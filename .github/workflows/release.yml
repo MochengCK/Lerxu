@@ -50,22 +50,30 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           $ErrorActionPreference = 'Stop'
-          # 使用 ShareX 的裁剪版 FFmpeg，体积更小
-          $ffmpegUrl = 'https://github.com/ShareX/FFmpeg/releases/download/v7.1/ffmpeg-7.1-win64.zip'
-          $ffmpegZip = 'ffmpeg-7.1-win64.zip'
-          # 使用 curl 下载，更可靠地处理 GitHub 重定向
-          curl -L -o $ffmpegZip $ffmpegUrl
+          $ffmpegUrl = 'https://github.com/GyanD/codexffmpeg/releases/download/8.0.1/ffmpeg-8.0.1-essentials_build.zip'
+          $ffmpegZip = 'ffmpeg-8.0.1-essentials_build.zip'
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $ffmpegZip
           if (Test-Path 'ffmpeg-8.0.1-essentials_build') {
             Remove-Item 'ffmpeg-8.0.1-essentials_build' -Recurse -Force
           }
-          # 创建目标目录结构
-          New-Item -ItemType Directory -Path 'ffmpeg-8.0.1-essentials_build\bin' -Force | Out-Null
-          # 解压到临时目录
-          Expand-Archive -Path $ffmpegZip -DestinationPath 'ffmpeg-temp' -Force
-          # 复制 ffmpeg.exe 到目标目录
-          Copy-Item -Path 'ffmpeg-temp\ffmpeg.exe' -Destination 'ffmpeg-8.0.1-essentials_build\bin\ffmpeg.exe' -Force
-          # 清理临时文件
-          Remove-Item 'ffmpeg-temp' -Recurse -Force
+          Expand-Archive -Path $ffmpegZip -DestinationPath . -Force
+          # 只保留 ffmpeg.exe，删除其他不需要的文件（ffprobe.exe, ffplay.exe 等）
+          $binDir = 'ffmpeg-8.0.1-essentials_build\bin'
+          if (Test-Path $binDir) {
+            Get-ChildItem -Path $binDir -Exclude 'ffmpeg.exe' | Remove-Item -Force
+          }
+          # 删除 doc 目录
+          $docDir = 'ffmpeg-8.0.1-essentials_build\doc'
+          if (Test-Path $docDir) {
+            Remove-Item $docDir -Recurse -Force
+          }
+          # 删除 presets 目录
+          $presetsDir = 'ffmpeg-8.0.1-essentials_build\presets'
+          if (Test-Path $presetsDir) {
+            Remove-Item $presetsDir -Recurse -Force
+          }
+          # 删除根目录下的其他文件
+          Get-ChildItem -Path 'ffmpeg-8.0.1-essentials_build' -File | Remove-Item -Force
           Remove-Item $ffmpegZip -Force
 
       - name: Prepare ffmpeg dependency (Linux)
