@@ -555,216 +555,31 @@
           return false
         }
       },
-      getFfmpegDownloadUrl () {
-        const platform = process.platform
-        const arch = process.arch
-        if (platform === 'win32') {
-          return 'https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip'
-        } else if (platform === 'darwin') {
-          if (arch === 'arm64') {
-            return 'https://evermeet.cx/ffmpeg/ffmpeg-7.1.zip'
-          }
-          return 'https://evermeet.cx/ffmpeg/ffmpeg-7.1.zip'
-        } else if (platform === 'linux') {
-          if (arch === 'arm64') {
-            return 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz'
-          }
-          return 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz'
-        }
-        return ''
-      },
-      async downloadFfmpeg () {
-        const { app } = require('@electron/remote')
-        const userDataPath = app.getPath('userData')
-        const ffmpegDir = resolve(userDataPath, 'ffmpeg')
-        const ffmpegExeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-        const ffmpegPath = resolve(ffmpegDir, ffmpegExeName)
-
-        // 如果已经存在，直接返回
-        if (existsSync(ffmpegPath)) {
-          return ffmpegPath
-        }
-
-        const downloadUrl = this.getFfmpegDownloadUrl()
-        if (!downloadUrl) {
-          throw new Error('Unsupported platform for ffmpeg download')
-        }
-
-        const https = require('node:https')
-        const http = require('node:http')
-        const fs = require('node:fs')
-        const os = require('node:os')
-
-        // 创建临时目录
-        const tempDir = resolve(os.tmpdir(), `ffmpeg-download-${Date.now()}`)
-        if (!existsSync(tempDir)) {
-          mkdirSync(tempDir, { recursive: true })
-        }
-
-        const isZip = downloadUrl.endsWith('.zip')
-        const isTarXz = downloadUrl.endsWith('.tar.xz')
-        const tempFile = resolve(tempDir, isZip ? 'ffmpeg.zip' : 'ffmpeg.tar.xz')
-
-        // 下载文件
-        await new Promise((resolve, reject) => {
-          const downloadWithRedirect = (url, redirectCount = 0) => {
-            if (redirectCount > 5) {
-              reject(new Error('Too many redirects'))
-              return
-            }
-            const protocol = url.startsWith('https') ? https : http
-            const request = protocol.get(url, (response) => {
-              if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-                downloadWithRedirect(response.headers.location, redirectCount + 1)
-                return
-              }
-              if (response.statusCode !== 200) {
-                reject(new Error(`Download failed with status ${response.statusCode}`))
-                return
-              }
-              const fileStream = fs.createWriteStream(tempFile)
-              response.pipe(fileStream)
-              fileStream.on('finish', () => {
-                fileStream.close()
-                resolve()
-              })
-              fileStream.on('error', reject)
-            })
-            request.on('error', reject)
-            request.setTimeout(60000, () => {
-              request.destroy()
-              reject(new Error('Download timeout'))
-            })
-          }
-          downloadWithRedirect(downloadUrl)
-        })
-
-        // 解压文件
-        if (!existsSync(ffmpegDir)) {
-          mkdirSync(ffmpegDir, { recursive: true })
-        }
-
-        if (isZip) {
-          // 使用 PowerShell 解压 (Windows) 或 unzip (Unix)
-          if (process.platform === 'win32') {
-            const result = spawnSync('powershell', [
-              '-Command',
-              `Expand-Archive -Path "${tempFile}" -DestinationPath "${tempDir}" -Force`
-            ], { windowsHide: true, timeout: 120000 })
-            if (result.status !== 0) {
-              throw new Error('Failed to extract ffmpeg zip')
-            }
-            // 查找 ffmpeg.exe
-            const findFfmpeg = (dir) => {
-              const entries = readdirSync(dir, { withFileTypes: true })
-              for (const entry of entries) {
-                const fullPath = resolve(dir, entry.name)
-                if (entry.isDirectory()) {
-                  const found = findFfmpeg(fullPath)
-                  if (found) return found
-                } else if (entry.name === 'ffmpeg.exe') {
-                  return fullPath
-                }
-              }
-              return null
-            }
-            const foundFfmpeg = findFfmpeg(tempDir)
-            if (foundFfmpeg) {
-              fs.copyFileSync(foundFfmpeg, ffmpegPath)
-            } else {
-              throw new Error('ffmpeg.exe not found in archive')
-            }
-          } else {
-            // macOS - 使用 unzip
-            const result = spawnSync('unzip', ['-o', tempFile, '-d', tempDir], { windowsHide: true, timeout: 120000 })
-            if (result.status !== 0) {
-              throw new Error('Failed to extract ffmpeg zip')
-            }
-            const extractedFfmpeg = resolve(tempDir, 'ffmpeg')
-            if (existsSync(extractedFfmpeg)) {
-              fs.copyFileSync(extractedFfmpeg, ffmpegPath)
-              fs.chmodSync(ffmpegPath, 0o755)
-            } else {
-              throw new Error('ffmpeg not found in archive')
-            }
-          }
-        } else if (isTarXz) {
-          // Linux - 使用 tar
-          const result = spawnSync('tar', ['xf', tempFile, '-C', tempDir], { windowsHide: true, timeout: 120000 })
-          if (result.status !== 0) {
-            throw new Error('Failed to extract ffmpeg tar.xz')
-          }
-          // 查找 ffmpeg
-          const findFfmpeg = (dir) => {
-            const entries = readdirSync(dir, { withFileTypes: true })
-            for (const entry of entries) {
-              const fullPath = resolve(dir, entry.name)
-              if (entry.isDirectory()) {
-                const found = findFfmpeg(fullPath)
-                if (found) return found
-              } else if (entry.name === 'ffmpeg') {
-                return fullPath
-              }
-            }
-            return null
-          }
-          const foundFfmpeg = findFfmpeg(tempDir)
-          if (foundFfmpeg) {
-            fs.copyFileSync(foundFfmpeg, ffmpegPath)
-            fs.chmodSync(ffmpegPath, 0o755)
-          } else {
-            throw new Error('ffmpeg not found in archive')
-          }
-        }
-
-        // 清理临时文件
-        try {
-          fs.rmSync(tempDir, { recursive: true, force: true })
-        } catch (_) {}
-
-        return ffmpegPath
-      },
       async ensureFfmpeg () {
-        // 先检查是否已有 ffmpeg
+        // 检查是否已有 ffmpeg
         const existingPath = this.resolveFfmpegPath()
         if (existingPath) {
           return existingPath
         }
 
-        // 提示用户下载
-        try {
-          await this.$confirm(
-            this.$t('task.ffmpeg-download-confirm'),
-            this.$t('task.ffmpeg-required'),
-            {
-              confirmButtonText: this.$t('task.download'),
-              cancelButtonText: this.$t('app.cancel'),
-              type: 'info'
-            }
-          )
-        } catch (_) {
-          // 用户取消
+        // 检查用户是否已经取消过提示
+        const { app } = require('@electron/remote')
+        const userDataPath = app.getPath('userData')
+        const skipFlagPath = resolve(userDataPath, '.ffmpeg-skip')
+        if (existsSync(skipFlagPath)) {
           return ''
         }
 
-        // 显示下载进度
-        const loading = this.$loading({
-          lock: true,
-          text: this.$t('task.ffmpeg-downloading'),
-          spinner: 'el-icon-loading',
-          background: 'rgba(0, 0, 0, 0.7)'
-        })
+        // 提示用户需要手动安装 FFmpeg
+        this.$msg.warning(this.$t('task.ffmpeg-required-manual'))
 
+        // 记录已提示，避免重复提示
         try {
-          const ffmpegPath = await this.downloadFfmpeg()
-          loading.close()
-          this.$msg.success(this.$t('task.ffmpeg-download-success'))
-          return ffmpegPath
-        } catch (e) {
-          loading.close()
-          this.$msg.error(this.$t('task.ffmpeg-download-failed') + ': ' + e.message)
-          return ''
-        }
+          const fs = require('node:fs')
+          fs.writeFileSync(skipFlagPath, '1')
+        } catch (_) {}
+
+        return ''
       },
       runFfmpegMux (ffmpegPath, videoPath, audioPath, outputPath) {
         return new Promise((resolve, reject) => {
