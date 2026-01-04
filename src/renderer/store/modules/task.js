@@ -442,13 +442,70 @@ const actions = {
       }
     }
 
+    // 辅助函数：为文件名添加正确位置的序号
+    const addDuplicateNumber = (filename, num) => {
+      const lastDotIndex = filename.lastIndexOf('.')
+      if (lastDotIndex > 0) {
+        const name = filename.substring(0, lastDotIndex)
+        const ext = filename.substring(lastDotIndex)
+        return `${name} (${num})${ext}`
+      }
+      return `${filename} (${num})`
+    }
+
+    // 辅助函数：检查文件是否存在并生成唯一文件名
+    const getUniqueFilename = (dir, filename, downloadingSuffix) => {
+      if (!dir || !filename) return filename
+      
+      try {
+        const { existsSync } = require('node:fs')
+        const { join } = require('node:path')
+        
+        // 检查带后缀的文件名
+        const filenameWithSuffix = downloadingSuffix ? `${filename}${downloadingSuffix}` : filename
+        let targetPath = join(dir, filenameWithSuffix)
+        
+        // 也检查不带后缀的文件名（可能已经下载完成）
+        const targetPathWithoutSuffix = join(dir, filename)
+        
+        if (!existsSync(targetPath) && !existsSync(targetPathWithoutSuffix)) {
+          return filename // 文件不存在，使用原始文件名
+        }
+        
+        // 文件存在，需要添加序号
+        let num = 1
+        while (num < 1000) { // 防止无限循环
+          const newFilename = addDuplicateNumber(filename, num)
+          const newFilenameWithSuffix = downloadingSuffix ? `${newFilename}${downloadingSuffix}` : newFilename
+          const newPath = join(dir, newFilenameWithSuffix)
+          const newPathWithoutSuffix = join(dir, newFilename)
+          
+          if (!existsSync(newPath) && !existsSync(newPathWithoutSuffix)) {
+            return newFilename
+          }
+          num++
+        }
+        
+        return filename // 如果找不到唯一名称，返回原始名称
+      } catch (e) {
+        console.warn('[Motrix] getUniqueFilename error:', e.message)
+        return filename
+      }
+    }
+
     const hasOuts = Array.isArray(outs) && outs.length > 0
     const hasSingleOptionOut = !!(Array.isArray(uris) && uris.length === 1 && normalizedOptions && typeof normalizedOptions.out === 'string' && normalizedOptions.out.trim() !== '')
+
+    // 获取默认下载目录
+    const defaultDir = (options && options.dir) || config.dir || ''
 
     if (suffix && hasSingleOptionOut) {
       const onlyUri = uris[0]
       if (onlyUri && !`${onlyUri}`.startsWith('magnet:') && !normalizedOptions.out.endsWith(suffix)) {
-        normalizedOptions.out = `${normalizedOptions.out}${suffix}`
+        // 检查文件是否存在，如果存在则添加序号
+        const dir = Array.isArray(dirs) && dirs[0] ? dirs[0] : defaultDir
+        const uniqueFilename = getUniqueFilename(dir, normalizedOptions.out, suffix)
+        normalizedOptions.out = `${uniqueFilename}${suffix}`
       }
     }
 
@@ -471,7 +528,10 @@ const actions = {
         // Only append suffix if out is present and uri is not a magnet link
         if (out && uri && !uri.startsWith('magnet:')) {
           if (!out.endsWith(suffix)) {
-            return out + suffix
+            // 检查文件是否存在，如果存在则添加序号
+            const dir = Array.isArray(dirs) && dirs[index] ? dirs[index] : defaultDir
+            const uniqueFilename = getUniqueFilename(dir, out, suffix)
+            return uniqueFilename + suffix
           }
         }
         return out

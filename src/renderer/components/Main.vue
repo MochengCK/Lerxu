@@ -1378,7 +1378,19 @@
         // 检查是否已经有窗口
         const existingWindow = this.progressWindows.get(gid)
         if (existingWindow && (typeof existingWindow.isDestroyed !== 'function' || !existingWindow.isDestroyed())) {
+          // 确保窗口显示、激活并置于最前面
+          if (existingWindow.isMinimized()) {
+            existingWindow.restore()
+          }
+          existingWindow.show()
           existingWindow.focus()
+          // 短暂置顶以确保窗口在最前面，然后取消置顶
+          existingWindow.setAlwaysOnTop(true)
+          setTimeout(() => {
+            if (existingWindow && !existingWindow.isDestroyed()) {
+              existingWindow.setAlwaysOnTop(false)
+            }
+          }, 100)
           this.updateProgressWindow(task)
           return
         }
@@ -1431,6 +1443,10 @@
           frame: !useCustomFrame,
           backgroundColor: isDark ? '#1f1f1f' : '#ffffff',
           icon,
+          // 确保窗口独立于主窗口，不会继承主窗口的最小化状态
+          parent: null,
+          modal: false,
+          show: false, // 先不显示，等 ready-to-show 时再显示
           webPreferences: {
             enableRemoteModule: true,
             contextIsolation: false,
@@ -1459,7 +1475,19 @@
               win.setMenu(null)
             }
           }
+          // 确保窗口显示、激活并置于最前面
+          if (win.isMinimized()) {
+            win.restore()
+          }
           win.show()
+          win.focus()
+          // 短暂置顶以确保窗口在最前面，然后取消置顶
+          win.setAlwaysOnTop(true)
+          setTimeout(() => {
+            if (win && !win.isDestroyed()) {
+              win.setAlwaysOnTop(false)
+            }
+          }, 100)
           this.updateProgressWindow(task)
         })
       },

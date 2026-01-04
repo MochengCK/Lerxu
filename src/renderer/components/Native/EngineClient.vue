@@ -106,6 +106,36 @@
           }
         }
       },
+      /**
+       * 修复带有下载后缀的文件名中的序号位置
+       * 例如：/path/to/5EClient-8.2.5.exe (1).vxdv -> /path/to/5EClient-8.2.5 (1).exe.vxdv
+       */
+      fixFileNameWithSuffix (filePath, downloadingFileSuffix) {
+        if (!downloadingFileSuffix || !filePath.endsWith(downloadingFileSuffix)) {
+          return filePath
+        }
+
+        const { dirname, basename, join } = require('node:path')
+        const dir = dirname(filePath)
+        const fullFilename = basename(filePath)
+        
+        // 移除下载后缀得到原始文件名（可能带有错误位置的序号）
+        const filenameWithoutDownloadSuffix = fullFilename.slice(0, -downloadingFileSuffix.length)
+        
+        // 检查是否有 aria2 添加的序号 (1), (2), etc. 在扩展名后面
+        // 例如：5EClient-8.2.5.exe (1) 应该变成 5EClient-8.2.5 (1).exe
+        const duplicatePattern = /^(.+?)(\.[^.\s]+)(\s+\(\d+\))$/
+        const match = filenameWithoutDownloadSuffix.match(duplicatePattern)
+        
+        if (match) {
+          const [, baseName, extension, duplicateNumber] = match
+          // 重新组织文件名：baseName + duplicateNumber + extension + downloadingFileSuffix
+          const fixedFilename = baseName + duplicateNumber + extension + downloadingFileSuffix
+          return join(dir, fixedFilename)
+        }
+        
+        return filePath
+      },
       async fetchTaskItem ({ gid }) {
         return api.fetchTaskItem({ gid })
           .catch((e) => {
@@ -1031,15 +1061,30 @@
         }
 
         if (currentPath.endsWith(downloadingFileSuffix)) {
-          const originalPath = currentPath.slice(0, -downloadingFileSuffix.length)
+          // 首先尝试修复文件名中的序号位置
+          const fixedPath = this.fixFileNameWithSuffix(currentPath, downloadingFileSuffix)
+          let pathToProcess = currentPath
+          
+          // 如果修复后的路径不同，先重命名到正确的位置
+          if (fixedPath !== currentPath && existsSync(currentPath)) {
+            const renameOk = this.renamePreserveTimes(currentPath, fixedPath)
+            if (renameOk) {
+              console.log(`[Motrix] Fixed file name structure: ${currentPath} -> ${fixedPath}`)
+              pathToProcess = fixedPath
+            } else {
+              console.warn(`[Motrix] Failed to fix file name structure: ${currentPath} -> ${fixedPath}`)
+            }
+          }
+          
+          const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
           // 尝试重命名
-          if (existsSync(currentPath)) {
-            const ok = this.renamePreserveTimes(currentPath, originalPath)
+          if (existsSync(pathToProcess)) {
+            const ok = this.renamePreserveTimes(pathToProcess, originalPath)
             if (ok) {
-              console.log(`[Motrix] Removed downloading suffix: ${currentPath} -> ${originalPath}`)
+              console.log(`[Motrix] Removed downloading suffix: ${pathToProcess} -> ${originalPath}`)
               return originalPath
             } else {
-              console.warn(`[Motrix] Failed to remove downloading suffix: ${currentPath} -> ${originalPath}`)
+              console.warn(`[Motrix] Failed to remove downloading suffix: ${pathToProcess} -> ${originalPath}`)
             }
           } else if (existsSync(originalPath)) {
             // 如果原文件已存在（可能已经被重命名），直接返回原路径
@@ -1130,10 +1175,25 @@
             try {
               if (downloadingFileSuffix) {
                 if (filePath.endsWith(downloadingFileSuffix) && existsSync(filePath)) {
-                  const originalPath = filePath.slice(0, -downloadingFileSuffix.length)
-                  const ok = this.renamePreserveTimes(filePath, originalPath)
+                  // 首先尝试修复文件名中的序号位置
+                  const fixedPath = this.fixFileNameWithSuffix(filePath, downloadingFileSuffix)
+                  let pathToProcess = filePath
+                  
+                  // 如果修复后的路径不同，先重命名到正确的位置
+                  if (fixedPath !== filePath) {
+                    const renameOk = this.renamePreserveTimes(filePath, fixedPath)
+                    if (renameOk) {
+                      console.log(`[Motrix] Fixed BT file name structure: ${filePath} -> ${fixedPath}`)
+                      pathToProcess = fixedPath
+                    } else {
+                      console.warn(`[Motrix] Failed to fix BT file name structure: ${filePath} -> ${fixedPath}`)
+                    }
+                  }
+                  
+                  const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
+                  const ok = this.renamePreserveTimes(pathToProcess, originalPath)
                   if (ok) {
-                    console.log(`[Motrix] Removed downloading suffix before categorize: ${filePath} -> ${originalPath}`)
+                    console.log(`[Motrix] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
                     filePath = originalPath
                   }
                 }
@@ -1174,18 +1234,47 @@
           try {
             if (downloadingFileSuffix) {
               if (filePath.endsWith(downloadingFileSuffix) && existsSync(filePath)) {
-                const originalPath = filePath.slice(0, -downloadingFileSuffix.length)
-                const ok = this.renamePreserveTimes(filePath, originalPath)
+                // 首先尝试修复文件名中的序号位置
+                const fixedPath = this.fixFileNameWithSuffix(filePath, downloadingFileSuffix)
+                let pathToProcess = filePath
+                
+                // 如果修复后的路径不同，先重命名到正确的位置
+                if (fixedPath !== filePath) {
+                  const renameOk = this.renamePreserveTimes(filePath, fixedPath)
+                  if (renameOk) {
+                    console.log(`[Motrix] Fixed file name structure before categorize: ${filePath} -> ${fixedPath}`)
+                    pathToProcess = fixedPath
+                  } else {
+                    console.warn(`[Motrix] Failed to fix file name structure before categorize: ${filePath} -> ${fixedPath}`)
+                  }
+                }
+                
+                const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
+                const ok = this.renamePreserveTimes(pathToProcess, originalPath)
                 if (ok) {
-                  console.log(`[Motrix] Removed downloading suffix before categorize: ${filePath} -> ${originalPath}`)
+                  console.log(`[Motrix] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
                   filePath = originalPath
                 }
               } else {
                 const suffixedPath = filePath + downloadingFileSuffix
                 if (!existsSync(filePath) && existsSync(suffixedPath)) {
-                  const ok = this.renamePreserveTimes(suffixedPath, filePath)
+                  // 也检查这个路径是否需要修复
+                  const fixedSuffixedPath = this.fixFileNameWithSuffix(suffixedPath, downloadingFileSuffix)
+                  let pathToProcess = suffixedPath
+                  
+                  if (fixedSuffixedPath !== suffixedPath && existsSync(suffixedPath)) {
+                    const renameOk = this.renamePreserveTimes(suffixedPath, fixedSuffixedPath)
+                    if (renameOk) {
+                      console.log(`[Motrix] Fixed suffixed file name structure: ${suffixedPath} -> ${fixedSuffixedPath}`)
+                      pathToProcess = fixedSuffixedPath
+                    }
+                  }
+                  
+                  const targetPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
+                  const ok = this.renamePreserveTimes(pathToProcess, targetPath)
                   if (ok) {
-                    console.log(`[Motrix] Restored downloading suffix before categorize: ${suffixedPath} -> ${filePath}`)
+                    console.log(`[Motrix] Restored downloading suffix before categorize: ${pathToProcess} -> ${targetPath}`)
+                    filePath = targetPath
                   }
                 }
               }
