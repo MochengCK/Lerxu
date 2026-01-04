@@ -265,5 +265,5 @@ export default {
   'connection-status-active': 'Active',
   'connection-status-idle': 'Idle',
   // FFmpeg related
-  'ffmpeg-required-manual': 'FFmpeg is required to merge Bilibili videos. Please download and place it in the app directory.'
+  'ffmpeg-required-manual': 'FFmpeg is required to merge videos. Please check the installation guide in Settings.'
 }

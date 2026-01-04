@@ -269,5 +269,11 @@ export default {
   'priority-how-it-works': '工作原理：',
   'priority-rule-1': '高优先级任务（优先级 > 0）将获得更多连接数和带宽',
   'priority-rule-3': '普通任务（优先级 = 0）平分剩余资源，保证不会完全无法下载',
-  'priority-rule-auto-min': '每个任务的最小连接数会根据"每个服务器最大连接数"自动调整（取其 1/4，范围 1-4）'
+  'priority-rule-auto-min': '每个任务的最小连接数会根据"每个服务器最大连接数"自动调整（取其 1/4，范围 1-4）',
+  'video-merge': '视频合并',
+  'ffmpeg-status': 'FFmpeg 状态',
+  'ffmpeg-installed': '已安装',
+  'ffmpeg-not-installed': '未安装',
+  'ffmpeg-path': '路径',
+  'ffmpeg-open-folder': '打开目录'
 }

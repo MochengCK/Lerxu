@@ -513,36 +513,35 @@
       },
       resolveFfmpegPath () {
         const candidates = []
+        const ffmpegExeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+
         // 检查用户数据目录中的 ffmpeg
         try {
           const { app } = require('@electron/remote')
           const userDataPath = app.getPath('userData')
-          const userFfmpegDir = resolve(userDataPath, 'ffmpeg')
-          const ffmpegExeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-          candidates.push(resolve(userFfmpegDir, ffmpegExeName))
+          candidates.push(resolve(userDataPath, 'ffmpeg', ffmpegExeName))
         } catch (_) {}
-        // 检查应用资源目录中的 ffmpeg
+
+        // 检查应用安装目录（通过 exe 路径获取）
         try {
-          const root = resolve(process.cwd(), 'ffmpeg-8.0.1-essentials_build')
-          candidates.push(
-            resolve(root, 'bin', 'ffmpeg.exe'),
-            resolve(root, 'ffmpeg.exe'),
-            resolve(root, 'bin', 'ffmpeg'),
-            resolve(root, 'ffmpeg')
-          )
+          const { app } = require('@electron/remote')
+          const exePath = app.getPath('exe')
+          const appDir = dirname(exePath)
+          candidates.push(resolve(appDir, ffmpegExeName))
         } catch (_) {}
+
+        // 检查应用资源目录中的 ffmpeg
         try {
           const rp = process && process.resourcesPath ? `${process.resourcesPath}` : ''
           if (rp) {
-            const root = resolve(rp, 'ffmpeg-8.0.1-essentials_build')
             candidates.push(
-              resolve(root, 'bin', 'ffmpeg.exe'),
-              resolve(root, 'ffmpeg.exe'),
-              resolve(root, 'bin', 'ffmpeg'),
-              resolve(root, 'ffmpeg')
+              resolve(rp, ffmpegExeName),
+              resolve(rp, 'ffmpeg-8.0.1-essentials_build', 'bin', ffmpegExeName),
+              resolve(rp, 'ffmpeg-8.0.1-essentials_build', ffmpegExeName)
             )
           }
         } catch (_) {}
+
         // 检查系统 PATH 中的 ffmpeg
         candidates.push('ffmpeg')
         return candidates.find(p => (p === 'ffmpeg' ? this.checkSystemFfmpeg() : existsSync(p))) || ''

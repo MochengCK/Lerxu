@@ -287,5 +287,11 @@ export default {
   'priority-how-it-works': 'How it works:',
   'priority-rule-1': 'High priority tasks (priority > 0) get more connections and bandwidth',
   'priority-rule-3': 'Normal tasks (priority = 0) share remaining resources equally, ensuring they can still download',
-  'priority-rule-auto-min': 'Minimum connections per task is auto-calculated based on "Max connections per server" (1/4 of max, range 1-4)'
+  'priority-rule-auto-min': 'Minimum connections per task is auto-calculated based on "Max connections per server" (1/4 of max, range 1-4)',
+  'video-merge': 'Video Merge',
+  'ffmpeg-status': 'FFmpeg Status',
+  'ffmpeg-installed': 'Installed',
+  'ffmpeg-not-installed': 'Not Installed',
+  'ffmpeg-path': 'Path',
+  'ffmpeg-open-folder': 'Open Folder'
 }

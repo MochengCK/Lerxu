@@ -267,5 +267,5 @@ export default {
   'connection-status-active': '活跃',
   'connection-status-idle': '空闲',
   // FFmpeg 相关
-  'ffmpeg-required-manual': '合并 Bilibili 视频需要 FFmpeg，请手动下载并放置到应用目录'
+  'ffmpeg-required-manual': '合并视频需要 FFmpeg，请在设置中查看安装方式'
 }
