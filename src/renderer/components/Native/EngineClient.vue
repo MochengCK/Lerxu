@@ -593,7 +593,6 @@
         const https = require('node:https')
         const http = require('node:http')
         const fs = require('node:fs')
-        const path = require('node:path')
         const os = require('node:os')
 
         // 创建临时目录
@@ -607,7 +606,7 @@
         const tempFile = resolve(tempDir, isZip ? 'ffmpeg.zip' : 'ffmpeg.tar.xz')
 
         // 下载文件
-        await new Promise((resolvePromise, reject) => {
+        await new Promise((resolve, reject) => {
           const downloadWithRedirect = (url, redirectCount = 0) => {
             if (redirectCount > 5) {
               reject(new Error('Too many redirects'))
@@ -627,7 +626,7 @@
               response.pipe(fileStream)
               fileStream.on('finish', () => {
                 fileStream.close()
-                resolvePromise()
+                resolve()
               })
               fileStream.on('error', reject)
             })
