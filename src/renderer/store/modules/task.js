@@ -456,22 +456,22 @@ const actions = {
     // 辅助函数：检查文件是否存在并生成唯一文件名
     const getUniqueFilename = (dir, filename, downloadingSuffix) => {
       if (!dir || !filename) return filename
-      
+
       try {
         const { existsSync } = require('node:fs')
         const { join } = require('node:path')
-        
+
         // 检查带后缀的文件名
         const filenameWithSuffix = downloadingSuffix ? `${filename}${downloadingSuffix}` : filename
-        let targetPath = join(dir, filenameWithSuffix)
-        
+        const targetPath = join(dir, filenameWithSuffix)
+
         // 也检查不带后缀的文件名（可能已经下载完成）
         const targetPathWithoutSuffix = join(dir, filename)
-        
+
         if (!existsSync(targetPath) && !existsSync(targetPathWithoutSuffix)) {
           return filename // 文件不存在，使用原始文件名
         }
-        
+
         // 文件存在，需要添加序号
         let num = 1
         while (num < 1000) { // 防止无限循环
@@ -479,13 +479,13 @@ const actions = {
           const newFilenameWithSuffix = downloadingSuffix ? `${newFilename}${downloadingSuffix}` : newFilename
           const newPath = join(dir, newFilenameWithSuffix)
           const newPathWithoutSuffix = join(dir, newFilename)
-          
+
           if (!existsSync(newPath) && !existsSync(newPathWithoutSuffix)) {
             return newFilename
           }
           num++
         }
-        
+
         return filename // 如果找不到唯一名称，返回原始名称
       } catch (e) {
         console.warn('[Motrix] getUniqueFilename error:', e.message)

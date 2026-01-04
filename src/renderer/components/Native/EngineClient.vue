@@ -118,22 +118,22 @@
         const { dirname, basename, join } = require('node:path')
         const dir = dirname(filePath)
         const fullFilename = basename(filePath)
-        
+
         // 移除下载后缀得到原始文件名（可能带有错误位置的序号）
         const filenameWithoutDownloadSuffix = fullFilename.slice(0, -downloadingFileSuffix.length)
-        
+
         // 检查是否有 aria2 添加的序号 (1), (2), etc. 在扩展名后面
         // 例如：5EClient-8.2.5.exe (1) 应该变成 5EClient-8.2.5 (1).exe
         const duplicatePattern = /^(.+?)(\.[^.\s]+)(\s+\(\d+\))$/
         const match = filenameWithoutDownloadSuffix.match(duplicatePattern)
-        
+
         if (match) {
           const [, baseName, extension, duplicateNumber] = match
           // 重新组织文件名：baseName + duplicateNumber + extension + downloadingFileSuffix
           const fixedFilename = baseName + duplicateNumber + extension + downloadingFileSuffix
           return join(dir, fixedFilename)
         }
-        
+
         return filePath
       },
       async fetchTaskItem ({ gid }) {
@@ -1064,7 +1064,7 @@
           // 首先尝试修复文件名中的序号位置
           const fixedPath = this.fixFileNameWithSuffix(currentPath, downloadingFileSuffix)
           let pathToProcess = currentPath
-          
+
           // 如果修复后的路径不同，先重命名到正确的位置
           if (fixedPath !== currentPath && existsSync(currentPath)) {
             const renameOk = this.renamePreserveTimes(currentPath, fixedPath)
@@ -1075,7 +1075,7 @@
               console.warn(`[Motrix] Failed to fix file name structure: ${currentPath} -> ${fixedPath}`)
             }
           }
-          
+
           const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
           // 尝试重命名
           if (existsSync(pathToProcess)) {
@@ -1178,7 +1178,7 @@
                   // 首先尝试修复文件名中的序号位置
                   const fixedPath = this.fixFileNameWithSuffix(filePath, downloadingFileSuffix)
                   let pathToProcess = filePath
-                  
+
                   // 如果修复后的路径不同，先重命名到正确的位置
                   if (fixedPath !== filePath) {
                     const renameOk = this.renamePreserveTimes(filePath, fixedPath)
@@ -1189,7 +1189,7 @@
                       console.warn(`[Motrix] Failed to fix BT file name structure: ${filePath} -> ${fixedPath}`)
                     }
                   }
-                  
+
                   const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
                   const ok = this.renamePreserveTimes(pathToProcess, originalPath)
                   if (ok) {
@@ -1237,7 +1237,7 @@
                 // 首先尝试修复文件名中的序号位置
                 const fixedPath = this.fixFileNameWithSuffix(filePath, downloadingFileSuffix)
                 let pathToProcess = filePath
-                
+
                 // 如果修复后的路径不同，先重命名到正确的位置
                 if (fixedPath !== filePath) {
                   const renameOk = this.renamePreserveTimes(filePath, fixedPath)
@@ -1248,7 +1248,7 @@
                     console.warn(`[Motrix] Failed to fix file name structure before categorize: ${filePath} -> ${fixedPath}`)
                   }
                 }
-                
+
                 const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
                 const ok = this.renamePreserveTimes(pathToProcess, originalPath)
                 if (ok) {
@@ -1261,7 +1261,7 @@
                   // 也检查这个路径是否需要修复
                   const fixedSuffixedPath = this.fixFileNameWithSuffix(suffixedPath, downloadingFileSuffix)
                   let pathToProcess = suffixedPath
-                  
+
                   if (fixedSuffixedPath !== suffixedPath && existsSync(suffixedPath)) {
                     const renameOk = this.renamePreserveTimes(suffixedPath, fixedSuffixedPath)
                     if (renameOk) {
@@ -1269,7 +1269,7 @@
                       pathToProcess = fixedSuffixedPath
                     }
                   }
-                  
+
                   const targetPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
                   const ok = this.renamePreserveTimes(pathToProcess, targetPath)
                   if (ok) {

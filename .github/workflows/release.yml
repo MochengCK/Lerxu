@@ -57,6 +57,24 @@ jobs:
             Remove-Item 'ffmpeg-8.0.1-essentials_build' -Recurse -Force
           }
           Expand-Archive -Path $ffmpegZip -DestinationPath . -Force
+          # 只保留 ffmpeg.exe，删除其他不需要的文件（ffprobe.exe, ffplay.exe 等）
+          $binDir = 'ffmpeg-8.0.1-essentials_build\bin'
+          if (Test-Path $binDir) {
+            Get-ChildItem -Path $binDir -Exclude 'ffmpeg.exe' | Remove-Item -Force
+          }
+          # 删除 doc 目录
+          $docDir = 'ffmpeg-8.0.1-essentials_build\doc'
+          if (Test-Path $docDir) {
+            Remove-Item $docDir -Recurse -Force
+          }
+          # 删除 presets 目录
+          $presetsDir = 'ffmpeg-8.0.1-essentials_build\presets'
+          if (Test-Path $presetsDir) {
+            Remove-Item $presetsDir -Recurse -Force
+          }
+          # 删除根目录下的其他文件
+          Get-ChildItem -Path 'ffmpeg-8.0.1-essentials_build' -File | Remove-Item -Force
+          Remove-Item $ffmpegZip -Force
 
       - name: Prepare ffmpeg dependency (Linux)
         if: matrix.os == 'ubuntu-latest'

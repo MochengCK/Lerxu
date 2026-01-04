@@ -106,31 +106,45 @@ module.exports = async function (context) {
   const destFfmpegDir = join(resourcesDir, 'ffmpeg-8.0.1-essentials_build')
   try {
     if (fs.existsSync(srcFfmpegDir)) {
-      let srcBin = join(srcFfmpegDir, 'bin', 'ffmpeg.exe')
-      if (!fs.existsSync(srcBin)) {
-        srcBin = join(srcFfmpegDir, 'ffmpeg.exe')
+      // 只复制 ffmpeg 可执行文件，不复制 ffprobe、ffplay 等其他文件
+      const ffmpegExeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+      
+      // 查找 ffmpeg 可执行文件的位置
+      let srcBin = null
+      const possiblePaths = [
+        join(srcFfmpegDir, 'bin', ffmpegExeName),
+        join(srcFfmpegDir, ffmpegExeName)
+      ]
+      for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+          srcBin = p
+          break
+        }
       }
-      if (!fs.existsSync(srcBin)) {
-        srcBin = join(srcFfmpegDir, 'bin', 'ffmpeg')
-      }
-      if (!fs.existsSync(srcBin)) {
-        srcBin = join(srcFfmpegDir, 'ffmpeg')
-      }
-      if (fs.existsSync(srcBin)) {
+      
+      if (srcBin) {
+        // 创建目标目录
         const destBinDir = join(destFfmpegDir, 'bin')
         if (!fs.existsSync(destBinDir)) {
           fs.mkdirSync(destBinDir, { recursive: true })
         }
-        const destBinPath = join(destBinDir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
+        
+        // 只复制 ffmpeg 可执行文件到 bin 目录
+        const destBinPath = join(destBinDir, ffmpegExeName)
         fs.copyFileSync(srcBin, destBinPath)
-        if (!fs.existsSync(destFfmpegDir)) {
-          fs.mkdirSync(destFfmpegDir, { recursive: true })
-        }
-        const destRootPath = join(destFfmpegDir, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg')
+        
+        // 也复制到根目录（兼容旧代码）
+        const destRootPath = join(destFfmpegDir, ffmpegExeName)
         fs.copyFileSync(srcBin, destRootPath)
+        
+        console.log(`[afterPackHook] Copied ffmpeg: ${srcBin} -> ${destBinPath}`)
+      } else {
+        console.warn('[afterPackHook] ffmpeg executable not found in:', srcFfmpegDir)
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('[afterPackHook] Error copying ffmpeg:', e.message)
+  }
 
   if (context.electronPlatformName !== 'linux') {
     chdir(originalDir)
