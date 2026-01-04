@@ -193,7 +193,13 @@ if (!devMode) {
       patterns: [{
         from: path.join(__dirname, '../static'),
         to: path.join(__dirname, '../dist/electron/static'),
-        globOptions: { ignore: [ '.*' ] }
+        globOptions: {
+          ignore: [
+            '.*',
+            '**/parsers/bilibili_parser',
+            '**/parsers/bilibili_parser.exe'
+          ]
+        }
       }]
     }),
     new Webpack.DefinePlugin({

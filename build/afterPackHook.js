@@ -129,13 +129,9 @@ module.exports = async function (context) {
           fs.mkdirSync(destBinDir, { recursive: true })
         }
         
-        // 只复制 ffmpeg 可执行文件到 bin 目录
+        // 只复制 ffmpeg 可执行文件到 bin 目录（只保留一份）
         const destBinPath = join(destBinDir, ffmpegExeName)
         fs.copyFileSync(srcBin, destBinPath)
-        
-        // 也复制到根目录（兼容旧代码）
-        const destRootPath = join(destFfmpegDir, ffmpegExeName)
-        fs.copyFileSync(srcBin, destRootPath)
         
         console.log(`[afterPackHook] Copied ffmpeg: ${srcBin} -> ${destBinPath}`)
       } else {
