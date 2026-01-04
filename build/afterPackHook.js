@@ -149,45 +149,7 @@ module.exports = async function (context) {
     }
   }
 
-  const srcFfmpegDir = join(__dirname, '..', 'ffmpeg-8.0.1-essentials_build')
-  const destFfmpegDir = join(resourcesDir, 'ffmpeg-8.0.1-essentials_build')
-  try {
-    if (fs.existsSync(srcFfmpegDir)) {
-      // 只复制 ffmpeg 可执行文件，不复制 ffprobe、ffplay 等其他文件
-      const ffmpegExeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-      
-      // 查找 ffmpeg 可执行文件的位置
-      let srcBin = null
-      const possiblePaths = [
-        join(srcFfmpegDir, 'bin', ffmpegExeName),
-        join(srcFfmpegDir, ffmpegExeName)
-      ]
-      for (const p of possiblePaths) {
-        if (fs.existsSync(p)) {
-          srcBin = p
-          break
-        }
-      }
-      
-      if (srcBin) {
-        // 创建目标目录
-        const destBinDir = join(destFfmpegDir, 'bin')
-        if (!fs.existsSync(destBinDir)) {
-          fs.mkdirSync(destBinDir, { recursive: true })
-        }
-        
-        // 只复制 ffmpeg 可执行文件到 bin 目录（只保留一份）
-        const destBinPath = join(destBinDir, ffmpegExeName)
-        fs.copyFileSync(srcBin, destBinPath)
-        
-        console.log(`[afterPackHook] Copied ffmpeg: ${srcBin} -> ${destBinPath}`)
-      } else {
-        console.warn('[afterPackHook] ffmpeg executable not found in:', srcFfmpegDir)
-      }
-    }
-  } catch (e) {
-    console.error('[afterPackHook] Error copying ffmpeg:', e.message)
-  }
+  // ffmpeg 不再预先打包，改为运行时按需下载
 
   if (context.electronPlatformName !== 'linux') {
     chdir(originalDir)

@@ -263,5 +263,12 @@ export default {
   'connection-speed': 'Speed',
   'connection-status': 'Status',
   'connection-status-active': 'Active',
-  'connection-status-idle': 'Idle'
+  'connection-status-idle': 'Idle',
+  // FFmpeg related
+  'ffmpeg-required': 'FFmpeg Required',
+  'ffmpeg-download-confirm': 'FFmpeg is required to merge Bilibili videos. Download now? (~90MB)',
+  'download': 'Download',
+  'ffmpeg-downloading': 'Downloading FFmpeg...',
+  'ffmpeg-download-success': 'FFmpeg downloaded successfully',
+  'ffmpeg-download-failed': 'FFmpeg download failed'
 }

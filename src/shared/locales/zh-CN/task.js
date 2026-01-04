@@ -265,5 +265,12 @@ export default {
   'connection-speed': '速度',
   'connection-status': '状态',
   'connection-status-active': '活跃',
-  'connection-status-idle': '空闲'
+  'connection-status-idle': '空闲',
+  // FFmpeg 相关
+  'ffmpeg-required': '需要 FFmpeg',
+  'ffmpeg-download-confirm': '合并 Bilibili 视频需要 FFmpeg，是否自动下载？（约 90MB）',
+  'download': '下载',
+  'ffmpeg-downloading': '正在下载 FFmpeg...',
+  'ffmpeg-download-success': 'FFmpeg 下载成功',
+  'ffmpeg-download-failed': 'FFmpeg 下载失败'
 }
