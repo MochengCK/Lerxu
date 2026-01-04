@@ -197,7 +197,8 @@ if (!devMode) {
           ignore: [
             '.*',
             '**/parsers/bilibili_parser',
-            '**/parsers/bilibili_parser.exe'
+            '**/parsers/bilibili_parser.exe',
+            '**/parsers/*.py'
           ]
         }
       }]

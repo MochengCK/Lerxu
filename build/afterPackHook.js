@@ -97,10 +97,57 @@ module.exports = async function (context) {
   const dirname = context.appOutDir
   chdir(dirname)
 
+  // 应用支持的语言列表
+  const supportedLocales = [
+    'de', 'en-US', 'es', 'fr', 'it', 'ja', 'ko', 'pt-BR', 'ru', 'zh-CN', 'zh-TW'
+  ]
+
+  // 删除不需要的 Electron 语言文件
+  const localesDir = join(dirname, 'locales')
+  if (fs.existsSync(localesDir)) {
+    const localeFiles = fs.readdirSync(localesDir)
+    let removedCount = 0
+    let savedSize = 0
+    localeFiles.forEach(file => {
+      const localeName = file.replace('.pak', '')
+      if (!supportedLocales.includes(localeName)) {
+        const filePath = join(localesDir, file)
+        try {
+          const stat = fs.statSync(filePath)
+          savedSize += stat.size
+          fs.unlinkSync(filePath)
+          removedCount++
+        } catch (e) {}
+      }
+    })
+    console.log(`[afterPackHook] Removed ${removedCount} unused locale files, saved ${(savedSize / 1024 / 1024).toFixed(2)} MB`)
+  }
+
   const resourcesDir = join(dirname, 'resources')
   const srcParsersDir = join(__dirname, '..', 'static', 'parsers')
   const destParsersDir = join(resourcesDir, 'parsers')
-  copyDirRecursiveSync(srcParsersDir, destParsersDir)
+  
+  // 复制 parsers 目录，但排除 .py 文件（因为已经有编译好的可执行文件）
+  if (fs.existsSync(srcParsersDir)) {
+    if (!fs.existsSync(destParsersDir)) {
+      fs.mkdirSync(destParsersDir, { recursive: true })
+    }
+    const entries = fs.readdirSync(srcParsersDir, { withFileTypes: true })
+    for (const e of entries) {
+      // 跳过 .py 文件
+      if (e.isFile() && e.name.endsWith('.py')) {
+        console.log(`[afterPackHook] Skipped Python file: ${e.name}`)
+        continue
+      }
+      const src = join(srcParsersDir, e.name)
+      const dest = join(destParsersDir, e.name)
+      if (e.isDirectory()) {
+        copyDirRecursiveSync(src, dest)
+      } else if (e.isFile()) {
+        fs.copyFileSync(src, dest)
+      }
+    }
+  }
 
   const srcFfmpegDir = join(__dirname, '..', 'ffmpeg-8.0.1-essentials_build')
   const destFfmpegDir = join(resourcesDir, 'ffmpeg-8.0.1-essentials_build')
