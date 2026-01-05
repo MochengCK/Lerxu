@@ -77,7 +77,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   }
 
-  const isBilibiliVideoPage = (url) => {
+  const isVideoPage = (url) => {
     const s = (url || window.location.href || '').trim()
     if (!s) return false
     try {
@@ -85,13 +85,23 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const host = (u.hostname || '').toLowerCase()
       const path = (u.pathname || '').toLowerCase()
       if (!host) return false
-      const isBilibiliHost = host === 'bilibili.com' ||
+      
+      // 检查是否是视频网站
+      const isVideoHost = host.includes('video') || 
+        host.includes('tube') || 
+        host.includes('tv') ||
+        host === 'bilibili.com' ||
         host === 'www.bilibili.com' ||
         host.endsWith('.bilibili.com')
+      
       const isShort = host === 'b23.tv' || host === 'www.b23.tv'
       if (isShort) return true
-      if (!isBilibiliHost) return false
+      if (!isVideoHost) return false
+      
+      // 检查是否是视频页面路径
       if (path.startsWith('/video/')) return true
+      if (path.startsWith('/watch')) return true
+      if (path.startsWith('/v/')) return true
       if (path.startsWith('/bangumi/')) return true
       if (path.startsWith('/cheese/')) return true
       return false
@@ -125,7 +135,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     log('Resources updated:', event.detail)
     sniffedResources = event.detail || { video: [], audio: [], m4s: [], combined: [], total: 0 }
     log('Total resources:', sniffedResources.total)
-    updateBilibiliButtonVisibility()
+    
+    // 确保有资源时按钮可见
+    if (sniffedResources.total > 0) {
+      const wrapper = document.getElementById('linkcore-download-btn-wrapper')
+      if (wrapper) {
+        wrapper.style.display = 'block'
+        wrapper.style.visibility = 'visible'
+        log('Ensured button visibility after resource update')
+      }
+    }
+    
+    updateButtonVisibility()
   })
 
   // 监听来自 iframe 的消息
@@ -134,7 +155,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       log('Received message from iframe:', event.data.data)
       sniffedResources = event.data.data || { video: [], audio: [], m4s: [], combined: [], total: 0 }
       log('Total resources from iframe:', sniffedResources.total)
-      updateBilibiliButtonVisibility()
+      
+      // 确保有资源时按钮可见
+      if (sniffedResources.total > 0) {
+        const wrapper = document.getElementById('linkcore-download-btn-wrapper')
+        if (wrapper) {
+          wrapper.style.display = 'block'
+          wrapper.style.visibility = 'visible'
+          log('Ensured button visibility after iframe message')
+        }
+      }
+      
+      updateButtonVisibility()
     }
   })
 
@@ -150,12 +182,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       total: 0
     }
     log('Resources after clear:', JSON.stringify(sniffedResources))
-    updateBilibiliButtonVisibility()
+    updateButtonVisibility()
   })
 
   log('Event listeners registered')
 
-  const sendBilibiliPageToClient = () => {
+  const sendPageToClient = () => {
     try {
       const url = window.location.href || ''
       if (!url || !/^https?:/i.test(url)) return
@@ -180,6 +212,246 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       chrome.runtime.sendMessage(message, () => { })
     } catch (e) {
     }
+  }
+
+  // 获取当前语言的缓存
+  let cachedLocale = 'en'
+  let cachedUnknownSizeText = 'Unknown size'
+  
+  // 更新语言缓存
+  const updateLocaleCache = async () => {
+    try {
+      const config = await new Promise((resolve) => {
+        chrome.storage.local.get(['browserLocale'], (result) => {
+          resolve(result || {})
+        })
+      })
+      
+      cachedLocale = config.browserLocale || 'en'
+      const unknownSizeTranslations = {
+        'en': 'Unknown size',
+        'zh_CN': '未知大小',
+        'zh_TW': '未知大小',
+        'ja': 'サイズ不明',
+        'ko': '크기 알 수 없음',
+        'es': 'Tamaño desconocido',
+        'fr': 'Taille inconnue',
+        'de': 'Unbekannte Größe',
+        'ru': 'Неизвестный размер'
+      }
+      
+      cachedUnknownSizeText = unknownSizeTranslations[cachedLocale] || unknownSizeTranslations['en']
+    } catch (e) {
+      cachedLocale = 'en'
+      cachedUnknownSizeText = 'Unknown size'
+    }
+  }
+
+  // 获取本地化文本
+  const getLocalizedText = (key) => {
+    const translations = {
+      'clearResourceList': {
+        'en': 'Clear resource list',
+        'zh_CN': '清空资源列表',
+        'zh_TW': '清空資源列表',
+        'ja': 'リソースリストをクリア',
+        'ko': '리소스 목록 지우기',
+        'es': 'Limpiar lista de recursos',
+        'fr': 'Effacer la liste des ressources',
+        'de': 'Ressourcenliste löschen',
+        'ru': 'Очистить список ресурсов'
+      },
+      'dashCompleteVideo': {
+        'en': 'DASH Complete Video (Video+Audio)',
+        'zh_CN': 'DASH 完整视频 (视频+音频)',
+        'zh_TW': 'DASH 完整視頻 (視頻+音頻)',
+        'ja': 'DASH 完全動画 (動画+音声)',
+        'ko': 'DASH 완전 비디오 (비디오+오디오)',
+        'es': 'Video completo DASH (Video+Audio)',
+        'fr': 'Vidéo complète DASH (Vidéo+Audio)',
+        'de': 'DASH Vollständiges Video (Video+Audio)',
+        'ru': 'DASH Полное видео (Видео+Аудио)'
+      },
+      'dashSeparateStreams': {
+        'en': 'DASH Separate Streams',
+        'zh_CN': 'DASH 单独流',
+        'zh_TW': 'DASH 單獨流',
+        'ja': 'DASH 個別ストリーム',
+        'ko': 'DASH 개별 스트림',
+        'es': 'Flujos separados DASH',
+        'fr': 'Flux séparés DASH',
+        'de': 'DASH Separate Streams',
+        'ru': 'DASH Отдельные потоки'
+      },
+      'videoResources': {
+        'en': 'Video Resources',
+        'zh_CN': '视频资源',
+        'zh_TW': '視頻資源',
+        'ja': '動画リソース',
+        'ko': '비디오 리소스',
+        'es': 'Recursos de video',
+        'fr': 'Ressources vidéo',
+        'de': 'Video-Ressourcen',
+        'ru': 'Видео ресурсы'
+      },
+      'audioResources': {
+        'en': 'Audio Resources',
+        'zh_CN': '音频资源',
+        'zh_TW': '音頻資源',
+        'ja': '音声リソース',
+        'ko': '오디오 리소스',
+        'es': 'Recursos de audio',
+        'fr': 'Ressources audio',
+        'de': 'Audio-Ressourcen',
+        'ru': 'Аудио ресурсы'
+      },
+      'noVideoResourcesDetected': {
+        'en': 'No video resources detected',
+        'zh_CN': '未检测到视频资源',
+        'zh_TW': '未檢測到視頻資源',
+        'ja': '動画リソースが検出されませんでした',
+        'ko': '비디오 리소스가 감지되지 않음',
+        'es': 'No se detectaron recursos de video',
+        'fr': 'Aucune ressource vidéo détectée',
+        'de': 'Keine Video-Ressourcen erkannt',
+        'ru': 'Видео ресурсы не обнаружены'
+      },
+      'rightClickTip': {
+        'en': 'Tip: Right-click on links and select "Download with LinkCore"',
+        'zh_CN': '提示：右键点击页面上的链接，选择"使用 LinkCore 下载"',
+        'zh_TW': '提示：右鍵點擊頁面上的鏈接，選擇"使用 LinkCore 下載"',
+        'ja': 'ヒント：リンクを右クリックして「LinkCore でダウンロード」を選択',
+        'ko': '팁: 링크를 마우스 오른쪽 버튼으로 클릭하고 "LinkCore로 다운로드"를 선택',
+        'es': 'Consejo: Haz clic derecho en los enlaces y selecciona "Descargar con LinkCore"',
+        'fr': 'Astuce : Cliquez avec le bouton droit sur les liens et sélectionnez "Télécharger avec LinkCore"',
+        'de': 'Tipp: Rechtsklick auf Links und "Mit LinkCore herunterladen" auswählen',
+        'ru': 'Совет: Щелкните правой кнопкой мыши по ссылкам и выберите "Скачать с LinkCore"'
+      },
+      'complete': {
+        'en': 'Complete',
+        'zh_CN': '完整',
+        'zh_TW': '完整',
+        'ja': '完全',
+        'ko': '완전',
+        'es': 'Completo',
+        'fr': 'Complet',
+        'de': 'Vollständig',
+        'ru': 'Полный'
+      },
+      'completeVideo': {
+        'en': 'Complete Video',
+        'zh_CN': '完整视频',
+        'zh_TW': '完整視頻',
+        'ja': '完全動画',
+        'ko': '완전 비디오',
+        'es': 'Video completo',
+        'fr': 'Vidéo complète',
+        'de': 'Vollständiges Video',
+        'ru': 'Полное видео'
+      },
+      'videoStream': {
+        'en': 'Video stream',
+        'zh_CN': '视频流',
+        'zh_TW': '視頻流',
+        'ja': '動画ストリーム',
+        'ko': '비디오 스트림',
+        'es': 'Flujo de video',
+        'fr': 'Flux vidéo',
+        'de': 'Video-Stream',
+        'ru': 'Видео поток'
+      },
+      'audioStream': {
+        'en': 'Audio stream',
+        'zh_CN': '音频流',
+        'zh_TW': '音頻流',
+        'ja': '音声ストリーム',
+        'ko': '오디오 스트림',
+        'es': 'Flujo de audio',
+        'fr': 'Flux audio',
+        'de': 'Audio-Stream',
+        'ru': 'Аудио поток'
+      },
+      'file': {
+        'en': 'file',
+        'zh_CN': '文件',
+        'zh_TW': '文件',
+        'ja': 'ファイル',
+        'ko': '파일',
+        'es': 'archivo',
+        'fr': 'fichier',
+        'de': 'Datei',
+        'ru': 'файл'
+      }
+    }
+    
+    const localeTexts = translations[key]
+    if (localeTexts && localeTexts[cachedLocale]) {
+      return localeTexts[cachedLocale]
+    }
+    return localeTexts ? localeTexts['en'] : key
+  }
+
+  // 初始化语言缓存
+  updateLocaleCache()
+
+  // 监听语言变化
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (msg && msg.type === 'localeChanged') {
+        updateLocaleCache().then(() => {
+          // 语言变化后重新渲染UI
+          updateResourceList()
+          
+          // 更新按钮文本
+          const btn = document.getElementById('linkcore-bilibili-download-btn')
+          if (btn) {
+            applyClientLocaleToButton(btn)
+          }
+        })
+      }
+    })
+  }
+
+  // 监听来自标签页的语言变化消息
+  if (typeof chrome !== 'undefined' && chrome.runtime) {
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (msg && msg.type === 'localeChanged') {
+        updateLocaleCache().then(() => {
+          // 语言变化后重新渲染UI
+          updateResourceList()
+          
+          // 更新按钮文本
+          const btn = document.getElementById('linkcore-bilibili-download-btn')
+          if (btn) {
+            applyClientLocaleToButton(btn)
+          }
+        })
+      }
+    })
+  }
+
+  // 格式化文件大小显示（同步版本）
+  const formatFileSize = (bytes) => {
+    if (!bytes || bytes <= 0) return cachedUnknownSizeText
+    
+    const units = ['B', 'KB', 'MB', 'GB', 'TB']
+    let size = bytes
+    let unitIndex = 0
+    
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024
+      unitIndex++
+    }
+    
+    // 根据大小选择合适的小数位数
+    let decimals = 0
+    if (unitIndex > 0) {
+      if (size < 10) decimals = 2
+      else if (size < 100) decimals = 1
+      else decimals = 0
+    }
+    
+    return `${size.toFixed(decimals)} ${units[unitIndex]}`
   }
 
   // 创建资源选择下拉框
@@ -262,7 +534,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     icon.style.fontSize = '14px'
 
     const text = document.createElement('span')
-    text.textContent = '清空资源列表'
+    text.textContent = getLocalizedText('clearResourceList')
 
     clearBtn.appendChild(icon)
     clearBtn.appendChild(text)
@@ -302,7 +574,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const combinedSection = document.createElement('div')
 
       const combinedTitle = document.createElement('div')
-      combinedTitle.textContent = 'DASH 完整视频 (视频+音频)'
+      combinedTitle.textContent = getLocalizedText('dashCompleteVideo')
       combinedTitle.style.fontSize = '12px'
       combinedTitle.style.fontWeight = 'bold'
       combinedTitle.style.padding = '10px 12px 5px'
@@ -323,7 +595,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const m4sSection = document.createElement('div')
 
       const m4sTitle = document.createElement('div')
-      m4sTitle.textContent = 'DASH 单独流'
+      m4sTitle.textContent = getLocalizedText('dashSeparateStreams')
       m4sTitle.style.fontSize = '12px'
       m4sTitle.style.fontWeight = 'bold'
       m4sTitle.style.padding = '10px 12px 5px'
@@ -344,7 +616,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const videoSection = document.createElement('div')
 
       const videoTitle = document.createElement('div')
-      videoTitle.textContent = '视频资源'
+      videoTitle.textContent = getLocalizedText('videoResources')
       videoTitle.style.fontSize = '12px'
       videoTitle.style.fontWeight = 'bold'
       videoTitle.style.padding = '10px 12px 5px'
@@ -369,7 +641,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const audioSection = document.createElement('div')
 
       const audioTitle = document.createElement('div')
-      audioTitle.textContent = '音频资源'
+      audioTitle.textContent = getLocalizedText('audioResources')
       audioTitle.style.fontSize = '12px'
       audioTitle.style.fontWeight = 'bold'
       audioTitle.style.padding = '10px 12px 5px'
@@ -397,11 +669,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       noData.style.fontSize = '12px'
 
       const tip1 = document.createElement('div')
-      tip1.textContent = '未检测到视频资源'
+      tip1.textContent = getLocalizedText('noVideoResourcesDetected')
       tip1.style.marginBottom = '8px'
 
       const tip2 = document.createElement('div')
-      tip2.textContent = '提示：右键点击页面上的链接，选择"使用 LinkCore 下载"'
+      tip2.textContent = getLocalizedText('rightClickTip')
       tip2.style.color = '#666'
       tip2.style.fontSize = '11px'
 
@@ -437,10 +709,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 生成友好的文件名（与普通资源项相同的逻辑）
     let displayName = ''
+    let sizeInfo = ''
     try {
       // 尝试从页面标题获取
       const pageTitle = document.title || window.top.document.title || ''
       const ext = 'DASH'
+
+      // 格式化大小信息（总是显示，即使是未知大小）
+      sizeInfo = ` (${formatFileSize(resource.size)})`
 
       if (pageTitle) {
         // 清理标题，移除常见后缀
@@ -452,19 +728,20 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           .trim()
 
         if (cleanTitle) {
-          displayName = `${cleanTitle}, ${ext}完整视频`
+          displayName = `${cleanTitle}, ${ext}${getLocalizedText('completeVideo')}${sizeInfo}`
           // 如果有质量信息，添加到文件名
           if (resource.quality) {
-            displayName = `${cleanTitle}, ${resource.quality}, ${ext}完整视频`
+            displayName = `${cleanTitle}, ${resource.quality}, ${ext}${getLocalizedText('completeVideo')}${sizeInfo}`
           }
         } else {
-          displayName = resource.name || `完整视频 ${index + 1}`
+          displayName = resource.name || `${getLocalizedText('completeVideo')} ${index + 1}${sizeInfo}`
         }
       } else {
-        displayName = resource.name || `完整视频 ${index + 1}`
+        displayName = resource.name || `${getLocalizedText('completeVideo')} ${index + 1}${sizeInfo}`
       }
     } catch (e) {
       displayName = resource.name || `完整视频 ${index + 1}`
+      displayName += ` (${formatFileSize(resource.size)})`
     }
 
     const name = document.createElement('div')
@@ -498,7 +775,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 完整标记
     const completeTag = document.createElement('span')
-    completeTag.textContent = '完整'
+    completeTag.textContent = getLocalizedText('complete')
     completeTag.style.fontSize = '11px'
     completeTag.style.color = '#52c41a'
     completeTag.style.fontWeight = 'bold'
@@ -507,32 +784,45 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     completeTag.style.borderRadius = '3px'
     badges.appendChild(completeTag)
 
-    // 文件大小
+    // 文件大小徽章（只在有准确大小时显示）
     if (resource.size && resource.size > 0) {
       const size = document.createElement('span')
-      const sizeText = resource.size > 1024 * 1024
-        ? `${(resource.size / 1024 / 1024).toFixed(2)}MB`
-        : `${(resource.size / 1024).toFixed(2)}KB`
+      const sizeText = formatFileSize(resource.size)
       size.textContent = sizeText
       size.style.fontSize = '11px'
       size.style.color = '#666'
+      size.style.fontWeight = '500'
       size.style.padding = '2px 6px'
       size.style.backgroundColor = '#f0f0f0'
       size.style.borderRadius = '3px'
+      size.style.border = '1px solid #e0e0e0'
       badges.appendChild(size)
     }
 
     info.appendChild(name)
     info.appendChild(badges)
 
-    const desc = document.createElement('div')
-    desc.textContent = '视频流 + 音频流 (自动下载两个文件)'
-    desc.style.fontSize = '10px'
-    desc.style.color = '#52c41a'
-    desc.style.marginBottom = '2px'
+    // 显示两个资源的URL
+    const videoUrl = document.createElement('div')
+    videoUrl.textContent = `${getLocalizedText('videoStream')}: ${resource.videoUrl}`
+    videoUrl.style.fontSize = '10px'
+    videoUrl.style.color = '#999'
+    videoUrl.style.overflow = 'hidden'
+    videoUrl.style.textOverflow = 'ellipsis'
+    videoUrl.style.whiteSpace = 'nowrap'
+    videoUrl.style.marginBottom = '2px'
+
+    const audioUrl = document.createElement('div')
+    audioUrl.textContent = `${getLocalizedText('audioStream')}: ${resource.audioUrl}`
+    audioUrl.style.fontSize = '10px'
+    audioUrl.style.color = '#999'
+    audioUrl.style.overflow = 'hidden'
+    audioUrl.style.textOverflow = 'ellipsis'
+    audioUrl.style.whiteSpace = 'nowrap'
 
     item.appendChild(info)
-    item.appendChild(desc)
+    item.appendChild(videoUrl)
+    item.appendChild(audioUrl)
 
     item.addEventListener('click', () => {
       // 生成建议的文件名
@@ -552,9 +842,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
           if (cleanTitle) {
             // 视频流文件名
-            videoFilename = `${cleanTitle}_视频.m4s`
+            videoFilename = `${cleanTitle}_${getLocalizedText('videoStream').replace(':', '')}.m4s`
             // 音频流文件名
-            audioFilename = `${cleanTitle}_音频.m4s`
+            audioFilename = `${cleanTitle}_${getLocalizedText('audioStream').replace(':', '')}.m4s`
           }
         }
       } catch (e) {
@@ -598,10 +888,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 生成友好的文件名
     let displayName = ''
+    let sizeInfo = ''
     try {
       // 尝试从页面标题获取
       const pageTitle = document.title || window.top.document.title || ''
       const ext = resource.ext ? resource.ext.toUpperCase() : 'VIDEO'
+
+      // 格式化大小信息（总是显示，即使是未知大小）
+      sizeInfo = ` (${formatFileSize(resource.size)})`
 
       if (pageTitle) {
         // 清理标题，移除常见后缀
@@ -613,19 +907,20 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           .trim()
 
         if (cleanTitle) {
-          displayName = `${cleanTitle}, ${ext}文件`
+          displayName = `${cleanTitle}, ${ext}${getLocalizedText('file')}${sizeInfo}`
           // 如果有质量信息，添加到文件名
           if (resource.quality && resource.quality !== ext) {
-            displayName = `${cleanTitle}, ${resource.quality}, ${ext}文件`
+            displayName = `${cleanTitle}, ${resource.quality}, ${ext}${getLocalizedText('file')}${sizeInfo}`
           }
         } else {
-          displayName = resource.name || `${ext} ${index + 1}`
+          displayName = resource.name || `${ext} ${index + 1}${sizeInfo}`
         }
       } else {
-        displayName = resource.name || `${ext} ${index + 1}`
+        displayName = resource.name || `${ext} ${index + 1}${sizeInfo}`
       }
     } catch (e) {
       displayName = resource.name || `Resource ${index + 1}`
+      displayName += ` (${formatFileSize(resource.size)})`
     }
 
     const name = document.createElement('div')
@@ -657,18 +952,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       badges.appendChild(quality)
     }
 
-    // 文件大小
+    // 文件大小徽章（只在有准确大小时显示）
     if (resource.size && resource.size > 0) {
       const size = document.createElement('span')
-      const sizeText = resource.size > 1024 * 1024
-        ? `${(resource.size / 1024 / 1024).toFixed(2)}MB`
-        : `${(resource.size / 1024).toFixed(2)}KB`
+      const sizeText = formatFileSize(resource.size)
       size.textContent = sizeText
       size.style.fontSize = '11px'
       size.style.color = '#666'
+      size.style.fontWeight = '500'
       size.style.padding = '2px 6px'
       size.style.backgroundColor = '#f0f0f0'
       size.style.borderRadius = '3px'
+      size.style.border = '1px solid #e0e0e0'
       badges.appendChild(size)
     }
 
@@ -794,11 +1089,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 上次更新资源列表的时间戳，用于节流
   let lastResourceListUpdate = 0
-  const RESOURCE_LIST_UPDATE_INTERVAL = 500 // 最少500ms更新一次资源列表
+  const RESOURCE_LIST_UPDATE_INTERVAL = 100 // 减少到100ms，提高响应速度
 
   // 更新按钮显示状态
-  const updateBilibiliButtonVisibility = () => {
-    const btn = document.getElementById('linkcore-bilibili-download-btn')
+  const updateButtonVisibility = () => {
+    const btn = document.getElementById('linkcore-download-btn')
     log('Update button visibility, btn:', !!btn, 'total:', sniffedResources.total)
     if (!btn) return
 
@@ -812,6 +1107,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       log('Showing button, updating resource list...')
       if (wrapper) {
         const wasHidden = wrapper.style.display === 'none'
+
+        // 确保按钮始终显示（有资源时）
+        wrapper.style.display = 'block'
+        wrapper.style.visibility = 'visible'
 
         // 只有在按钮之前是隐藏的时候才需要特殊处理位置
         if (wasHidden) {
@@ -862,27 +1161,24 @@ if (typeof window !== 'undefined' && window.addEventListener) {
             wrapper.style.right = `${newRight}px`
             log('Updated button position for player container before showing, top:', newTop, 'right:', newRight)
           }
-
-          // 直接显示按钮，不使用 requestAnimationFrame 避免延迟
-          wrapper.style.display = 'block'
-          wrapper.style.visibility = 'visible'
         }
-        // 如果按钮已经显示，不需要再更新 visibility，避免闪烁
 
         log('Wrapper display set to block, current display:', wrapper.style.display)
         log('Wrapper position:', wrapper.style.position)
         log('Wrapper top:', wrapper.style.top, 'right:', wrapper.style.right)
       }
 
-      // 节流：只有距离上次更新超过指定时间才更新资源列表
-      const now = Date.now()
-      if (now - lastResourceListUpdate > RESOURCE_LIST_UPDATE_INTERVAL) {
-        lastResourceListUpdate = now
-        updateResourceList()
-      }
+      // 立即更新资源列表，不使用节流
+      updateResourceList()
     } else {
-      log('Hiding button')
-      if (wrapper) wrapper.style.display = 'none'
+      log('No resources, but keeping button if it was dragged or locked')
+      // 只有在没有被拖拽且没有锁定位置时才隐藏
+      if (wrapper && !hasBeenDragged && !positionLocked) {
+        wrapper.style.display = 'none'
+        log('Hiding button - no resources and not dragged/locked')
+      } else {
+        log('Keeping button visible - dragged:', hasBeenDragged, 'locked:', positionLocked)
+      }
     }
   }
 
@@ -892,6 +1188,31 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   let isButtonHovered = false // 标记按钮是否正在被悬停
   let positionLocked = false // 标记位置是否已锁定（只有悬停新视频才会解锁）
   let hideButtonTimeout = null // 按钮隐藏倒计时
+  let buttonStabilityTimer = null // 按钮稳定性定时器
+
+  // 按钮稳定性检查 - 确保有资源时按钮始终可见
+  const ensureButtonStability = () => {
+    const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+    if (wrapper && sniffedResources && sniffedResources.total > 0) {
+      // 如果有资源但按钮被隐藏，重新显示
+      if (wrapper.style.display === 'none') {
+        wrapper.style.display = 'block'
+        wrapper.style.visibility = 'visible'
+        log('Button stability check: restored hidden button with resources')
+      }
+    }
+  }
+
+  // 启动按钮稳定性检查
+  const startButtonStabilityCheck = () => {
+    if (buttonStabilityTimer) {
+      clearInterval(buttonStabilityTimer)
+    }
+    buttonStabilityTimer = setInterval(ensureButtonStability, 2000) // 每2秒检查一次
+  }
+
+  // 启动稳定性检查
+  startButtonStabilityCheck()
 
   const clearHideTimeout = () => {
     if (hideButtonTimeout) {
@@ -902,16 +1223,19 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   const startHideTimeout = () => {
     clearHideTimeout()
+    // 增加隐藏延迟到10秒，给用户更多时间操作
     hideButtonTimeout = setTimeout(() => {
       const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
-      if (wrapper && !isButtonHovered) {
+      // 只有在没有资源、没有被拖拽、没有被悬停时才隐藏
+      if (wrapper && !isButtonHovered && !hasBeenDragged && (!sniffedResources || sniffedResources.total === 0)) {
         wrapper.style.display = 'none'
         positionLocked = false
-        // hoveredVideoContainer = null // 保留 active container 以便下次悬停能正确定位? 不，还是重置吧
         hoveredVideoContainer = null
-        log('Button hidden after 3s timeout')
+        log('Button hidden after 10s timeout')
+      } else {
+        log('Button not hidden - hovered:', isButtonHovered, 'dragged:', hasBeenDragged, 'resources:', sniffedResources?.total || 0)
       }
-    }, 3000)
+    }, 10000) // 增加到10秒
   }
 
   const ensureBilibiliButton = () => {
@@ -1312,10 +1636,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       log('Delayed check...')
       log('Current sniffedResources:', sniffedResources)
 
-      // 如果已经有资源，就不要再请求了（避免覆盖 iframe 的资源）
+      // 如果已经有资源，立即显示按钮
       if (sniffedResources && sniffedResources.total > 0) {
         log('Already have resources from iframe:', sniffedResources.total)
-        updateBilibiliButtonVisibility()
+        wrapper.style.display = 'block'
+        wrapper.style.visibility = 'visible'
+        updateButtonVisibility()
       } else {
         log('No resources yet, requesting...')
         window.dispatchEvent(new Event('linkcore-get-resources'))
@@ -1509,10 +1835,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const findVideoContainer = (videoElement) => {
     if (!videoElement) return null
 
+    let bestContainer = null
+
     // 尝试找到视频的直接容器
     let parent = videoElement.parentElement
     let depth = 0
-    const maxDepth = 5  // 最多向上查找5层
+    const maxDepth = 8  // 增加查找深度到8层
 
     while (parent && depth < maxDepth) {
       // 检查是否是视频卡片
@@ -1531,11 +1859,22 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           cls.includes('recommend-item') ||
           cls.includes('video-wrapper') ||
           cls.includes('poster') ||
-          cls.includes('cover')
+          cls.includes('cover') ||
+          cls.includes('bpx-player') ||
+          cls.includes('bilibili-player')
         )) {
           bestContainer = parent
-          // 继续向上查找
+          // 继续向上查找更好的容器
         }
+      }
+
+      // 检查ID
+      if (parent.id && (
+        parent.id.includes('player') ||
+        parent.id.includes('video') ||
+        parent.id.includes('bilibili')
+      )) {
+        bestContainer = parent
       }
 
       // 如果还没有找到基于类的容器，检查尺寸
@@ -1545,7 +1884,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         const height = parent.offsetHeight
 
         if (width >= 100 && height >= 60 &&
-          (style.position === 'relative' || style.position === 'absolute')) {
+          (style.position === 'relative' || style.position === 'absolute' || style.position === 'fixed')) {
           if (!bestContainer) bestContainer = parent
         }
       }
@@ -1573,7 +1912,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         if (container && container !== hoveredVideoContainer) {
           hoveredVideoContainer = container
           hoveredVideoElement = video
-          // 更新当前容器记录，这样 updateBilibiliButtonVisibility 会使用新位置
+          // 更新当前容器记录，这样 updateButtonVisibility 会使用新位置
           currentContainer = container
           currentContainerSelector = 'video-hover'
           log('Video play detected, container:', container)
@@ -1656,14 +1995,20 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }
       }
 
-      // 如果容器被移除（如虚拟列表滚动）且无法恢复，隐藏按钮并重置锁定
-      // 除非按钮被拖拽过（用户想保留它）
-      if (!hasBeenDragged) {
-        const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      // 如果容器被移除但有资源，保持按钮显示但重置锁定
+      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      if (sniffedResources && sniffedResources.total > 0) {
+        if (!hasBeenDragged) {
+          positionLocked = false
+          hoveredVideoContainer = null
+          log('Container removed but keeping button due to resources')
+        }
+      } else if (!hasBeenDragged) {
+        // 只有在没有资源且未被拖拽时才隐藏
         if (wrapper) wrapper.style.display = 'none'
         positionLocked = false
         hoveredVideoContainer = null
-        log('Container removed from DOM and cannot recover, resetting position lock')
+        log('Container removed from DOM and no resources, hiding button')
       }
     }
   }, true) // 使用 capture 捕获滚动事件
@@ -1682,16 +2027,27 @@ if (typeof window !== 'undefined' && window.addEventListener) {
             hoveredVideoContainer = newContainer
             updateButtonPositionToContainer(hoveredVideoContainer)
             recovered = true
+            log('Container recovered via video element')
           }
         }
 
-        if (!recovered && !hasBeenDragged) {
-          // 容器已失效且无法恢复，且未被拖拽
-          positionLocked = false
-          hoveredVideoContainer = null
+        // 更宽松的恢复策略：如果有资源且按钮存在，保持显示
+        if (!recovered) {
           const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
-          if (wrapper) wrapper.style.display = 'none'
-          log('Container disconnected in loop, hidden')
+          if (wrapper && sniffedResources && sniffedResources.total > 0) {
+            // 有资源时不隐藏按钮，只是重置位置锁定
+            if (!hasBeenDragged) {
+              positionLocked = false
+              hoveredVideoContainer = null
+              log('Container disconnected but keeping button visible due to resources')
+            }
+          } else if (!hasBeenDragged) {
+            // 只有在没有资源且未被拖拽时才隐藏
+            positionLocked = false
+            hoveredVideoContainer = null
+            if (wrapper) wrapper.style.display = 'none'
+            log('Container disconnected and no resources, hidden')
+          }
         }
       }
     }

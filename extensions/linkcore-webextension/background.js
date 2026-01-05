@@ -512,12 +512,29 @@ const notifyLocaleChange = (browserLocale) => {
   }).catch(() => {
     // 忽略错误(可能没有打开的popup)
   })
+  
+  // 通知所有标签页的 content scripts
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach(tab => {
+      chrome.tabs.sendMessage(tab.id, {
+        type: 'localeChanged',
+        locale: browserLocale
+      }).catch(() => {
+        // 忽略错误(标签页可能没有 content script)
+      })
+    })
+  })
 }
 
 // 定期轮询客户端语言
 let localePollingTimer = null
 const startLocalePolling = () => {
   syncLocaleFromClient(false)
+  
+  // 每30秒检查一次语言变化
+  localePollingTimer = setInterval(() => {
+    syncLocaleFromClient(false)
+  }, 30000)
 }
 
 const stopLocalePolling = () => {

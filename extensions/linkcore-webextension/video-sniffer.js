@@ -2,6 +2,76 @@
 (function () {
   'use strict'
 
+  // 多语言质量和类型映射
+  const getLocalizedQuality = (quality, locale) => {
+    const qualityTranslations = {
+      'Audio': {
+        'en': 'Audio',
+        'zh_CN': '音频',
+        'zh_TW': '音訊',
+        'ja': 'オーディオ',
+        'ko': '오디오',
+        'es': 'Audio',
+        'fr': 'Audio',
+        'de': 'Audio',
+        'ru': 'Аудио'
+      },
+      'Hi-Res Audio': {
+        'en': 'Hi-Res Audio',
+        'zh_CN': '高品质音频',
+        'zh_TW': '高品質音訊',
+        'ja': 'ハイレゾ音声',
+        'ko': '고품질 오디오',
+        'es': 'Audio de alta resolución',
+        'fr': 'Audio haute résolution',
+        'de': 'High-Res Audio',
+        'ru': 'Аудио высокого разрешения'
+      },
+      'High Audio': {
+        'en': 'High Audio',
+        'zh_CN': '高音质',
+        'zh_TW': '高音質',
+        'ja': '高音質',
+        'ko': '고음질',
+        'es': 'Audio alto',
+        'fr': 'Audio élevé',
+        'de': 'Hohe Audioqualität',
+        'ru': 'Высокое качество звука'
+      },
+      'Unknown': {
+        'en': 'Unknown',
+        'zh_CN': '未知',
+        'zh_TW': '未知',
+        'ja': '不明',
+        'ko': '알 수 없음',
+        'es': 'Desconocido',
+        'fr': 'Inconnu',
+        'de': 'Unbekannt',
+        'ru': 'Неизвестно'
+      }
+    }
+    
+    if (qualityTranslations[quality] && qualityTranslations[quality][locale]) {
+      return qualityTranslations[quality][locale]
+    }
+    
+    return quality // 如果没有翻译，返回原始值
+  }
+
+  // 获取当前语言设置
+  const getCurrentLocale = async () => {
+    try {
+      const config = await new Promise((resolve) => {
+        chrome.storage.local.get(['browserLocale'], (result) => {
+          resolve(result || {})
+        })
+      })
+      return config.browserLocale || 'en'
+    } catch (e) {
+      return 'en'
+    }
+  }
+
   // 调试日志控制
   const DEBUG = false
   const log = (...args) => {
@@ -190,6 +260,11 @@
       'audio/x-ms-wma': 'wma',
       'audio/x-aac': 'aac',
       'audio/aac': 'aac',
+      'audio/flac': 'flac',
+      'audio/x-flac': 'flac',
+      'audio/opus': 'opus',
+      'audio/vorbis': 'ogg',
+      'audio/x-vorbis': 'ogg',
       'application/x-mpegURL': 'm3u8',
       'application/vnd.apple.mpegurl': 'm3u8',
       'application/dash+xml': 'mpd'
@@ -304,8 +379,138 @@
     return shouldSniff
   }
 
-  // 解析资源信息
-  function parseResource(url, mimeType, size) {
+  // 通用音频检测函数（适用于所有平台）
+  const checkIfAudio = (url, ext, mimeType) => {
+    // 1. 检查MIME类型
+    if (mimeType) {
+      const mimeTypeLower = mimeType.toLowerCase()
+      if (mimeTypeLower.startsWith('audio/')) {
+        return true
+      }
+    }
+    
+    // 2. 检查文件扩展名
+    const audioExtensions = ['mp3', 'aac', 'm4a', 'wav', 'flac', 'ogg', 'oga', 'wma', 'opus', 'webm']
+    if (ext && audioExtensions.includes(ext.toLowerCase())) {
+      return true
+    }
+    
+    // 3. 检查URL路径中的音频关键词
+    const urlLower = url.toLowerCase()
+    const audioKeywords = [
+      '/audio/', '_audio_', '-audio-', '.audio.',
+      '/sound/', '_sound_', '-sound-', '.sound.',
+      '/music/', '_music_', '-music-', '.music.',
+      'audio=', 'sound=', 'music=',
+      'type=audio', 'format=audio',
+      '/a/', '_a_', '-a-' // 简短的音频标识
+    ]
+    
+    for (const keyword of audioKeywords) {
+      if (urlLower.includes(keyword)) {
+        return true
+      }
+    }
+    
+    // 4. 检查URL参数中的音频标识
+    try {
+      const urlObj = new URL(url)
+      const params = new URLSearchParams(urlObj.search)
+      
+      // 检查常见的音频参数
+      const audioParams = ['audio', 'sound', 'music', 'track', 'stream_type']
+      for (const param of audioParams) {
+        const value = params.get(param)
+        if (value && (value.toLowerCase() === 'true' || value.toLowerCase() === 'audio' || value.toLowerCase() === '1')) {
+          return true
+        }
+      }
+      
+      // 检查媒体类型参数
+      const mediaType = params.get('mime_type') || params.get('type') || params.get('format')
+      if (mediaType && mediaType.toLowerCase().includes('audio')) {
+        return true
+      }
+    } catch (e) {
+      // URL解析失败，忽略
+    }
+    
+    // 5. 检查文件名中的音频标识
+    try {
+      const urlObj = new URL(url)
+      const pathname = urlObj.pathname.toLowerCase()
+      const filename = pathname.split('/').pop() || ''
+      
+      const audioFilenamePatterns = [
+        /audio/i, /sound/i, /music/i, /track/i,
+        /_a\./i, /-a\./i, /\.a\./i, // 简短音频标识
+        /soundtrack/i, /bgm/i, /voice/i
+      ]
+      
+      for (const pattern of audioFilenamePatterns) {
+        if (pattern.test(filename)) {
+          return true
+        }
+      }
+    } catch (e) {
+      // URL解析失败，忽略
+    }
+    
+    return false
+  }
+
+  // 从URL和其他信息推断可能的文件大小
+  const inferResourceSize = (url, mimeType) => {
+    try {
+      const urlObj = new URL(url)
+      const pathname = urlObj.pathname.toLowerCase()
+      const params = new URLSearchParams(urlObj.search)
+      
+      // 从URL参数中查找大小信息（这些通常是准确的）
+      const sizeParams = ['len', 'size', 'filesize', 'content_length', 'cl', 'bytes']
+      for (const param of sizeParams) {
+        if (params.has(param)) {
+          const size = parseInt(params.get(param)) || 0
+          if (size > 0) {
+            log('Found size in URL param', param + ':', size)
+            return size
+          }
+        }
+      }
+      
+      // 从URL路径中查找明确的大小信息（如文件名包含大小）
+      const pathSizeMatch = pathname.match(/[\/_\-](\d+)([kmgt]?b)[\/_\-\.]/)
+      if (pathSizeMatch) {
+        const sizeValue = parseInt(pathSizeMatch[1])
+        const unit = pathSizeMatch[2]?.toLowerCase() || ''
+        
+        if (sizeValue > 0 && unit) { // 必须有明确的单位
+          let multiplier = 1
+          if (unit === 'kb') multiplier = 1024
+          else if (unit === 'mb') multiplier = 1024 * 1024
+          else if (unit === 'gb') multiplier = 1024 * 1024 * 1024
+          else if (unit === 'tb') multiplier = 1024 * 1024 * 1024 * 1024
+          else if (unit === 'b') multiplier = 1 // bytes
+          else return 0 // 不认识的单位，不估算
+          
+          const size = sizeValue * multiplier
+          log('Found exact size from URL path:', size, 'from', pathSizeMatch[0])
+          return size
+        }
+      }
+      
+    } catch (e) {
+      log('Size inference failed:', e.message)
+    }
+    
+    return 0 // 无法准确推断时返回0
+  }
+
+  // 解析资源信息（异步版本，支持多语言）
+  async function parseResource(url, mimeType, size) {
+    // 获取当前语言设置
+    const currentLocale = await getCurrentLocale()
+    
     // 优先使用 MIME 类型获取扩展名（更准确）
     let ext = ''
     if (mimeType) {
@@ -365,48 +570,133 @@
         const host = u.hostname
         if (host.endsWith('.bilivideo.com') || host.endsWith('.hdslb.com')) {
         const qualityMap = {
+          // 视频质量编号映射（使用英文键值）
           '100027': '8K', '100026': '1080P', '100025': '4K', '100024': '720P',
-          '100023': '480P', '100022': '360P', '100021': '240P',
-          '30127': '8K', '30126': 'Dolby', '30125': 'HDR', '30120': '4K',
-          '30116': '1080P60', '30112': '1080P+', '30080': '1080P',
-          '30074': '720P60', '30064': '720P', '30032': '480P',
-          '30016': '360P', '30006': '240P', '30280': 'Audio'
+          '100023': '480P', '100022': '360P', '100021': '240P', '100020': '144P',
+          '100050': '4K HDR', '100051': '8K HDR', '100052': '1080P HDR',
+          '100053': '720P HDR', '100054': '480P HDR',
+          
+          // 音频质量编号（使用英文键值）
+          '30280': 'Audio', '30232': 'Hi-Res Audio', '30216': 'High Audio',
+          
+          // 标准视频质量编号
+          '30127': '8K', '30126': 'Dolby Vision', '30125': 'HDR', '30120': '4K',
+          '30116': '1080P60', '30112': '1080P+', '30080': '1080P', '30077': '1080P',
+          '30074': '720P60', '30066': '720P60', '30064': '720P', '30048': '720P',
+          '30032': '480P', '30033': '400P', '30016': '360P', '30006': '240P',
+          '30011': '240P', '30005': '144P',
+          
+          // 新增的质量编号
+          '30251': '8K+', '30250': '4K+', '30216': '1080P+', '30210': '1080P',
+          '30192': '720P+', '30128': '720P', '30096': '480P+', '30080': '480P',
+          '30064': '360P+', '30048': '360P', '30032': '240P+', '30016': '240P',
+          
+          // 特殊质量
+          '30335': 'Dolby', '30350': 'HDR10+', '30400': 'AV1 8K', '30401': 'AV1 4K',
+          '30402': 'AV1 1080P', '30403': 'AV1 720P',
+          
+          // 更多可能的编号
+          '127': '8K', '126': 'Dolby Vision', '125': 'HDR', '120': '4K',
+          '116': '1080P60', '112': '1080P+', '80': '1080P', '74': '720P60',
+          '64': '720P', '32': '480P', '16': '360P', '6': '240P'
         }
 
         let qualityFound = false
+        
+        // 优先匹配完整的质量编号
         for (const [code, quality] of Object.entries(qualityMap)) {
-          if (url.includes(code)) {
-            info.quality = quality
+          if (url.includes(`-${code}.m4s`) || url.includes(`-${code}-`) || url.includes(`/${code}/`)) {
+            info.quality = getLocalizedQuality(quality, currentLocale)
             qualityFound = true
+            log('Found quality by exact match:', code, '->', quality, '->', info.quality)
             break
           }
         }
-
-        if (url.includes('audio') || url.includes('-30280.m4s') || url.includes('/audio/') || info.quality === 'Audio') {
-          info.type = 'audio'
-          if (!qualityFound) info.quality = 'Audio'
-        } else if (!qualityFound) {
-          const match = url.match(/-(\d+)\.m4s/)
-          if (match) {
-            info.quality = match[1]
-          } else {
-            info.quality = 'Unknown'
+        
+        // 如果没有找到完整匹配，尝试部分匹配
+        if (!qualityFound) {
+          for (const [code, quality] of Object.entries(qualityMap)) {
+            if (url.includes(code)) {
+              info.quality = getLocalizedQuality(quality, currentLocale)
+              qualityFound = true
+              log('Found quality by partial match:', code, '->', quality, '->', info.quality)
+              break
+            }
           }
         }
 
-        const params = new URLSearchParams(urlObj.search)
+        // 通用音频检测逻辑
+        const isGeneralAudio = checkIfAudio(url, ext, mimeType)
+        
+        if (isGeneralAudio) {
+          info.type = 'audio'
+          if (!qualityFound) info.quality = getLocalizedQuality('Audio', currentLocale)
+        } else if (!qualityFound) {
+          // 尝试从URL中提取质量编号的更智能方法
+          const match = url.match(/-(\d+)\.m4s/)
+          if (match) {
+            const code = match[1]
+            
+            // 根据编号范围推断质量
+            const codeNum = parseInt(code)
+            if (codeNum >= 100000) {
+              // 100xxx 系列
+              if (codeNum >= 100050) info.quality = '4K+'
+              else if (codeNum >= 100026) info.quality = '1080P+'
+              else if (codeNum >= 100024) info.quality = '720P+'
+              else info.quality = '480P+'
+            } else if (codeNum >= 30000) {
+              // 30xxx 系列
+              if (codeNum >= 30280) info.quality = getLocalizedQuality('Audio', currentLocale)
+              else if (codeNum >= 30120) info.quality = '4K'
+              else if (codeNum >= 30080) info.quality = '1080P'
+              else if (codeNum >= 30064) info.quality = '720P'
+              else if (codeNum >= 30032) info.quality = '480P'
+              else if (codeNum >= 30016) info.quality = '360P'
+              else info.quality = '240P'
+            } else {
+              // 其他编号，直接显示
+              info.quality = code
+            }
+            
+            log('Inferred quality from code:', code, '->', info.quality)
+          } else {
+            info.quality = getLocalizedQuality('Unknown', currentLocale)
+          }
+        }
+
+        // 尝试从URL参数获取大小
         if (params.has('len')) {
           info.size = parseInt(params.get('len')) || 0
+        }
+        if (!info.size && params.has('filesize')) {
+          info.size = parseInt(params.get('filesize')) || 0
+        }
+        if (!info.size && params.has('size')) {
+          info.size = parseInt(params.get('size')) || 0
         }
         }
       } else {
         info.quality = ext.toUpperCase()
         info.type = 'video'
+        
+        // 通用音频检测逻辑（适用于所有平台）
+        const isAudio = checkIfAudio(url, ext, mimeType)
+        if (isAudio) {
+          info.type = 'audio'
+          info.quality = getLocalizedQuality('Audio', currentLocale)
+        }
       }
 
-      // 如果传入了有效的大小，使用传入的大小（优先级高于URL参数）
+      // 如果传入了有效的大小，使用传入的大小（优先级最高）
       if (size && size > 0) {
         info.size = size
+      } else {
+        // 尝试从URL推断大小
+        const inferredSize = inferResourceSize(url, mimeType)
+        if (inferredSize > 0) {
+          info.size = inferredSize
+        }
       }
     } catch (e) {
       console.error('[Video Sniffer] Parse error:', e)
@@ -421,46 +711,569 @@
     const videoStreams = sniffedResources.video.filter(r => r.ext === 'm4s')
     const audioStreams = sniffedResources.audio.filter(r => r.ext === 'm4s')
 
+    // 用于跟踪已经组合过的视频流，避免重复
+    const usedVideoUrls = new Set()
+    const usedCombinations = new Set()
+    const qualityGroups = new Map() // 按质量分组，确保每个质量只有一个组合
+
     videoStreams.forEach(video => {
+      // 标准化视频URL用于去重检查
+      const normalizeUrl = (url) => {
+        try {
+          const urlObj = new URL(url)
+          // 对于M4S资源，使用资源ID和质量编号作为标识符
+          if (url.includes('.m4s') && (urlObj.hostname.includes('bilivideo.com') || urlObj.hostname.includes('mcdn.bilivideo.cn'))) {
+            const pathMatch = urlObj.pathname.match(/(\d+)-1-(\d+)\.m4s/)
+            if (pathMatch) {
+              const resourceId = pathMatch[1]
+              const qualityCode = pathMatch[2]
+              return `video:${resourceId}:${qualityCode}`
+            }
+          }
+          return `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}`
+        } catch (e) {
+          return url
+        }
+      }
+
+      const normalizedVideoUrl = normalizeUrl(video.url)
+      const quality = video.quality || 'Unknown'
+      
+      // 如果这个视频URL已经被使用过，跳过
+      if (usedVideoUrls.has(normalizedVideoUrl)) {
+        log('Skipping duplicate video URL:', normalizedVideoUrl)
+        return
+      }
+
+      // 如果这个质量已经有组合了，选择更好的（更大的文件或更完整的URL）
+      if (qualityGroups.has(quality)) {
+        const existing = qualityGroups.get(quality)
+        const existingVideoSize = existing.videoSize || 0
+        const currentVideoSize = video.size || 0
+        
+        // 如果当前视频更大或URL更完整，替换现有的
+        if (currentVideoSize > existingVideoSize || 
+            (currentVideoSize === existingVideoSize && video.url.length > existing.videoUrl.length)) {
+          log('Replacing existing combination for quality:', quality, 'old size:', existingVideoSize, 'new size:', currentVideoSize)
+          // 移除旧的标记
+          usedVideoUrls.delete(normalizeUrl(existing.videoUrl))
+          usedCombinations.delete(existing.combinationId)
+        } else {
+          log('Keeping existing combination for quality:', quality)
+          return
+        }
+      }
+
+      // 查找匹配的音频流
       const matchedAudio = audioStreams.find(audio => {
+        // 首先尝试精确的时间戳匹配（1秒内）
         const timeDiff = Math.abs(video.timestamp - audio.timestamp)
-        return timeDiff < 5000
+        if (timeDiff < 1000) {
+          return true
+        }
+        
+        // 如果没有精确匹配，尝试更宽松的匹配（3秒内）
+        if (timeDiff < 3000) {
+          // 检查是否是同一个资源的不同流（通过URL相似性）
+          try {
+            const videoUrlObj = new URL(video.url)
+            const audioUrlObj = new URL(audio.url)
+            
+            // 检查主机名和路径的相似性
+            if (videoUrlObj.hostname === audioUrlObj.hostname) {
+              const videoPath = videoUrlObj.pathname
+              const audioPath = audioUrlObj.pathname
+              
+              // 检查路径是否包含相同的资源ID
+              const videoId = videoPath.match(/(\d+)-1-(\d+)/)
+              const audioId = audioPath.match(/(\d+)-1-(\d+)/)
+              
+              if (videoId && audioId && videoId[1] === audioId[1]) {
+                return true
+              }
+            }
+          } catch (e) {
+            // URL解析失败，使用时间差判断
+            return timeDiff < 3000
+          }
+        }
+        
+        return false
       })
 
       if (matchedAudio) {
-        combined.push({
-          quality: video.quality,
+        // 创建组合标识符，避免重复组合
+        const combinationId = `${normalizedVideoUrl}:${normalizeUrl(matchedAudio.url)}:${quality}`
+        
+        if (usedCombinations.has(combinationId)) {
+          log('Skipping duplicate combination:', combinationId)
+          return
+        }
+
+        // 选择更准确的大小信息
+        let totalSize = 0
+        if (video.size > 0 && matchedAudio.size > 0) {
+          totalSize = video.size + matchedAudio.size
+        } else if (video.size > 0) {
+          totalSize = video.size
+        } else if (matchedAudio.size > 0) {
+          totalSize = matchedAudio.size
+        }
+
+        const combinedItem = {
+          quality: quality,
           videoUrl: video.url,
           audioUrl: matchedAudio.url,
-          name: `${video.quality} 视频`,
+          name: `${quality} 完整视频`,
           timestamp: video.timestamp,
-          size: (video.size || 0) + (matchedAudio.size || 0)
-        })
+          size: totalSize,
+          videoSize: video.size || 0,
+          audioSize: matchedAudio.size || 0,
+          combinationId: combinationId
+        }
+
+        // 记录到质量分组中
+        qualityGroups.set(quality, combinedItem)
+
+        // 标记为已使用
+        usedVideoUrls.add(normalizedVideoUrl)
+        usedCombinations.add(combinationId)
+        
+        log('Created combined stream:', quality, 'Video size:', video.size, 'Audio size:', matchedAudio.size, 'Total:', totalSize)
+      } else {
+        log('No matching audio found for video:', quality, video.url.substring(0, 100))
       }
     })
 
+    // 从质量分组中提取最终的组合项
+    for (const [quality, item] of qualityGroups) {
+      combined.push({
+        quality: item.quality,
+        videoUrl: item.videoUrl,
+        audioUrl: item.audioUrl,
+        name: item.name,
+        timestamp: item.timestamp,
+        size: item.size
+      })
+    }
+
+    log('Combined streams created:', combined.length, 'from', videoStreams.length, 'video and', audioStreams.length, 'audio streams')
     return combined
   }
 
+  // 性能统计
+  const sizeStats = {
+    totalRequests: 0,
+    successfulRequests: 0,
+    cacheHits: 0,
+    methodSuccess: {
+      contentLength: 0,
+      responseSize: 0,
+      headRequest: 0,
+      rangeRequest: 0,
+      xhrRequest: 0,
+      inference: 0
+    }
+  }
+  
+  const logSizeSuccess = (method, size) => {
+    sizeStats.totalRequests++
+    if (size > 0) {
+      sizeStats.successfulRequests++
+      sizeStats.methodSuccess[method]++
+      log('Size success via', method + ':', size, 'Success rate:', 
+          (sizeStats.successfulRequests / sizeStats.totalRequests * 100).toFixed(1) + '%')
+    }
+  }
+
+  // 资源大小获取队列，避免同时发送太多请求
+  const sizeRequestQueue = []
+  const sizeRequestCache = new Map() // 缓存已请求的URL，避免重复请求
+  let isProcessingQueue = false
+  let activeRequests = 0
+  const MAX_CONCURRENT_REQUESTS = 3 // 最大并发请求数
+  
+  const processSizeRequestQueue = async () => {
+    if (isProcessingQueue) return
+    
+    isProcessingQueue = true
+    
+    while (sizeRequestQueue.length > 0 && activeRequests < MAX_CONCURRENT_REQUESTS) {
+      const { url, resolve, retries } = sizeRequestQueue.shift()
+      
+      // 检查缓存（使用标准化URL）
+      const normalizeUrl = (url) => {
+        try {
+          const urlObj = new URL(url)
+          return `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}`
+        } catch (e) {
+          return url
+        }
+      }
+      
+      const normalizedUrl = normalizeUrl(url)
+      if (sizeRequestCache.has(normalizedUrl)) {
+        const cachedResult = sizeRequestCache.get(normalizedUrl)
+        sizeStats.cacheHits++
+        resolve(cachedResult)
+        continue
+      }
+      
+      activeRequests++
+      
+      // 异步处理请求
+      (async () => {
+        try {
+          const size = await fetchResourceSize(url)
+          
+          // 缓存结果（使用标准化URL）
+          const normalizedUrl = normalizeUrl(url)
+          sizeRequestCache.set(normalizedUrl, size)
+          resolve(size)
+          
+          // 如果获取失败且还有重试次数，重新加入队列
+          if (size === 0 && retries > 0) {
+            log('Retrying size request for:', url.substring(0, 100), 'retries left:', retries - 1)
+            sizeRequestQueue.push({ url, resolve: () => {}, retries: retries - 1 })
+          }
+        } catch (e) {
+          log('Size request error:', e.message)
+          resolve(0)
+        } finally {
+          activeRequests--
+          // 继续处理队列
+          setTimeout(() => processSizeRequestQueue(), 50)
+        }
+      })()
+      
+      // 添加小延迟，避免请求过于频繁
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+    
+    isProcessingQueue = false
+  }
+  
+  const queueSizeRequest = (url) => {
+    return new Promise((resolve) => {
+      // 使用标准化的URL进行缓存检查
+      const normalizeUrl = (url) => {
+        try {
+          const urlObj = new URL(url)
+          return `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}`
+        } catch (e) {
+          return url
+        }
+      }
+      
+      const normalizedUrl = normalizeUrl(url)
+      
+      // 检查缓存（使用标准化URL）
+      if (sizeRequestCache.has(normalizedUrl)) {
+        sizeStats.cacheHits++
+        resolve(sizeRequestCache.get(normalizedUrl))
+        return
+      }
+      
+      // 检查是否已在队列中（使用标准化URL）
+      const existingRequest = sizeRequestQueue.find(req => normalizeUrl(req.url) === normalizedUrl)
+      if (existingRequest) {
+        // 如果已在队列中，不重复添加，但如果当前URL更完整，更新队列中的URL
+        if (url.length > existingRequest.url.length) {
+          existingRequest.url = url
+          log('Updated queued URL to more complete version:', url.substring(0, 100))
+        }
+        return
+      }
+      
+      sizeRequestQueue.push({ url, resolve, retries: 2 }) // 最多重试2次
+      processSizeRequestQueue()
+    })
+  }
+
+  // 专门获取资源文件大小的函数（通用且强化）
+  const fetchResourceSize = async (url) => {
+    try {
+      log('Attempting to fetch size for:', url.substring(0, 100))
+      
+      // 策略1: HEAD请求获取Content-Length
+      try {
+        const headResponse = await fetch(url, { 
+          method: 'HEAD',
+          mode: 'cors',
+          credentials: 'include',
+          cache: 'no-cache',
+          headers: {
+            'User-Agent': navigator.userAgent,
+            'Accept': '*/*',
+            'Accept-Encoding': 'identity' // 避免压缩影响大小
+          }
+        })
+        
+        if (headResponse.ok) {
+          const contentLength = headResponse.headers.get('Content-Length')
+          if (contentLength) {
+            const size = parseInt(contentLength) || 0
+            if (size > 0) {
+              log('Got size from HEAD request:', size, 'for URL:', url.substring(0, 100))
+              return size
+            }
+          }
+        }
+      } catch (e) {
+        log('HEAD request failed:', e.message)
+      }
+      
+      // 策略2: Range请求获取总大小
+      try {
+        const rangeResponse = await fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'include',
+          headers: {
+            'Range': 'bytes=0-1023', // 请求前1KB
+            'User-Agent': navigator.userAgent,
+            'Accept': '*/*'
+          },
+          cache: 'no-cache'
+        })
+        
+        if (rangeResponse.ok) {
+          const contentRange = rangeResponse.headers.get('Content-Range')
+          if (contentRange) {
+            // Content-Range: bytes 0-1023/1234567
+            const match = contentRange.match(/bytes \d+-\d+\/(\d+)/)
+            if (match) {
+              const size = parseInt(match[1]) || 0
+              if (size > 0) {
+                log('Got size from Range request:', size, 'for URL:', url.substring(0, 100))
+                return size
+              }
+            }
+          }
+          
+          // 如果Range请求成功但没有Content-Range，检查Content-Length
+          const contentLength = rangeResponse.headers.get('Content-Length')
+          if (contentLength) {
+            const partialSize = parseInt(contentLength) || 0
+            // 如果返回的是完整文件（不支持Range），Content-Length就是文件大小
+            if (partialSize > 1024) {
+              log('Got full size from Range request Content-Length:', partialSize, 'for URL:', url.substring(0, 100))
+              return partialSize
+            }
+          }
+        }
+      } catch (e) {
+        log('Range request failed:', e.message)
+      }
+      
+      // 策略3: 完整GET请求获取准确大小
+      try {
+        const getResponse = await fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+          credentials: 'include',
+          headers: {
+            'User-Agent': navigator.userAgent,
+            'Accept': '*/*'
+          },
+          cache: 'no-cache'
+        })
+        
+        if (getResponse.ok) {
+          // 先检查Content-Length
+          const contentLength = getResponse.headers.get('Content-Length')
+          if (contentLength) {
+            const size = parseInt(contentLength) || 0
+            if (size > 0) {
+              log('Got size from GET Content-Length:', size, 'for URL:', url.substring(0, 100))
+              return size
+            }
+          }
+          
+          // 如果没有Content-Length，读取完整响应体获取准确大小
+          try {
+            const blob = await getResponse.blob()
+            if (blob && blob.size > 0) {
+              log('Got exact size from full response blob:', blob.size, 'for URL:', url.substring(0, 100))
+              return blob.size
+            }
+          } catch (e) {
+            log('Failed to get blob size:', e.message)
+          }
+        }
+      } catch (e) {
+        log('GET request failed:', e.message)
+      }
+      
+      // 策略4: 尝试不同的请求方式
+      try {
+        // 尝试使用XMLHttpRequest，有时比fetch更容易获取到Content-Length
+        const xhr = new XMLHttpRequest()
+        return new Promise((resolve) => {
+          xhr.open('HEAD', url, true)
+          xhr.setRequestHeader('User-Agent', navigator.userAgent)
+          xhr.setRequestHeader('Accept', '*/*')
+          
+          xhr.onreadystatechange = function() {
+            if (xhr.readyState === 2) { // HEADERS_RECEIVED
+              const contentLength = xhr.getResponseHeader('Content-Length')
+              if (contentLength) {
+                const size = parseInt(contentLength) || 0
+                if (size > 0) {
+                  log('Got size from XHR HEAD:', size, 'for URL:', url.substring(0, 100))
+                  resolve(size)
+                  return
+                }
+              }
+            }
+            if (xhr.readyState === 4) {
+              resolve(0)
+            }
+          }
+          
+          xhr.onerror = () => resolve(0)
+          xhr.ontimeout = () => resolve(0)
+          xhr.timeout = 5000 // 5秒超时
+          
+          try {
+            xhr.send()
+          } catch (e) {
+            resolve(0)
+          }
+        })
+      } catch (e) {
+        log('XHR request failed:', e.message)
+      }
+      
+    } catch (e) {
+      log('All size fetch strategies failed for:', url.substring(0, 100), e.message)
+    }
+    return 0
+  }
+
   // 添加资源
-  function addResource(url, mimeType, size) {
+  async function addResource(url, mimeType, size) {
     if (!shouldSniff(url, mimeType)) return
 
-    const exists = sniffedResources.video.some(r => r.url === url) ||
-      sniffedResources.audio.some(r => r.url === url)
-    if (exists) return
-
-    const info = parseResource(url, mimeType, size)
-
-    if (info.type === 'audio') {
-      sniffedResources.audio.push(info)
-      log('✓ Audio detected:', info.quality, info.name, url.substring(0, 100))
-    } else {
-      sniffedResources.video.push(info)
-      log('✓ Video detected:', info.quality, info.name, url.substring(0, 100))
+    // 更严格的去重检查 - 使用URL的核心部分进行比较
+    const normalizeUrl = (url) => {
+      try {
+        const urlObj = new URL(url)
+        // 对于M4S资源，使用更精确的标识符
+        if (url.includes('.m4s') && (urlObj.hostname.includes('bilivideo.com') || urlObj.hostname.includes('mcdn.bilivideo.cn'))) {
+          // 提取资源ID和质量编号
+          const pathMatch = urlObj.pathname.match(/(\d+)-1-(\d+)\.m4s/)
+          if (pathMatch) {
+            const resourceId = pathMatch[1]
+            const qualityCode = pathMatch[2]
+            return `video:${resourceId}:${qualityCode}`
+          }
+        }
+        
+        // 移除一些可能变化的参数，保留核心路径
+        const coreUrl = `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}`
+        return coreUrl
+      } catch (e) {
+        return url
+      }
     }
 
+    const normalizedUrl = normalizeUrl(url)
+    
+    // 检查是否已存在相同的核心URL
+    const existingVideo = sniffedResources.video.find(r => normalizeUrl(r.url) === normalizedUrl)
+    const existingAudio = sniffedResources.audio.find(r => normalizeUrl(r.url) === normalizedUrl)
+    
+    // 如果已存在，只在新的信息更完整时才更新
+    if (existingVideo) {
+      let shouldUpdate = false
+      
+      // 如果新的URL更完整（更长），更新URL
+      if (url.length > existingVideo.url.length) {
+        existingVideo.url = url
+        shouldUpdate = true
+        log('Updated video URL to more complete version:', url.substring(0, 100))
+      }
+      
+      // 如果新的大小更大且有效，更新大小
+      if (size && size > 0 && size > (existingVideo.size || 0)) {
+        existingVideo.size = size
+        shouldUpdate = true
+        log('Updated existing video resource size:', size)
+      }
+      
+      // 如果现有资源没有质量信息，但新资源有，则更新
+      const newInfo = await parseResource(url, mimeType, size)
+      if ((!existingVideo.quality || existingVideo.quality === 'Unknown') && newInfo.quality && newInfo.quality !== 'Unknown') {
+        existingVideo.quality = newInfo.quality
+        shouldUpdate = true
+        log('Updated existing video quality:', newInfo.quality)
+      }
+      
+      if (shouldUpdate) {
+        updateUI()
+      }
+      return
+    }
+    
+    if (existingAudio) {
+      let shouldUpdate = false
+      
+      // 如果新的URL更完整（更长），更新URL
+      if (url.length > existingAudio.url.length) {
+        existingAudio.url = url
+        shouldUpdate = true
+        log('Updated audio URL to more complete version:', url.substring(0, 100))
+      }
+      
+      // 如果新的大小更大且有效，更新大小
+      if (size && size > 0 && size > (existingAudio.size || 0)) {
+        existingAudio.size = size
+        shouldUpdate = true
+        log('Updated existing audio resource size:', size)
+      }
+      
+      // 如果现有资源没有质量信息，但新资源有，则更新
+      const newInfo = await parseResource(url, mimeType, size)
+      if ((!existingAudio.quality || existingAudio.quality === 'Unknown') && newInfo.quality && newInfo.quality !== 'Unknown') {
+        existingAudio.quality = newInfo.quality
+        shouldUpdate = true
+        log('Updated existing audio quality:', newInfo.quality)
+      }
+      
+      if (shouldUpdate) {
+        updateUI()
+      }
+      return
+    }
+
+    const info = await parseResource(url, mimeType, size)
+
+    // 立即添加资源到列表，不等待大小获取
+    if (info.type === 'audio') {
+      sniffedResources.audio.push(info)
+      log('✓ Audio detected:', info.quality, info.name, 'size:', info.size, url.substring(0, 100))
+    } else {
+      sniffedResources.video.push(info)
+      log('✓ Video detected:', info.quality, info.name, 'size:', info.size, url.substring(0, 100))
+    }
+
+    // 立即更新UI显示
     updateUI()
+
+    // 如果没有大小信息，异步获取（不阻塞UI显示）
+    if (!info.size || info.size === 0) {
+      queueSizeRequest(url).then(fetchedSize => {
+        if (fetchedSize > 0) {
+          info.size = fetchedSize
+          log('Fetched resource size:', fetchedSize, 'for', url.substring(0, 100))
+          // 更新UI显示新的大小
+          updateUI()
+        }
+      }).catch(e => {
+        log('Failed to fetch size:', e)
+      })
+    }
   }
 
   // 更新UI显示
@@ -523,6 +1336,8 @@
   XMLHttpRequest.prototype.open = function (method, url) {
     this._url = url
     this._mimeType = null
+    this._size = 0
+    this._method = method
     return originalXHROpen.apply(this, arguments)
   }
 
@@ -531,22 +1346,75 @@
     if (this._url) {
       const xhr = this
       const originalOnReadyStateChange = xhr.onreadystatechange
+      
       xhr.onreadystatechange = function () {
         if (xhr.readyState === xhr.HEADERS_RECEIVED) {
           const contentType = xhr.getResponseHeader('Content-Type')
           const contentLength = xhr.getResponseHeader('Content-Length')
+          const contentRange = xhr.getResponseHeader('Content-Range')
+          
           if (contentType) {
             xhr._mimeType = contentType
           }
+          
+          // 优先使用Content-Length
           if (contentLength) {
             xhr._size = parseInt(contentLength) || 0
+            log('XHR Content-Length:', xhr._size, 'for', xhr._url.substring(0, 100))
+          }
+          
+          // 如果是Range请求，尝试从Content-Range获取总大小
+          if (!xhr._size && contentRange) {
+            const match = contentRange.match(/bytes \d+-\d+\/(\d+)/)
+            if (match) {
+              xhr._size = parseInt(match[1]) || 0
+              log('XHR Content-Range total size:', xhr._size, 'for', xhr._url.substring(0, 100))
+            }
           }
         }
+        
+        if (xhr.readyState === xhr.DONE) {
+          let finalSize = xhr._size
+          
+          // 如果还没有大小信息，尝试从响应中计算
+          if (!finalSize && xhr.response) {
+            if (xhr.responseType === 'arraybuffer') {
+              finalSize = xhr.response.byteLength || 0
+            } else if (xhr.responseType === 'blob') {
+              finalSize = xhr.response.size || 0
+            } else if (typeof xhr.response === 'string') {
+              finalSize = new Blob([xhr.response]).size
+            } else if (xhr.responseText) {
+              finalSize = new Blob([xhr.responseText]).size
+            }
+            
+            if (finalSize > 0) {
+              log('XHR response size calculated:', finalSize, 'for', xhr._url.substring(0, 100))
+            }
+          }
+          
+          // 只有当我们有有效大小或者这是一个我们关心的资源时才添加
+          if (shouldSniff(xhr._url, xhr._mimeType)) {
+            addResource(xhr._url, xhr._mimeType, finalSize)
+          }
+        }
+        
         if (originalOnReadyStateChange) {
           originalOnReadyStateChange.apply(xhr, arguments)
         }
       }
-      addResource(xhr._url, xhr._mimeType, xhr._size)
+      
+      // 添加错误处理
+      const originalOnError = xhr.onerror
+      xhr.onerror = function() {
+        // 即使出错也尝试添加资源（大小为0）
+        if (shouldSniff(xhr._url, xhr._mimeType)) {
+          addResource(xhr._url, xhr._mimeType, 0)
+        }
+        if (originalOnError) {
+          originalOnError.apply(xhr, arguments)
+        }
+      }
     }
     return originalXHRSend.apply(this, arguments)
   }
@@ -555,22 +1423,77 @@
   const originalFetch = window.fetch
   window.fetch = function (input, init) {
     const url = typeof input === 'string' ? input : (input.url || '')
+    const method = init?.method || 'GET'
+    
     if (url) {
-      const ext = getExtension(url)
-
-      // 获取响应并检查Content-Type和Content-Length
+      // 获取响应并检查各种大小信息
       const fetchPromise = originalFetch.apply(this, arguments)
       fetchPromise.then(response => {
         const contentType = response.headers.get('Content-Type')
         const contentLength = response.headers.get('Content-Length')
-        const size = contentLength ? parseInt(contentLength) || 0 : 0
-        if (contentType) {
-          addResource(url, contentType, size)
+        const contentRange = response.headers.get('Content-Range')
+        const contentEncoding = response.headers.get('Content-Encoding')
+        
+        let size = 0
+        
+        // 优先使用Content-Length（如果没有压缩）
+        if (contentLength && !contentEncoding) {
+          size = parseInt(contentLength) || 0
+          log('Fetch Content-Length:', size, 'for', url.substring(0, 100))
+        }
+        
+        // 如果是Range请求，从Content-Range获取总大小
+        if (!size && contentRange) {
+          const match = contentRange.match(/bytes \d+-\d+\/(\d+)/)
+          if (match) {
+            size = parseInt(match[1]) || 0
+            log('Fetch Content-Range total size:', size, 'for', url.substring(0, 100))
+          }
+        }
+        
+        if (size > 0) {
+          // 如果有明确的大小信息，立即添加
+          if (shouldSniff(url, contentType)) {
+            addResource(url, contentType, size)
+          }
         } else {
-          addResource(url, null, size)
+          // 如果没有大小信息，先立即添加资源（大小为0），然后异步获取大小
+          if (shouldSniff(url, contentType)) {
+            addResource(url, contentType, 0)
+            
+            // 异步获取准确大小
+            if (response.body && response.headers.get('Content-Type')) {
+              // 克隆响应以避免消费原始流
+              const clonedResponse = response.clone()
+              
+              // 尝试多种方式获取大小
+              Promise.race([
+                // 方式1: 转换为blob获取大小
+                clonedResponse.blob().then(blob => ({ type: 'blob', size: blob ? blob.size : 0 })),
+                // 方式2: 转换为arrayBuffer获取大小
+                clonedResponse.arrayBuffer().then(buffer => ({ type: 'buffer', size: buffer ? buffer.byteLength : 0 })),
+                // 方式3: 超时保护
+                new Promise(resolve => setTimeout(() => resolve({ type: 'timeout', size: 0 }), 3000))
+              ]).then(result => {
+                const blobSize = result.size || 0
+                log('Fetch', result.type, 'size for', url.substring(0, 100), ':', blobSize)
+                
+                // 如果获取到了更准确的大小，更新资源
+                if (blobSize > 0) {
+                  addResource(url, contentType, blobSize)
+                }
+              }).catch(() => {
+                log('Failed to get accurate size for', url.substring(0, 100))
+              })
+            }
+          }
         }
       }).catch((error) => {
-        addResource(url)
+        log('Fetch error for', url.substring(0, 100), ':', error.message)
+        // 请求失败，但如果是我们关心的资源，仍然添加（大小为0）
+        if (shouldSniff(url, null)) {
+          addResource(url, null, 0)
+        }
       })
 
       return fetchPromise
