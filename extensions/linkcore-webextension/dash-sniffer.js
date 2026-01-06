@@ -433,10 +433,21 @@
   // 暴露清除资源的方法
   window.addEventListener('linkcore-clear-resources', () => {
     log('Clearing resources from dash-sniffer')
+    
     sniffedResources.video = []
     sniffedResources.audio = []
     sniffedResources.m4s = []
+    sniffedResources.combined = []
+    
+    // 立即更新UI显示为空
     notifyResourceUpdate()
+    
+    // 延迟一小段时间后重新检测当前正在播放的媒体资源
+    setTimeout(() => {
+      log('Re-checking current media elements after clear')
+      observeMediaElements()
+      observeIframeMedia()
+    }, 100)
   })
 
   log('Video sniffer initialized')

@@ -315,7 +315,28 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       combined: [],
       total: 0
     }
-    log('Resources cleared, was:', beforeCount, 'now: 0')
+    // 同时清空备份，防止资源被恢复
+    resourcesBackup = {
+      video: [],
+      audio: [],
+      m4s: [],
+      combined: [],
+      timestamp: 0
+    }
+    log('Resources and backup cleared, was:', beforeCount, 'now: 0')
+    
+    // 关闭下拉框
+    const dropdown = document.getElementById('linkcore-resource-dropdown')
+    if (dropdown) {
+      dropdown.style.display = 'none'
+    }
+    
+    // 隐藏按钮
+    const wrapper = document.getElementById('linkcore-download-btn-wrapper')
+    if (wrapper) {
+      wrapper.style.display = 'none'
+    }
+    
     updateButtonVisibility()
   })
 

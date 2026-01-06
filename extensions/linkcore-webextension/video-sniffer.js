@@ -1805,7 +1805,18 @@
     sniffedResources.audio = []
     sniffedResources.m4s = []
     sniffedResources.combined = []
+    
+    // 清空已清除URL记录，允许重新检测
+    clearedResourceUrls.clear()
+    
+    // 立即更新UI显示为空
     updateUI()
+    
+    // 延迟一小段时间后重新检测当前正在播放的媒体资源
+    setTimeout(() => {
+      log('Re-checking current media elements after clear')
+      checkMediaElements()
+    }, 100)
   })
 
   // 延迟加载配置
