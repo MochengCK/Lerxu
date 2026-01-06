@@ -96,6 +96,7 @@ export default {
   'task-complete-notify-click-action-tips': 'Choisissez ce qui se passe en cliquant sur la notification de fin de téléchargement',
   'task-complete-notify-click-action-open-folder': 'Ouvrir le dossier du fichier téléchargé',
   'task-complete-notify-click-action-show-app': 'Afficher la fenêtre de l\'application',
+  'task-complete-notify-click-action-execute-file': 'Exécuter le fichier',
   'auto-purge-record': 'Purger l\'historique de téléchargement lorsque vous quittez l\'application',
   'downloading-file-suffix': 'Suffixe supplémentaire lors du téléchargement de fichiers',
   'downloading-file-suffix-tips': 'Ajoutez ce suffixe aux fichiers pendant le téléchargement, il sera automatiquement supprimé après l\'achèvement',

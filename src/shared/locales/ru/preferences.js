@@ -116,6 +116,7 @@ export default {
   'task-complete-notify-click-action-tips': 'Выберите, что делать при нажатии на уведомление о завершении загрузки',
   'task-complete-notify-click-action-open-folder': 'Открыть папку с загруженным файлом',
   'task-complete-notify-click-action-show-app': 'Показать окно приложения',
+  'task-complete-notify-click-action-execute-file': 'Выполнить файл',
   'auto-purge-record': 'Автоматически чистить записи о загрузках после закрытия приложения',
   'downloading-file-suffix': 'Суффикс, добавляемый во время скачивания файла',
   'downloading-file-suffix-tips': 'Добавьте этот суффикс к файлам во время скачивания, он будет автоматически удален после завершения',

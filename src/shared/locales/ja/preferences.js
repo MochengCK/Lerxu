@@ -108,6 +108,7 @@ export default {
   'task-complete-notify-click-action-tips': 'ダウンロード完了通知をクリックしたときに実行する操作を選択',
   'task-complete-notify-click-action-open-folder': 'ダウンロードしたファイルの場所を開く',
   'task-complete-notify-click-action-show-app': 'アプリケーションウィンドウを表示',
+  'task-complete-notify-click-action-execute-file': 'ファイルを実行',
   'auto-purge-record': 'アプリケーション終了時に自動的にダウンロード記録を消去',
   'downloading-file-suffix': 'ダウンロード中ファイルサフィックス',
   'downloading-file-suffix-tips': 'ダウンロード中のファイルにこのサフィックスを追加し、完了後に自動的に削除',

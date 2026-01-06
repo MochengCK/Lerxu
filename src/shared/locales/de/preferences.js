@@ -96,6 +96,7 @@ export default {
   'task-complete-notify-click-action-tips': 'Wählen Sie, was beim Klicken auf die Abschlussbenachrichtigung passiert',
   'task-complete-notify-click-action-open-folder': 'Ordner der heruntergeladenen Datei öffnen',
   'task-complete-notify-click-action-show-app': 'Anwendungsfenster anzeigen',
+  'task-complete-notify-click-action-execute-file': 'Datei ausführen',
   'auto-purge-record': 'Download Protokoll beim Schließen der App löschen',
   'downloading-file-suffix': 'Zusätzlicher Suffix beim Herunterladen von Dateien',
   'downloading-file-suffix-tips': 'Fügen Sie diesem Suffix Dateien während des Downloads hinzu, er wird nach Abschluss automatisch entfernt',

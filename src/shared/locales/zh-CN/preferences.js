@@ -91,6 +91,7 @@ export default {
   'task-complete-notify-click-action-tips': '选择当点击下载完成通知时要执行的操作',
   'task-complete-notify-click-action-open-folder': '打开文件所在位置',
   'task-complete-notify-click-action-show-app': '唤起应用窗口',
+  'task-complete-notify-click-action-execute-file': '执行该文件',
   'auto-purge-record': '当应用退出时自动清除下载记录',
   'downloading-file-suffix': '下载中文件后缀',
   'downloading-file-suffix-tips': '下载中的文件将添加此后缀，下载完成后自动移除',

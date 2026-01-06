@@ -286,10 +286,20 @@
         ipcRenderer.removeAllListeners('video-sniffer-format-added')
 
         let useCustomFrame = false
+        let currentTheme = 'light'
+        let currentLocale = 'en-US'
         try {
           const appConfig = await ipcRenderer.invoke('get-app-config')
           if (appConfig && appConfig['hide-app-menu']) {
             useCustomFrame = appConfig['hide-app-menu']
+          }
+          if (appConfig && appConfig.theme) {
+            currentTheme = appConfig.theme
+          }
+
+          const appLocale = await ipcRenderer.invoke('get-app-locale')
+          if (appLocale) {
+            currentLocale = appLocale
           }
         } catch (e) {
           console.error('[Video Sniffer] Failed to get app config:', e)
@@ -318,7 +328,14 @@
 
         win.loadURL(url)
 
-        ipcRenderer.once('video-sniffer-format-added', (event, format) => {
+        // 窗口加载完成后立即同步主题和语言
+        win.webContents.once('dom-ready', () => {
+          log('Child window DOM ready, syncing theme and locale:', currentTheme, currentLocale)
+          win.webContents.send('sync-theme', { theme: currentTheme })
+          win.webContents.send('sync-locale', { locale: currentLocale })
+        })
+
+        ipcRenderer.once('video-sniffer-format-added', (_, format) => {
           addFormat(format)
         })
 
@@ -471,7 +488,7 @@
     try {
       if (window.require) {
         const { ipcRenderer } = window.require('electron')
-        ipcRenderer.on('command', (event, command, ...args) => {
+        ipcRenderer.on('command', (_, command, ...args) => {
           log('Command received:', command, args)
           if (command === 'application:update-system-theme') {
             const data = args[0]
@@ -486,6 +503,9 @@
                 const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
                 applyTheme(isDark ? 'dark' : 'light')
               }
+
+              // 通知所有子窗口主题变化
+              notifyChildWindows(data)
             }
           } else if (command === 'application:update-theme') {
             const data = args[0]
@@ -500,12 +520,115 @@
                 const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
                 applyTheme(isDark ? 'dark' : 'light')
               }
+
+              // 通知所有子窗口主题变化
+              notifyChildWindows(data)
             }
+          } else if (command === 'application:update-locale') {
+            const data = args[0]
+            log('Locale updated:', data)
+            if (data && data.locale) {
+              handleLocaleChange(data.locale)
+            }
+          }
+        })
+
+        // 监听子窗口的主题请求
+        ipcRenderer.on('request-current-theme', async () => {
+          log('Child window requested current theme')
+          try {
+            const appConfig = await ipcRenderer.invoke('get-app-config')
+            if (appConfig && appConfig.theme) {
+              // 发送当前主题给请求的子窗口
+              ipcRenderer.send('current-theme-response', { theme: appConfig.theme })
+              log('Sent current theme to child window:', appConfig.theme)
+            }
+          } catch (e) {
+            console.error('[Video Sniffer] Failed to get current theme for child window:', e)
+          }
+        })
+
+        // 监听子窗口的语言请求
+        ipcRenderer.on('request-current-locale', async () => {
+          log('Child window requested current locale')
+          try {
+            const appLocale = await ipcRenderer.invoke('get-app-locale')
+            if (appLocale) {
+              // 发送当前语言给请求的子窗口
+              ipcRenderer.send('current-locale-response', { locale: appLocale })
+              log('Sent current locale to child window:', appLocale)
+            }
+          } catch (e) {
+            console.error('[Video Sniffer] Failed to get current locale for child window:', e)
           }
         })
       }
     } catch (e) {
       console.error('[Video Sniffer] Failed to listen for theme changes:', e)
+    }
+
+    // 处理语言变化
+    async function handleLocaleChange (newLocale) {
+      log('Handling locale change:', newLocale)
+      locale = newLocale
+      try {
+        await loadTranslations(locale)
+        applyTranslations()
+        log('Locale changed and translations applied:', locale)
+
+        // 通知所有子窗口语言变化
+        notifyChildWindowsLocale({ locale: newLocale })
+      } catch (e) {
+        console.error('[Video Sniffer] Failed to handle locale change:', e)
+      }
+    }
+
+    // 通知子窗口主题变化的函数
+    function notifyChildWindows (themeData) {
+      try {
+        if (window.require) {
+          const { BrowserWindow } = window.require('@electron/remote')
+          const allWindows = BrowserWindow.getAllWindows()
+          const currentWindow = BrowserWindow.getFocusedWindow()
+
+          allWindows.forEach(win => {
+            if (win !== currentWindow && win.webContents) {
+              try {
+                win.webContents.send('sync-theme', themeData)
+                log('Sent theme sync to child window:', themeData)
+              } catch (e) {
+                // 忽略已关闭的窗口
+              }
+            }
+          })
+        }
+      } catch (e) {
+        console.error('[Video Sniffer] Failed to notify child windows:', e)
+      }
+    }
+
+    // 通知子窗口语言变化的函数
+    function notifyChildWindowsLocale (localeData) {
+      try {
+        if (window.require) {
+          const { BrowserWindow } = window.require('@electron/remote')
+          const allWindows = BrowserWindow.getAllWindows()
+          const currentWindow = BrowserWindow.getFocusedWindow()
+
+          allWindows.forEach(win => {
+            if (win !== currentWindow && win.webContents) {
+              try {
+                win.webContents.send('sync-locale', localeData)
+                log('Sent locale sync to child window:', localeData)
+              } catch (e) {
+                // 忽略已关闭的窗口
+              }
+            }
+          })
+        }
+      } catch (e) {
+        console.error('[Video Sniffer] Failed to notify child windows locale:', e)
+      }
     }
   })
 })()

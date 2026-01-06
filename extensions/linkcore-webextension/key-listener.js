@@ -119,8 +119,135 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     total: 0
   }
 
+  // 资源备份系统，防止意外清除
+  let resourcesBackup = {
+    video: [],
+    audio: [],
+    m4s: [],
+    combined: [],
+    timestamp: 0
+  }
+
+  // 备份当前资源
+  const backupResources = () => {
+    if (sniffedResources.total > 0) {
+      resourcesBackup = {
+        video: [...sniffedResources.video],
+        audio: [...sniffedResources.audio],
+        m4s: [...(sniffedResources.m4s || [])],
+        combined: [...sniffedResources.combined],
+        timestamp: Date.now()
+      }
+      log('Resources backed up:', {
+        video: resourcesBackup.video.length,
+        audio: resourcesBackup.audio.length,
+        m4s: resourcesBackup.m4s.length,
+        combined: resourcesBackup.combined.length
+      })
+    }
+  }
+
+  // 检查是否需要从备份恢复资源
+  const checkAndRestoreResources = () => {
+    const currentTotal = sniffedResources.total || 0
+    const backupTotal = resourcesBackup.video.length + resourcesBackup.audio.length
+    const timeSinceBackup = Date.now() - resourcesBackup.timestamp
+    
+    // 如果当前资源为空，但备份有资源，且备份时间在30秒内，则恢复
+    if (currentTotal === 0 && backupTotal > 0 && timeSinceBackup < 30000) {
+      log('Restoring resources from backup:', {
+        video: resourcesBackup.video.length,
+        audio: resourcesBackup.audio.length,
+        m4s: resourcesBackup.m4s.length,
+        combined: resourcesBackup.combined.length
+      })
+      sniffedResources.video = [...resourcesBackup.video]
+      sniffedResources.audio = [...resourcesBackup.audio]
+      sniffedResources.m4s = [...resourcesBackup.m4s]
+      sniffedResources.combined = [...resourcesBackup.combined]
+      sniffedResources.total = backupTotal
+      updateButtonVisibility()
+      return true
+    }
+    
+    // 检查是否只有部分资源丢失（比如只有单独资源消失但组合资源还在）
+    const currentVideoAudio = (sniffedResources.video?.length || 0) + (sniffedResources.audio?.length || 0)
+    const backupVideoAudio = resourcesBackup.video.length + resourcesBackup.audio.length
+    const currentCombined = sniffedResources.combined?.length || 0
+    const backupCombined = resourcesBackup.combined.length
+    
+    if (currentCombined > 0 && currentVideoAudio === 0 && backupVideoAudio > 0 && timeSinceBackup < 30000) {
+      log('Restoring individual resources while keeping combined:', {
+        restoring_video: resourcesBackup.video.length,
+        restoring_audio: resourcesBackup.audio.length,
+        keeping_combined: currentCombined
+      })
+      sniffedResources.video = [...resourcesBackup.video]
+      sniffedResources.audio = [...resourcesBackup.audio]
+      sniffedResources.m4s = [...resourcesBackup.m4s]
+      sniffedResources.total = currentVideoAudio + currentCombined
+      updateButtonVisibility()
+      return true
+    }
+    
+    return false
+  }
+
+  // 视频嗅探器配置
+  let videoSnifferConfig = {
+    enabled: true, // 默认启用
+    loaded: false
+  }
+
+  // 加载视频嗅探器配置
+  const loadVideoSnifferConfig = () => {
+    try {
+      if (!chrome || !chrome.storage || !chrome.storage.local) {
+        log('Chrome storage not available, using default config')
+        videoSnifferConfig.loaded = true
+        return
+      }
+      
+      chrome.storage.local.get(['videoSnifferEnabled'], (result) => {
+        if (chrome.runtime.lastError) {
+          log('Error loading video sniffer config:', chrome.runtime.lastError)
+          videoSnifferConfig.loaded = true
+          return
+        }
+        
+        if (result.videoSnifferEnabled !== undefined) {
+          videoSnifferConfig.enabled = result.videoSnifferEnabled
+          log('Loaded videoSnifferEnabled:', videoSnifferConfig.enabled)
+        }
+        
+        videoSnifferConfig.loaded = true
+        log('Video sniffer config loaded:', videoSnifferConfig)
+        
+        // 配置加载后更新按钮可见性
+        updateButtonVisibility()
+      })
+    } catch (e) {
+      log('Error loading video sniffer config:', e)
+      videoSnifferConfig.loaded = true
+    }
+  }
+
+  // 监听配置变化
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === 'local' && changes.videoSnifferEnabled) {
+        const oldEnabled = videoSnifferConfig.enabled
+        videoSnifferConfig.enabled = changes.videoSnifferEnabled.newValue
+        log('videoSnifferEnabled changed from', oldEnabled, 'to', videoSnifferConfig.enabled)
+        
+        // 配置变化后更新按钮可见性
+        updateButtonVisibility()
+      }
+    })
+  }
+
   // 调试日志控制
-  const DEBUG = false
+  const DEBUG = false // 关闭调试日志
   const log = (...args) => {
     if (DEBUG) {
       console.log('[Key Listener]', ...args)
@@ -136,8 +263,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     sniffedResources = event.detail || { video: [], audio: [], m4s: [], combined: [], total: 0 }
     log('Total resources:', sniffedResources.total)
     
-    // 确保有资源时按钮可见
-    if (sniffedResources.total > 0) {
+    // 备份资源
+    backupResources()
+    
+    // 检查按钮是否被用户关闭，如果关闭则不显示
+    if (!isButtonClosedByUser() && sniffedResources.total > 0) {
       const wrapper = document.getElementById('linkcore-download-btn-wrapper')
       if (wrapper) {
         wrapper.style.display = 'block'
@@ -156,8 +286,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       sniffedResources = event.data.data || { video: [], audio: [], m4s: [], combined: [], total: 0 }
       log('Total resources from iframe:', sniffedResources.total)
       
-      // 确保有资源时按钮可见
-      if (sniffedResources.total > 0) {
+      // 备份资源
+      backupResources()
+      
+      // 检查按钮是否被用户关闭，如果关闭则不显示
+      if (!isButtonClosedByUser() && sniffedResources.total > 0) {
         const wrapper = document.getElementById('linkcore-download-btn-wrapper')
         if (wrapper) {
           wrapper.style.display = 'block'
@@ -173,7 +306,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 监听清除资源事件
   window.addEventListener('linkcore-clear-resources', () => {
     log('Clearing resources')
-    log('Resources before clear:', JSON.stringify(sniffedResources))
+    const beforeCount = sniffedResources.total || 0
+    log('Resources before clear:', beforeCount)
     sniffedResources = {
       video: [],
       audio: [],
@@ -181,7 +315,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       combined: [],
       total: 0
     }
-    log('Resources after clear:', JSON.stringify(sniffedResources))
+    log('Resources cleared, was:', beforeCount, 'now: 0')
     updateButtonVisibility()
   })
 
@@ -549,10 +683,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     log('Audio count:', sniffedResources.audio?.length || 0)
     log('M4S count:', sniffedResources.m4s?.length || 0)
     log('Combined count:', sniffedResources.combined?.length || 0)
+    
     const content = document.getElementById('linkcore-resource-list')
     if (!content) {
       log('Resource list container not found')
       return
+    }
+
+    // 检查是否资源突然变为空（可能是意外清除）
+    const totalResources = (sniffedResources.video?.length || 0) + 
+                          (sniffedResources.audio?.length || 0) + 
+                          (sniffedResources.combined?.length || 0)
+    
+    if (totalResources === 0 && content.children.length > 0) {
+      log('Warning: Resources became empty but UI had content, this might be an unexpected clear')
+      // 可以在这里添加恢复逻辑，但现在先记录
     }
 
     content.innerHTML = ''
@@ -625,7 +770,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       videoSection.appendChild(videoTitle)
 
       sniffedResources.video.forEach((resource, index) => {
-        if (!resource.url.includes('.m4s')) { // 排除已在M4S区显示的
+        // 如果M4S资源没有在M4S区域显示，则在这里显示
+        const isM4S = resource.url.includes('.m4s')
+        const shouldShowInM4SSection = isM4S && sniffedResources.m4s && sniffedResources.m4s.length > 0
+        
+        if (!shouldShowInM4SSection) {
           const item = createResourceItem(resource, referer, index)
           videoSection.appendChild(item)
         }
@@ -650,7 +799,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       audioSection.appendChild(audioTitle)
 
       sniffedResources.audio.forEach((resource, index) => {
-        if (!resource.url.includes('.m4s')) { // 排除已在M4S区显示的
+        // 如果M4S资源没有在M4S区域显示，则在这里显示
+        const isM4S = resource.url.includes('.m4s')
+        const shouldShowInM4SSection = isM4S && sniffedResources.m4s && sniffedResources.m4s.length > 0
+        
+        if (!shouldShowInM4SSection) {
           const item = createResourceItem(resource, referer, index)
           audioSection.appendChild(item)
         }
@@ -1026,7 +1179,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       if (dropdown.style.display === 'flex') {
         dropdown.style.display = 'none'
       } else {
-        updateResourceList()
+        // 在显示下拉框前检查是否需要恢复资源
+        if (!checkAndRestoreResources()) {
+          // 如果没有恢复，正常更新资源列表
+          updateResourceList()
+        } else {
+          // 如果恢复了资源，重新更新资源列表
+          updateResourceList()
+        }
         dropdown.style.display = 'flex'
         adjustDropdownPosition(dropdown)
       }
@@ -1087,6 +1247,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   }, true)
 
+  // 检查按钮是否被用户关闭
+  const isButtonClosedByUser = () => {
+    // 检查全局标记
+    if (window.linkcoreButtonClosed) return true
+    
+    // 检查wrapper上的标记
+    const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+    if (wrapper && wrapper.getAttribute('data-user-closed') === 'true') {
+      window.linkcoreButtonClosed = true
+      return true
+    }
+    
+    return false
+  }
+
   // 上次更新资源列表的时间戳，用于节流
   let lastResourceListUpdate = 0
   const RESOURCE_LIST_UPDATE_INTERVAL = 100 // 减少到100ms，提高响应速度
@@ -1094,16 +1269,22 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 更新按钮显示状态
   const updateButtonVisibility = () => {
     const btn = document.getElementById('linkcore-download-btn')
-    log('Update button visibility, btn:', !!btn, 'total:', sniffedResources.total)
+    log('Update button visibility, btn:', !!btn, 'total:', sniffedResources.total, 'sniffer enabled:', videoSnifferConfig.enabled, 'config loaded:', videoSnifferConfig.loaded)
     if (!btn) return
 
     const hasResources = sniffedResources.total > 0
-    const wrapper = btn.parentElement
+    const snifferEnabled = videoSnifferConfig.enabled
+    const configLoaded = videoSnifferConfig.loaded
+    const wrapper = btn.parentElement?.parentElement // 现在btn在buttonContainer中，wrapper是buttonContainer的父元素
 
     log('Wrapper element:', wrapper)
     log('Wrapper current display:', wrapper ? wrapper.style.display : 'no wrapper')
 
-    if (hasResources) {
+    // 检查按钮是否已被用户关闭
+    const isButtonClosed = isButtonClosedByUser()
+
+    // 只有在配置已加载、嗅探器启用、有资源且按钮未被用户关闭时才显示按钮
+    if (configLoaded && snifferEnabled && hasResources && !isButtonClosed) {
       log('Showing button, updating resource list...')
       if (wrapper) {
         const wasHidden = wrapper.style.display === 'none'
@@ -1171,13 +1352,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       // 立即更新资源列表，不使用节流
       updateResourceList()
     } else {
-      log('No resources, but keeping button if it was dragged or locked')
-      // 只有在没有被拖拽且没有锁定位置时才隐藏
-      if (wrapper && !hasBeenDragged && !positionLocked) {
+      log('Hiding button - config loaded:', configLoaded, 'sniffer enabled:', snifferEnabled, 'has resources:', hasResources, 'button closed:', isButtonClosed)
+      // 如果嗅探器被禁用或没有资源，隐藏按钮（除非被拖拽过）
+      if (wrapper && !hasBeenDragged && !positionLocked && !isButtonClosed) {
         wrapper.style.display = 'none'
-        log('Hiding button - no resources and not dragged/locked')
+        log('Hiding button - sniffer disabled or no resources and not dragged/locked/closed')
+      } else if (wrapper && !snifferEnabled && configLoaded) {
+        // 如果嗅探器被禁用，强制隐藏按钮（即使被拖拽过）
+        wrapper.style.display = 'none'
+        log('Hiding button - sniffer disabled by user')
+      } else if (wrapper && isButtonClosed) {
+        // 如果按钮被用户关闭，强制隐藏
+        wrapper.style.display = 'none'
+        log('Hiding button - closed by user')
       } else {
-        log('Keeping button visible - dragged:', hasBeenDragged, 'locked:', positionLocked)
+        log('Keeping button visible - dragged:', hasBeenDragged, 'locked:', positionLocked, 'closed:', isButtonClosed, 'sniffer enabled:', snifferEnabled)
       }
     }
   }
@@ -1190,15 +1379,23 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   let hideButtonTimeout = null // 按钮隐藏倒计时
   let buttonStabilityTimer = null // 按钮稳定性定时器
 
-  // 按钮稳定性检查 - 确保有资源时按钮始终可见
+  // 按钮稳定性检查 - 确保有资源且嗅探器启用时按钮始终可见
   const ensureButtonStability = () => {
     const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
-    if (wrapper && sniffedResources && sniffedResources.total > 0) {
-      // 如果有资源但按钮被隐藏，重新显示
+    const isButtonClosed = isButtonClosedByUser()
+    
+    if (wrapper && sniffedResources && sniffedResources.total > 0 && videoSnifferConfig.enabled && videoSnifferConfig.loaded && !isButtonClosed) {
+      // 如果有资源且嗅探器启用但按钮被隐藏且未被用户关闭，重新显示
       if (wrapper.style.display === 'none') {
         wrapper.style.display = 'block'
         wrapper.style.visibility = 'visible'
-        log('Button stability check: restored hidden button with resources')
+        log('Button stability check: restored hidden button with resources and sniffer enabled')
+      }
+    } else if (wrapper && (!videoSnifferConfig.enabled && videoSnifferConfig.loaded) || isButtonClosed) {
+      // 如果嗅探器被禁用或按钮被用户关闭，强制隐藏按钮
+      if (wrapper.style.display !== 'none') {
+        wrapper.style.display = 'none'
+        log('Button stability check: hidden button due to sniffer disabled or user closed')
       }
     }
   }
@@ -1226,14 +1423,16 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     // 增加隐藏延迟到10秒，给用户更多时间操作
     hideButtonTimeout = setTimeout(() => {
       const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
-      // 只有在没有资源、没有被拖拽、没有被悬停时才隐藏
-      if (wrapper && !isButtonHovered && !hasBeenDragged && (!sniffedResources || sniffedResources.total === 0)) {
+      const isButtonClosed = isButtonClosedByUser()
+      
+      // 只有在没有资源、没有被拖拽、没有被悬停、没有被用户关闭且嗅探器启用时才隐藏
+      if (wrapper && !isButtonHovered && !hasBeenDragged && !isButtonClosed && (!sniffedResources || sniffedResources.total === 0 || !videoSnifferConfig.enabled)) {
         wrapper.style.display = 'none'
         positionLocked = false
         hoveredVideoContainer = null
         log('Button hidden after 10s timeout')
       } else {
-        log('Button not hidden - hovered:', isButtonHovered, 'dragged:', hasBeenDragged, 'resources:', sniffedResources?.total || 0)
+        log('Button not hidden - hovered:', isButtonHovered, 'dragged:', hasBeenDragged, 'closed:', isButtonClosed, 'resources:', sniffedResources?.total || 0, 'sniffer enabled:', videoSnifferConfig.enabled)
       }
     }, 10000) // 增加到10秒
   }
@@ -1241,6 +1440,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const ensureBilibiliButton = () => {
     if (!isTopWindow()) return
     if (!document) return
+
+    // 如果按钮已被用户关闭，不重新创建
+    if (isButtonClosedByUser()) {
+      log('Button was closed by user, skipping creation')
+      return
+    }
 
     log('Creating download button...')
 
@@ -1446,7 +1651,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     wStyle.pointerEvents = 'auto'
-    wStyle.display = 'none' // 默认隐藏，检测到资源后显示
+    
+    // 根据当前状态设置初始显示状态
+    if (isButtonClosedByUser()) {
+      wStyle.display = 'none'
+      wrapper.setAttribute('data-user-closed', 'true')
+      log('Button created in closed state due to user preference')
+    } else {
+      wStyle.display = 'none' // 默认隐藏，检测到资源后显示
+    }
 
     const btn = document.createElement('button')
     btn.id = 'linkcore-bilibili-download-btn'
@@ -1467,25 +1680,88 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     style.background = '#00a1d6'
     style.color = '#ffffff'
     style.border = 'none'
-    style.borderRadius = '4px'
+    style.borderRadius = '4px 0 0 4px' // 左侧圆角，右侧直角
     style.cursor = 'pointer'
     style.fontSize = '12px'
     style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)'
     style.opacity = '0.9'
     style.transition = 'opacity 0.2s ease'
     style.pointerEvents = 'auto'
+    style.display = 'inline-block'
+    style.verticalAlign = 'top'
+
+    // 创建关闭按钮
+    const closeBtn = document.createElement('button')
+    closeBtn.id = 'linkcore-close-btn'
+    closeBtn.textContent = '×'
+    closeBtn.title = 'Close'
+    const closeStyle = closeBtn.style
+    closeStyle.position = 'relative'
+    closeStyle.padding = '6px 8px'
+    closeStyle.background = '#ff4d4f'
+    closeStyle.color = '#ffffff'
+    closeStyle.border = 'none'
+    closeStyle.borderRadius = '0 4px 4px 0' // 右侧圆角，左侧直角
+    closeStyle.cursor = 'pointer'
+    closeStyle.fontSize = '12px'
+    closeStyle.fontWeight = 'bold'
+    closeStyle.boxShadow = '0 2px 4px rgba(0,0,0,0.2)'
+    closeStyle.opacity = '0.9'
+    closeStyle.transition = 'opacity 0.2s ease'
+    closeStyle.pointerEvents = 'auto'
+    closeStyle.display = 'inline-block'
+    closeStyle.verticalAlign = 'top'
+    closeStyle.marginLeft = '0' // 紧贴下载按钮
+
+    // 创建按钮容器
+    const buttonContainer = document.createElement('div')
+    buttonContainer.style.display = 'inline-flex'
+    buttonContainer.style.alignItems = 'stretch'
+    buttonContainer.style.borderRadius = '4px'
+    buttonContainer.style.overflow = 'hidden'
+
+    // 关闭按钮点击事件
+    closeBtn.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // 隐藏整个按钮组
+      wrapper.style.display = 'none'
+      
+      // 在wrapper上设置关闭标记，这样即使wrapper被重新创建也能保持状态
+      wrapper.setAttribute('data-user-closed', 'true')
+      
+      // 设置全局关闭标记，防止按钮重新出现
+      window.linkcoreButtonClosed = true
+      
+      log('Download button closed by user')
+    })
+
+    // 关闭按钮悬停效果
+    closeBtn.addEventListener('mouseenter', () => {
+      closeBtn.style.opacity = '1'
+      closeBtn.style.background = '#ff7875'
+    })
+    closeBtn.addEventListener('mouseleave', () => {
+      closeBtn.style.opacity = '0.9'
+      closeBtn.style.background = '#ff4d4f'
+    })
+
+    // 将按钮添加到容器
+    buttonContainer.appendChild(btn)
+    buttonContainer.appendChild(closeBtn)
     // 监听按钮悬停状态，防止悬停时位置被重置
-    wrapper.addEventListener('mouseenter', () => {
+    buttonContainer.addEventListener('mouseenter', () => {
       isButtonHovered = true
       clearHideTimeout() // 清除隐藏倒计时
       btn.style.opacity = '1'
-      log('Button wrapper mouseenter, locked position')
+      log('Button container mouseenter, locked position')
     })
-    wrapper.addEventListener('mouseleave', () => {
+    buttonContainer.addEventListener('mouseleave', () => {
       isButtonHovered = false
       startHideTimeout() // 开始隐藏倒计时
       btn.style.opacity = '0.9'
-      log('Button wrapper mouseleave, unlocked position')
+      log('Button container mouseleave, unlocked position')
     })
     btn.addEventListener('click', (e) => {
       e.preventDefault()
@@ -1609,7 +1885,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     document.addEventListener('mousemove', onDrag)
     document.addEventListener('mouseup', endDrag)
 
-    wrapper.appendChild(btn)
+    wrapper.appendChild(buttonContainer)
 
     // 创建并添加下拉框
     const dropdown = createResourceDropdown()
@@ -1635,6 +1911,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     setTimeout(() => {
       log('Delayed check...')
       log('Current sniffedResources:', sniffedResources)
+
+      // 如果按钮被用户关闭，不显示
+      if (isButtonClosedByUser()) {
+        log('Button was closed by user, keeping hidden')
+        return
+      }
 
       // 如果已经有资源，立即显示按钮
       if (sniffedResources && sniffedResources.total > 0) {
@@ -1686,6 +1968,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 监听窗口大小变化，确保按钮始终在视口内
     const handleResize = () => {
+      // 如果按钮被用户关闭，不处理调整大小
+      if (isButtonClosedByUser()) {
+        log('Button closed by user, skipping resize update')
+        return
+      }
+
       // 如果位置已锁定或按钮正在被悬停，不更新位置
       if (positionLocked || isButtonHovered) {
         log('Position locked or button hovered, skipping resize update')
@@ -1763,6 +2051,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   log('Script loaded, calling scheduleBilibiliButton')
   scheduleBilibiliButton()
 
+  // 加载视频嗅探器配置
+  loadVideoSnifferConfig()
+
   // 当前悬停的视频元素或容器
   let hoveredVideoContainer = null
 
@@ -1776,6 +2067,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
     if (!wrapper) return
+
+    // 如果按钮已被用户关闭，不更新位置也不显示
+    if (isButtonClosedByUser()) {
+      log('Button was closed by user, skipping position update')
+      return
+    }
 
     // 如果按钮已被拖拽过，不自动更新位置
     if (hasBeenDragged) return
@@ -1821,9 +2118,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     wrapper.style.right = `${newRight}px`
     wrapper.style.left = 'auto'
 
-    // 确保按钮可见
-    wrapper.style.display = 'block'
-    wrapper.style.visibility = 'visible'
+    // 只有在有资源且嗅探器启用时才确保按钮可见
+    if (sniffedResources && sniffedResources.total > 0 && videoSnifferConfig.enabled) {
+      wrapper.style.display = 'block'
+      wrapper.style.visibility = 'visible'
+    }
 
     // 锁定位置，防止被其他逻辑重置
     positionLocked = true
@@ -2015,6 +2314,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 也使用 requestAnimationFrame 持续跟踪位置（处理非滚动导致的布局变化）
   const trackPositionLoop = () => {
+    // 如果按钮被用户关闭，不进行位置跟踪
+    if (isButtonClosedByUser()) {
+      requestAnimationFrame(trackPositionLoop)
+      return
+    }
+
     if (positionLocked && hoveredVideoContainer) {
       if (hoveredVideoContainer.isConnected) {
         updateButtonPositionToContainer(hoveredVideoContainer)
@@ -2034,19 +2339,20 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         // 更宽松的恢复策略：如果有资源且按钮存在，保持显示
         if (!recovered) {
           const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
-          if (wrapper && sniffedResources && sniffedResources.total > 0) {
-            // 有资源时不隐藏按钮，只是重置位置锁定
+          const isButtonClosed = isButtonClosedByUser()
+          if (wrapper && sniffedResources && sniffedResources.total > 0 && !isButtonClosed) {
+            // 有资源且未被用户关闭时不隐藏按钮，只是重置位置锁定
             if (!hasBeenDragged) {
               positionLocked = false
               hoveredVideoContainer = null
               log('Container disconnected but keeping button visible due to resources')
             }
-          } else if (!hasBeenDragged) {
-            // 只有在没有资源且未被拖拽时才隐藏
+          } else if (!hasBeenDragged || isButtonClosed) {
+            // 只有在没有资源、未被拖拽或被用户关闭时才隐藏
             positionLocked = false
             hoveredVideoContainer = null
             if (wrapper) wrapper.style.display = 'none'
-            log('Container disconnected and no resources, hidden')
+            log('Container disconnected and no resources or user closed, hidden')
           }
         }
       }
@@ -2061,6 +2367,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 全局鼠标移动监听，用于捕获动态变化的元素或被遮挡的视频
   let lastMouseMoveTime = 0
   window.addEventListener('mousemove', (e) => {
+    // 如果按钮被用户关闭，不处理鼠标移动
+    if (isButtonClosedByUser()) {
+      return
+    }
+
     const now = Date.now()
     if (now - lastMouseMoveTime < 100) return // 节流 100ms
     lastMouseMoveTime = now

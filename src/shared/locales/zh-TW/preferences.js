@@ -116,6 +116,7 @@ export default {
   'task-complete-notify-click-action-tips': '選擇點擊下載完成通知時要執行的操作',
   'task-complete-notify-click-action-open-folder': '開啟檔案所在位置',
   'task-complete-notify-click-action-show-app': '喚起應用程式視窗',
+  'task-complete-notify-click-action-execute-file': '執行該檔案',
   'auto-purge-record': '當結束程式時自動清除下載紀錄',
   'downloading-file-suffix': '下載檔案時新增的後綴',
   'downloading-file-suffix-tips': '在下載期間將此後綴新增到檔案，完成後會自動刪除',

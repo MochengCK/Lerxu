@@ -73,7 +73,7 @@
   }
 
   // 调试日志控制
-  const DEBUG = false
+  const DEBUG = false // 关闭调试日志
   const log = (...args) => {
     if (DEBUG) {
       console.log('[Video Sniffer]', ...args)
@@ -100,6 +100,7 @@
   const sniffedResources = {
     video: [],
     audio: [],
+    m4s: [],
     combined: []
   }
 
@@ -108,13 +109,15 @@
     log('Loading config from storage...')
     try {
       if (!chrome || !chrome.storage || !chrome.storage.local) {
-        console.warn('[Video Sniffer] Chrome storage API not available')
+        // Chrome storage API not available
+        configLoaded = true
         return
       }
       chrome.storage.local.get(['videoSnifferEnabled', 'videoSnifferFormats', 'videoSnifferAutoCombine'], (result) => {
         log('Storage result:', JSON.stringify(result, null, 2))
         if (chrome.runtime.lastError) {
-          console.error('[Video Sniffer] Storage error:', chrome.runtime.lastError)
+          // Storage error
+          configLoaded = true
           return
         }
         let configChanged = false
@@ -122,6 +125,8 @@
           config.enabled = result.videoSnifferEnabled
           log('Loaded videoSnifferEnabled:', config.enabled)
           configChanged = true
+        } else {
+          log('videoSnifferEnabled not found in storage, using default:', config.enabled)
         }
         if (result.videoSnifferFormats && Array.isArray(result.videoSnifferFormats)) {
           const oldFormats = config.formats
@@ -135,24 +140,31 @@
           config.autoCombine = result.videoSnifferAutoCombine
           log('Loaded videoSnifferAutoCombine:', config.autoCombine)
           configChanged = true
+        } else {
+          log('videoSnifferAutoCombine not found in storage, using default:', config.autoCombine)
         }
         log('Final config after loading:', JSON.stringify(config, null, 2))
 
         configLoaded = true
         log('Config loaded from storage, marking as loaded and rechecking all resources')
-        sniffedResources.video = []
-        sniffedResources.audio = []
-        sniffedResources.combined = []
-
+        // 不清除现有资源，而是重新检查以确保完整性
+        
         const resources = window.performance.getEntriesByType('resource')
         log('Rechecking', resources.length, 'resources after loading config')
         resources.forEach(entry => {
           addResource(entry.name)
         })
         checkMediaElements()
+        
+        // 立即触发UI更新以应用新配置
+        if (configChanged) {
+          log('Config changed, triggering UI update')
+          updateUI()
+        }
       })
     } catch (e) {
-      console.error('[Video Sniffer] Failed to load config:', e)
+      // Failed to load config
+      configLoaded = true
     }
   }
 
@@ -182,26 +194,33 @@
           log('Config updated:', config)
 
           if (configChanged) {
-            log('Config changed, clearing all sniffed resources')
-            sniffedResources.video = []
-            sniffedResources.audio = []
-            sniffedResources.combined = []
+            log('Config changed, updating UI without clearing resources')
+            
+            // 只有在启用状态或格式发生变化时才需要重新检查资源
+            if (changes.videoSnifferEnabled || changes.videoSnifferFormats) {
+              log('Sniffer enabled or formats changed, rechecking resources')
+              // 不清除现有资源，而是重新检查和过滤
+              const resources = window.performance.getEntriesByType('resource')
+              log('Found', resources.length, 'resources in performance API')
+              resources.forEach(entry => {
+                addResource(entry.name)
+              })
+              checkMediaElements()
+            }
+            
+            // 如果只是autoCombine变化，只需要重新组合
+            if (changes.videoSnifferAutoCombine) {
+              log('AutoCombine setting changed, updating combinations')
+            }
+            
             updateUI()
-
-            log('Rechecking all resources after config change')
-            const resources = window.performance.getEntriesByType('resource')
-            log('Found', resources.length, 'resources in performance API')
-            resources.forEach(entry => {
-              addResource(entry.name)
-            })
-            checkMediaElements()
             log('Config change handling complete')
           }
         }
       })
     }
   } catch (e) {
-    console.error('[Video Sniffer] Failed to setup storage listener:', e)
+    // Failed to setup storage listener
   }
 
   // 从URL提取文件扩展名
@@ -381,10 +400,13 @@
 
   // 通用音频检测函数（适用于所有平台）
   const checkIfAudio = (url, ext, mimeType) => {
+    log('Checking if audio:', url.substring(0, 100), 'ext:', ext, 'mimeType:', mimeType)
+    
     // 1. 检查MIME类型
     if (mimeType) {
       const mimeTypeLower = mimeType.toLowerCase()
       if (mimeTypeLower.startsWith('audio/')) {
+        log('Detected as audio by MIME type:', mimeType)
         return true
       }
     }
@@ -392,10 +414,32 @@
     // 2. 检查文件扩展名
     const audioExtensions = ['mp3', 'aac', 'm4a', 'wav', 'flac', 'ogg', 'oga', 'wma', 'opus', 'webm']
     if (ext && audioExtensions.includes(ext.toLowerCase())) {
+      log('Detected as audio by extension:', ext)
       return true
     }
     
-    // 3. 检查URL路径中的音频关键词
+    // 3. 特殊处理M4S文件 - B站音频质量编号检测
+    if (ext === 'm4s' && url.includes('bilivideo.com')) {
+      const audioQualityCodes = [
+        '30280', '30232', '30216', // 标准音频质量编号
+        '280', '232', '216' // 简化编号
+      ]
+      
+      for (const code of audioQualityCodes) {
+        if (url.includes(`-${code}.m4s`) || url.includes(`-${code}-`) || url.includes(`/${code}/`)) {
+          log('Detected as audio M4S by quality code:', code)
+          return true
+        }
+      }
+      
+      // 检查URL中是否包含音频相关的路径或参数
+      if (url.includes('/audio/') || url.includes('_audio_') || url.includes('-audio-')) {
+        log('Detected as audio M4S by URL pattern')
+        return true
+      }
+    }
+    
+    // 4. 检查URL路径中的音频关键词
     const urlLower = url.toLowerCase()
     const audioKeywords = [
       '/audio/', '_audio_', '-audio-', '.audio.',
@@ -408,11 +452,12 @@
     
     for (const keyword of audioKeywords) {
       if (urlLower.includes(keyword)) {
+        log('Detected as audio by URL keyword:', keyword)
         return true
       }
     }
     
-    // 4. 检查URL参数中的音频标识
+    // 5. 检查URL参数中的音频标识
     try {
       const urlObj = new URL(url)
       const params = new URLSearchParams(urlObj.search)
@@ -422,6 +467,7 @@
       for (const param of audioParams) {
         const value = params.get(param)
         if (value && (value.toLowerCase() === 'true' || value.toLowerCase() === 'audio' || value.toLowerCase() === '1')) {
+          log('Detected as audio by URL parameter:', param, '=', value)
           return true
         }
       }
@@ -429,13 +475,14 @@
       // 检查媒体类型参数
       const mediaType = params.get('mime_type') || params.get('type') || params.get('format')
       if (mediaType && mediaType.toLowerCase().includes('audio')) {
+        log('Detected as audio by media type parameter:', mediaType)
         return true
       }
     } catch (e) {
       // URL解析失败，忽略
     }
     
-    // 5. 检查文件名中的音频标识
+    // 6. 检查文件名中的音频标识
     try {
       const urlObj = new URL(url)
       const pathname = urlObj.pathname.toLowerCase()
@@ -449,6 +496,7 @@
       
       for (const pattern of audioFilenamePatterns) {
         if (pattern.test(filename)) {
+          log('Detected as audio by filename pattern:', pattern)
           return true
         }
       }
@@ -456,6 +504,7 @@
       // URL解析失败，忽略
     }
     
+    log('Not detected as audio')
     return false
   }
 
@@ -628,9 +677,17 @@
         // 通用音频检测逻辑
         const isGeneralAudio = checkIfAudio(url, ext, mimeType)
         
+        log('M4S resource analysis:', {
+          url: url.substring(0, 100),
+          qualityFound: qualityFound,
+          isGeneralAudio: isGeneralAudio,
+          quality: info.quality
+        })
+        
         if (isGeneralAudio) {
           info.type = 'audio'
           if (!qualityFound) info.quality = getLocalizedQuality('Audio', currentLocale)
+          log('Classified as audio M4S:', info.quality)
         } else if (!qualityFound) {
           // 尝试从URL中提取质量编号的更智能方法
           const match = url.match(/-(\d+)\.m4s/)
@@ -699,7 +756,7 @@
         }
       }
     } catch (e) {
-      console.error('[Video Sniffer] Parse error:', e)
+      // Parse error
     }
 
     return info
@@ -710,6 +767,8 @@
     const combined = []
     const videoStreams = sniffedResources.video.filter(r => r.ext === 'm4s')
     const audioStreams = sniffedResources.audio.filter(r => r.ext === 'm4s')
+
+    log('Combining M4S streams - Video:', videoStreams.length, 'Audio:', audioStreams.length)
 
     // 用于跟踪已经组合过的视频流，避免重复
     const usedVideoUrls = new Set()
@@ -739,6 +798,8 @@
       const normalizedVideoUrl = normalizeUrl(video.url)
       const quality = video.quality || 'Unknown'
       
+      log('Processing video stream:', quality, video.url.substring(0, 100))
+      
       // 如果这个视频URL已经被使用过，跳过
       if (usedVideoUrls.has(normalizedVideoUrl)) {
         log('Skipping duplicate video URL:', normalizedVideoUrl)
@@ -764,38 +825,50 @@
         }
       }
 
-      // 查找匹配的音频流
+      // 查找匹配的音频流 - 使用更宽松的匹配策略
       const matchedAudio = audioStreams.find(audio => {
-        // 首先尝试精确的时间戳匹配（1秒内）
+        log('Checking audio match for video:', quality, 'audio timestamp:', audio.timestamp, 'video timestamp:', video.timestamp)
+        
+        // 策略1: 时间戳匹配（放宽到10秒内）
         const timeDiff = Math.abs(video.timestamp - audio.timestamp)
-        if (timeDiff < 1000) {
+        if (timeDiff < 10000) {
+          log('Audio matched by timestamp (within 10s):', timeDiff + 'ms')
           return true
         }
         
-        // 如果没有精确匹配，尝试更宽松的匹配（3秒内）
-        if (timeDiff < 3000) {
-          // 检查是否是同一个资源的不同流（通过URL相似性）
-          try {
-            const videoUrlObj = new URL(video.url)
-            const audioUrlObj = new URL(audio.url)
+        // 策略2: URL相似性匹配
+        try {
+          const videoUrlObj = new URL(video.url)
+          const audioUrlObj = new URL(audio.url)
+          
+          // 检查主机名和路径的相似性
+          if (videoUrlObj.hostname === audioUrlObj.hostname) {
+            const videoPath = videoUrlObj.pathname
+            const audioPath = audioUrlObj.pathname
             
-            // 检查主机名和路径的相似性
-            if (videoUrlObj.hostname === audioUrlObj.hostname) {
-              const videoPath = videoUrlObj.pathname
-              const audioPath = audioUrlObj.pathname
-              
-              // 检查路径是否包含相同的资源ID
-              const videoId = videoPath.match(/(\d+)-1-(\d+)/)
-              const audioId = audioPath.match(/(\d+)-1-(\d+)/)
-              
-              if (videoId && audioId && videoId[1] === audioId[1]) {
-                return true
-              }
+            // 检查路径是否包含相同的资源ID
+            const videoId = videoPath.match(/(\d+)-1-(\d+)/)
+            const audioId = audioPath.match(/(\d+)-1-(\d+)/)
+            
+            if (videoId && audioId && videoId[1] === audioId[1]) {
+              log('Audio matched by resource ID:', videoId[1])
+              return true
             }
-          } catch (e) {
-            // URL解析失败，使用时间差判断
-            return timeDiff < 3000
           }
+        } catch (e) {
+          log('URL parsing failed for matching:', e.message)
+        }
+        
+        // 策略3: 如果只有一个音频流，直接匹配
+        if (audioStreams.length === 1) {
+          log('Only one audio stream available, using it')
+          return true
+        }
+        
+        // 策略4: 按质量匹配（如果音频也有质量信息）
+        if (audio.quality && audio.quality === quality) {
+          log('Audio matched by quality:', quality)
+          return true
         }
         
         return false
@@ -839,9 +912,46 @@
         usedVideoUrls.add(normalizedVideoUrl)
         usedCombinations.add(combinationId)
         
-        log('Created combined stream:', quality, 'Video size:', video.size, 'Audio size:', matchedAudio.size, 'Total:', totalSize)
+        log('✓ Created combined stream:', quality, 'Video size:', video.size, 'Audio size:', matchedAudio.size, 'Total:', totalSize)
       } else {
-        log('No matching audio found for video:', quality, video.url.substring(0, 100))
+        log('✗ No matching audio found for video:', quality, video.url.substring(0, 100))
+        
+        // 如果没有找到匹配的音频，但有音频流，尝试使用第一个音频流
+        if (audioStreams.length > 0) {
+          const firstAudio = audioStreams[0]
+          log('Using first available audio stream as fallback')
+          
+          const combinationId = `${normalizedVideoUrl}:${normalizeUrl(firstAudio.url)}:${quality}`
+          
+          if (!usedCombinations.has(combinationId)) {
+            let totalSize = 0
+            if (video.size > 0 && firstAudio.size > 0) {
+              totalSize = video.size + firstAudio.size
+            } else if (video.size > 0) {
+              totalSize = video.size
+            } else if (firstAudio.size > 0) {
+              totalSize = firstAudio.size
+            }
+
+            const combinedItem = {
+              quality: quality,
+              videoUrl: video.url,
+              audioUrl: firstAudio.url,
+              name: `${quality} 完整视频`,
+              timestamp: video.timestamp,
+              size: totalSize,
+              videoSize: video.size || 0,
+              audioSize: firstAudio.size || 0,
+              combinationId: combinationId
+            }
+
+            qualityGroups.set(quality, combinedItem)
+            usedVideoUrls.add(normalizedVideoUrl)
+            usedCombinations.add(combinationId)
+            
+            log('✓ Created fallback combined stream:', quality, 'Video size:', video.size, 'Audio size:', firstAudio.size, 'Total:', totalSize)
+          }
+        }
       }
     })
 
@@ -857,7 +967,11 @@
       })
     }
 
-    log('Combined streams created:', combined.length, 'from', videoStreams.length, 'video and', audioStreams.length, 'audio streams')
+    log('✓ Combined streams created:', combined.length, 'from', videoStreams.length, 'video and', audioStreams.length, 'audio streams')
+    combined.forEach((item, index) => {
+      log(`Combined ${index + 1}:`, item.quality, 'Size:', item.size)
+    })
+    
     return combined
   }
 
@@ -1003,7 +1117,7 @@
           credentials: 'include',
           cache: 'no-cache',
           headers: {
-            'User-Agent': navigator.userAgent,
+            // 移除User-Agent，浏览器会自动设置
             'Accept': '*/*',
             'Accept-Encoding': 'identity' // 避免压缩影响大小
           }
@@ -1031,7 +1145,7 @@
           credentials: 'include',
           headers: {
             'Range': 'bytes=0-1023', // 请求前1KB
-            'User-Agent': navigator.userAgent,
+            // 移除User-Agent，浏览器会自动设置
             'Accept': '*/*'
           },
           cache: 'no-cache'
@@ -1073,7 +1187,7 @@
           mode: 'cors',
           credentials: 'include',
           headers: {
-            'User-Agent': navigator.userAgent,
+            // 移除User-Agent，浏览器会自动设置
             'Accept': '*/*'
           },
           cache: 'no-cache'
@@ -1111,7 +1225,7 @@
         const xhr = new XMLHttpRequest()
         return new Promise((resolve) => {
           xhr.open('HEAD', url, true)
-          xhr.setRequestHeader('User-Agent', navigator.userAgent)
+          // 移除不安全的头部设置，浏览器会自动设置User-Agent
           xhr.setRequestHeader('Accept', '*/*')
           
           xhr.onreadystatechange = function() {
@@ -1153,7 +1267,14 @@
 
   // 添加资源
   async function addResource(url, mimeType, size) {
-    if (!shouldSniff(url, mimeType)) return
+    log('Adding resource:', url.substring(0, 150), 'mimeType:', mimeType, 'size:', size)
+    
+    if (!shouldSniff(url, mimeType)) {
+      log('Resource skipped by shouldSniff filter')
+      return
+    }
+
+    log('Resource passed shouldSniff filter, processing...')
 
     // 更严格的去重检查 - 使用URL的核心部分进行比较
     const normalizeUrl = (url) => {
@@ -1252,10 +1373,12 @@
     // 立即添加资源到列表，不等待大小获取
     if (info.type === 'audio') {
       sniffedResources.audio.push(info)
-      log('✓ Audio detected:', info.quality, info.name, 'size:', info.size, url.substring(0, 100))
+      log('✓ Audio detected:', info.quality, info.name, 'size:', info.size, 'ext:', info.ext, url.substring(0, 100))
+      log('Current audio resources count:', sniffedResources.audio.length)
     } else {
       sniffedResources.video.push(info)
-      log('✓ Video detected:', info.quality, info.name, 'size:', info.size, url.substring(0, 100))
+      log('✓ Video detected:', info.quality, info.name, 'size:', info.size, 'ext:', info.ext, url.substring(0, 100))
+      log('Current video resources count:', sniffedResources.video.length)
     }
 
     // 立即更新UI显示
@@ -1283,9 +1406,21 @@
     const audioM4S = sniffedResources.audio.filter(r => r.ext === 'm4s')
     m4sResources = [...videoM4S, ...audioM4S]
 
-    if (config.autoCombine) {
+    // 确保m4s资源被正确设置
+    sniffedResources.m4s = m4sResources
+
+    // 确保autoCombine配置已加载且启用
+    if (config.autoCombine && configLoaded) {
       const combined = combineM4SStreams()
       sniffedResources.combined = combined
+      log('Auto-combine enabled, created', combined.length, 'combined streams')
+    } else {
+      sniffedResources.combined = []
+      if (!configLoaded) {
+        log('Config not loaded yet, skipping auto-combine')
+      } else {
+        log('Auto-combine disabled in config')
+      }
     }
 
     const totalCount = sniffedResources.video.length + sniffedResources.audio.length
@@ -1295,7 +1430,9 @@
       audio: sniffedResources.audio.length,
       m4s: m4sResources.length,
       combined: sniffedResources.combined.length,
-      total: totalCount
+      total: totalCount,
+      autoCombine: config.autoCombine,
+      configLoaded: configLoaded
     })
 
     const event = new CustomEvent('linkcore-resources-updated', {
@@ -1307,14 +1444,14 @@
         total: totalCount
       }
     })
-    log('Dispatching event to document with total:', totalCount)
+    log('Dispatching event to document with total:', totalCount, 'combined:', sniffedResources.combined.length)
     document.dispatchEvent(event)
     log('Event dispatched')
 
     // 如果在 iframe 中，向父窗口发送消息
     try {
       if (window.top !== window) {
-        console.log('[Video Sniffer] In iframe, sending message to parent')
+        // In iframe, sending message to parent
         window.top.postMessage({
           type: 'linkcore-resources-updated',
           data: {
@@ -1327,7 +1464,7 @@
         }, '*')
       }
     } catch (e) {
-      console.log('[Video Sniffer] Cannot access parent window:', e)
+      // Cannot access parent window
     }
   }
 
@@ -1501,7 +1638,7 @@
     return originalFetch.apply(this, arguments)
   }
 
-  console.log('[Video Sniffer] Network interceptors installed')
+  // Network interceptors installed
 
   // 使用 PerformanceObserver
   try {
@@ -1520,16 +1657,16 @@
       }
     })
     observer.observe({ entryTypes: ['resource'] })
-    console.log('[Video Sniffer] PerformanceObserver installed')
+    // PerformanceObserver installed
   } catch (e) {
-    console.log('[Video Sniffer] PerformanceObserver not available')
+    // PerformanceObserver not available
   }
 
   // 检查已加载的资源
   function checkExistingResources() {
     if (window.performance && window.performance.getEntriesByType) {
       const resources = window.performance.getEntriesByType('resource')
-      console.log('[Video Sniffer] Checking', resources.length, 'existing resources')
+      // Checking existing resources
       resources.forEach(entry => {
         // 跳过blob URL
         if (!entry.name.toLowerCase().startsWith('blob:')) {
@@ -1542,7 +1679,7 @@
   // 检查媒体元素
   function checkMediaElements() {
     if (!configLoaded) {
-      console.log('[Video Sniffer] Config not loaded yet, skipping media elements check')
+      // Config not loaded yet, skipping media elements check
       return
     }
     const mediaElements = document.querySelectorAll('video, audio')
@@ -1550,7 +1687,7 @@
       const mimeType = element.getAttribute('type') || ''
       if (element.src) {
         const src = element.src
-        console.log('[Video Sniffer] Found media src:', src.substring(0, 150), 'type:', mimeType)
+        // Found media src
         // 跳过blob URL
         if (!src.toLowerCase().startsWith('blob:')) {
           addResource(src, mimeType)
@@ -1558,7 +1695,7 @@
       }
       if (element.currentSrc) {
         const src = element.currentSrc
-        console.log('[Video Sniffer] Found media currentSrc:', src.substring(0, 150), 'type:', mimeType)
+        // Found media currentSrc
         // 跳过blob URL
         if (!src.toLowerCase().startsWith('blob:')) {
           addResource(src, mimeType)
@@ -1569,7 +1706,7 @@
         const sourceMimeType = source.getAttribute('type') || ''
         if (source.src) {
           const src = source.src
-          console.log('[Video Sniffer] Found source src:', src.substring(0, 150), 'type:', sourceMimeType)
+          // Found source src
           // 跳过blob URL
           if (!src.toLowerCase().startsWith('blob:')) {
             addResource(src, sourceMimeType)
@@ -1599,7 +1736,7 @@
         const mimeType = video.getAttribute('type') || ''
         video.addEventListener('loadstart', () => {
           const src = video.src || video.currentSrc
-          console.log('[Video Sniffer] Video loadstart, src:', src, 'type:', mimeType)
+          // Video loadstart
           // 跳过blob URL
           if (src && !src.toLowerCase().startsWith('blob:')) {
             addResource(src, mimeType)
@@ -1607,7 +1744,7 @@
         })
         video.addEventListener('play', () => {
           const src = video.src || video.currentSrc
-          console.log('[Video Sniffer] Video play, src:', src, 'type:', mimeType)
+          // Video play
           // 跳过blob URL
           if (src && !src.toLowerCase().startsWith('blob:')) {
             addResource(src, mimeType)
@@ -1625,14 +1762,14 @@
       mutation.addedNodes.forEach((node) => {
         if (node.nodeType === 1) { // Element node
           if (node.tagName === 'VIDEO' || node.tagName === 'AUDIO') {
-            console.log('[Video Sniffer] New media element added:', node.tagName)
+            // New media element added
             observeVideoElements()
             checkMediaElements()
           }
           // 检查子元素
           const mediaElements = node.querySelectorAll && node.querySelectorAll('video, audio')
           if (mediaElements && mediaElements.length > 0) {
-            console.log('[Video Sniffer] New media elements found:', mediaElements.length)
+            // New media elements found
             observeVideoElements()
             checkMediaElements()
           }
@@ -1647,34 +1784,41 @@
     attributes: true,
     attributeFilter: ['src']
   })
-  console.log('[Video Sniffer] MutationObserver installed')
+  // MutationObserver installed
 
   // 监听资源请求
   window.addEventListener('linkcore-get-resources', () => {
-    console.log('[Video Sniffer] Resource request received')
+    // Resource request received
     updateUI()
   })
 
   // 监听清除资源事件（当切换到不同的视频预览时触发）
   window.addEventListener('linkcore-clear-resources', () => {
-    console.log('[Video Sniffer] Clear resources request received')
+    // Clear resources request received
+    // 添加保护：只有在确实需要清除时才清除
+    const currentResourceCount = sniffedResources.video.length + sniffedResources.audio.length
+    if (currentResourceCount > 0) {
+      log('Clearing', currentResourceCount, 'resources on explicit request')
+    }
+    
     sniffedResources.video = []
     sniffedResources.audio = []
+    sniffedResources.m4s = []
     sniffedResources.combined = []
     updateUI()
   })
 
   // 延迟加载配置
   setTimeout(() => {
-    console.log('[Video Sniffer] Loading config...')
+    // Loading config...
     loadConfig()
   }, 100)
 
   // 确保在页面完全加载后再次检查配置
   window.addEventListener('load', () => {
-    console.log('[Video Sniffer] Page loaded, reloading config...')
+    // Page loaded, reloading config...
     loadConfig()
   })
 
-  console.log('[Video Sniffer] ========== Initialization complete ==========')
+  // Initialization complete
 })()

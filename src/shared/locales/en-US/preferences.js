@@ -88,6 +88,7 @@ export default {
   'task-complete-notify-click-action-tips': 'Choose what happens when clicking the completion notification',
   'task-complete-notify-click-action-open-folder': 'Open folder of downloaded file',
   'task-complete-notify-click-action-show-app': 'Activate application window',
+  'task-complete-notify-click-action-execute-file': 'Execute the file',
   'auto-purge-record': 'Automatically purge download records when exiting app',
   'downloading-file-suffix': 'Downloading file suffix',
   'downloading-file-suffix-tips': 'Add this suffix to files while downloading, automatically removed after completion',

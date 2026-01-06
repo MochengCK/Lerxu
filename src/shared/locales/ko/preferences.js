@@ -108,6 +108,7 @@ export default {
   'task-complete-notify-click-action-tips': '다운로드 완료 알림을 클릭했을 때 수행할 작업을 선택하세요',
   'task-complete-notify-click-action-open-folder': '다운로드한 파일 위치 열기',
   'task-complete-notify-click-action-show-app': '애플리케이션 창 표시',
+  'task-complete-notify-click-action-execute-file': '파일 실행',
   'auto-purge-record': '애플리케이션 종료 시 자동으로 다운로드 기록 삭제',
   'downloading-file-suffix': '다운로드 중 파일 접미사',
   'downloading-file-suffix-tips': '다운로드 중인 파일에 이 접미사를 추가하고 완료 후 자동으로 제거합니다',

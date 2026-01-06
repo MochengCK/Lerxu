@@ -96,6 +96,7 @@ export default {
   'task-complete-notify-click-action-tips': 'Elige qué ocurre al hacer clic en la notificación de descarga completada',
   'task-complete-notify-click-action-open-folder': 'Abrir la carpeta del archivo descargado',
   'task-complete-notify-click-action-show-app': 'Mostrar la ventana de la aplicación',
+  'task-complete-notify-click-action-execute-file': 'Ejecutar el archivo',
   'auto-purge-record': 'Eliminar automáticamente el registro de descargas al salir',
   'downloading-file-suffix': 'Sufijo adicional al descargar archivos',
   'downloading-file-suffix-tips': 'Agregue este sufijo a los archivos durante la descarga, se eliminará automáticamente después de completarse',

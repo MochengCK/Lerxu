@@ -380,6 +380,7 @@
         <div class="preference-card">
           <h3 class="card-title">{{ $t('preferences.task-manage') }}</h3>
           <el-form-item size="mini">
+            <!-- 单设置项 -->
             <el-col class="form-item-sub" :span="24">
               {{ $t('preferences.max-concurrent-downloads') }}
               <el-input-number
@@ -419,6 +420,13 @@
                 {{ $t('preferences.auto-purge-record') }}
               </el-checkbox>
             </el-col>
+
+            <!-- 分隔线 -->
+            <el-col class="form-item-sub" :span="24">
+              <div class="settings-divider"></div>
+            </el-col>
+
+            <!-- 多设置项 -->
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.autoOpenTaskProgressWindow" @change="autoSaveForm">
                 {{ $t('preferences.auto-open-task-progress-window') }}
@@ -470,6 +478,9 @@
                   </el-radio>
                   <el-radio label="show-app">
                     {{ $t('preferences.task-complete-notify-click-action-show-app') }}
+                  </el-radio>
+                  <el-radio label="execute-file">
+                    {{ $t('preferences.task-complete-notify-click-action-execute-file') }}
                   </el-radio>
                 </el-radio-group>
               </el-tooltip>
@@ -1955,6 +1966,22 @@
  .el-form-item__info .edit-rules-btn {
    vertical-align: middle;
    margin-top: -2px;
+ }
+
+ /* 设置分隔线样式 */
+ .settings-divider {
+   height: 2px;
+   background: var(--border-color);
+   margin: 24px 0;
+   border-radius: 1px;
+   opacity: 0.8;
+   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+ }
+
+ /* 暗色主题下的分隔线 */
+ .theme-dark .settings-divider {
+   background: #4a4a4a;
+   box-shadow: 0 1px 2px rgba(255, 255, 255, 0.05);
  }
 
  /* 视频嗅探设置按钮样式 */

@@ -1404,7 +1404,26 @@
         notify.onclick = () => {
           if (clickAction === 'show-app') {
             this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
+          } else if (clickAction === 'execute-file') {
+            // 执行文件
+            try {
+              const { shell } = this.$electron
+              shell.openPath(path).catch((error) => {
+                console.error('Failed to execute file:', error)
+                // 如果执行失败，回退到打开文件夹
+                showItemInFolder(path, {
+                  errorMsg: this.$t('task.file-not-exist')
+                })
+              })
+            } catch (error) {
+              console.error('Failed to execute file:', error)
+              // 如果执行失败，回退到打开文件夹
+              showItemInFolder(path, {
+                errorMsg: this.$t('task.file-not-exist')
+              })
+            }
           } else {
+            // 默认行为：打开文件夹
             showItemInFolder(path, {
               errorMsg: this.$t('task.file-not-exist')
             })

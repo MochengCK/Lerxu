@@ -77,6 +77,57 @@
     }
   }
 
+  // 添加主题同步函数，从父窗口获取当前主题
+  function syncThemeFromParent () {
+    try {
+      if (window.require) {
+        const { getCurrentWindow } = window.require('@electron/remote')
+        const win = getCurrentWindow()
+        const parentWindow = win.getParentWindow()
+
+        if (parentWindow && parentWindow.webContents) {
+          // 请求父窗口发送当前主题
+          parentWindow.webContents.send('request-current-theme')
+          log('Requested current theme from parent window')
+        }
+      }
+    } catch (e) {
+      console.error('[Video Sniffer Add Format] Failed to sync theme from parent:', e)
+    }
+  }
+
+  // 添加语言同步函数，从父窗口获取当前语言
+  function syncLocaleFromParent () {
+    try {
+      if (window.require) {
+        const { getCurrentWindow } = window.require('@electron/remote')
+        const win = getCurrentWindow()
+        const parentWindow = win.getParentWindow()
+
+        if (parentWindow && parentWindow.webContents) {
+          // 请求父窗口发送当前语言
+          parentWindow.webContents.send('request-current-locale')
+          log('Requested current locale from parent window')
+        }
+      }
+    } catch (e) {
+      console.error('[Video Sniffer Add Format] Failed to sync locale from parent:', e)
+    }
+  }
+
+  // 处理语言变化
+  async function handleLocaleChange (newLocale) {
+    log('Handling locale change:', newLocale)
+    locale = newLocale
+    try {
+      await loadTranslations(locale)
+      applyTranslations()
+      log('Locale changed and translations applied:', locale)
+    } catch (e) {
+      console.error('[Video Sniffer Add Format] Failed to handle locale change:', e)
+    }
+  }
+
   function applyTranslations () {
     const titleText = document.getElementById('titleText')
     const formatLabel = document.getElementById('formatLabel')
@@ -122,7 +173,12 @@
   document.addEventListener('DOMContentLoaded', async () => {
     log('DOM Content Loaded')
     await init()
-    await getCurrentTheme()
+    getCurrentTheme()
+
+    // 同步父窗口主题和语言
+    syncThemeFromParent()
+    syncLocaleFromParent()
+
     applyTranslations()
 
     const formatInput = document.getElementById('formatInput')
@@ -219,7 +275,8 @@
       if (window.require) {
         const { ipcRenderer } = window.require('electron')
 
-        ipcRenderer.on('command', (event, command, ...args) => {
+        // 监听主题变化命令
+        ipcRenderer.on('command', (_, command, ...args) => {
           log('Command received:', command, args)
           if (command === 'application:update-system-theme') {
             const data = args[0]
@@ -249,7 +306,100 @@
                 applyTheme(isDark ? 'dark' : 'light')
               }
             }
+          } else if (command === 'application:update-locale') {
+            const data = args[0]
+            log('Locale updated:', data)
+            if (data && data.locale) {
+              handleLocaleChange(data.locale)
+            }
           }
+        })
+
+        // 监听来自父窗口的主题同步消息
+        ipcRenderer.on('sync-theme', (_, themeData) => {
+          log('Theme sync received from parent:', themeData)
+          if (themeData && themeData.theme) {
+            const theme = themeData.theme
+            if (theme === 'dark') {
+              applyTheme('dark')
+            } else if (theme === 'light') {
+              applyTheme('light')
+            } else if (theme === 'auto') {
+              const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+              applyTheme(isDark ? 'dark' : 'light')
+            }
+          }
+        })
+
+        // 监听来自父窗口的语言同步消息
+        ipcRenderer.on('sync-locale', (_, localeData) => {
+          log('Locale sync received from parent:', localeData)
+          if (localeData && localeData.locale) {
+            handleLocaleChange(localeData.locale)
+          }
+        })
+
+        // 监听父窗口的主题请求响应
+        ipcRenderer.on('current-theme-response', (_, themeData) => {
+          log('Current theme response received:', themeData)
+          if (themeData && themeData.theme) {
+            const theme = themeData.theme
+            if (theme === 'dark') {
+              applyTheme('dark')
+            } else if (theme === 'light') {
+              applyTheme('light')
+            } else if (theme === 'auto') {
+              const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+              applyTheme(isDark ? 'dark' : 'light')
+            }
+          }
+        })
+
+        // 监听父窗口的语言请求响应
+        ipcRenderer.on('current-locale-response', (_, localeData) => {
+          log('Current locale response received:', localeData)
+          if (localeData && localeData.locale) {
+            handleLocaleChange(localeData.locale)
+          }
+        })
+
+        // 定期同步主题和语言（作为备用机制）
+        const syncInterval = setInterval(() => {
+          Promise.all([
+            ipcRenderer.invoke('get-app-config'),
+            ipcRenderer.invoke('get-app-locale')
+          ]).then(([appConfig, appLocale]) => {
+            // 检查主题
+            if (appConfig && appConfig.theme) {
+              const theme = appConfig.theme
+              const currentIsDark = document.body.classList.contains('dark')
+              let shouldBeDark = false
+
+              if (theme === 'dark') {
+                shouldBeDark = true
+              } else if (theme === 'auto') {
+                shouldBeDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+              }
+
+              if (currentIsDark !== shouldBeDark) {
+                log('Theme sync detected change, updating:', shouldBeDark ? 'dark' : 'light')
+                applyTheme(shouldBeDark ? 'dark' : 'light')
+              }
+            }
+
+            // 检查语言
+            if (appLocale && appLocale !== locale) {
+              log('Locale sync detected change, updating:', appLocale)
+              handleLocaleChange(appLocale)
+            }
+          }).catch(() => {
+            // 忽略错误，可能窗口已关闭
+          })
+        }, 1000) // 每秒检查一次
+
+        // 窗口关闭时清理定时器
+        window.addEventListener('beforeunload', () => {
+          clearInterval(syncInterval)
         })
       }
     } catch (e) {
