@@ -14,68 +14,24 @@
       <div class="task-detail-nav-wrapper">
         <div class="task-detail-nav-bar">
           <el-radio-group :value="activeTab" size="mini" @input="handleTabChange">
-            <el-tooltip
-              effect="dark"
-              :content="$t('task.task-detail-general')"
-              placement="bottom"
-              :open-delay="500"
-            >
-              <el-radio-button label="general">
-                {{ $t('task.task-detail-general') }}
-              </el-radio-button>
-            </el-tooltip>
-            <el-tooltip
-              effect="dark"
-              :content="$t('task.task-detail-activity')"
-              placement="bottom"
-              :open-delay="500"
-            >
-              <el-radio-button label="activity">
-                {{ $t('task.task-detail-activity') }}
-              </el-radio-button>
-            </el-tooltip>
-            <el-tooltip
-              effect="dark"
-              :content="$t('task.task-detail-trackers')"
-              placement="bottom"
-              :open-delay="500"
-              v-if="isBT"
-            >
-              <el-radio-button label="trackers">
-                {{ $t('task.task-detail-trackers') }}
-              </el-radio-button>
-            </el-tooltip>
-            <el-tooltip
-              effect="dark"
-              :content="$t('task.task-detail-peers')"
-              placement="bottom"
-              :open-delay="500"
-              v-if="isBT"
-            >
-              <el-radio-button label="peers">
-                {{ $t('task.task-detail-peers') }}
-              </el-radio-button>
-            </el-tooltip>
-            <el-tooltip
-              effect="dark"
-              :content="$t('task.task-detail-files')"
-              placement="bottom"
-              :open-delay="500"
-            >
-              <el-radio-button label="files">
-                {{ $t('task.task-detail-files') }}
-              </el-radio-button>
-            </el-tooltip>
-            <el-tooltip
-              effect="dark"
-              :content="$t('task.task-detail-connections')"
-              placement="bottom"
-              :open-delay="500"
-            >
-              <el-radio-button label="connections">
-                {{ $t('task.task-detail-connections') }}
-              </el-radio-button>
-            </el-tooltip>
+            <el-radio-button label="general">
+              {{ $t('task.task-detail-general') }}
+            </el-radio-button>
+            <el-radio-button label="activity">
+              {{ $t('task.task-detail-activity') }}
+            </el-radio-button>
+            <el-radio-button label="trackers" v-if="isBT">
+              {{ $t('task.task-detail-trackers') }}
+            </el-radio-button>
+            <el-radio-button label="peers" v-if="isBT">
+              {{ $t('task.task-detail-peers') }}
+            </el-radio-button>
+            <el-radio-button label="files">
+              {{ $t('task.task-detail-files') }}
+            </el-radio-button>
+            <el-radio-button label="connections">
+              {{ $t('task.task-detail-connections') }}
+            </el-radio-button>
           </el-radio-group>
         </div>
         <span class="task-detail-nav-close-btn" @click="handleHeaderClose">

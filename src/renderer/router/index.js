@@ -25,6 +25,15 @@ const router = new Router({
           props: true
         },
         {
+          path: '/task/date/:date',
+          name: 'task-date',
+          component: require('@/components/Task/Index').default,
+          props: (route) => ({
+            status: 'date',
+            filterDate: route.params.date
+          })
+        },
+        {
           path: '/preference',
           name: 'preference',
           component: require('@/components/Preference/Index').default,

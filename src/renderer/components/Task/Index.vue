@@ -65,7 +65,7 @@
       <ul class="menu small-menu">
         <li
           @click="navStatus('all')"
-          :class="{ active: status === 'all' }"
+          :class="{ active: status === 'all' || status === 'date' }"
         >
           <el-tooltip
             effect="dark"
@@ -117,6 +117,34 @@
         </li>
       </ul>
     </div>
+    <!-- 子侧边栏与日期筛选按钮之间的分隔线 -->
+    <div v-if="subnavMode === 'floating'" class="subnav-divider"></div>
+    <!-- 日期筛选按钮 - 独立于子侧边栏 -->
+    <div
+      v-if="subnavMode === 'floating'"
+      ref="dateFilterBtn"
+      class="date-filter-standalone"
+      :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible }"
+      @click.stop="onDateFilterClick"
+      @mouseenter="onDateFilterHover"
+      @mouseleave="onDateFilterLeave"
+    >
+      <span v-if="!datePickerVisible" class="date-filter-text" :class="{ visible: showDateText || storeFilterDate }">
+        {{ currentDateText }}
+      </span>
+      <div class="date-filter-icon">
+        <mo-icon name="date-filter" width="24" height="24" />
+      </div>
+    </div>
+    <!-- 自定义日期选择器 -->
+    <mo-custom-date-picker
+      v-if="datePickerVisible"
+      v-model="selectedDate"
+      :task-counts="taskDateCounts"
+      :trigger-rect="dateFilterBtnRect"
+      @change="onDateChange"
+      @close="closeDatePicker"
+    />
   </el-container>
 </template>
 
@@ -129,10 +157,13 @@
   import TaskActions from '@/components/Task/TaskActions'
   import TaskList from '@/components/Task/TaskList'
   import SubnavSwitcher from '@/components/Subnav/SubnavSwitcher'
+  import CustomDatePicker from '@/components/Task/DatePicker'
+  import taskHistory from '@/api/TaskHistory'
   import '@/components/Icons/menu-task'
   import '@/components/Icons/task-start'
   import '@/components/Icons/task-pause'
   import '@/components/Icons/task-stop'
+  import '@/components/Icons/date-filter'
   import {
     getTaskUri,
     parseHeader
@@ -148,12 +179,17 @@
     components: {
       [TaskActions.name]: TaskActions,
       [TaskList.name]: TaskList,
-      [SubnavSwitcher.name]: SubnavSwitcher
+      [SubnavSwitcher.name]: SubnavSwitcher,
+      [CustomDatePicker.name]: CustomDatePicker
     },
     props: {
       status: {
         type: String,
         default: 'all'
+      },
+      filterDate: {
+        type: String,
+        default: null
       }
     },
     data () {
@@ -162,7 +198,12 @@
         isCategoryPopperEventsBound: false,
         categoryHoverCloseTimer: null,
         categoryPopperMouseEnterHandler: null,
-        categoryPopperMouseLeaveHandler: null
+        categoryPopperMouseLeaveHandler: null,
+        datePickerVisible: false,
+        selectedDate: '',
+        taskDateCounts: {}, // 存储每个日期的任务数量
+        showDateText: false,
+        dateFilterBtnRect: {} // 日期筛选按钮的位置信息
       }
     },
     computed: {
@@ -170,7 +211,8 @@
         taskList: state => state.taskList,
         selectedGidList: state => state.selectedGidList,
         selectedGidListCount: state => state.selectedGidList.length,
-        taskSearchKeyword: state => state.searchKeyword
+        taskSearchKeyword: state => state.searchKeyword,
+        storeFilterDate: state => state.filterDate
       }),
       ...mapState('app', {
         systemTheme: state => state.systemTheme
@@ -205,8 +247,11 @@
         ]
       },
       title () {
+        if (this.status === 'date' && this.filterDate) {
+          return `${this.$t('task.date-filter')} - ${this.filterDate}`
+        }
         const subnav = this.subnavs.find((item) => item.key === this.status)
-        return subnav.title
+        return subnav ? subnav.title : this.$t('task.all')
       },
       taskSearchQuery: {
         get () {
@@ -223,6 +268,12 @@
         set (val) {
           this.$store.dispatch('task/updateCategoryFilter', val)
         }
+      },
+      currentDateText () {
+        if (this.storeFilterDate) {
+          return this.storeFilterDate
+        }
+        return this.$t('task.all-tasks')
       }
     },
     watch: {
@@ -356,6 +407,62 @@
           console.log(err)
         })
       },
+      showDatePicker () {
+        this.datePickerVisible = true
+      },
+      toggleDatePicker () {
+        this.datePickerVisible = !this.datePickerVisible
+        if (this.datePickerVisible) {
+          this.loadTaskDateCounts()
+          // 获取按钮位置
+          if (this.$refs.dateFilterBtn) {
+            this.dateFilterBtnRect = this.$refs.dateFilterBtn.getBoundingClientRect()
+          }
+        }
+      },
+      closeDatePicker () {
+        this.datePickerVisible = false
+      },
+      onDateFilterClick (event) {
+        event.stopPropagation()
+        // 如果当前已经有日期筛选，点击则清除日期筛选
+        if (this.storeFilterDate && !this.datePickerVisible) {
+          this.selectedDate = ''
+          this.$store.dispatch('task/updateFilterDate', null)
+          this.$store.dispatch('task/fetchList')
+          return
+        }
+        // 否则打开日期选择器
+        this.toggleDatePicker()
+      },
+      loadTaskDateCounts () {
+        const history = taskHistory.getHistory()
+        const counts = {}
+        history.forEach(task => {
+          // 使用savedAt作为任务完成时间
+          const timestamp = parseInt(task.savedAt) || parseInt(task.creationTime) || 0
+          if (timestamp > 0) {
+            const date = new Date(timestamp)
+            const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+            counts[dateStr] = (counts[dateStr] || 0) + 1
+          }
+        })
+        this.taskDateCounts = counts
+      },
+      onDateFilterHover () {
+        this.showDateText = true
+      },
+      onDateFilterLeave () {
+        this.showDateText = false
+      },
+      onDateChange (date) {
+        if (date) {
+          this.selectedDate = date
+          this.$store.dispatch('task/updateFilterDate', date)
+          this.$store.dispatch('task/fetchList')
+        }
+        this.datePickerVisible = false
+      },
       handleFocusTaskSearch () {
         // Since the top search bar is removed, we delegate focus to the floating bar search if needed,
         // or just ignore if the intention was to focus the removed input.
@@ -369,7 +476,14 @@
         this.changeCurrentList()
       },
       changeCurrentList () {
-        this.$store.dispatch('task/changeCurrentList', this.status)
+        if (this.status === 'date' && this.filterDate) {
+          this.$store.dispatch('task/changeCurrentListWithDate', {
+            currentList: this.status,
+            filterDate: this.filterDate
+          })
+        } else {
+          this.$store.dispatch('task/changeCurrentList', this.status)
+        }
       },
       directAddTask (uri, options = {}) {
         const uris = [uri]
@@ -798,5 +912,121 @@
 
 .subnav-small-screen .small-menu > li:last-child {
   margin-bottom: 0;
+}
+
+/* 子侧边栏与日期筛选按钮之间的分隔线 */
+.subnav-divider {
+  position: fixed;
+  right: 26px;
+  top: calc(50% + 97px);
+  width: 16px;
+  height: 2px;
+  background-color: $--icon-color;
+  border-radius: 1px;
+  z-index: 1000;
+  opacity: 0.3;
+}
+
+/* 日期筛选独立按钮样式 */
+.date-filter-standalone {
+  position: fixed;
+  right: 18px;
+  top: calc(50% + 105px);
+  width: 32px;
+  height: 32px;
+  background-color: var(--speedometer-background);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  cursor: pointer;
+  transition: width 0.3s ease, background-color 0.25s ease, opacity 0.3s ease;
+  overflow: hidden;
+  opacity: 0.5;
+  z-index: 1000;
+}
+
+.date-filter-standalone:hover {
+  opacity: 1;
+}
+
+.date-filter-standalone.expanded {
+  width: 120px;
+}
+
+.date-filter-standalone.active {
+  opacity: 1;
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+.date-filter-standalone.has-filter {
+  background-color: rgba(0, 0, 0, 0.15);
+  opacity: 1;
+}
+
+.date-filter-standalone:hover:not(.has-filter):not(.active) {
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+.date-filter-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.date-filter-icon svg {
+  padding: 4px;
+  color: $--icon-color;
+}
+
+.date-filter-text {
+  flex: 1;
+  color: $--icon-color;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-left: 8px;
+  transition: opacity 0.3s ease;
+}
+
+.date-filter-text.visible {
+  opacity: 1;
+}
+
+.date-filter-picker {
+  flex: 1;
+  margin-left: 4px;
+}
+
+.date-filter-picker .el-input__inner {
+  height: 24px;
+  line-height: 24px;
+  font-size: 12px;
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  color: $--icon-color;
+}
+
+.date-filter-picker .el-input__prefix,
+.date-filter-picker .el-input__suffix {
+  display: none;
+}
+
+.date-picker-content {
+  padding: 20px 0;
+}
+
+.dialog-footer {
+  text-align: right;
+}
+
+.dialog-footer .el-button {
+  margin-left: 10px;
 }
 </style>

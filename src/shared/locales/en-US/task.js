@@ -269,5 +269,10 @@ export default {
   'connection-status-active': 'Active',
   'connection-status-idle': 'Idle',
   // FFmpeg related
-  'ffmpeg-required-manual': 'FFmpeg is required to merge videos. Please check the installation guide in Settings.'
+  'ffmpeg-required-manual': 'FFmpeg is required to merge videos. Please check the installation guide in Settings.',
+  'date-filter': 'Date Filter',
+  'select-date': 'Select Date',
+  'select-date-placeholder': 'Please select a date',
+  'show-all': 'Show All',
+  'all-tasks': 'All Tasks'
 }

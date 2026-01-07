@@ -96,6 +96,7 @@ function sortTaskList (taskList, field, order) {
 
 const state = {
   currentList: 'all',
+  filterDate: null, // 添加日期过滤状态
   taskDetailVisible: false,
   currentTaskGid: EMPTY_STRING,
   enabledFetchPeers: false,
@@ -163,6 +164,9 @@ const mutations = {
   },
   CHANGE_CURRENT_LIST (state, currentList) {
     state.currentList = currentList
+  },
+  UPDATE_FILTER_DATE (state, date) {
+    state.filterDate = date
   },
   CHANGE_TASK_DETAIL_VISIBLE (state, visible) {
     state.taskDetailVisible = visible
@@ -311,20 +315,49 @@ const actions = {
     commit('UPDATE_SELECTED_GID_LIST', [])
     dispatch('fetchList')
   },
+  changeCurrentListWithDate ({ commit, dispatch }, { currentList, filterDate }) {
+    commit('CHANGE_CURRENT_LIST', currentList)
+    commit('UPDATE_FILTER_DATE', filterDate)
+    commit('UPDATE_SELECTED_GID_LIST', [])
+    dispatch('fetchList')
+  },
+  updateFilterDate ({ commit }, date) {
+    commit('UPDATE_FILTER_DATE', date)
+  },
   fetchList ({ commit, state, rootState }) {
-    return api.fetchTaskList({ type: state.currentList })
+    const params = { type: state.currentList }
+
+    return api.fetchTaskList(params)
       .then((data) => {
-        commit('UPDATE_TASK_LIST', data)
+        // 如果有日期过滤，在前端进一步过滤任务
+        let filteredData = data
+        if (state.filterDate) {
+          // 解析筛选日期 (格式: yyyy-MM-dd)
+          const [year, month, day] = state.filterDate.split('-').map(Number)
+
+          filteredData = data.filter(task => {
+            // 优先使用savedAt（完成时间），其次使用creationTime
+            const timestamp = parseInt(task.savedAt) || parseInt(task.creationTime) || 0
+            if (timestamp === 0) return false
+
+            const taskDate = new Date(timestamp)
+            return taskDate.getFullYear() === year &&
+                   (taskDate.getMonth() + 1) === month &&
+                   taskDate.getDate() === day
+          })
+        }
+
+        commit('UPDATE_TASK_LIST', filteredData)
 
         const { selectedGidList } = state
-        const gids = data.map((task) => task.gid)
+        const gids = filteredData.map((task) => task.gid)
         const list = intersection(selectedGidList, gids)
         commit('UPDATE_SELECTED_GID_LIST', list)
 
         try {
           const saved = (rootState.preference && rootState.preference.config && rootState.preference.config.taskPriorities) || {}
           const mapping = {}
-          data.forEach(task => {
+          filteredData.forEach(task => {
             const dir = task.dir || ''
             let base = ''
             try {

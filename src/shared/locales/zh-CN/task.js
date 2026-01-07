@@ -270,6 +270,10 @@ export default {
   'connection-status': '状态',
   'connection-status-active': '活跃',
   'connection-status-idle': '空闲',
-  // FFmpeg 相关
-  'ffmpeg-required-manual': '合并视频需要 FFmpeg，请在设置中查看安装方式'
+  'ffmpeg-required-manual': '合并视频需要 FFmpeg，请在设置中查看安装方式',
+  'date-filter': '日期筛选',
+  'select-date': '选择日期',
+  'select-date-placeholder': '请选择日期',
+  'show-all': '显示全部',
+  'all-tasks': '所有任务'
 }
