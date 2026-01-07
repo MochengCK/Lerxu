@@ -632,7 +632,7 @@
 
 .task-item-actions.task-item-actions--verify-open {
   overflow: visible;
-  z-index: 20;
+  z-index: 100;
 }
 
 .task-verify-dropdown-ref {
@@ -719,7 +719,7 @@
   left: 50%;
   transform: translateX(calc(-50% - 8px));
   margin-top: 8px;
-  z-index: 10;
+  z-index: 100;
   min-width: 88px;
   max-width: 100px;
   padding: 4px 0;

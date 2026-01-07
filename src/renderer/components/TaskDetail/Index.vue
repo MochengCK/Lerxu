@@ -11,15 +11,77 @@
     @closed="handleClosed"
   >
     <div slot="title" class="task-detail-drawer-title">
-      <span>{{ $t('task.task-detail-title') }}</span>
-      <ul class="task-detail-drawer-actions">
-        <li @click.stop="handleMinimize">
-          <i class="el-icon-minus"></i>
-        </li>
-        <li @click.stop="handleHeaderClose">
+      <div class="task-detail-nav-wrapper">
+        <div class="task-detail-nav-bar">
+          <el-radio-group :value="activeTab" size="mini" @input="handleTabChange">
+            <el-tooltip
+              effect="dark"
+              :content="$t('task.task-detail-general')"
+              placement="bottom"
+              :open-delay="500"
+            >
+              <el-radio-button label="general">
+                {{ $t('task.task-detail-general') }}
+              </el-radio-button>
+            </el-tooltip>
+            <el-tooltip
+              effect="dark"
+              :content="$t('task.task-detail-activity')"
+              placement="bottom"
+              :open-delay="500"
+            >
+              <el-radio-button label="activity">
+                {{ $t('task.task-detail-activity') }}
+              </el-radio-button>
+            </el-tooltip>
+            <el-tooltip
+              effect="dark"
+              :content="$t('task.task-detail-trackers')"
+              placement="bottom"
+              :open-delay="500"
+              v-if="isBT"
+            >
+              <el-radio-button label="trackers">
+                {{ $t('task.task-detail-trackers') }}
+              </el-radio-button>
+            </el-tooltip>
+            <el-tooltip
+              effect="dark"
+              :content="$t('task.task-detail-peers')"
+              placement="bottom"
+              :open-delay="500"
+              v-if="isBT"
+            >
+              <el-radio-button label="peers">
+                {{ $t('task.task-detail-peers') }}
+              </el-radio-button>
+            </el-tooltip>
+            <el-tooltip
+              effect="dark"
+              :content="$t('task.task-detail-files')"
+              placement="bottom"
+              :open-delay="500"
+            >
+              <el-radio-button label="files">
+                {{ $t('task.task-detail-files') }}
+              </el-radio-button>
+            </el-tooltip>
+            <el-tooltip
+              effect="dark"
+              :content="$t('task.task-detail-connections')"
+              placement="bottom"
+              :open-delay="500"
+            >
+              <el-radio-button label="connections">
+                {{ $t('task.task-detail-connections') }}
+              </el-radio-button>
+            </el-tooltip>
+          </el-radio-group>
+        </div>
+        <span class="task-detail-nav-close-btn" @click="handleHeaderClose">
           <i class="el-icon-close"></i>
-        </li>
-      </ul>
+        </span>
+      </div>
     </div>
     <div v-if="statusHintText" class="task-detail-hint">
       <el-tooltip
@@ -39,97 +101,31 @@
     <div v-if="isCompleted" class="task-detail-completion-time">
       <span class="task-detail-completion-time__text">{{ $t('task.completed-at') }} {{ completionTime }}</span>
     </div>
-    <el-tabs
-      tab-position="top"
-      class="task-detail-tab"
-      value="general"
-      :before-leave="handleTabBeforeLeave"
-      @tab-click="handleTabClick"
-    >
-      <el-tab-pane name="general">
-        <span class="task-detail-tab-label" slot="label">
-          <el-tooltip
-            effect="dark"
-            :content="$t('task.task-detail-general')"
-            placement="bottom"
-            :open-delay="500"
-          >
-            <i class="el-icon-info"></i>
-          </el-tooltip>
-        </span>
+    <div class="task-detail-content">
+      <div v-show="activeTab === 'general'">
         <mo-task-general :task="task" />
-      </el-tab-pane>
-      <el-tab-pane name="activity" lazy>
-        <span class="task-detail-tab-label" slot="label">
-          <el-tooltip
-            effect="dark"
-            :content="$t('task.task-detail-activity')"
-            placement="bottom"
-            :open-delay="500"
-          >
-            <i class="el-icon-s-grid"></i>
-          </el-tooltip>
-        </span>
+      </div>
+      <div v-show="activeTab === 'activity'">
         <mo-task-activity ref="taskGraphic" :task="task" />
-      </el-tab-pane>
-      <el-tab-pane name="trackers" lazy v-if="isBT">
-        <span class="task-detail-tab-label" slot="label">
-          <el-tooltip
-            effect="dark"
-            :content="$t('task.task-detail-trackers')"
-            placement="bottom"
-            :open-delay="500"
-          >
-            <i class="el-icon-discover"></i>
-          </el-tooltip>
-        </span>
+      </div>
+      <div v-show="activeTab === 'trackers'" v-if="isBT">
         <mo-task-trackers :task="task" />
-      </el-tab-pane>
-      <el-tab-pane name="peers" lazy v-if="isBT">
-        <span class="task-detail-tab-label" slot="label">
-          <el-tooltip
-            effect="dark"
-            :content="$t('task.task-detail-peers')"
-            placement="bottom"
-            :open-delay="500"
-          >
-            <i class="el-icon-s-custom"></i>
-          </el-tooltip>
-        </span>
+      </div>
+      <div v-show="activeTab === 'peers'" v-if="isBT">
         <mo-task-peers :peers="peers" />
-      </el-tab-pane>
-      <el-tab-pane name="files" lazy>
-        <span class="task-detail-tab-label" slot="label">
-          <el-tooltip
-            effect="dark"
-            :content="$t('task.task-detail-files')"
-            placement="bottom"
-            :open-delay="500"
-          >
-            <i class="el-icon-files"></i>
-          </el-tooltip>
-        </span>
+      </div>
+      <div v-show="activeTab === 'files'">
         <mo-task-files
           ref="detailFileList"
           mode="DETAIL"
           :files="fileList"
           @selection-change="handleSelectionChange"
         />
-      </el-tab-pane>
-      <el-tab-pane name="connections" lazy>
-        <span class="task-detail-tab-label" slot="label">
-          <el-tooltip
-            effect="dark"
-            :content="$t('task.task-detail-connections')"
-            placement="bottom"
-            :open-delay="500"
-          >
-            <i class="el-icon-connection"></i>
-          </el-tooltip>
-        </span>
+      </div>
+      <div v-show="activeTab === 'connections'">
         <mo-task-connections :task="task" />
-      </el-tab-pane>
-    </el-tabs>
+      </div>
+    </div>
     <div class="task-detail-actions">
       <div class="action-wrapper action-wrapper-left" v-if="optionsChanged">
         <el-button @click="resetChanged">
@@ -416,9 +412,6 @@
       }
     },
     methods: {
-      handleMinimize () {
-        this.handleClose()
-      },
       handleHeaderClose () {
         this.handleClose()
       },
@@ -456,7 +449,21 @@
       },
       handleTabClick (tab) {
         const { name } = tab
+        this.activeTab = name
         switch (name) {
+        case 'peers':
+          this.$store.dispatch('task/toggleEnabledFetchPeers', true)
+          break
+        case 'files':
+          setImmediate(() => {
+            this.updateFilesListSelection()
+          })
+          break
+        }
+      },
+      handleTabChange (tabName) {
+        this.activeTab = tabName
+        switch (tabName) {
         case 'peers':
           this.$store.dispatch('task/toggleEnabledFetchPeers', true)
           break
@@ -585,24 +592,96 @@
   .task-detail-drawer-title {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
+    width: 100%;
+  }
+  .task-detail-nav-wrapper {
+    display: flex;
+    align-items: center;
+    width: 100%;
     justify-content: space-between;
-    &> span, &> ul {
-      vertical-align: middle;
-    }
   }
-  .task-detail-drawer-actions {
+  .task-detail-nav-bar {
+    display: flex;
+    align-items: center;
+    position: relative;
+    z-index: 2;
+    flex: 1;
+  }
+  .task-detail-nav-bar :deep(.el-radio-group) {
     display: inline-flex;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    li {
-      cursor: pointer;
-      padding: 0 4px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
+  }
+  .task-detail-nav-bar :deep(.el-radio-button) {
+    .el-radio-button__inner {
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: 500;
     }
   }
+  .task-detail-nav-bar :deep(.el-radio-button:first-child .el-radio-button__inner) {
+    border-radius: 4px 0 0 4px;
+  }
+  .task-detail-nav-bar :deep(.el-radio-button:last-child .el-radio-button__inner) {
+    border-radius: 0 4px 4px 0;
+  }
+  .task-detail-nav-close-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    min-width: 32px;
+    padding: 0 8px;
+    font-size: 16px;
+    font-weight: 500;
+    background: transparent;
+    border: none;
+    color: #303133;
+    cursor: pointer;
+    box-sizing: border-box;
+    transition: all 0.3s;
+    position: relative;
+    z-index: 1;
+    i {
+      color: #303133;
+      font-size: 16px;
+    }
+  }
+  .task-detail-nav-close-btn:hover {
+    color: #409eff;
+    background-color: transparent;
+    i {
+      color: #409eff;
+    }
+  }
+}
+
+.theme-dark .task-detail-drawer {
+  .task-detail-nav-close-btn {
+    background: transparent;
+    border: none;
+    color: #c0c4cc;
+    i {
+      color: #c0c4cc;
+      font-size: 16px;
+    }
+  }
+  .task-detail-nav-close-btn:hover {
+    color: #409eff;
+    background-color: transparent;
+    i {
+      color: #409eff;
+    }
+  }
+}
+
+.task-detail-content {
+  height: calc(100% - 0.5rem);
+  padding: 0.5rem 1.25rem 3.125rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.task-detail-drawer {
   .action-wrapper {
     flex: 1;
   }
@@ -617,29 +696,6 @@
   }
   .action-wrapper-right {
     text-align: right;
-  }
-}
-
-.task-detail-tab {
-  height: 100%;
-  padding: 0.5rem 1.25rem 3.125rem;
-  display: flex;
-  flex-direction: column;
-  .task-detail-tab-label {
-    padding: 0 0.75rem;
-  }
-  .el-tabs__content {
-    position: relative;
-    height: 100%;
-  }
-  .el-tab-pane {
-    overflow-x: hidden;
-    overflow-y: auto;
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
   }
 }
 

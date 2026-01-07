@@ -139,6 +139,7 @@ export default class ConfigManager {
         'resume-all-when-app-launched': false,
         'run-mode': APP_RUN_MODE.STANDARD,
         'show-progress-bar': true,
+        'task-progress-mode': 'component',
         'task-notification': true,
         'task-complete-notify-click-action': 'open-folder',
         'theme': APP_THEME.AUTO,
@@ -159,7 +160,8 @@ export default class ConfigManager {
         'task-plan-action': 'none',
         'enable-security-scan': false,
         'security-scan-tool': 'system',
-        'custom-security-scan-path': ''
+        'custom-security-scan-path': '',
+        'task-view-mode': 'list'
       }
       /* eslint-enable quote-props */
     })

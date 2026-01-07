@@ -40,6 +40,24 @@
               </el-checkbox>
             </el-col>
             <el-col class="form-item-sub" :span="24">
+              <el-form-item :label="$t('preferences.task-progress-mode')">
+                <el-select
+                  v-model="form.taskProgressMode"
+                  size="mini"
+                  @change="autoSaveForm"
+                >
+                  <el-option
+                    :label="$t('preferences.task-progress-mode-component')"
+                    value="component"
+                  />
+                  <el-option
+                    :label="$t('preferences.task-progress-mode-background')"
+                    value="background"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
               <el-form-item :label="$t('preferences.subnav-mode')">
                 <el-select
                   v-model="form.subnavMode"
@@ -765,6 +783,7 @@
       seedRatio,
       seedTime,
       showProgressBar,
+      taskProgressMode,
       taskNotification,
       taskCompleteNotifyClickAction,
       theme,
@@ -834,6 +853,7 @@
       seedRatio,
       seedTime,
       showProgressBar,
+      taskProgressMode: taskProgressMode || 'component',
       taskNotification,
       taskCompleteNotifyClickAction: taskCompleteNotifyClickAction || 'open-folder',
       theme,

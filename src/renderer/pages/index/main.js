@@ -116,6 +116,8 @@ function init (config) {
 store.dispatch('preference/fetchPreference')
   .then((config) => {
     console.info('[Motrix] load preference:', config)
+    // Initialize task view mode from preferences
+    store.dispatch('task/initializeViewMode', config)
     init(config)
   })
   .catch((err) => {

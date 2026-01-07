@@ -24,6 +24,32 @@
         <mo-icon name="refresh" width="14" height="14" :spin="refreshing" />
       </i>
     </el-tooltip>
+    <div class="view-mode-nav">
+      <el-tooltip
+        effect="dark"
+        placement="bottom"
+        :content="$t('task.list-view')"
+      >
+        <div
+          :class="['view-mode-nav__item', { 'view-mode-nav__item--active': viewMode === 'list' }]"
+          @click="onViewModeChange('list')"
+        >
+          <mo-icon name="view-list" width="14" height="14" />
+        </div>
+      </el-tooltip>
+      <el-tooltip
+        effect="dark"
+        placement="bottom"
+        :content="$t('task.grid-view')"
+      >
+        <div
+          :class="['view-mode-nav__item', { 'view-mode-nav__item--active': viewMode === 'grid' }]"
+          @click="onViewModeChange('grid')"
+        >
+          <mo-icon name="view-grid" width="14" height="14" />
+        </div>
+      </el-tooltip>
+    </div>
     <el-tooltip
       class="item"
       effect="dark"
@@ -46,6 +72,8 @@
   import { bytesToSize, timeFormat } from '@shared/utils'
   import '@/components/Icons/menu-add'
   import '@/components/Icons/refresh'
+  import '@/components/Icons/view-list'
+  import '@/components/Icons/view-grid'
   import '@/components/Icons/delete'
   import '@/components/Icons/purge'
   import '@/components/Icons/more'
@@ -63,7 +91,8 @@
     computed: {
       ...mapState('task', {
         currentList: state => state.currentList,
-        selectedGidListCount: state => state.selectedGidList.length
+        selectedGidListCount: state => state.selectedGidList.length,
+        viewMode: state => state.viewMode
       })
     },
     filters: {
@@ -86,6 +115,11 @@
       onRefreshClick () {
         this.refreshSpin()
         this.$store.dispatch('task/fetchList')
+      },
+      onViewModeChange (mode) {
+        if (this.viewMode !== mode) {
+          this.$store.dispatch('task/updateViewMode', mode)
+        }
       },
       onPurgeRecordClick () {
         this.$store.dispatch('task/purgeTaskRecord')
@@ -118,6 +152,9 @@
   text-align: right;
   color: $--task-action-color;
   transition: all 0.25s;
+  display: flex;
+  align-items: center;
+
   .task-action {
     display: inline-block;
     padding: 5px;
@@ -130,6 +167,66 @@
     }
     &.disabled {
       color: $--task-action-disabled-color;
+    }
+  }
+}
+
+.view-mode-nav {
+  display: inline-flex;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+  padding: 2px;
+  margin: 0 4px;
+  height: 24px;
+  box-sizing: border-box;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: $--task-action-color;
+
+    &:hover {
+      color: $--task-action-hover-color;
+    }
+
+    &--active {
+      background-color: $--color-primary;
+      color: #fff;
+
+      &:hover {
+        color: #fff;
+      }
+    }
+  }
+}
+
+// 暗色主题支持
+.theme-dark {
+  .view-mode-nav {
+    background-color: rgba(255, 255, 255, 0.1);
+
+    &__item {
+      color: $--dk-task-action-color;
+
+      &:hover {
+        color: $--dk-task-action-hover-color;
+      }
+
+      &--active {
+        background-color: $--color-primary;
+        color: #fff;
+
+        &:hover {
+          color: #fff;
+        }
+      }
     }
   }
 }

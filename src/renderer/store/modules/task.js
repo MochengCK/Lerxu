@@ -113,7 +113,8 @@ const state = {
   searchKeyword: '',
   categoryFilter: '',
   sortField: 'name',
-  sortOrder: 'asc'
+  sortOrder: 'asc',
+  viewMode: 'list' // Will be loaded from preferences on initialization
 }
 
 const getters = {
@@ -259,6 +260,9 @@ const mutations = {
   UPDATE_CATEGORY_FILTER (state, filter) {
     state.categoryFilter = filter
   },
+  UPDATE_VIEW_MODE (state, mode) {
+    state.viewMode = mode
+  },
   SORT_TASK_LIST (state, payload) {
     const { field, order } = payload || {}
     if (!field || !order) {
@@ -275,6 +279,12 @@ const mutations = {
 }
 
 const actions = {
+  initializeViewMode ({ commit }, config) {
+    // Load saved view mode from preferences
+    // config 中的键是 camelCase 格式
+    const savedViewMode = config?.taskViewMode || 'list'
+    commit('UPDATE_VIEW_MODE', savedViewMode)
+  },
   setTaskDisplayName ({ commit }, payload) {
     commit('UPDATE_TASK_DISPLAY_NAME', payload)
   },
@@ -286,6 +296,12 @@ const actions = {
   },
   updateCategoryFilter ({ commit }, filter) {
     commit('UPDATE_CATEGORY_FILTER', filter)
+  },
+  updateViewMode ({ commit, dispatch }, mode) {
+    commit('UPDATE_VIEW_MODE', mode)
+    // Save the view mode to preferences for persistence
+    // 使用 camelCase 格式的键名，与其他设置保持一致
+    dispatch('preference/save', { taskViewMode: mode }, { root: true })
   },
   sortTasks ({ commit }, payload) {
     commit('SORT_TASK_LIST', payload)

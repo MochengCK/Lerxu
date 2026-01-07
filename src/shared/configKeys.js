@@ -33,6 +33,7 @@ const userKeys = [
   'resume-all-when-app-launched',
   'run-mode',
   'show-progress-bar',
+  'task-progress-mode',
   'task-notification',
   'task-complete-notify-click-action',
   'theme',
@@ -65,7 +66,8 @@ const userKeys = [
   'preference-cards-collapsed',
   'enable-security-scan',
   'security-scan-tool',
-  'custom-security-scan-path'
+  'custom-security-scan-path',
+  'task-view-mode'
 ]
 
 const systemKeys = [

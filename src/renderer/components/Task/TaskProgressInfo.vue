@@ -3,10 +3,10 @@
   <el-row class="task-progress-info">
   <el-col
       class="task-progress-info-left"
-      :xs="12"
-      :sm="7"
-      :md="6"
-      :lg="6"
+      :xs="leftColSpan.xs"
+      :sm="leftColSpan.sm"
+      :md="leftColSpan.md"
+      :lg="leftColSpan.lg"
     >
       <div
         v-if="seedingHintText"
@@ -49,10 +49,10 @@
     </el-col>
     <el-col
       class="task-progress-info-right"
-      :xs="12"
-      :sm="17"
-      :md="18"
-      :lg="18"
+      :xs="rightColSpan.xs"
+      :sm="rightColSpan.sm"
+      :md="rightColSpan.md"
+      :lg="rightColSpan.lg"
     >
       <div class="task-speed-info" v-if="isActive">
         <div class="task-speed-text" v-if="isBT">
@@ -128,6 +128,10 @@
     props: {
       task: {
         type: Object
+      },
+      viewMode: {
+        type: String,
+        default: 'list'
       }
     },
     computed: {
@@ -139,6 +143,42 @@
       ...mapState('preference', {
         preferenceConfig: state => state.config
       }),
+      leftColSpan () {
+        // 在网格视图下，给左侧列更多空间以防止任务大小信息折叠
+        if (this.viewMode === 'grid') {
+          return {
+            xs: 10, // 增加xs断点的空间
+            sm: 9, // 增加sm断点的空间
+            md: 8, // 增加md断点的空间
+            lg: 8 // 增加lg断点的空间
+          }
+        }
+        // 列表视图使用原来的设置
+        return {
+          xs: 12,
+          sm: 7,
+          md: 6,
+          lg: 6
+        }
+      },
+      rightColSpan () {
+        // 在网格视图下，相应调整右侧列的空间
+        if (this.viewMode === 'grid') {
+          return {
+            xs: 14, // 对应左侧的10
+            sm: 15, // 对应左侧的9
+            md: 16, // 对应左侧的8
+            lg: 16 // 对应左侧的8
+          }
+        }
+        // 列表视图使用原来的设置
+        return {
+          xs: 12,
+          sm: 17,
+          md: 18,
+          lg: 18
+        }
+      },
       isActive () {
         const task = this.task || {}
         return task.status === TASK_STATUS.ACTIVE
@@ -350,9 +390,29 @@
     font-style: normal;
   }
 }
+
+// 在背景进度条模式下，底部边距应该与任务名称的上边距一致
+// 但在网格视图下不需要额外的底部边距
+.task-item-wrapper--background-progress .task-progress-info {
+  margin-bottom: 0; // 移除底部边距，避免网格视图下间隔过大
+}
 .task-progress-info-left {
   min-height: 0.875rem;
   text-align: left;
+
+  // 确保任务大小信息不会折叠
+  & > div {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0; // 允许flex收缩但保持内容可见
+  }
+
+  // 在网格视图下给任务大小信息更多空间
+  .task-item--grid & {
+    flex: 0 0 auto; // 防止收缩
+    min-width: 120px; // 设置最小宽度确保任务大小信息完整显示
+  }
 }
 .task-progress-info-right {
   min-height: 0.875rem;
