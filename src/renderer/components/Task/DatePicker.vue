@@ -4,22 +4,31 @@
     :class="{ 'position-top': positionTop }"
     :style="pickerStyle"
     v-click-outside="handleClickOutside"
+    @keydown="handleKeydown"
+    tabindex="0"
+    ref="picker"
   >
     <div class="picker-arrow"></div>
     <div class="picker-header">
-      <button class="nav-btn" @click="prevMonth">
-        <mo-icon name="chevron-left" width="16" height="16" />
-      </button>
-      <span class="current-month">{{ currentYear }}年 {{ currentMonth }}月</span>
-      <button class="nav-btn" @click="nextMonth">
-        <mo-icon name="chevron-right" width="16" height="16" />
-      </button>
+      <el-tooltip effect="dark" :content="$t('task.prev-month')" placement="top" :open-delay="500" popper-class="date-picker-tooltip">
+        <button class="nav-btn" @click="prevMonth">
+          <mo-icon name="chevron-left" width="16" height="16" />
+        </button>
+      </el-tooltip>
+      <el-tooltip effect="dark" :content="$t('task.dblclick-to-today')" placement="top" :open-delay="500" popper-class="date-picker-tooltip">
+        <span class="current-month" @dblclick="goToToday">{{ currentYear }}年 {{ currentMonth }}月</span>
+      </el-tooltip>
+      <el-tooltip effect="dark" :content="$t('task.next-month')" placement="top" :open-delay="500" popper-class="date-picker-tooltip">
+        <button class="nav-btn" @click="nextMonth">
+          <mo-icon name="chevron-right" width="16" height="16" />
+        </button>
+      </el-tooltip>
     </div>
     <div class="picker-body">
       <div class="weekdays">
         <span v-for="day in weekDays" :key="day">{{ day }}</span>
       </div>
-      <div class="days-grid">
+      <div class="days-grid" @mouseleave="onGridMouseLeave">
         <div
           v-for="(day, index) in calendarDays"
           :key="index"
@@ -31,11 +40,17 @@
             'has-tasks': day.taskCount > 0
           }"
           @click="selectDate(day)"
+          @mouseenter="onDayHover(day)"
         >
           <span class="day-number">{{ day.day }}</span>
           <span v-if="day.taskCount > 0" class="task-count">{{ day.taskCount > 99 ? '99+' : day.taskCount }}</span>
         </div>
       </div>
+    </div>
+    <div class="picker-footer" v-if="value">
+      <button class="footer-btn clear-btn" @click="clearFilter">
+        {{ $t('task.clear-filter') }}
+      </button>
     </div>
   </div>
 </template>
@@ -81,7 +96,7 @@
         currentMonth: new Date().getMonth() + 1,
         weekDays: ['日', '一', '二', '三', '四', '五', '六'],
         positionTop: false,
-        pickerHeight: 320
+        pickerHeight: 360
       }
     },
     computed: {
@@ -165,6 +180,12 @@
       }
       this.calculatePosition()
       window.addEventListener('resize', this.calculatePosition)
+      // 自动聚焦以支持键盘操作
+      this.$nextTick(() => {
+        if (this.$refs.picker) {
+          this.$refs.picker.focus()
+        }
+      })
     },
     beforeDestroy () {
       window.removeEventListener('resize', this.calculatePosition)
@@ -201,9 +222,39 @@
           this.currentMonth++
         }
       },
+      goToToday () {
+        const today = new Date()
+        this.currentYear = today.getFullYear()
+        this.currentMonth = today.getMonth() + 1
+      },
       selectDate (day) {
         this.$emit('input', day.dateStr)
         this.$emit('change', day.dateStr)
+      },
+      selectToday () {
+        const today = new Date()
+        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+        this.$emit('input', dateStr)
+        this.$emit('change', dateStr)
+      },
+      clearFilter () {
+        this.$emit('input', '')
+        this.$emit('clear')
+      },
+      onDayHover (day) {
+        this.$emit('hover', day.dateStr)
+      },
+      onGridMouseLeave () {
+        this.$emit('hover', null)
+      },
+      handleKeydown (event) {
+        if (event.key === 'ArrowLeft') {
+          this.prevMonth()
+        } else if (event.key === 'ArrowRight') {
+          this.nextMonth()
+        } else if (event.key === 'Escape') {
+          this.$emit('close')
+        }
       },
       handleClickOutside () {
         this.$emit('close')
@@ -222,6 +273,7 @@
   width: 280px;
   user-select: none;
   z-index: 9999;
+  outline: none;
 }
 
 /* 箭头 - 默认指向上方（选择框在按钮下方时） */
@@ -273,6 +325,14 @@
   font-size: 14px;
   font-weight: 500;
   color: #333;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.custom-date-picker .current-month:hover {
+  background-color: rgba(0, 0, 0, 0.05);
 }
 
 .custom-date-picker .weekdays {
@@ -314,6 +374,10 @@
   color: #c0c4cc;
 }
 
+.custom-date-picker .day-cell.today {
+  background-color: rgba(64, 158, 255, 0.15);
+}
+
 .custom-date-picker .day-cell.today .day-number {
   color: #409EFF;
   font-weight: 600;
@@ -329,10 +393,6 @@
 
 .custom-date-picker .day-cell.selected .task-count {
   color: #fff;
-}
-
-.custom-date-picker .day-cell.has-tasks:not(.selected) {
-  background-color: rgba(64, 158, 255, 0.1);
 }
 
 .custom-date-picker .day-number {
@@ -353,6 +413,50 @@
   text-align: center;
   color: #409EFF;
   background-color: transparent;
+}
+
+/* 底部操作栏 */
+.custom-date-picker .picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.custom-date-picker .footer-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.custom-date-picker .today-btn {
+  color: #409EFF;
+}
+
+.custom-date-picker .today-btn:hover {
+  background-color: rgba(64, 158, 255, 0.1);
+}
+
+.custom-date-picker .clear-btn {
+  color: #909399;
+}
+
+.custom-date-picker .clear-btn:hover {
+  color: #f56c6c;
+  background-color: rgba(245, 108, 108, 0.1);
+}
+
+.custom-date-picker .footer-info {
+  font-size: 11px;
+  color: #909399;
+  flex: 1;
+  text-align: center;
 }
 
 /* 暗色主题 */
@@ -381,6 +485,10 @@
   color: #fff;
 }
 
+.theme-dark .custom-date-picker .current-month:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
 .theme-dark .custom-date-picker .weekdays span {
   color: #aaa;
 }
@@ -393,11 +501,28 @@
   color: #666;
 }
 
-.theme-dark .custom-date-picker .day-cell.has-tasks:not(.selected) {
+.theme-dark .custom-date-picker .day-cell.today {
   background-color: rgba(64, 158, 255, 0.25);
 }
 
 .theme-dark .custom-date-picker .day-number {
   color: #fff;
+}
+
+.theme-dark .custom-date-picker .picker-footer {
+  border-top-color: #555;
+}
+
+.theme-dark .custom-date-picker .footer-info {
+  color: #aaa;
+}
+
+.theme-dark .custom-date-picker .clear-btn {
+  color: #aaa;
+}
+
+/* Tooltip z-index fix */
+.date-picker-tooltip {
+  z-index: 99999 !important;
 }
 </style>

@@ -31,6 +31,14 @@
           </template>
         </el-table-column>
         <el-table-column
+          :label="`${$t('task.task-peer-downloaded')}`"
+          align="right"
+          width="100">
+          <template slot-scope="scope">
+            {{ scope.row.downloadLength | bytesToSize }}
+          </template>
+        </el-table-column>
+        <el-table-column
           :label="`%`"
           align="right"
           width="55">
@@ -79,6 +87,12 @@
         default: function () {
           return []
         }
+      },
+      task: {
+        type: Object,
+        default: function () {
+          return {}
+        }
       }
     },
     data () {
@@ -123,6 +137,8 @@
         }).length
       },
       countIdle () { return (this.peers || []).filter(p => (Number(p.uploadSpeed) || 0) === 0 && (Number(p.downloadSpeed) || 0) === 0).length }
+    },
+    methods: {
     }
   }
 </script>

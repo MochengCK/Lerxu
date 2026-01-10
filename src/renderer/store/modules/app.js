@@ -6,7 +6,7 @@ import { ipcRenderer } from 'electron'
 const BASE_INTERVAL = 1000
 const PER_INTERVAL = 100
 const MIN_INTERVAL = 500
-const MAX_INTERVAL = 6000
+const MAX_INTERVAL = 30000
 
 const state = {
   systemTheme: getSystemTheme(),
@@ -20,6 +20,13 @@ const state = {
     dependencies: [],
     compileInfo: '',
     binPath: ''
+  },
+  engineList: {
+    engines: [],
+    platform: '',
+    arch: '',
+    timestamp: 0,
+    error: null
   },
   engineOptions: {},
   interval: BASE_INTERVAL,
@@ -121,6 +128,15 @@ const mutations = {
   },
   UPDATE_CHECKING_UPDATE (state, isChecking) {
     state.isCheckingUpdate = isChecking
+  },
+  UPDATE_ENGINE_LIST (state, engineListData) {
+    state.engineList = {
+      engines: engineListData.engines || [],
+      platform: engineListData.platform || '',
+      arch: engineListData.arch || '',
+      timestamp: engineListData.timestamp || 0,
+      error: engineListData.error || null
+    }
   }
 }
 
@@ -248,8 +264,45 @@ const actions = {
         commit('UPDATE_PROGRESS', progress)
       })
   },
+  clearProgress ({ commit }) {
+    commit('UPDATE_PROGRESS', -1)
+  },
   updateCheckingUpdate ({ commit }, isChecking) {
     commit('UPDATE_CHECKING_UPDATE', isChecking)
+  },
+  fetchEngineList ({ commit }) {
+    return new Promise((resolve, reject) => {
+      // 通过IPC调用后端获取引擎列表
+      ipcRenderer.send('command', 'engine:get-list')
+
+      // 监听引擎列表返回事件
+      const handleEngineList = (event, command, engineListData) => {
+        if (command !== 'engine-list') {
+          return
+        }
+
+        ipcRenderer.removeListener('command', handleEngineList)
+        clearTimeout(timeoutId)
+
+        if (engineListData && engineListData.error) {
+          console.error('[Motrix] Failed to fetch engine list:', engineListData.error)
+          reject(new Error(engineListData.error))
+          return
+        }
+
+        commit('UPDATE_ENGINE_LIST', engineListData)
+        resolve(engineListData)
+      }
+
+      // 设置超时处理
+      const timeoutId = setTimeout(() => {
+        ipcRenderer.removeListener('command', handleEngineList)
+        console.warn('[Motrix] Timeout fetching engine list')
+        reject(new Error('Timeout fetching engine list'))
+      }, 5000)
+
+      ipcRenderer.on('command', handleEngineList)
+    })
   }
 }
 

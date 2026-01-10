@@ -268,35 +268,67 @@ export const getEngineList = (platform, arch) => {
       const files = readdirSync(enginePath)
       const binName = getEngineBin(platform)
 
-      // 查找所有可执行文件，特别是与aria2c相关的文件，过滤掉临时文件和备份文件
+      // 查找所有可执行文件，识别引擎目录下的所有可执行文件
       files.forEach(file => {
         const filePath = resolve(enginePath, file)
         const stats = lstatSync(filePath)
 
         // 过滤条件：
         // 1. 必须是文件
-        // 2. 包含aria2c 或者是 LinkCore
-        // 3. 不是备份文件（不以.backup结尾）
-        // 4. 不是临时文件（不以.tmp结尾）
-        const lowerFile = file.toLowerCase()
+        // 2. 不是备份文件（不以.backup结尾）
+        // 3. 不是临时文件（不以.tmp结尾）
+        // 4. 不是日志文件（不以.log结尾）
+        // 5. 不是配置文件（不以.conf结尾）
         if (stats.isFile() &&
-            (file.includes('aria2c') || lowerFile === 'linkcore.exe' || lowerFile === 'linkcore') &&
             !file.endsWith('.backup') &&
-            !file.endsWith('.tmp')) {
-          engines.push(file)
+            !file.endsWith('.tmp') &&
+            !file.endsWith('.log') &&
+            !file.endsWith('.conf') &&
+            !file.endsWith('.txt') &&
+            !file.endsWith('.md')) {
+          // 检查是否为可执行文件
+          const isExecutable = platform === 'win32'
+            ? file.endsWith('.exe')
+            : (stats.mode & parseInt('111', 8)) !== 0 // Unix系统检查执行权限
+
+          if (isExecutable) {
+            engines.push({
+              name: file,
+              path: filePath,
+              size: stats.size,
+              modified: stats.mtime,
+              isDefault: file === binName
+            })
+          }
         }
       })
 
-      // 仅当默认引擎实际存在于引擎目录时，确保它位于列表首位
+      // 确保默认引擎位于列表首位（如果存在）
       const defaultBinPath = resolve(enginePath, binName)
       if (existsSync(defaultBinPath)) {
-        if (engines.includes(binName)) {
-          // 去重并置顶
-          const filtered = engines.filter(e => e !== binName)
-          engines.splice(0, engines.length, binName, ...filtered)
-        } else {
-          engines.unshift(binName)
+        const defaultIndex = engines.findIndex(e => e.name === binName)
+        if (defaultIndex > 0) {
+          // 将默认引擎移到首位
+          const defaultEngine = engines.splice(defaultIndex, 1)[0]
+          engines.unshift(defaultEngine)
+        } else if (defaultIndex === -1) {
+          // 如果默认引擎不在列表中，添加到首位
+          const stats = lstatSync(defaultBinPath)
+          engines.unshift({
+            name: binName,
+            path: defaultBinPath,
+            size: stats.size,
+            modified: stats.mtime,
+            isDefault: true
+          })
         }
+      }
+
+      // 按名称排序（除了默认引擎）
+      if (engines.length > 1) {
+        const defaultEngine = engines[0]
+        const otherEngines = engines.slice(1).sort((a, b) => a.name.localeCompare(b.name))
+        engines.splice(0, engines.length, defaultEngine, ...otherEngines)
       }
     }
   } catch (error) {

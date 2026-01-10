@@ -111,6 +111,7 @@ export default {
   'theme-auto': 'Automatisch',
   'theme-light': 'Hell',
   'theme-dark': 'Dunkel',
+  'background-ui-opacity': 'UI-Deckkraft',
   'auto-hide-window': 'Fenster automatisch ausblenden',
   'run-mode': 'Rennen wie',
   'run-mode-standard': 'Standardanwendung',

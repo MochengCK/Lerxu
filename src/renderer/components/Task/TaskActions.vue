@@ -4,6 +4,17 @@
       class="item"
       effect="dark"
       placement="bottom"
+      :content="$t('task.purge-record')"
+      v-if="currentList === 'stopped'"
+    >
+      <i class="task-action" @click="onPurgeRecordClick">
+        <mo-icon name="purge" width="14" height="14" />
+      </i>
+    </el-tooltip>
+    <el-tooltip
+      class="item"
+      effect="dark"
+      placement="bottom"
       :content="$t('task.delete-selected-tasks')"
       v-if="currentList !== 'stopped'"
     >
@@ -50,17 +61,6 @@
         </div>
       </el-tooltip>
     </div>
-    <el-tooltip
-      class="item"
-      effect="dark"
-      placement="bottom"
-      :content="$t('task.purge-record')"
-      v-if="currentList === 'stopped'"
-    >
-      <i class="task-action" @click="onPurgeRecordClick">
-        <mo-icon name="purge" width="14" height="14" />
-      </i>
-    </el-tooltip>
   </div>
 </template>
 

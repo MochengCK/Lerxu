@@ -48,6 +48,15 @@
           </template>
         </el-table-column>
         <el-table-column
+          :label="$t('task.task-peer-downloaded')"
+          width="120"
+          align="right"
+        >
+          <template slot-scope="scope">
+            {{ scope.row.downloaded }}
+          </template>
+        </el-table-column>
+        <el-table-column
           :label="$t('task.connection-speed')"
           width="120"
           align="right"
@@ -211,9 +220,9 @@
         const serverList = []
 
         if (Array.isArray(servers)) {
-          servers.forEach(file => {
+          servers.forEach((file, fileIndex) => {
             const fileServers = file.servers || []
-            fileServers.forEach(server => {
+            fileServers.forEach((server, serverIndex) => {
               totalConnections++
               const speed = Number(server.downloadSpeed) || 0
               const isActive = speed > 0
@@ -235,8 +244,10 @@
               serverList.push({
                 host,
                 speed: `${bytesToSize(speed, 2)}/s`,
+                downloaded: bytesToSize(Number(server.downloadLength) || 0, 2),
                 isActive,
-                status: isActive ? this.$t('task.connection-status-active') : this.$t('task.connection-status-idle')
+                status: isActive ? this.$t('task.connection-status-active') : this.$t('task.connection-status-idle'),
+                _key: `${fileIndex}-${serverIndex}-${host}`
               })
             })
           })

@@ -27,7 +27,8 @@
         ticker: null,
         baseCompleted: 0,
         baseTime: 0,
-        currentSpeed: 0
+        currentSpeed: 0,
+        lastIndeterminate: false
       }
     },
     props: {
@@ -114,6 +115,19 @@
         }
         const total = Number.isFinite(this.total) ? this.total : 0
         if (!(total > 0)) {
+          if (this.currentSpeed > 0) {
+            const min = 5
+            const max = 15
+            const step = 0.6
+            let next = Number.isFinite(this.displayPercent) ? (this.displayPercent + step) : min
+            if (next > max) {
+              next = min
+            }
+            this.displayPercent = next
+            this.lastIndeterminate = true
+            return
+          }
+          this.lastIndeterminate = false
           const actual = this.percent
           if (!Number.isFinite(this.displayPercent) || actual > this.displayPercent) {
             this.displayPercent = actual
@@ -121,6 +135,10 @@
           return
         }
         const actual = this.percent
+        if (this.lastIndeterminate) {
+          this.displayPercent = actual
+          this.lastIndeterminate = false
+        }
         if (!(this.currentSpeed > 0 && this.baseTime > 0)) {
           if (!Number.isFinite(this.displayPercent) || actual > this.displayPercent) {
             this.displayPercent = actual

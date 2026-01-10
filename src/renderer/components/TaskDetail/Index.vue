@@ -8,6 +8,7 @@
     :destroy-on-close="true"
     :visible="visible"
     :before-close="handleClose"
+    append-to-body
     @closed="handleClosed"
   >
     <div slot="title" class="task-detail-drawer-title">
@@ -176,7 +177,8 @@
         optionsChanged: false,
         filesSelection: EMPTY_STRING,
         selectionChangedCount: 0,
-        statusHintTruncated: false
+        statusHintTruncated: false,
+        resizeHandler: null
       }
     },
     computed: {
@@ -353,10 +355,18 @@
       }
     },
     mounted () {
-      window.addEventListener('resize', this.handleAppResize)
+      this.resizeHandler = debounce(() => {
+        if (this.activeTab === 'activity' && this.$refs.taskGraphic) {
+          this.$refs.taskGraphic.updateGraphicWidth()
+        }
+      }, 250)
+      window.addEventListener('resize', this.resizeHandler)
     },
     destroyed () {
-      window.removeEventListener('resize', this.handleAppResize)
+      window.removeEventListener('resize', this.resizeHandler)
+      if (this.resizeHandler && this.resizeHandler.cancel) {
+        this.resizeHandler.cancel()
+      }
       cached.files = []
     },
     watch: {
@@ -372,8 +382,14 @@
         this.handleClose()
       },
       handleClose (done) {
-        window.removeEventListener('resize', this.handleAppResize)
         this.$store.dispatch('task/hideTaskDetail')
+        window.removeEventListener('resize', this.resizeHandler)
+        if (this.resizeHandler && this.resizeHandler.cancel) {
+          this.resizeHandler.cancel()
+        }
+        if (typeof done === 'function') {
+          done()
+        }
       },
       handleClosed (done) {
         this.$store.dispatch('task/updateCurrentTaskGid', EMPTY_STRING)
@@ -410,6 +426,13 @@
         case 'peers':
           this.$store.dispatch('task/toggleEnabledFetchPeers', true)
           break
+        case 'activity':
+          this.$nextTick(() => {
+            if (this.$refs.taskGraphic) {
+              this.$refs.taskGraphic.updateGraphicWidth()
+            }
+          })
+          break
         case 'files':
           setImmediate(() => {
             this.updateFilesListSelection()
@@ -422,6 +445,13 @@
         switch (tabName) {
         case 'peers':
           this.$store.dispatch('task/toggleEnabledFetchPeers', true)
+          break
+        case 'activity':
+          this.$nextTick(() => {
+            if (this.$refs.taskGraphic) {
+              this.$refs.taskGraphic.updateGraphicWidth()
+            }
+          })
           break
         case 'files':
           setImmediate(() => {
@@ -448,14 +478,6 @@
           break
         }
         this.optionsChanged = false
-      },
-      handleAppResize () {
-        debounce(() => {
-          console.log('resize===>', this.activeTab, this.$refs.taskGraphic)
-          if (this.activeTab === 'activity' && this.$refs.taskGraphic) {
-            this.$refs.taskGraphic.updateGraphicWidth()
-          }
-        }, 250)
       },
       updateFilesListSelection () {
         if (!this.$refs.detailFileList) {
@@ -493,6 +515,214 @@
 </script>
 
 <style lang="scss">
+.task-detail-default-transparent {
+  .task-detail-drawer,
+  .task-detail-drawer .el-drawer__header,
+  .task-detail-drawer .el-drawer__body,
+  .task-detail-content {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+
+  .task-detail-drawer {
+    backdrop-filter: blur(var(--task-detail-frosted-blur, 0px));
+    -webkit-backdrop-filter: blur(var(--task-detail-frosted-blur, 0px));
+
+    .el-input__inner,
+    .el-textarea__inner,
+    .el-input-group__append,
+    .el-input-group__prepend,
+    .el-divider__text {
+      background-color: transparent !important;
+      background: transparent !important;
+    }
+
+    .el-table,
+    .el-table__header-wrapper,
+    .el-table__body-wrapper,
+    .el-table__footer-wrapper,
+    .el-table__fixed,
+    .el-table__fixed-right,
+    .el-table__fixed-header-wrapper,
+    .el-table__fixed-body-wrapper,
+    .el-table__fixed-footer-wrapper,
+    .el-table__empty-block,
+    .el-table__body,
+    .el-table__header,
+    .el-table tr,
+    .el-table th,
+    .el-table td {
+      background-color: transparent !important;
+      background: transparent !important;
+    }
+
+    .el-table::before,
+    .el-table--border::after,
+    .el-table__border-left-patch {
+      background-color: transparent !important;
+    }
+
+    .mo-connections-summary,
+    .graphic-box {
+      background: transparent !important;
+      background-color: transparent !important;
+    }
+  }
+}
+
+.theme-light.task-detail-default-transparent {
+  .task-detail-drawer {
+    background-color: rgba(255, 255, 255, var(--task-detail-frosted-alpha, 0)) !important;
+    background: rgba(255, 255, 255, var(--task-detail-frosted-alpha, 0)) !important;
+  }
+
+  .task-detail-drawer {
+    .el-form-item__label,
+    .el-form-item__content,
+    .form-static-value,
+    .summary-label,
+    .summary-value,
+    .el-radio-button__inner,
+    .el-table,
+    .el-table .cell,
+    .el-table th,
+    .el-table td {
+      color: #000 !important;
+    }
+
+    .task-detail-nav-bar .el-radio-button.is-active .el-radio-button__inner {
+      color: #fff !important;
+    }
+
+    .task-detail-nav-bar .el-radio-button:not(.is-active) .el-radio-button__inner:hover {
+      color: $--color-primary !important;
+    }
+
+    .task-detail-nav-bar .el-radio-button.is-active .el-radio-button__inner:hover {
+      color: #fff !important;
+    }
+
+    .el-input__inner,
+    .el-textarea__inner {
+      color: #000 !important;
+    }
+
+    .el-input__inner::placeholder,
+    .el-textarea__inner::placeholder {
+      color: #606266 !important;
+    }
+  }
+}
+
+.theme-dark.task-detail-default-transparent {
+  .task-detail-drawer {
+    background-color: rgba(0, 0, 0, var(--task-detail-frosted-alpha, 0)) !important;
+    background: rgba(0, 0, 0, var(--task-detail-frosted-alpha, 0)) !important;
+  }
+
+  .task-detail-drawer {
+    .el-table,
+    .el-table__header-wrapper,
+    .el-table__body-wrapper,
+    .el-table__footer-wrapper,
+    .el-table__fixed,
+    .el-table__fixed-right,
+    .el-table__fixed-header-wrapper,
+    .el-table__fixed-body-wrapper,
+    .el-table__fixed-footer-wrapper,
+    .el-table__empty-block,
+    .el-table__body,
+    .el-table__header,
+    .el-table tr,
+    .el-table th,
+    .el-table td,
+    .mo-connections-summary,
+    .graphic-box {
+      background-color: rgba(0, 0, 0, var(--task-detail-frosted-alpha, 0)) !important;
+      background: rgba(0, 0, 0, var(--task-detail-frosted-alpha, 0)) !important;
+    }
+  }
+}
+
+.theme-light {
+  .task-detail-drawer {
+    .task-detail-hint,
+    .task-detail-completion-time,
+    .files-summary,
+    .average-speed-samples,
+    .mo-task-connections .mo-connections-empty,
+    .mo-task-connections .mo-connections-loading,
+    .mo-task-connections .mo-connections-summary .summary-label {
+      color: #000 !important;
+    }
+  }
+}
+
+.theme-light.has-app-background-image:not(.task-detail-default-transparent) {
+  .task-detail-drawer {
+    background-color: $--panel-background !important;
+    background: $--panel-background !important;
+  }
+
+  .task-detail-drawer {
+    .el-form-item__label,
+    .el-form-item__content,
+    .form-static-value,
+    .summary-label,
+    .summary-value,
+    .el-radio-button__inner,
+    .el-table,
+    .el-table .cell,
+    .el-table th,
+    .el-table td {
+      color: #000 !important;
+    }
+
+    .task-detail-nav-bar .el-radio-button.is-active .el-radio-button__inner {
+      color: #fff !important;
+    }
+
+    .task-detail-nav-bar .el-radio-button:not(.is-active) .el-radio-button__inner:hover {
+      color: $--color-primary !important;
+    }
+
+    .task-detail-nav-bar .el-radio-button.is-active .el-radio-button__inner:hover {
+      color: #fff !important;
+    }
+
+    .el-input__inner,
+    .el-textarea__inner {
+      color: #000 !important;
+    }
+
+    .el-input__inner::placeholder,
+    .el-textarea__inner::placeholder {
+      color: #606266 !important;
+    }
+  }
+
+  .task-detail-drawer .el-drawer__header,
+  .task-detail-drawer .el-drawer__body,
+  .task-detail-content {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+}
+
+.theme-dark.has-app-background-image:not(.task-detail-default-transparent) {
+  .task-detail-drawer {
+    background-color: $--dk-panel-background !important;
+    background: $--dk-panel-background !important;
+  }
+
+  .task-detail-drawer .el-drawer__header,
+  .task-detail-drawer .el-drawer__body,
+  .task-detail-content {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
+}
+
 .task-detail-drawer {
   min-width: 478px;
   .el-drawer__header {

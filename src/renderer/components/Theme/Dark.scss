@@ -82,6 +82,17 @@
     background-color: $--dk-panel-background;
   }
 
+  &.has-app-background-image {
+    #app,
+    #container,
+    .main,
+    .panel:not(.task-detail-drawer),
+    .form-actions {
+      background-color: transparent !important;
+      background: transparent !important;
+    }
+  }
+
   .panel .panel-header {
     border-bottom-color: rgba(255, 255, 255, 0.1);
     h4 {

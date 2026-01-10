@@ -32,6 +32,8 @@
           class="task-category-select"
           @mouseenter="onCategoryMouseEnter"
           @mouseleave="onCategoryMouseLeave"
+          @mousedown.prevent
+          @selectstart.prevent
         >
           <el-select
             ref="categorySelect"
@@ -42,6 +44,8 @@
             @visible-change="onCategoryVisibleChange"
             @mouseenter.native="openCategorySelect"
             @mouseleave.native="onCategoryMouseLeave"
+            @focus.native="clearTextSelection"
+            @click.native="clearTextSelection"
           >
             <el-option :label="$t('task.category-all')" value="" />
             <el-option :label="$t('task.category-archives')" value="archives" />
@@ -128,11 +132,25 @@
       @click.stop="onDateFilterClick"
       @mouseenter="onDateFilterHover"
       @mouseleave="onDateFilterLeave"
+      @mousedown.prevent
+      @selectstart.prevent
+      @dragstart.prevent
     >
-      <span v-if="!datePickerVisible" class="date-filter-text" :class="{ visible: showDateText || storeFilterDate }">
-        {{ currentDateText }}
+      <span
+        class="date-filter-text"
+        :class="{ visible: datePickerVisible || showDateText || storeFilterDate }"
+        @mousedown.prevent
+        @selectstart.prevent
+        @dragstart.prevent
+      >
+        {{ displayDateText }}
       </span>
-      <div class="date-filter-icon">
+      <div
+        class="date-filter-icon"
+        @mousedown.prevent
+        @selectstart.prevent
+        @dragstart.prevent
+      >
         <mo-icon name="date-filter" width="24" height="24" />
       </div>
     </div>
@@ -143,6 +161,8 @@
       :task-counts="taskDateCounts"
       :trigger-rect="dateFilterBtnRect"
       @change="onDateChange"
+      @hover="onDateHover"
+      @clear="onDateClear"
       @close="closeDatePicker"
     />
   </el-container>
@@ -203,7 +223,8 @@
         selectedDate: '',
         taskDateCounts: {}, // 存储每个日期的任务数量
         showDateText: false,
-        dateFilterBtnRect: {} // 日期筛选按钮的位置信息
+        dateFilterBtnRect: {}, // 日期筛选按钮的位置信息
+        hoverDate: null // 悬停的日期
       }
     },
     computed: {
@@ -274,6 +295,13 @@
           return this.storeFilterDate
         }
         return this.$t('task.all-tasks')
+      },
+      displayDateText () {
+        // 优先显示悬停的日期
+        if (this.datePickerVisible && this.hoverDate) {
+          return this.hoverDate
+        }
+        return this.currentDateText
       }
     },
     watch: {
@@ -292,10 +320,17 @@
           return
         }
 
+        // 清除文本选择
+        this.clearTextSelection()
+
         select.toggleMenu()
 
         this.$nextTick(() => {
           this.bindCategoryPopperEvents()
+          // 清除可能产生的文本选择
+          setTimeout(() => {
+            this.clearTextSelection()
+          }, 50)
         })
       },
       clearCategoryHoverCloseTimer () {
@@ -328,6 +363,9 @@
           return
         }
 
+        // 清除文本选择
+        this.clearTextSelection()
+
         if (select.blur) {
           select.blur()
           return
@@ -337,11 +375,20 @@
         if (input && input.blur) {
           input.blur()
         }
+
+        // 再次清除文本选择，确保blur后也没有选中状态
+        setTimeout(() => {
+          this.clearTextSelection()
+        }, 10)
       },
       onCategoryVisibleChange (visible) {
         if (visible) {
           this.$nextTick(() => {
             this.bindCategoryPopperEvents()
+            // 清除可能产生的文本选择
+            setTimeout(() => {
+              this.clearTextSelection()
+            }, 50)
           })
           return
         }
@@ -393,6 +440,9 @@
         this.isHoveringCategoryPopper = false
       },
       onCategoryChange () {
+        // 清除文本选择
+        this.clearTextSelection()
+
         this.$store.dispatch('task/selectTasks', [])
         this.$store.dispatch('task/updateCategoryFilter', this.categoryFilter)
         this.$store.dispatch('task/fetchList')
@@ -411,6 +461,8 @@
         this.datePickerVisible = true
       },
       toggleDatePicker () {
+        this.clearTextSelection()
+
         this.datePickerVisible = !this.datePickerVisible
         if (this.datePickerVisible) {
           this.loadTaskDateCounts()
@@ -422,9 +474,24 @@
       },
       closeDatePicker () {
         this.datePickerVisible = false
+        this.hoverDate = null
+      },
+      onDateHover (date) {
+        this.hoverDate = date
+      },
+      onDateClear () {
+        this.selectedDate = ''
+        this.$store.dispatch('task/updateFilterDate', null)
+        this.$store.dispatch('task/fetchList')
+        this.datePickerVisible = false
+        this.hoverDate = null
       },
       onDateFilterClick (event) {
         event.stopPropagation()
+        event.preventDefault()
+
+        this.clearTextSelection()
+
         // 如果当前已经有日期筛选，点击则清除日期筛选
         if (this.storeFilterDate && !this.datePickerVisible) {
           this.selectedDate = ''
@@ -449,10 +516,24 @@
         })
         this.taskDateCounts = counts
       },
+      clearTextSelection () {
+        // 清除任何文本选择的多种方法
+        if (window.getSelection) {
+          const selection = window.getSelection()
+          if (selection.rangeCount > 0) {
+            selection.removeAllRanges()
+          }
+        }
+        if (document.selection && document.selection.empty) {
+          document.selection.empty()
+        }
+      },
       onDateFilterHover () {
+        this.clearTextSelection()
         this.showDateText = true
       },
       onDateFilterLeave () {
+        this.clearTextSelection()
         this.showDateText = false
       },
       onDateChange (date) {
@@ -527,21 +608,29 @@
       async removeTask (task, taskName, isRemoveWithFiles = false) {
         await this.$store.dispatch('task/forcePauseTask', task)
           .finally(async () => {
+            // 先从aria2中删除任务，确保任务不会再被保存
+            await this.removeTaskItem(task, taskName)
+
+            // 然后再删除文件（包括.aria2控制文件）
             if (isRemoveWithFiles) {
+              // 等待一小段时间确保aria2已经完全移除任务
+              await new Promise(resolve => setTimeout(resolve, 500))
               await this.deleteTaskFiles(task)
             }
-
-            return this.removeTaskItem(task, taskName)
           })
       },
       async removeTaskRecord (task, taskName, isRemoveWithFiles = false) {
         await this.$store.dispatch('task/forcePauseTask', task)
           .finally(async () => {
+            // 先从aria2中删除任务记录
+            await this.removeTaskRecordItem(task, taskName)
+
+            // 然后再删除文件（包括.aria2控制文件）
             if (isRemoveWithFiles) {
+              // 等待一小段时间确保aria2已经完全移除任务
+              await new Promise(resolve => setTimeout(resolve, 500))
               await this.deleteTaskFiles(task)
             }
-
-            return this.removeTaskRecordItem(task, taskName)
           })
       },
       async removeTaskItem (task, taskName) {
@@ -575,12 +664,16 @@
       removeTasks (taskList, isRemoveWithFiles = false) {
         const gids = taskList.map((task) => task.gid)
         this.$store.dispatch('task/batchForcePauseTask', gids)
-          .finally(() => {
+          .finally(async () => {
+            // 先从aria2中删除任务
+            await this.removeTaskItems(gids)
+
+            // 然后再删除文件（包括.aria2控制文件）
             if (isRemoveWithFiles) {
+              // 等待一小段时间确保aria2已经完全移除任务
+              await new Promise(resolve => setTimeout(resolve, 500))
               this.batchDeleteTaskFiles(taskList)
             }
-
-            this.removeTaskItems(gids)
           })
       },
       batchDeleteTaskFiles (taskList) {
@@ -594,16 +687,15 @@
           console.log('[Motrix] batch delete task files: ', results)
         })
       },
-      removeTaskItems (gids) {
-        this.$store.dispatch('task/batchRemoveTask', gids)
-          .then(() => {
-            this.$msg.success(this.$t('task.batch-delete-task-success'))
-          })
-          .catch(({ code }) => {
-            if (code === 1) {
-              this.$msg.error(this.$t('task.batch-delete-task-fail'))
-            }
-          })
+      async removeTaskItems (gids) {
+        try {
+          await this.$store.dispatch('task/batchRemoveTask', gids)
+          this.$msg.success(this.$t('task.batch-delete-task-success'))
+        } catch ({ code }) {
+          if (code === 1) {
+            this.$msg.error(this.$t('task.batch-delete-task-fail'))
+          }
+        }
       },
       handlePauseTask (payload) {
         const { task, taskName } = payload
@@ -805,6 +897,10 @@
   display: flex;
   justify-content: center;
   pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 .task-category-select .el-select {
@@ -812,6 +908,13 @@
   pointer-events: auto;
   opacity: 0.75;
   transition: opacity 0.2s ease;
+}
+
+.task-category-select .el-select .el-input__inner {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
 }
 
 .task-category-select .el-select:hover,
@@ -931,7 +1034,7 @@
 .date-filter-standalone {
   position: fixed;
   right: 18px;
-  top: calc(50% + 105px);
+  top: calc(50% + 108px);
   width: 32px;
   height: 32px;
   background-color: var(--speedometer-background);
@@ -940,10 +1043,24 @@
   align-items: center;
   justify-content: flex-end;
   cursor: pointer;
-  transition: width 0.3s ease, background-color 0.25s ease, opacity 0.3s ease;
+  transition: width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease;
   overflow: hidden;
   opacity: 0.5;
   z-index: 1000;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.date-filter-standalone * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -moz-user-select: none !important;
+  -ms-user-select: none !important;
+  -webkit-touch-callout: none !important;
 }
 
 .date-filter-standalone:hover {
@@ -992,6 +1109,10 @@
   text-overflow: ellipsis;
   padding-left: 8px;
   transition: opacity 0.3s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 
 .date-filter-text.visible {

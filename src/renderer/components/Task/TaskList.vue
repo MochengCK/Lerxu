@@ -344,10 +344,22 @@
       },
       getItemClass (item) {
         const isSelected = this.selectedList.includes(item.gid)
+        const completed = Number(item && item.completedLength ? item.completedLength : 0) || 0
+        const total = Number(item && item.totalLength ? item.totalLength : 0) || 0
+        const speed = Number(item && item.downloadSpeed ? item.downloadSpeed : 0) || 0
+        const isIndeterminateProgress = (
+          this.taskProgressMode === 'background' &&
+          item &&
+          item.status === TASK_STATUS.ACTIVE &&
+          !(total > 0) &&
+          speed > 0 &&
+          completed >= 0
+        )
         return {
           'task-item-wrapper': true,
           [`task-item-wrapper--${this.viewMode}`]: true,
           'task-item-wrapper--background-progress': this.taskProgressMode === 'background',
+          'task-item-wrapper--indeterminate': isIndeterminateProgress,
           selected: isSelected
         }
       },
@@ -365,6 +377,8 @@
         const status = item.status
         if (status === TASK_STATUS.COMPLETE || status === TASK_STATUS.SEEDING) {
           progress = 100
+        } else if (status === TASK_STATUS.ACTIVE && !(total > 0) && (Number(item.downloadSpeed) || 0) > 0) {
+          progress = 30
         } else if (!Number.isFinite(progress)) {
           progress = 0
         } else if (progress < 0) {
@@ -524,6 +538,11 @@
       border-radius: 6px; // 直接设置圆角，确保进度条不超出容器
     }
 
+    &.task-item-wrapper--indeterminate::before {
+      transition: none;
+      animation: mo-task-indeterminate 1.2s ease-in-out infinite;
+    }
+
     // 确保内容在进度条之上
     & > .task-item {
       position: relative;
@@ -531,6 +550,15 @@
       background: transparent; // 确保TaskItem背景透明，让进度条可见
       border: none; // 移除TaskItem的边框，由wrapper控制
     }
+  }
+}
+
+@keyframes mo-task-indeterminate {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(410%);
   }
 }
 

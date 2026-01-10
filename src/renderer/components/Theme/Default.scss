@@ -10,8 +10,8 @@ body {
     "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-variant: tabular-nums;
   font-size: $--font-size-medium;
-  overflow-y: scroll;
-  overflow-x: hidden;
+  margin: 0;
+  overflow: hidden;
 }
 
 ::-webkit-scrollbar {
@@ -163,6 +163,21 @@ iframe {
 #container {
   height: 100%;
   background-color: $--app-background;
+}
+
+.has-app-background-image {
+  body {
+    overflow-y: hidden;
+  }
+
+  #app,
+  #container,
+  .main,
+  .panel:not(.task-detail-drawer),
+  .form-actions {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
 }
 
 .draggable {

@@ -37,6 +37,11 @@ const userKeys = [
   'task-notification',
   'task-complete-notify-click-action',
   'theme',
+  'background-type',
+  'background-image',
+  'background-image-opacity',
+  'background-image-frosted-blur',
+  'background-ui-opacity',
   'tracker-source',
   'tracker-source-discovered',
   'tracker-source-origins',
@@ -67,6 +72,8 @@ const userKeys = [
   'enable-security-scan',
   'security-scan-tool',
   'custom-security-scan-path',
+  'task-detail-default-transparent',
+  'task-detail-frosted-blur',
   'task-view-mode'
 ]
 

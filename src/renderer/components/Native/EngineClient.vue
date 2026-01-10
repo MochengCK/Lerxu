@@ -89,6 +89,17 @@
       }
     },
     methods: {
+      maybeEnterIdleInterval () {
+        const hidden = typeof document !== 'undefined' && !!document.hidden
+        const stat = (this.$store.state.app && this.$store.state.app.stat) ? this.$store.state.app.stat : {}
+        const numActive = Number(stat.numActive || 0)
+        const numWaiting = Number(stat.numWaiting || 0)
+        const busy = (numActive + numWaiting) > 0 || !!this.taskDetailVisible
+        if (hidden && !busy) {
+          this.$store.dispatch('app/updateInterval', 30000)
+          this.$store.dispatch('app/clearProgress')
+        }
+      },
       renamePreserveTimes (from, to) {
         try {
           const st = statSync(from)
@@ -146,6 +157,7 @@
         this.$store.dispatch('task/fetchList')
         this.$store.dispatch('app/resetInterval')
         this.$store.dispatch('task/saveSession')
+        this.kickPolling()
         const [{ gid }] = event
         const { seedingList } = this
         if (seedingList.includes(gid)) {
@@ -1153,12 +1165,16 @@
         const cfg = this.$store.state.preference.config || {}
         const autoCategorizeEnabled = cfg.autoCategorizeFiles
 
+        console.log('[Motrix] Auto categorize check - enabled:', autoCategorizeEnabled)
+
         if (!autoCategorizeEnabled) {
           console.log('[Motrix] Auto categorize files is disabled')
           return
         }
 
         const categories = cfg.fileCategories
+        console.log('[Motrix] Auto categorize categories:', categories)
+
         if (!categories || Object.keys(categories).length === 0) {
           console.log('[Motrix] No file categories configured, skip auto categorize')
           return
@@ -1462,10 +1478,23 @@
         api.client.removeListener('onBtDownloadComplete', this.onBtDownloadComplete)
       },
       startPolling () {
+        this.stopPolling()
         this.timer = setTimeout(() => {
           this.polling()
           this.startPolling()
         }, this.interval)
+      },
+      kickPolling () {
+        const now = Date.now()
+        if (this._pollingKickAt && now - this._pollingKickAt < 400) {
+          return
+        }
+        this._pollingKickAt = now
+        this.stopPolling()
+        this.timer = setTimeout(() => {
+          this.polling()
+          this.startPolling()
+        }, 0)
       },
       polling () {
         this.pollingCount = (this.pollingCount || 0) + 1
@@ -1474,8 +1503,20 @@
           this.persistAllActiveTasksAverageSpeed()
         }
 
+        this.maybeEnterIdleInterval()
+
+        const stat = (this.$store.state.app && this.$store.state.app.stat) ? this.$store.state.app.stat : {}
+        const numActive = Number(stat.numActive || 0)
+        const numWaiting = Number(stat.numWaiting || 0)
+        const hasActiveOrWaiting = (numActive + numWaiting) > 0
+
         this.$store.dispatch('app/fetchGlobalStat')
-        this.$store.dispatch('app/fetchProgress')
+        if (hasActiveOrWaiting) {
+          this.$store.dispatch('app/fetchProgress')
+        } else {
+          this.$store.dispatch('app/clearProgress')
+        }
+
         this.$store.dispatch('task/fetchList').then(() => {
           this.sampleAverageSpeedForActiveTasks()
           this.checkMagnetAlerts()
@@ -1751,6 +1792,80 @@
             updatedAt: Date.now()
           })
         })
+
+        this.pruneInternalMapsByTaskList(list)
+      },
+      pruneInternalMapsByTaskList (list) {
+        const gids = Array.isArray(list) ? list.map(t => `${t && t.gid ? t.gid : ''}`).filter(Boolean) : []
+        const gidSet = new Set(gids)
+
+        const capSet = (set, cap) => {
+          if (!set || typeof set.size !== 'number' || set.size <= cap) {
+            return
+          }
+          const over = set.size - cap
+          if (over <= 0) {
+            return
+          }
+          const it = set.values()
+          for (let i = 0; i < over; i++) {
+            const r = it.next()
+            if (r && !r.done) {
+              set.delete(r.value)
+            } else {
+              break
+            }
+          }
+        }
+
+        const pruneObj = (obj) => {
+          const next = {}
+          Object.keys(obj || {}).forEach(gid => {
+            if (gidSet.has(gid)) {
+              next[gid] = obj[gid]
+            }
+          })
+          return next
+        }
+
+        this.magnetZeroMap = pruneObj(this.magnetZeroMap)
+        this.dataAccessZeroMap = pruneObj(this.dataAccessZeroMap)
+        this.dataAccessLastCompletedMap = pruneObj(this.dataAccessLastCompletedMap)
+
+        if (this.magnetAlertedSet && this.magnetAlertedSet.size > 0) {
+          Array.from(this.magnetAlertedSet).forEach(gid => {
+            if (!gidSet.has(`${gid}`)) {
+              this.magnetAlertedSet.delete(gid)
+            }
+          })
+        }
+
+        if (this.downloadStartNotifiedGids && this.downloadStartNotifiedGids.size > 0) {
+          Array.from(this.downloadStartNotifiedGids).forEach(gid => {
+            if (!gidSet.has(`${gid}`)) {
+              this.downloadStartNotifiedGids.delete(gid)
+            }
+          })
+          capSet(this.downloadStartNotifiedGids, 2000)
+        }
+
+        if (this._resumedCompletedFixedGids && this._resumedCompletedFixedGids.size > 0) {
+          Array.from(this._resumedCompletedFixedGids).forEach(gid => {
+            if (!gidSet.has(`${gid}`)) {
+              this._resumedCompletedFixedGids.delete(gid)
+            }
+          })
+          capSet(this._resumedCompletedFixedGids, 2000)
+        }
+
+        if (this._bilibiliMergeNotified && this._bilibiliMergeNotified.size > 0) {
+          Array.from(this._bilibiliMergeNotified).forEach(gid => {
+            if (!gidSet.has(`${gid}`)) {
+              this._bilibiliMergeNotified.delete(gid)
+            }
+          })
+          capSet(this._bilibiliMergeNotified, 500)
+        }
       },
       resolveErrorReason (errorCode, errorMessage = '') {
         const code = Number(errorCode)
@@ -1894,6 +2009,7 @@
       this._resumedCompletedLastRun = 0
       this._resumedCompletedFixedGids = new Set()
       this._bilibiliMergeNotified = new Set()
+      this._pollingKickAt = 0
     },
     mounted () {
       setTimeout(() => {
@@ -1902,6 +2018,16 @@
 
         this.startPolling()
       }, 100)
+
+      this._visibilityHandler = () => {
+        this.maybeEnterIdleInterval()
+        if (typeof document !== 'undefined' && document && !document.hidden) {
+          this.kickPolling()
+        }
+      }
+      if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', this._visibilityHandler)
+      }
     },
     destroyed () {
       this.$store.dispatch('task/saveSession')
@@ -1909,6 +2035,10 @@
       this.unbindEngineEvents()
 
       this.stopPolling()
+
+      if (this._visibilityHandler && typeof document !== 'undefined' && document && typeof document.removeEventListener === 'function') {
+        document.removeEventListener('visibilitychange', this._visibilityHandler)
+      }
     }
   }
 </script>

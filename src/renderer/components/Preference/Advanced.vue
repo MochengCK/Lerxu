@@ -436,11 +436,17 @@
                     @change="onEngineBinaryChange"
                   >
                     <el-option
-                      v-for="engine in engineList"
-                      :key="engine"
-                      :label="engine"
-                      :value="engine"
-                    ></el-option>
+                      v-for="engine in storeEngineList.engines"
+                      :key="engine.name"
+                      :label="engine.name + (engine.isDefault ? ' (Default)' : '')"
+                      :value="engine.name"
+                    >
+                      <span style="float: left">{{ engine.name }}</span>
+                      <span style="float: right; color: #8492a6; font-size: 13px">
+                        {{ formatFileSize(engine.size) }}
+                        {{ engine.isDefault ? '(Default)' : '' }}
+                      </span>
+                    </el-option>
                   </el-select>
                 </el-col>
               </el-row>
@@ -856,7 +862,6 @@
         trackerSourceOptions: [],
         trackerSyncing: false,
         saveTimeout: null,
-        engineList: [],
         trackerSourceConfigVisible: false,
         trackerSourceInput: '',
         // 添加标志，用于跟踪引擎配置是否已初始化
@@ -892,11 +897,17 @@
       ...mapState('app', ['isCheckingUpdate']),
       ...mapState('preference', ['updateAvailable', 'newVersion', 'isDownloadingUpdate', 'downloadProgress', 'releaseNotes', 'searchKeyword']),
       ...mapState('app', {
-        storeEngineInfo: state => state.engineInfo
+        storeEngineInfo: state => state.engineInfo,
+        storeEngineList: state => state.engineList
       }),
       configEngineBinary () {
         const { config = {} } = this.$store.state.preference
         return config.engineBinary || config['engine-binary']
+      },
+      engineList () {
+        // 从store中获取引擎列表，并转换为选择器需要的格式
+        const { engines = [] } = this.storeEngineList
+        return engines.map(engine => engine.name)
       },
       engineInfo () {
         return this.storeEngineInfo
@@ -1516,11 +1527,10 @@
       // 获取引擎列表方法
       async fetchEngineList () {
         try {
-          const engines = await this.$electron.ipcRenderer.invoke('get-engine-list')
-          this.engineList = engines
+          await this.$store.dispatch('app/fetchEngineList')
         } catch (error) {
           console.error('Failed to get engine list:', error)
-          this.engineList = []
+          this.$msg.error(this.$t('preferences.engine-list-fetch-error') || 'Failed to fetch engine list')
         }
       },
       autoSaveForm () {
@@ -1538,6 +1548,18 @@
       onEngineBinaryChange () {
         // 引擎选择变化时，直接触发保存，不更新formOriginal
         this.autoSaveForm()
+      },
+      formatFileSize (bytes) {
+        if (!bytes || bytes === 0) return '0 B'
+        const k = 1024
+        const sizes = ['B', 'KB', 'MB', 'GB']
+        const i = Math.floor(Math.log(bytes) / Math.log(k))
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+      },
+      formatDate (date) {
+        if (!date) return '--'
+        const d = new Date(date)
+        return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       },
       handleLocaleChange (locale) {
         const lng = getLanguage(locale)

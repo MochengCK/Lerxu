@@ -313,7 +313,28 @@
           return ''
         }
         return this.$t('task.waiting-download-data')
+      }
+    },
+    watch: {
+      dataAccessHintText () {
+        this.updateStatusTruncation()
       },
+      magnetHintText () {
+        this.updateStatusTruncation()
+      }
+    },
+    mounted () {
+      this.updateStatusTruncation()
+      if (typeof window !== 'undefined') {
+        window.addEventListener('resize', this.updateStatusTruncation)
+      }
+    },
+    beforeDestroy () {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('resize', this.updateStatusTruncation)
+      }
+    },
+    methods: {
       resolveErrorReason (errorCode, errorMessage = '') {
         const code = Number(errorCode)
         if (!code) {
@@ -339,28 +360,7 @@
           return this.$t('task.error-reason-disk')
         }
         return this.$t('task.error-reason-generic')
-      }
-    },
-    watch: {
-      dataAccessHintText () {
-        this.updateStatusTruncation()
       },
-      magnetHintText () {
-        this.updateStatusTruncation()
-      }
-    },
-    mounted () {
-      this.updateStatusTruncation()
-      if (typeof window !== 'undefined') {
-        window.addEventListener('resize', this.updateStatusTruncation)
-      }
-    },
-    beforeDestroy () {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('resize', this.updateStatusTruncation)
-      }
-    },
-    methods: {
       updateStatusTruncation () {
         this.$nextTick(() => {
           const el = this.$refs.magnetHintText || this.$refs.statusText

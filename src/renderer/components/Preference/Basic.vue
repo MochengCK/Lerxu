@@ -29,6 +29,22 @@
                 {{ $t('preferences.auto-hide-window') }}
               </el-checkbox>
             </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.taskDetailDefaultTransparent" @change="autoSaveForm">
+                {{ $t('preferences.task-detail-default-transparent') }}
+              </el-checkbox>
+            </el-col>
+            <el-col v-if="form.taskDetailDefaultTransparent" class="form-item-sub" :span="24">
+              <el-form-item class="background-slider-item" :label="$t('preferences.task-detail-frosted-strength')">
+                <el-slider
+                  v-model="form.taskDetailFrostedBlur"
+                  :min="0"
+                  :max="20"
+                  :step="1"
+                  @change="autoSaveForm"
+                />
+              </el-form-item>
+            </el-col>
             <el-col v-if="isMac" class="form-item-sub" :span="16">
               <el-checkbox v-model="form.traySpeedometer" @change="autoSaveForm">
                 {{ $t('preferences.tray-speedometer') }}
@@ -91,6 +107,58 @@
                     value="always"
                   />
                 </el-select>
+              </el-form-item>
+            </el-col>
+          </el-form-item>
+        </div>
+
+        <!-- 背景设置卡片 -->
+        <div class="preference-card">
+          <div class="card-title background-type-nav">
+            <div class="background-type-nav__left">
+              <el-radio-group v-model="form.backgroundType" size="mini" @change="autoSaveForm">
+                <el-radio-button label="color">{{ $t('preferences.background-type-color') }}</el-radio-button>
+                <el-radio-button label="image">{{ $t('preferences.background-type-image') }}</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div class="background-type-nav__right">
+              <el-button type="primary" size="mini" @click.stop="selectBackgroundImage">
+                {{ $t('preferences.background-image-select') }}
+              </el-button>
+            </div>
+          </div>
+          <el-form-item size="mini">
+            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
+              <el-form-item class="background-slider-item" :label="$t('preferences.background-image-opacity')">
+                <el-slider
+                  v-model="backgroundImageOpacityPercent"
+                  :min="0"
+                  :max="100"
+                  :step="1"
+                  @change="autoSaveForm"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
+              <el-form-item class="background-slider-item" :label="$t('preferences.background-image-frosted-strength')">
+                <el-slider
+                  v-model="form.backgroundImageFrostedBlur"
+                  :min="0"
+                  :max="20"
+                  :step="1"
+                  @change="autoSaveForm"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
+              <el-form-item class="background-slider-item" :label="$t('preferences.background-ui-opacity')">
+                <el-slider
+                  v-model="backgroundUiOpacityPercent"
+                  :min="30"
+                  :max="100"
+                  :step="1"
+                  @change="autoSaveForm"
+                />
               </el-form-item>
             </el-col>
           </el-form-item>
@@ -626,6 +694,7 @@
         :visible.sync="showCategoryDialog"
         width="800px"
         custom-class="tab-title-dialog category-rules-dialog"
+        append-to-body
         @open="handleCategoryDialogOpen"
         @close="handleCategoryDialogClose"
         :before-close="handleCategoryDialogBeforeClose"
@@ -788,6 +857,13 @@
       taskCompleteNotifyClickAction,
       theme,
       traySpeedometer,
+      backgroundType,
+      backgroundImage,
+      backgroundImageOpacity,
+      backgroundImageFrostedBlur,
+      backgroundUiOpacity,
+      taskDetailDefaultTransparent,
+      taskDetailFrostedBlur,
       autoCategorizeFiles,
       fileCategories,
       setFileMtimeOnComplete,
@@ -858,6 +934,21 @@
       taskCompleteNotifyClickAction: taskCompleteNotifyClickAction || 'open-folder',
       theme,
       traySpeedometer,
+      backgroundType: backgroundType || 'color',
+      backgroundImage: backgroundImage || '',
+      backgroundImageOpacity: (typeof backgroundImageOpacity === 'number' && Number.isFinite(backgroundImageOpacity))
+        ? Math.min(Math.max(backgroundImageOpacity, 0), 1)
+        : 0.3,
+      backgroundImageFrostedBlur: (typeof backgroundImageFrostedBlur === 'number' && Number.isFinite(backgroundImageFrostedBlur))
+        ? Math.min(Math.max(backgroundImageFrostedBlur, 0), 20)
+        : 0,
+      backgroundUiOpacity: (typeof backgroundUiOpacity === 'number' && Number.isFinite(backgroundUiOpacity))
+        ? Math.min(Math.max(backgroundUiOpacity, 0.3), 1)
+        : 0.9,
+      taskDetailDefaultTransparent: taskDetailDefaultTransparent === undefined ? false : !!taskDetailDefaultTransparent,
+      taskDetailFrostedBlur: (typeof taskDetailFrostedBlur === 'number' && Number.isFinite(taskDetailFrostedBlur))
+        ? Math.min(Math.max(taskDetailFrostedBlur, 0), 20)
+        : 0,
       autoCategorizeFiles: autoCategorizeFiles || false,
       setFileMtimeOnComplete: setFileMtimeOnComplete || false,
       fileCategories: fileCategories || {
@@ -1036,6 +1127,40 @@
       },
       showHideAppMenuOption () {
         return is.windows() || is.linux()
+      },
+      backgroundImageOpacityPercent: {
+        get () {
+          const o = Number(this.form.backgroundImageOpacity)
+          const clamped = Number.isFinite(o) ? Math.min(Math.max(o, 0), 1) : 0.3
+          return Math.round(clamped * 100)
+        },
+        set (value) {
+          const n = Number(value)
+          const percent = Number.isFinite(n) ? Math.min(Math.max(n, 0), 100) : 30
+          this.form.backgroundImageOpacity = percent / 100
+        }
+      },
+      backgroundUiOpacityPercent: {
+        get () {
+          const o = Number(this.form.backgroundUiOpacity)
+          const clamped = Number.isFinite(o) ? Math.min(Math.max(o, 0.3), 1) : 0.9
+          return Math.round(clamped * 100)
+        },
+        set (value) {
+          const n = Number(value)
+          const percent = Number.isFinite(n) ? Math.min(Math.max(n, 30), 100) : 90
+          this.form.backgroundUiOpacity = percent / 100
+        }
+      },
+      backgroundImageDisplay () {
+        const p = this.form.backgroundImage
+        if (!p) return this.$t('preferences.background-image-not-selected')
+        try {
+          const path = require('path')
+          return path.basename(p)
+        } catch (_) {
+          return p
+        }
       },
       appChannelUrl () {
         return `http://127.0.0.1:${APP_HTTP_PORT}`
@@ -1400,6 +1525,133 @@
         this.form.theme = theme
         this.autoSaveForm()
       },
+      getBackgroundImageCacheDir () {
+        try {
+          const { app } = require('@electron/remote')
+          const path = require('path')
+          const userData = app.getPath('userData')
+          return path.join(userData, 'background-images')
+        } catch (e) {
+          return ''
+        }
+      },
+      isCachedBackgroundImagePath (p) {
+        try {
+          const path = require('path')
+          const cacheDir = this.getBackgroundImageCacheDir()
+          if (!cacheDir) return false
+          const resolvedCache = path.resolve(cacheDir)
+          const resolvedPath = path.resolve(p || '')
+          const prefix = resolvedCache.endsWith(path.sep) ? resolvedCache : `${resolvedCache}${path.sep}`
+          return resolvedPath.toLowerCase().startsWith(prefix.toLowerCase())
+        } catch (e) {
+          return false
+        }
+      },
+      async cacheBackgroundImageToAppDir (sourcePath) {
+        const src = `${sourcePath || ''}`.trim()
+        if (!src) return ''
+        if (this.isCachedBackgroundImagePath(src)) return src
+
+        const cacheDir = this.getBackgroundImageCacheDir()
+        if (!cacheDir) return ''
+
+        const fs = require('fs')
+        const path = require('path')
+        const crypto = require('crypto')
+
+        try {
+          fs.mkdirSync(cacheDir, { recursive: true })
+        } catch (e) {}
+
+        const ext = path.extname(src) || '.img'
+        const lowerExt = `${ext || ''}`.toLowerCase()
+        const rand = crypto.randomBytes(6).toString('hex')
+        const base = `bg-${Date.now()}-${rand}`
+
+        let output = null
+        let outputExt = ext
+
+        try {
+          if (lowerExt !== '.gif' && lowerExt !== '.svg') {
+            const { nativeImage } = require('electron')
+            const img = nativeImage.createFromPath(src)
+            if (img && !img.isEmpty()) {
+              const size = img.getSize()
+              const maxSide = 2560
+              const w = Number(size && size.width)
+              const h = Number(size && size.height)
+              const longest = Math.max(Number.isFinite(w) ? w : 0, Number.isFinite(h) ? h : 0)
+              const scale = longest > maxSide ? (maxSide / longest) : 1
+              const targetW = Math.max(1, Math.round((Number.isFinite(w) ? w : 1) * scale))
+              const targetH = Math.max(1, Math.round((Number.isFinite(h) ? h : 1) * scale))
+              const processed = scale < 1 ? img.resize({ width: targetW, height: targetH, quality: 'good' }) : img
+
+              if (lowerExt === '.jpg' || lowerExt === '.jpeg' || lowerExt === '.webp') {
+                output = processed.toJPEG(80)
+                outputExt = '.jpg'
+              } else {
+                output = processed.toPNG()
+                outputExt = '.png'
+              }
+            }
+          }
+        } catch (e) {}
+
+        const filename = `${base}${outputExt}`
+        const dest = path.join(cacheDir, filename)
+        if (output && output.length) {
+          await fs.promises.writeFile(dest, output)
+        } else {
+          await fs.promises.copyFile(src, dest)
+        }
+        return dest
+      },
+      async deleteCachedBackgroundImageIfNeeded (p) {
+        const target = `${p || ''}`.trim()
+        if (!target) return
+        if (!this.isCachedBackgroundImagePath(target)) return
+        try {
+          const fs = require('fs')
+          await fs.promises.unlink(target)
+        } catch (e) {}
+      },
+      async selectBackgroundImage () {
+        try {
+          const { dialog } = require('@electron/remote')
+          const result = await dialog.showOpenDialog({
+            title: this.$t('preferences.background-image-select'),
+            properties: ['openFile'],
+            filters: [
+              { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] }
+            ]
+          })
+          if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+            return
+          }
+          const selected = result.filePaths[0]
+          const oldPath = this.form.backgroundImage
+          const cached = await this.cacheBackgroundImageToAppDir(selected)
+          if (!cached) {
+            throw new Error('cache background image failed')
+          }
+          this.form.backgroundImage = cached
+          this.form.backgroundType = 'image'
+          this.autoSaveForm()
+          if (oldPath && oldPath !== cached) {
+            await this.deleteCachedBackgroundImageIfNeeded(oldPath)
+          }
+        } catch (e) {
+          this.$msg.error(this.$t('preferences.save-fail-message'))
+        }
+      },
+      clearBackgroundImage () {
+        const oldPath = this.form.backgroundImage
+        this.form.backgroundImage = ''
+        this.form.backgroundType = 'color'
+        this.autoSaveForm()
+        this.deleteCachedBackgroundImageIfNeeded(oldPath)
+      },
       handleDownloadChange (value) {
         const speedLimit = parseInt(this.form.maxOverallDownloadLimit, 10)
         this.downloadUnit = value
@@ -1756,9 +2008,49 @@
 </script>
 
 <style lang="scss" scoped>
- .content {
-   height: 100%;
- }
+.background-type-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.background-type-nav :deep(.el-radio-group) {
+  display: inline-flex;
+}
+
+.background-type-nav__left {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.background-type-nav__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+:deep(.background-slider-item .el-form-item__label) {
+  float: none;
+  display: block;
+  text-align: left;
+  line-height: 1.2;
+  padding: 0 0 8px;
+}
+
+:deep(.background-slider-item .el-form-item__content) {
+  margin-left: 0 !important;
+}
+
+:deep(.background-slider-item.el-form-item) {
+  margin-bottom: 0px;
+}
+
+.content {
+  height: 100%;
+}
 
  .panel {
    background: var(--panel-background);
@@ -1816,18 +2108,18 @@
    margin-bottom: 0;
  }
 
- .category-item h4 {
-   margin: 0 0 8px 0;
-   font-size: 14px;
-   font-weight: 500;
-   color: $--color-text-primary;
- }
+.category-item h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: $--color-text-primary;
+}
 
- /* 弹窗样式 */
- .category-dialog-content {
-   max-height: 400px;
-   overflow-y: auto;
-   margin-bottom: 60px; /* 为底部按钮留出空间 */
+/* 弹窗样式 */
+.category-dialog-content {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 60px; /* 为底部按钮留出空间 */
  }
 
  /* 弹窗标题样式 */
@@ -1905,9 +2197,9 @@
    color: var(--text-color-primary);
  }
 
- :deep(.el-input__inner:focus) {
-   border-color: var(--primary-color);
- }
+:deep(.el-input__inner:focus) {
+  border-color: var(--primary-color, #409eff);
+}
 
  :deep(.el-button:not(.el-button--primary)) {
    background: var(--button-background);
@@ -1915,50 +2207,50 @@
    color: var(--text-color-primary);
  }
 
- :deep(.el-button--primary) {
-   background: var(--primary-color);
-   border-color: var(--primary-color);
-   color: #fff;
- }
+:deep(.el-button--primary) {
+  background: var(--primary-color, #409eff);
+  border-color: var(--primary-color, #409eff);
+  color: #fff;
+}
 
- :deep(.el-button--primary:disabled) {
-   background: var(--primary-color);
-   border-color: var(--primary-color);
-   color: #fff;
-   cursor: not-allowed;
- }
+:deep(.el-button--primary:disabled) {
+  background: var(--primary-color, #409eff);
+  border-color: var(--primary-color, #409eff);
+  color: #fff;
+  cursor: not-allowed;
+}
 
  /* 编辑规则按钮优化样式 */
- .edit-rules-btn {
+.edit-rules-btn {
    margin-left: 8px;
    padding: 6px 12px;
    border-radius: 6px;
    font-weight: 500;
    transition: all 0.2s ease-in-out;
    border: 1px solid transparent;
-   background: var(--primary-color);
-   color: #fff;
- }
+  background: var(--primary-color, #409eff);
+  color: #fff;
+}
 
  /* 白天模式适配 */
  .theme-light .edit-rules-btn {
    color: #000;
  }
 
- .theme-light .edit-rules-btn:hover {
-   color: #000;
-   background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-light-1) 100%);
- }
+.theme-light .edit-rules-btn:hover {
+  color: #000;
+  background: linear-gradient(135deg, var(--primary-color, #409eff) 0%, var(--primary-color-light-1, #66b1ff) 100%);
+}
 
- .edit-rules-btn:hover {
-   background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-light-1) 100%);
-   border-color: var(--primary-color-light-1);
- }
+.edit-rules-btn:hover {
+  background: linear-gradient(135deg, var(--primary-color, #409eff) 0%, var(--primary-color-light-1, #66b1ff) 100%);
+  border-color: var(--primary-color-light-1, #66b1ff);
+}
 
- .edit-rules-btn:active {
-   background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-light-1) 100%);
-   border-color: var(--primary-color-light-1);
- }
+.edit-rules-btn:active {
+  background: linear-gradient(135deg, var(--primary-color, #409eff) 0%, var(--primary-color-light-1, #66b1ff) 100%);
+  border-color: var(--primary-color-light-1, #66b1ff);
+}
 
  .edit-rules-btn .el-icon-edit {
    margin-right: 4px;
@@ -1966,14 +2258,14 @@
  }
 
  /* 黑夜模式适配 */
- .theme-dark .edit-rules-btn {
-   background: var(--primary-color);
-   border-color: transparent;
-   color: #fff;
- }
+.theme-dark .edit-rules-btn {
+  background: var(--primary-color, #409eff);
+  border-color: transparent;
+  color: #fff;
+}
 
- .theme-dark .edit-rules-btn:hover {
-   background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-light-1) 100%);
+.theme-dark .edit-rules-btn:hover {
+  background: linear-gradient(135deg, var(--primary-color, #409eff) 0%, var(--primary-color-light-1, #66b1ff) 100%);
    border-color: var(--primary-color-light-1);
  }
 

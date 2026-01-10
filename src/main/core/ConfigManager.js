@@ -8,6 +8,7 @@ import {
   getMaxConnectionPerServer,
   getUserDownloadsPath
 } from '../utils/index'
+import { engineBinMap } from '../configs/engine'
 import {
   APP_RUN_MODE,
   APP_THEME,
@@ -114,7 +115,7 @@ export default class ConfigManager {
         'task-priorities': {},
         'task-multi-select-modifier': 'ctrl',
         'enable-upnp': true,
-        'engine-binary': '',
+        'engine-binary': engineBinMap[process.platform] || 'aria2c',
         'engine-max-connection-per-server': getMaxConnectionPerServer(),
         'favorite-directories': [],
         'hide-app-menu': false,
@@ -143,6 +144,9 @@ export default class ConfigManager {
         'task-notification': true,
         'task-complete-notify-click-action': 'open-folder',
         'theme': APP_THEME.AUTO,
+        'background-type': 'color',
+        'background-image': EMPTY_STRING,
+        'background-image-opacity': 0.3,
         'tracker-source': [
           NGOSANG_TRACKERS_BEST_IP_URL_CDN,
           NGOSANG_TRACKERS_BEST_URL_CDN

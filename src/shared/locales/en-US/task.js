@@ -78,6 +78,7 @@ export default {
   'task-peer-host': 'Host',
   'task-peer-ip': 'IP',
   'task-peer-client': 'Client',
+  'task-peer-downloaded': 'Downloaded',
   'navigate-to-downloading': 'Navigate to Downloading',
   'show-advanced-options': 'Advanced Options',
   'copyright-warning': 'Copyright Warning',
@@ -274,5 +275,11 @@ export default {
   'select-date': 'Select Date',
   'select-date-placeholder': 'Please select a date',
   'show-all': 'Show All',
-  'all-tasks': 'All Tasks'
+  'all-tasks': 'All Tasks',
+  'today': 'Today',
+  'clear-filter': 'Clear',
+  'tasks-count': '{count} tasks',
+  'prev-month': 'Previous month',
+  'next-month': 'Next month',
+  'dblclick-to-today': 'Double-click to go to today'
 }

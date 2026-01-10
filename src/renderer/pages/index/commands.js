@@ -181,6 +181,10 @@ const handleTaskProgressControl = (payload = {}) => {
   commands.emit('task-progress:control', payload)
 }
 
+const updateEngineList = (payload = {}) => {
+  store.commit('app/UPDATE_ENGINE_LIST', payload)
+}
+
 commands.register('application:task-list', navigateTaskList)
 commands.register('application:preferences', navigatePreferences)
 
@@ -203,3 +207,4 @@ commands.register('application:update-theme', updateTheme)
 commands.register('application:update-locale', updateLocale)
 commands.register('application:update-tray-focused', updateTrayFocused)
 commands.register('task-progress:control', handleTaskProgressControl)
+commands.register('engine-list', updateEngineList)

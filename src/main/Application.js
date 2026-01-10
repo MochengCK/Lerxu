@@ -16,9 +16,10 @@ import {
   PROXY_SCOPES,
   PROXY_MODE,
   APP_HTTP_PORT,
-  ADD_TASK_TYPE
+  ADD_TASK_TYPE,
+  TASK_STATUS
 } from '@shared/constants'
-import { checkIsNeedRunAdvanced, removeExtensionDot } from '@shared/utils'
+import { bytesToSize, checkIsNeedRunAdvanced, getTaskName, removeExtensionDot, timeFormat, timeRemaining } from '@shared/utils'
 import {
   convertTrackerDataToComma,
   fetchBtTrackerFromSource,
@@ -127,6 +128,9 @@ export default class Application extends EventEmitter {
 
     // 应用启动时自动获取引擎信息
     await this.autoFetchEngineInfo()
+
+    // 应用启动时自动获取引擎列表
+    await this.autoFetchEngineList()
 
     this.emit('application:initialized')
   }
@@ -660,6 +664,33 @@ export default class Application extends EventEmitter {
         features: [],
         dependencies: [],
         compileInfo: 'Unknown'
+      })
+    }
+  }
+
+  async autoFetchEngineList () {
+    try {
+      logger.info('[Motrix] Auto fetching engine list on app startup')
+      const { platform, arch } = process
+      const engineList = getEngineList(platform, arch)
+      logger.info('[Motrix] Engine list fetched successfully:', engineList)
+
+      // 发送引擎列表到所有窗口
+      this.sendCommandToAll('engine-list', {
+        engines: engineList,
+        platform,
+        arch,
+        timestamp: Date.now()
+      })
+    } catch (error) {
+      logger.warn('[Motrix] Failed to fetch engine list on startup:', error.message)
+      // 发送错误信息到前端
+      this.sendCommandToAll('engine-list', {
+        error: error.message,
+        engines: [],
+        platform: process.platform,
+        arch: process.arch,
+        timestamp: Date.now()
       })
     }
   }
@@ -2428,6 +2459,29 @@ export default class Application extends EventEmitter {
       }
     })
 
+    this.on('engine:get-list', async () => {
+      try {
+        const { platform, arch } = process
+        const engineList = getEngineList(platform, arch)
+        logger.info('[Motrix] Engine list retrieved:', engineList)
+        this.sendCommandToAll('engine-list', {
+          engines: engineList,
+          platform,
+          arch,
+          timestamp: Date.now()
+        })
+      } catch (error) {
+        logger.error('[Motrix] Failed to get engine list:', error)
+        this.sendCommandToAll('engine-list', {
+          error: error.message,
+          engines: [],
+          platform: process.platform,
+          arch: process.arch,
+          timestamp: Date.now()
+        })
+      }
+    })
+
     this.on('application:reveal-in-folder', (data) => {
       const { gid, path } = data
       logger.info('[Motrix] application:reveal-in-folder===>', path)
@@ -2765,9 +2819,28 @@ export default class Application extends EventEmitter {
     })
 
     ipcMain.handle('get-engine-list', async () => {
-      const { platform, arch } = process
-      const engines = getEngineList(platform, arch)
-      return engines
+      try {
+        const { platform, arch } = process
+        const engines = getEngineList(platform, arch)
+        logger.info('[Motrix] IPC get-engine-list:', engines)
+        return {
+          success: true,
+          engines,
+          platform,
+          arch,
+          timestamp: Date.now()
+        }
+      } catch (error) {
+        logger.error('[Motrix] IPC get-engine-list failed:', error)
+        return {
+          success: false,
+          error: error.message,
+          engines: [],
+          platform: process.platform,
+          arch: process.arch,
+          timestamp: Date.now()
+        }
+      }
     })
 
     ipcMain.handle('aria2-conf:read', async () => {
@@ -2846,6 +2919,187 @@ export default class Application extends EventEmitter {
         logger.warn('[Motrix] Failed to resize progress window:', e.message)
       }
       return { success: false }
+    })
+
+    ipcMain.handle('task-progress:fetch', async (_event, payload = {}) => {
+      const gid = payload && payload.gid ? String(payload.gid) : ''
+      const includeConnections = !!(payload && payload.includeConnections)
+      if (!gid) {
+        return { success: false, error: 'invalid-gid' }
+      }
+
+      const task = await this.engineClient.call('tellStatus', gid)
+      if (!task || !task.gid) {
+        return { success: false, done: true, error: 'task-not-found' }
+      }
+
+      const status = task.status
+      const doneStatuses = [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED]
+      if (doneStatuses.includes(status)) {
+        return { success: true, done: true }
+      }
+
+      const completed = Number(task.completedLength || 0)
+      const total = Number(task.totalLength || 0)
+      const speed = Number(task.downloadSpeed || 0)
+      const connections = Number(task.connections || 0)
+      const percent = total > 0 ? Math.floor((completed * 100) / total) : 0
+      const title = getTaskName(task, {
+        defaultName: this.i18n.t('task.get-task-name'),
+        maxLen: -1
+      })
+      const completedText = bytesToSize(completed, 2)
+      const totalText = total > 0 ? bytesToSize(total, 2) : ''
+      const sizeText = totalText ? `${this.i18n.t('task.task-file-size')}: ${completedText} / ${totalText}` : `${this.i18n.t('task.task-file-size')}: ${completedText}`
+      const speedValue = speed > 0 ? `${bytesToSize(speed, 2)}/s` : `${bytesToSize(0, 2)}/s`
+
+      let avgSpeed = 0
+      if (task.averageDownloadSpeed != null) {
+        const v = Number(task.averageDownloadSpeed)
+        avgSpeed = Number.isFinite(v) && v >= 0 ? v : 0
+      }
+      const avgSpeedValue = avgSpeed > 0 ? `${bytesToSize(avgSpeed, 2)}/s` : `${bytesToSize(0, 2)}/s`
+
+      let remainingText = ''
+      if (total > 0 && speed > 0 && completed < total) {
+        const remainingSeconds = timeRemaining(total, completed, speed)
+        if (remainingSeconds > 0) {
+          remainingText = timeFormat(remainingSeconds, {
+            prefix: this.i18n.t('task.remaining-prefix'),
+            i18n: {
+              gt1d: this.i18n.t('app.gt1d'),
+              hour: this.i18n.t('app.hour'),
+              minute: this.i18n.t('app.minute'),
+              second: this.i18n.t('app.second')
+            }
+          })
+        }
+      }
+      if (!remainingText) {
+        remainingText = `${this.i18n.t('task.remaining-prefix')}: --`
+      }
+
+      let piecesData = null
+      const bitfield = task.bitfield || ''
+      const numPieces = Number(task.numPieces || 0)
+      if (bitfield && numPieces > 0) {
+        const pieces = []
+        let completedCount = 0
+        let partialCount = 0
+        let pendingCount = 0
+        for (let i = 0; i < bitfield.length; i++) {
+          const hex = parseInt(bitfield[i], 16)
+          let pieceStatus
+          if (hex === 0) {
+            pieceStatus = 0
+            pendingCount++
+          } else if (hex === 15) {
+            pieceStatus = 2
+            completedCount++
+          } else {
+            pieceStatus = 1
+            partialCount++
+          }
+          pieces.push(pieceStatus)
+        }
+        const pieceSize = Number(task.pieceLength || 0)
+        const pieceSizeText = pieceSize > 0 ? bytesToSize(pieceSize, 2) : ''
+        piecesData = {
+          numPieces,
+          pieces,
+          tabText: this.i18n.t('task.task-pieces-progress'),
+          infoText: `${this.i18n.t('task.task-num-pieces')}: ${numPieces} ${this.i18n.t('task.task-pieces-unit')}` + (pieceSizeText ? ` (${pieceSizeText}/${this.i18n.t('task.task-piece-unit')})` : ''),
+          completedText: `${this.i18n.t('task.piece-completed')} (${completedCount})`,
+          partialText: `${this.i18n.t('task.piece-partial')} (${partialCount})`,
+          pendingText: `${this.i18n.t('task.piece-pending')} (${pendingCount})`
+        }
+      }
+
+      const isPaused = status === TASK_STATUS.PAUSED || status === TASK_STATUS.WAITING
+      const canPause = status === TASK_STATUS.ACTIVE && completed > 0
+      const canResume = status === TASK_STATUS.WAITING || status === TASK_STATUS.PAUSED
+      const canCancel = !doneStatuses.includes(status)
+
+      let connectionsData = null
+      if (includeConnections && (status === TASK_STATUS.ACTIVE || status === TASK_STATUS.WAITING)) {
+        const servers = await this.engineClient.call('getServers', gid)
+        const serverList = []
+        let totalConnections = 0
+        let activeConnections = 0
+        if (Array.isArray(servers)) {
+          servers.forEach(file => {
+            const fileServers = file && file.servers ? file.servers : []
+            fileServers.forEach(server => {
+              totalConnections++
+              const spd = Number(server.downloadSpeed) || 0
+              const isActive = spd > 0
+              if (isActive) activeConnections++
+              let host = '-'
+              const uri = server.currentUri || server.uri || ''
+              if (uri) {
+                try {
+                  const url = new URL(uri)
+                  host = url.hostname
+                } catch (e) {
+                  const match = uri.match(/:\/\/([^/:]+)/)
+                  host = match ? match[1] : uri
+                }
+              }
+              serverList.push({
+                host,
+                speed: `${bytesToSize(spd, 2)}/s`,
+                downloaded: bytesToSize(Number(server.downloadLength) || 0, 2),
+                isActive,
+                status: isActive ? this.i18n.t('task.connection-status-active') : this.i18n.t('task.connection-status-idle')
+              })
+            })
+          })
+        }
+        connectionsData = {
+          totalLabel: this.i18n.t('task.connections-total'),
+          totalValue: String(totalConnections),
+          activeLabel: this.i18n.t('task.connections-active'),
+          activeValue: String(activeConnections),
+          speedLabel: this.i18n.t('task.connections-total-speed'),
+          speedValue: `${bytesToSize(speed, 2)}/s`,
+          thHost: this.i18n.t('task.connection-host'),
+          thDownloaded: this.i18n.t('task.task-peer-downloaded'),
+          thSpeed: this.i18n.t('task.connection-speed'),
+          thStatus: this.i18n.t('task.connection-status'),
+          servers: serverList,
+          emptyText: this.i18n.t('task.no-connections')
+        }
+      }
+
+      return {
+        success: true,
+        payload: {
+          gid,
+          title,
+          percent,
+          percentText: `${percent}%`,
+          nameText: title,
+          isPaused,
+          tabInfoText: this.i18n.t('task.task-progress-info'),
+          tabConnectionsText: this.i18n.t('task.task-connections-detail'),
+          sizeText,
+          speedText: `${this.i18n.t('task.task-download-speed')}: ${speedValue}`,
+          avgSpeedText: `${this.i18n.t('task.task-average-speed')}: ${avgSpeedValue}`,
+          connectionsText: `${this.i18n.t('task.task-connections')}: ${connections}`,
+          remainingText,
+          piecesData,
+          connectionsData,
+          pauseText: this.i18n.t('task.pause'),
+          resumeText: this.i18n.t('task.resume'),
+          cancelText: this.i18n.t('task.delete'),
+          canPause,
+          canResume,
+          canCancel,
+          showPause: true,
+          showResume: true,
+          showCancel: true
+        }
+      }
     })
 
     // Get video sniffer config

@@ -513,10 +513,14 @@
         if (noConfirmBeforeDelete) {
           await this.$store.dispatch('task/forcePauseTask', task)
             .finally(async () => {
+              // 先从aria2中删除任务
+              await this.removeTaskItemFromProgress(task, taskName)
+
+              // 然后再删除文件
               if (deleteWithFiles) {
+                await new Promise(resolve => setTimeout(resolve, 500))
                 await this.deleteTaskFilesFromProgress(task)
               }
-              return this.removeTaskItemFromProgress(task, taskName)
             })
           return
         }
@@ -534,10 +538,14 @@
           }
           await this.$store.dispatch('task/forcePauseTask', task)
             .finally(async () => {
+              // 先从aria2中删除任务
+              await this.removeTaskItemFromProgress(task, taskName)
+
+              // 然后再删除文件
               if (checkboxChecked) {
+                await new Promise(resolve => setTimeout(resolve, 500))
                 await this.deleteTaskFilesFromProgress(task)
               }
-              return this.removeTaskItemFromProgress(task, taskName)
             })
         })
       },
@@ -697,7 +705,7 @@
           '</div>',
           '<div class="conn-table-wrap" id="connTableWrap">',
           '<table class="conn-table" id="connTable">',
-          '<thead><tr><th id="connThHost"></th><th id="connThSpeed"></th><th id="connThStatus"></th></tr></thead>',
+          '<thead><tr><th id="connThHost"></th><th id="connThDownloaded"></th><th id="connThSpeed"></th><th id="connThStatus"></th></tr></thead>',
           '<tbody id="connTableBody"></tbody>',
           '</table>',
           '</div>',
@@ -745,6 +753,7 @@
           'const connSpeedLabelEl = document.getElementById("connSpeedLabel");',
           'const connSpeedValueEl = document.getElementById("connSpeedValue");',
           'const connThHostEl = document.getElementById("connThHost");',
+          'const connThDownloadedEl = document.getElementById("connThDownloaded");',
           'const connThSpeedEl = document.getElementById("connThSpeed");',
           'const connThStatusEl = document.getElementById("connThStatus");',
           'const connTableBodyEl = document.getElementById("connTableBody");',
@@ -990,39 +999,44 @@
           '    legendPendingEl.style.backgroundColor = piecePending;',
           '  }',
           '});',
-          'ipcRenderer.on("task-progress-update", (event, payload) => {',
+          'function applyPayload(payload) {',
           '  if (!payload) {',
           '    return;',
           '  }',
-          '  currentGid = payload.gid ? String(payload.gid) : "";',
+          '  if (payload.gid) {',
+          '    currentGid = String(payload.gid);',
+          '  }',
           '  const title = payload.title ? String(payload.title) : "";',
           '  const percentText = payload.percentText ? String(payload.percentText) : "0%";',
+          '  if (title) {',
+          '    try { document.title = title; } catch (e) {}',
+          '  }',
           '  if (windowTitleEl) {',
           '    windowTitleEl.innerText = title;',
           '  }',
-          '  if (tabInfoBtn) {',
+          '  if (tabInfoBtn && payload.tabInfoText) {',
           '    tabInfoBtn.innerText = payload.tabInfoText || "Info";',
           '  }',
-          '  if (tabConnectionsBtn) {',
+          '  if (tabConnectionsBtn && payload.tabConnectionsText) {',
           '    tabConnectionsBtn.innerText = payload.tabConnectionsText || "Connections";',
           '  }',
           '  if (barEl) {',
           '    barEl.style.width = percentText;',
           '    barEl.style.backgroundColor = payload.isPaused ? "#909399" : "#409EFF";',
           '  }',
-          '  if (sizeEl) {',
+          '  if (sizeEl && payload.sizeText != null) {',
           '    sizeEl.innerText = payload.sizeText || "";',
           '  }',
-          '  if (speedEl) {',
+          '  if (speedEl && payload.speedText != null) {',
           '    speedEl.innerText = payload.speedText || "";',
           '  }',
-          '  if (avgSpeedEl) {',
+          '  if (avgSpeedEl && payload.avgSpeedText != null) {',
           '    avgSpeedEl.innerText = payload.avgSpeedText || "";',
           '  }',
-          '  if (connectionsEl) {',
+          '  if (connectionsEl && payload.connectionsText != null) {',
           '    connectionsEl.innerText = payload.connectionsText || "";',
           '  }',
-          '  if (remainingEl) {',
+          '  if (remainingEl && payload.remainingText != null) {',
           '    remainingEl.innerText = payload.remainingText || "";',
           '  }',
           '  if (payload.piecesData && payload.piecesData.numPieces > 0) {',
@@ -1090,6 +1104,7 @@
           '    if (connSpeedLabelEl) connSpeedLabelEl.innerText = cd.speedLabel || "";',
           '    if (connSpeedValueEl) connSpeedValueEl.innerText = cd.speedValue || "0 B/s";',
           '    if (connThHostEl) connThHostEl.innerText = cd.thHost || "";',
+          '    if (connThDownloadedEl) connThDownloadedEl.innerText = cd.thDownloaded || "";',
           '    if (connThSpeedEl) connThSpeedEl.innerText = cd.thSpeed || "";',
           '    if (connThStatusEl) connThStatusEl.innerText = cd.thStatus || "";',
           '    if (cd.servers && cd.servers.length > 0) {',
@@ -1105,9 +1120,11 @@
           '          if (i < rowCount) {',
           '            const row = rows[i];',
           '            const hostCell = row.cells[0];',
-          '            const speedCell = row.cells[1];',
-          '            const statusCell = row.cells[2];',
+          '            const downloadedCell = row.cells[1];',
+          '            const speedCell = row.cells[2];',
+          '            const statusCell = row.cells[3];',
           '            if (hostCell && hostCell.innerText !== s.host) hostCell.innerText = s.host || "-";',
+          '            if (downloadedCell && downloadedCell.innerText !== s.downloaded) downloadedCell.innerText = s.downloaded || "0 B";',
           '            if (speedCell) {',
           '              if (speedCell.innerText !== s.speed) speedCell.innerText = s.speed || "0 B/s";',
           '              const newClass = s.isActive ? "speed-active" : "";',
@@ -1116,7 +1133,7 @@
           '            if (statusCell && statusCell.innerText !== s.status) statusCell.innerText = s.status || "-";',
           '          } else {',
           '            const newRow = document.createElement("tr");',
-          '            newRow.innerHTML = "<td>" + (s.host || "-") + "</td><td class=\\"" + (s.isActive ? "speed-active" : "") + "\\">" + (s.speed || "0 B/s") + "</td><td>" + (s.status || "-") + "</td>";',
+          '            newRow.innerHTML = "<td>" + (s.host || "-") + "</td><td>" + (s.downloaded || "0 B") + "</td><td class=\\"" + (s.isActive ? "speed-active" : "") + "\\">" + (s.speed || "0 B/s") + "</td><td>" + (s.status || "-") + "</td>";',
           '            connTableBodyEl.appendChild(newRow);',
           '          }',
           '        }',
@@ -1145,6 +1162,29 @@
           '    cancelBtn.disabled = !payload.canCancel;',
           '    cancelBtn.style.display = payload.showCancel ? \'flex\' : \'none\';',
           '  }',
+          '}',
+          'ipcRenderer.on("task-progress-update", (event, payload) => {',
+          '  applyPayload(payload);',
+          '});',
+          'async function pollProgress() {',
+          '  if (!currentGid) {',
+          '    return;',
+          '  }',
+          '  const includeConnections = !!isPanelOpen;',
+          '  try {',
+          '    const res = await ipcRenderer.invoke("task-progress:fetch", { gid: currentGid, includeConnections });',
+          '    if (res && res.done) {',
+          '      try { window.close(); } catch (e) {}',
+          '      return;',
+          '    }',
+          '    if (res && res.payload) {',
+          '      applyPayload(res.payload);',
+          '    }',
+          '  } catch (e) {}',
+          '}',
+          'let pollTimer = setInterval(pollProgress, 1000);',
+          'window.addEventListener("beforeunload", () => {',
+          '  try { if (pollTimer) clearInterval(pollTimer); } catch (e) {}',
           '});',
           '</scr' + 'ipt>',
           '</body>',
@@ -1345,6 +1385,7 @@
               serverList.push({
                 host,
                 speed: `${bytesToSize(speed, 2)}/s`,
+                downloaded: bytesToSize(Number(server.downloadLength) || 0, 2),
                 isActive,
                 status: isActive ? this.$t('task.connection-status-active') : this.$t('task.connection-status-idle')
               })
@@ -1360,6 +1401,7 @@
           speedLabel: this.$t('task.connections-total-speed'),
           speedValue: `${bytesToSize(taskSpeed, 2)}/s`,
           thHost: this.$t('task.connection-host'),
+          thDownloaded: this.$t('task.task-peer-downloaded'),
           thSpeed: this.$t('task.connection-speed'),
           thStatus: this.$t('task.connection-status'),
           servers: serverList,

@@ -79,6 +79,7 @@ export default {
   'task-peer-host': '服务器',
   'task-peer-ip': 'IP',
   'task-peer-client': '客户端',
+  'task-peer-downloaded': '已下载',
   'navigate-to-downloading': '跳转到下载页面',
   'show-advanced-options': '高级选项',
   'copyright-warning': '版权提醒',
@@ -275,5 +276,11 @@ export default {
   'select-date': '选择日期',
   'select-date-placeholder': '请选择日期',
   'show-all': '显示全部',
-  'all-tasks': '所有任务'
+  'all-tasks': '所有任务',
+  'today': '今天',
+  'clear-filter': '清除筛选',
+  'tasks-count': '{count} 个任务',
+  'prev-month': '上个月',
+  'next-month': '下个月',
+  'dblclick-to-today': '双击回到今天'
 }

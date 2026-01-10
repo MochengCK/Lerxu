@@ -42,7 +42,7 @@ export default class Engine {
     const binPath = this.getEngineBinPath()
     const args = this.getStartArgs()
 
-    const enableEngineLogs = is.dev() || is.linux()
+    const enableEngineLogs = is.dev() || is.linux() || is.windows()
     logger.info('[Motrix] engine bin path:', binPath)
     logger.info('[Motrix] engine start args:', args)
 
@@ -74,13 +74,13 @@ export default class Engine {
       }
     })
 
-    if (is.dev()) {
+    if (enableEngineLogs) {
       this.instance.stdout.on('data', (data) => {
         logger.log('[Motrix] engine stdout===>', data.toString())
       })
 
       this.instance.stderr.on('data', (data) => {
-        logger.log('[Motrix] engine stderr===>', data.toString())
+        logger.error('[Motrix] engine stderr===>', data.toString())
       })
     }
   }
@@ -122,7 +122,13 @@ export default class Engine {
       availableEngines = files.filter(file => {
         const filePath = resolve(enginePath, file)
         const stats = require('fs').lstatSync(filePath)
-        return stats.isFile() && file.includes('aria2c') &&
+        // 检查是否为可执行文件（aria2c）
+        const isExecutable = platform === 'win32'
+          ? file.endsWith('.exe')
+          : (stats.mode & parseInt('111', 8)) !== 0
+
+        return stats.isFile() && isExecutable &&
+               file.includes('aria2c') &&
                !file.endsWith('.backup') && !file.endsWith('.tmp')
       })
 
@@ -156,12 +162,12 @@ export default class Engine {
         binName = defaultBinName
       } else if (availableEngines.length > 0) {
         // 默认引擎文件不存在，使用可用引擎
-        // 优先选择包含1.37.0的引擎
+        // 优先选择包含1.37.0的aria2c引擎
         const specificEngine = availableEngines.find(file => file.includes('1.37.0'))
         if (specificEngine) {
           binName = specificEngine
         } else {
-          // 否则使用第一个找到的引擎
+          // 最后使用第一个找到的引擎
           binName = availableEngines[0]
         }
         // 保存为默认引擎，下次启动使用
@@ -202,9 +208,15 @@ export default class Engine {
 
     const binPath = this.getEngineBinPath()
     const is136 = /1\.36\.0/.test(binPath)
-    const isLinkCoreEngine = /LinkCore\.exe$/i.test(binPath)
-    let allowedMax = is136 ? 64 : 16
-    if (isLinkCoreEngine) {
+    const is137 = /1\.37\.0/.test(binPath)
+    const engineFile = String(binPath).split(/[\\/]/).pop() || ''
+    const isLinkCoreEngine = /^LinkCore(\.exe)?$/i.test(engineFile)
+    const isAria2cFamily = /^aria2c/i.test(engineFile)
+    const isStandardAria2c = isAria2cFamily && !isLinkCoreEngine
+    const isHighConnAria2c = is136 || is137
+
+    let allowedMax = 16
+    if (isLinkCoreEngine || isHighConnAria2c) {
       allowedMax = 64
     }
     const extraConfig = {
@@ -220,8 +232,16 @@ export default class Engine {
     }
     extraConfig['max-connection-per-server'] = Math.min(desiredMax, allowedMax)
     const desiredSplit = Number(this.systemConfig.split || 0)
-    const baseSplit = desiredSplit >= 64 ? desiredSplit : 64
-    extraConfig.split = isLinkCoreEngine ? Math.min(baseSplit, 64) : baseSplit
+    const splitBaseline = allowedMax >= 64 ? 64 : 16
+    const baseSplit = desiredSplit >= splitBaseline ? desiredSplit : splitBaseline
+    if (isLinkCoreEngine || isHighConnAria2c) {
+      extraConfig.split = Math.min(baseSplit, 64)
+    } else if (isStandardAria2c) {
+      // 标准aria2c使用较小的split值以避免过多连接
+      extraConfig.split = Math.min(baseSplit, 16)
+    } else {
+      extraConfig.split = baseSplit
+    }
 
     const keepSeeding = this.userConfig['keep-seeding']
     const seedRatio = this.systemConfig['seed-ratio']

@@ -6,6 +6,7 @@
     :top="dialogTop"
     :show-close="false"
     :before-close="beforeClose"
+    append-to-body
     @open="handleOpen"
     @opened="handleOpened"
     @closed="handleClosed"

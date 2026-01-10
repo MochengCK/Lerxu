@@ -4,6 +4,55 @@ import { EMPTY_STRING, TASK_STATUS } from '@shared/constants'
 import { checkTaskIsBT, getFileNameFromFile, intersection } from '@shared/utils'
 import taskHistory from '@/api/TaskHistory'
 
+const MAX_TASK_SPEED_SAMPLE_GIDS = 200
+const MAX_TASK_DISPLAY_NAME_GIDS = 1000
+const MAX_TASK_PRIORITY_GIDS = 1000
+const MAX_MAGNET_STATUS_GIDS = 300
+const MAX_DATA_ACCESS_STATUS_GIDS = 300
+
+function normalizeGid (gid) {
+  const s = `${gid || ''}`
+  return s
+}
+
+function pruneObjectByGidSet (obj, gidSet) {
+  const keys = Object.keys(obj || {})
+  if (keys.length === 0) {
+    return obj
+  }
+  let changed = false
+  const next = {}
+  keys.forEach(k => {
+    if (gidSet.has(k)) {
+      next[k] = obj[k]
+    } else {
+      changed = true
+    }
+  })
+  return changed ? next : obj
+}
+
+function capObjectByTimestamp (obj, cap, getTs) {
+  const keys = Object.keys(obj || {})
+  if (keys.length <= cap) {
+    return obj
+  }
+  const entries = keys.map(k => ({ k, ts: Number(getTs(k)) || 0 }))
+  entries.sort((a, b) => a.ts - b.ts)
+  const removeCount = entries.length - cap
+  if (removeCount <= 0) {
+    return obj
+  }
+  const removeSet = new Set(entries.slice(0, removeCount).map(it => it.k))
+  const next = {}
+  keys.forEach(k => {
+    if (!removeSet.has(k)) {
+      next[k] = obj[k]
+    }
+  })
+  return next
+}
+
 // 排序辅助函数
 function sortTaskList (taskList, field, order) {
   return [...taskList].sort((a, b) => {
@@ -110,7 +159,10 @@ const state = {
   dataAccessStatuses: {},
   taskPriorities: {},
   taskSpeedSamples: {},
+  taskSpeedSamplesTouchedAt: {},
   taskDisplayNames: {},
+  taskDisplayNamesTouchedAt: {},
+  taskPrioritiesTouchedAt: {},
   searchKeyword: '',
   categoryFilter: '',
   sortField: 'name',
@@ -188,8 +240,13 @@ const mutations = {
   },
   UPDATE_MAGNET_STATUS (state, payload) {
     const { gid, ...rest } = payload
+    const now = Date.now()
+    const nextRest = { ...rest }
+    if (nextRest.updatedAt == null) {
+      nextRest.updatedAt = now
+    }
     const prev = state.magnetStatuses[gid] || {}
-    state.magnetStatuses = { ...state.magnetStatuses, [gid]: { ...prev, ...rest } }
+    state.magnetStatuses = { ...state.magnetStatuses, [gid]: { ...prev, ...nextRest } }
   },
   CLEAR_MAGNET_STATUS (state, gid) {
     const next = { ...state.magnetStatuses }
@@ -198,8 +255,13 @@ const mutations = {
   },
   UPDATE_DATA_ACCESS_STATUS (state, payload) {
     const { gid, ...rest } = payload
+    const now = Date.now()
+    const nextRest = { ...rest }
+    if (nextRest.updatedAt == null) {
+      nextRest.updatedAt = now
+    }
     const prev = state.dataAccessStatuses[gid] || {}
-    state.dataAccessStatuses = { ...state.dataAccessStatuses, [gid]: { ...prev, ...rest } }
+    state.dataAccessStatuses = { ...state.dataAccessStatuses, [gid]: { ...prev, ...nextRest } }
   },
   CLEAR_DATA_ACCESS_STATUS (state, gid) {
     const next = { ...state.dataAccessStatuses }
@@ -207,7 +269,31 @@ const mutations = {
     state.dataAccessStatuses = next
   },
   UPDATE_TASK_PRIORITIES (state, mapping) {
+    const now = Date.now()
+    const nextTouched = { ...(state.taskPrioritiesTouchedAt || {}) }
+    Object.keys(mapping || {}).forEach(gid => {
+      const k = normalizeGid(gid)
+      if (k) {
+        nextTouched[k] = now
+      }
+    })
     state.taskPriorities = { ...state.taskPriorities, ...mapping }
+    state.taskPrioritiesTouchedAt = nextTouched
+  },
+  CLEAR_TASK_PRIORITY (state, gid) {
+    if (!gid) {
+      return
+    }
+    if (!state.taskPriorities[gid]) {
+      return
+    }
+    const next = { ...state.taskPriorities }
+    delete next[gid]
+    state.taskPriorities = next
+
+    const nextTouched = { ...(state.taskPrioritiesTouchedAt || {}) }
+    delete nextTouched[gid]
+    state.taskPrioritiesTouchedAt = nextTouched
   },
   UPDATE_TASK_SPEED_SAMPLES (state, payload) {
     const { gid, samples } = payload || {}
@@ -215,6 +301,7 @@ const mutations = {
       return
     }
     state.taskSpeedSamples = { ...state.taskSpeedSamples, [gid]: Array.isArray(samples) ? samples : [] }
+    state.taskSpeedSamplesTouchedAt = { ...(state.taskSpeedSamplesTouchedAt || {}), [gid]: Date.now() }
   },
   ADD_TASK_SPEED_SAMPLE (state, payload) {
     const { gid, sample, maxSamples = 60 } = payload || {}
@@ -228,6 +315,7 @@ const mutations = {
       next.splice(0, next.length - cap)
     }
     state.taskSpeedSamples = { ...state.taskSpeedSamples, [gid]: next }
+    state.taskSpeedSamplesTouchedAt = { ...(state.taskSpeedSamplesTouchedAt || {}), [gid]: Date.now() }
   },
   CLEAR_TASK_SPEED_SAMPLES (state, gid) {
     if (!gid) {
@@ -236,6 +324,10 @@ const mutations = {
     const next = { ...state.taskSpeedSamples }
     delete next[gid]
     state.taskSpeedSamples = next
+
+    const nextTouched = { ...(state.taskSpeedSamplesTouchedAt || {}) }
+    delete nextTouched[gid]
+    state.taskSpeedSamplesTouchedAt = nextTouched
   },
   UPDATE_TASK_DISPLAY_NAME (state, payload) {
     const { gid, name } = payload || {}
@@ -246,6 +338,7 @@ const mutations = {
       return
     }
     state.taskDisplayNames = { ...state.taskDisplayNames, [gid]: name }
+    state.taskDisplayNamesTouchedAt = { ...(state.taskDisplayNamesTouchedAt || {}), [gid]: Date.now() }
   },
   CLEAR_TASK_DISPLAY_NAME (state, gid) {
     if (!gid) {
@@ -257,6 +350,78 @@ const mutations = {
     const next = { ...state.taskDisplayNames }
     delete next[gid]
     state.taskDisplayNames = next
+
+    const nextTouched = { ...(state.taskDisplayNamesTouchedAt || {}) }
+    delete nextTouched[gid]
+    state.taskDisplayNamesTouchedAt = nextTouched
+  },
+  CLEAR_TASK_CACHES_FOR_GIDS (state, gids) {
+    const list = Array.isArray(gids) ? gids : []
+    if (list.length === 0) {
+      return
+    }
+    const gidSet = new Set(list.map(normalizeGid).filter(Boolean))
+
+    const pruneBySet = (obj) => {
+      const next = { ...(obj || {}) }
+      gidSet.forEach(gid => {
+        delete next[gid]
+      })
+      return next
+    }
+
+    state.magnetStatuses = pruneBySet(state.magnetStatuses)
+    state.dataAccessStatuses = pruneBySet(state.dataAccessStatuses)
+    state.taskSpeedSamples = pruneBySet(state.taskSpeedSamples)
+    state.taskSpeedSamplesTouchedAt = pruneBySet(state.taskSpeedSamplesTouchedAt)
+    state.taskDisplayNames = pruneBySet(state.taskDisplayNames)
+    state.taskDisplayNamesTouchedAt = pruneBySet(state.taskDisplayNamesTouchedAt)
+    state.taskPriorities = pruneBySet(state.taskPriorities)
+    state.taskPrioritiesTouchedAt = pruneBySet(state.taskPrioritiesTouchedAt)
+  },
+  PRUNE_TASK_CACHES (state, payload) {
+    const gids = Array.isArray(payload && payload.gids) ? payload.gids : []
+    const keepGids = Array.isArray(payload && payload.keepGids) ? payload.keepGids : []
+    const gidSet = new Set([...gids, ...keepGids].map(normalizeGid).filter(Boolean))
+
+    state.magnetStatuses = pruneObjectByGidSet(state.magnetStatuses, gidSet)
+    state.dataAccessStatuses = pruneObjectByGidSet(state.dataAccessStatuses, gidSet)
+    state.taskSpeedSamples = pruneObjectByGidSet(state.taskSpeedSamples, gidSet)
+    state.taskSpeedSamplesTouchedAt = pruneObjectByGidSet(state.taskSpeedSamplesTouchedAt, gidSet)
+    state.taskDisplayNames = pruneObjectByGidSet(state.taskDisplayNames, gidSet)
+    state.taskDisplayNamesTouchedAt = pruneObjectByGidSet(state.taskDisplayNamesTouchedAt, gidSet)
+    state.taskPriorities = pruneObjectByGidSet(state.taskPriorities, gidSet)
+    state.taskPrioritiesTouchedAt = pruneObjectByGidSet(state.taskPrioritiesTouchedAt, gidSet)
+
+    state.magnetStatuses = capObjectByTimestamp(
+      state.magnetStatuses,
+      MAX_MAGNET_STATUS_GIDS,
+      (gid) => (state.magnetStatuses && state.magnetStatuses[gid] && state.magnetStatuses[gid].updatedAt) || 0
+    )
+    state.dataAccessStatuses = capObjectByTimestamp(
+      state.dataAccessStatuses,
+      MAX_DATA_ACCESS_STATUS_GIDS,
+      (gid) => (state.dataAccessStatuses && state.dataAccessStatuses[gid] && state.dataAccessStatuses[gid].updatedAt) || 0
+    )
+
+    const capByTouched = (map, touchedAt, cap) => {
+      const cappedMap = capObjectByTimestamp(map, cap, (gid) => (touchedAt && touchedAt[gid]) || 0)
+      const cappedKeys = new Set(Object.keys(cappedMap || {}))
+      const cappedTouched = pruneObjectByGidSet(touchedAt || {}, cappedKeys)
+      return { cappedMap, cappedTouched }
+    }
+
+    const speedCapped = capByTouched(state.taskSpeedSamples, state.taskSpeedSamplesTouchedAt, MAX_TASK_SPEED_SAMPLE_GIDS)
+    state.taskSpeedSamples = speedCapped.cappedMap
+    state.taskSpeedSamplesTouchedAt = speedCapped.cappedTouched
+
+    const nameCapped = capByTouched(state.taskDisplayNames, state.taskDisplayNamesTouchedAt, MAX_TASK_DISPLAY_NAME_GIDS)
+    state.taskDisplayNames = nameCapped.cappedMap
+    state.taskDisplayNamesTouchedAt = nameCapped.cappedTouched
+
+    const priorityCapped = capByTouched(state.taskPriorities, state.taskPrioritiesTouchedAt, MAX_TASK_PRIORITY_GIDS)
+    state.taskPriorities = priorityCapped.cappedMap
+    state.taskPrioritiesTouchedAt = priorityCapped.cappedTouched
   },
   UPDATE_TASK_SEARCH_KEYWORD (state, keyword) {
     state.searchKeyword = `${keyword || ''}`
@@ -375,6 +540,8 @@ const actions = {
             commit('UPDATE_TASK_PRIORITIES', mapping)
           }
         } catch (e) {}
+
+        commit('PRUNE_TASK_CACHES', { gids, keepGids: [state.currentTaskGid] })
       })
   },
   updateDataAccessStatus ({ commit }, payload) {
@@ -684,7 +851,7 @@ const actions = {
     const { gid, options } = payload
     return api.changeOption({ gid, options })
   },
-  removeTask ({ state, dispatch }, task) {
+  removeTask ({ state, dispatch, commit }, task) {
     const { gid } = task
     if (gid === state.currentTaskGid) {
       dispatch('hideTaskDetail')
@@ -692,7 +859,7 @@ const actions = {
 
     return api.removeTask({ gid })
       .finally(() => {
-        dispatch('clearTaskDisplayName', gid)
+        commit('CLEAR_TASK_CACHES_FOR_GIDS', [gid])
         dispatch('fetchList')
         dispatch('saveSession')
       })
@@ -817,9 +984,12 @@ const actions = {
         // 忽略Aria2删除失败的错误，继续执行
       })
       .finally(() => {
-        dispatch('clearTaskDisplayName', gid)
+        dispatch('clearTaskCachesForGids', [gid])
         dispatch('fetchList')
       })
+  },
+  clearTaskCachesForGids ({ commit }, gids) {
+    commit('CLEAR_TASK_CACHES_FOR_GIDS', gids)
   },
   saveSession () {
     api.saveSession()
@@ -859,9 +1029,10 @@ const actions = {
   batchResumeTask (_, gids) {
     return api.batchResumeTask({ gids })
   },
-  batchRemoveTask ({ dispatch }, gids) {
+  batchRemoveTask ({ dispatch, commit }, gids) {
     return api.batchRemoveTask({ gids })
       .finally(() => {
+        commit('CLEAR_TASK_CACHES_FOR_GIDS', gids)
         dispatch('fetchList')
         dispatch('saveSession')
       })
