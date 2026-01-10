@@ -1,4 +1,3 @@
-
 <div align="center">
   <table width="100%">
     <tr>
@@ -27,63 +26,59 @@
 </p>
 
 
-
 ## 📖 Overview
 
-LinkCore Download Manager is a simple, easy-to-use, cross-platform downloader built with modern web technologies. A clean, intuitive UI, straightforward task flow, and minimal required settings make downloads effortless; it supports common protocols and online video downloads, covering everyday scenarios.
+LinkCore Download Manager is a [simple], [beautiful], and [easy-to-use] cross-platform download manager built with modern web technologies. With an out-of-the-box intuitive interface, clear task flow, and minimal necessary settings, it makes download management simpler. It supports common download protocols and online video downloads, or video sniffing with extensions, covering everyday usage scenarios.
 ***
-At the same time, LinkCore offers professional-grade capabilities: BitTorrent/magnet support, UPnP/NAT-PMP port mapping, automatic tracker updates, task priority and batch management, quick engine switching, and advanced option presets — ready for power users and heavy downloading scenarios.
+At the same time, LinkCore Download Manager also possesses professional-grade downloader capabilities: supporting BitTorrent/Magnet, UPnP/NAT-PMP port mapping, automatic Tracker updates, task priority and batch management, quick switching of download engines, and advanced option presets, satisfying advanced and heavy download scenarios.
 
 ## ✨ Key Features
 
 ### 🚀 Performance & Reliability
-- **High-Speed Downloads**: Optimized for maximum download performance
-- **Multi-Threading**: Support for up to 64 threads per task
-- **Concurrent Downloads**: Manage up to 10 simultaneous download tasks
-- **Stable Connections**: Robust error handling and automatic retry mechanisms
+- **High-Speed Download**: Optimized for maximum download performance
+- **Multi-threading Support**: Each task supports up to 64 threads
+- **Concurrent Downloads**: Can manage up to 10 download tasks simultaneously
+- **Stable Connection**: Robust error handling and automatic retry mechanism
 
 ### 📁 Protocol Support
-- **HTTP/HTTPS**: Direct downloads from web servers
-- **FTP/SFTP**: File transfers from FTP servers
-- **BitTorrent**: Full torrent file support with selective downloading
-- **Magnet Links**: Instant torrent downloads without .torrent files
+- **HTTP/HTTPS**: Download directly from web servers
+- **FTP/SFTP**: Transfer files from FTP servers
+- **BitTorrent**: Full support for torrent files, with selective downloading
+- **Magnet Links**: Direct download without .torrent files
 
-### 🎬 Video Downloads
-
-- **Online Video Parsing**: Turn supported web video pages into downloadable tasks with one click
-- **Default Quality & Format**: Configure preferred resolution and container in “Preferences → Video Settings” and apply them automatically when creating tasks
-- **Automatic Muxing/Conversion**: Automatically merge audio and video after download and output in the selected container (MP4/MKV/MOV, etc.)
-- **Batch Video Management**: Manage multiple video downloads alongside other tasks with a unified list for viewing, pausing/resuming, and deleting
+### 🎬 Video Download
+- **Online Video Download**: Download online videos by adding video tasks within the app or using browser extensions for video sniffing
+- **Multi-task Video Batch Management**: Unified viewing, pausing/resuming, and deleting video download tasks in the task list, supporting a consistent management experience with other types of tasks
 
 ### 🎨 User Experience
-- **Clean Interface**: Modern, intuitive design with dark mode support
+- **Simple Interface**: Modern intuitive design, supporting dark mode
 - **System Tray Integration**: Quick access and status monitoring
-- **Download Notifications**: Real-time alerts when downloads complete
+- **Download Notifications**: Real-time reminders when downloads are completed
 - **Speed Control**: Set upload and download speed limits
-- **File Management**: Organize downloads by category and location
+- **File Management**: Organize downloaded files by category and location
 
 ### 🔧 Advanced Features
-- **Tracker Updates**: Daily automatic tracker list updates for improved torrent performance
-- **UPnP/NAT-PMP**: Automatic port mapping for better connectivity
-- **User-Agent Spoofing**: Customize user-agent strings for compatibility
-- **Task Scheduling**: Set download times and priorities
-- **Batch Downloads**: Import and export download lists
+- **Tracker Update**: Automatically update Tracker list daily to improve torrent download performance
+- **UPnP/NAT-PMP**: Automatic port mapping to improve connectivity
+- **User-Agent Spoofing**: Customize User-Agent strings to enhance compatibility
+- **Task Scheduling**: Set download time and priority
+- **Batch Download**: Import and export download lists
 
 ### 🧩 Unique Features
+- **File Categorization**: Automatically classify and save according to file type
+- **Custom Categorization**: Users can customize file categorization rules
+- **Task Priority**: Users can set task priority values, affecting download order and resource allocation
+- **Custom Downloading Suffix**: Users can customize the suffix of files being downloaded for easier file management
+- **Set File Modification Date to Completion Time**: Users can choose to set the modification date of completed files to be the same as the completion time for easier file management
+- **Quick Engine Switching**: Users can quickly switch between different download engines to meet different download needs
+- **Advanced Option Presets**: Support for naming, saving, selecting, and deleting presets for "Advanced Options"
+- **Link Input UX Optimization**: Automatically deduplicate duplicate links; automatically wrap and position cursor after pasting or auto-filling
+- **Custom Shortcuts**: Set or reset shortcuts for common commands in the "Preferences → Basic Settings → Shortcuts" card
 
-- **Auto Categorization**: Automatically save files by type
-- **Custom Categories**: Define your own rules for file categorization
-- **Task Priority Value**: Set numeric priorities to influence download order and resource allocation
-- **Custom Download Suffix**: Configure a temporary suffix for downloading files for easier management
-- **Set File Modified Time to Completion Time**: Optionally set the file's modification time to the moment the download finishes
-- **Quick Engine Switching**: Switch between different download engines quickly to suit various scenarios
-- **Advanced Option Presets**: Name, save, select, and delete presets for advanced options
-- **Link Input UX Enhancements**: Automatically deduplicate links; auto-append newline and place caret after paste or autofill
-- **Customizable Shortcuts**: Set or reset keyboard shortcuts for common commands in “Preferences → Basic → Shortcuts”
 
-## 🖥️ Platforms
+## 🖥️ Supported Platforms
 
-LinkCore Download Manager is currently available for:
+LinkCore Download Manager currently supports the following platforms:
 - **Windows** (7, 8, 10, 11)
 - **macOS** (Apple Silicon, arm64)
 - **Linux** (x64, arm64)
@@ -93,30 +88,30 @@ LinkCore Download Manager is currently available for:
 ### Windows
 
 1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore-Download-Manager/releases) page
-2. Download the latest `LinkCore-Download-Manager-Setup-x.y.z.exe` installer
-3. Run the installer and follow the on-screen instructions
+2. Download the latest version of the `LinkCore-Download-Manager-Setup-x.y.z.exe` installer
+3. Run the installer and follow the on-screen prompts to complete the installation
 
 ### macOS
 
 1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore-Download-Manager/releases) page
 2. Download `*.dmg` or `*-arm64-mac.zip` (Apple Silicon, arm64)
-3. Using `*.dmg`: double-click to open, then drag the app to `/Applications`
-4. Using `*-arm64-mac.zip`: unzip and move the app to `/Applications`
-5. If macOS shows “unidentified developer”, go to “System Settings → Privacy & Security” and click “Open Anyway”, or right-click the app in Finder and choose “Open”
+3. Using `*.dmg`: Double-click to open, drag the app to `/Applications`
+4. Using `*-arm64-mac.zip`: After unzipping, move the app to `/Applications`
+5. If it prompts "unidentified developer" on first run, click "Open Anyway" in "System Settings → Privacy & Security", or "Right-click → Open" on the app icon in Finder
 
 ### Linux
 
-- AppImage (recommended):
+- AppImage (Universally Recommended):
   1. Download `*.AppImage` (`x64` or `arm64`)
-  2. Make it executable: `chmod +x LinkCore-Download-Manager-*.AppImage`
+  2. Grant executable permission: `chmod +x LinkCore-Download-Manager-*.AppImage`
   3. Run: `./LinkCore-Download-Manager-*.AppImage`
 
-- Debian/Ubuntu (`.deb`):
+- Debian/Ubuntu (`.deb` package):
   1. Download `linkcore-download-manager_*_amd64.deb` or `linkcore-download-manager_*_arm64.deb`
   2. Install: `sudo dpkg -i linkcore-download-manager_*.deb`
-  3. Fix dependencies if needed: `sudo apt -f install`
+  3. If there are dependency issues: `sudo apt -f install`
 
-- Other distros: prefer AppImage method.
+- Other distributions: Prefer the AppImage method.
 
 ## 🖥️ Screenshots
 
@@ -141,48 +136,13 @@ LinkCore Download Manager is currently available for:
   </tr>
 </table>
 
-## 🚀 Quick Start
-
-### Basic Usage
-
-1. **Add a Download Task**:
-   - Click the "+ New Download" button
-   - Enter the download URL or upload a torrent file
-   - Configure download settings (optional)
-   - Click "OK" to start downloading
-
-2. **Manage Downloads**:
-   - Pause/resume downloads with a single click
-   - Monitor download progress in real-time
-   - View detailed information about each task
-
-3. **Torrent Downloads**:
-   - Select specific files to download from a torrent
-   - View peer and seed information
-   - Adjust torrent-specific settings
-
-### Keyboard Shortcuts
-
-- `Ctrl/Cmd + N`: New download task
-- `Ctrl/Cmd + R`: Resume selected task(s)
-- `Ctrl/Cmd + P`: Pause selected task(s)
-- `Ctrl/Cmd + D`: Delete selected task(s)
-- `Ctrl/Cmd + Q`: Quit the application
-  
-Tip: You can customize these shortcuts in “Preferences → Basic → Shortcuts”; changes take effect immediately after saving.
-
-## 💡 Tips
-
-- In the “Add Task” dialog, you can set a numeric priority for each parsed item. Higher values get scheduled earlier while low-priority tasks are interleaved to keep allocation fair. Priorities are shown on the task card and in the detail panel, and persist across restarts.
-- “Advanced Options” support named presets for quick reuse (UA, Referer, Cookie, proxy, etc.). Saving is blocked when all fields are empty, with a localized warning.
-
 ### Engine Version & Connections
 
-- The app ships with and defaults to `aria2c 1.37.0`. This version does not support setting “max-connection-per-server” to 64 and may fail to start tasks if forced. To ensure stability, the app automatically caps this value to 16 on 1.37.0 while keeping `split=64` for high chunk-level concurrency.
-- If you need 64 connections per server, go to “Preferences → Advanced → Engine” and quickly switch to `aria2c 1.36.0`. This version allows `max-connection-per-server=64`, and `split=64` is retained.
-- Note: For single-source HTTP/FTP downloads, the effective concurrency is `min(split, max-connection-per-server)`. For BitTorrent or multi-mirror downloads, concurrency across sources/peers can stack, so overall throughput is less affected.
+- The program builds in and uses `aria2c 1.37.0` by default. This version does not support setting "Max connections per server" to 64 (it will cause tasks to fail to download), so the app automatically compensates by limiting this value to 16 under this version, while maintaining `split=64` chunk concurrency.
+- If you need to run with "Max connections per server" at 64, you can quickly switch to `aria2c 1.36.0` in the "Preferences → Advanced → Engine" card. After switching, `max-connection-per-server=64` will be allowed, while retaining `split=64`.
+- Tip: The real concurrency for HTTP/FTP single-source download is `min(split, max-connection-per-server)`; BT or multi-mirror downloads can stack concurrency, having less impact on overall speed.
 
-## 🛠️ Development
+## 🛠️ Development Guide
 
 ### Prerequisites
 
@@ -190,7 +150,7 @@ Tip: You can customize these shortcuts in “Preferences → Basic → Shortcuts
 - npm or yarn
 - Git
 
-### Setup
+### Setting up the Development Environment
 
 1. Clone the repository:
    ```bash
@@ -210,7 +170,7 @@ Tip: You can customize these shortcuts in “Preferences → Basic → Shortcuts
    npm run dev
    ```
 
-4. Build for production:
+4. Build production version:
    ```bash
    npm run build
    ```
@@ -225,42 +185,40 @@ LinkCore-Download-Manager/
 │   └── shared/           # Shared utilities
 ├── static/               # Static assets
 ├── .electron-vue/        # Electron-Vue configuration
-├── screenshots/          # Screenshots for documentation
+├── screenshots/          # Documentation screenshots
 ├── package.json          # Project configuration
-└── README.md             # This file
+└── README.md             # Project documentation
 ```
 
 ## 🤝 Contributing
 
-Contributions are welcome! Whether you're fixing bugs, adding new features, or improving documentation, your help is appreciated.
+Contributions are welcome! Whether you are fixing bugs, adding new features, or improving documentation, we greatly appreciate your help.
 
 ### How to Contribute
 
-1. Fork the repository
+1. Fork this repository
 2. Create a new branch (`git checkout -b feature/your-feature`)
-3. Make your changes
-4. Commit your changes (`git commit -m 'Add some feature'`)
+3. Make modifications
+4. Commit changes (`git commit -m 'Add some feature'`)
 5. Push to the branch (`git push origin feature/your-feature`)
 6. Create a Pull Request
 
 ### Development Guidelines
 
-- Follow existing code style
-- Write clear, concise commit messages
-- Include tests for new features
+- Follow existing code styles
+- Write clear and concise commit messages
+- Add tests for new features
 - Update documentation as needed
 
 ## 💰 Sponsor
 
-If you find this project helpful, please consider sponsoring to support its continued development and maintenance.
+If you find this project helpful, please consider sponsoring to support the continuous development and maintenance of the project.
 
 - [Sponsor on Afdian](https://afdian.com/a/LinkCore)
 
 ## 🙏 Credits
 
-- This project is based on the open-source project
-[Motrix](https://github.com/agalwood/Motrix) by agalwood,
-and has been significantly modified and extended.
+- This project is developed based on the open-source project [Motrix](https://github.com/agalwood/Motrix) by agalwood, with significant modifications and functional extensions.
 - UI Framework: [Vue.js](https://vuejs.org/)
 - Desktop Framework: [Electron](https://www.electronjs.org/)
 - Video Processing: [FFmpeg](https://ffmpeg.org/)
@@ -268,11 +226,11 @@ and has been significantly modified and extended.
 
 ## 📞 Support
 
-If you encounter any issues or have questions:
+If you encounter any problems or have questions:
 
-- Open an [issue](https://github.com/MochengCK/LinkCore-Download-Manager/issues) on GitHub
-- Join our community for discussions and support
+- [Submit an issue](https://github.com/MochengCK/LinkCore-Download-Manager/issues) on GitHub
+- Join our community for discussion and support
 
 ## 📄 License
 
-This project is released under the GNU General Public License v3.0 [(GPL-3.0)](LICENSE)
+This project is open-sourced under the GNU General Public License v3.0 [(GPL-3.0)](LICENSE)
