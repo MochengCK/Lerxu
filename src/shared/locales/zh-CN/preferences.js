@@ -230,7 +230,7 @@ export default {
   'auto-check-update': '自动检查更新',
   'last-check-update-time': '上次检查更新时间',
   'aria2-text-placeholder': '粘贴或编辑原始配置文本',
-  'import-from-text': '从文本导入',
+  'import-from-text': '导入JSON文件',
   'copy-as-text': '复制为文本',
   'paste-and-import': '粘贴并导入',
   'follow-metalink': '自动开始下载磁力链接、种子内的文件',

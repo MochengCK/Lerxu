@@ -69,6 +69,12 @@ iframe {
 }
 
 .el-message-box.ui-config-import-confirm {
+  .el-message-box__status {
+    display: none;
+  }
+  .el-message-box__message {
+    padding-left: 0;
+  }
   .el-message-box__btns {
     display: flex;
     justify-content: flex-end;

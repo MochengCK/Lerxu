@@ -147,7 +147,7 @@
                   plain
                   style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border-color: #409EFF; color: #409EFF;"
                   @click="importUiConfigFromFile"
-                >从文件导入</el-button>
+                >导入JSON文件</el-button>
                 <el-button
                   size="mini"
                   type="primary"
@@ -162,6 +162,7 @@
 
         <!-- 背景设置卡片 -->
         <div class="preference-card">
+          <span style="display: none;">外观</span>
           <div class="card-title background-type-nav">
             <div class="background-type-nav__left">
               <el-radio-group v-model="form.backgroundType" size="mini" @change="autoSaveForm">
@@ -2040,7 +2041,7 @@
           const fs = require('fs')
 
           const result = await dialog.showOpenDialog({
-            title: '导入 UI 配置',
+            title: '导入JSON文件',
             properties: ['openFile'],
             filters: [{ name: 'JSON', extensions: ['json'] }]
           })
@@ -2062,7 +2063,7 @@
       },
       async importUiConfigFromTextPrompt () {
         try {
-          const { value } = await this.$prompt('粘贴 UI JSON 配置', '导入 UI 配置', {
+          const { value } = await this.$prompt('', '粘贴 UI JSON 配置', {
             confirmButtonText: this.$t('preferences.paste-and-import'),
             cancelButtonText: this.$t('preferences.cancel'),
             inputType: 'textarea',
