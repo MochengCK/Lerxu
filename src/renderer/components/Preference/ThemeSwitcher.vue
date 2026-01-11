@@ -52,7 +52,13 @@
       }
     },
     watch: {
+      value (val) {
+        if (val !== this.currentValue) {
+          this.currentValue = val
+        }
+      },
       currentValue (val) {
+        this.$emit('input', val)
         this.$emit('change', val)
       }
     },

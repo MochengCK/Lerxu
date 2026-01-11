@@ -201,8 +201,8 @@
         return false
       },
       isSpeedometerShifted () {
-        const { taskPlanVisible, addTaskVisible } = this
-        return !!(taskPlanVisible || addTaskVisible)
+        const { taskPlanVisible, addTaskVisible, hasModalMaskVisible } = this
+        return !!(taskPlanVisible || addTaskVisible || hasModalMaskVisible)
       }
     },
     watch: {
@@ -1761,10 +1761,6 @@
     &.is-search-expanded {
       transform: translateX(277px);
       transition-delay: 0s;
-    }
-
-    &:not(.is-search-open):not(.is-search-expanded) {
-      transition-delay: 0.1s;
     }
   }
 

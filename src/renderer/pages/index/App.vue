@@ -114,7 +114,7 @@
       uiOpacity () {
         if (!this.shouldUseBackgroundImage) return 1
         const raw = Number(this.backgroundUiOpacity)
-        const normalized = Number.isFinite(raw) ? raw : 0.9
+        const normalized = Number.isFinite(raw) ? raw : 0.7
         return Math.min(Math.max(normalized, 0.3), 1)
       },
       uiFrostedBlur () {

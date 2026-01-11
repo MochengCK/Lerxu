@@ -463,8 +463,50 @@
   }
 
   .el-message-box {
+    background-color: #2d2d2d;
+    border-color: #606060;
     border-radius: 12px;
     overflow: hidden;
+  }
+
+  .el-message-box.ui-config-import-confirm .el-message-box__btns {
+    display: flex;
+    justify-content: flex-end;
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    padding: 0;
+    margin: 0;
+    z-index: 2001;
+  }
+
+  .el-message-box.ui-config-import-prompt .el-message-box__btns {
+    display: flex;
+    justify-content: flex-end;
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    padding: 0;
+    margin: 0;
+    z-index: 2001;
+  }
+
+  .el-message-box__title {
+    color: #ffffff;
+  }
+
+  .el-message-box__content,
+  .el-message-box__message,
+  .el-message-box__message p {
+    color: #a2a3a4;
+  }
+
+  .el-message-box__headerbtn .el-message-box__close {
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  .el-message-box__headerbtn:hover .el-message-box__close {
+    color: rgba(255, 255, 255, 0.6);
   }
 
   .add-task-dialog .el-dialog__footer {

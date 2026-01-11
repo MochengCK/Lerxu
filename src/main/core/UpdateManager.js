@@ -83,14 +83,15 @@ export default class UpdateManager extends EventEmitter {
   }
 
   setupProxy (proxy) {
-    const { server, scope = [] } = proxy
+    const { server } = proxy || {}
+    const scope = (proxy && Array.isArray(proxy.scope)) ? proxy.scope : null
     // 兼容旧版配置（enable 字段）
-    let proxyMode = proxy.mode
-    if (!proxyMode && proxy.enable !== undefined) {
+    let proxyMode = proxy && proxy.mode
+    if (!proxyMode && proxy && proxy.enable !== undefined) {
       proxyMode = proxy.enable ? PROXY_MODE.CUSTOM : PROXY_MODE.NONE
     }
 
-    const enableUpdateProxy = scope.includes(PROXY_SCOPES.UPDATE_APP)
+    const enableUpdateProxy = !scope || scope.length === 0 || scope.includes(PROXY_SCOPES.UPDATE_APP)
 
     // 不使用代理：强制直连，避免走系统代理
     if (proxyMode === PROXY_MODE.NONE) {

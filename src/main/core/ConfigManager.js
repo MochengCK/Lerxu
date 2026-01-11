@@ -148,25 +148,23 @@ export default class ConfigManager {
         'background-image': EMPTY_STRING,
         'background-image-opacity': 0.3,
         'background-image-frosted-blur': 0,
-        'background-ui-opacity': 0.9,
+        'background-ui-opacity': 0.7,
         'background-ui-opacity-scope': [
-          'floating-bar',
-          'task-plan',
-          'speedometer',
           'date-filter',
           'task-category-select',
           'task-item',
-          'preference-card'
+          'preference-card',
+          'aside',
+          'subnav'
         ],
         'background-ui-frosted-blur': 6,
         'background-ui-frosted-blur-scope': [
-          'floating-bar',
-          'task-plan',
-          'speedometer',
           'date-filter',
           'task-category-select',
           'task-item',
-          'preference-card'
+          'preference-card',
+          'aside',
+          'subnav'
         ],
         'tracker-source': [
           NGOSANG_TRACKERS_BEST_IP_URL_CDN,
@@ -234,6 +232,27 @@ export default class ConfigManager {
     const openAtLogin = app.getLoginItemSettings(LOGIN_SETTING_OPTIONS).openAtLogin
     if (this.getUserConfig('open-at-login') !== openAtLogin) {
       this.setUserConfig('open-at-login', openAtLogin)
+    }
+
+    const uiScopeAll = [
+      'date-filter',
+      'task-category-select',
+      'task-item',
+      'preference-card',
+      'aside',
+      'subnav'
+    ]
+    const shouldResetUiScope = (value) => {
+      if (!Array.isArray(value) || value.length === 0) return true
+      return value.some(s => ['floating-bar', 'task-plan', 'speedometer'].includes(`${s}`.trim()))
+    }
+    const uiOpacityScope = this.getUserConfig('background-ui-opacity-scope')
+    if (shouldResetUiScope(uiOpacityScope)) {
+      this.setUserConfig('background-ui-opacity-scope', uiScopeAll)
+    }
+    const uiFrostedBlurScope = this.getUserConfig('background-ui-frosted-blur-scope')
+    if (shouldResetUiScope(uiFrostedBlurScope)) {
+      this.setUserConfig('background-ui-frosted-blur-scope', uiScopeAll)
     }
 
     if (this.getUserConfig('tracker-source').length === 0) {

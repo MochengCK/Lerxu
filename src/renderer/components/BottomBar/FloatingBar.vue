@@ -301,7 +301,7 @@
         if (!floatingBar.contains(event.target)) {
           if (this.isSearchExpanded && !this.bottomSearchValue) {
             this.shouldKeepActive = false
-            this.collapseSearch(true) // 传递参数表示是通过点击背景关闭的
+            this.collapseSearch()
           }
         }
       },
@@ -349,40 +349,19 @@
         })
         this.saveSortState()
       },
-      collapseSearch (isBackgroundClick = false) {
+      collapseSearch () {
         const shouldEmitClose = !this.isHovering && !this.bottomSearchValue && !this.isAlwaysShow
 
-        // 对于背景点击关闭，需要同步搜索框和任务计划按钮的时序
-        if (isBackgroundClick) {
-          // 立即设置搜索框状态，搜索框会因为CSS的transition-delay: 0.1s而延迟开始动画
-          this.isSearchExpanded = false
+        this.isSearchExpanded = false
 
-          // 延迟发送事件，让任务计划按钮与搜索框的CSS延迟同步
-          // 搜索框移除is-expanded后有0.1s的transition-delay，所以任务计划按钮也需要延迟0.1s
-          setTimeout(() => {
-            try {
-              commands.emit('floating-bar:search-expanded', false)
-            } catch (e) {}
+        try {
+          commands.emit('floating-bar:search-expanded', false)
+        } catch (e) {}
 
-            if (shouldEmitClose) {
-              try {
-                commands.emit('floating-bar:search-open', false)
-              } catch (e) {}
-            }
-          }, 100)
-        } else {
-          // 其他方式关闭时的原有逻辑
-          this.isSearchExpanded = false
-
+        if (shouldEmitClose) {
           try {
-            commands.emit('floating-bar:search-expanded', false)
+            commands.emit('floating-bar:search-open', false)
           } catch (e) {}
-
-          if (shouldEmitClose) {
-            try {
-              commands.emit('floating-bar:search-open', false)
-            } catch (e) {}
-          }
         }
       },
       saveSortState () {
@@ -533,7 +512,7 @@
       z-index: 2;
       opacity: 0;
       transition: width 0.15s ease-out, transform 0.15s ease-out, opacity 0.15s ease-out, background-color 0.15s;
-      transition-delay: 0.1s;
+      transition-delay: 0s;
       overflow: hidden;
       color: $--task-item-action-color;
       box-sizing: border-box;
@@ -559,7 +538,7 @@
         color: inherit;
         font-size: 12px;
         opacity: 0;
-        transition: opacity 0.1s linear 0.1s;
+        transition: opacity 0.1s linear 0s;
       }
       &.is-expanded {
         width: 220px;
@@ -602,7 +581,7 @@
       cursor: pointer;
       padding: 0;
       transition: transform 0.15s ease-out, opacity 0.15s ease-out, background-color 0.15s;
-      transition-delay: 0.1s;
+      transition-delay: 0s;
       opacity: 0;
       pointer-events: none;
       z-index: 2;

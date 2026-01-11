@@ -67,6 +67,32 @@ iframe {
   border-radius: 12px;
   overflow: hidden;
 }
+
+.el-message-box.ui-config-import-confirm {
+  .el-message-box__btns {
+    display: flex;
+    justify-content: flex-end;
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    padding: 0;
+    margin: 0;
+    z-index: 2001;
+  }
+}
+
+.el-message-box.ui-config-import-prompt {
+  .el-message-box__btns {
+    display: flex;
+    justify-content: flex-end;
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    padding: 0;
+    margin: 0;
+    z-index: 2001;
+  }
+}
 .el-progress-bar__inner {
   transition: all 0.4s cubic-bezier(0.08, 0.82, 0.17, 1) 0s;
 }
