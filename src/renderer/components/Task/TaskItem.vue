@@ -221,11 +221,6 @@
     right: 12px;
   }
 
-  // 列表视图样式（默认）
-  &.task-item--list {
-    // 保持原有样式
-  }
-
   // 网格视图样式
   &.task-item--grid {
     margin-bottom: 0;
@@ -265,12 +260,19 @@
       right: 12px; // 与列表视图保持一致
       z-index: 10; // 确保操作按钮和弹窗在最上层
     }
-
-    // 在网格视图中的样式调整
-    .task-progress {
-      // 进度条信息的样式可以在这里调整
-    }
   }
+}
+
+.theme-light.has-app-background-image .task-item {
+  background-color: rgba(255, 255, 255, var(--app-ui-opacity-task-item, var(--app-ui-opacity, 0.9)));
+  backdrop-filter: blur(var(--app-ui-frosted-blur-task-item, var(--app-ui-frosted-blur, 0px)));
+  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-task-item, var(--app-ui-frosted-blur, 0px)));
+}
+
+.theme-dark.has-app-background-image .task-item {
+  background-color: rgba(45, 45, 45, var(--app-ui-opacity-task-item, var(--app-ui-opacity, 0.9)));
+  backdrop-filter: blur(var(--app-ui-frosted-blur-task-item, var(--app-ui-frosted-blur, 0px)));
+  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-task-item, var(--app-ui-frosted-blur, 0px)));
 }
 
 // 背景进度条模式下的TaskItem样式调整

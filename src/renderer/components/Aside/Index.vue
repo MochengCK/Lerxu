@@ -75,6 +75,10 @@
 </script>
 
 <style lang="scss">
+.aside {
+  -webkit-app-region: drag;
+}
+
 .aside-inner {
   display: flex;
   height: 100%;

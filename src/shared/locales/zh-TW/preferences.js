@@ -140,6 +140,7 @@ export default {
   'background-image-not-selected': '未選擇圖片',
   'background-image-opacity': '圖片透明度',
   'background-ui-opacity': 'UI 透明度',
+  'background-ui-frosted-strength': 'UI 磨砂強度',
   'task-detail-default-transparent': '任務詳情彈窗預設透明',
   'task-detail-frosted-strength': '任務詳情彈窗磨砂強度',
   'auto-hide-window': '自動隱藏視窗',

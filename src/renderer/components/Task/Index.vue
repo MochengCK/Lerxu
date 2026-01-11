@@ -3,6 +3,13 @@
     class="main panel"
     direction="horizontal"
   >
+    <template v-if="isThreeColumn">
+      <mo-aside />
+      <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav">
+        <mo-task-subnav :current="status" />
+      </el-aside>
+    </template>
+
     <el-container
       class="content panel"
       direction="vertical"
@@ -40,6 +47,7 @@
             v-model="categoryFilter"
             size="mini"
             :placeholder="$t('task.category-all')"
+            popper-class="task-category-select-dropdown"
             @change="onCategoryChange"
             @visible-change="onCategoryVisibleChange"
             @mouseenter.native="openCategorySelect"
@@ -62,109 +70,111 @@
         <mo-task-list :category="categoryFilter" :keyword="taskSearchQuery" />
       </el-main>
     </el-container>
-    <div
-      v-if="subnavMode === 'floating'"
-      class="subnav-small-screen subnav-right"
-    >
-      <ul class="menu small-menu">
-        <li
-          @click="navStatus('all')"
-          :class="{ active: status === 'all' || status === 'date' }"
-        >
-          <el-tooltip
-            effect="dark"
-            :content="$t('task.all')"
-            placement="left"
-            :open-delay="500"
-          >
-            <mo-icon name="menu-task" width="20" height="20" />
-          </el-tooltip>
-        </li>
-        <li
-          @click="navStatus('active')"
-          :class="{ active: status === 'active' }"
-        >
-          <el-tooltip
-            effect="dark"
-            :content="$t('task.active')"
-            placement="left"
-            :open-delay="500"
-          >
-            <mo-icon name="task-start" width="20" height="20" />
-          </el-tooltip>
-        </li>
-        <li
-          @click="navStatus('waiting')"
-          :class="{ active: status === 'waiting' }"
-        >
-          <el-tooltip
-            effect="dark"
-            :content="$t('task.waiting')"
-            placement="left"
-            :open-delay="500"
-          >
-            <mo-icon name="task-pause" width="20" height="20" />
-          </el-tooltip>
-        </li>
-        <li
-          @click="navStatus('stopped')"
-          :class="{ active: status === 'stopped' }"
-        >
-          <el-tooltip
-            effect="dark"
-            :content="$t('task.stopped')"
-            placement="left"
-            :open-delay="500"
-          >
-            <mo-icon name="task-stop" width="20" height="20" />
-          </el-tooltip>
-        </li>
-      </ul>
-    </div>
-    <!-- 子侧边栏与日期筛选按钮之间的分隔线 -->
-    <div v-if="subnavMode === 'floating'" class="subnav-divider"></div>
-    <!-- 日期筛选按钮 - 独立于子侧边栏 -->
-    <div
-      v-if="subnavMode === 'floating'"
-      ref="dateFilterBtn"
-      class="date-filter-standalone"
-      :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible }"
-      @click.stop="onDateFilterClick"
-      @mouseenter="onDateFilterHover"
-      @mouseleave="onDateFilterLeave"
-      @mousedown.prevent
-      @selectstart.prevent
-      @dragstart.prevent
-    >
-      <span
-        class="date-filter-text"
-        :class="{ visible: datePickerVisible || showDateText || storeFilterDate }"
-        @mousedown.prevent
-        @selectstart.prevent
-        @dragstart.prevent
-      >
-        {{ displayDateText }}
-      </span>
+
+    <template v-if="!isThreeColumn">
       <div
-        class="date-filter-icon"
+        v-if="subnavMode === 'floating'"
+        class="subnav-small-screen subnav-right"
+      >
+        <ul class="menu small-menu">
+          <li
+            @click="navStatus('all')"
+            :class="{ active: status === 'all' || status === 'date' }"
+          >
+            <el-tooltip
+              effect="dark"
+              :content="$t('task.all')"
+              placement="left"
+              :open-delay="500"
+            >
+              <mo-icon name="menu-task" width="20" height="20" />
+            </el-tooltip>
+          </li>
+          <li
+            @click="navStatus('active')"
+            :class="{ active: status === 'active' }"
+          >
+            <el-tooltip
+              effect="dark"
+              :content="$t('task.active')"
+              placement="left"
+              :open-delay="500"
+            >
+              <mo-icon name="task-start" width="20" height="20" />
+            </el-tooltip>
+          </li>
+          <li
+            @click="navStatus('waiting')"
+            :class="{ active: status === 'waiting' }"
+          >
+            <el-tooltip
+              effect="dark"
+              :content="$t('task.waiting')"
+              placement="left"
+              :open-delay="500"
+            >
+              <mo-icon name="task-pause" width="20" height="20" />
+            </el-tooltip>
+          </li>
+          <li
+            @click="navStatus('stopped')"
+            :class="{ active: status === 'stopped' }"
+          >
+            <el-tooltip
+              effect="dark"
+              :content="$t('task.stopped')"
+              placement="left"
+              :open-delay="500"
+            >
+              <mo-icon name="task-stop" width="20" height="20" />
+            </el-tooltip>
+          </li>
+        </ul>
+      </div>
+      <div v-if="subnavMode === 'floating'" class="subnav-divider"></div>
+    </template>
+
+    <template v-if="subnavMode === 'floating'">
+      <div
+        ref="dateFilterBtn"
+        class="date-filter-standalone"
+        :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible, 'date-filter-standalone--three-column': isThreeColumn }"
+        @click.stop="onDateFilterClick"
+        @mouseenter="onDateFilterHover"
+        @mouseleave="onDateFilterLeave"
         @mousedown.prevent
         @selectstart.prevent
         @dragstart.prevent
       >
-        <mo-icon name="date-filter" width="24" height="24" />
+        <span
+          class="date-filter-text"
+          :class="{ visible: datePickerVisible || showDateText || storeFilterDate }"
+          @mousedown.prevent
+          @selectstart.prevent
+          @dragstart.prevent
+        >
+          {{ displayDateText }}
+        </span>
+        <div
+          class="date-filter-icon"
+          @mousedown.prevent
+          @selectstart.prevent
+          @dragstart.prevent
+        >
+          <mo-icon name="date-filter" width="24" height="24" />
+        </div>
       </div>
-    </div>
-    <!-- 自定义日期选择器 -->
-    <mo-custom-date-picker
-      v-if="datePickerVisible"
-      v-model="selectedDate"
-      :task-counts="taskDateCounts"
-      :trigger-rect="dateFilterBtnRect"
-      @change="onDateChange"
-      @hover="onDateHover"
-      @clear="onDateClear"
-      @close="closeDatePicker"
-    />
+      <mo-custom-date-picker
+        v-if="datePickerVisible"
+        v-model="selectedDate"
+        :task-counts="taskDateCounts"
+        :trigger-rect="dateFilterBtnRect"
+        @change="onDateChange"
+        @hover="onDateHover"
+        @clear="onDateClear"
+        @close="closeDatePicker"
+      />
+    </template>
   </el-container>
 </template>
 
@@ -176,7 +186,9 @@
   import { ADD_TASK_TYPE } from '@shared/constants'
   import TaskActions from '@/components/Task/TaskActions'
   import TaskList from '@/components/Task/TaskList'
+  import Aside from '@/components/Aside/Index'
   import SubnavSwitcher from '@/components/Subnav/SubnavSwitcher'
+  import TaskSubnav from '@/components/Subnav/TaskSubnav'
   import CustomDatePicker from '@/components/Task/DatePicker'
   import taskHistory from '@/api/TaskHistory'
   import '@/components/Icons/menu-task'
@@ -199,7 +211,9 @@
     components: {
       [TaskActions.name]: TaskActions,
       [TaskList.name]: TaskList,
+      [Aside.name]: Aside,
       [SubnavSwitcher.name]: SubnavSwitcher,
+      [TaskSubnav.name]: TaskSubnav,
       [CustomDatePicker.name]: CustomDatePicker
     },
     props: {
@@ -241,8 +255,15 @@
       ...mapState('preference', {
         noConfirmBeforeDelete: state => state.config.noConfirmBeforeDeleteTask,
         subnavMode: state => state.config.subnavMode || 'floating',
+        sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating',
         prefTheme: state => state.config.theme
       }),
+      isThreeColumn () {
+        return this.sidebarLayoutMode === 'three-column'
+      },
+      showThreeColumnSubnav () {
+        return this.isThreeColumn && this.subnavMode !== 'title'
+      },
       subnavs () {
         return [
           {
@@ -922,6 +943,42 @@
   opacity: 1;
 }
 
+.theme-light.has-app-background-image {
+  .task-category-select .el-select .el-input__inner {
+    background-color: rgba(255, 255, 255, var(--app-ui-opacity-task-category-select, var(--app-ui-opacity, 0.9))) !important;
+    backdrop-filter: blur(var(--app-ui-frosted-blur-task-category-select, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-task-category-select, var(--app-ui-frosted-blur, 0px)));
+  }
+  .task-category-select-dropdown {
+    background-color: rgba(255, 255, 255, var(--app-ui-opacity-task-category-select, var(--app-ui-opacity, 0.9)));
+    backdrop-filter: blur(var(--app-ui-frosted-blur-task-category-select, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-task-category-select, var(--app-ui-frosted-blur, 0px)));
+  }
+}
+
+.theme-dark.has-app-background-image {
+  .task-category-select .el-select .el-input__inner {
+    background-color: rgba(45, 45, 45, var(--app-ui-opacity-task-category-select, var(--app-ui-opacity, 0.9))) !important;
+    backdrop-filter: blur(var(--app-ui-frosted-blur-task-category-select, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-task-category-select, var(--app-ui-frosted-blur, 0px)));
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    color: #eee !important;
+  }
+  .task-category-select-dropdown {
+    background-color: rgba(45, 45, 45, var(--app-ui-opacity-task-category-select, var(--app-ui-opacity, 0.9)));
+    backdrop-filter: blur(var(--app-ui-frosted-blur-task-category-select, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-task-category-select, var(--app-ui-frosted-blur, 0px)));
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .task-category-select-dropdown .el-select-dropdown__item {
+    color: #eee;
+  }
+  .task-category-select-dropdown .el-select-dropdown__item.hover,
+  .task-category-select-dropdown .el-select-dropdown__item:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+  }
+}
+
 .task-search-bar {
   display: flex;
   justify-content: flex-end;
@@ -938,7 +995,7 @@
   top: 50%;
   transform: translateY(-50%);
   z-index: 1000;
-  background-color: var(--speedometer-background);
+  background-color: transparent;
   border-radius: 100px;
   opacity: 0.5;
   transition: opacity 0.3s ease;
@@ -1053,6 +1110,44 @@
   -ms-user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
+}
+
+.date-filter-standalone.date-filter-standalone--three-column {
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.theme-light.has-app-background-image .date-filter-standalone {
+  background-color: transparent !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.theme-dark.has-app-background-image .date-filter-standalone {
+  background-color: transparent !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.theme-light.has-app-background-image .date-filter-standalone.active,
+.theme-light.has-app-background-image .date-filter-standalone.has-filter,
+.theme-light.has-app-background-image .date-filter-standalone:hover:not(.has-filter):not(.active) {
+  background-color: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
+  background: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
+  backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;
+  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;
+}
+
+.theme-dark.has-app-background-image .date-filter-standalone.active,
+.theme-dark.has-app-background-image .date-filter-standalone.has-filter,
+.theme-dark.has-app-background-image .date-filter-standalone:hover:not(.has-filter):not(.active) {
+  background-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
+  background: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
+  backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;
+  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;
 }
 
 .date-filter-standalone * {

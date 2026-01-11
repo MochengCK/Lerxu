@@ -56,10 +56,12 @@
           <el-checkbox v-model="taskPlanOnlyWhenIdle">{{ $t('app.task-plan-only-when-idle') }}</el-checkbox>
         </el-form-item>
       </el-form>
+      <div slot="footer" class="dialog-footer">
+        <div class="mo-task-plan-save">
+          <el-button type="primary" :disabled="isTaskPlanSaveDisabled" @click="saveTaskPlan">{{ $t('app.save') }}</el-button>
+        </div>
+      </div>
     </el-dialog>
-    <div v-if="taskPlanVisible" class="mo-task-plan-save">
-      <el-button type="primary" :disabled="isTaskPlanSaveDisabled" @click="saveTaskPlan">{{ $t('app.save') }}</el-button>
-    </div>
     <mo-speedometer :class="{ 'is-shifted': isSpeedometerShifted }" />
     <mo-add-task :visible="addTaskVisible" :type="addTaskType" />
     <mo-task-detail
@@ -70,7 +72,7 @@
       :peers="currentTaskPeers"
     />
     <mo-dragger />
-    <div class="aside-small-screen">
+    <div v-if="sidebarLayoutMode !== 'three-column'" class="aside-small-screen">
       <ul class="menu small-menu">
         <li
           @click="nav('/task')"
@@ -172,7 +174,8 @@
         taskPlanTypeFromConfig: state => (state.config && state.config.taskPlanType) || 'complete',
         taskPlanTimeFromConfig: state => (state.config && state.config.taskPlanTime) || '',
         taskPlanOnlyWhenIdleFromConfig: state => !!(state.config && state.config.taskPlanOnlyWhenIdle),
-        prefTheme: state => state.config && state.config.theme
+        prefTheme: state => state.config && state.config.theme,
+        sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating'
       }),
       isTaskPlanPlanned () {
         return (this.taskPlanActionFromConfig || 'none') !== 'none'
@@ -1707,7 +1710,7 @@
     left: 50%;
     bottom: 24px;
     transform: translateX(87px);
-    z-index: 25;
+    z-index: 220;
     height: 40px;
     width: 40px;
     padding: 0;
@@ -1780,11 +1783,19 @@
     width: 100%;
   }
 
+  .el-dialog.task-plan-dialog .el-dialog__footer {
+    padding: 0;
+  }
+
+  .el-dialog.task-plan-dialog .el-dialog__footer::before {
+    display: none;
+  }
+
   .mo-task-plan-save {
     position: fixed;
     right: 14px;
     bottom: 24px;
-    z-index: 3001;
+    z-index: 2147483647;
   }
 
   .mo-speedometer.is-shifted {
@@ -1793,6 +1804,20 @@
 
   .theme-dark .mo-task-plan.is-planned {
     border-color: #a5d6a7;
+  }
+
+  .theme-light .mo-task-plan:hover,
+  .theme-light .mo-task-plan.is-planned {
+    background-color: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .theme-dark .mo-task-plan:hover,
+  .theme-dark .mo-task-plan.is-planned {
+    background-color: rgba(45, 45, 45, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
   }
 
   @keyframes pulse-green {
@@ -1811,7 +1836,7 @@
     position: fixed;
     right: 14px;
     bottom: 24px;
-    z-index: 20;
+    z-index: 210;
   }
 
   /* 小屏幕侧边栏样式 */
@@ -1821,7 +1846,7 @@
     top: 50%;
     transform: translateY(-50%);
     z-index: 1000;
-    background-color: var(--speedometer-background);
+    background-color: transparent;
     border-radius: 100px;
     opacity: 0.5;
     transition: opacity 0.3s ease;

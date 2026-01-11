@@ -140,4 +140,18 @@
       color: $--speedometer-primary-color;
     }
   }
+
+  .theme-light .mo-speedometer:hover,
+  .theme-light .mo-speedometer:not(.stopped) {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .theme-dark .mo-speedometer:hover,
+  .theme-dark .mo-speedometer:not(.stopped) {
+    background: rgba(45, 45, 45, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
 </style>

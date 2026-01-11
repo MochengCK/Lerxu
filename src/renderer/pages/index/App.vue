@@ -31,6 +31,24 @@
   import { getLanguage } from '@shared/locales'
   import { getLocaleManager } from '@/components/Locale'
 
+  const UI_FROSTED_BLUR_SCOPES = [
+    'date-filter',
+    'task-category-select',
+    'task-item',
+    'preference-card',
+    'aside',
+    'subnav'
+  ]
+
+  const UI_OPACITY_SCOPES = [
+    'date-filter',
+    'task-category-select',
+    'task-item',
+    'preference-card',
+    'aside',
+    'subnav'
+  ]
+
   export default {
     name: 'LinkCoreDownloadManagerApp',
     components: {
@@ -57,6 +75,9 @@
         backgroundImageOpacity: state => state.config.backgroundImageOpacity,
         backgroundImageFrostedBlur: state => state.config.backgroundImageFrostedBlur,
         backgroundUiOpacity: state => state.config.backgroundUiOpacity,
+        backgroundUiOpacityScope: state => state.config.backgroundUiOpacityScope,
+        backgroundUiFrostedBlur: state => state.config.backgroundUiFrostedBlur,
+        backgroundUiFrostedBlurScope: state => state.config.backgroundUiFrostedBlurScope,
         taskDetailDefaultTransparent: state => state.config.taskDetailDefaultTransparent,
         taskDetailFrostedBlur: state => state.config.taskDetailFrostedBlur
       }),
@@ -96,17 +117,39 @@
         const normalized = Number.isFinite(raw) ? raw : 0.9
         return Math.min(Math.max(normalized, 0.3), 1)
       },
+      uiFrostedBlur () {
+        if (!this.shouldUseBackgroundImage) return 0
+        const raw = Number(this.backgroundUiFrostedBlur)
+        const normalized = Number.isFinite(raw) ? raw : 6
+        return Math.min(Math.max(normalized, 0), 20)
+      },
+      backgroundImageCssValue () {
+        if (!this.shouldUseBackgroundImage) return 'none'
+        const url = this.backgroundImageUrl
+        if (!url) return 'none'
+        return `url("${url}")`
+      },
       appRootStyle () {
         const blurRaw = Number(this.taskDetailFrostedBlur)
         const blur = Number.isFinite(blurRaw) ? Math.min(Math.max(blurRaw, 0), 20) : 0
         const alpha = blur <= 0 ? 0 : Math.min(Math.max((blur / 20) * 0.16, 0), 0.16)
         const bgBlurRaw = Number(this.backgroundImageFrostedBlur)
         const bgBlur = Number.isFinite(bgBlurRaw) ? Math.min(Math.max(bgBlurRaw, 0), 20) : 0
+        const scopeVars = {}
+        UI_FROSTED_BLUR_SCOPES.forEach(scope => {
+          scopeVars[`--app-ui-frosted-blur-${scope}`] = `${this.getUiFrostedBlurForScope(scope)}px`
+        })
+        UI_OPACITY_SCOPES.forEach(scope => {
+          scopeVars[`--app-ui-opacity-${scope}`] = `${this.getUiOpacityForScope(scope)}`
+        })
         return {
           '--app-ui-opacity': `${this.uiOpacity}`,
+          '--app-ui-frosted-blur': `${this.uiFrostedBlur}px`,
+          '--app-background-image': `${this.backgroundImageCssValue}`,
           '--task-detail-frosted-blur': `${blur}px`,
           '--task-detail-frosted-alpha': `${alpha}`,
-          '--background-image-frosted-blur': `${bgBlur}px`
+          '--background-image-frosted-blur': `${bgBlur}px`,
+          ...scopeVars
         }
       },
       backgroundImageUrl () {
@@ -144,6 +187,18 @@
       }
     },
     methods: {
+      getUiOpacityForScope (scope) {
+        if (!this.shouldUseBackgroundImage) return 1
+        const scopes = Array.isArray(this.backgroundUiOpacityScope) ? this.backgroundUiOpacityScope : null
+        if (!scopes) return this.uiOpacity
+        return scopes.includes(scope) ? this.uiOpacity : 1
+      },
+      getUiFrostedBlurForScope (scope) {
+        if (!this.shouldUseBackgroundImage) return 0
+        const scopes = Array.isArray(this.backgroundUiFrostedBlurScope) ? this.backgroundUiFrostedBlurScope : null
+        if (!scopes) return this.uiFrostedBlur
+        return scopes.includes(scope) ? this.uiFrostedBlur : 0
+      },
       updateRootClassName () {
         const { themeClass = '', i18nClass = '', directionClass = '', backgroundClass = '', taskDetailTransparentClass = '' } = this
         const className = `${themeClass} ${i18nClass} ${directionClass} ${backgroundClass} ${taskDetailTransparentClass}`.trim()
@@ -156,9 +211,17 @@
         const bgBlurRaw = Number(this.backgroundImageFrostedBlur)
         const bgBlur = Number.isFinite(bgBlurRaw) ? Math.min(Math.max(bgBlurRaw, 0), 20) : 0
         document.documentElement.style.setProperty('--app-ui-opacity', `${this.uiOpacity}`)
+        document.documentElement.style.setProperty('--app-ui-frosted-blur', `${this.uiFrostedBlur}px`)
+        document.documentElement.style.setProperty('--app-background-image', `${this.backgroundImageCssValue}`)
         document.documentElement.style.setProperty('--task-detail-frosted-blur', `${blur}px`)
         document.documentElement.style.setProperty('--task-detail-frosted-alpha', `${alpha}`)
         document.documentElement.style.setProperty('--background-image-frosted-blur', `${bgBlur}px`)
+        UI_FROSTED_BLUR_SCOPES.forEach(scope => {
+          document.documentElement.style.setProperty(`--app-ui-frosted-blur-${scope}`, `${this.getUiFrostedBlurForScope(scope)}px`)
+        })
+        UI_OPACITY_SCOPES.forEach(scope => {
+          document.documentElement.style.setProperty(`--app-ui-opacity-${scope}`, `${this.getUiOpacityForScope(scope)}`)
+        })
       }
     },
     beforeMount () {
@@ -252,6 +315,18 @@
       },
       uiOpacity () {
         this.updateRootCssVars()
+      },
+      uiFrostedBlur () {
+        this.updateRootCssVars()
+      },
+      backgroundUiOpacityScope () {
+        this.updateRootCssVars()
+      },
+      backgroundUiFrostedBlurScope () {
+        this.updateRootCssVars()
+      },
+      backgroundImageCssValue () {
+        this.updateRootCssVars()
       }
     }
   }
@@ -275,7 +350,6 @@
 .app-content {
   position: relative;
   z-index: 1;
-  opacity: var(--app-ui-opacity, 1);
   height: 100%;
   width: 100%;
 }

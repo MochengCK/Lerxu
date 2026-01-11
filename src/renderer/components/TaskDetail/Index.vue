@@ -1,6 +1,6 @@
 <template>
   <el-drawer
-    custom-class="panel task-detail-drawer"
+    :custom-class="drawerClass"
     size="61.8%"
     v-if="gid"
     :with-header="true"
@@ -9,6 +9,8 @@
     :visible="visible"
     :before-close="handleClose"
     append-to-body
+    @open="handleOpen"
+    @opened="handleOpened"
     @closed="handleClosed"
   >
     <div slot="title" class="task-detail-drawer-title">
@@ -178,7 +180,8 @@
         filesSelection: EMPTY_STRING,
         selectionChangedCount: 0,
         statusHintTruncated: false,
-        resizeHandler: null
+        resizeHandler: null,
+        drawerAnimationDone: false
       }
     },
     computed: {
@@ -190,6 +193,22 @@
         preferenceConfig: state => state.config
       }),
       isRenderer: () => is.renderer(),
+      taskDetailDefaultTransparentEnabled () {
+        const cfg = this.preferenceConfig || {}
+        return cfg.taskDetailDefaultTransparent === undefined ? false : !!cfg.taskDetailDefaultTransparent
+      },
+      taskDetailFrostedBlurValue () {
+        const cfg = this.preferenceConfig || {}
+        const raw = Number(cfg.taskDetailFrostedBlur)
+        return Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 20) : 0
+      },
+      shouldEnableBackdrop () {
+        return this.drawerAnimationDone && this.taskDetailDefaultTransparentEnabled && this.taskDetailFrostedBlurValue > 0
+      },
+      drawerClass () {
+        const base = 'panel task-detail-drawer'
+        return this.shouldEnableBackdrop ? `${base} task-detail-drawer--backdrop` : base
+      },
       isBT () {
         return checkTaskIsBT(this.task)
       },
@@ -378,10 +397,24 @@
       }
     },
     methods: {
+      handleOpen () {
+        this.drawerAnimationDone = false
+      },
+      handleOpened () {
+        const done = () => {
+          this.drawerAnimationDone = true
+        }
+        if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+          window.requestAnimationFrame(() => window.requestAnimationFrame(done))
+          return
+        }
+        setTimeout(done, 0)
+      },
       handleHeaderClose () {
         this.handleClose()
       },
       handleClose (done) {
+        this.drawerAnimationDone = false
         this.$store.dispatch('task/hideTaskDetail')
         window.removeEventListener('resize', this.resizeHandler)
         if (this.resizeHandler && this.resizeHandler.cancel) {
@@ -392,6 +425,7 @@
         }
       },
       handleClosed (done) {
+        this.drawerAnimationDone = false
         this.$store.dispatch('task/updateCurrentTaskGid', EMPTY_STRING)
         this.$store.dispatch('task/updateCurrentTaskItem', null)
         this.optionsChanged = false
@@ -525,8 +559,8 @@
   }
 
   .task-detail-drawer {
-    backdrop-filter: blur(var(--task-detail-frosted-blur, 0px));
-    -webkit-backdrop-filter: blur(var(--task-detail-frosted-blur, 0px));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 
     .el-input__inner,
     .el-textarea__inner,
@@ -567,6 +601,11 @@
       background: transparent !important;
       background-color: transparent !important;
     }
+  }
+
+  .task-detail-drawer.task-detail-drawer--backdrop {
+    backdrop-filter: blur(var(--task-detail-frosted-blur, 0px));
+    -webkit-backdrop-filter: blur(var(--task-detail-frosted-blur, 0px));
   }
 }
 

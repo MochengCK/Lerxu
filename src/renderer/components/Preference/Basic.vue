@@ -92,6 +92,24 @@
               </el-form-item>
             </el-col>
             <el-col class="form-item-sub" :span="24">
+              <el-form-item :label="$t('preferences.sidebar-layout-mode')">
+                <el-select
+                  v-model="form.sidebarLayoutMode"
+                  size="mini"
+                  @change="autoSaveForm"
+                >
+                  <el-option
+                    :label="$t('preferences.sidebar-layout-mode-floating')"
+                    value="floating"
+                  />
+                  <el-option
+                    :label="$t('preferences.sidebar-layout-mode-three-column')"
+                    value="three-column"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
               <el-form-item :label="$t('preferences.floating-bar-display-mode')">
                 <el-select
                   v-model="form.floatingBarDisplayMode"
@@ -159,6 +177,57 @@
                   :step="1"
                   @change="autoSaveForm"
                 />
+              </el-form-item>
+            </el-col>
+            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
+              <el-form-item class="background-slider-item" :label="$t('preferences.background-ui-opacity-scope')">
+                <el-select
+                  ref="backgroundUiOpacityScopeSelect"
+                  v-model="form.backgroundUiOpacityScope"
+                  filterable
+                  multiple
+                  :collapse-tags="collapseTagsBackgroundUiOpacityScope"
+                  style="width: 100%;"
+                  @change="autoSaveForm"
+                >
+                  <el-option
+                    v-for="item in backgroundUiOpacityScopeOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
+              <el-form-item class="background-slider-item" :label="$t('preferences.background-ui-frosted-strength')">
+                <el-slider
+                  v-model="form.backgroundUiFrostedBlur"
+                  :min="0"
+                  :max="20"
+                  :step="1"
+                  @change="autoSaveForm"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
+              <el-form-item class="background-slider-item" :label="$t('preferences.background-ui-frosted-scope')">
+                <el-select
+                  ref="backgroundUiFrostedBlurScopeSelect"
+                  v-model="form.backgroundUiFrostedBlurScope"
+                  filterable
+                  multiple
+                  :collapse-tags="collapseTagsBackgroundUiFrostedBlurScope"
+                  style="width: 100%;"
+                  @change="autoSaveForm"
+                >
+                  <el-option
+                    v-for="item in backgroundUiFrostedBlurScopeOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </el-select>
               </el-form-item>
             </el-col>
           </el-form-item>
@@ -819,6 +888,24 @@
     return normalized || 'ctrl'
   }
 
+  const BACKGROUND_UI_FROSTED_BLUR_SCOPE_OPTIONS = [
+    'date-filter',
+    'task-category-select',
+    'task-item',
+    'preference-card',
+    'aside',
+    'subnav'
+  ]
+
+  const BACKGROUND_UI_OPACITY_SCOPE_OPTIONS = [
+    'date-filter',
+    'task-category-select',
+    'task-item',
+    'preference-card',
+    'aside',
+    'subnav'
+  ]
+
   const initForm = (config) => {
     const {
       autoHideWindow,
@@ -862,6 +949,9 @@
       backgroundImageOpacity,
       backgroundImageFrostedBlur,
       backgroundUiOpacity,
+      backgroundUiOpacityScope,
+      backgroundUiFrostedBlur,
+      backgroundUiFrostedBlurScope,
       taskDetailDefaultTransparent,
       taskDetailFrostedBlur,
       autoCategorizeFiles,
@@ -870,6 +960,7 @@
       customKeymap,
       taskMultiSelectModifier,
       subnavMode,
+      sidebarLayoutMode,
       autoOpenTaskProgressWindow,
       taskProgressWindowMode,
       clipboardAutoPaste,
@@ -945,6 +1036,19 @@
       backgroundUiOpacity: (typeof backgroundUiOpacity === 'number' && Number.isFinite(backgroundUiOpacity))
         ? Math.min(Math.max(backgroundUiOpacity, 0.3), 1)
         : 0.9,
+      backgroundUiOpacityScope: Array.isArray(backgroundUiOpacityScope)
+        ? backgroundUiOpacityScope
+          .map(s => `${s}`.trim())
+          .filter(s => BACKGROUND_UI_OPACITY_SCOPE_OPTIONS.includes(s))
+        : [...BACKGROUND_UI_OPACITY_SCOPE_OPTIONS],
+      backgroundUiFrostedBlur: (typeof backgroundUiFrostedBlur === 'number' && Number.isFinite(backgroundUiFrostedBlur))
+        ? Math.min(Math.max(backgroundUiFrostedBlur, 0), 20)
+        : 6,
+      backgroundUiFrostedBlurScope: Array.isArray(backgroundUiFrostedBlurScope)
+        ? backgroundUiFrostedBlurScope
+          .map(s => `${s}`.trim())
+          .filter(s => BACKGROUND_UI_FROSTED_BLUR_SCOPE_OPTIONS.includes(s))
+        : [...BACKGROUND_UI_FROSTED_BLUR_SCOPE_OPTIONS],
       taskDetailDefaultTransparent: taskDetailDefaultTransparent === undefined ? false : !!taskDetailDefaultTransparent,
       taskDetailFrostedBlur: (typeof taskDetailFrostedBlur === 'number' && Number.isFinite(taskDetailFrostedBlur))
         ? Math.min(Math.max(taskDetailFrostedBlur, 0), 20)
@@ -963,6 +1067,7 @@
       customKeymap: customKeymap || {},
       taskMultiSelectModifier: normalizeTaskMultiSelectModifier(taskMultiSelectModifier),
       subnavMode: subnavMode || 'floating',
+      sidebarLayoutMode: sidebarLayoutMode || 'floating',
       autoOpenTaskProgressWindow: autoOpenTaskProgressWindow === undefined ? true : !!autoOpenTaskProgressWindow,
       taskProgressWindowMode: taskProgressWindowMode || 'first',
       clipboardAutoPaste: clipboardAutoPaste === undefined ? true : !!clipboardAutoPaste,
@@ -995,6 +1100,12 @@
       if (!('taskProgressWindowMode' in formOriginal)) {
         this.$set(formOriginal, 'taskProgressWindowMode', 'first')
       }
+      if (!('sidebarLayoutMode' in form)) {
+        this.$set(form, 'sidebarLayoutMode', 'floating')
+      }
+      if (!('sidebarLayoutMode' in formOriginal)) {
+        this.$set(formOriginal, 'sidebarLayoutMode', 'floating')
+      }
 
       return {
         form,
@@ -1009,7 +1120,10 @@
         showCategoryDialog: false,
         tempFileCategories: null,
         originalFileCategories: null,
-        hasNoResults: false
+        hasNoResults: false,
+        collapseTagsBackgroundUiOpacityScope: false,
+        collapseTagsBackgroundUiFrostedBlurScope: false,
+        textMeasureCanvas: null
       }
     },
     computed: {
@@ -1152,6 +1266,26 @@
           this.form.backgroundUiOpacity = percent / 100
         }
       },
+      backgroundUiFrostedBlurScopeOptions () {
+        return [
+          { value: 'date-filter', label: this.$t('preferences.background-ui-frosted-scope-date-filter') },
+          { value: 'task-category-select', label: this.$t('preferences.background-ui-frosted-scope-task-category-select') },
+          { value: 'task-item', label: this.$t('preferences.background-ui-frosted-scope-task-item') },
+          { value: 'preference-card', label: this.$t('preferences.background-ui-frosted-scope-preference-card') },
+          { value: 'aside', label: this.$t('preferences.background-ui-frosted-scope-aside') },
+          { value: 'subnav', label: this.$t('preferences.background-ui-frosted-scope-subnav') }
+        ]
+      },
+      backgroundUiOpacityScopeOptions () {
+        return [
+          { value: 'date-filter', label: this.$t('preferences.background-ui-opacity-scope-date-filter') },
+          { value: 'task-category-select', label: this.$t('preferences.background-ui-opacity-scope-task-category-select') },
+          { value: 'task-item', label: this.$t('preferences.background-ui-opacity-scope-task-item') },
+          { value: 'preference-card', label: this.$t('preferences.background-ui-opacity-scope-preference-card') },
+          { value: 'aside', label: this.$t('preferences.background-ui-opacity-scope-aside') },
+          { value: 'subnav', label: this.$t('preferences.background-ui-opacity-scope-subnav') }
+        ]
+      },
       backgroundImageDisplay () {
         const p = this.form.backgroundImage
         if (!p) return this.$t('preferences.background-image-not-selected')
@@ -1219,9 +1353,81 @@
       // 监控语言变化，更新localeChanged状态
       'form.locale' (newLocale, oldLocale) {
         this.localeChanged = newLocale !== this.originalLocale
+      },
+      'form.backgroundType' () {
+        this.updateUiScopeSelectCollapse()
+      },
+      'form.backgroundUiOpacityScope': {
+        handler () {
+          this.updateUiScopeSelectCollapse()
+        },
+        deep: true
+      },
+      'form.backgroundUiFrostedBlurScope': {
+        handler () {
+          this.updateUiScopeSelectCollapse()
+        },
+        deep: true
       }
     },
+    mounted () {
+      window.addEventListener('resize', this.updateUiScopeSelectCollapse)
+      this.updateUiScopeSelectCollapse()
+    },
+    beforeDestroy () {
+      window.removeEventListener('resize', this.updateUiScopeSelectCollapse)
+    },
     methods: {
+      measureTextWidth (text, font) {
+        try {
+          const canvas = this.textMeasureCanvas || (this.textMeasureCanvas = document.createElement('canvas'))
+          const ctx = canvas.getContext('2d')
+          if (!ctx) return `${text || ''}`.length * 10
+          ctx.font = font || '12px sans-serif'
+          return ctx.measureText(`${text || ''}`).width
+        } catch (_) {
+          return `${text || ''}`.length * 10
+        }
+      },
+      computeScopeSelectCollapse (selectRef, values, options) {
+        const el = selectRef && selectRef.$el
+        if (!el) return false
+        const v = Array.isArray(values) ? values : []
+        if (v.length <= 1) return false
+        const inputInner = el.querySelector('.el-input__inner') || el.querySelector('.el-input')
+        if (!inputInner) return false
+        const rect = inputInner.getBoundingClientRect()
+        const width = rect && rect.width ? rect.width : 0
+        if (!width) return false
+        const available = Math.max(width - 72, 120)
+        const map = new Map((options || []).map(o => [o.value, o.label]))
+        const font = window.getComputedStyle(inputInner).font
+        let total = 0
+        v.forEach(val => {
+          const label = map.get(val) || `${val}`
+          total += this.measureTextWidth(label, font) + 46
+        })
+        return total > available
+      },
+      updateUiScopeSelectCollapse () {
+        if (!this.form || this.form.backgroundType !== 'image') {
+          this.collapseTagsBackgroundUiOpacityScope = false
+          this.collapseTagsBackgroundUiFrostedBlurScope = false
+          return
+        }
+        this.$nextTick(() => {
+          this.collapseTagsBackgroundUiOpacityScope = this.computeScopeSelectCollapse(
+            this.$refs.backgroundUiOpacityScopeSelect,
+            this.form.backgroundUiOpacityScope,
+            this.backgroundUiOpacityScopeOptions
+          )
+          this.collapseTagsBackgroundUiFrostedBlurScope = this.computeScopeSelectCollapse(
+            this.$refs.backgroundUiFrostedBlurScopeSelect,
+            this.form.backgroundUiFrostedBlurScope,
+            this.backgroundUiFrostedBlurScopeOptions
+          )
+        })
+      },
       filterCards (keyword) {
         this.$nextTick(() => {
           if (!this.$el) return

@@ -147,6 +147,27 @@ export default class ConfigManager {
         'background-type': 'color',
         'background-image': EMPTY_STRING,
         'background-image-opacity': 0.3,
+        'background-image-frosted-blur': 0,
+        'background-ui-opacity': 0.9,
+        'background-ui-opacity-scope': [
+          'floating-bar',
+          'task-plan',
+          'speedometer',
+          'date-filter',
+          'task-category-select',
+          'task-item',
+          'preference-card'
+        ],
+        'background-ui-frosted-blur': 6,
+        'background-ui-frosted-blur-scope': [
+          'floating-bar',
+          'task-plan',
+          'speedometer',
+          'date-filter',
+          'task-category-select',
+          'task-item',
+          'preference-card'
+        ],
         'tracker-source': [
           NGOSANG_TRACKERS_BEST_IP_URL_CDN,
           NGOSANG_TRACKERS_BEST_URL_CDN
@@ -159,6 +180,7 @@ export default class ConfigManager {
         'extension-silent-download': false,
         'extension-skip-file-extensions': '',
         'extension-shift-toggle-enabled': false,
+        'sidebar-layout-mode': 'floating',
         'task-plan-type': 'complete',
         'task-plan-time': '',
         'task-plan-action': 'none',

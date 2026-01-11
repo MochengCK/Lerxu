@@ -1,5 +1,16 @@
 <template>
-  <el-container class="main panel" direction="horizontal">
+  <el-container
+    class="main panel"
+    direction="horizontal"
+    style="height: 100vh"
+  >
+    <template v-if="isThreeColumn">
+      <mo-aside />
+      <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav">
+        <router-view :key="$route.path" name="subnav" />
+      </el-aside>
+    </template>
+
     <el-container
       class="content panel"
       direction="vertical"
@@ -28,57 +39,69 @@
       </el-header>
       <router-view :key="$route.path" name="form" />
     </el-container>
-    <div
-      v-if="subnavMode === 'floating'"
-      class="subnav-small-screen subnav-right"
-    >
-      <ul class="menu small-menu">
-        <li
-          @click="navPreference('basic')"
-          :class="{ active: isActive('/preference/basic') || isActive('/preference') }"
-        >
-          <el-tooltip
-            effect="dark"
-            :content="$t('preferences.basic')"
-            placement="left"
-            :open-delay="500"
+
+    <template v-if="!isThreeColumn">
+      <div
+        v-if="subnavMode === 'floating'"
+        class="subnav-small-screen subnav-right"
+      >
+        <ul class="menu small-menu">
+          <li
+            @click="navPreference('basic')"
+            :class="{ active: isActive('/preference/basic') || isActive('/preference') }"
           >
-            <mo-icon name="preference-basic" width="20" height="20" />
-          </el-tooltip>
-        </li>
-        <li
-          @click="navPreference('advanced')"
-          :class="{ active: isActive('/preference/advanced') }"
-        >
-          <el-tooltip
-            effect="dark"
-            :content="$t('preferences.advanced')"
-            placement="left"
-            :open-delay="500"
+            <el-tooltip
+              effect="dark"
+              :content="$t('preferences.basic')"
+              placement="left"
+              :open-delay="500"
+            >
+              <mo-icon name="preference-basic" width="20" height="20" />
+            </el-tooltip>
+          </li>
+          <li
+            @click="navPreference('advanced')"
+            :class="{ active: isActive('/preference/advanced') }"
           >
-            <mo-icon name="preference-advanced" width="20" height="20" />
-          </el-tooltip>
-        </li>
-      </ul>
-    </div>
+            <el-tooltip
+              effect="dark"
+              :content="$t('preferences.advanced')"
+              placement="left"
+              :open-delay="500"
+            >
+              <mo-icon name="preference-advanced" width="20" height="20" />
+            </el-tooltip>
+          </li>
+        </ul>
+      </div>
+    </template>
   </el-container>
 </template>
 
 <script>
   import { mapState } from 'vuex'
   import SubnavSwitcher from '@/components/Subnav/SubnavSwitcher'
+  import Aside from '@/components/Aside/Index'
   import '@/components/Icons/preference-basic'
   import '@/components/Icons/preference-advanced'
 
   export default {
     name: 'mo-content-preference',
     components: {
-      [SubnavSwitcher.name]: SubnavSwitcher
+      [SubnavSwitcher.name]: SubnavSwitcher,
+      [Aside.name]: Aside
     },
     computed: {
       ...mapState('preference', {
-        subnavMode: state => state.config.subnavMode || 'floating'
+        subnavMode: state => state.config.subnavMode || 'floating',
+        sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating'
       }),
+      isThreeColumn () {
+        return this.sidebarLayoutMode === 'three-column'
+      },
+      showThreeColumnSubnav () {
+        return this.isThreeColumn && this.subnavMode !== 'title'
+      },
       subnavs () {
         return [
           {
@@ -95,7 +118,7 @@
       },
       title () {
         const rawPath = `${this.$route.path || ''}`
-        const m = rawPath.match(/^\/preference\/(basic|advanced|video)(?:\/|$)/)
+        const m = rawPath.match(/^\/preference\/(basic|advanced)(?:\/|$)/)
         const key = m && m[1] ? m[1] : 'basic'
         const subnav = this.subnavs.find((item) => item.key === key)
         return subnav ? subnav.title : this.$t('preferences.basic')
@@ -126,7 +149,7 @@
   top: 50%;
   transform: translateY(-50%);
   z-index: 1000;
-  background-color: var(--speedometer-background);
+  background-color: transparent;
   border-radius: 100px;
   opacity: 0.5;
   transition: opacity 0.3s ease;
@@ -274,6 +297,15 @@
   }
 }
 
+.theme-light.has-app-background-image .form-preference {
+  .preference-card {
+    background-color: rgba(255, 255, 255, var(--app-ui-opacity-preference-card, var(--app-ui-opacity, 0.9)));
+    backdrop-filter: blur(var(--app-ui-frosted-blur-preference-card, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-preference-card, var(--app-ui-frosted-blur, 0px)));
+    overflow: hidden;
+  }
+}
+
 /* Dark theme styles */
 .theme-dark .form-preference {
   .preference-card {
@@ -284,6 +316,15 @@
   .card-title {
     color: $--dk-panel-title-color;
     border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.theme-dark.has-app-background-image .form-preference {
+  .preference-card {
+    background-color: rgba(52, 52, 52, var(--app-ui-opacity-preference-card, var(--app-ui-opacity, 0.9)));
+    backdrop-filter: blur(var(--app-ui-frosted-blur-preference-card, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-preference-card, var(--app-ui-frosted-blur, 0px)));
+    overflow: hidden;
   }
 }
 

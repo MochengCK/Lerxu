@@ -180,6 +180,38 @@ iframe {
   }
 }
 
+.theme-light.has-app-background-image {
+  .aside {
+    background-color: rgba(0, 0, 0, var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9))) !important;
+    background: rgba(0, 0, 0, var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9))) !important;
+    backdrop-filter: blur(var(--app-ui-frosted-blur-aside, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-aside, var(--app-ui-frosted-blur, 0px)));
+  }
+
+  .subnav {
+    background-color: rgba(255, 255, 255, var(--app-ui-opacity-subnav, var(--app-ui-opacity, 0.9))) !important;
+    background: rgba(255, 255, 255, var(--app-ui-opacity-subnav, var(--app-ui-opacity, 0.9))) !important;
+    backdrop-filter: blur(var(--app-ui-frosted-blur-subnav, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-subnav, var(--app-ui-frosted-blur, 0px)));
+  }
+}
+
+.theme-dark.has-app-background-image {
+  .aside {
+    background-color: rgba(0, 0, 0, var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9))) !important;
+    background: rgba(0, 0, 0, var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9))) !important;
+    backdrop-filter: blur(var(--app-ui-frosted-blur-aside, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-aside, var(--app-ui-frosted-blur, 0px)));
+  }
+
+  .subnav {
+    background-color: rgba(45, 45, 45, var(--app-ui-opacity-subnav, var(--app-ui-opacity, 0.9))) !important;
+    background: rgba(45, 45, 45, var(--app-ui-opacity-subnav, var(--app-ui-opacity, 0.9))) !important;
+    backdrop-filter: blur(var(--app-ui-frosted-blur-subnav, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-subnav, var(--app-ui-frosted-blur, 0px)));
+  }
+}
+
 .draggable {
   -webkit-app-region: drag;
   user-select: none;

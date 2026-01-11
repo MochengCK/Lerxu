@@ -431,7 +431,7 @@
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 16;
+    z-index: 200;
     pointer-events: none;
 
     &.is-always-show {
@@ -764,6 +764,80 @@
           }
         }
       }
+    }
+  }
+
+  .theme-light {
+    .floating-bar-inner,
+    .floating-bar-search,
+    .floating-bar-sort-button {
+      background-color: rgba(255, 255, 255, 0.5);
+    }
+
+    .floating-bar-sort-button .floating-bar-sort-menu {
+      background-color: rgba(255, 255, 255, 1);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+
+      &::before {
+        border-color: rgba(255, 255, 255, 1) transparent transparent transparent;
+      }
+    }
+
+    .floating-bar:hover .floating-bar-inner,
+    .floating-bar .floating-bar-inner.is-active,
+    .floating-bar .floating-bar-search:hover,
+    .floating-bar .floating-bar-search.is-expanded,
+    .floating-bar .floating-bar-sort-button:hover,
+    .floating-bar .floating-bar-sort-button.is-active {
+      background-color: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .floating-bar.is-always-show .floating-bar-inner,
+    .floating-bar.is-always-show .floating-bar-search,
+    .floating-bar.is-always-show .floating-bar-sort-button {
+      background-color: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+  }
+
+  .theme-dark {
+    .floating-bar-inner,
+    .floating-bar-search,
+    .floating-bar-sort-button {
+      background-color: rgba(45, 45, 45, 0.5);
+    }
+
+    .floating-bar-sort-button .floating-bar-sort-menu {
+      background-color: rgba(45, 45, 45, 1);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+
+      &::before {
+        border-color: rgba(45, 45, 45, 1) transparent transparent transparent;
+      }
+    }
+
+    .floating-bar:hover .floating-bar-inner,
+    .floating-bar .floating-bar-inner.is-active,
+    .floating-bar .floating-bar-search:hover,
+    .floating-bar .floating-bar-search.is-expanded,
+    .floating-bar .floating-bar-sort-button:hover,
+    .floating-bar .floating-bar-sort-button.is-active {
+      background-color: rgba(45, 45, 45, 0.7);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .floating-bar.is-always-show .floating-bar-inner,
+    .floating-bar.is-always-show .floating-bar-search,
+    .floating-bar.is-always-show .floating-bar-sort-button {
+      background-color: rgba(45, 45, 45, 0.7);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
     }
   }
 

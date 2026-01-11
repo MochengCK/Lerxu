@@ -20,15 +20,6 @@
         </i>
         <span>{{ $t('preferences.advanced') }}</span>
       </li>
-      <li
-        @click="() => nav('video')"
-        :class="[ current === 'video' ? 'active' : '' ]"
-        >
-        <i class="subnav-icon">
-          <mo-icon name='preference-video' width="20" height="20" />
-        </i>
-        <span>{{ $t('preferences.video') }}</span>
-      </li>
     </ul>
   </nav>
 </template>
@@ -36,7 +27,6 @@
 <script>
   import '@/components/Icons/preference-basic'
   import '@/components/Icons/preference-advanced'
-  import '@/components/Icons/preference-video'
   import { mapState, mapActions } from 'vuex'
 
   export default {
