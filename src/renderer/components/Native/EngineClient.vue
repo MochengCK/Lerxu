@@ -331,6 +331,30 @@
               }
             } catch (_) {}
           }
+          if (!isBilibiliPart) {
+            try {
+              const gid = task && task.gid ? `${task.gid}` : ''
+              if (gid) {
+                let fromHeader = false
+                try {
+                  const t = (taskHistory.getAllHistory() || []).find(x => x && `${x.gid}` === gid)
+                  fromHeader = !!(t && t.fromBrowserExtension)
+                } catch (_) {}
+                if (!fromHeader) {
+                  const opt = await api.getOption({ gid })
+                  const hs = opt && opt.header ? opt.header : []
+                  const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
+                  fromHeader = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`))
+                }
+                if (fromHeader) {
+                  const pair = this.collectExtensionDashParts(finalPath || path, cfg)
+                  if (pair && pair.isPairCandidate) {
+                    isBilibiliPart = true
+                  }
+                }
+              }
+            } catch (_) {}
+          }
         }
 
         this.$store.dispatch('task/saveSession')
@@ -411,6 +435,21 @@
             this.showTaskCompleteNotify(task, isBT, notifyPath)
             this.$electron.ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
           }
+        } else if (mergeResult && mergeResult.isBilibiliPart && mergeResult.noFfmpeg) {
+          try {
+            const gidKey = task && task.gid ? `${task.gid}` : ''
+            if (!this._extensionDashNoFfmpegNotified) {
+              this._extensionDashNoFfmpegNotified = new Set()
+            }
+            if (!gidKey || !this._extensionDashNoFfmpegNotified.has(gidKey)) {
+              if (gidKey) {
+                this._extensionDashNoFfmpegNotified.add(gidKey)
+              }
+              const notifyPath = mergeResult.fallbackNotifyPath || finalPath || path
+              this.showTaskCompleteNotify(task, isBT, notifyPath)
+              this.$electron.ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
+            }
+          } catch (_) {}
         } else if (!(mergeResult && mergeResult.isBilibiliPart)) {
           this.autoCategorizeDownloadedFile(task, finalPath)
         }
@@ -450,18 +489,112 @@
         }
         return false
       },
+      stripDownloadingSuffixFromFilename (filename, downloadingFileSuffix) {
+        const name = filename ? `${filename}` : ''
+        const suffix = downloadingFileSuffix ? `${downloadingFileSuffix}` : ''
+        if (!name || !suffix) return name
+        return name.endsWith(suffix) ? name.slice(0, -suffix.length) : name
+      },
+      stripDuplicateNumberBeforeExtension (filename) {
+        const name = filename ? `${filename}` : ''
+        if (!name) return name
+        return name.replace(/\s+\(\d+\)(?=\.[^.]+$)/, '')
+      },
+      normalizeDashStemFromFilename (filename) {
+        const name = filename ? `${filename}` : ''
+        if (!name) return ''
+        const withoutDup = this.stripDuplicateNumberBeforeExtension(name)
+        const dot = withoutDup.lastIndexOf('.')
+        const stem = dot > 0 ? withoutDup.slice(0, dot) : withoutDup
+        return stem
+          .replace(/(?:[._-]|\s+|\()?(video\s*stream|audio\s*stream|videostream|audiostream|video|audio|视频流|音频流|视频|音频)\)?$/i, '')
+          .trim()
+      },
+      getDashExtFromFilename (filename) {
+        const name = filename ? `${filename}` : ''
+        const lower = name.toLowerCase()
+        if (lower.endsWith('.mp4')) return 'mp4'
+        if (lower.endsWith('.m4a')) return 'm4a'
+        if (lower.endsWith('.m4s')) return 'm4s'
+        return ''
+      },
+      collectExtensionDashParts (finalPath, cfg) {
+        try {
+          const p = finalPath ? `${finalPath}` : ''
+          if (!p) return null
+          const downloadingFileSuffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
+          const dir = dirname(p)
+          const file = basename(p)
+          const fileNoSuffix = this.stripDownloadingSuffixFromFilename(file, downloadingFileSuffix)
+          const stem = this.normalizeDashStemFromFilename(fileNoSuffix)
+          if (!stem) return null
+
+          let entries = []
+          try {
+            entries = readdirSync(dir) || []
+          } catch (_) {
+            entries = []
+          }
+
+          const aria2Set = new Set()
+          entries.forEach((e) => {
+            const n = e ? `${e}` : ''
+            if (n.toLowerCase().endsWith('.aria2')) {
+              aria2Set.add(n.slice(0, -'.aria2'.length))
+            }
+          })
+
+          const parts = []
+          for (const e0 of entries) {
+            const e = e0 ? `${e0}` : ''
+            if (!e || e.toLowerCase().endsWith('.aria2')) continue
+            const pendingBySuffix = !!(downloadingFileSuffix && e.endsWith(downloadingFileSuffix))
+            const eNoSuffix = this.stripDownloadingSuffixFromFilename(e, downloadingFileSuffix)
+            const ext = this.getDashExtFromFilename(eNoSuffix)
+            if (!ext) continue
+            const s = this.normalizeDashStemFromFilename(eNoSuffix)
+            if (!s || s !== stem) continue
+            const pendingByAria2 = aria2Set.has(e) || aria2Set.has(eNoSuffix)
+            const diskPath = resolve(dir, e)
+            let size = 0
+            try {
+              size = statSync(diskPath).size || 0
+            } catch (_) {
+              size = 0
+            }
+            parts.push({
+              diskPath,
+              ext,
+              size,
+              pending: pendingBySuffix || pendingByAria2
+            })
+          }
+
+          const isPairCandidate = parts.length >= 2
+          return { dir, stem, parts, isPairCandidate }
+        } catch (_) {
+          return null
+        }
+      },
       parseBilibiliDashPart (fullPath) {
         try {
           const p = fullPath ? `${fullPath}` : ''
           if (!p) return null
-          const file = basename(p)
+          const rawFile = basename(p)
+          const file = this.stripDuplicateNumberBeforeExtension(rawFile)
           const m1 = file.match(/^(.*)_(video\.mp4|audio\.m4a)$/i)
           if (m1) {
             const base = m1[1] ? `${m1[1]}` : ''
             if (!base) return null
             return { dir: dirname(p), base, type: 'named' }
           }
-          const m2 = file.match(/^(.+)-\d+\.m4s$/i)
+          const m1b = file.match(/^(.*)(?:[._-]|\s*\()(video|audio)\)?\.(mp4|m4a|m4s)$/i)
+          if (m1b) {
+            const base = (m1b[1] ? `${m1b[1]}` : '').trim()
+            if (!base) return null
+            return { dir: dirname(p), base, type: 'named' }
+          }
+          const m2 = file.match(/^(.+)-\d+(?:\s+\(\d+\))?\.m4s$/i)
           if (m2) {
             const prefix = m2[1] ? `${m2[1]}` : ''
             if (!prefix) return null
@@ -499,17 +632,35 @@
         try {
           const rd = rootDir ? `${rootDir}` : ''
           const b = base ? `${base}` : ''
-          const k = kind === 'video' ? 'video.mp4' : 'audio.m4a'
           if (!rd || !b) return []
-          const file = `${b}_${k}`
-          candidates.add(resolve(rd, file))
-          const categories = cfg && cfg.fileCategories
-          const auto = !!(cfg && cfg.autoCategorizeFiles)
-          if (auto && categories && Object.keys(categories).length > 0) {
-            const categorized = buildCategorizedPath(resolve(rd, file), file, categories, rd)
-            if (categorized && categorized.categorizedPath) {
-              candidates.add(resolve(`${categorized.categorizedPath}`))
+          const add = (filename) => {
+            if (!filename) return
+            candidates.add(resolve(rd, filename))
+            const categories = cfg && cfg.fileCategories
+            const auto = !!(cfg && cfg.autoCategorizeFiles)
+            if (auto && categories && Object.keys(categories).length > 0) {
+              const categorized = buildCategorizedPath(resolve(rd, filename), filename, categories, rd)
+              if (categorized && categorized.categorizedPath) {
+                candidates.add(resolve(`${categorized.categorizedPath}`))
+              }
             }
+          }
+
+          const exts = kind === 'video'
+            ? ['mp4', 'm4s']
+            : ['m4a', 'm4s', 'mp4']
+
+          exts.forEach((ext) => {
+            add(`${b}_${kind}.${ext}`)
+            add(`${b}.${kind}.${ext}`)
+            add(`${b}-${kind}.${ext}`)
+            add(`${b} (${kind}).${ext}`)
+          })
+
+          if (kind === 'video') {
+            add(`${b}_video.mp4`)
+          } else {
+            add(`${b}_audio.m4a`)
           }
         } catch (_) {}
         return Array.from(candidates)
@@ -624,7 +775,7 @@
       async maybeMergeBilibiliDash (finalPath, task = null) {
         const info = this.parseBilibiliDashPart(finalPath)
         if (!info) {
-          return { isBilibiliPart: false, mergedPath: '' }
+          return await this.maybeMergeExtensionDash(finalPath, task)
         }
         const cfg = this.$store.state.preference.config || {}
         const { dir, base, type } = info
@@ -661,13 +812,21 @@
           })
           const readyParts = parts.filter(p => p && p.ready)
           if (readyParts.length < 2) {
+            const ffmpegPath = this.resolveFfmpegPath()
+            if (!ffmpegPath) {
+              const notifyKey = `${dir || ''}|${base || ''}`
+              const fallbackNotifyPath = finalPath || ''
+              return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
+            }
             return { isBilibiliPart: true, mergedPath: '' }
           }
           const videoPath = readyParts[0].path
           const audioPath = readyParts[1].path
           const ffmpegPath = await this.ensureFfmpeg()
           if (!ffmpegPath) {
-            return { isBilibiliPart: true, mergedPath: '' }
+            const notifyKey = `${dir || ''}|${base || ''}`
+            const fallbackNotifyPath = finalPath || ''
+            return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
           }
           const outputPath = resolve(dir, `${base}.mp4`)
           try {
@@ -676,7 +835,11 @@
             }
           } catch (_) {}
           try {
-            await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, outputPath)
+            try {
+              await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, outputPath)
+            } catch (e1) {
+              await this.runFfmpegMux(ffmpegPath, audioPath, videoPath, outputPath)
+            }
             const finalOutputPath = this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
@@ -699,6 +862,12 @@
         const audioPath = this.findFirstExistingPath(audioCand)
 
         if (!videoPath || !audioPath) {
+          const ffmpegPath = this.resolveFfmpegPath()
+          if (!ffmpegPath) {
+            const notifyKey = `${dir || ''}|${base || ''}`
+            const fallbackNotifyPath = finalPath || ''
+            return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
+          }
           return { isBilibiliPart: true, mergedPath: '' }
         }
 
@@ -712,16 +881,171 @@
 
         const ffmpegPath = await this.ensureFfmpeg()
         if (!ffmpegPath) {
-          return { isBilibiliPart: true, mergedPath: '' }
+          const notifyKey = `${outputDir || ''}|${base || ''}`
+          const fallbackNotifyPath = finalPath || ''
+          return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
         }
 
         try {
-          await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, outputPath)
+          try {
+            await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, outputPath)
+          } catch (e1) {
+            await this.runFfmpegMux(ffmpegPath, audioPath, videoPath, outputPath)
+          }
           const finalOutputPath = this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
           return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
         } catch (e) {
           console.warn(`[Motrix] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
           return { isBilibiliPart: true, mergedPath: '' }
+        }
+      },
+      async maybeMergeExtensionDash (finalPath, task = null) {
+        try {
+          const gid = task && task.gid ? `${task.gid}` : ''
+          if (!gid) return { isBilibiliPart: false, mergedPath: '' }
+
+          let fromHeader = false
+          try {
+            const t = (taskHistory.getAllHistory() || []).find(x => x && `${x.gid}` === gid)
+            fromHeader = !!(t && t.fromBrowserExtension)
+          } catch (_) {
+            fromHeader = false
+          }
+          if (!fromHeader) {
+            try {
+              const opt = await api.getOption({ gid })
+              const hs = opt && opt.header ? opt.header : []
+              const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
+              fromHeader = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`))
+            } catch (_) {
+              fromHeader = false
+            }
+          }
+          if (!fromHeader) {
+            return { isBilibiliPart: false, mergedPath: '' }
+          }
+
+          const cfg = this.$store.state.preference.config || {}
+          const pair = this.collectExtensionDashParts(finalPath, cfg)
+          if (!pair || !pair.isPairCandidate) {
+            return { isBilibiliPart: false, mergedPath: '' }
+          }
+
+          try {
+            const downloadingFileSuffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
+            if (downloadingFileSuffix && Array.isArray(pair.parts)) {
+              for (const part of pair.parts) {
+                const diskPath = part && part.diskPath ? `${part.diskPath}` : ''
+                if (!diskPath || !diskPath.endsWith(downloadingFileSuffix)) {
+                  continue
+                }
+
+                const withoutSuffix = diskPath.slice(0, -downloadingFileSuffix.length)
+                const aria2A = `${diskPath}.aria2`
+                const aria2B = `${withoutSuffix}.aria2`
+                if (existsSync(aria2A) || existsSync(aria2B)) {
+                  continue
+                }
+
+                let pathToProcess = diskPath
+                try {
+                  const fixed = this.fixFileNameWithSuffix(pathToProcess, downloadingFileSuffix)
+                  if (fixed && fixed !== pathToProcess && existsSync(pathToProcess)) {
+                    const okFix = this.renamePreserveTimes(pathToProcess, fixed)
+                    if (okFix) {
+                      pathToProcess = fixed
+                    }
+                  }
+                } catch (_) {}
+
+                const targetPath = pathToProcess.endsWith(downloadingFileSuffix)
+                  ? pathToProcess.slice(0, -downloadingFileSuffix.length)
+                  : pathToProcess
+
+                if (targetPath && targetPath !== pathToProcess) {
+                  if (existsSync(targetPath)) {
+                    part.diskPath = targetPath
+                    part.pending = false
+                    continue
+                  }
+                  if (existsSync(pathToProcess)) {
+                    const ok = this.renamePreserveTimes(pathToProcess, targetPath)
+                    if (ok) {
+                      part.diskPath = targetPath
+                      part.pending = false
+                    }
+                  }
+                }
+              }
+            }
+          } catch (_) {}
+
+          const ready = (pair.parts || []).filter(p => p && !p.pending && p.diskPath && existsSync(p.diskPath))
+          if (ready.length < 2) {
+            const ffmpegPath = this.resolveFfmpegPath()
+            if (!ffmpegPath) {
+              const notifyKey = `${pair.dir || ''}|${pair.stem || ''}`
+              const fallbackNotifyPath = finalPath || ''
+              return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
+            }
+            return { isBilibiliPart: true, mergedPath: '' }
+          }
+
+          const mp4 = ready.filter(p => p.ext === 'mp4').sort((a, b) => (b.size || 0) - (a.size || 0))
+          const m4a = ready.filter(p => p.ext === 'm4a').sort((a, b) => (b.size || 0) - (a.size || 0))
+          const m4s = ready.filter(p => p.ext === 'm4s').sort((a, b) => (b.size || 0) - (a.size || 0))
+
+          let videoPath = ''
+          let audioPath = ''
+          if (mp4.length && m4a.length) {
+            videoPath = mp4[0].diskPath
+            audioPath = m4a[0].diskPath
+          } else if (mp4.length && m4s.length) {
+            videoPath = mp4[0].diskPath
+            audioPath = m4s[0].diskPath
+          } else if (m4a.length && m4s.length) {
+            videoPath = m4s[0].diskPath
+            audioPath = m4a[0].diskPath
+          } else if (m4s.length >= 2) {
+            videoPath = m4s[0].diskPath
+            audioPath = m4s[m4s.length - 1].diskPath
+          } else {
+            return { isBilibiliPart: true, mergedPath: '' }
+          }
+
+          if (!videoPath || !audioPath || resolve(videoPath) === resolve(audioPath)) {
+            return { isBilibiliPart: true, mergedPath: '' }
+          }
+
+          const outputPath = resolve(pair.dir, `${pair.stem}.mp4`)
+          try {
+            if (existsSync(outputPath)) {
+              return { isBilibiliPart: true, mergedPath: outputPath }
+            }
+          } catch (_) {}
+
+          const ffmpegPath = await this.ensureFfmpeg()
+          if (!ffmpegPath) {
+            const notifyKey = `${pair.dir || ''}|${pair.stem || ''}`
+            const fallbackNotifyPath = finalPath || ''
+            return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
+          }
+
+          try {
+            try {
+              await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, outputPath)
+            } catch (e1) {
+              await this.runFfmpegMux(ffmpegPath, audioPath, videoPath, outputPath)
+            }
+            const info = { dir: pair.dir, base: pair.stem, type: 'named' }
+            const finalOutputPath = this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
+            return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
+          } catch (e) {
+            console.warn(`[Motrix] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+            return { isBilibiliPart: true, mergedPath: '' }
+          }
+        } catch (_) {
+          return { isBilibiliPart: false, mergedPath: '' }
         }
       },
       afterBilibiliMerge (task, info, videoPath, audioPath, outputPath) {
@@ -766,9 +1090,16 @@
                     toDelete.add(`${full}.aria2`)
                   }
                 } else if (type === 'named') {
-                  if (s === `${base}_video.mp4` || s === `${base}_audio.m4a`) {
-                    toDelete.add(full)
-                    toDelete.add(`${full}.aria2`)
+                  const cfg = this.$store.state.preference.config || {}
+                  const suffix = cfg.downloadingFileSuffix || ''
+                  const raw = suffix ? this.stripDownloadingSuffixFromFilename(s, suffix) : s
+                  const ext = this.getDashExtFromFilename(raw)
+                  if (ext) {
+                    const stem = this.normalizeDashStemFromFilename(raw)
+                    if (stem && stem === base) {
+                      toDelete.add(full)
+                      toDelete.add(`${full}.aria2`)
+                    }
                   }
                 }
               })

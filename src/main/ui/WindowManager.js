@@ -39,6 +39,8 @@ export default class WindowManager extends EventEmitter {
 
     this.willQuit = false
 
+    this.windowRecoveryState = new Map()
+
     this.handleBeforeQuit()
 
     this.handleAllWindowClosed()
@@ -90,6 +92,10 @@ export default class WindowManager extends EventEmitter {
     const { hidden } = options
     const autoHideWindow = this.userConfig['auto-hide-window']
     let window = this.windows[page] || null
+    if (window && typeof window.isDestroyed === 'function' && window.isDestroyed()) {
+      this.removeWindow(page)
+      window = null
+    }
     if (window) {
       window.show()
       window.focus()
@@ -127,6 +133,8 @@ export default class WindowManager extends EventEmitter {
       window.loadURL(pageOptions.url)
     }
 
+    this.bindWindowHealth(page, window, pageOptions)
+
     window.once('ready-to-show', () => {
       if (!hidden) {
         window.show()
@@ -153,6 +161,105 @@ export default class WindowManager extends EventEmitter {
     }
 
     return window
+  }
+
+  getWindowRecoveryState (page) {
+    if (!this.windowRecoveryState.has(page)) {
+      this.windowRecoveryState.set(page, {
+        reloadTimer: null,
+        lastRecoverAt: 0,
+        recoverCount: 0,
+        lastUnresponsiveAt: 0
+      })
+    }
+    return this.windowRecoveryState.get(page)
+  }
+
+  clearWindowReloadTimer (page) {
+    const state = this.windowRecoveryState.get(page)
+    if (!state || !state.reloadTimer) {
+      return
+    }
+    clearTimeout(state.reloadTimer)
+    state.reloadTimer = null
+  }
+
+  scheduleWindowReload (page, window, pageOptions, reason) {
+    if (this.willQuit) {
+      return
+    }
+    if (!window || (typeof window.isDestroyed === 'function' && window.isDestroyed())) {
+      return
+    }
+    if (!pageOptions || !pageOptions.url) {
+      return
+    }
+
+    const state = this.getWindowRecoveryState(page)
+    if (state.reloadTimer) {
+      return
+    }
+
+    const now = Date.now()
+    if (now - state.lastRecoverAt > 60000) {
+      state.recoverCount = 0
+    }
+    if (state.recoverCount >= 3) {
+      logger.error(`[Motrix] window recovery halted (too frequent): page=${page} reason=${reason}`)
+      return
+    }
+
+    state.reloadTimer = setTimeout(() => {
+      state.reloadTimer = null
+      if (this.willQuit) {
+        return
+      }
+      if (!window || (typeof window.isDestroyed === 'function' && window.isDestroyed())) {
+        return
+      }
+      try {
+        state.lastRecoverAt = Date.now()
+        state.recoverCount += 1
+        window.loadURL(pageOptions.url)
+      } catch (e) {
+        logger.error(`[Motrix] window reload failed: page=${page} reason=${reason} message=${e && e.message ? e.message : e}`)
+      }
+    }, 1200)
+  }
+
+  bindWindowHealth (page, window, pageOptions) {
+    if (!window) {
+      return
+    }
+    const state = this.getWindowRecoveryState(page)
+
+    window.on('unresponsive', () => {
+      state.lastUnresponsiveAt = Date.now()
+      logger.warn(`[Motrix] window unresponsive: page=${page}`)
+      this.scheduleWindowReload(page, window, pageOptions, 'unresponsive')
+    })
+
+    window.on('responsive', () => {
+      state.lastUnresponsiveAt = 0
+      this.clearWindowReloadTimer(page)
+    })
+
+    if (window.webContents && typeof window.webContents.on === 'function') {
+      window.webContents.on('render-process-gone', (_event, details) => {
+        const reason = details && details.reason ? details.reason : 'unknown'
+        const exitCode = details && typeof details.exitCode !== 'undefined' ? details.exitCode : ''
+        logger.error(`[Motrix] render-process-gone: page=${page} reason=${reason} exitCode=${exitCode}`)
+        this.scheduleWindowReload(page, window, pageOptions, `render-process-gone:${reason}`)
+      })
+
+      window.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+        if (!isMainFrame) {
+          return
+        }
+        logger.warn(`[Motrix] did-fail-load: page=${page} code=${errorCode} desc=${errorDescription} url=${validatedURL}`)
+        this.scheduleWindowReload(page, window, pageOptions, `did-fail-load:${errorCode}`)
+      })
+    }
   }
 
   getWindow (page) {
@@ -191,6 +298,8 @@ export default class WindowManager extends EventEmitter {
   bindAfterClosed (page, window) {
     window.on('closed', (event) => {
       this.removeWindow(page)
+      this.clearWindowReloadTimer(page)
+      this.windowRecoveryState.delete(page)
     })
   }
 

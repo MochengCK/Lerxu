@@ -61,12 +61,15 @@
   width: 100%;
   height: 36px;
   z-index: 5000;
+  pointer-events: none;
   .title-bar-dragger {
     margin: 5px 0 0 5px;
     flex: 1;
     user-select: none;
     -webkit-app-region: drag;
     -webkit-user-select: none;
+    pointer-events: auto;
+    margin-left: 83px;
   }
   .window-actions {
     opacity: 0.4;
@@ -76,6 +79,7 @@
     margin: 0;
     z-index: 5100;
     font-size: 0;
+    pointer-events: auto;
     > li {
       display: inline-block;
       padding: 5px 18px;

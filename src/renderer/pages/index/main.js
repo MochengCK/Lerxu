@@ -118,6 +118,7 @@ store.dispatch('preference/fetchPreference')
     console.info('[Motrix] load preference:', config)
     // Initialize task view mode from preferences
     store.dispatch('task/initializeViewMode', config)
+    store.dispatch('task/initializeFilterDate', config)
     init(config)
   })
   .catch((err) => {

@@ -454,6 +454,10 @@ const actions = {
     const savedViewMode = config?.taskViewMode || 'list'
     commit('UPDATE_VIEW_MODE', savedViewMode)
   },
+  initializeFilterDate ({ commit }, config) {
+    const savedFilterDate = config && typeof config.taskFilterDate === 'string' ? config.taskFilterDate : null
+    commit('UPDATE_FILTER_DATE', savedFilterDate)
+  },
   setTaskDisplayName ({ commit }, payload) {
     commit('UPDATE_TASK_DISPLAY_NAME', payload)
   },
@@ -486,14 +490,42 @@ const actions = {
     commit('UPDATE_SELECTED_GID_LIST', [])
     dispatch('fetchList')
   },
-  updateFilterDate ({ commit }, date) {
+  updateFilterDate ({ commit, dispatch }, date) {
     commit('UPDATE_FILTER_DATE', date)
+    if (date) {
+      dispatch('preference/save', { taskFilterDate: date }, { root: true })
+    } else {
+      dispatch('preference/save', { taskFilterDate: null }, { root: true })
+    }
   },
   fetchList ({ commit, state, rootState }) {
     const params = { type: state.currentList }
 
     return api.fetchTaskList(params)
       .then((data) => {
+        const normalizeTimestamp = (value) => {
+          const raw = parseInt(value)
+          if (!Number.isFinite(raw) || raw <= 0) return 0
+          if (raw < 1000000000000) return raw * 1000
+          return raw
+        }
+
+        try {
+          const now = Date.now()
+          data.forEach(task => {
+            const gid = task && task.gid ? `${task.gid}` : ''
+            if (!gid) return
+            const status = `${task.status || ''}`
+            if (![TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED].includes(status)) return
+            const hasSavedAt = task.savedAt != null && Number(task.savedAt) > 0
+            const hasCreatedAt = task.createdAt != null && Number(task.createdAt) > 0
+            if (!hasSavedAt && !hasCreatedAt) {
+              taskHistory.updateTask(gid, { createdAt: now }, task)
+              task.createdAt = now
+            }
+          })
+        } catch (e) {}
+
         // 如果有日期过滤，在前端进一步过滤任务
         let filteredData = data
         if (state.filterDate) {
@@ -501,8 +533,18 @@ const actions = {
           const [year, month, day] = state.filterDate.split('-').map(Number)
 
           filteredData = data.filter(task => {
-            // 优先使用savedAt（完成时间），其次使用creationTime
-            const timestamp = parseInt(task.savedAt) || parseInt(task.creationTime) || 0
+            const status = `${task.status || ''}`
+            const isInProgress = [TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED].includes(status)
+            const timestamp = isInProgress
+              ? (normalizeTimestamp(task.startTime) ||
+                 normalizeTimestamp(task.startedAt) ||
+                 normalizeTimestamp(task.createdAt) ||
+                 normalizeTimestamp(task.creationTime))
+              : (normalizeTimestamp(task.savedAt) ||
+                 normalizeTimestamp(task.completedTime) ||
+                 normalizeTimestamp(task.stopTime) ||
+                 normalizeTimestamp(task.createdAt) ||
+                 normalizeTimestamp(task.creationTime))
             if (timestamp === 0) return false
 
             const taskDate = new Date(timestamp)
@@ -643,7 +685,7 @@ const actions = {
   resetTaskSpeedSamples ({ commit }, gid) {
     commit('CLEAR_TASK_SPEED_SAMPLES', gid)
   },
-  addUri ({ dispatch, commit, rootState }, data) {
+  addUri ({ commit, dispatch, rootState }, data) {
     const { uris, outs, options, optionsList, dirs, priorities, bilibiliTitles, bilibiliFormats } = data
 
     // Handle downloading file suffix
@@ -758,6 +800,26 @@ const actions = {
       .then((res) => {
         if (Array.isArray(res)) {
           const gids = res.map(r => r && r[0]).filter(Boolean)
+          const hasBrowserExtensionHeader = (opt) => {
+            try {
+              const o = opt && typeof opt === 'object' ? opt : {}
+              const hs = o && o.header ? o.header : []
+              const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
+              return headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`))
+            } catch (_) {
+              return false
+            }
+          }
+          const fromBrowserExtension =
+            hasBrowserExtensionHeader(normalizedOptions) ||
+            (Array.isArray(optionsList) && optionsList.some(o => hasBrowserExtensionHeader(o)))
+          try {
+            const now = Date.now()
+            gids.forEach(gid => {
+              const patch = fromBrowserExtension ? { createdAt: now, fromBrowserExtension: true } : { createdAt: now }
+              taskHistory.updateTask(`${gid}`, patch, null)
+            })
+          } catch (e) {}
           if (Array.isArray(bilibiliTitles) && bilibiliTitles.length === gids.length) {
             try {
               for (let i = 0; i < gids.length; i++) {
@@ -826,7 +888,12 @@ const actions = {
   addTorrent ({ dispatch }, data) {
     const { torrent, options } = data
     return api.addTorrent({ torrent, options })
-      .then(() => {
+      .then((gid) => {
+        try {
+          if (gid) {
+            taskHistory.updateTask(`${gid}`, { createdAt: Date.now() }, null)
+          }
+        } catch (e) {}
         dispatch('fetchList')
         dispatch('app/updateAddTaskOptions', {}, { root: true })
       })
@@ -834,18 +901,18 @@ const actions = {
   addMetalink ({ dispatch }, data) {
     const { metalink, options } = data
     return api.addMetalink({ metalink, options })
-      .then(() => {
+      .then((gid) => {
+        try {
+          if (gid) {
+            taskHistory.updateTask(`${gid}`, { createdAt: Date.now() }, null)
+          }
+        } catch (e) {}
         dispatch('fetchList')
         dispatch('app/updateAddTaskOptions', {}, { root: true })
       })
   },
   getTaskOption (_, gid) {
-    return new Promise((resolve) => {
-      api.getOption({ gid })
-        .then((data) => {
-          resolve(data)
-        })
-    })
+    return api.getOption({ gid })
   },
   changeTaskOption (_, payload) {
     const { gid, options } = payload

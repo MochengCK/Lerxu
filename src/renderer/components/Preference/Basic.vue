@@ -39,7 +39,7 @@
                 <el-slider
                   v-model="form.taskDetailFrostedBlur"
                   :min="0"
-                  :max="20"
+                  :max="10"
                   :step="1"
                   @change="autoSaveForm"
                 />
@@ -181,7 +181,7 @@
               <el-form-item class="background-slider-item" :label="$t('preferences.background-image-opacity')">
                 <el-slider
                   v-model="backgroundImageOpacityPercent"
-                  :min="0"
+                  :min="30"
                   :max="100"
                   :step="1"
                   @change="autoSaveForm"
@@ -193,7 +193,7 @@
                 <el-slider
                   v-model="form.backgroundImageFrostedBlur"
                   :min="0"
-                  :max="20"
+                  :max="10"
                   :step="1"
                   @change="autoSaveForm"
                 />
@@ -203,7 +203,7 @@
               <el-form-item class="background-slider-item" :label="$t('preferences.background-ui-opacity')">
                 <el-slider
                   v-model="backgroundUiOpacityPercent"
-                  :min="30"
+                  :min="40"
                   :max="100"
                   :step="1"
                   @change="autoSaveForm"
@@ -235,7 +235,7 @@
                 <el-slider
                   v-model="form.backgroundUiFrostedBlur"
                   :min="0"
-                  :max="20"
+                  :max="10"
                   :step="1"
                   @change="autoSaveForm"
                 />
@@ -1059,13 +1059,13 @@
       backgroundType: backgroundType || 'color',
       backgroundImage: backgroundImage || '',
       backgroundImageOpacity: (typeof backgroundImageOpacity === 'number' && Number.isFinite(backgroundImageOpacity))
-        ? Math.min(Math.max(backgroundImageOpacity, 0), 1)
-        : 0.3,
+        ? Math.min(Math.max(backgroundImageOpacity, 0.3), 1)
+        : 0.4,
       backgroundImageFrostedBlur: (typeof backgroundImageFrostedBlur === 'number' && Number.isFinite(backgroundImageFrostedBlur))
-        ? Math.min(Math.max(backgroundImageFrostedBlur, 0), 20)
+        ? Math.min(Math.max(backgroundImageFrostedBlur, 0), 10)
         : 0,
       backgroundUiOpacity: (typeof backgroundUiOpacity === 'number' && Number.isFinite(backgroundUiOpacity))
-        ? Math.min(Math.max(backgroundUiOpacity, 0.3), 1)
+        ? Math.min(Math.max(backgroundUiOpacity, 0.4), 1)
         : 0.7,
       backgroundUiOpacityScope: Array.isArray(backgroundUiOpacityScope)
         ? backgroundUiOpacityScope
@@ -1073,7 +1073,7 @@
           .filter(s => BACKGROUND_UI_OPACITY_SCOPE_OPTIONS.includes(s))
         : [...BACKGROUND_UI_OPACITY_SCOPE_OPTIONS],
       backgroundUiFrostedBlur: (typeof backgroundUiFrostedBlur === 'number' && Number.isFinite(backgroundUiFrostedBlur))
-        ? Math.min(Math.max(backgroundUiFrostedBlur, 0), 20)
+        ? Math.min(Math.max(backgroundUiFrostedBlur, 0), 10)
         : 6,
       backgroundUiFrostedBlurScope: Array.isArray(backgroundUiFrostedBlurScope)
         ? backgroundUiFrostedBlurScope
@@ -1082,8 +1082,8 @@
         : [...BACKGROUND_UI_FROSTED_BLUR_SCOPE_OPTIONS],
       taskDetailDefaultTransparent: taskDetailDefaultTransparent === undefined ? false : !!taskDetailDefaultTransparent,
       taskDetailFrostedBlur: (typeof taskDetailFrostedBlur === 'number' && Number.isFinite(taskDetailFrostedBlur))
-        ? Math.min(Math.max(taskDetailFrostedBlur, 0), 20)
-        : 0,
+        ? Math.min(Math.max(taskDetailFrostedBlur, 0), 10)
+        : 4,
       autoCategorizeFiles: autoCategorizeFiles || false,
       setFileMtimeOnComplete: setFileMtimeOnComplete || false,
       fileCategories: fileCategories || {
@@ -1276,24 +1276,24 @@
       backgroundImageOpacityPercent: {
         get () {
           const o = Number(this.form.backgroundImageOpacity)
-          const clamped = Number.isFinite(o) ? Math.min(Math.max(o, 0), 1) : 0.3
+          const clamped = Number.isFinite(o) ? Math.min(Math.max(o, 0.3), 1) : 0.4
           return Math.round(clamped * 100)
         },
         set (value) {
           const n = Number(value)
-          const percent = Number.isFinite(n) ? Math.min(Math.max(n, 0), 100) : 30
+          const percent = Number.isFinite(n) ? Math.min(Math.max(n, 30), 100) : 40
           this.form.backgroundImageOpacity = percent / 100
         }
       },
       backgroundUiOpacityPercent: {
         get () {
           const o = Number(this.form.backgroundUiOpacity)
-          const clamped = Number.isFinite(o) ? Math.min(Math.max(o, 0.3), 1) : 0.9
+          const clamped = Number.isFinite(o) ? Math.min(Math.max(o, 0.4), 1) : 0.9
           return Math.round(clamped * 100)
         },
         set (value) {
           const n = Number(value)
-          const percent = Number.isFinite(n) ? Math.min(Math.max(n, 30), 100) : 90
+          const percent = Number.isFinite(n) ? Math.min(Math.max(n, 40), 100) : 90
           this.form.backgroundUiOpacity = percent / 100
         }
       },
@@ -1782,21 +1782,21 @@
         const data = {
           theme: this.form.theme,
           taskDetailDefaultTransparent: !!this.form.taskDetailDefaultTransparent,
-          taskDetailFrostedBlur: this.normalizeUiNumber(this.form.taskDetailFrostedBlur, 0, 20, 0),
+          taskDetailFrostedBlur: this.normalizeUiNumber(this.form.taskDetailFrostedBlur, 0, 10, 0),
           subnavMode: this.form.subnavMode === 'title' ? 'title' : 'floating',
           sidebarLayoutMode: this.form.sidebarLayoutMode === 'three-column' ? 'three-column' : 'floating',
           floatingBarDisplayMode: this.form.floatingBarDisplayMode === 'always' ? 'always' : 'hover',
           taskProgressMode: this.form.taskProgressMode === 'background' ? 'background' : 'component',
           showProgressBar: this.form.showProgressBar === undefined ? true : !!this.form.showProgressBar,
           backgroundType,
-          backgroundImageOpacity: this.normalizeUiNumber(this.form.backgroundImageOpacity, 0, 1, 0.3),
-          backgroundImageFrostedBlur: this.normalizeUiNumber(this.form.backgroundImageFrostedBlur, 0, 20, 0),
-          backgroundUiOpacity: this.normalizeUiNumber(this.form.backgroundUiOpacity, 0.3, 1, 0.7),
+          backgroundImageOpacity: this.normalizeUiNumber(this.form.backgroundImageOpacity, 0.3, 1, 0.4),
+          backgroundImageFrostedBlur: this.normalizeUiNumber(this.form.backgroundImageFrostedBlur, 0, 10, 0),
+          backgroundUiOpacity: this.normalizeUiNumber(this.form.backgroundUiOpacity, 0.4, 1, 0.7),
           backgroundUiOpacityScope: this.normalizeUiScopeValues(
             this.form.backgroundUiOpacityScope,
             BACKGROUND_UI_OPACITY_SCOPE_OPTIONS
           ),
-          backgroundUiFrostedBlur: this.normalizeUiNumber(this.form.backgroundUiFrostedBlur, 0, 20, 6),
+          backgroundUiFrostedBlur: this.normalizeUiNumber(this.form.backgroundUiFrostedBlur, 0, 10, 6),
           backgroundUiFrostedBlurScope: this.normalizeUiScopeValues(
             this.form.backgroundUiFrostedBlurScope,
             BACKGROUND_UI_FROSTED_BLUR_SCOPE_OPTIONS
@@ -1844,7 +1844,7 @@
 
         if (keys.has('theme')) candidate.theme = data.theme
         if (keys.has('taskDetailDefaultTransparent')) candidate.taskDetailDefaultTransparent = !!data.taskDetailDefaultTransparent
-        if (keys.has('taskDetailFrostedBlur')) candidate.taskDetailFrostedBlur = this.normalizeUiNumber(data.taskDetailFrostedBlur, 0, 20, 0)
+        if (keys.has('taskDetailFrostedBlur')) candidate.taskDetailFrostedBlur = this.normalizeUiNumber(data.taskDetailFrostedBlur, 0, 10, 0)
         if (keys.has('subnavMode')) candidate.subnavMode = data.subnavMode === 'title' ? 'title' : 'floating'
         if (keys.has('sidebarLayoutMode')) candidate.sidebarLayoutMode = data.sidebarLayoutMode === 'three-column' ? 'three-column' : 'floating'
         if (keys.has('floatingBarDisplayMode')) candidate.floatingBarDisplayMode = data.floatingBarDisplayMode === 'always' ? 'always' : 'hover'
@@ -1852,16 +1852,16 @@
         if (keys.has('showProgressBar')) candidate.showProgressBar = data.showProgressBar === undefined ? true : !!data.showProgressBar
 
         if (keys.has('backgroundType')) candidate.backgroundType = data.backgroundType === 'image' ? 'image' : 'color'
-        if (keys.has('backgroundImageOpacity')) candidate.backgroundImageOpacity = this.normalizeUiNumber(data.backgroundImageOpacity, 0, 1, 0.3)
-        if (keys.has('backgroundImageFrostedBlur')) candidate.backgroundImageFrostedBlur = this.normalizeUiNumber(data.backgroundImageFrostedBlur, 0, 20, 0)
-        if (keys.has('backgroundUiOpacity')) candidate.backgroundUiOpacity = this.normalizeUiNumber(data.backgroundUiOpacity, 0.3, 1, 0.7)
+        if (keys.has('backgroundImageOpacity')) candidate.backgroundImageOpacity = this.normalizeUiNumber(data.backgroundImageOpacity, 0.3, 1, 0.4)
+        if (keys.has('backgroundImageFrostedBlur')) candidate.backgroundImageFrostedBlur = this.normalizeUiNumber(data.backgroundImageFrostedBlur, 0, 10, 0)
+        if (keys.has('backgroundUiOpacity')) candidate.backgroundUiOpacity = this.normalizeUiNumber(data.backgroundUiOpacity, 0.4, 1, 0.7)
         if (keys.has('backgroundUiOpacityScope')) {
           candidate.backgroundUiOpacityScope = this.normalizeUiScopeValues(
             data.backgroundUiOpacityScope,
             BACKGROUND_UI_OPACITY_SCOPE_OPTIONS
           )
         }
-        if (keys.has('backgroundUiFrostedBlur')) candidate.backgroundUiFrostedBlur = this.normalizeUiNumber(data.backgroundUiFrostedBlur, 0, 20, 6)
+        if (keys.has('backgroundUiFrostedBlur')) candidate.backgroundUiFrostedBlur = this.normalizeUiNumber(data.backgroundUiFrostedBlur, 0, 10, 6)
         if (keys.has('backgroundUiFrostedBlurScope')) {
           candidate.backgroundUiFrostedBlurScope = this.normalizeUiScopeValues(
             data.backgroundUiFrostedBlurScope,

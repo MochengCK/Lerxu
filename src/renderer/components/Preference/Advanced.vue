@@ -707,10 +707,11 @@
           </template>
         </el-input>
       </div>
+      <div slot="footer" class="tracker-source-dialog__footer">
+        <el-button @click="trackerSourceConfigVisible = false">{{ $t('app.cancel') }}</el-button>
+        <el-button type="primary" @click="addTrackerSourceFromInput">{{ $t('app.submit') }}</el-button>
+      </div>
     </el-dialog>
-    <div v-if="trackerSourceConfigVisible" class="mo-tracker-source-submit">
-      <el-button type="primary" @click="addTrackerSourceFromInput">{{ $t('app.submit') }}</el-button>
-    </div>
     <div
       v-if="updatePreviewVisible"
       class="update-preview-mask"
@@ -2582,7 +2583,7 @@
   color: #606266;
 }
 
-.mo-tracker-source-submit {
+.tracker-source-dialog__footer {
   position: fixed;
   right: 14px;
   bottom: 24px;

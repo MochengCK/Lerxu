@@ -115,13 +115,13 @@
         if (!this.shouldUseBackgroundImage) return 1
         const raw = Number(this.backgroundUiOpacity)
         const normalized = Number.isFinite(raw) ? raw : 0.7
-        return Math.min(Math.max(normalized, 0.3), 1)
+        return Math.min(Math.max(normalized, 0.4), 1)
       },
       uiFrostedBlur () {
         if (!this.shouldUseBackgroundImage) return 0
         const raw = Number(this.backgroundUiFrostedBlur)
         const normalized = Number.isFinite(raw) ? raw : 6
-        return Math.min(Math.max(normalized, 0), 20)
+        return Math.min(Math.max(normalized, 0), 10)
       },
       backgroundImageCssValue () {
         if (!this.shouldUseBackgroundImage) return 'none'
@@ -131,10 +131,10 @@
       },
       appRootStyle () {
         const blurRaw = Number(this.taskDetailFrostedBlur)
-        const blur = Number.isFinite(blurRaw) ? Math.min(Math.max(blurRaw, 0), 20) : 0
-        const alpha = blur <= 0 ? 0 : Math.min(Math.max((blur / 20) * 0.16, 0), 0.16)
+        const blur = Number.isFinite(blurRaw) ? Math.min(Math.max(blurRaw, 0), 10) : 0
+        const alpha = blur <= 0 ? 0 : Math.min(Math.max((blur / 10) * 0.16, 0), 0.16)
         const bgBlurRaw = Number(this.backgroundImageFrostedBlur)
-        const bgBlur = Number.isFinite(bgBlurRaw) ? Math.min(Math.max(bgBlurRaw, 0), 20) : 0
+        const bgBlur = Number.isFinite(bgBlurRaw) ? Math.min(Math.max(bgBlurRaw, 0), 10) : 0
         const scopeVars = {}
         UI_FROSTED_BLUR_SCOPES.forEach(scope => {
           scopeVars[`--app-ui-frosted-blur-${scope}`] = `${this.getUiFrostedBlurForScope(scope)}px`
@@ -167,11 +167,11 @@
       },
       backgroundLayerStyle () {
         const opacityRaw = Number(this.backgroundImageOpacity)
-        const opacity = Number.isFinite(opacityRaw) ? Math.min(Math.max(opacityRaw, 0), 1) : 0.3
+        const opacity = Number.isFinite(opacityRaw) ? Math.min(Math.max(opacityRaw, 0.3), 1) : 0.4
         const url = this.backgroundImageUrl
         if (!url) return {}
         const blurRaw = Number(this.backgroundImageFrostedBlur)
-        const blur = Number.isFinite(blurRaw) ? Math.min(Math.max(blurRaw, 0), 20) : 0
+        const blur = Number.isFinite(blurRaw) ? Math.min(Math.max(blurRaw, 0), 10) : 0
         return {
           opacity,
           backgroundImage: `url("${url}")`,
@@ -206,10 +206,10 @@
       },
       updateRootCssVars () {
         const blurRaw = Number(this.taskDetailFrostedBlur)
-        const blur = Number.isFinite(blurRaw) ? Math.min(Math.max(blurRaw, 0), 20) : 0
-        const alpha = blur <= 0 ? 0 : Math.min(Math.max((blur / 20) * 0.16, 0), 0.16)
+        const blur = Number.isFinite(blurRaw) ? Math.min(Math.max(blurRaw, 0), 10) : 0
+        const alpha = blur <= 0 ? 0 : Math.min(Math.max((blur / 10) * 0.16, 0), 0.16)
         const bgBlurRaw = Number(this.backgroundImageFrostedBlur)
-        const bgBlur = Number.isFinite(bgBlurRaw) ? Math.min(Math.max(bgBlurRaw, 0), 20) : 0
+        const bgBlur = Number.isFinite(bgBlurRaw) ? Math.min(Math.max(bgBlurRaw, 0), 10) : 0
         document.documentElement.style.setProperty('--app-ui-opacity', `${this.uiOpacity}`)
         document.documentElement.style.setProperty('--app-ui-frosted-blur', `${this.uiFrostedBlur}px`)
         document.documentElement.style.setProperty('--app-background-image', `${this.backgroundImageCssValue}`)

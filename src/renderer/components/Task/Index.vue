@@ -326,7 +326,13 @@
       }
     },
     watch: {
-      status: 'onStatusChange'
+      status: 'onStatusChange',
+      storeFilterDate: {
+        immediate: true,
+        handler (val) {
+          this.selectedDate = val || ''
+        }
+      }
     },
     methods: {
       onCategoryMouseEnter () {
@@ -528,7 +534,7 @@
         const counts = {}
         history.forEach(task => {
           // 使用savedAt作为任务完成时间
-          const timestamp = parseInt(task.savedAt) || parseInt(task.creationTime) || 0
+          const timestamp = parseInt(task.savedAt) || parseInt(task.createdAt) || parseInt(task.creationTime) || 0
           if (timestamp > 0) {
             const date = new Date(timestamp)
             const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`

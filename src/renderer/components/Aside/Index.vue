@@ -75,7 +75,7 @@
 </script>
 
 <style lang="scss">
-.aside {
+.aside.draggable {
   -webkit-app-region: drag;
 }
 
@@ -83,6 +83,11 @@
   display: flex;
   height: 100%;
   flex-flow: column;
+}
+
+.menu > li.non-draggable,
+.menu > li.non-draggable * {
+  -webkit-app-region: no-drag;
 }
 .menu {
     list-style: none;
@@ -115,7 +120,8 @@
     }
   }
 .top-menu {
-  flex: 1;
+  flex-grow: 1;
+  min-height: 0;
 }
 .bottom-menu {
   margin-bottom: 24px;

@@ -1500,8 +1500,9 @@ export default class Application extends EventEmitter {
             cwd: process.env.NODE_ENV === 'development' ? './dev-config' : undefined
           })
 
-          const currentHistory = taskHistoryStore.get('tasks', [])
-          const currentGids = new Set(currentHistory.map(task => task.gid))
+          const currentHistoryRaw = taskHistoryStore.get('tasks', [])
+          const currentHistory = Array.isArray(currentHistoryRaw) ? currentHistoryRaw : []
+          const currentGids = new Set(currentHistory.map(task => task && task.gid).filter(Boolean))
 
           // 过滤需要保存的任务（包括磁力链接任务）
           const tasksToSave = allTasks.filter(task => {

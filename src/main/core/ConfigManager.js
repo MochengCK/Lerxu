@@ -146,7 +146,7 @@ export default class ConfigManager {
         'theme': APP_THEME.AUTO,
         'background-type': 'color',
         'background-image': EMPTY_STRING,
-        'background-image-opacity': 0.3,
+        'background-image-opacity': 0.4,
         'background-image-frosted-blur': 0,
         'background-ui-opacity': 0.7,
         'background-ui-opacity-scope': [
@@ -166,6 +166,7 @@ export default class ConfigManager {
           'aside',
           'subnav'
         ],
+        'task-detail-frosted-blur': 4,
         'tracker-source': [
           NGOSANG_TRACKERS_BEST_IP_URL_CDN,
           NGOSANG_TRACKERS_BEST_URL_CDN
@@ -254,6 +255,43 @@ export default class ConfigManager {
     if (shouldResetUiScope(uiFrostedBlurScope)) {
       this.setUserConfig('background-ui-frosted-blur-scope', uiScopeAll)
     }
+
+    const clampFrostedBlur = (value, min, max) => {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return null
+      return Math.min(Math.max(n, min), max)
+    }
+    const frostedBlurKeys = [
+      'background-image-frosted-blur',
+      'background-ui-frosted-blur',
+      'task-detail-frosted-blur'
+    ]
+    frostedBlurKeys.forEach((key) => {
+      const raw = this.getUserConfig(key)
+      const clamped = clampFrostedBlur(raw, 0, 10)
+      if (clamped === null) return
+      if (clamped !== raw) {
+        this.setUserConfig(key, clamped)
+      }
+    })
+
+    const clampOpacity = (value, min, max) => {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return null
+      return Math.min(Math.max(n, min), max)
+    }
+    const opacityRules = [
+      { key: 'background-image-opacity', min: 0.3, max: 1 },
+      { key: 'background-ui-opacity', min: 0.4, max: 1 }
+    ]
+    opacityRules.forEach(({ key, min, max }) => {
+      const raw = this.getUserConfig(key)
+      const clamped = clampOpacity(raw, min, max)
+      if (clamped === null) return
+      if (clamped !== raw) {
+        this.setUserConfig(key, clamped)
+      }
+    })
 
     if (this.getUserConfig('tracker-source').length === 0) {
       this.setUserConfig('tracker-source', [

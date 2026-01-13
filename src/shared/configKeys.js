@@ -78,7 +78,9 @@ const userKeys = [
   'custom-security-scan-path',
   'task-detail-default-transparent',
   'task-detail-frosted-blur',
-  'task-view-mode'
+  'task-view-mode',
+  'task-filter-date',
+  'task-created-at-map'
 ]
 
 const systemKeys = [

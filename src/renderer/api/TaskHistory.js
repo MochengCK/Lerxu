@@ -11,6 +11,23 @@ const taskHistoryStore = new Store({
 })
 
 class TaskHistory {
+  getAllHistory () {
+    const raw = taskHistoryStore.get('tasks', [])
+    const list = Array.isArray(raw) ? raw : []
+    const cleaned = list.filter(t => {
+      if (!t || !t.gid) return false
+      const status = `${t.status || ''}`
+      if (t.deletedAt) return true
+      return status !== TASK_STATUS.REMOVED
+    })
+    if (cleaned.length !== list.length) {
+      try {
+        taskHistoryStore.set('tasks', cleaned)
+      } catch (_) { }
+    }
+    return cleaned
+  }
+
   /**
    * 保存已停止的任务到历史记录
    * @param {Array} tasks - 已停止的任务列表
@@ -20,14 +37,14 @@ class TaskHistory {
       return
     }
 
-    // 过滤出已完成、已失败和已移除的任务，以及种子解析任务和磁力链接任务
+    // 过滤出已完成、已失败的任务，以及种子解析任务和磁力链接任务
     const stoppedTasks = tasks.filter(task => {
       const { status } = task
       // 检查是否为种子解析任务（名称以[METADATA]开头）
       const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
       // 检查是否为磁力链接任务
       const isMagnetTask = task.bittorrent && !task.bittorrent.info
-      return isMetadataTask || isMagnetTask || [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(status)
+      return isMetadataTask || isMagnetTask || [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR].includes(status)
     })
 
     if (stoppedTasks.length === 0) {
@@ -35,7 +52,7 @@ class TaskHistory {
     }
 
     // 获取当前历史记录
-    const currentHistory = this.getHistory()
+    const currentHistory = this.getAllHistory()
     const currentGids = new Set(currentHistory.map(task => task.gid))
 
     // 添加新的任务到历史记录
@@ -58,7 +75,8 @@ class TaskHistory {
    * @returns {Array} 任务历史记录列表
    */
   getHistory () {
-    return taskHistoryStore.get('tasks', [])
+    const all = this.getAllHistory()
+    return all.filter(t => !t.deletedAt && `${t.status || ''}` !== TASK_STATUS.REMOVED)
   }
 
   updateTask (gid, patch = {}, fallbackTask = null) {
@@ -66,26 +84,84 @@ class TaskHistory {
       return
     }
 
-    const currentHistory = this.getHistory()
+    const currentHistory = this.getAllHistory()
     const idx = currentHistory.findIndex(task => task.gid === gid)
     const now = Date.now()
+    const stoppedStatuses = new Set([TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED])
+    const activeStatuses = new Set([TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED])
 
     if (idx === -1) {
       const base = fallbackTask && typeof fallbackTask === 'object' ? fallbackTask : { gid }
+      const normalizedPatch = patch && typeof patch === 'object' ? patch : {}
+      const baseStatus = `${base.status || ''}`
+      const patchStatus = `${normalizedPatch.status || ''}`
+      const shouldSetSavedAt =
+        normalizedPatch.savedAt != null ||
+        base.savedAt != null ||
+        stoppedStatuses.has(patchStatus) ||
+        stoppedStatuses.has(baseStatus)
+      const startedAt = base.startedAt != null
+        ? base.startedAt
+        : (normalizedPatch.startedAt != null ? normalizedPatch.startedAt : (activeStatuses.has(patchStatus) || activeStatuses.has(baseStatus) ? now : undefined))
+      const createdAt = base.createdAt != null ? base.createdAt : normalizedPatch.createdAt
+      const savedAt = normalizedPatch.savedAt != null
+        ? normalizedPatch.savedAt
+        : (base.savedAt != null ? base.savedAt : (shouldSetSavedAt ? now : undefined))
+      const entry = {
+        ...base,
+        ...normalizedPatch
+      }
+      if (startedAt !== undefined) {
+        entry.startedAt = startedAt
+      }
+      if (createdAt !== undefined) {
+        entry.createdAt = createdAt
+      }
+      if (savedAt !== undefined) {
+        entry.savedAt = savedAt
+      }
       taskHistoryStore.set('tasks', [
         ...currentHistory,
-        {
-          ...base,
-          ...patch,
-          savedAt: base.savedAt || now
-        }
+        entry
       ])
       return
     }
 
     const prev = currentHistory[idx] || {}
+    if (prev.deletedAt) {
+      return
+    }
+    const normalizedPatch = patch && typeof patch === 'object' ? patch : {}
+    const prevStatus = `${prev.status || ''}`
+    const patchStatus = `${normalizedPatch.status || ''}`
+    const shouldSetSavedAt =
+      normalizedPatch.savedAt != null ||
+      prev.savedAt != null ||
+      stoppedStatuses.has(patchStatus) ||
+      stoppedStatuses.has(prevStatus)
+    const startedAt = prev.startedAt != null
+      ? prev.startedAt
+      : (normalizedPatch.startedAt != null ? normalizedPatch.startedAt : (activeStatuses.has(patchStatus) || activeStatuses.has(prevStatus) ? now : undefined))
+    const createdAt = prev.createdAt != null ? prev.createdAt : normalizedPatch.createdAt
+    const savedAt = normalizedPatch.savedAt != null
+      ? normalizedPatch.savedAt
+      : (prev.savedAt != null ? prev.savedAt : (shouldSetSavedAt ? now : undefined))
     const next = [...currentHistory]
-    next[idx] = { ...prev, ...patch, savedAt: prev.savedAt || now }
+    const entry = { ...prev, ...normalizedPatch }
+    if (startedAt !== undefined) {
+      entry.startedAt = startedAt
+    } else if (Object.prototype.hasOwnProperty.call(entry, 'startedAt')) {
+      delete entry.startedAt
+    }
+    if (createdAt !== undefined) {
+      entry.createdAt = createdAt
+    }
+    if (savedAt !== undefined) {
+      entry.savedAt = savedAt
+    } else if (Object.prototype.hasOwnProperty.call(entry, 'savedAt')) {
+      delete entry.savedAt
+    }
+    next[idx] = entry
     taskHistoryStore.set('tasks', next)
   }
 
@@ -94,9 +170,21 @@ class TaskHistory {
    * @param {string} gid - 任务的GID
    */
   removeTask (gid) {
-    const currentHistory = this.getHistory()
-    const updatedHistory = currentHistory.filter(task => task.gid !== gid)
-    taskHistoryStore.set('tasks', updatedHistory)
+    if (!gid) {
+      return
+    }
+
+    const now = Date.now()
+    const currentHistory = this.getAllHistory()
+    const idx = currentHistory.findIndex(task => task.gid === gid)
+    if (idx === -1) {
+      taskHistoryStore.set('tasks', [...currentHistory, { gid, deletedAt: now }])
+      return
+    }
+
+    const next = [...currentHistory]
+    next[idx] = { ...next[idx], deletedAt: now }
+    taskHistoryStore.set('tasks', next)
   }
 
   /**

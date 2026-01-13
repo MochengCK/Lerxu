@@ -200,7 +200,7 @@
       taskDetailFrostedBlurValue () {
         const cfg = this.preferenceConfig || {}
         const raw = Number(cfg.taskDetailFrostedBlur)
-        return Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 20) : 0
+        return Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 10) : 0
       },
       shouldEnableBackdrop () {
         return this.drawerAnimationDone && this.taskDetailDefaultTransparentEnabled && this.taskDetailFrostedBlurValue > 0

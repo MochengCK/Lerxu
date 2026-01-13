@@ -161,24 +161,16 @@ export default class Api {
   }
 
   getGlobalOption () {
-    return new Promise((resolve) => {
-      this.client.call('getGlobalOption')
-        .then((data) => {
-          resolve(changeKeysToCamelCase(data))
-        })
-    })
+    return this.client.call('getGlobalOption')
+      .then((data) => changeKeysToCamelCase(data))
   }
 
   getOption (params = {}) {
     const { gid } = params
     const args = compactUndefined([gid])
 
-    return new Promise((resolve) => {
-      this.client.call('getOption', ...args)
-        .then((data) => {
-          resolve(changeKeysToCamelCase(data))
-        })
-    })
+    return this.client.call('getOption', ...args)
+      .then((data) => changeKeysToCamelCase(data))
   }
 
   updateActiveTaskOption (options) {
@@ -337,7 +329,7 @@ export default class Api {
     return tasks.map(task => {
       const historyTask = historyMap.get(task.gid)
       if (historyTask) {
-        const { savedAt, averageDownloadSpeed, averageSpeedSampleCount } = historyTask
+        const { savedAt, startedAt, createdAt, averageDownloadSpeed, averageSpeedSampleCount } = historyTask
         const liveStatus = `${task.status || ''}`
         const historyStatus = `${historyTask.status || ''}`
         const activeStatuses = new Set([TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED])
@@ -353,6 +345,8 @@ export default class Api {
           ...task,
           ...(shouldCoerceToHistoryStatus ? { status: historyStatus } : {}),
           ...(savedAt ? { savedAt } : {}),
+          ...(startedAt ? { startedAt } : {}),
+          ...(createdAt ? { createdAt } : {}),
           ...(averageDownloadSpeed != null ? { averageDownloadSpeed } : {}),
           ...(averageSpeedSampleCount != null ? { averageSpeedSampleCount } : {})
         }
@@ -440,10 +434,12 @@ export default class Api {
               if ([TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(task.status)) {
                 const historyTask = historyMap.get(task.gid)
                 if (historyTask) {
-                  const { savedAt, averageDownloadSpeed, averageSpeedSampleCount } = historyTask
+                  const { savedAt, startedAt, createdAt, averageDownloadSpeed, averageSpeedSampleCount } = historyTask
                   return {
                     ...task,
                     ...(savedAt ? { savedAt } : {}),
+                    ...(startedAt ? { startedAt } : {}),
+                    ...(createdAt ? { createdAt } : {}),
                     ...(averageDownloadSpeed != null ? { averageDownloadSpeed } : {}),
                     ...(averageSpeedSampleCount != null ? { averageSpeedSampleCount } : {})
                   }
@@ -454,6 +450,14 @@ export default class Api {
 
             result = [...result, ...newHistoryTasks]
           }
+
+          try {
+            const deleted = taskHistory.getAllHistory().filter(t => t && t.deletedAt && t.gid).map(t => t.gid)
+            if (deleted.length > 0) {
+              const deletedGids = new Set(deleted)
+              result = result.filter(task => task && task.gid && !deletedGids.has(task.gid))
+            }
+          } catch (e) {}
 
           result = result.filter(task => !looksLikeBilibiliDashPart(task))
 
@@ -492,10 +496,12 @@ export default class Api {
           stoppedTasks = stoppedTasks.map(task => {
             const historyTask = historyMap.get(task.gid)
             if (historyTask) {
-              const { savedAt, averageDownloadSpeed, averageSpeedSampleCount } = historyTask
+              const { savedAt, startedAt, createdAt, averageDownloadSpeed, averageSpeedSampleCount } = historyTask
               return {
                 ...task,
                 ...(savedAt ? { savedAt } : {}),
+                ...(startedAt ? { startedAt } : {}),
+                ...(createdAt ? { createdAt } : {}),
                 ...(averageDownloadSpeed != null ? { averageDownloadSpeed } : {}),
                 ...(averageSpeedSampleCount != null ? { averageSpeedSampleCount } : {})
               }
@@ -503,7 +509,15 @@ export default class Api {
             return task
           })
 
-          const merged = [...stoppedTasks, ...newHistoryTasks]
+          let merged = [...stoppedTasks, ...newHistoryTasks]
+          try {
+            const deleted = taskHistory.getAllHistory().filter(t => t && t.deletedAt && t.gid).map(t => t.gid)
+            if (deleted.length > 0) {
+              const deletedGids = new Set(deleted)
+              merged = merged.filter(task => task && task.gid && !deletedGids.has(task.gid))
+            }
+          } catch (e) {}
+
           return merged.filter(task => !looksLikeBilibiliDashPart(task))
         })
         .catch(err => {
