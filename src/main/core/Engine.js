@@ -1,5 +1,5 @@
-import { spawn } from 'node:child_process'
-import { existsSync, writeFile, unlink } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { accessSync, chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, writeFile, unlink } from 'node:fs'
 import { resolve } from 'node:path'
 import is from 'electron-is'
 
@@ -11,6 +11,7 @@ import {
   getEnginePidPath,
   getAria2ConfPath,
   getSessionPath,
+  getUserDataPath,
   transformConfig,
   getEngineBin,
   getEnginePath
@@ -39,7 +40,8 @@ export default class Engine {
       return
     }
 
-    const binPath = this.getEngineBinPath()
+    const originBinPath = this.getEngineBinPath()
+    const binPath = this.prepareEngineBinary(originBinPath)
     const args = this.getStartArgs()
 
     const enableEngineLogs = is.dev() || is.linux() || is.windows()
@@ -56,7 +58,14 @@ export default class Engine {
     })
     if (typeof this.instance.pid !== 'number') {
       logger.error('[Motrix] engine process pid is invalid:', this.instance.pid)
-      throw new Error(this.i18n.t('app.engine-damaged-message'))
+      const e = new Error(this.i18n.t('app.engine-damaged-message'))
+      e.details = [
+        `platform=${platform} arch=${arch}`,
+        `binPath=${binPath}`,
+        `args=${Array.isArray(args) ? args.join(' ') : ''}`,
+        `pid=${String(this.instance.pid)}`
+      ].join('\n')
+      throw e
     }
     const pid = String(this.instance.pid)
     this.writePidFile(pidPath, pid)
@@ -83,6 +92,155 @@ export default class Engine {
         logger.error('[Motrix] engine stderr===>', data.toString())
       })
     }
+  }
+
+  prepareEngineBinary (originBinPath) {
+    const p = originBinPath ? resolve(`${originBinPath}`) : ''
+    if (!p || platform === 'win32') {
+      return p
+    }
+
+    const tryUnquarantine = (fp) => {
+      if (!is.macOS() || !fp) {
+        return
+      }
+      const args = ['-dr', 'com.apple.quarantine', fp]
+      try {
+        spawnSync('xattr', args, { windowsHide: true, timeout: 3000 })
+        return
+      } catch (_) {}
+      try {
+        spawnSync('/usr/bin/xattr', args, { windowsHide: true, timeout: 3000 })
+      } catch (_) {}
+    }
+
+    const canExecute = (fp) => {
+      try {
+        accessSync(fp, constants.X_OK)
+        return true
+      } catch (_) {
+        return false
+      }
+    }
+
+    const runVersionCheck = (fp) => {
+      if (!is.macOS() || !fp) {
+        return { ok: true, detail: '' }
+      }
+      try {
+        const r = spawnSync(fp, ['--version'], {
+          windowsHide: true,
+          timeout: 5000,
+          encoding: 'utf8',
+          maxBuffer: 1024 * 128,
+          stdio: ['ignore', 'pipe', 'pipe']
+        })
+        if (r && r.error) {
+          const c = r.error && r.error.code ? String(r.error.code) : ''
+          return { ok: false, detail: `spawn_error=${r.error.message}${c ? ` code=${c}` : ''}` }
+        }
+        if (!r || r.status !== 0) {
+          const status = r && typeof r.status === 'number' ? String(r.status) : 'unknown'
+          const signal = r && r.signal ? String(r.signal) : ''
+          const stderr = r && r.stderr ? String(r.stderr).trim() : ''
+          const stderrLine = stderr ? `\nstderr=${stderr.slice(0, 600)}` : ''
+          return { ok: false, detail: `exit_status=${status}${signal ? ` signal=${signal}` : ''}${stderrLine}` }
+        }
+        return { ok: true, detail: '' }
+      } catch (e) {
+        return { ok: false, detail: `exception=${e && e.message ? e.message : String(e)}` }
+      }
+    }
+
+    const tryChmod = (fp) => {
+      try {
+        const st = lstatSync(fp)
+        const mode = Number(st && st.mode) || 0
+        if ((mode & parseInt('111', 8)) !== 0) {
+          return true
+        }
+      } catch (_) {}
+      try {
+        chmodSync(fp, 0o755)
+        return true
+      } catch (_) {
+        return false
+      }
+    }
+
+    tryUnquarantine(p)
+    tryChmod(p)
+    const originalCheck = canExecute(p) ? runVersionCheck(p) : { ok: false, detail: 'not_executable' }
+    if (canExecute(p) && originalCheck.ok) {
+      return p
+    }
+
+    let lastError = null
+    try {
+      const destDir = resolve(getUserDataPath(), 'engine')
+      try {
+        mkdirSync(destDir, { recursive: true })
+      } catch (_) {}
+
+      const name = p.split(/[\\/]/).pop() || 'aria2c'
+      const destPath = resolve(destDir, name)
+      try {
+        copyFileSync(p, destPath)
+      } catch (e) {
+        logger.warn('[Motrix] Copy engine to userData failed:', e && e.message ? e.message : e)
+        const err = new Error(this.i18n.t('app.engine-damaged-message'))
+        err.details = [
+          `platform=${platform} arch=${arch}`,
+          `origin=${p}`,
+          `origin_check=${originalCheck && originalCheck.detail ? originalCheck.detail : 'unknown'}`,
+          `copy_failed=${e && e.message ? e.message : String(e)}`
+        ].join('\n')
+        throw err
+      }
+
+      tryChmod(destPath)
+      tryUnquarantine(destPath)
+
+      if (canExecute(destPath)) {
+        const copiedCheck = runVersionCheck(destPath)
+        if (copiedCheck.ok) {
+          return destPath
+        }
+        const e = new Error(this.i18n.t('app.engine-damaged-message'))
+        e.details = [
+          `platform=${platform} arch=${arch}`,
+          `origin=${p}`,
+          `origin_check=${originalCheck && originalCheck.detail ? originalCheck.detail : 'unknown'}`,
+          `copied=${destPath}`,
+          `copied_check=${copiedCheck && copiedCheck.detail ? copiedCheck.detail : 'unknown'}`
+        ].join('\n')
+        throw e
+      }
+      const err = new Error(this.i18n.t('app.engine-damaged-message'))
+      err.details = [
+        `platform=${platform} arch=${arch}`,
+        `origin=${p}`,
+        `origin_check=${originalCheck && originalCheck.detail ? originalCheck.detail : 'unknown'}`,
+        `copied=${destPath}`,
+        'copied_check=not_executable'
+      ].join('\n')
+      throw err
+    } catch (e) {
+      logger.warn('[Motrix] prepareEngineBinary failed:', e && e.message ? e.message : e)
+      lastError = e
+    }
+
+    if (lastError) {
+      throw lastError
+    }
+    const err = new Error(this.i18n.t('app.engine-damaged-message'))
+    err.details = [
+      `platform=${platform} arch=${arch}`,
+      `origin=${p}`,
+      `origin_check=${originalCheck && originalCheck.detail ? originalCheck.detail : 'unknown'}`,
+      'copy_skipped=unknown_reason'
+    ].join('\n')
+    throw err
   }
 
   stop () {
@@ -189,7 +347,15 @@ export default class Engine {
     const binIsExist = existsSync(result)
     if (!binIsExist) {
       logger.error('[Motrix] engine bin is not exist:', result)
-      throw new Error(this.i18n.t('app.engine-missing-message'))
+      const e = new Error(this.i18n.t('app.engine-missing-message'))
+      e.details = [
+        `platform=${platform} arch=${arch}`,
+        `engine_path=${enginePath}`,
+        `configured=${binName || ''}`,
+        `available=${Array.isArray(availableEngines) ? availableEngines.join(',') : ''}`,
+        `missing=${result}`
+      ].join('\n')
+      throw e
     }
 
     return result

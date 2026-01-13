@@ -118,7 +118,8 @@
           "**/*"
         ]
       },
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "icon": "./static/L.icns"
     },
     "win": {
       "target": [

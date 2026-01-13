@@ -790,11 +790,15 @@ export default class Application extends EventEmitter {
       })
       this.engine.start()
     } catch (err) {
-      const { message } = err
+      const message = err && err.message ? err.message : String(err)
+      const detail = err && err.details
+        ? String(err.details)
+        : (err && err.stack ? String(err.stack) : '')
       dialog.showMessageBox({
         type: 'error',
         title: this.i18n.t('app.system-error-title'),
-        message: this.i18n.t('app.system-error-message', { message })
+        message: this.i18n.t('app.system-error-message', { message }),
+        detail: detail || undefined
       }).then(_ => {
         setTimeout(() => {
           self.quit()
