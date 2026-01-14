@@ -77,9 +77,9 @@ LinkCore Download Manager是一款【简洁】【美观】【易用】的跨平�
 
 ## 🖥️ 支持平台
 
-联芯下载管理器目前支持以下平台：
+LinkCore Download Manager目前支持以下平台：
 - **Windows** (7, 8, 10, 11)
-- **macOS** (Apple Silicon, arm64)
+- **macOS**（Intel，x64；Apple Silicon，arm64）
 - **Linux** (x64, arm64)
 
 ## 📦 安装方式
@@ -93,9 +93,9 @@ LinkCore Download Manager是一款【简洁】【美观】【易用】的跨平�
 ### macOS
 
 1. 访问 [GitHub Releases](https://github.com/MochengCK/LinkCore-Download-Manager/releases) 页面
-2. 下载 `*.dmg` 或 `*-arm64-mac.zip`（Apple Silicon，arm64）
+2. 下载 `*.dmg`（x64/arm64）或 `*-mac.zip` / `*-arm64-mac.zip`（x64/arm64）
 3. 使用 `*.dmg`：双击打开，将应用拖拽到 `/Applications`
-4. 使用 `*-arm64-mac.zip`：解压后将应用移动到 `/Applications`
+4. 使用 `*.zip`：解压后将应用移动到 `/Applications`
 5. 首次运行若提示“无法验证开发者”，请在“系统设置 → 隐私与安全”中点击“仍要打开”，或在 Finder 中对应用图标“右键 → 打开”
 
 ### Linux

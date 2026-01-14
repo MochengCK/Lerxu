@@ -80,7 +80,7 @@ At the same time, LinkCore Download Manager also possesses professional-grade do
 
 LinkCore Download Manager currently supports the following platforms:
 - **Windows** (7, 8, 10, 11)
-- **macOS** (Apple Silicon, arm64)
+- **macOS** (Intel, x64; Apple Silicon, arm64)
 - **Linux** (x64, arm64)
 
 ## 📦 Installation
@@ -94,9 +94,9 @@ LinkCore Download Manager currently supports the following platforms:
 ### macOS
 
 1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore-Download-Manager/releases) page
-2. Download `*.dmg` or `*-arm64-mac.zip` (Apple Silicon, arm64)
+2. Download `*.dmg` (x64/arm64) or `*-mac.zip` / `*-arm64-mac.zip` (x64/arm64)
 3. Using `*.dmg`: Double-click to open, drag the app to `/Applications`
-4. Using `*-arm64-mac.zip`: After unzipping, move the app to `/Applications`
+4. Using `*.zip`: After unzipping, move the app to `/Applications`
 5. If it prompts "unidentified developer" on first run, click "Open Anyway" in "System Settings → Privacy & Security", or "Right-click → Open" on the app icon in Finder
 
 ### Linux
