@@ -53,6 +53,75 @@ const looksLikeBilibiliDashPart = (task) => {
   }
 }
 
+const isStoppedCategoryStatus = (status) => {
+  const s = `${status || ''}`
+  return s === TASK_STATUS.PAUSED ||
+    s === TASK_STATUS.COMPLETE ||
+    s === TASK_STATUS.ERROR ||
+    s === TASK_STATUS.REMOVED
+}
+
+const isNonEmptyString = (value) => {
+  return typeof value === 'string' && value.trim() !== ''
+}
+
+const cloneTaskFiles = (files) => {
+  if (!Array.isArray(files)) {
+    return files
+  }
+  return files.map((file) => {
+    if (!file || typeof file !== 'object') {
+      return file
+    }
+    const next = { ...file }
+    if (Array.isArray(file.uris)) {
+      next.uris = file.uris.map((u) => {
+        if (!u || typeof u !== 'object') {
+          return u
+        }
+        return { ...u }
+      })
+    }
+    return next
+  })
+}
+
+const cloneBittorrent = (bt) => {
+  if (!bt || typeof bt !== 'object') {
+    return bt
+  }
+  const next = { ...bt }
+  if (bt.info && typeof bt.info === 'object') {
+    next.info = { ...bt.info }
+  }
+  return next
+}
+
+const shouldAdoptHistoryFiles = (task, historyTask) => {
+  const liveFiles = Array.isArray(task && task.files) ? task.files : []
+  const historyFiles = Array.isArray(historyTask && historyTask.files) ? historyTask.files : []
+  if (historyFiles.length === 0) {
+    return false
+  }
+  if (liveFiles.length === 0) {
+    return true
+  }
+
+  const liveFirst = liveFiles[0] || {}
+  const livePath = isNonEmptyString(liveFirst.path) ? liveFirst.path : ''
+  const liveUris = Array.isArray(liveFirst.uris) ? liveFirst.uris : []
+  const liveUri0 = liveUris[0] && isNonEmptyString(liveUris[0].uri) ? liveUris[0].uri : ''
+  if (isNonEmptyString(`${livePath}`) || isNonEmptyString(`${liveUri0}`)) {
+    return false
+  }
+
+  const histFirst = historyFiles[0] || {}
+  const histPath = isNonEmptyString(histFirst.path) ? histFirst.path : ''
+  const histUris = Array.isArray(histFirst.uris) ? histFirst.uris : []
+  const histUri0 = histUris[0] && isNonEmptyString(histUris[0].uri) ? histUris[0].uri : ''
+  return isNonEmptyString(`${histPath}`) || isNonEmptyString(`${histUri0}`)
+}
+
 export default class Api {
   constructor (options = {}) {
     this.options = options
@@ -266,6 +335,14 @@ export default class Api {
     return this.client.multicall(tasks)
   }
 
+  addUriRaw (params = {}) {
+    const { uri, uris, options = {}, position } = params
+    const list = Array.isArray(uris) ? uris : (uri ? [uri] : [])
+    const engineOptions = formatOptionsForEngine(options)
+    const args = compactUndefined([list, engineOptions, position])
+    return this.client.call('addUri', ...args)
+  }
+
   async addTorrent (params) {
     const {
       torrent,
@@ -326,14 +403,38 @@ export default class Api {
     }
 
     const historyMap = new Map(historyTasks.map(task => [task.gid, task]))
+    const activeStatuses = new Set([TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED])
+    const stoppedStatuses = new Set([TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED])
     return tasks.map(task => {
       const historyTask = historyMap.get(task.gid)
       if (historyTask) {
         const { savedAt, startedAt, createdAt, averageDownloadSpeed, averageSpeedSampleCount } = historyTask
+        const mergedFields = {}
+        if (!isNonEmptyString(`${task && task.dir ? task.dir : ''}`) && isNonEmptyString(`${historyTask.dir || ''}`)) {
+          mergedFields.dir = historyTask.dir
+        }
+        if (!isNonEmptyString(`${task && task.uri ? task.uri : ''}`) && isNonEmptyString(`${historyTask.uri || ''}`)) {
+          mergedFields.uri = historyTask.uri
+        }
+        if (!isNonEmptyString(`${task && task.name ? task.name : ''}`) && isNonEmptyString(`${historyTask.name || ''}`)) {
+          mergedFields.name = historyTask.name
+        }
+        if (shouldAdoptHistoryFiles(task, historyTask)) {
+          mergedFields.files = cloneTaskFiles(historyTask.files)
+        }
+
+        const liveBtName = task && task.bittorrent && task.bittorrent.info && task.bittorrent.info.name
+          ? `${task.bittorrent.info.name}`
+          : ''
+        const histBtName = historyTask && historyTask.bittorrent && historyTask.bittorrent.info && historyTask.bittorrent.info.name
+          ? `${historyTask.bittorrent.info.name}`
+          : ''
+        if (!isNonEmptyString(liveBtName) && isNonEmptyString(histBtName)) {
+          mergedFields.bittorrent = cloneBittorrent(historyTask.bittorrent)
+        }
+
         const liveStatus = `${task.status || ''}`
         const historyStatus = `${historyTask.status || ''}`
-        const activeStatuses = new Set([TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED])
-        const stoppedStatuses = new Set([TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED])
         const total = Number(task.totalLength || historyTask.totalLength || 0)
         const completed = Number(task.completedLength || historyTask.completedLength || 0)
         const shouldCoerceToHistoryStatus =
@@ -343,6 +444,7 @@ export default class Api {
           Number.isFinite(completed) && completed >= total
         return {
           ...task,
+          ...mergedFields,
           ...(shouldCoerceToHistoryStatus ? { status: historyStatus } : {}),
           ...(savedAt ? { savedAt } : {}),
           ...(startedAt ? { startedAt } : {}),
@@ -421,33 +523,14 @@ export default class Api {
           })
           taskHistory.saveStoppedTasks(stoppedTasks)
 
+          result = this._mergeHistoryToTasks(result)
+
           // 获取历史记录并合并到结果中
           const historyTasks = taskHistory.getHistory()
           if (historyTasks.length > 0) {
             // 合并历史任务，避免重复
             const currentGids = new Set(result.map(task => task.gid))
             const newHistoryTasks = historyTasks.filter(task => !currentGids.has(task.gid))
-
-            // 为从aria2获取的已停止任务合并历史字段（如 savedAt/平均速度）
-            const historyMap = new Map(historyTasks.map(task => [task.gid, task]))
-            result = result.map(task => {
-              if ([TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(task.status)) {
-                const historyTask = historyMap.get(task.gid)
-                if (historyTask) {
-                  const { savedAt, startedAt, createdAt, averageDownloadSpeed, averageSpeedSampleCount } = historyTask
-                  return {
-                    ...task,
-                    ...(savedAt ? { savedAt } : {}),
-                    ...(startedAt ? { startedAt } : {}),
-                    ...(createdAt ? { createdAt } : {}),
-                    ...(averageDownloadSpeed != null ? { averageDownloadSpeed } : {}),
-                    ...(averageSpeedSampleCount != null ? { averageSpeedSampleCount } : {})
-                  }
-                }
-              }
-              return task
-            })
-
             result = [...result, ...newHistoryTasks]
           }
 
@@ -481,33 +564,21 @@ export default class Api {
           // 如果没有从Aria2获取到已停止的任务，直接返回历史记录
           if (stoppedTasks.length === 0) {
             return historyTasks
+              .filter(task => isStoppedCategoryStatus(task && task.status))
+              .filter(task => !looksLikeBilibiliDashPart(task))
           }
 
           // 保存从Aria2获取到的已停止任务到历史记录
           taskHistory.saveStoppedTasks(stoppedTasks)
 
+          stoppedTasks = this._mergeHistoryToTasks(stoppedTasks)
+
           // 合并Aria2任务和历史记录任务，避免重复
           const currentGids = new Set(stoppedTasks.map(task => task.gid))
-          const newHistoryTasks = historyTasks.filter(task => !currentGids.has(task.gid))
-
-          // 为从aria2获取的已停止任务合并历史字段（如 savedAt/平均速度）
-          const updatedHistoryTasks = taskHistory.getHistory()
-          const historyMap = new Map(updatedHistoryTasks.map(task => [task.gid, task]))
-          stoppedTasks = stoppedTasks.map(task => {
-            const historyTask = historyMap.get(task.gid)
-            if (historyTask) {
-              const { savedAt, startedAt, createdAt, averageDownloadSpeed, averageSpeedSampleCount } = historyTask
-              return {
-                ...task,
-                ...(savedAt ? { savedAt } : {}),
-                ...(startedAt ? { startedAt } : {}),
-                ...(createdAt ? { createdAt } : {}),
-                ...(averageDownloadSpeed != null ? { averageDownloadSpeed } : {}),
-                ...(averageSpeedSampleCount != null ? { averageSpeedSampleCount } : {})
-              }
-            }
-            return task
-          })
+          const newHistoryTasks = historyTasks
+            .filter(task => !currentGids.has(task.gid))
+            .filter(task => isStoppedCategoryStatus(task && task.status))
+          stoppedTasks = stoppedTasks.filter(task => isStoppedCategoryStatus(task && task.status))
 
           let merged = [...stoppedTasks, ...newHistoryTasks]
           try {
@@ -523,7 +594,9 @@ export default class Api {
         .catch(err => {
           console.log('[Motrix] fetch stopped task list fail, fallback to history:', err)
           const history = taskHistory.getHistory()
-          return history.filter(task => !looksLikeBilibiliDashPart(task))
+          return history
+            .filter(task => isStoppedCategoryStatus(task && task.status))
+            .filter(task => !looksLikeBilibiliDashPart(task))
         })
     default:
       return this.fetchDownloadingTaskList(params)
@@ -610,6 +683,15 @@ export default class Api {
 
   resumeAllTask (params = {}) {
     return this.client.call('unpauseAll')
+  }
+
+  changeUri (params = {}) {
+    const { gid, fileIndex = 1, delUris = [], addUris = [], position } = params
+    const idx = Number(fileIndex) || 1
+    const del = Array.isArray(delUris) ? delUris : []
+    const add = Array.isArray(addUris) ? addUris : []
+    const args = compactUndefined([gid, idx, del, add, position])
+    return this.client.call('changeUri', ...args)
   }
 
   removeTask (params = {}) {

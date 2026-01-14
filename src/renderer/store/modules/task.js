@@ -3,12 +3,15 @@ import api from '@/api'
 import { EMPTY_STRING, TASK_STATUS } from '@shared/constants'
 import { checkTaskIsBT, getFileNameFromFile, intersection } from '@shared/utils'
 import taskHistory from '@/api/TaskHistory'
+import fetch from 'node-fetch'
+import { inferRefererFromUrl } from '@shared/utils/referer-rules'
 
 const MAX_TASK_SPEED_SAMPLE_GIDS = 200
 const MAX_TASK_DISPLAY_NAME_GIDS = 1000
 const MAX_TASK_PRIORITY_GIDS = 1000
 const MAX_MAGNET_STATUS_GIDS = 300
 const MAX_DATA_ACCESS_STATUS_GIDS = 300
+const MAX_TASK_LINK_UPDATE_HINT_GIDS = 300
 
 function normalizeGid (gid) {
   const s = `${gid || ''}`
@@ -163,6 +166,8 @@ const state = {
   taskDisplayNames: {},
   taskDisplayNamesTouchedAt: {},
   taskPrioritiesTouchedAt: {},
+  taskLinkUpdateHints: {},
+  taskLinkUpdateHintsTouchedAt: {},
   searchKeyword: '',
   categoryFilter: '',
   sortField: 'name',
@@ -378,6 +383,8 @@ const mutations = {
     state.taskDisplayNamesTouchedAt = pruneBySet(state.taskDisplayNamesTouchedAt)
     state.taskPriorities = pruneBySet(state.taskPriorities)
     state.taskPrioritiesTouchedAt = pruneBySet(state.taskPrioritiesTouchedAt)
+    state.taskLinkUpdateHints = pruneBySet(state.taskLinkUpdateHints)
+    state.taskLinkUpdateHintsTouchedAt = pruneBySet(state.taskLinkUpdateHintsTouchedAt)
   },
   PRUNE_TASK_CACHES (state, payload) {
     const gids = Array.isArray(payload && payload.gids) ? payload.gids : []
@@ -422,6 +429,39 @@ const mutations = {
     const priorityCapped = capByTouched(state.taskPriorities, state.taskPrioritiesTouchedAt, MAX_TASK_PRIORITY_GIDS)
     state.taskPriorities = priorityCapped.cappedMap
     state.taskPrioritiesTouchedAt = priorityCapped.cappedTouched
+
+    const linkHintCapped = capByTouched(state.taskLinkUpdateHints, state.taskLinkUpdateHintsTouchedAt, MAX_TASK_LINK_UPDATE_HINT_GIDS)
+    state.taskLinkUpdateHints = linkHintCapped.cappedMap
+    state.taskLinkUpdateHintsTouchedAt = linkHintCapped.cappedTouched
+  },
+  UPDATE_TASK_LINK_UPDATE_HINT (state, payload) {
+    const gid = payload && payload.gid ? normalizeGid(payload.gid) : ''
+    if (!gid) {
+      return
+    }
+    const now = Date.now()
+    const prev = (state.taskLinkUpdateHints && state.taskLinkUpdateHints[gid]) || {}
+    const next = {
+      ...prev,
+      ...payload,
+      gid,
+      updatedAt: now
+    }
+    state.taskLinkUpdateHints = { ...(state.taskLinkUpdateHints || {}), [gid]: next }
+    state.taskLinkUpdateHintsTouchedAt = { ...(state.taskLinkUpdateHintsTouchedAt || {}), [gid]: now }
+  },
+  CLEAR_TASK_LINK_UPDATE_HINT (state, gid) {
+    const k = normalizeGid(gid)
+    if (!k) {
+      return
+    }
+    const next = { ...(state.taskLinkUpdateHints || {}) }
+    delete next[k]
+    state.taskLinkUpdateHints = next
+
+    const nextTouched = { ...(state.taskLinkUpdateHintsTouchedAt || {}) }
+    delete nextTouched[k]
+    state.taskLinkUpdateHintsTouchedAt = nextTouched
   },
   UPDATE_TASK_SEARCH_KEYWORD (state, keyword) {
     state.searchKeyword = `${keyword || ''}`
@@ -448,6 +488,28 @@ const mutations = {
 }
 
 const actions = {
+  markTaskNeedUpdateLink ({ commit }, payload) {
+    const gid = payload && payload.gid ? `${payload.gid}` : ''
+    if (!gid) {
+      return
+    }
+    const httpStatus = payload && payload.httpStatus ? Number(payload.httpStatus) : 0
+    const reason = payload && payload.reason ? `${payload.reason}` : ''
+    const level = payload && payload.level ? `${payload.level}` : ''
+    const errorCode = payload && payload.errorCode != null ? Number(payload.errorCode) : null
+    const errorMessage = payload && payload.errorMessage ? `${payload.errorMessage}` : ''
+    commit('UPDATE_TASK_LINK_UPDATE_HINT', {
+      gid,
+      httpStatus: Number.isFinite(httpStatus) ? httpStatus : 0,
+      level,
+      reason,
+      errorCode,
+      errorMessage
+    })
+  },
+  clearTaskNeedUpdateLink ({ commit }, gid) {
+    commit('CLEAR_TASK_LINK_UPDATE_HINT', gid)
+  },
   initializeViewMode ({ commit }, config) {
     // Load saved view mode from preferences
     // config 中的键是 camelCase 格式
@@ -1103,6 +1165,265 @@ const actions = {
         dispatch('fetchList')
         dispatch('saveSession')
       })
+  },
+  async updateTaskLink ({ dispatch, rootState }, payload) {
+    const task = payload && payload.task ? payload.task : null
+    const gid = task && task.gid ? `${task.gid}` : ''
+    const newUri = payload && payload.newUri ? `${payload.newUri}`.trim() : ''
+    const headersUA = payload && payload.headersUA != null ? `${payload.headersUA}` : ''
+    const headersReferer = payload && payload.headersReferer != null ? `${payload.headersReferer}` : ''
+    const headersCookie = payload && payload.headersCookie != null ? `${payload.headersCookie}` : ''
+    const headersAuthorization = payload && payload.headersAuthorization != null ? `${payload.headersAuthorization}` : ''
+    const desiredAllProxy = payload && payload.allProxy != null ? `${payload.allProxy}`.trim() : ''
+    if (!gid || !newUri) {
+      throw new Error('INVALID_PAYLOAD')
+    }
+
+    const current = await api.fetchTaskItem({ gid }).catch(() => task)
+    const files = Array.isArray(current && current.files) ? current.files : []
+    const fileIdx0 = files.findIndex(f => Array.isArray(f && f.uris) && f.uris.some(u => u && u.uri))
+    const firstFile = fileIdx0 >= 0 ? files[fileIdx0] : null
+    const fileIndex = fileIdx0 >= 0 ? (fileIdx0 + 1) : 1
+
+    const currentUris = Array.isArray(firstFile && firstFile.uris)
+      ? firstFile.uris.map(u => u && u.uri ? `${u.uri}` : '').filter(Boolean)
+      : []
+    if (currentUris.length === 0) {
+      throw new Error('NO_ORIGINAL_URI')
+    }
+
+    const buildDesiredHeaderLines = (existing = []) => {
+      const base = new Map()
+      const input = Array.isArray(existing) ? existing : []
+      input.forEach(h => {
+        const s = `${h || ''}`
+        const i = s.indexOf(':')
+        if (i <= 0) return
+        const k = s.slice(0, i).trim()
+        const v = s.slice(i + 1).trim()
+        if (!k) return
+        base.set(k.toLowerCase(), { k, v })
+      })
+
+      const setOrDelete = (keyLower, keyName, value) => {
+        const v = `${value || ''}`.trim()
+        if (!v) {
+          base.delete(keyLower)
+          return
+        }
+        base.set(keyLower, { k: keyName, v })
+      }
+
+      setOrDelete('user-agent', 'User-Agent', headersUA)
+      setOrDelete('referer', 'Referer', headersReferer)
+      setOrDelete('cookie', 'Cookie', headersCookie)
+      setOrDelete('authorization', 'Authorization', headersAuthorization)
+
+      return Array.from(base.values()).map(it => `${it.k}: ${it.v}`)
+    }
+    let currentHeaderLines = []
+    let currentAllProxy = ''
+    try {
+      const opt = await api.getOption({ gid })
+      const hs = opt && opt.header ? opt.header : []
+      const headerItems = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
+      const lines = []
+      headerItems.filter(Boolean).forEach(h => {
+        `${h}`.split(/\r?\n/).forEach(line => {
+          const s = `${line || ''}`.trim()
+          if (s) lines.push(s)
+        })
+      })
+      currentHeaderLines = lines
+      currentAllProxy = opt && (opt.allProxy || opt['all-proxy']) ? `${opt.allProxy || opt['all-proxy']}`.trim() : ''
+    } catch (_) {}
+
+    const desiredHeaderLines = buildDesiredHeaderLines(currentHeaderLines)
+
+    const normalizeLines = (lines) => (Array.isArray(lines) ? lines.map(x => `${x}`.trim()).filter(Boolean) : [])
+    const ensureMinimalHeaders = (url, lines) => {
+      const arr = normalizeLines(lines)
+      const hasRef = arr.some(s => /^Referer\s*:/i.test(s))
+      const hasOrigin = arr.some(s => /^Origin\s*:/i.test(s))
+      const next = [...arr]
+      if (!hasRef) {
+        const inferred = inferRefererFromUrl(url)
+        if (inferred) {
+          next.push(`Referer: ${inferred}`)
+          if (!hasOrigin && /bilibili\.com/i.test(inferred)) {
+            next.push('Origin: https://www.bilibili.com')
+          }
+        }
+      }
+      return next
+    }
+    const effectiveHeaderLines = ensureMinimalHeaders(newUri, desiredHeaderLines)
+    const sameHeaders = normalizeLines(effectiveHeaderLines).join('\n') === normalizeLines(currentHeaderLines).join('\n')
+
+    const sameProxy = `${currentAllProxy || ''}`.trim() === `${desiredAllProxy || ''}`.trim()
+
+    if (currentUris.includes(newUri) && sameHeaders && sameProxy) {
+      dispatch('clearTaskNeedUpdateLink', gid)
+      await dispatch('fetchList').catch(() => {})
+      await dispatch('resumeTask', { gid, status: TASK_STATUS.PAUSED }).catch(() => {})
+      await dispatch('fetchList').catch(() => {})
+      return
+    }
+
+    const effectiveDesiredHeaderLines = effectiveHeaderLines
+
+    const status = current && current.status ? `${current.status}` : ''
+    if (status === TASK_STATUS.ACTIVE || status === TASK_STATUS.WAITING) {
+      await dispatch('pauseTask', current).catch(() => {})
+      await dispatch('fetchList').catch(() => {})
+    }
+
+    const headerLinesToFetchHeaders = (lines) => {
+      const list = Array.isArray(lines) ? lines : []
+      const out = {}
+      for (const raw of list) {
+        const s = `${raw || ''}`
+        const idx = s.indexOf(':')
+        if (idx <= 0) continue
+        const k = s.slice(0, idx).trim()
+        const v = s.slice(idx + 1).trim()
+        if (!k) continue
+        out[k] = v
+      }
+      return out
+    }
+
+    const fetchHeadLength = async (url, headerLines) => {
+      const baseHeaders = headerLinesToFetchHeaders(headerLines)
+      const res = await fetch(url, {
+        method: 'HEAD',
+        redirect: 'follow',
+        headers: {
+          ...baseHeaders,
+          'Accept-Encoding': 'identity'
+        }
+      })
+      const cl = res && res.headers && res.headers.get ? res.headers.get('content-length') : ''
+      return cl ? (Number(cl) || 0) : 0
+    }
+
+    const fetchRange0 = async (url, maxBytes, headerLines) => {
+      const end = Math.max(0, maxBytes - 1)
+      const baseHeaders = headerLinesToFetchHeaders(headerLines)
+      const res = await fetch(url, {
+        redirect: 'follow',
+        headers: {
+          ...baseHeaders,
+          Range: `bytes=0-${end}`,
+          'Accept-Encoding': 'identity'
+        }
+      })
+      if (!(res && (res.status === 206 || res.status === 200))) {
+        throw new Error(`HTTP_${res ? res.status : 0}`)
+      }
+      const arrayBuf = await res.arrayBuffer()
+      const body = Buffer.from(arrayBuf || [])
+      const contentRange = res.headers && res.headers.get ? res.headers.get('content-range') : ''
+      const contentLength = res.headers && res.headers.get ? res.headers.get('content-length') : ''
+      let total = 0
+      if (contentRange) {
+        const m = `${contentRange}`.match(/\/(\d+)\s*$/)
+        if (m) total = Number(m[1]) || 0
+      }
+      if (!total && contentLength && res.status === 200) {
+        total = Number(contentLength) || 0
+      }
+      return { body, total, status: res.status }
+    }
+
+    let remoteTotal = 0
+    const verifyRangeBytes = 8192
+    const remoteProbe = await fetchRange0(newUri, verifyRangeBytes, effectiveHeaderLines)
+    remoteTotal = remoteProbe.total || 0
+
+    let verifiedRemoteTotal = Number(remoteTotal) || 0
+    if (verifiedRemoteTotal === 0) {
+      try {
+        verifiedRemoteTotal = await fetchHeadLength(newUri, effectiveHeaderLines)
+      } catch (_) {
+        verifiedRemoteTotal = 0
+      }
+      if (verifiedRemoteTotal > 0) {
+        remoteTotal = verifiedRemoteTotal
+      }
+    }
+
+    const applyOptionsAndUri = async () => {
+      if (!sameProxy) {
+        await api.changeOption({ gid, options: { allProxy: desiredAllProxy } })
+      }
+
+      if (normalizeLines(effectiveDesiredHeaderLines).join('\n') !== normalizeLines(currentHeaderLines).join('\n')) {
+        await api.changeOption({ gid, options: { header: effectiveDesiredHeaderLines } })
+      }
+
+      await api.changeUri({
+        gid,
+        fileIndex,
+        delUris: currentUris,
+        addUris: [newUri]
+      })
+    }
+
+    const shouldFallback = (err) => {
+      const msg = err && err.message ? `${err.message}` : `${err || ''}`
+      return /Cannot change option for GID#/i.test(msg) ||
+        /GID\s*#?.*\s*is not found/i.test(msg) ||
+        /Cannot change URI/i.test(msg) ||
+        /Cannot\s+change\s+option/i.test(msg)
+    }
+
+    try {
+      await applyOptionsAndUri()
+    } catch (e) {
+      if (!shouldFallback(e)) {
+        throw e
+      }
+
+      let opt = null
+      try {
+        opt = await api.getOption({ gid })
+      } catch (_) {}
+
+      const dir = opt && opt.dir ? `${opt.dir}` : (current && current.dir ? `${current.dir}` : '')
+      const out = opt && opt.out ? `${opt.out}` : ''
+      const split = opt && opt.split != null ? Number(opt.split) : null
+      const options = {
+        dir,
+        out,
+        continue: true,
+        header: effectiveDesiredHeaderLines,
+        allProxy: desiredAllProxy
+      }
+      if (split != null && Number.isFinite(split) && split > 0) {
+        options.split = split
+      }
+      const nextGid = await api.addUriRaw({ uri: newUri, options })
+      if (!nextGid) {
+        throw e
+      }
+
+      dispatch('clearTaskNeedUpdateLink', gid)
+      await dispatch('fetchList').catch(() => {})
+      await dispatch('resumeTask', { gid: `${nextGid}`, status: TASK_STATUS.PAUSED }).catch(() => {})
+      await dispatch('fetchList').catch(() => {})
+
+      const oldStatus = current && current.status ? `${current.status}` : ''
+      if ([TASK_STATUS.ERROR, TASK_STATUS.COMPLETE, TASK_STATUS.REMOVED].includes(oldStatus)) {
+        await dispatch('removeTaskRecord', { gid, status: oldStatus }).catch(() => {})
+      }
+      return
+    }
+
+    dispatch('clearTaskNeedUpdateLink', gid)
+    await dispatch('fetchList').catch(() => {})
+    await dispatch('resumeTask', { gid, status: TASK_STATUS.PAUSED }).catch(() => {})
+    await dispatch('fetchList').catch(() => {})
   }
 }
 

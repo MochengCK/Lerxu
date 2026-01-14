@@ -8,8 +8,22 @@
       :md="leftColSpan.md"
       :lg="leftColSpan.lg"
     >
+      <el-tooltip
+        v-if="linkUpdateHintText"
+        effect="dark"
+        :content="linkUpdateHintText"
+        placement="top"
+        :disabled="!isStatusTruncated"
+      >
+        <div
+          ref="statusText"
+          class="task-magnet-hint task-magnet-hint--ellipsis"
+        >
+          {{ linkUpdateHintText }}
+        </div>
+      </el-tooltip>
       <div
-        v-if="seedingHintText"
+        v-else-if="seedingHintText"
         class="task-magnet-hint task-magnet-hint--ellipsis"
       >
         {{ seedingHintText }}
@@ -31,6 +45,8 @@
       <div v-else-if="!magnetHintText && (task.completedLength > 0 || task.totalLength > 0)">
         <span>{{ task.completedLength | bytesToSize(2) }}</span>
         <span v-if="task.totalLength > 0"> / {{ task.totalLength | bytesToSize(2) }}</span>
+        <span v-if="downloadPercentText" class="task-progress-sep"></span>
+        <span v-if="downloadPercentText" class="task-progress-percent">{{ downloadPercentText }}</span>
       </div>
       <el-tooltip
         v-if="magnetHintText"
@@ -138,7 +154,8 @@
       ...mapState('task', {
         magnetStatuses: state => state.magnetStatuses,
         dataAccessStatuses: state => state.dataAccessStatuses,
-        taskPriorities: state => state.taskPriorities
+        taskPriorities: state => state.taskPriorities,
+        taskLinkUpdateHints: state => state.taskLinkUpdateHints || {}
       }),
       ...mapState('preference', {
         preferenceConfig: state => state.config
@@ -202,9 +219,40 @@
         }
         return this.$t('task.bt-seeding-continue')
       },
+      linkUpdateHintText () {
+        const task = this.task || {}
+        const gid = task && task.gid ? `${task.gid}` : ''
+        const map = this.taskLinkUpdateHints || {}
+        const hint = gid ? map[gid] : null
+        if (!hint) {
+          return ''
+        }
+        const code = Number(hint.httpStatus) || 0
+        if (code === 403) return this.$t('task.link-update-hint-403')
+        if (code === 401) return this.$t('task.link-update-hint-401')
+        if (code === 410) return this.$t('task.link-update-hint-410')
+        if (code === 404) return this.$t('task.link-update-hint-404')
+        if (code === 416) return this.$t('task.link-update-hint-416')
+        return code > 0
+          ? this.$t('task.link-update-hint-with-code', { code })
+          : this.$t('task.link-update-hint')
+      },
       remaining () {
         const { totalLength, completedLength, downloadSpeed } = this.task
         return timeRemaining(totalLength, completedLength, downloadSpeed)
+      },
+      downloadPercentText () {
+        const { totalLength, completedLength } = this.task || {}
+        const total = Number(totalLength)
+        const completed = Number(completedLength)
+        if (!(total > 0) || !(completed >= 0)) {
+          return ''
+        }
+        const percent = calcProgress(totalLength, completedLength)
+        if (!Number.isFinite(percent)) {
+          return ''
+        }
+        return `${percent}%`
       },
       completionTime () {
         // 使用任务保存时间作为完成时间，如果没有保存时间则使用当前时间
@@ -316,6 +364,9 @@
       }
     },
     watch: {
+      linkUpdateHintText () {
+        this.updateStatusTruncation()
+      },
       dataAccessHintText () {
         this.updateStatusTruncation()
       },
@@ -413,6 +464,20 @@
     flex: 0 0 auto; // 防止收缩
     min-width: 120px; // 设置最小宽度确保任务大小信息完整显示
   }
+}
+.task-progress-percent {
+  margin-left: 0;
+}
+.task-progress-sep {
+  display: inline-block;
+  width: 1px;
+  height: 0.625rem;
+  background: currentColor;
+  opacity: 0.65;
+  margin: 0 0.25rem;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
 }
 .task-progress-info-right {
   min-height: 0.875rem;

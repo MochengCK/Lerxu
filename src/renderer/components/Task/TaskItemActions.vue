@@ -8,13 +8,14 @@
       >
         <li
           class="task-item-action is-verify task-item-action--verify-trigger"
-          @mouseenter="onVerifyTriggerEnter"
-          @mouseleave="onVerifyTriggerLeave"
+          @mouseenter="verifyBarMode === 'verify' && onVerifyTriggerEnter()"
+          @mouseleave="verifyBarMode === 'verify' && onVerifyTriggerLeave()"
         >
           <span
+            v-if="verifyBarMode === 'verify'"
             class="task-verify-dropdown-ref"
             ref="verifyTrigger"
-            @click.stop="onVerifyDefaultClick"
+            @click.stop="onVerifyDefaultClick()"
           >
             <span
               v-if="securityScanStatusText"
@@ -24,9 +25,24 @@
             </span>
             <mo-icon name="verify-file" width="14" height="14" />
           </span>
+          <el-tooltip
+            v-else
+            effect="dark"
+            :content="$t('task.update-link')"
+            placement="top"
+            :open-delay="500"
+          >
+            <span
+              class="task-verify-dropdown-ref"
+              ref="verifyTrigger"
+              @click.stop="onUpdateLinkClick()"
+            >
+              <mo-icon name="link" width="14" height="14" />
+            </span>
+          </el-tooltip>
           <transition name="verify-panel">
             <div
-              v-if="verifyPanelVisible"
+              v-if="verifyBarMode === 'verify' && verifyPanelVisible"
               :class="['task-verify-panel', { 'task-verify-panel--top': verifyPlacementTop }]"
               @mouseenter="onVerifyPanelEnter"
               @mouseleave="onVerifyPanelLeave"
@@ -126,6 +142,145 @@
         </el-tooltip>
       </li>
     </ul>
+
+    <el-dialog
+      :title="$t('task.update-link')"
+      :visible.sync="updateLinkDialogVisible"
+      width="620px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      custom-class="update-link-dialog"
+      append-to-body
+      @open="onUpdateLinkDialogOpen"
+    >
+      <el-form label-position="left">
+        <el-form-item :label="`${$t('task.uri-task')}: `" :label-width="formLabelWidth">
+          <el-input
+            v-model="updateLinkValue"
+            type="textarea"
+            auto-complete="off"
+            :autosize="{ minRows: 2, maxRows: 4 }"
+            :placeholder="$t('task.update-link-placeholder')"
+          />
+        </el-form-item>
+
+        <div class="task-advanced-options" v-if="showUpdateAdvanced">
+          <el-row :gutter="8" style="margin-bottom: 8px; align-items:center;">
+            <el-col :span="16" :xs="14">
+              <el-form-item :label="`${$t('task.advanced-presets')}: `" :label-width="formLabelWidth">
+                <el-select v-model="selectedAdvancedPresetId" placeholder="" @change="onAdvancedPresetChange">
+                  <el-option :label="$t('task.empty-preset')" value="" />
+                  <el-option v-for="p in advancedPresets" :key="p.id" :label="p.name" :value="p.id" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="8" :xs="10" style="text-align:right;">
+              <div class="preset-actions">
+                <el-button type="primary" size="mini" @click="saveOrUpdateAdvancedPreset">{{ selectedAdvancedPresetId ? $t('task.update-advanced-preset') : $t('task.save-advanced-preset') }}</el-button>
+                <el-button type="danger" size="mini" :disabled="!selectedAdvancedPresetId" @click="deleteAdvancedPreset">{{ $t('task.delete-advanced-preset') }}</el-button>
+              </div>
+            </el-col>
+          </el-row>
+
+          <el-form-item :label="`${$t('task.task-user-agent')}: `" :label-width="formLabelWidth">
+            <el-input
+              type="textarea"
+              auto-complete="off"
+              :autosize="{ minRows: 2, maxRows: 3 }"
+              :placeholder="$t('task.task-user-agent')"
+              v-model="updateHeadersUA"
+            />
+          </el-form-item>
+
+          <el-form-item :label="`${$t('task.task-authorization')}: `" :label-width="formLabelWidth">
+            <el-input
+              type="textarea"
+              auto-complete="off"
+              :autosize="{ minRows: 2, maxRows: 3 }"
+              :placeholder="$t('task.task-authorization')"
+              v-model="updateHeadersAuthorization"
+            />
+          </el-form-item>
+
+          <el-form-item :label="`${$t('task.task-referer')}: `" :label-width="formLabelWidth">
+            <el-input
+              type="textarea"
+              auto-complete="off"
+              :autosize="{ minRows: 2, maxRows: 3 }"
+              :placeholder="$t('task.task-referer')"
+              v-model="updateHeadersReferer"
+            />
+          </el-form-item>
+
+          <el-form-item :label="`${$t('task.task-cookie')}: `" :label-width="formLabelWidth">
+            <el-input
+              type="textarea"
+              auto-complete="off"
+              :autosize="{ minRows: 2, maxRows: 3 }"
+              :placeholder="$t('task.task-cookie')"
+              v-model="updateHeadersCookie"
+            />
+          </el-form-item>
+
+          <el-row :gutter="12">
+            <el-col :span="16" :xs="24">
+              <el-form-item
+                :label="`${$t('task.task-proxy')}: `"
+                :label-width="formLabelWidth"
+              >
+                <el-input
+                  placeholder="[http://][USER:PASSWORD@]HOST[:PORT]"
+                  v-model="updateAllProxy">
+                </el-input>
+              </el-form-item>
+            </el-col>
+            <el-col :span="8" :xs="24">
+              <div class="help-link">
+                <a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Proxy" rel="noopener noreferrer">
+                  {{ $t('preferences.proxy-tips') }}
+                  <mo-icon name="link" width="12" height="12" />
+                </a>
+              </div>
+            </el-col>
+          </el-row>
+        </div>
+      </el-form>
+      <div class="update-link-warning-tip">
+        {{ updateLinkWarningTip }}
+      </div>
+      <div slot="footer" class="dialog-footer">
+        <el-row>
+          <el-col :span="12" :xs="12" style="text-align: left;">
+            <el-checkbox class="chk" v-model="showUpdateAdvanced">
+              {{$t('task.show-advanced-options')}}
+            </el-checkbox>
+          </el-col>
+          <el-col :span="12" :xs="12" style="text-align: right;">
+            <el-button @click="updateLinkDialogVisible = false">{{ $t('app.cancel') }}</el-button>
+            <el-button type="primary" :loading="updateLinkSubmitting" @click="onUpdateLinkConfirm">{{ $t('app.submit') }}</el-button>
+          </el-col>
+        </el-row>
+      </div>
+    </el-dialog>
+
+    <el-dialog
+      custom-class="save-advanced-preset-dialog"
+      width="400px"
+      :visible.sync="savePresetDialogVisible"
+      :append-to-body="true"
+    >
+      <div>
+        <el-form label-position="left">
+          <el-form-item :label="`${$t('task.preset-name')}: `" :label-width="formLabelWidth">
+            <el-input v-model="savePresetName" />
+          </el-form-item>
+        </el-form>
+      </div>
+      <div slot="footer" class="dialog-footer">
+        <el-button @click="savePresetDialogVisible=false">{{ $t('app.cancel') }}</el-button>
+        <el-button type="primary" @click="saveAdvancedPreset">{{ $t('app.save') }}</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -137,6 +292,7 @@
   import { isAbsolute, resolve, basename } from 'node:path'
 
   import { commands } from '@/components/CommandManager/instance'
+  import api from '@/api'
   import { TASK_STATUS } from '@shared/constants'
   import {
     checkTaskIsSeeder,
@@ -181,11 +337,25 @@
     },
     data () {
       return {
+        formLabelWidth: '110px',
         verifyTriggerHover: false,
         verifyPanelHover: false,
         verifyPanelVisibleInternal: false,
         verifyHideTimer: null,
-        verifyPlacementTop: false
+        verifyPlacementTop: false,
+        updateLinkDialogVisible: false,
+        updateLinkValue: '',
+        showUpdateAdvanced: false,
+        advancedPresets: [],
+        selectedAdvancedPresetId: '',
+        savePresetDialogVisible: false,
+        savePresetName: '',
+        updateHeadersUA: '',
+        updateHeadersReferer: '',
+        updateHeadersCookie: '',
+        updateHeadersAuthorization: '',
+        updateAllProxy: '',
+        updateLinkSubmitting: false
       }
     },
     computed: {
@@ -194,10 +364,27 @@
         preferenceConfig: state => state.config
       }),
       ...mapState('task', {
-        securityScanStatuses: state => state.taskSecurityScanStatuses || {}
+        securityScanStatuses: state => state.taskSecurityScanStatuses || {},
+        taskLinkUpdateHints: state => state.taskLinkUpdateHints || {}
       }),
+      needUpdateLink () {
+        const { task, taskLinkUpdateHints } = this
+        const gid = task && task.gid ? `${task.gid}` : ''
+        return !!(gid && taskLinkUpdateHints && taskLinkUpdateHints[gid])
+      },
+      verifyBarMode () {
+        return this.needUpdateLink ? 'update-link' : 'verify'
+      },
       verifyPanelVisible () {
         return this.verifyPanelVisibleInternal
+      },
+      updateLinkWarningTip () {
+        const key = 'task.update-link-warning-tip'
+        const v = this.$t(key)
+        if (v && v !== key) {
+          return v
+        }
+        return '更新链接后，若新链接指向不同文件，可能导致下载文件损坏。建议仅在确认是相同文件时使用'
       },
       verifyMenuItems () {
         return [
@@ -250,15 +437,14 @@
         return result
       },
       showVerifyBar () {
+        if (this.needUpdateLink) {
+          return true
+        }
         const { taskActions, isSeeder, path } = this
         const canVerify = taskActions.indexOf('VERIFY') !== -1
-
         if (!canVerify || isSeeder) {
           return false
         }
-
-        // 确保文件存在才显示校验按钮
-        // path 已经是通过 getTaskActualPath 获取的，处理了后缀和分类
         return path && existsSync(path)
       },
       verifyCanSlideOut () {
@@ -577,6 +763,220 @@
       onInfoClick () {
         const { task } = this
         commands.emit('show-task-info', { task })
+      },
+      onUpdateLinkClick () {
+        this.updateLinkDialogVisible = true
+      },
+      async onUpdateLinkDialogOpen () {
+        try {
+          const cfg = this.preferenceConfig || {}
+          const { advancedOptionPresets = [] } = cfg || {}
+          this.advancedPresets = Array.isArray(advancedOptionPresets) ? advancedOptionPresets : []
+        } catch (_) {
+          this.advancedPresets = []
+        }
+        this.selectedAdvancedPresetId = ''
+        this.showUpdateAdvanced = false
+
+        const { task } = this
+        const files = Array.isArray(task && task.files) ? task.files : []
+        const first = files.length > 0 ? files[0] : null
+        const uris = Array.isArray(first && first.uris)
+          ? first.uris.map(u => u && u.uri ? `${u.uri}` : '').filter(Boolean)
+          : []
+        this.updateLinkValue = uris.length > 0 ? uris[0] : ''
+
+        const gid = task && task.gid ? `${task.gid}` : ''
+        if (!gid) {
+          this.updateHeadersUA = ''
+          this.updateHeadersReferer = ''
+          this.updateHeadersCookie = ''
+          this.updateHeadersAuthorization = ''
+          this.updateAllProxy = ''
+          return
+        }
+        try {
+          const opt = await api.getOption({ gid })
+          const hs = opt && opt.header ? opt.header : []
+          const headerItems = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
+          const headers = []
+          headerItems.filter(Boolean).forEach(h => {
+            `${h}`.split(/\r?\n/).forEach(line => {
+              const s = `${line || ''}`.trim()
+              if (s) headers.push(s)
+            })
+          })
+          const map = {}
+          headers.forEach(h => {
+            const s = `${h}`
+            const i = s.indexOf(':')
+            if (i > 0) {
+              const k = s.slice(0, i).trim().toLowerCase()
+              const v = s.slice(i + 1).trim()
+              map[k] = v
+            }
+          })
+          this.updateHeadersUA = map['user-agent'] || ''
+          this.updateHeadersReferer = map.referer || ''
+          this.updateHeadersCookie = map.cookie || ''
+          this.updateHeadersAuthorization = map.authorization || ''
+          this.updateAllProxy = (opt && (opt.allProxy || opt['all-proxy'])) ? `${opt.allProxy || opt['all-proxy']}` : ''
+        } catch (e) {
+          this.updateHeadersUA = ''
+          this.updateHeadersReferer = ''
+          this.updateHeadersCookie = ''
+          this.updateHeadersAuthorization = ''
+          this.updateAllProxy = ''
+        }
+      },
+      async onUpdateLinkConfirm () {
+        const { task } = this
+        const newUri = `${this.updateLinkValue || ''}`.trim()
+        if (!newUri) {
+          this.$msg.error(this.$t('task.update-link-empty'))
+          return
+        }
+        if (this.updateLinkSubmitting) {
+          return
+        }
+        this.updateLinkSubmitting = true
+        try {
+          await this.$store.dispatch('task/updateTaskLink', {
+            task,
+            newUri,
+            headersUA: this.updateHeadersUA,
+            headersReferer: this.updateHeadersReferer,
+            headersCookie: this.updateHeadersCookie,
+            headersAuthorization: this.updateHeadersAuthorization,
+            allProxy: this.updateAllProxy
+          })
+          this.$msg.success(this.$t('task.update-link-success'))
+          this.updateLinkDialogVisible = false
+          this.updateLinkValue = ''
+          this.updateHeadersUA = ''
+          this.updateHeadersReferer = ''
+          this.updateHeadersCookie = ''
+          this.updateHeadersAuthorization = ''
+          this.updateAllProxy = ''
+        } catch (e) {
+          const code = e && e.message ? `${e.message}` : `${e}`
+          if (/^HTTP_\d+$/.test(code)) {
+            const httpCode = Number(code.replace('HTTP_', '')) || 0
+            this.$msg.error(this.$t('task.update-link-http-fail', { code: httpCode || code }))
+            return
+          }
+          const map = {
+            INVALID_PAYLOAD: this.$t('task.update-link-fail'),
+            NO_ORIGINAL_URI: this.$t('task.update-link-no-original'),
+            LINK_MISMATCH: this.$t('task.update-link-mismatch'),
+            CONTENT_LENGTH_MISMATCH: this.$t('task.update-link-mismatch'),
+            UNABLE_TO_VERIFY: this.$t('task.update-link-unverifiable')
+          }
+          this.$msg.error(map[code] || (code ? `${this.$t('task.update-link-fail')}（${code}）` : this.$t('task.update-link-fail')))
+        } finally {
+          this.updateLinkSubmitting = false
+        }
+      },
+      openSavePresetDialog () {
+        const data = {
+          userAgent: this.updateHeadersUA || '',
+          authorization: this.updateHeadersAuthorization || '',
+          referer: this.updateHeadersReferer || '',
+          cookie: this.updateHeadersCookie || '',
+          allProxy: this.updateAllProxy || ''
+        }
+        const allEmpty = [
+          data.userAgent,
+          data.authorization,
+          data.referer,
+          data.cookie,
+          data.allProxy
+        ].every(v => !v || !String(v).trim())
+        if (allEmpty) {
+          this.$msg.warning(this.$t('task.empty-advanced-options-tips'))
+          return
+        }
+        this.savePresetName = ''
+        this.savePresetDialogVisible = true
+      },
+      saveAdvancedPreset () {
+        const name = (this.savePresetName || '').trim() || `Preset ${new Date().toLocaleString()}`
+        const data = {
+          userAgent: this.updateHeadersUA || '',
+          authorization: this.updateHeadersAuthorization || '',
+          referer: this.updateHeadersReferer || '',
+          cookie: this.updateHeadersCookie || '',
+          allProxy: this.updateAllProxy || '',
+          newTaskShowDownloading: false
+        }
+        const preset = { id: Date.now().toString(), name, data }
+        const next = [...(this.advancedPresets || []), preset]
+        this.advancedPresets = next
+        this.$store.dispatch('preference/save', { advancedOptionPresets: next })
+        this.$msg.success(this.$t('task.save-preset-success'))
+        this.savePresetDialogVisible = false
+        this.selectedAdvancedPresetId = preset.id
+      },
+      onAdvancedPresetChange (id) {
+        if (!id) {
+          this.updateHeadersUA = ''
+          this.updateHeadersAuthorization = ''
+          this.updateHeadersReferer = ''
+          this.updateHeadersCookie = ''
+          this.updateAllProxy = ''
+          return
+        }
+        const preset = (this.advancedPresets || []).find(p => p.id === id)
+        if (!preset) return
+        const d = preset.data || {}
+        this.updateHeadersUA = d.userAgent || ''
+        this.updateHeadersAuthorization = d.authorization || ''
+        this.updateHeadersReferer = d.referer || ''
+        this.updateHeadersCookie = d.cookie || ''
+        this.updateAllProxy = d.allProxy || ''
+        this.$msg.success(this.$t('task.apply-preset-success'))
+      },
+      deleteAdvancedPreset () {
+        const id = this.selectedAdvancedPresetId
+        if (!id) return
+        const next = (this.advancedPresets || []).filter(p => p.id !== id)
+        this.advancedPresets = next
+        this.selectedAdvancedPresetId = ''
+        this.onAdvancedPresetChange('')
+        this.$store.dispatch('preference/save', { advancedOptionPresets: next })
+        this.$msg.success(this.$t('task.delete-preset-success'))
+      },
+      updateAdvancedPreset () {
+        const id = this.selectedAdvancedPresetId
+        if (!id) return
+        const presetIndex = (this.advancedPresets || []).findIndex(p => p.id === id)
+        if (presetIndex === -1) return
+
+        const data = {
+          userAgent: this.updateHeadersUA || '',
+          authorization: this.updateHeadersAuthorization || '',
+          referer: this.updateHeadersReferer || '',
+          cookie: this.updateHeadersCookie || '',
+          allProxy: this.updateAllProxy || '',
+          newTaskShowDownloading: false
+        }
+
+        const updatedPresets = [...this.advancedPresets]
+        updatedPresets[presetIndex] = {
+          ...updatedPresets[presetIndex],
+          data
+        }
+
+        this.advancedPresets = updatedPresets
+        this.$store.dispatch('preference/save', { advancedOptionPresets: updatedPresets })
+        this.$msg.success(this.$t('task.update-preset-success'))
+      },
+      saveOrUpdateAdvancedPreset () {
+        if (this.selectedAdvancedPresetId) {
+          this.updateAdvancedPreset()
+        } else {
+          this.openSavePresetDialog()
+        }
       }
     },
     beforeDestroy () {
@@ -633,6 +1033,41 @@
 .task-item-actions.task-item-actions--verify-open {
   overflow: visible;
   z-index: 100;
+}
+
+.update-link-dialog {
+  position: relative;
+  .el-dialog__body {
+    padding-bottom: 72px;
+  }
+  .el-dialog__footer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: transparent;
+    border-top: none;
+    z-index: 3000;
+  }
+  .update-link-warning-tip {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: 64px;
+    font-size: 12px;
+    line-height: 16px;
+    color: #909399;
+    text-align: left;
+    pointer-events: none;
+  }
+  .help-link {
+    font-size: 12px;
+    line-height: 14px;
+    padding-top: 7px;
+    > a {
+      color: #909399;
+    }
+  }
 }
 
 .task-verify-dropdown-ref {

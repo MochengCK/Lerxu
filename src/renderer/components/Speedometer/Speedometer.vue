@@ -45,7 +45,10 @@
 <style lang="scss">
   .mo-speedometer {
     font-size: 12px;
-    position: relative;
+    position: fixed;
+    right: 14px;
+    bottom: 24px;
+    z-index: 210;
     display: inline-block;
     box-sizing: border-box;
     width: 150px;
@@ -139,6 +142,10 @@
       line-height: 28px;
       color: $--speedometer-primary-color;
     }
+  }
+
+  .mo-speedometer.is-shifted {
+    bottom: 78px;
   }
 
   .theme-light .mo-speedometer:hover,

@@ -262,6 +262,50 @@
               ? this.$t('task.download-error-with-reason', { taskName, reason })
               : this.$t('task.download-error-message', { taskName })
             const link = `<a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Error#${errorCode}" rel="noopener noreferrer">${errorCode}</a>`
+
+            const msg = `${errorMessage || ''}`
+            const parseHttpStatus = (text) => {
+              const m = `${text || ''}`.match(/\b(\d{3})\b/)
+              return m ? Number(m[1]) || 0 : 0
+            }
+            const httpStatus = parseHttpStatus(msg)
+
+            const isTimeout = /timeout|timed\s*out|ETIMEDOUT/i.test(msg)
+            const isHashMismatch = /hash\s*mismatch|checksum|digest/i.test(msg)
+            const isDiskIssue = Number(errorCode) === 16 || /No space left|disk full|Permission denied|permission/i.test(msg)
+            const isServerError = httpStatus >= 500 && httpStatus < 600
+            const isBt = !!(task && task.bittorrent && task.bittorrent.info)
+
+            const linkUpdateRule = (code) => {
+              const c = Number(code) || 0
+              if (c === 403) return { show: true, level: 'must', notifyKey: 'task.link-update-needed-403' }
+              if (c === 401) return { show: true, level: 'must', notifyKey: 'task.link-update-needed-401' }
+              if (c === 410) return { show: true, level: 'suggest', notifyKey: 'task.link-update-needed-410' }
+              if (c === 404) return { show: true, level: 'optional', notifyKey: 'task.link-update-needed-404' }
+              if (c === 416) return { show: true, level: 'optional', notifyKey: 'task.link-update-needed-416' }
+              return { show: false, level: '', notifyKey: '' }
+            }
+
+            const rule = linkUpdateRule(httpStatus)
+            const canShowUpdateLink = rule.show && !isBt && !isServerError && !isTimeout && !isDiskIssue && !isHashMismatch
+
+            if (canShowUpdateLink) {
+              this.$store.dispatch('task/markTaskNeedUpdateLink', {
+                gid,
+                httpStatus,
+                level: rule.level,
+                reason: `HTTP ${httpStatus}`,
+                errorCode,
+                errorMessage
+              })
+
+              const st = task && task.status ? `${task.status}` : ''
+              if (st === TASK_STATUS.ACTIVE || st === TASK_STATUS.WAITING) {
+                this.$store.dispatch('task/pauseTask', task).catch(() => {})
+              }
+              this.$msg.warning(this.$t(rule.notifyKey || 'task.link-update-needed', { taskName }))
+            }
+
             this.$msg({
               type: 'error',
               showClose: true,
@@ -300,6 +344,19 @@
         const cfg = this.$store.state.preference.config || {}
         const path = getTaskActualPath(task, cfg)
         const finalPath = isBT ? path : this.removeDownloadingSuffix(task, path, cfg)
+        const looksLikeExtensionDashStream = (p, downloadingFileSuffix) => {
+          try {
+            const raw = p ? `${p}` : ''
+            if (!raw) return false
+            const file0 = basename(raw)
+            const suffix = downloadingFileSuffix ? `${downloadingFileSuffix}` : ''
+            const file1 = suffix ? this.stripDownloadingSuffixFromFilename(file0, suffix) : file0
+            const file = this.stripDuplicateNumberBeforeExtension(file1)
+            return /(video\s*stream|audio\s*stream|videostream|audiostream|视频流|音频流)/i.test(file)
+          } catch (_) {
+            return false
+          }
+        }
         let isBilibiliPart = false
         if (!isBT) {
           try {
@@ -348,7 +405,9 @@
                 }
                 if (fromHeader) {
                   const pair = this.collectExtensionDashParts(finalPath || path, cfg)
-                  if (pair && pair.isPairCandidate) {
+                  const suffix = cfg.downloadingFileSuffix || ''
+                  const looksLikeStream = looksLikeExtensionDashStream(finalPath || path, suffix)
+                  if (looksLikeStream || (pair && pair.isPairCandidate)) {
                     isBilibiliPart = true
                   }
                 }
@@ -581,20 +640,23 @@
           const p = fullPath ? `${fullPath}` : ''
           if (!p) return null
           const rawFile = basename(p)
+          const cfg = this.$store.state.preference.config || {}
+          const suffix = cfg.downloadingFileSuffix || ''
           const file = this.stripDuplicateNumberBeforeExtension(rawFile)
-          const m1 = file.match(/^(.*)_(video\.mp4|audio\.m4a)$/i)
+          const normalized = suffix ? this.stripDownloadingSuffixFromFilename(file, suffix) : file
+          const m1 = normalized.match(/^(.*)_(video\.mp4|audio\.m4a)$/i)
           if (m1) {
             const base = m1[1] ? `${m1[1]}` : ''
             if (!base) return null
             return { dir: dirname(p), base, type: 'named' }
           }
-          const m1b = file.match(/^(.*)(?:[._-]|\s*\()(video|audio)\)?\.(mp4|m4a|m4s)$/i)
+          const m1b = normalized.match(/^(.*)(?:[._-]|\s*\()(video|audio)\)?\.(mp4|m4a|m4s)$/i)
           if (m1b) {
             const base = (m1b[1] ? `${m1b[1]}` : '').trim()
             if (!base) return null
             return { dir: dirname(p), base, type: 'named' }
           }
-          const m2 = file.match(/^(.+)-\d+(?:\s+\(\d+\))?\.m4s$/i)
+          const m2 = normalized.match(/^(.+)-\d+(?:\s+\(\d+\))?\.m4s$/i)
           if (m2) {
             const prefix = m2[1] ? `${m2[1]}` : ''
             if (!prefix) return null
@@ -1050,6 +1112,40 @@
       },
       afterBilibiliMerge (task, info, videoPath, audioPath, outputPath) {
         let finalOutputPath = outputPath
+        const deletedFiles = new Set()
+        const deletedCandidates = new Set()
+        const deletedSuffix = (() => {
+          try {
+            const cfg = this.$store.state.preference.config || {}
+            return cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
+          } catch (_) {
+            return ''
+          }
+        })()
+        const addDeletedPath = (p) => {
+          if (!p) return
+          let full = ''
+          try {
+            full = resolve(`${p}`)
+          } catch (_) {
+            full = `${p}`
+          }
+          if (!full) return
+          deletedFiles.add(full)
+          deletedCandidates.add(full)
+          if (deletedSuffix) {
+            try {
+              if (full.endsWith(deletedSuffix)) {
+                const without = full.slice(0, -deletedSuffix.length)
+                if (without) {
+                  deletedCandidates.add(without)
+                }
+              } else {
+                deletedCandidates.add(`${full}${deletedSuffix}`)
+              }
+            } catch (_) {}
+          }
+        }
         try {
           const toDelete = new Set()
           const outAbs = outputPath ? resolve(outputPath) : ''
@@ -1110,6 +1206,12 @@
             try {
               if (p && existsSync(p)) {
                 unlinkSync(p)
+                try {
+                  const s = `${p}`
+                  if (!s.toLowerCase().endsWith('.aria2')) {
+                    addDeletedPath(s)
+                  }
+                } catch (_) {}
               }
             } catch (_) {}
           })
@@ -1132,6 +1234,9 @@
                 }
                 if (existsSync(full)) {
                   unlinkSync(full)
+                  try {
+                    addDeletedPath(full)
+                  } catch (_) {}
                 }
                 const aria2Path = `${full}.aria2`
                 try {
@@ -1274,15 +1379,96 @@
         try {
           const gid = task && task.gid ? `${task.gid}` : ''
           if (gid && finalOutputPath) {
-            const history = taskHistory.getHistory() || []
-            let currentTitle = ''
-            try {
-              const self = history.find(t => t && t.gid === gid)
-              if (self && self.bilibiliTitle) {
-                currentTitle = `${self.bilibiliTitle}`.trim()
+            const historyAll = taskHistory.getAllHistory ? (taskHistory.getAllHistory() || []) : (taskHistory.getHistory() || [])
+            const cfg = this.$store.state.preference.config || {}
+            const deleted = deletedCandidates && deletedCandidates.size > 0 ? deletedCandidates : (deletedFiles && deletedFiles.size > 0 ? deletedFiles : null)
+            const normalizeFull = (p) => {
+              try {
+                return p ? resolve(`${p}`) : ''
+              } catch (_) {
+                return ''
               }
-            } catch (_) {}
-            history.forEach(item => {
+            }
+            let extensionAggressive = false
+            try {
+              const current = Array.isArray(historyAll) ? historyAll.find(x => x && `${x.gid || ''}` === gid) : null
+              extensionAggressive = !!(current && current.fromBrowserExtension)
+            } catch (_) {
+              extensionAggressive = false
+            }
+            const matchesExtensionDashStem = (t, targetBase, targetDir, targetRootDir) => {
+              try {
+                if (!t || !t.gid) return false
+                if (!targetBase || !targetDir) return false
+                const full = getTaskFullPath(t) || ''
+                if (!full) return false
+                const dir = dirname(full)
+                try {
+                  const rd = resolve(dir)
+                  const td = resolve(targetDir)
+                  if (rd !== td) {
+                    const tr = targetRootDir ? resolve(targetRootDir) : ''
+                    if (!tr || rd !== tr) {
+                      return false
+                    }
+                  }
+                } catch (_) {
+                  return false
+                }
+                const rawFile = basename(full)
+                const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
+                const file = this.stripDuplicateNumberBeforeExtension(rawFile)
+                const normalized = suffix ? this.stripDownloadingSuffixFromFilename(file, suffix) : file
+                const stem = this.normalizeDashStemFromFilename(normalized)
+                return !!(stem && stem === targetBase)
+              } catch (_) {
+                return false
+              }
+            }
+            const matchesDeletedFiles = (t) => {
+              if (!deleted) return false
+              try {
+                const candidates = new Set()
+                try {
+                  const a = getTaskActualPath(t, cfg)
+                  if (a) candidates.add(normalizeFull(a))
+                } catch (_) {}
+                try {
+                  const f = getTaskFullPath(t)
+                  if (f) candidates.add(normalizeFull(f))
+                } catch (_) {}
+                const dir = t && t.dir ? `${t.dir}` : ''
+                const files = Array.isArray(t && t.files) ? t.files : []
+                files.forEach(file => {
+                  try {
+                    const raw = file && file.path ? `${file.path}` : ''
+                    if (!raw) return
+                    if (isAbsolute(raw)) {
+                      candidates.add(normalizeFull(raw))
+                      return
+                    }
+                    if (dir) {
+                      candidates.add(normalizeFull(resolve(dir, raw)))
+                      return
+                    }
+                    candidates.add(normalizeFull(raw))
+                  } catch (_) {}
+                })
+                for (const c of candidates) {
+                  if (c && deleted.has(c)) {
+                    return true
+                  }
+                }
+                return false
+              } catch (_) {
+                return false
+              }
+            }
+            const targetInfo = info && typeof info === 'object' ? info : null
+            const targetBase = targetInfo && targetInfo.base ? `${targetInfo.base}` : ''
+            const targetDir = targetInfo && targetInfo.dir ? `${targetInfo.dir}` : ''
+            const targetRootDir = targetDir ? this.deriveBilibiliDashRootDir(targetDir, cfg) : ''
+            historyAll.forEach(item => {
               try {
                 if (!item || !item.gid) {
                   return
@@ -1290,30 +1476,55 @@
                 if (item.gid === gid) {
                   return
                 }
-                const t = item.bilibiliTitle ? `${item.bilibiliTitle}`.trim() : ''
-                if (currentTitle && t && t !== currentTitle) {
+                if (extensionAggressive && matchesExtensionDashStem(item, targetBase, targetDir, targetRootDir)) {
+                  try {
+                    api.removeDownloadResult({ gid: item.gid }).catch(() => {})
+                  } catch (_) {}
+                  try {
+                    taskHistory.removeTask(item.gid)
+                  } catch (_) {}
+                  return
+                }
+                if (matchesDeletedFiles(item)) {
+                  try {
+                    api.removeDownloadResult({ gid: item.gid }).catch(() => {})
+                  } catch (_) {}
+                  try {
+                    taskHistory.removeTask(item.gid)
+                  } catch (_) {}
                   return
                 }
                 const files = Array.isArray(item.files) ? item.files : []
                 if (!files.length) {
                   return
                 }
-                const first = files[0] || {}
-                const p = first && first.path ? `${first.path}` : ''
-                if (!p) {
+                const full = getTaskFullPath(item) || ''
+                if (!full) {
                   return
                 }
-                const base = basename(p)
-                const looksLikePart = base.toLowerCase().endsWith('_video.mp4') ||
-                  base.toLowerCase().endsWith('_audio.m4a') ||
-                  /\.m4s$/i.test(base)
-                let missing = false
+                if (!targetBase || !targetRootDir) {
+                  return
+                }
+                const partInfo = this.parseBilibiliDashPart(full)
+                if (!partInfo || !partInfo.base || !partInfo.dir) {
+                  return
+                }
+                if (`${partInfo.base}` !== targetBase) {
+                  return
+                }
+                const partRootDir = this.deriveBilibiliDashRootDir(`${partInfo.dir}`, cfg)
                 try {
-                  missing = !existsSync(p)
-                } catch (_) {}
-                if (!looksLikePart && !missing) {
+                  if (resolve(partRootDir) !== resolve(targetRootDir)) {
+                    return
+                  }
+                } catch (_) {
                   return
                 }
+                try {
+                  if (existsSync(full)) {
+                    return
+                  }
+                } catch (_) {}
                 try {
                   api.removeDownloadResult({ gid: item.gid }).catch(() => {})
                 } catch (_) {}

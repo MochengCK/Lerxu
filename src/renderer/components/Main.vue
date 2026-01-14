@@ -146,6 +146,7 @@
         taskPlanTime: '',
         taskPlanOnlyWhenIdle: false,
         hasModalMaskVisible: false,
+        hasModalDialogVisible: false,
         lastTaskStatuses: {},
         progressWindows: new Map(), // gid -> window
         progressTaskGids: new Set(),
@@ -201,8 +202,8 @@
         return false
       },
       isSpeedometerShifted () {
-        const { taskPlanVisible, addTaskVisible, hasModalMaskVisible } = this
-        return !!(taskPlanVisible || addTaskVisible || hasModalMaskVisible)
+        const { taskPlanVisible, addTaskVisible, hasModalDialogVisible } = this
+        return !!(taskPlanVisible || addTaskVisible || hasModalDialogVisible)
       }
     },
     watch: {
@@ -251,11 +252,48 @@
       handleFloatingBarSearchExpanded (expanded) {
         this.isFloatingBarSearchExpanded = !!expanded
       },
+      isAliveWindow (win) {
+        if (!win) {
+          return false
+        }
+        try {
+          if (typeof win.isDestroyed === 'function' && win.isDestroyed()) {
+            return false
+          }
+        } catch (e) {
+          return false
+        }
+        return true
+      },
       updateModalMaskVisible () {
         try {
-          this.hasModalMaskVisible = !!document.body.querySelector('.v-modal')
+          const body = document.body
+          this.hasModalMaskVisible = !!(body && body.querySelector('.v-modal'))
+
+          const isVisible = (el) => {
+            if (!el) return false
+            try {
+              const style = window.getComputedStyle ? window.getComputedStyle(el) : null
+              if (style && (style.display === 'none' || style.visibility === 'hidden')) return false
+              if (style && Number(style.opacity) <= 0.01) return false
+              if (el.getAttribute && el.getAttribute('aria-hidden') === 'true') return false
+              return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)
+            } catch (e) {
+              return true
+            }
+          }
+
+          const modalBodies = body
+            ? Array.from(body.querySelectorAll('.el-dialog, .el-message-box'))
+            : []
+          this.hasModalDialogVisible = modalBodies.some(el => {
+            const wrapper = el.closest && el.closest('.el-dialog__wrapper, .el-message-box__wrapper')
+            if (wrapper && wrapper.getAttribute && wrapper.getAttribute('aria-hidden') === 'true') return false
+            return isVisible(el)
+          })
         } catch (e) {
           this.hasModalMaskVisible = false
+          this.hasModalDialogVisible = false
         }
       },
       normalizeTaskPlanAction (action) {
@@ -1198,7 +1236,7 @@
       async refreshProgressTaskDirectly () {
         // Refresh all progress windows
         this.progressWindows.forEach(async (win, gid) => {
-          if (!win || (win.isDestroyed && win.isDestroyed())) {
+          if (!this.isAliveWindow(win)) {
             this.progressWindows.delete(gid)
             return
           }
@@ -1422,7 +1460,7 @@
 
         // 检查是否已经有窗口
         const existingWindow = this.progressWindows.get(gid)
-        if (existingWindow && (typeof existingWindow.isDestroyed !== 'function' || !existingWindow.isDestroyed())) {
+        if (this.isAliveWindow(existingWindow)) {
           // 确保窗口显示、激活并置于最前面
           if (existingWindow.isMinimized()) {
             existingWindow.restore()
@@ -1432,9 +1470,11 @@
           // 短暂置顶以确保窗口在最前面，然后取消置顶
           existingWindow.setAlwaysOnTop(true)
           setTimeout(() => {
-            if (existingWindow && !existingWindow.isDestroyed()) {
-              existingWindow.setAlwaysOnTop(false)
-            }
+            try {
+              if (this.isAliveWindow(existingWindow)) {
+                existingWindow.setAlwaysOnTop(false)
+              }
+            } catch (e) {}
           }, 100)
           this.updateProgressWindow(task)
           return
@@ -1507,11 +1547,22 @@
         const html = this.buildProgressWindowHtml(useCustomFrame)
         win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
         win.once('ready-to-show', () => {
+          if (!this.isAliveWindow(win)) {
+            this.progressWindows.delete(gid)
+            this.progressTaskGids.delete(gid)
+            return
+          }
           const payload = this.buildProgressPayload(task)
           const windowTitle = this.$t('task.task-info-dialog-title', {
             title: payload.title
           })
-          win.setTitle(windowTitle)
+          try {
+            win.setTitle(windowTitle)
+          } catch (e) {
+            this.progressWindows.delete(gid)
+            this.progressTaskGids.delete(gid)
+            return
+          }
           if (hideAppMenu) {
             if (typeof win.setMenuBarVisibility === 'function') {
               win.setMenuBarVisibility(false)
@@ -1529,9 +1580,11 @@
           // 短暂置顶以确保窗口在最前面，然后取消置顶
           win.setAlwaysOnTop(true)
           setTimeout(() => {
-            if (win && !win.isDestroyed()) {
-              win.setAlwaysOnTop(false)
-            }
+            try {
+              if (this.isAliveWindow(win)) {
+                win.setAlwaysOnTop(false)
+              }
+            } catch (e) {}
           }, 100)
           this.updateProgressWindow(task)
         })
@@ -1542,7 +1595,9 @@
         }
         const gid = task.gid
         const win = this.progressWindows.get(gid)
-        if (!win || (win.isDestroyed && win.isDestroyed())) {
+        if (!this.isAliveWindow(win)) {
+          this.progressWindows.delete(gid)
+          this.progressTaskGids.delete(gid)
           return
         }
         const payload = this.buildProgressPayload(task)
@@ -1564,7 +1619,13 @@
         const windowTitle = this.$t('task.task-info-dialog-title', {
           title: payload.title
         })
-        win.setTitle(windowTitle)
+        try {
+          win.setTitle(windowTitle)
+        } catch (e) {
+          this.progressWindows.delete(gid)
+          this.progressTaskGids.delete(gid)
+          return
+        }
         try {
           win.webContents.send('task-progress-update', payload)
         } catch (e) {}
@@ -1676,7 +1737,12 @@
       })
 
       try {
-        this._modalObserver.observe(document.body, { childList: true, subtree: true })
+        this._modalObserver.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['style', 'class', 'aria-hidden']
+        })
       } catch (e) {}
 
       commands.on('show-task-progress', this.handleShowTaskProgress)
@@ -1794,10 +1860,6 @@
     z-index: 2147483647;
   }
 
-  .mo-speedometer.is-shifted {
-    bottom: 78px;
-  }
-
   .theme-dark .mo-task-plan.is-planned {
     border-color: #a5d6a7;
   }
@@ -1826,13 +1888,6 @@
     100% {
       box-shadow: 0 0 0 0 rgba(103, 194, 58, 0);
     }
-  }
-
-  .mo-speedometer {
-    position: fixed;
-    right: 14px;
-    bottom: 24px;
-    z-index: 210;
   }
 
   /* 小屏幕侧边栏样式 */

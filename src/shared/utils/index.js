@@ -243,7 +243,8 @@ export const getTaskName = (task, options = {}) => {
     return result
   }
 
-  const { files, bittorrent } = task
+  const files = Array.isArray(task.files) ? task.files : []
+  const { bittorrent } = task
   const total = files.length
 
   if (bittorrent && bittorrent.info && bittorrent.info.name) {
@@ -264,6 +265,9 @@ export const getFileNameFromFile = (file) => {
   let { path } = file
   if (!path && file.uris && file.uris.length > 0) {
     path = decodeURI(file.uris[0].uri)
+  }
+  if (typeof path !== 'string' || !path) {
+    return ''
   }
 
   const index = path.lastIndexOf('/')

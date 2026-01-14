@@ -53,6 +53,8 @@ export default class Application extends EventEmitter {
     this.isReady = false
     this._updateStatusInitialized = false
     this._taskPlanTriggered = false
+    this._taskPlanHasCompletionSinceEnabled = false
+    this._taskPlanKey = ''
     this._taskPlanCheckTimer = null
     this._taskPlanScheduleTimer = null
     this._taskPlanScheduledNotBeforeTime = null
@@ -2026,11 +2028,25 @@ export default class Application extends EventEmitter {
         this._taskPlanScheduleTimer = null
       }
       this._taskPlanTriggered = false
+      this._taskPlanHasCompletionSinceEnabled = false
+      this._taskPlanKey = ''
       this._taskPlanScheduledNotBeforeTime = null
       return
     }
 
     const type = this.getTaskPlanType()
+    try {
+      const time = this.getTaskPlanTime()
+      const onlyWhenIdle = this.getTaskPlanOnlyWhenIdle()
+      const gids = this.getTaskPlanGids()
+      const key = `${action}|${type}|${time}|${onlyWhenIdle ? '1' : '0'}|${gids.join(',')}`
+      if (key !== this._taskPlanKey) {
+        this._taskPlanKey = key
+        this._taskPlanHasCompletionSinceEnabled = false
+        this._taskPlanTriggered = false
+        this._taskPlanScheduledNotBeforeTime = null
+      }
+    } catch (_) {}
     if (type === 'scheduled') {
       const onlyWhenIdle = this.getTaskPlanOnlyWhenIdle()
       const notBefore = this._taskPlanScheduledNotBeforeTime
@@ -2128,17 +2144,7 @@ export default class Application extends EventEmitter {
         return
       }
 
-      const stopped = await this.engineClient.call('tellStopped', 0, 10000)
-      const stoppedList = Array.isArray(stopped) ? stopped : []
-
-      if (activeList.length + waitingList.length + stoppedList.length === 0) {
-        this._taskPlanTriggered = false
-        this.scheduleCheckTaskPlan(2000)
-        return
-      }
-
-      const hasPaused = stoppedList.some(t => `${t.status}` === 'paused')
-      if (hasPaused) {
+      if (!this._taskPlanHasCompletionSinceEnabled) {
         this._taskPlanTriggered = false
         this.scheduleCheckTaskPlan(2000)
         return
@@ -2235,6 +2241,8 @@ export default class Application extends EventEmitter {
 
   clearTaskPlanConfig () {
     this._taskPlanTriggered = false
+    this._taskPlanHasCompletionSinceEnabled = false
+    this._taskPlanKey = ''
     this._taskPlanScheduledNotBeforeTime = null
     this.configManager.setUserConfig({
       'task-plan-action': 'none',
@@ -2655,6 +2663,7 @@ export default class Application extends EventEmitter {
 
     this.on('task-download-complete', (task, path) => {
       this.dockManager.openDock(path)
+      this._taskPlanHasCompletionSinceEnabled = true
 
       // 通知优先级管理器任务完成
       if (this.priorityManager) {
@@ -2664,10 +2673,9 @@ export default class Application extends EventEmitter {
       // 执行安全扫描
       this.performSecurityScan(task, path)
 
-      if (is.linux()) {
-        return
+      if (!is.linux()) {
+        app.addRecentDocument(path)
       }
-      app.addRecentDocument(path)
       this.scheduleCheckTaskPlan()
     })
 
