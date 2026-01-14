@@ -1706,7 +1706,72 @@ export default class Application extends EventEmitter {
       this.windowManager.setWillQuit(true)
       await this.stopAllSettled()
       // 自动安装更新并重启应用
+      if (process.platform === 'linux') {
+        const info = (event && typeof event === 'object') ? event : {}
+        const downloadedFile = info && info.downloadedFile ? `${info.downloadedFile}` : ''
+        const currentAppImage = process.env.APPIMAGE ? `${process.env.APPIMAGE}` : ''
+        const canUseDownloaded = !!(downloadedFile)
+        const canReplaceAppImage = !!(currentAppImage)
+
+        if (canUseDownloaded) {
+          try {
+            const fs = require('node:fs')
+            const path = require('node:path')
+            const { spawn } = require('node:child_process')
+            const { app } = require('electron')
+
+            const ensureExecutable = (p) => {
+              try {
+                fs.chmodSync(p, 0o755)
+              } catch (_) {}
+            }
+
+            const spawnDetached = (p) => {
+              ensureExecutable(p)
+              const child = spawn(p, [], {
+                detached: true,
+                stdio: 'ignore',
+                env: process.env
+              })
+              child.unref()
+              app.exit(0)
+            }
+
+            if (canReplaceAppImage && fs.existsSync(currentAppImage) && fs.existsSync(downloadedFile)) {
+              try {
+                fs.accessSync(path.dirname(currentAppImage), fs.constants.W_OK)
+                fs.accessSync(currentAppImage, fs.constants.W_OK)
+                const bak = `${currentAppImage}.bak`
+                try {
+                  if (!fs.existsSync(bak)) {
+                    fs.copyFileSync(currentAppImage, bak)
+                    ensureExecutable(bak)
+                  }
+                } catch (_) {}
+                fs.copyFileSync(downloadedFile, currentAppImage)
+                ensureExecutable(currentAppImage)
+                spawnDetached(currentAppImage)
+                return
+              } catch (_) {}
+            }
+
+            if (fs.existsSync(downloadedFile)) {
+              spawnDetached(downloadedFile)
+              return
+            }
+          } catch (_) {}
+        }
+      }
+
       this.updateManager.updater.quitAndInstall()
+      if (process.platform === 'linux') {
+        setTimeout(() => {
+          try {
+            const { app } = require('electron')
+            app.exit(0)
+          } catch (_) {}
+        }, 8000)
+      }
     })
 
     this.updateManager.on('update-error', (event) => {

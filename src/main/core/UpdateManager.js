@@ -279,14 +279,19 @@ export default class UpdateManager extends EventEmitter {
   }
 
   updateDownloaded (event, info) {
-    this.emit('update-downloaded', info)
-    this.updater.logger.log(`Update Downloaded: ${info}`)
+    const data = (info && typeof info === 'object') ? info : (event && typeof event === 'object' ? event : {})
+    this.emit('update-downloaded', data)
+    try {
+      this.updater.logger.log(`Update Downloaded: ${JSON.stringify(data, null, 2)}`)
+    } catch (_) {
+      this.updater.logger.log(`Update Downloaded: ${data}`)
+    }
     this.isChecking = false
-    this.emit('will-updated')
+    this.emit('will-updated', data)
     // Notify renderer process about the downloaded update
     const windows = global.application?.windowManager?.getWindowList() || []
     windows.forEach(window => {
-      window.webContents.send('update-downloaded')
+      window.webContents.send('update-downloaded', data)
     })
   }
 
