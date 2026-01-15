@@ -228,7 +228,7 @@ If you find this project helpful, please consider sponsoring to support the cont
 
 If you encounter any problems or have questions:
 
-- [Submit an issue](https://github.com/MochengCK/LinkCore-Download-Manager/issues) on GitHub
+- [Submit an issue](https://github.com/MochengCK/LinkCore-Download-Manager/issues/new/choose) on GitHub
 - Join our community for discussion and support
 
 ## 📄 License

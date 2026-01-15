@@ -229,7 +229,7 @@ LinkCore-Download-Manager/
 
 如果您遇到任何问题或有疑问：
 
-- 在GitHub上 [提交issue](https://github.com/MochengCK/LinkCore-Download-Manager/issues)
+- 在GitHub上 [提交issue](https://github.com/MochengCK/LinkCore-Download-Manager/issues/new/choose)
 - 加入我们的社区进行讨论和获取支持
 
 ## 📄 许可证
