@@ -1,8 +1,2 @@
 blank_issues_enabled: false
-contact_links:
-  - name: 📦 Releases / 下载
-    url: https://github.com/HuanXinStudio/LinkCore-Download-Manager/releases
-    about: 获取最新版本、更新日志与安装包下载
-  - name: 📖 README（使用说明）
-    url: https://github.com/HuanXinStudio/LinkCore-Download-Manager#readme
-    about: 项目简介、安装方式与常见信息
+contact_links: []
