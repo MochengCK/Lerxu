@@ -104,6 +104,110 @@
     combined: []
   }
 
+  let videoContextSeq = 1
+  const videoContextMap = new WeakMap()
+  const videoContextState = new Map()
+
+  const coreUrl = (raw) => {
+    try {
+      if (!raw) return ''
+      const u = new URL(raw)
+      return `${u.protocol}//${u.hostname}${u.pathname}`
+    } catch (e) {
+      return `${raw || ''}`
+    }
+  }
+
+  const normalizeUrlForDedup = (url) => {
+    try {
+      if (!url) return ''
+      const urlObj = new URL(url)
+      if (url.includes('.m4s') && (urlObj.hostname.includes('bilivideo.com') || urlObj.hostname.includes('mcdn.bilivideo.cn'))) {
+        const pathMatch = urlObj.pathname.match(/(\d+)-1-(\d+)\.m4s/)
+        if (pathMatch) {
+          const resourceId = pathMatch[1]
+          const qualityCode = pathMatch[2]
+          return `video:${resourceId}:${qualityCode}`
+        }
+      }
+      return `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}`
+    } catch (e) {
+      return `${url || ''}`
+    }
+  }
+
+  const ensureVideoContext = (video) => {
+    try {
+      if (!video || video.tagName !== 'VIDEO') return null
+      let id = videoContextMap.get(video)
+      if (!id) {
+        const existing = video.getAttribute('data-linkcore-video-context-id')
+        id = existing || `vc_${Date.now()}_${videoContextSeq++}`
+        videoContextMap.set(video, id)
+        try {
+          video.setAttribute('data-linkcore-video-context-id', id)
+        } catch (e) {}
+        if (!videoContextState.has(id)) {
+          videoContextState.set(id, { lastActiveAt: 0, lastSrc: '' })
+        }
+
+        const mark = () => {
+          const st = videoContextState.get(id)
+          if (!st) return
+          st.lastActiveAt = Date.now()
+          const src = video.currentSrc || video.src || ''
+          if (src) st.lastSrc = src
+          try {
+            video.setAttribute('data-linkcore-video-last-active', `${st.lastActiveAt}`)
+          } catch (e) {}
+        }
+        try {
+          video.addEventListener('play', mark, true)
+          video.addEventListener('playing', mark, true)
+          video.addEventListener('loadedmetadata', mark, true)
+          video.addEventListener('loadeddata', mark, true)
+          video.addEventListener('emptied', mark, true)
+        } catch (e) {}
+      }
+      return id
+    } catch (e) {
+      return null
+    }
+  }
+
+  const scanVideoElements = () => {
+    try {
+      const list = document.querySelectorAll('video')
+      list.forEach(v => ensureVideoContext(v))
+    } catch (e) {}
+  }
+
+  const getVideoContextIdForResource = (url) => {
+    try {
+      const target = coreUrl(url)
+      if (target) {
+        for (const [id, st] of videoContextState.entries()) {
+          if (!st || !st.lastSrc) continue
+          if (coreUrl(st.lastSrc) === target) return id
+        }
+      }
+
+      const now = Date.now()
+      let bestId = null
+      let bestAt = 0
+      for (const [id, st] of videoContextState.entries()) {
+        if (!st) continue
+        const at = Number(st.lastActiveAt || 0)
+        if (at > bestAt) {
+          bestAt = at
+          bestId = id
+        }
+      }
+      if (bestId && bestAt && now - bestAt < 8000) return bestId
+    } catch (e) {}
+    return null
+  }
+
   // 从应用读取配置
   function loadConfig() {
     log('Loading config from storage...')
@@ -773,7 +877,7 @@
     // 用于跟踪已经组合过的视频流，避免重复
     const usedVideoUrls = new Set()
     const usedCombinations = new Set()
-    const qualityGroups = new Map() // 按质量分组，确保每个质量只有一个组合
+    const qualityGroups = new Map()
 
     videoStreams.forEach(video => {
       // 标准化视频URL用于去重检查
@@ -797,6 +901,8 @@
 
       const normalizedVideoUrl = normalizeUrl(video.url)
       const quality = video.quality || 'Unknown'
+      const contextId = video.videoContextId || ''
+      const qualityKey = `${contextId}:${quality}`
       
       log('Processing video stream:', quality, video.url.substring(0, 100))
       
@@ -807,15 +913,15 @@
       }
 
       // 如果这个质量已经有组合了，选择更好的（更大的文件或更完整的URL）
-      if (qualityGroups.has(quality)) {
-        const existing = qualityGroups.get(quality)
+      if (qualityGroups.has(qualityKey)) {
+        const existing = qualityGroups.get(qualityKey)
         const existingVideoSize = existing.videoSize || 0
         const currentVideoSize = video.size || 0
         
         // 如果当前视频更大或URL更完整，替换现有的
         if (currentVideoSize > existingVideoSize || 
             (currentVideoSize === existingVideoSize && video.url.length > existing.videoUrl.length)) {
-          log('Replacing existing combination for quality:', quality, 'old size:', existingVideoSize, 'new size:', currentVideoSize)
+          log('Replacing existing combination for quality:', qualityKey, 'old size:', existingVideoSize, 'new size:', currentVideoSize)
           // 移除旧的标记
           usedVideoUrls.delete(normalizeUrl(existing.videoUrl))
           usedCombinations.delete(existing.combinationId)
@@ -828,6 +934,10 @@
       // 查找匹配的音频流 - 使用更宽松的匹配策略
       const matchedAudio = audioStreams.find(audio => {
         log('Checking audio match for video:', quality, 'audio timestamp:', audio.timestamp, 'video timestamp:', video.timestamp)
+
+        if (contextId && audio.videoContextId && audio.videoContextId !== contextId) {
+          return false
+        }
         
         // 策略1: 时间戳匹配（放宽到10秒内）
         const timeDiff = Math.abs(video.timestamp - audio.timestamp)
@@ -876,7 +986,7 @@
 
       if (matchedAudio) {
         // 创建组合标识符，避免重复组合
-        const combinationId = `${normalizedVideoUrl}:${normalizeUrl(matchedAudio.url)}:${quality}`
+        const combinationId = `${contextId}:${normalizedVideoUrl}:${normalizeUrl(matchedAudio.url)}:${quality}`
         
         if (usedCombinations.has(combinationId)) {
           log('Skipping duplicate combination:', combinationId)
@@ -902,11 +1012,12 @@
           size: totalSize,
           videoSize: video.size || 0,
           audioSize: matchedAudio.size || 0,
-          combinationId: combinationId
+          combinationId: combinationId,
+          videoContextId: contextId || null
         }
 
         // 记录到质量分组中
-        qualityGroups.set(quality, combinedItem)
+        qualityGroups.set(qualityKey, combinedItem)
 
         // 标记为已使用
         usedVideoUrls.add(normalizedVideoUrl)
@@ -921,7 +1032,7 @@
           const firstAudio = audioStreams[0]
           log('Using first available audio stream as fallback')
           
-          const combinationId = `${normalizedVideoUrl}:${normalizeUrl(firstAudio.url)}:${quality}`
+          const combinationId = `${contextId}:${normalizedVideoUrl}:${normalizeUrl(firstAudio.url)}:${quality}`
           
           if (!usedCombinations.has(combinationId)) {
             let totalSize = 0
@@ -942,10 +1053,11 @@
               size: totalSize,
               videoSize: video.size || 0,
               audioSize: firstAudio.size || 0,
-              combinationId: combinationId
+              combinationId: combinationId,
+              videoContextId: contextId || null
             }
 
-            qualityGroups.set(quality, combinedItem)
+            qualityGroups.set(qualityKey, combinedItem)
             usedVideoUrls.add(normalizedVideoUrl)
             usedCombinations.add(combinationId)
             
@@ -956,14 +1068,15 @@
     })
 
     // 从质量分组中提取最终的组合项
-    for (const [quality, item] of qualityGroups) {
+    for (const [_, item] of qualityGroups) {
       combined.push({
         quality: item.quality,
         videoUrl: item.videoUrl,
         audioUrl: item.audioUrl,
         name: item.name,
         timestamp: item.timestamp,
-        size: item.size
+        size: item.size,
+        videoContextId: item.videoContextId || null
       })
     }
 
@@ -1275,39 +1388,22 @@
     }
 
     log('Resource passed shouldSniff filter, processing...')
+    const videoContextId = getVideoContextIdForResource(url)
 
-    // 更严格的去重检查 - 使用URL的核心部分进行比较
-    const normalizeUrl = (url) => {
-      try {
-        const urlObj = new URL(url)
-        // 对于M4S资源，使用更精确的标识符
-        if (url.includes('.m4s') && (urlObj.hostname.includes('bilivideo.com') || urlObj.hostname.includes('mcdn.bilivideo.cn'))) {
-          // 提取资源ID和质量编号
-          const pathMatch = urlObj.pathname.match(/(\d+)-1-(\d+)\.m4s/)
-          if (pathMatch) {
-            const resourceId = pathMatch[1]
-            const qualityCode = pathMatch[2]
-            return `video:${resourceId}:${qualityCode}`
-          }
-        }
-        
-        // 移除一些可能变化的参数，保留核心路径
-        const coreUrl = `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}`
-        return coreUrl
-      } catch (e) {
-        return url
-      }
-    }
-
-    const normalizedUrl = normalizeUrl(url)
+    const normalizedUrl = normalizeUrlForDedup(url)
     
     // 检查是否已存在相同的核心URL
-    const existingVideo = sniffedResources.video.find(r => normalizeUrl(r.url) === normalizedUrl)
-    const existingAudio = sniffedResources.audio.find(r => normalizeUrl(r.url) === normalizedUrl)
+    const existingVideo = sniffedResources.video.find(r => normalizeUrlForDedup(r.url) === normalizedUrl)
+    const existingAudio = sniffedResources.audio.find(r => normalizeUrlForDedup(r.url) === normalizedUrl)
     
     // 如果已存在，只在新的信息更完整时才更新
     if (existingVideo) {
       let shouldUpdate = false
+
+      if (!existingVideo.videoContextId && videoContextId) {
+        existingVideo.videoContextId = videoContextId
+        shouldUpdate = true
+      }
       
       // 如果新的URL更完整（更长），更新URL
       if (url.length > existingVideo.url.length) {
@@ -1339,6 +1435,11 @@
     
     if (existingAudio) {
       let shouldUpdate = false
+
+      if (!existingAudio.videoContextId && videoContextId) {
+        existingAudio.videoContextId = videoContextId
+        shouldUpdate = true
+      }
       
       // 如果新的URL更完整（更长），更新URL
       if (url.length > existingAudio.url.length) {
@@ -1369,6 +1470,9 @@
     }
 
     const info = await parseResource(url, mimeType, size)
+    if (videoContextId) {
+      info.videoContextId = videoContextId
+    }
 
     // 立即添加资源到列表，不等待大小获取
     if (info.type === 'audio') {
@@ -1397,6 +1501,75 @@
         log('Failed to fetch size:', e)
       })
     }
+  }
+
+  async function addResourceFromMediaElement(element, url, mimeType, size) {
+    try {
+      if (!url || !/^https?:/i.test(url)) return
+      if (!shouldSniff(url, mimeType)) return
+      const info = await parseResource(url, mimeType, size)
+      if (element && element.tagName === 'VIDEO') {
+        const contextId = ensureVideoContext(element)
+        if (contextId) info.videoContextId = contextId
+      }
+
+      const normalizedUrl = normalizeUrlForDedup(info.url)
+      if (!normalizedUrl) return
+
+      if (info.type === 'audio') {
+        const existing = sniffedResources.audio.find(r => normalizeUrlForDedup(r.url) === normalizedUrl)
+        if (existing) {
+          let changed = false
+          if (!existing.videoContextId && info.videoContextId) {
+            existing.videoContextId = info.videoContextId
+            changed = true
+          }
+          if (info.url && info.url.length > (existing.url || '').length) {
+            existing.url = info.url
+            changed = true
+          }
+          if (info.size && info.size > 0 && info.size > (existing.size || 0)) {
+            existing.size = info.size
+            changed = true
+          }
+          if ((!existing.quality || existing.quality === 'Unknown') && info.quality && info.quality !== 'Unknown') {
+            existing.quality = info.quality
+            changed = true
+          }
+          if (changed) updateUI()
+          return
+        }
+        sniffedResources.audio.push(info)
+        updateUI()
+        return
+      }
+
+      const existing = sniffedResources.video.find(r => normalizeUrlForDedup(r.url) === normalizedUrl)
+      if (existing) {
+        let changed = false
+        if (!existing.videoContextId && info.videoContextId) {
+          existing.videoContextId = info.videoContextId
+          changed = true
+        }
+        if (info.url && info.url.length > (existing.url || '').length) {
+          existing.url = info.url
+          changed = true
+        }
+        if (info.size && info.size > 0 && info.size > (existing.size || 0)) {
+          existing.size = info.size
+          changed = true
+        }
+        if ((!existing.quality || existing.quality === 'Unknown') && info.quality && info.quality !== 'Unknown') {
+          existing.quality = info.quality
+          changed = true
+        }
+        if (changed) updateUI()
+        return
+      }
+
+      sniffedResources.video.push(info)
+      updateUI()
+    } catch (e) {}
   }
 
   // 更新UI显示
@@ -1690,7 +1863,7 @@
         // Found media src
         // 跳过blob URL
         if (!src.toLowerCase().startsWith('blob:')) {
-          addResource(src, mimeType)
+          addResourceFromMediaElement(element, src, mimeType)
         }
       }
       if (element.currentSrc) {
@@ -1698,7 +1871,7 @@
         // Found media currentSrc
         // 跳过blob URL
         if (!src.toLowerCase().startsWith('blob:')) {
-          addResource(src, mimeType)
+          addResourceFromMediaElement(element, src, mimeType)
         }
       }
       const sources = element.querySelectorAll('source')
@@ -1709,7 +1882,7 @@
           // Found source src
           // 跳过blob URL
           if (!src.toLowerCase().startsWith('blob:')) {
-            addResource(src, sourceMimeType)
+            addResourceFromMediaElement(element, src, sourceMimeType)
           }
         }
       })
@@ -1731,6 +1904,7 @@
   const observeVideoElements = () => {
     const videos = document.querySelectorAll('video')
     videos.forEach(video => {
+      ensureVideoContext(video)
       if (!video._linkcoreObserved) {
         video._linkcoreObserved = true
         const mimeType = video.getAttribute('type') || ''
@@ -1739,7 +1913,7 @@
           // Video loadstart
           // 跳过blob URL
           if (src && !src.toLowerCase().startsWith('blob:')) {
-            addResource(src, mimeType)
+            addResourceFromMediaElement(video, src, mimeType)
           }
         })
         video.addEventListener('play', () => {
@@ -1747,7 +1921,7 @@
           // Video play
           // 跳过blob URL
           if (src && !src.toLowerCase().startsWith('blob:')) {
-            addResource(src, mimeType)
+            addResourceFromMediaElement(video, src, mimeType)
           }
         })
       }

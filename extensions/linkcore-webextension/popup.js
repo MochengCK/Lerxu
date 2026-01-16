@@ -3,6 +3,36 @@ const defaults = { host: '127.0.0.1', port: 16800, secret: '' }
 const getConfig = () => new Promise((r) => chrome.storage.local.get(defaults, (c) => r(c || defaults)))
 const setConfig = (d) => new Promise((r) => chrome.storage.local.set(d, () => r(true)))
 
+const normalizeTheme = (v) => {
+  const s = v === undefined || v === null ? '' : `${v}`.toLowerCase()
+  if (s === 'dark' || s === 'light') return s
+  return null
+}
+
+const getStoredTheme = () => {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['uiTheme'], (res) => {
+      resolve(normalizeTheme(res && res.uiTheme ? res.uiTheme : null))
+    })
+  })
+}
+
+const applyTheme = (theme) => {
+  const t = normalizeTheme(theme) || 'light'
+  const root = document.documentElement
+  root.classList.toggle('theme-dark', t === 'dark')
+}
+
+const applyThemeFromStorage = async () => {
+  const stored = await getStoredTheme()
+  if (stored) {
+    applyTheme(stored)
+    return
+  }
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+  applyTheme(prefersDark ? 'dark' : 'light')
+}
+
 // 初始化界面文本
 const initI18n = async () => {
   // 等待语言初始化完成
@@ -35,6 +65,9 @@ const initI18n = async () => {
 
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('[Popup] Starting initialization...')
+
+  await applyThemeFromStorage()
+  chrome.runtime.sendMessage({ type: 'getExtConfig' }, () => {})
   
   // 首先同步客户端语言
   await new Promise((resolve) => {
@@ -65,6 +98,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 // 设置语言变化监听器
 const setupLocaleChangeListener = () => {
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (msg && msg.type === 'themeChanged' && msg.theme) {
+      applyTheme(msg.theme)
+      sendResponse({ ok: true })
+      return true
+    }
+
     if (msg && msg.type === 'localeChanged') {
       console.log('[Popup] Locale changed detected, reloading UI...', msg.locale)
       // 重新初始化多语言
@@ -98,6 +137,17 @@ const setupLocaleChangeListener = () => {
   })
   console.log('[Popup] Locale change listener set up')
 }
+
+try {
+  if (chrome && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+      if (namespace === 'local' && changes.uiTheme) {
+        const next = normalizeTheme(changes.uiTheme.newValue)
+        if (next) applyTheme(next)
+      }
+    })
+  }
+} catch (e) {}
 
 let timer = null
 let versionTimer = null

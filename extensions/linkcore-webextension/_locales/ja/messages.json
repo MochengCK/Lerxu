@@ -1,6 +1,6 @@
 {
   "extensionName": {
-    "message": "LinkCore ダウンロードヘルパー",
+    "message": "LinkCore Download Manager",
     "description": "拡張機能の名前"
   },
   "extensionDescription": {
@@ -8,11 +8,11 @@
     "description": "拡張機能の説明"
   },
   "actionTitle": {
-    "message": "LinkCore ヘルパー",
+    "message": "LinkCore Download Manager",
     "description": "ブラウザアクションのタイトル"
   },
   "popupTitle": {
-    "message": "LinkCore ダウンロードアシスタント",
+    "message": "LinkCore Download Manager",
     "description": "ポップアップのタイトル"
   },
   "rpcAddress": {

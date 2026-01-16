@@ -8,11 +8,11 @@
     "description": "扩展描述"
   },
   "actionTitle": {
-    "message": "LinkCore 助手",
+    "message": "LinkCore Download Manager",
     "description": "浏览器操作标题"
   },
   "popupTitle": {
-    "message": "LinkCore 下载助手",
+    "message": "LinkCore Download Manager",
     "description": "弹窗标题"
   },
   "rpcAddress": {

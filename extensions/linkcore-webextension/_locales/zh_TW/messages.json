@@ -1,6 +1,6 @@
 {
   "extensionName": {
-    "message": "LinkCore 下載助手",
+    "message": "LinkCore Download Manager",
     "description": "擴展名稱"
   },
   "extensionDescription": {
@@ -8,11 +8,11 @@
     "description": "擴展描述"
   },
   "actionTitle": {
-    "message": "LinkCore 助手",
+    "message": "LinkCore Download Manager",
     "description": "瀏覽器操作標題"
   },
   "popupTitle": {
-    "message": "LinkCore 下載助手",
+    "message": "LinkCore Download Manager",
     "description": "彈窗標題"
   },
   "rpcAddress": {

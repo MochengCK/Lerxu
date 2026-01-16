@@ -1,6 +1,6 @@
 {
   "extensionName": {
-    "message": "Помощник загрузок LinkCore",
+    "message": "LinkCore Download Manager",
     "description": "Название расширения"
   },
   "extensionDescription": {
@@ -8,11 +8,11 @@
     "description": "Описание расширения"
   },
   "actionTitle": {
-    "message": "Помощник LinkCore",
+    "message": "LinkCore Download Manager",
     "description": "Заголовок действия браузера"
   },
   "popupTitle": {
-    "message": "Помощник загрузок LinkCore",
+    "message": "LinkCore Download Manager",
     "description": "Заголовок всплывающего окна"
   },
   "rpcAddress": {

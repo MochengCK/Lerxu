@@ -8,11 +8,11 @@
     "description": "Description of the extension"
   },
   "actionTitle": {
-    "message": "LinkCore Helper",
+    "message": "LinkCore Download Manager",
     "description": "Title for browser action"
   },
   "popupTitle": {
-    "message": "LinkCore Download Assistant",
+    "message": "LinkCore Download Manager",
     "description": "Title in popup header"
   },
   "rpcAddress": {

@@ -20,6 +20,16 @@ let extConfigSyncedOnce = false
 const AUTO_HIJACK_OVERRIDE_KEY = 'autoHijackTemporarilyDisabled'
 let sessionToken = null
 let tokenVersion = null
+let lastKnownTheme = null
+
+try {
+  chrome.storage.local.get(['uiTheme'], (res) => {
+    const t = res && res.uiTheme ? `${res.uiTheme}`.toLowerCase() : ''
+    if (t === 'dark' || t === 'light') {
+      lastKnownTheme = t
+    }
+  })
+} catch (e) {}
 
 const fetchHandshake = async () => {
   try {
@@ -313,6 +323,18 @@ const syncExtConfigFromClient = async () => {
     const videoSnifferEnabled = data.videoSnifferEnabled !== undefined ? !!data.videoSnifferEnabled : true
     const videoSnifferFormats = Array.isArray(data.videoSnifferFormats) ? data.videoSnifferFormats : ['m4s', 'mp4', 'flv', 'webm', 'm3u8', 'ts']
     const videoSnifferAutoCombine = data.videoSnifferAutoCombine !== undefined ? !!data.videoSnifferAutoCombine : true
+
+    const normalizeTheme = (v) => {
+      const s = v === undefined || v === null ? '' : `${v}`.toLowerCase()
+      if (s === 'dark' || s === 'light') return s
+      return null
+    }
+
+    const nextTheme = normalizeTheme(data.effectiveTheme) || normalizeTheme(data.theme)
+    const themeChanged = nextTheme && nextTheme !== lastKnownTheme
+    if (nextTheme) {
+      lastKnownTheme = nextTheme
+    }
     
     const nextConfig = {
       interceptAllDownloads,
@@ -329,10 +351,15 @@ const syncExtConfigFromClient = async () => {
     chrome.storage.local.set({
       videoSnifferEnabled,
       videoSnifferFormats,
-      videoSnifferAutoCombine
+      videoSnifferAutoCombine,
+      ...(lastKnownTheme ? { uiTheme: lastKnownTheme } : {})
     }, () => {
       console.log('[Background] Video sniffer config saved to storage:', { videoSnifferEnabled, videoSnifferFormats, videoSnifferAutoCombine })
     })
+
+    if (themeChanged) {
+      chrome.runtime.sendMessage({ type: 'themeChanged', theme: lastKnownTheme }).catch(() => {})
+    }
   } catch (e) {
   }
 }
@@ -344,6 +371,53 @@ const startExtConfigPolling = () => {
   }
   syncExtConfigFromClient()
   extConfigTimer = setInterval(syncExtConfigFromClient, 3000)
+}
+
+const sanitizeDownloadFilename = (input) => {
+  if (!input) return ''
+  const raw = `${input}`.trim()
+  if (!raw) return ''
+  const base = raw.split(/[\\/]/).pop() || ''
+  if (!base) return ''
+  return base.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').slice(0, 180)
+}
+
+const downloadViaBrowser = async (url, suggestedFilename) => {
+  try {
+    const sanitizedFilename = sanitizeDownloadFilename(suggestedFilename)
+    const options = {
+      url,
+      conflictAction: 'uniquify',
+      saveAs: !extConfig.silentDownload
+    }
+    if (sanitizedFilename) {
+      options.filename = sanitizedFilename
+    }
+    return await new Promise((resolve) => {
+      chrome.downloads.download(options, (downloadId) => {
+        if (chrome.runtime.lastError) {
+          resolve({ ok: false, error: chrome.runtime.lastError.message || 'download failed' })
+          return
+        }
+        resolve({ ok: typeof downloadId === 'number' })
+      })
+    })
+  } catch (e) {
+    return { ok: false, error: e && e.message ? e.message : 'download failed' }
+  }
+}
+
+const isClientAvailable = async () => {
+  const now = Date.now()
+  if (now - lastConnectionCheck.lastCheckTime < 1000) {
+    return !!lastConnectionCheck.connected
+  }
+  try {
+    const result = await tryChannel('/linkcore/health', { method: 'GET' }, 800)
+    return !!(result && result.resp && result.resp.ok)
+  } catch (e) {
+    return false
+  }
 }
 
 const addUri = async (url, referer, suggestedFilename) => {
@@ -689,8 +763,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       const referer = msg.referer || ''
       const suggestedFilename = msg.suggestedFilename || ''
+      const connected = await isClientAvailable()
+      if (!connected) {
+        const fallback = await downloadViaBrowser(url, suggestedFilename)
+        sendResponse({ ok: !!fallback.ok, via: 'browser' })
+        return
+      }
       const ok = await addUri(url, referer, suggestedFilename)
-      sendResponse({ ok })
+      sendResponse({ ok, via: 'client' })
     }
     handleAddFromContent()
     return true
@@ -700,7 +780,12 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   let url = info.linkUrl || info.srcUrl || info.pageUrl
   const referer = tab && tab.url ? tab.url : ''
   if (url) {
-    await addUri(url, referer)
+    const connected = await isClientAvailable()
+    if (connected) {
+      const ok = await addUri(url, referer)
+      if (ok) return
+    }
+    await downloadViaBrowser(url, '')
   }
 })
 

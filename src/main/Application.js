@@ -11,6 +11,7 @@ import Store from 'electron-store'
 
 import {
   APP_RUN_MODE,
+  APP_THEME,
   AUTO_SYNC_TRACKER_INTERVAL,
   ONE_HOUR,
   PROXY_SCOPES,
@@ -304,6 +305,9 @@ export default class Application extends EventEmitter {
             const videoSnifferEnabled = this._videoSnifferConfig.enabled
             const videoSnifferFormats = this._videoSnifferConfig.formats
             const videoSnifferAutoCombine = this._videoSnifferConfig.autoCombine
+            const theme = this.configManager.getUserConfig('theme', APP_THEME.AUTO)
+            const systemTheme = this.themeManager ? this.themeManager.getSystemTheme() : null
+            const effectiveTheme = theme === APP_THEME.AUTO ? (systemTheme || APP_THEME.LIGHT) : theme
 
             res.writeHead(200, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({
@@ -313,7 +317,9 @@ export default class Application extends EventEmitter {
               skipFileExtensions,
               videoSnifferEnabled,
               videoSnifferFormats,
-              videoSnifferAutoCombine
+              videoSnifferAutoCombine,
+              theme,
+              effectiveTheme
             }))
           } catch (err) {
             res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -324,7 +330,9 @@ export default class Application extends EventEmitter {
               skipFileExtensions: [],
               videoSnifferEnabled: false,
               videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts'],
-              videoSnifferAutoCombine: true
+              videoSnifferAutoCombine: true,
+              theme: APP_THEME.AUTO,
+              effectiveTheme: APP_THEME.LIGHT
             }))
           }
           return

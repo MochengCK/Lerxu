@@ -1,6 +1,6 @@
 {
   "extensionName": {
-    "message": "LinkCore Download-Assistent",
+    "message": "LinkCore Download Manager",
     "description": "Name der Erweiterung"
   },
   "extensionDescription": {
@@ -8,11 +8,11 @@
     "description": "Beschreibung der Erweiterung"
   },
   "actionTitle": {
-    "message": "LinkCore-Assistent",
+    "message": "LinkCore Download Manager",
     "description": "Titel der Browser-Aktion"
   },
   "popupTitle": {
-    "message": "LinkCore Download-Assistent",
+    "message": "LinkCore Download Manager",
     "description": "Titel des Popups"
   },
   "rpcAddress": {

@@ -276,6 +276,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       }
     }
     
+    renderPerVideoSniffButtons()
     updateButtonVisibility()
   })
 
@@ -299,6 +300,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }
       }
       
+      renderPerVideoSniffButtons()
       updateButtonVisibility()
     }
   })
@@ -336,11 +338,53 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     if (wrapper) {
       wrapper.style.display = 'none'
     }
+
+    removePerVideoButtons()
     
     updateButtonVisibility()
   })
 
   log('Event listeners registered')
+
+  let lastKnownHref = ''
+  let navClearTimer = null
+  const handleMaybeUrlChange = () => {
+    try {
+      const href = window.location.href || ''
+      if (!href) return
+      if (!lastKnownHref) lastKnownHref = href
+      if (href === lastKnownHref) return
+      lastKnownHref = href
+
+      if (navClearTimer) clearTimeout(navClearTimer)
+      navClearTimer = setTimeout(() => {
+        navClearTimer = null
+        window.dispatchEvent(new Event('linkcore-clear-resources'))
+        setTimeout(() => {
+          window.dispatchEvent(new Event('linkcore-get-resources'))
+        }, 200)
+      }, 80)
+    } catch (e) {}
+  }
+
+  try {
+    lastKnownHref = window.location.href || ''
+    window.addEventListener('popstate', handleMaybeUrlChange, true)
+    window.addEventListener('hashchange', handleMaybeUrlChange, true)
+    if (window.history) {
+      const wrap = (method) => {
+        const original = window.history[method]
+        if (typeof original !== 'function') return
+        window.history[method] = function () {
+          const ret = original.apply(this, arguments)
+          handleMaybeUrlChange()
+          return ret
+        }
+      }
+      wrap('pushState')
+      wrap('replaceState')
+    }
+  } catch (e) {}
 
   const sendPageToClient = () => {
     try {
@@ -368,6 +412,462 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     } catch (e) {
     }
   }
+
+  const safeFilenamePart = (input) => {
+    const s = `${input || ''}`.trim()
+    if (!s) return ''
+    return s.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').slice(0, 180)
+  }
+
+  let perVideoModeActive = false
+
+  const getVideoContextIdFromElement = (video) => {
+    try {
+      if (!video) return ''
+      return video.getAttribute('data-linkcore-video-context-id') || ''
+    } catch (e) {
+      return ''
+    }
+  }
+
+  const getVideoLastActiveAt = (video) => {
+    try {
+      if (!video) return 0
+      const raw = video.getAttribute('data-linkcore-video-last-active') || ''
+      const n = Number(raw)
+      return Number.isFinite(n) ? n : 0
+    } catch (e) {
+      return 0
+    }
+  }
+
+  const isElementVisibleInViewport = (el) => {
+    try {
+      if (!el || !el.isConnected) return false
+      const rects = el.getClientRects()
+      if (!rects || rects.length === 0) return false
+      const style = window.getComputedStyle(el)
+      if (!style || style.display === 'none' || style.visibility === 'hidden') return false
+      if (Number(style.opacity || '1') === 0) return false
+      const rect = el.getBoundingClientRect()
+      const vw = window.innerWidth || document.documentElement.clientWidth || 0
+      const vh = window.innerHeight || document.documentElement.clientHeight || 0
+      if (!vw || !vh) return false
+      if (rect.width <= 0 || rect.height <= 0) return false
+      return rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw
+    } catch (e) {
+      return false
+    }
+  }
+
+  const hasAnySniffedResources = (res) => {
+    try {
+      const r = res || {}
+      const combined = Array.isArray(r.combined) ? r.combined.length : 0
+      const m4s = Array.isArray(r.m4s) ? r.m4s.length : 0
+      const video = Array.isArray(r.video) ? r.video.length : 0
+      const audio = Array.isArray(r.audio) ? r.audio.length : 0
+      return (combined + m4s + video + audio) > 0
+    } catch (e) {
+      return false
+    }
+  }
+
+  const getPreferredUniversalVideoContextId = () => {
+    try {
+      const videos = Array.from(document.querySelectorAll('video'))
+      if (videos.length === 0) return ''
+      const visible = videos.filter(v => isElementVisibleInViewport(v))
+
+      const pick = (list) => {
+        if (!list || list.length === 0) return ''
+        let best = null
+        let bestAt = -1
+        list.forEach(v => {
+          const at = getVideoLastActiveAt(v)
+          if (at > bestAt) {
+            bestAt = at
+            best = v
+          }
+        })
+        const chosen = best || list[0]
+        return getVideoContextIdFromElement(chosen) || ''
+      }
+
+      if (visible.length === 1) return pick(visible)
+      if (visible.length > 1) return pick(visible)
+      if (videos.length === 1) return pick(videos)
+      return ''
+    } catch (e) {
+      return ''
+    }
+  }
+
+  const getUniversalScopedResources = () => {
+    try {
+      if (perVideoModeActive) return { resources: sniffedResources, contextId: '', scoped: false }
+      const contextId = getPreferredUniversalVideoContextId()
+      if (!contextId) return { resources: sniffedResources, contextId: '', scoped: false }
+
+      const scoped = {
+        video: (sniffedResources.video || []).filter(r => (r && (r.videoContextId || '') === contextId)),
+        audio: (sniffedResources.audio || []).filter(r => (r && (r.videoContextId || '') === contextId)),
+        m4s: (sniffedResources.m4s || []).filter(r => (r && (r.videoContextId || '') === contextId)),
+        combined: (sniffedResources.combined || []).filter(r => (r && (r.videoContextId || '') === contextId)),
+        total: 0
+      }
+      scoped.total = (scoped.video.length || 0) + (scoped.audio.length || 0)
+
+      if (hasAnySniffedResources(scoped)) {
+        return { resources: scoped, contextId, scoped: true }
+      }
+      return { resources: sniffedResources, contextId, scoped: false }
+    } catch (e) {
+      return { resources: sniffedResources, contextId: '', scoped: false }
+    }
+  }
+
+  const getHostFromUrl = (url) => {
+    try {
+      const u = new URL(url)
+      return (u.hostname || '').toLowerCase()
+    } catch (e) {
+      return ''
+    }
+  }
+
+  const filterContextResources = (list, contextId, activeAt, preferredHost) => {
+    const arr = Array.isArray(list) ? list.filter(Boolean) : []
+    if (!contextId) return arr
+    const matched = arr.filter(r => (r.videoContextId || '') === contextId)
+    if (matched.length > 0) return matched
+    const host = `${preferredHost || ''}`.trim().toLowerCase()
+    if (host) {
+      const hostMatched = arr.filter(r => !r.videoContextId && getHostFromUrl(r.url || r.videoUrl || '') === host)
+      if (hostMatched.length > 0) return hostMatched
+    }
+    const at = Number(activeAt || 0)
+    if (!at) return []
+    const near = arr.filter(r => !r.videoContextId && Math.abs(Number(r.timestamp || 0) - at) < 15000)
+    return near.length > 0 ? near : []
+  }
+
+  const pickNearest = (list, activeAt) => {
+    const arr = Array.isArray(list) ? list.filter(Boolean) : []
+    if (arr.length === 0) return null
+    const at = Number(activeAt || 0)
+    return [...arr].sort((a, b) => {
+      const da = at ? Math.abs(Number(a.timestamp || 0) - at) : 0
+      const db = at ? Math.abs(Number(b.timestamp || 0) - at) : 0
+      if (da !== db) return da - db
+      const sa = Number(a && a.size ? a.size : 0)
+      const sb = Number(b && b.size ? b.size : 0)
+      if (sb !== sa) return sb - sa
+      return Number(b.timestamp || 0) - Number(a.timestamp || 0)
+    })[0] || null
+  }
+
+  const removePerVideoButtons = () => {
+    try {
+      const list = document.querySelectorAll('.linkcore-video-sniff-btn-wrapper')
+      list.forEach(el => el.remove())
+    } catch (e) {}
+  }
+
+  const collectResourcesForContext = (contextId) => {
+    const combined = (sniffedResources.combined || []).filter(r => (r && (r.videoContextId || '') === contextId))
+    const videos = (sniffedResources.video || []).filter(r => (r && (r.videoContextId || '') === contextId))
+    const audios = (sniffedResources.audio || []).filter(r => (r && (r.videoContextId || '') === contextId))
+    return { combined, videos, audios }
+  }
+
+  const pickBestCombined = (list) => {
+    if (!Array.isArray(list) || list.length === 0) return null
+    return [...list].sort((a, b) => {
+      const sa = Number(a && a.size ? a.size : 0)
+      const sb = Number(b && b.size ? b.size : 0)
+      if (sb !== sa) return sb - sa
+      const ta = Number(a && a.timestamp ? a.timestamp : 0)
+      const tb = Number(b && b.timestamp ? b.timestamp : 0)
+      return tb - ta
+    })[0] || null
+  }
+
+  const pickBestSingle = (list) => {
+    if (!Array.isArray(list) || list.length === 0) return null
+    return [...list].sort((a, b) => {
+      const sa = Number(a && a.size ? a.size : 0)
+      const sb = Number(b && b.size ? b.size : 0)
+      if (sb !== sa) return sb - sa
+      const ta = Number(a && a.timestamp ? a.timestamp : 0)
+      const tb = Number(b && b.timestamp ? b.timestamp : 0)
+      return tb - ta
+    })[0] || null
+  }
+
+  const downloadForVideoContext = (contextId, video, index) => {
+    try {
+      const referer = window.location.href || ''
+      const base = safeFilenamePart(document.title || 'video')
+      const seq = typeof index === 'number' ? index + 1 : 1
+      const activeAt = getVideoLastActiveAt(video) || Date.now()
+      const preferredHost = getHostFromUrl((video && (video.currentSrc || video.src)) ? (video.currentSrc || video.src) : '')
+
+      const combinedPool = filterContextResources(sniffedResources.combined || [], contextId, activeAt, preferredHost)
+      const bestCombined = pickNearest(combinedPool, activeAt) || pickBestCombined(combinedPool)
+      if (bestCombined && bestCombined.videoUrl && bestCombined.audioUrl) {
+        const videoFilename = base ? `${base}_${seq}_video.m4s` : ''
+        const audioFilename = base ? `${base}_${seq}_audio.m4s` : ''
+        sendResourceToClient(bestCombined.videoUrl, referer, videoFilename)
+        setTimeout(() => sendResourceToClient(bestCombined.audioUrl, referer, audioFilename), 100)
+        return true
+      }
+
+      const videoPool = filterContextResources(sniffedResources.video || [], contextId, activeAt, preferredHost)
+      const nonM4s = Array.isArray(videoPool) ? videoPool.filter(r => r && r.url && r.ext !== 'm4s') : []
+      const bestVideo = pickNearest(nonM4s, activeAt) || pickBestSingle(nonM4s) || pickNearest(videoPool, activeAt) || pickBestSingle(videoPool)
+      if (bestVideo && bestVideo.url) {
+        const ext = bestVideo.ext ? `${bestVideo.ext}`.toLowerCase() : 'mp4'
+        const filename = base ? `${base}_${seq}.${ext}` : ''
+        sendResourceToClient(bestVideo.url, referer, filename)
+        return true
+      }
+
+      const currentSrc = video && (video.currentSrc || video.src) ? (video.currentSrc || video.src) : ''
+      if (currentSrc && /^https?:/i.test(currentSrc)) {
+        const filename = base ? `${base}_${seq}.mp4` : ''
+        sendResourceToClient(currentSrc, referer, filename)
+        return true
+      }
+    } catch (e) {}
+    return false
+  }
+
+  const ensurePerVideoButton = (video, contextId, index) => {
+    try {
+      if (!video || !contextId) return false
+
+      const wrapperId = `linkcore-video-sniff-btn-wrapper-${contextId}`
+      const existing = document.getElementById(wrapperId)
+      if (existing) return true
+
+      const container = video.parentElement || video
+      if (!container) return false
+
+      const computedPosition = window.getComputedStyle(container).position
+      if (computedPosition === 'static') {
+        container.style.position = 'relative'
+      }
+
+      const wrapper = document.createElement('div')
+      wrapper.id = wrapperId
+      wrapper.className = 'linkcore-video-sniff-btn-wrapper'
+      const wStyle = wrapper.style
+      wStyle.position = 'absolute'
+      wStyle.top = '8px'
+      wStyle.right = '8px'
+      wStyle.zIndex = '2147483647'
+      wStyle.pointerEvents = 'auto'
+      wStyle.display = 'block'
+      wStyle.width = '32px'
+      wStyle.height = '32px'
+      wStyle.overflow = 'visible'
+      wStyle.opacity = '0.5'
+      wStyle.transition = 'opacity 0.12s ease'
+
+      let title = 'Download'
+      try {
+        if (chrome && chrome.i18n && chrome.i18n.getMessage) {
+          const msg = chrome.i18n.getMessage('contextMenuDownload')
+          if (msg) title = msg
+        }
+      } catch (e) {}
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.setAttribute('aria-label', title)
+      btn.setAttribute('title', '')
+      const bStyle = btn.style
+      bStyle.width = '32px'
+      bStyle.height = '32px'
+      bStyle.borderRadius = '16px'
+      bStyle.border = 'none'
+      bStyle.cursor = 'pointer'
+      bStyle.background = 'transparent'
+      bStyle.color = '#ffffff'
+      bStyle.fontSize = '18px'
+      bStyle.lineHeight = '32px'
+      bStyle.textAlign = 'center'
+      bStyle.opacity = '0.95'
+      btn.textContent = '↓'
+
+      const extend = document.createElement('div')
+      const exStyle = extend.style
+      exStyle.position = 'absolute'
+      exStyle.top = '0'
+      exStyle.right = '0'
+      exStyle.height = '32px'
+      exStyle.width = '32px'
+      exStyle.background = '#409eff'
+      exStyle.borderRadius = '16px'
+      exStyle.boxShadow = '0 2px 8px rgba(0,0,0,0.25)'
+      exStyle.overflow = 'hidden'
+      exStyle.pointerEvents = 'none'
+      exStyle.transition = 'width 0.18s ease'
+
+      const label = document.createElement('div')
+      label.textContent = title
+      const lStyle = label.style
+      lStyle.height = '32px'
+      lStyle.display = 'flex'
+      lStyle.alignItems = 'center'
+      lStyle.padding = '0 40px 0 12px'
+      lStyle.color = '#ffffff'
+      lStyle.fontSize = '12px'
+      lStyle.whiteSpace = 'nowrap'
+      lStyle.maxWidth = '150px'
+      lStyle.overflow = 'hidden'
+      lStyle.textOverflow = 'ellipsis'
+      lStyle.opacity = '0'
+      lStyle.transform = 'translateX(6px)'
+      lStyle.transition = 'opacity 0.12s ease, transform 0.12s ease'
+
+      extend.appendChild(label)
+
+      const showLabel = () => {
+        extend.style.width = '150px'
+        label.style.opacity = '1'
+        label.style.transform = 'translateX(0)'
+        wrapper.style.opacity = '1'
+      }
+      const hideLabel = () => {
+        extend.style.width = '32px'
+        label.style.opacity = '0'
+        label.style.transform = 'translateX(6px)'
+        wrapper.style.opacity = '0.5'
+      }
+      wrapper.addEventListener('mouseenter', showLabel, true)
+      wrapper.addEventListener('mouseleave', hideLabel, true)
+      btn.addEventListener('blur', hideLabel, true)
+
+      btn.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        downloadForVideoContext(contextId, video, index)
+      }, true)
+
+      wrapper.appendChild(extend)
+      wrapper.appendChild(btn)
+      container.appendChild(wrapper)
+      return true
+    } catch (e) {
+      return false
+    }
+  }
+
+  const renderPerVideoSniffButtons = () => {
+    try {
+      if (!videoSnifferConfig.loaded || !videoSnifferConfig.enabled) {
+        perVideoModeActive = false
+        removePerVideoButtons()
+        return
+      }
+
+      const videos = Array.from(document.querySelectorAll('video'))
+      const eligibleVideos = videos.filter(v => {
+        try {
+          if (!isElementVisibleInViewport(v)) return false
+          const rect = v.getBoundingClientRect()
+          const minW = 240
+          const minH = 135
+          const bigEnough = rect.width >= minW && rect.height >= minH
+
+          const muted = !!v.muted
+          const autoplay = !!v.autoplay
+          const likelyHoverPreview = muted && autoplay && rect.width < 320 && rect.height < 220
+          if (likelyHoverPreview && !bigEnough) return false
+
+          return bigEnough
+        } catch (e) {
+          return false
+        }
+      })
+      if (eligibleVideos.length === 0) {
+        perVideoModeActive = false
+        removePerVideoButtons()
+        return
+      }
+
+      const eligibleContextIds = []
+      eligibleVideos.forEach((video, idx) => {
+        const contextId = getVideoContextIdFromElement(video)
+        if (!contextId) return
+
+        const { combined, videos: resVideos } = collectResourcesForContext(contextId)
+        const hasResources = (combined && combined.length > 0) || (resVideos && resVideos.length > 0)
+        const hasDirectUrl = (() => {
+          const src = (video && (video.currentSrc || video.src)) ? (video.currentSrc || video.src) : ''
+          return !!(src && /^https?:/i.test(src))
+        })()
+        if (!hasResources && !hasDirectUrl) return
+
+        eligibleContextIds.push(contextId)
+      })
+
+      const uniqueEligible = Array.from(new Set(eligibleContextIds))
+      const shouldUsePerVideoMode = uniqueEligible.length >= 2
+      perVideoModeActive = shouldUsePerVideoMode
+
+      if (!shouldUsePerVideoMode) {
+        removePerVideoButtons()
+        return
+      }
+
+      const createdContextIds = new Set()
+      eligibleVideos.forEach((video, idx) => {
+        const contextId = getVideoContextIdFromElement(video)
+        if (!contextId) return
+
+        const { combined, videos: resVideos } = collectResourcesForContext(contextId)
+        const hasResources = (combined && combined.length > 0) || (resVideos && resVideos.length > 0)
+        const hasDirectUrl = (() => {
+          const src = (video && (video.currentSrc || video.src)) ? (video.currentSrc || video.src) : ''
+          return !!(src && /^https?:/i.test(src))
+        })()
+        if (!hasResources && !hasDirectUrl) return
+
+        if (ensurePerVideoButton(video, contextId, idx)) {
+          createdContextIds.add(contextId)
+        }
+      })
+
+      const existing = document.querySelectorAll('.linkcore-video-sniff-btn-wrapper')
+      existing.forEach(el => {
+        const id = el && el.id ? `${el.id}` : ''
+        const m = id.match(/^linkcore-video-sniff-btn-wrapper-(.+)$/)
+        const contextId = m && m[1] ? m[1] : ''
+        if (contextId && !createdContextIds.has(contextId)) {
+          el.remove()
+        }
+      })
+
+      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      if (wrapper) wrapper.style.display = 'none'
+    } catch (e) {}
+  }
+
+  let perVideoRenderTimer = null
+  const schedulePerVideoRender = () => {
+    if (perVideoRenderTimer) return
+    perVideoRenderTimer = setTimeout(() => {
+      perVideoRenderTimer = null
+      renderPerVideoSniffButtons()
+    }, 120)
+  }
+
+  try {
+    window.addEventListener('scroll', schedulePerVideoRender, true)
+    window.addEventListener('resize', schedulePerVideoRender, true)
+  } catch (e) {}
 
   // 获取当前语言的缓存
   let cachedLocale = 'en'
@@ -699,11 +1199,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 更新资源列表
   const updateResourceList = () => {
-    log('Updating resource list, resources:', JSON.stringify(sniffedResources))
-    log('Video count:', sniffedResources.video?.length || 0)
-    log('Audio count:', sniffedResources.audio?.length || 0)
-    log('M4S count:', sniffedResources.m4s?.length || 0)
-    log('Combined count:', sniffedResources.combined?.length || 0)
+    const { resources: viewResources } = getUniversalScopedResources()
+    log('Updating resource list, resources:', JSON.stringify(viewResources))
+    log('Video count:', viewResources.video?.length || 0)
+    log('Audio count:', viewResources.audio?.length || 0)
+    log('M4S count:', viewResources.m4s?.length || 0)
+    log('Combined count:', viewResources.combined?.length || 0)
     
     const content = document.getElementById('linkcore-resource-list')
     if (!content) {
@@ -712,9 +1213,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     // 检查是否资源突然变为空（可能是意外清除）
-    const totalResources = (sniffedResources.video?.length || 0) + 
-                          (sniffedResources.audio?.length || 0) + 
-                          (sniffedResources.combined?.length || 0)
+    const totalResources = (viewResources.video?.length || 0) + 
+                          (viewResources.audio?.length || 0) + 
+                          (viewResources.combined?.length || 0)
     
     if (totalResources === 0 && content.children.length > 0) {
       log('Warning: Resources became empty but UI had content, this might be an unexpected clear')
@@ -729,14 +1230,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const header = document.getElementById('linkcore-dropdown-header')
     if (header) {
       header.innerHTML = ''
-      if (sniffedResources.total > 0) {
+      if (hasAnySniffedResources(viewResources)) {
         const clearBtn = createClearButton()
         header.appendChild(clearBtn)
       }
     }
 
     // 优先显示组合的DASH视频（视频+音频）
-    if (sniffedResources.combined && sniffedResources.combined.length > 0) {
+    if (viewResources.combined && viewResources.combined.length > 0) {
       const combinedSection = document.createElement('div')
 
       const combinedTitle = document.createElement('div')
@@ -748,7 +1249,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       combinedTitle.style.backgroundColor = '#f5f5f5'
       combinedSection.appendChild(combinedTitle)
 
-      sniffedResources.combined.forEach((resource, index) => {
+      viewResources.combined.forEach((resource, index) => {
         const item = createCombinedResourceItem(resource, referer, index)
         combinedSection.appendChild(item)
       })
@@ -757,7 +1258,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     // 显示 M4S 资源（B站 DASH 视频）
-    if (sniffedResources.m4s && sniffedResources.m4s.length > 0) {
+    if (viewResources.m4s && viewResources.m4s.length > 0) {
       const m4sSection = document.createElement('div')
 
       const m4sTitle = document.createElement('div')
@@ -769,7 +1270,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       m4sTitle.style.backgroundColor = '#f5f5f5'
       m4sSection.appendChild(m4sTitle)
 
-      sniffedResources.m4s.forEach((resource, index) => {
+      viewResources.m4s.forEach((resource, index) => {
         const item = createResourceItem(resource, referer, index)
         m4sSection.appendChild(item)
       })
@@ -778,7 +1279,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     // 显示普通视频资源
-    if (sniffedResources.video && sniffedResources.video.length > 0) {
+    if (viewResources.video && viewResources.video.length > 0) {
       const videoSection = document.createElement('div')
 
       const videoTitle = document.createElement('div')
@@ -790,10 +1291,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       videoTitle.style.backgroundColor = '#f5f5f5'
       videoSection.appendChild(videoTitle)
 
-      sniffedResources.video.forEach((resource, index) => {
+      viewResources.video.forEach((resource, index) => {
         // 如果M4S资源没有在M4S区域显示，则在这里显示
         const isM4S = resource.url.includes('.m4s')
-        const shouldShowInM4SSection = isM4S && sniffedResources.m4s && sniffedResources.m4s.length > 0
+        const shouldShowInM4SSection = isM4S && viewResources.m4s && viewResources.m4s.length > 0
         
         if (!shouldShowInM4SSection) {
           const item = createResourceItem(resource, referer, index)
@@ -807,7 +1308,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     // 显示音频资源
-    if (sniffedResources.audio && sniffedResources.audio.length > 0) {
+    if (viewResources.audio && viewResources.audio.length > 0) {
       const audioSection = document.createElement('div')
 
       const audioTitle = document.createElement('div')
@@ -819,10 +1320,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       audioTitle.style.backgroundColor = '#f5f5f5'
       audioSection.appendChild(audioTitle)
 
-      sniffedResources.audio.forEach((resource, index) => {
+      viewResources.audio.forEach((resource, index) => {
         // 如果M4S资源没有在M4S区域显示，则在这里显示
         const isM4S = resource.url.includes('.m4s')
-        const shouldShowInM4SSection = isM4S && sniffedResources.m4s && sniffedResources.m4s.length > 0
+        const shouldShowInM4SSection = isM4S && viewResources.m4s && viewResources.m4s.length > 0
         
         if (!shouldShowInM4SSection) {
           const item = createResourceItem(resource, referer, index)
@@ -1193,6 +1694,127 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return item
   }
 
+  const downloadSingleResource = (resource, referer, index) => {
+    let filename = ''
+    try {
+      const pageTitle = document.title || window.top.document.title || ''
+      const ext = resource.ext || 'video'
+
+      if (pageTitle) {
+        let cleanTitle = pageTitle
+          .replace(/\s*[-_│|]\s*在线播放.*$/i, '')
+          .replace(/\s*[-_│|]\s*在线观看.*$/i, '')
+          .replace(/\s*[-_│|]\s*樱花动漫.*$/i, '')
+          .replace(/\s*[-_│|]\s*\w+视频.*$/i, '')
+          .replace(/[<>:"/\\|?*]/g, '_')
+          .trim()
+
+        if (cleanTitle) {
+          if (resource.quality && resource.quality !== ext.toUpperCase()) {
+            filename = `${cleanTitle}_${resource.quality}.${ext}`
+          } else {
+            filename = `${cleanTitle}.${ext}`
+          }
+        }
+      }
+    } catch (e) {
+    }
+
+    sendResourceToClient(resource.url, referer, filename)
+    const dropdown = document.getElementById('linkcore-resource-dropdown')
+    if (dropdown) dropdown.style.display = 'none'
+  }
+
+  const downloadCombinedResource = (resource, referer) => {
+    let videoFilename = ''
+    let audioFilename = ''
+    try {
+      const pageTitle = document.title || window.top.document.title || ''
+
+      if (pageTitle) {
+        let cleanTitle = pageTitle
+          .replace(/\s*[-_│|]\s*在线播放.*$/i, '')
+          .replace(/\s*[-_│|]\s*在线观看.*$/i, '')
+          .replace(/\s*[-_│|]\s*樱花动漫.*$/i, '')
+          .replace(/\s*[-_│|]\s*\w+视频.*$/i, '')
+          .replace(/[<>:"/\\|?*]/g, '_')
+          .trim()
+
+        if (cleanTitle) {
+          videoFilename = `${cleanTitle}_${getLocalizedText('videoStream').replace(':', '')}.m4s`
+          audioFilename = `${cleanTitle}_${getLocalizedText('audioStream').replace(':', '')}.m4s`
+        }
+      }
+    } catch (e) {
+    }
+
+    sendResourceToClient(resource.videoUrl, referer, videoFilename)
+    setTimeout(() => {
+      sendResourceToClient(resource.audioUrl, referer, audioFilename)
+    }, 100)
+    const dropdown = document.getElementById('linkcore-resource-dropdown')
+    if (dropdown) dropdown.style.display = 'none'
+  }
+
+  const getAutoDownloadCandidates = (resources) => {
+    const r = resources || sniffedResources
+    const candidates = []
+    const hasM4sSection = !!(r.m4s && r.m4s.length > 0)
+
+    if (r.combined && r.combined.length > 0) {
+      r.combined.forEach((resource, index) => {
+        candidates.push({ section: 'combined', resource, index })
+      })
+    }
+
+    if (r.m4s && r.m4s.length > 0) {
+      r.m4s.forEach((resource, index) => {
+        candidates.push({ section: 'm4s', resource, index })
+      })
+    }
+
+    if (r.video && r.video.length > 0) {
+      r.video.forEach((resource, index) => {
+        const isM4S = resource.url && resource.url.includes('.m4s')
+        const shouldShowInM4SSection = isM4S && hasM4sSection
+        if (!shouldShowInM4SSection) {
+          candidates.push({ section: 'video', resource, index })
+        }
+      })
+    }
+
+    if (r.audio && r.audio.length > 0) {
+      r.audio.forEach((resource, index) => {
+        const isM4S = resource.url && resource.url.includes('.m4s')
+        const shouldShowInM4SSection = isM4S && hasM4sSection
+        if (!shouldShowInM4SSection) {
+          candidates.push({ section: 'audio', resource, index })
+        }
+      })
+    }
+
+    return candidates
+  }
+
+  const tryAutoDownloadForUniversalButton = () => {
+    checkAndRestoreResources()
+    const referer = window.location.href
+    const { resources: viewResources } = getUniversalScopedResources()
+    const candidates = getAutoDownloadCandidates(viewResources)
+    if (candidates.length !== 1) return false
+
+    const c = candidates[0]
+    if (c.section === 'audio') return false
+
+    if (c.section === 'combined') {
+      downloadCombinedResource(c.resource, referer)
+      return true
+    }
+
+    downloadSingleResource(c.resource, referer, c.index)
+    return true
+  }
+
   // 显示资源选择下拉框
   const showResourceDropdown = () => {
     const dropdown = document.getElementById('linkcore-resource-dropdown')
@@ -1289,11 +1911,17 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 更新按钮显示状态
   const updateButtonVisibility = () => {
+    if (perVideoModeActive) {
+      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      if (wrapper) wrapper.style.display = 'none'
+      return
+    }
     const btn = document.getElementById('linkcore-download-btn')
-    log('Update button visibility, btn:', !!btn, 'total:', sniffedResources.total, 'sniffer enabled:', videoSnifferConfig.enabled, 'config loaded:', videoSnifferConfig.loaded)
+    const { resources: viewResources } = getUniversalScopedResources()
+    log('Update button visibility, btn:', !!btn, 'total:', viewResources.total, 'sniffer enabled:', videoSnifferConfig.enabled, 'config loaded:', videoSnifferConfig.loaded)
     if (!btn) return
 
-    const hasResources = sniffedResources.total > 0
+    const hasResources = hasAnySniffedResources(viewResources)
     const snifferEnabled = videoSnifferConfig.enabled
     const configLoaded = videoSnifferConfig.loaded
     const wrapper = btn.parentElement?.parentElement // 现在btn在buttonContainer中，wrapper是buttonContainer的父元素
@@ -1404,6 +2032,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const ensureButtonStability = () => {
     const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
     const isButtonClosed = isButtonClosedByUser()
+
+    if (perVideoModeActive) {
+      if (wrapper && wrapper.style.display !== 'none') {
+        wrapper.style.display = 'none'
+      }
+      return
+    }
     
     if (wrapper && sniffedResources && sniffedResources.total > 0 && videoSnifferConfig.enabled && videoSnifferConfig.loaded && !isButtonClosed) {
       // 如果有资源且嗅探器启用但按钮被隐藏且未被用户关闭，重新显示
@@ -1466,6 +2101,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     if (isButtonClosedByUser()) {
       log('Button was closed by user, skipping creation')
       return
+    }
+
+    if (perVideoModeActive) {
+      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      if (wrapper) wrapper.style.display = 'none'
     }
 
     log('Creating download button...')
@@ -1681,6 +2321,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     } else {
       wStyle.display = 'none' // 默认隐藏，检测到资源后显示
     }
+    if (perVideoModeActive) {
+      wStyle.display = 'none'
+    }
 
     const btn = document.createElement('button')
     btn.id = 'linkcore-bilibili-download-btn'
@@ -1787,6 +2430,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     btn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
+      if (tryAutoDownloadForUniversalButton()) return
       showResourceDropdown()
     })
 

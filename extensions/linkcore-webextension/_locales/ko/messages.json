@@ -1,6 +1,6 @@
 {
   "extensionName": {
-    "message": "LinkCore 다운로드 도우미",
+    "message": "LinkCore Download Manager",
     "description": "확장 프로그램 이름"
   },
   "extensionDescription": {
@@ -8,11 +8,11 @@
     "description": "확장 프로그램 설명"
   },
   "actionTitle": {
-    "message": "LinkCore 도우미",
+    "message": "LinkCore Download Manager",
     "description": "브라우저 작업 제목"
   },
   "popupTitle": {
-    "message": "LinkCore 다운로드 도우미",
+    "message": "LinkCore Download Manager",
     "description": "팝업 제목"
   },
   "rpcAddress": {
