@@ -339,15 +339,23 @@
       },
       fileList () {
         const { files } = this
+        const task = this.task || {}
+        const cfg = this.preferenceConfig || {}
+        const suffix = cfg.downloadingFileSuffix || ''
+        const completedStatuses = [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED]
+        const shouldStripSuffix = !!(suffix && !this.isBT && completedStatuses.includes(task.status))
         const result = files.map((item) => {
-          const name = getFileName(item.path)
+          const rawName = getFileName(item.path)
+          const name = shouldStripSuffix && rawName && rawName.endsWith(suffix)
+            ? rawName.slice(0, -suffix.length)
+            : rawName
           const extension = getFileExtension(name)
           return {
             idx: Number(item.index),
             selected: item.selected === 'true',
             path: item.path,
             name,
-            extension: `.${extension}`,
+            extension: extension ? `.${extension}` : '',
             length: parseInt(item.length, 10),
             completedLength: item.completedLength
           }

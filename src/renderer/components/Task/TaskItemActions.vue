@@ -396,7 +396,24 @@
         ]
       },
       taskName () {
-        return getTaskName(this.task)
+        const task = this.task || {}
+        const cfg = this.preferenceConfig || {}
+        const suffix = cfg.downloadingFileSuffix || ''
+        const { COMPLETE, ERROR, REMOVED } = TASK_STATUS
+        const isStopped = [COMPLETE, ERROR, REMOVED].includes(task.status)
+        if (isStopped) {
+          try {
+            const p = getTaskActualPath(task, cfg)
+            const base = basename(p || '')
+            if (base) {
+              if (suffix && base.endsWith(suffix)) {
+                return base.slice(0, -suffix.length)
+              }
+              return base
+            }
+          } catch (_) {}
+        }
+        return getTaskName(task)
       },
       path () {
         return getTaskActualPath(this.task, this.preferenceConfig)

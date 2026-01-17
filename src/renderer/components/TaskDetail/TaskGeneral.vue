@@ -96,6 +96,7 @@
 <script>
   import is from 'electron-is'
   import { mapState } from 'vuex'
+  import { basename } from 'node:path'
   import {
     bytesToSize,
     calcFormLabelWidth,
@@ -148,13 +149,37 @@
         }
       },
       taskFullName () {
-        return getTaskName(this.task, {
+        const task = this.task || {}
+        const config = this.preferenceConfig || {}
+        const suffix = config.downloadingFileSuffix || ''
+        if (task.status === TASK_STATUS.COMPLETE && !this.isBT) {
+          const p = getTaskActualPath(task, config)
+          const base = basename(p || '')
+          if (suffix && base.endsWith(suffix)) {
+            return base.slice(0, -suffix.length)
+          }
+          return base
+        }
+
+        return getTaskName(task, {
           defaultName: this.$t('task.get-task-name'),
           maxLen: -1
         })
       },
       taskName () {
-        return getTaskName(this.task, {
+        const task = this.task || {}
+        const config = this.preferenceConfig || {}
+        const suffix = config.downloadingFileSuffix || ''
+        if (task.status === TASK_STATUS.COMPLETE && !this.isBT) {
+          const p = getTaskActualPath(task, config)
+          const base = basename(p || '')
+          if (suffix && base.endsWith(suffix)) {
+            return base.slice(0, -suffix.length)
+          }
+          return base
+        }
+
+        return getTaskName(task, {
           defaultName: this.$t('task.get-task-name'),
           maxLen: 32
         })

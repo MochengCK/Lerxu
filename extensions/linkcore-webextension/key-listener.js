@@ -2430,7 +2430,6 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     btn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
-      if (tryAutoDownloadForUniversalButton()) return
       showResourceDropdown()
     })
 

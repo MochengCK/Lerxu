@@ -176,6 +176,12 @@
             this.$store.dispatch('preference/recordHistoryDirectory', dir)
             const taskName = getTaskName(task)
             const cfg = this.$store.state.preference.config || {}
+            let fromHistory = false
+            try {
+              const gidKey = task && task.gid ? `${task.gid}` : ''
+              const t = gidKey ? (taskHistory.getAllHistory() || []).find(x => x && `${x.gid}` === gidKey) : null
+              fromHistory = !!(t && t.fromBrowserExtension)
+            } catch (_) {}
             let isBilibiliPart = false
             try {
               const p = getTaskActualPath(task, cfg)
@@ -205,9 +211,30 @@
                 isBilibiliPart = true
               }
               const fromHeader = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`))
-              const fromReferer = !!(opt && opt.referer && /^https?:/i.test(`${opt.referer}`))
-              if (!isBilibiliPart) {
-                if (fromHeader || fromReferer) {
+              const fromBrowserExtension = fromHeader || fromHistory
+              if (fromBrowserExtension) {
+                const key = this.buildBrowserStartNotifyKey(task, cfg)
+                if (!this._browserStartNotifiedKeys) {
+                  this._browserStartNotifiedKeys = new Map()
+                }
+                const now = Date.now()
+                const windowMs = 10000
+                let shouldNotify = true
+                if (key) {
+                  const prev = Number(this._browserStartNotifiedKeys.get(key) || 0)
+                  if (prev && (now - prev) < windowMs) {
+                    shouldNotify = false
+                  }
+                  this._browserStartNotifiedKeys.set(key, now)
+                  if (this._browserStartNotifiedKeys.size > 500) {
+                    for (const [k, t] of this._browserStartNotifiedKeys.entries()) {
+                      if (!t || (now - Number(t)) > (windowMs * 3)) {
+                        this._browserStartNotifiedKeys.delete(k)
+                      }
+                    }
+                  }
+                }
+                if (shouldNotify) {
                   const message = this.$t('task.download-start-browser-message')
                   this.$msg.info(message)
                   if (is.windows()) {
@@ -216,12 +243,49 @@
                       this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
                     }
                   }
-                } else {
-                  const message = this.$t('task.download-start-message', { taskName })
-                  this.$msg.info(message)
                 }
+              } else if (!isBilibiliPart) {
+                const message = this.$t('task.download-start-message', { taskName })
+                this.$msg.info(message)
               }
-            } catch (_) {}
+            } catch (_) {
+              if (fromHistory) {
+                const key = this.buildBrowserStartNotifyKey(task, cfg)
+                if (!this._browserStartNotifiedKeys) {
+                  this._browserStartNotifiedKeys = new Map()
+                }
+                const now = Date.now()
+                const windowMs = 10000
+                let shouldNotify = true
+                if (key) {
+                  const prev = Number(this._browserStartNotifiedKeys.get(key) || 0)
+                  if (prev && (now - prev) < windowMs) {
+                    shouldNotify = false
+                  }
+                  this._browserStartNotifiedKeys.set(key, now)
+                  if (this._browserStartNotifiedKeys.size > 500) {
+                    for (const [k, t] of this._browserStartNotifiedKeys.entries()) {
+                      if (!t || (now - Number(t)) > (windowMs * 3)) {
+                        this._browserStartNotifiedKeys.delete(k)
+                      }
+                    }
+                  }
+                }
+                if (shouldNotify) {
+                  const message = this.$t('task.download-start-browser-message')
+                  this.$msg.info(message)
+                  if (is.windows()) {
+                    const notify = new Notification(message, { body: taskName })
+                    notify.onclick = () => {
+                      this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
+                    }
+                  }
+                }
+              } else if (!isBilibiliPart) {
+                const message = this.$t('task.download-start-message', { taskName })
+                this.$msg.info(message)
+              }
+            }
 
             this.ensureTargetDirectoryExists(task)
             this.ensureCategoryDirectoryForTask(task)
@@ -343,20 +407,7 @@
       async handleDownloadComplete (task, isBT) {
         const cfg = this.$store.state.preference.config || {}
         const path = getTaskActualPath(task, cfg)
-        const finalPath = isBT ? path : this.removeDownloadingSuffix(task, path, cfg)
-        const looksLikeExtensionDashStream = (p, downloadingFileSuffix) => {
-          try {
-            const raw = p ? `${p}` : ''
-            if (!raw) return false
-            const file0 = basename(raw)
-            const suffix = downloadingFileSuffix ? `${downloadingFileSuffix}` : ''
-            const file1 = suffix ? this.stripDownloadingSuffixFromFilename(file0, suffix) : file0
-            const file = this.stripDuplicateNumberBeforeExtension(file1)
-            return /(video\s*stream|audio\s*stream|videostream|audiostream|视频流|音频流)/i.test(file)
-          } catch (_) {
-            return false
-          }
-        }
+        const finalPath = isBT ? path : await this.removeDownloadingSuffix(task, path, cfg)
         let isBilibiliPart = false
         if (!isBT) {
           try {
@@ -406,7 +457,7 @@
                 if (fromHeader) {
                   const pair = this.collectExtensionDashParts(finalPath || path, cfg)
                   const suffix = cfg.downloadingFileSuffix || ''
-                  const looksLikeStream = looksLikeExtensionDashStream(finalPath || path, suffix)
+                  const looksLikeStream = this.looksLikeExtensionDashStreamPath(finalPath || path, suffix)
                   if (looksLikeStream || (pair && pair.isPairCandidate)) {
                     isBilibiliPart = true
                   }
@@ -473,23 +524,21 @@
               }
             }
           } catch (_) {}
-          let notified = false
+          let shouldNotify = true
           if (isBilibiliPart || (mergeResult && mergeResult.isBilibiliPart)) {
             try {
               const key = resolve(mergeResult.mergedPath)
               if (!this._bilibiliMergeNotified) {
                 this._bilibiliMergeNotified = new Set()
               }
-              if (!this._bilibiliMergeNotified.has(key)) {
+              if (this._bilibiliMergeNotified.has(key)) {
+                shouldNotify = false
+              } else {
                 this._bilibiliMergeNotified.add(key)
-                const notifyPath = mergeResult.mergedPath
-                this.showTaskCompleteNotify(task, isBT, notifyPath)
-                this.$electron.ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
-                notified = true
               }
             } catch (_) {}
           }
-          if (!notified) {
+          if (shouldNotify) {
             const notifyPath = mergeResult.mergedPath
             this.showTaskCompleteNotify(task, isBT, notifyPath)
             this.$electron.ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
@@ -547,6 +596,47 @@
           } catch (_) {}
         }
         return false
+      },
+      buildBrowserStartNotifyKey (task, cfg) {
+        try {
+          const gid = task && task.gid ? `${task.gid}` : ''
+          const config = cfg && typeof cfg === 'object' ? cfg : (this.$store.state.preference.config || {})
+          const suffix = config && config.downloadingFileSuffix ? `${config.downloadingFileSuffix}` : ''
+          const p = getTaskActualPath(task, config) || ''
+          const raw = p ? basename(p) : ''
+          const file0 = suffix ? this.stripDownloadingSuffixFromFilename(raw, suffix) : raw
+          const file = this.stripDuplicateNumberBeforeExtension(file0)
+          const lower = file.toLowerCase()
+          const isPairLike =
+            lower.endsWith('_video.mp4') ||
+            lower.endsWith('_audio.m4a') ||
+            /\.m4s$/i.test(file) ||
+            /(video\s*stream|audio\s*stream|videostream|audiostream|视频流|音频流)/i.test(file)
+          if (!isPairLike) {
+            return gid
+          }
+          const stem = this.normalizeDashStemFromFilename(file)
+          const dir = p ? dirname(p) : ''
+          if (!stem || !dir) {
+            return gid
+          }
+          return `${resolve(dir)}|${stem}`
+        } catch (_) {
+          return ''
+        }
+      },
+      looksLikeExtensionDashStreamPath (p, downloadingFileSuffix) {
+        try {
+          const raw = p ? `${p}` : ''
+          if (!raw) return false
+          const file0 = basename(raw)
+          const suffix = downloadingFileSuffix ? `${downloadingFileSuffix}` : ''
+          const file1 = suffix ? this.stripDownloadingSuffixFromFilename(file0, suffix) : file0
+          const file = this.stripDuplicateNumberBeforeExtension(file1)
+          return /(video\s*stream|audio\s*stream|videostream|audiostream|视频流|音频流)/i.test(file)
+        } catch (_) {
+          return false
+        }
       },
       stripDownloadingSuffixFromFilename (filename, downloadingFileSuffix) {
         const name = filename ? `${filename}` : ''
@@ -1648,7 +1738,7 @@
         createCategoryDirectory(categorizedInfo.categorizedDir)
       },
 
-      removeDownloadingSuffix (task, manualPath = '', preferenceConfig = null) {
+      async removeDownloadingSuffix (task, manualPath = '', preferenceConfig = null) {
         const cfg = preferenceConfig || this.$store.state.preference.config || {}
         const downloadingFileSuffix = cfg.downloadingFileSuffix || ''
 
@@ -1657,50 +1747,54 @@
           return currentPath
         }
 
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+        const renameWithRetry = async (from, to, attempts = 10, delayMs = 200) => {
+          const f = from ? `${from}` : ''
+          const t = to ? `${to}` : ''
+          if (!f || !t || f === t) return true
+          for (let i = 0; i < attempts; i++) {
+            if (existsSync(t)) return true
+            if (!existsSync(f)) return false
+            const ok = this.renamePreserveTimes(f, t)
+            if (ok) return true
+            await sleep(delayMs)
+          }
+          return existsSync(t)
+        }
+
         if (currentPath.endsWith(downloadingFileSuffix)) {
-          // 首先尝试修复文件名中的序号位置
           const fixedPath = this.fixFileNameWithSuffix(currentPath, downloadingFileSuffix)
           let pathToProcess = currentPath
 
-          // 如果修复后的路径不同，先重命名到正确的位置
           if (fixedPath !== currentPath && existsSync(currentPath)) {
-            const renameOk = this.renamePreserveTimes(currentPath, fixedPath)
-            if (renameOk) {
+            const okFix = await renameWithRetry(currentPath, fixedPath)
+            if (okFix) {
               console.log(`[Motrix] Fixed file name structure: ${currentPath} -> ${fixedPath}`)
               pathToProcess = fixedPath
-            } else {
-              console.warn(`[Motrix] Failed to fix file name structure: ${currentPath} -> ${fixedPath}`)
             }
           }
 
           const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
-          // 尝试重命名
           if (existsSync(pathToProcess)) {
-            const ok = this.renamePreserveTimes(pathToProcess, originalPath)
-            if (ok) {
+            const ok = await renameWithRetry(pathToProcess, originalPath)
+            if (ok && existsSync(originalPath)) {
               console.log(`[Motrix] Removed downloading suffix: ${pathToProcess} -> ${originalPath}`)
               return originalPath
-            } else {
-              console.warn(`[Motrix] Failed to remove downloading suffix: ${pathToProcess} -> ${originalPath}`)
             }
           } else if (existsSync(originalPath)) {
-            // 如果原文件已存在（可能已经被重命名），直接返回原路径
             return originalPath
           }
-          // 如果都不存在，假设原路径是目标路径
-          return originalPath
+          return existsSync(originalPath) ? originalPath : currentPath
         } else {
           const suffixedPath = currentPath + downloadingFileSuffix
           if (existsSync(suffixedPath)) {
-            const ok = this.renamePreserveTimes(suffixedPath, currentPath)
-            if (ok) {
+            const ok = await renameWithRetry(suffixedPath, currentPath)
+            if (ok && existsSync(currentPath)) {
               console.log(`[Motrix] Removed downloading suffix: ${suffixedPath} -> ${currentPath}`)
               return currentPath
-            } else {
-              console.warn(`[Motrix] Failed to remove downloading suffix: ${suffixedPath} -> ${currentPath}`)
             }
           }
-          return currentPath
+          return existsSync(currentPath) ? currentPath : suffixedPath
         }
       },
       autoCategorizeDownloadedFile (task, manualPath = null) {
