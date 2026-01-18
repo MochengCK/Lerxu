@@ -420,9 +420,70 @@ const isClientAvailable = async () => {
   }
 }
 
-const addUri = async (url, referer, suggestedFilename) => {
+const sanitizeHeaderLine = (line) => {
   try {
-    const headers = await getHeadersForUrl(url, referer)
+    const raw = `${line || ''}`.replace(/[\r\n]+/g, ' ').trim()
+    if (!raw) return ''
+    const idx = raw.indexOf(':')
+    if (idx <= 0) return ''
+    const k = raw.slice(0, idx).trim()
+    const v = raw.slice(idx + 1).trim()
+    if (!k || !v) return ''
+    return `${k}: ${v}`
+  } catch (e) {
+    return ''
+  }
+}
+
+const mergeHeaderLines = (baseLines, extraLines) => {
+  try {
+    const base = (Array.isArray(baseLines) ? baseLines : []).map(sanitizeHeaderLine).filter(Boolean)
+    const extra = (Array.isArray(extraLines) ? extraLines : []).map(sanitizeHeaderLine).filter(Boolean)
+    const map = new Map()
+    const order = []
+
+    const put = (line, allowOverride) => {
+      const idx = line.indexOf(':')
+      if (idx <= 0) return
+      const key = line.slice(0, idx).trim()
+      const value = line.slice(idx + 1).trim()
+      if (!key || !value) return
+      const lower = key.toLowerCase()
+      if (!map.has(lower)) {
+        order.push(lower)
+        map.set(lower, { key, value })
+        return
+      }
+      if (allowOverride) {
+        map.set(lower, { key, value })
+      }
+    }
+
+    base.forEach(line => put(line, false))
+    extra.forEach(line => {
+      const idx = line.indexOf(':')
+      const k = idx > 0 ? line.slice(0, idx).trim().toLowerCase() : ''
+      if (k === 'cookie') {
+        put(line, false)
+        return
+      }
+      put(line, true)
+    })
+
+    return order.map(lower => {
+      const kv = map.get(lower)
+      if (!kv) return ''
+      return `${kv.key}: ${kv.value}`
+    }).filter(Boolean)
+  } catch (e) {
+    return (Array.isArray(baseLines) ? baseLines : []).map(sanitizeHeaderLine).filter(Boolean)
+  }
+}
+
+const addUri = async (url, referer, suggestedFilename, extraHeaders) => {
+  try {
+    const baseHeaders = await getHeadersForUrl(url, referer)
+    const headers = mergeHeaderLines(baseHeaders, extraHeaders)
     const payload = { url, referer, headers }
     // 如果有建议的文件名，添加到请求中
     if (suggestedFilename) {
@@ -763,13 +824,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       const referer = msg.referer || ''
       const suggestedFilename = msg.suggestedFilename || ''
+      const extraHeaders = Array.isArray(msg.headers) ? msg.headers : []
       const connected = await isClientAvailable()
       if (!connected) {
         const fallback = await downloadViaBrowser(url, suggestedFilename)
         sendResponse({ ok: !!fallback.ok, via: 'browser' })
         return
       }
-      const ok = await addUri(url, referer, suggestedFilename)
+      const ok = await addUri(url, referer, suggestedFilename, extraHeaders)
       sendResponse({ ok, via: 'client' })
     }
     handleAddFromContent()

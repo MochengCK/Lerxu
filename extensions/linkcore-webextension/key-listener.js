@@ -268,7 +268,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     
     // 检查按钮是否被用户关闭，如果关闭则不显示
     if (!isButtonClosedByUser() && sniffedResources.total > 0) {
-      const wrapper = document.getElementById('linkcore-download-btn-wrapper')
+      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper') || document.getElementById('linkcore-download-btn-wrapper')
       if (wrapper) {
         wrapper.style.display = 'block'
         wrapper.style.visibility = 'visible'
@@ -276,6 +276,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       }
     }
     
+    dedupeUniversalButtonWrappers()
     renderPerVideoSniffButtons()
     updateButtonVisibility()
   })
@@ -292,7 +293,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       
       // 检查按钮是否被用户关闭，如果关闭则不显示
       if (!isButtonClosedByUser() && sniffedResources.total > 0) {
-        const wrapper = document.getElementById('linkcore-download-btn-wrapper')
+        const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper') || document.getElementById('linkcore-download-btn-wrapper')
         if (wrapper) {
           wrapper.style.display = 'block'
           wrapper.style.visibility = 'visible'
@@ -300,6 +301,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }
       }
       
+      dedupeUniversalButtonWrappers()
       renderPerVideoSniffButtons()
       updateButtonVisibility()
     }
@@ -334,10 +336,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
     
     // 隐藏按钮
-    const wrapper = document.getElementById('linkcore-download-btn-wrapper')
-    if (wrapper) {
-      wrapper.style.display = 'none'
-    }
+    try {
+      collectUniversalButtonWrappers().forEach(w => {
+        try { w.style.display = 'none' } catch (e) {}
+      })
+    } catch (e) {}
 
     removePerVideoButtons()
     
@@ -391,7 +394,22 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const url = window.location.href || ''
       if (!url || !/^https?:/i.test(url)) return
       const referer = url
-      chrome.runtime.sendMessage({ type: 'addUriFromContent', url, referer }, () => { })
+      const headers = []
+      try {
+        const origin = window.location && window.location.origin ? window.location.origin : ''
+        if (origin && /^https?:/i.test(origin)) headers.push(`Origin: ${origin}`)
+      } catch (e) {}
+      try {
+        const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : ''
+        if (ua) headers.push(`User-Agent: ${ua}`)
+      } catch (e) {}
+      try {
+        const langs = (typeof navigator !== 'undefined' && Array.isArray(navigator.languages) ? navigator.languages : [])
+          .map(x => `${x || ''}`.trim()).filter(Boolean)
+        if (langs.length > 0) headers.push(`Accept-Language: ${langs.join(',')}`)
+      } catch (e) {}
+      headers.push('Accept: */*')
+      chrome.runtime.sendMessage({ type: 'addUriFromContent', url, referer, headers }, () => { })
     } catch (e) {
     }
   }
@@ -399,10 +417,26 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const sendResourceToClient = (url, referer, suggestedFilename) => {
     try {
       if (!url || !/^https?:/i.test(url)) return
+      const headers = []
+      try {
+        const origin = window.location && window.location.origin ? window.location.origin : ''
+        if (origin && /^https?:/i.test(origin)) headers.push(`Origin: ${origin}`)
+      } catch (e) {}
+      try {
+        const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : ''
+        if (ua) headers.push(`User-Agent: ${ua}`)
+      } catch (e) {}
+      try {
+        const langs = (typeof navigator !== 'undefined' && Array.isArray(navigator.languages) ? navigator.languages : [])
+          .map(x => `${x || ''}`.trim()).filter(Boolean)
+        if (langs.length > 0) headers.push(`Accept-Language: ${langs.join(',')}`)
+      } catch (e) {}
+      headers.push('Accept: */*')
       const message = {
         type: 'addUriFromContent',
         url,
-        referer
+        referer,
+        headers
       }
       // 如果有建议的文件名，添加到消息中
       if (suggestedFilename) {
@@ -455,6 +489,131 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       if (!vw || !vh) return false
       if (rect.width <= 0 || rect.height <= 0) return false
       return rect.bottom > 0 && rect.right > 0 && rect.top < vh && rect.left < vw
+    } catch (e) {
+      return false
+    }
+  }
+
+  const getViewportIntersectionArea = (rect, vw, vh) => {
+    try {
+      if (!rect || !vw || !vh) return 0
+      const left = Math.max(0, rect.left)
+      const right = Math.min(vw, rect.right)
+      const top = Math.max(0, rect.top)
+      const bottom = Math.min(vh, rect.bottom)
+      const w = Math.max(0, right - left)
+      const h = Math.max(0, bottom - top)
+      return w * h
+    } catch (e) {
+      return 0
+    }
+  }
+
+  const isShortVideoFeedHost = () => {
+    try {
+      const host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase()
+      if (!host) return false
+      if (host.includes('douyin.com')) return true
+      if (host.includes('iesdouyin.com')) return true
+      if (host.includes('tiktok.com')) return true
+      return false
+    } catch (e) {
+      return false
+    }
+  }
+
+  const collectUniversalButtonWrappers = () => {
+    try {
+      const list = []
+      document.querySelectorAll('#linkcore-bilibili-download-btn-wrapper').forEach(el => list.push(el))
+      document.querySelectorAll('#linkcore-download-btn-wrapper').forEach(el => list.push(el))
+      return list.filter(Boolean)
+    } catch (e) {
+      return []
+    }
+  }
+
+  const dedupeUniversalButtonWrappers = () => {
+    try {
+      if (!isShortVideoFeedHost()) return
+      const wrappers = collectUniversalButtonWrappers().filter(w => w && w.isConnected)
+      if (wrappers.length <= 1) return
+
+      let keep = wrappers[0]
+      let bestTop = null
+      wrappers.forEach(w => {
+        try {
+          const rect = w.getBoundingClientRect()
+          const top = Number(rect && rect.top != null ? rect.top : 0)
+          if (bestTop == null || top < bestTop) {
+            bestTop = top
+            keep = w
+          }
+        } catch (e) {}
+      })
+
+      wrappers.forEach(w => {
+        if (w !== keep) {
+          try { w.remove() } catch (e) {}
+        }
+      })
+    } catch (e) {}
+  }
+
+  const hasLargeFeedVideoInView = (videos) => {
+    try {
+      const list = Array.isArray(videos) ? videos.filter(Boolean) : []
+      if (list.length === 0) return false
+      const vw = window.innerWidth || document.documentElement.clientWidth || 0
+      const vh = window.innerHeight || document.documentElement.clientHeight || 0
+      if (!vw || !vh) return false
+      const viewportArea = vw * vh
+      if (!viewportArea) return false
+
+      for (const v of list) {
+        try {
+          const rect = v.getBoundingClientRect()
+          const area = getViewportIntersectionArea(rect, vw, vh)
+          if (!area) continue
+          const wide = rect.width >= vw * 0.6
+          const tall = rect.height >= vh * 0.6
+          const large = (area / viewportArea) >= 0.55
+          if (wide && tall && large) return true
+        } catch (e) {}
+      }
+      return false
+    } catch (e) {
+      return false
+    }
+  }
+
+  const hasSingleDominantVideoInView = (videos) => {
+    try {
+      const list = Array.isArray(videos) ? videos.filter(Boolean) : []
+      if (list.length <= 1) return true
+      const vw = window.innerWidth || document.documentElement.clientWidth || 0
+      const vh = window.innerHeight || document.documentElement.clientHeight || 0
+      if (!vw || !vh) return false
+      const viewportArea = vw * vh
+      if (!viewportArea) return false
+
+      const areas = list.map(v => {
+        try {
+          const rect = v.getBoundingClientRect()
+          return getViewportIntersectionArea(rect, vw, vh)
+        } catch (e) {
+          return 0
+        }
+      }).filter(a => a > 0)
+
+      if (areas.length <= 1) return true
+      const sum = areas.reduce((acc, n) => acc + n, 0)
+      const max = Math.max.apply(null, areas)
+      if (!sum || !max) return false
+
+      const dominantByViewport = (max / viewportArea) >= 0.55
+      const dominantBySum = (max / sum) >= 0.72
+      return dominantByViewport && dominantBySum
     } catch (e) {
       return false
     }
@@ -814,7 +973,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       })
 
       const uniqueEligible = Array.from(new Set(eligibleContextIds))
-      const shouldUsePerVideoMode = uniqueEligible.length >= 2
+      let shouldUsePerVideoMode = uniqueEligible.length >= 2
+      if (shouldUsePerVideoMode) {
+        const shortVideoFeed = isShortVideoFeedHost()
+        if (shortVideoFeed) {
+          const largeFeed = hasLargeFeedVideoInView(eligibleVideos)
+          const dominant = hasSingleDominantVideoInView(eligibleVideos)
+          if (largeFeed || dominant) shouldUsePerVideoMode = false
+        }
+      }
       perVideoModeActive = shouldUsePerVideoMode
 
       if (!shouldUsePerVideoMode) {
@@ -861,12 +1028,22 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     perVideoRenderTimer = setTimeout(() => {
       perVideoRenderTimer = null
       renderPerVideoSniffButtons()
+      try {
+        updateButtonVisibility()
+      } catch (e) {}
     }, 120)
   }
 
   try {
     window.addEventListener('scroll', schedulePerVideoRender, true)
     window.addEventListener('resize', schedulePerVideoRender, true)
+    document.addEventListener('play', schedulePerVideoRender, true)
+    document.addEventListener('playing', schedulePerVideoRender, true)
+    document.addEventListener('pause', schedulePerVideoRender, true)
+    document.addEventListener('ended', schedulePerVideoRender, true)
+    document.addEventListener('wheel', schedulePerVideoRender, { capture: true, passive: true })
+    document.addEventListener('touchend', schedulePerVideoRender, { capture: true, passive: true })
+    document.addEventListener('pointerup', schedulePerVideoRender, { capture: true, passive: true })
   } catch (e) {}
 
   // 获取当前语言的缓存
@@ -2557,6 +2734,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 将wrapper添加到document.body，确保fixed定位正常工作
     document.body.appendChild(wrapper)
+    dedupeUniversalButtonWrappers()
 
     log('Button created successfully')
     log('Wrapper display:', wrapper.style.display)
@@ -2692,6 +2870,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const tryInit = () => {
       log('tryInit called')
       ensureBilibiliButton()
+      dedupeUniversalButtonWrappers()
     }
     // 立即尝试创建按钮，不等待 DOMContentLoaded
     log('Document ready state:', document.readyState)
