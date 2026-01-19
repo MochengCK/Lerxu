@@ -748,7 +748,7 @@ const actions = {
     commit('CLEAR_TASK_SPEED_SAMPLES', gid)
   },
   addUri ({ commit, dispatch, rootState }, data) {
-    const { uris, outs, options, optionsList, dirs, priorities, bilibiliTitles, bilibiliFormats } = data
+    const { uris, outs, options, optionsList, dirs, priorities } = data
 
     // Handle downloading file suffix
     const config = rootState.preference.config || {}
@@ -882,30 +882,6 @@ const actions = {
               taskHistory.updateTask(`${gid}`, patch, null)
             })
           } catch (e) {}
-          if (Array.isArray(bilibiliTitles) && bilibiliTitles.length === gids.length) {
-            try {
-              for (let i = 0; i < gids.length; i++) {
-                const gid = gids[i]
-                const title = bilibiliTitles[i]
-                const normalizedTitle = title && `${title}`.trim()
-                if (gid && normalizedTitle) {
-                  taskHistory.updateTask(gid, { bilibiliTitle: normalizedTitle }, null)
-                }
-              }
-            } catch (e) {}
-          }
-          if (Array.isArray(bilibiliFormats) && bilibiliFormats.length === gids.length) {
-            try {
-              for (let i = 0; i < gids.length; i++) {
-                const gid = gids[i]
-                const fmt = bilibiliFormats[i]
-                const normalizedFmt = fmt && `${fmt}`.trim()
-                if (gid && normalizedFmt) {
-                  taskHistory.updateTask(gid, { bilibiliFormat: normalizedFmt }, null)
-                }
-              }
-            } catch (e) {}
-          }
           if (Array.isArray(priorities) && priorities.length === gids.length) {
             const mapping = {}
             for (let i = 0; i < gids.length; i++) {

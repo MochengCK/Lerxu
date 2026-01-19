@@ -45,7 +45,6 @@ import TouchBarManager from './ui/TouchBarManager'
 import TrayManager from './ui/TrayManager'
 import DockManager from './ui/DockManager'
 import ThemeManager from './ui/ThemeManager'
-import PythonManager from './core/PythonManager'
 import PriorityManager from './core/PriorityManager'
 
 export default class Application extends EventEmitter {
@@ -97,9 +96,6 @@ export default class Application extends EventEmitter {
     this.startEngine()
 
     this.initEngineClient()
-
-    this.initPythonManager()
-    this.pythonManager.start()
 
     this.initThemeManager()
 
@@ -948,10 +944,6 @@ export default class Application extends EventEmitter {
     }
   }
 
-  initPythonManager () {
-    this.pythonManager = new PythonManager()
-  }
-
   initAutoLaunchManager () {
     this.autoLaunchManager = new AutoLaunchManager()
   }
@@ -1419,10 +1411,6 @@ export default class Application extends EventEmitter {
 
   stop () {
     try {
-      if (this.pythonManager) {
-        this.pythonManager.stop()
-      }
-
       const promises = [
         this.stopEngine(),
         this.shutdownUPnPManager(),

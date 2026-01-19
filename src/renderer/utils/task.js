@@ -1,9 +1,5 @@
 import { isEmpty } from 'lodash'
-import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
-import { getGlobal } from '@electron/remote'
-import store from '@/store'
 
 import {
   ADD_TASK_TYPE,
@@ -17,237 +13,12 @@ import {
   shouldCategorizeFiles
 } from '@shared/utils/file-categorize'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
-import { CHROME_UA } from '@shared/ua'
 
 import {
   buildUrisFromCurl,
   buildHeadersFromCurl,
   buildDefaultOptionsFromCurl
 } from '@shared/utils/curl'
-
-const getStaticBasePath = () => {
-  try {
-    if (typeof __static !== 'undefined' && __static) {
-      return __static
-    }
-  } catch (_) {}
-  try {
-    return getGlobal('__static')
-  } catch (_) {
-    return ''
-  }
-}
-
-const getBilibiliParserPath = () => {
-  const base = getStaticBasePath()
-  const resourcesPath = process && process.resourcesPath ? `${process.resourcesPath}` : ''
-
-  const devCandidate0 = base ? join(base, '..', 'MediaParser', 'parsers', 'bilibili_parser.py') : ''
-  if (devCandidate0 && existsSync(devCandidate0)) return devCandidate0
-
-  const devCandidate1 = base ? join(base, '..', '..', '..', 'MediaParser', 'parsers', 'bilibili_parser.py') : ''
-  if (devCandidate1 && existsSync(devCandidate1)) return devCandidate1
-
-  const packedCandidate1 = resourcesPath ? join(resourcesPath, 'parsers', 'bilibili_parser.exe') : ''
-  if (packedCandidate1 && existsSync(packedCandidate1)) return packedCandidate1
-
-  const packedCandidate1b = resourcesPath ? join(resourcesPath, 'parsers', 'bilibili_parser') : ''
-  if (packedCandidate1b && existsSync(packedCandidate1b)) return packedCandidate1b
-
-  const packedCandidate2 = resourcesPath ? join(resourcesPath, 'parsers', 'bilibili_parser.py') : ''
-  if (packedCandidate2 && existsSync(packedCandidate2)) return packedCandidate2
-
-  const devCandidate0b = base ? join(base, '..', '..', '..', 'static', 'parsers', 'bilibili_parser.exe') : ''
-  if (devCandidate0b && existsSync(devCandidate0b)) return devCandidate0b
-
-  const devCandidate0c = base ? join(base, '..', '..', '..', 'static', 'parsers', 'bilibili_parser') : ''
-  if (devCandidate0c && existsSync(devCandidate0c)) return devCandidate0c
-
-  const devCandidate2 = base ? join(base, 'parsers', 'bilibili_parser.exe') : ''
-  if (devCandidate2 && existsSync(devCandidate2)) return devCandidate2
-
-  const devCandidate2b = base ? join(base, 'parsers', 'bilibili_parser') : ''
-  if (devCandidate2b && existsSync(devCandidate2b)) return devCandidate2b
-
-  return devCandidate0 || devCandidate1 || packedCandidate1 || packedCandidate1b || packedCandidate2 || devCandidate0b || devCandidate0c || devCandidate2 || devCandidate2b || ''
-}
-
-const isBilibiliCandidateUrl = (url) => {
-  const s = `${url || ''}`.trim()
-  if (!s) return false
-  if (/^https?:\/\/(?:[a-z0-9-]+\.)*bilibili\.com\/(video|bangumi|cheese)\//i.test(s)) return true
-  if (/^https?:\/\/(?:www\.)?b23\.tv\//i.test(s)) return true
-  return false
-}
-
-export const isBilibiliUrl = (url) => {
-  return isBilibiliCandidateUrl(url)
-}
-
-const getEmbeddedPythonCandidates = () => {
-  const resourcesPath = process && process.resourcesPath ? `${process.resourcesPath}` : ''
-  const base = getStaticBasePath()
-  const devRoot = base ? join(base, '..') : ''
-
-  const candidates = []
-  if (process.platform === 'win32') {
-    if (resourcesPath) {
-      candidates.push(
-        join(resourcesPath, 'python', 'python.exe'),
-        join(resourcesPath, 'python', 'python3.exe'),
-        join(resourcesPath, 'python', 'bin', 'python.exe'),
-        join(resourcesPath, 'python', 'bin', 'python3.exe')
-      )
-    }
-    if (devRoot) {
-      candidates.push(
-        join(devRoot, 'MediaParser', 'python.exe'),
-        join(devRoot, 'MediaParser', 'python3.exe'),
-        join(devRoot, 'MediaParser', 'bin', 'python.exe'),
-        join(devRoot, 'MediaParser', 'bin', 'python3.exe')
-      )
-    }
-  } else {
-    if (resourcesPath) {
-      candidates.push(
-        join(resourcesPath, 'python', 'bin', 'python3'),
-        join(resourcesPath, 'python', 'bin', 'python')
-      )
-    }
-    if (devRoot) {
-      candidates.push(
-        join(devRoot, 'MediaParser', 'bin', 'python3'),
-        join(devRoot, 'MediaParser', 'bin', 'python')
-      )
-    }
-  }
-
-  return candidates.filter(p => p && existsSync(p))
-}
-
-const runBilibiliParser = async (url, options = {}) => {
-  const script = getBilibiliParserPath()
-  if (!script) {
-    throw new Error('未找到内置解析脚本')
-  }
-
-  const qn = options && options.qn !== undefined && options.qn !== null ? `${options.qn}` : ''
-  const forceSingle = options && options.forceSingle === true
-  const argsExtra = []
-  if (qn && qn.trim()) {
-    argsExtra.push('--qn', qn.trim())
-  }
-  if (forceSingle) {
-    argsExtra.push('--force-single')
-  }
-
-  const exeCandidates = []
-  const resourcesPath = process && process.resourcesPath ? `${process.resourcesPath}` : ''
-  if (resourcesPath) {
-    const exePacked = join(resourcesPath, 'parsers', 'bilibili_parser.exe')
-    if (existsSync(exePacked)) {
-      exeCandidates.push(exePacked)
-    }
-    const binPacked = join(resourcesPath, 'parsers', 'bilibili_parser')
-    if (existsSync(binPacked)) {
-      exeCandidates.push(binPacked)
-    }
-  }
-
-  const base = getStaticBasePath()
-  if (base) {
-    const exeDev1 = join(base, '..', '..', '..', 'static', 'parsers', 'bilibili_parser.exe')
-    if (existsSync(exeDev1)) {
-      exeCandidates.push(exeDev1)
-    }
-    const binDev1 = join(base, '..', '..', '..', 'static', 'parsers', 'bilibili_parser')
-    if (existsSync(binDev1)) {
-      exeCandidates.push(binDev1)
-    }
-    const exeDev2 = join(base, 'parsers', 'bilibili_parser.exe')
-    if (existsSync(exeDev2)) {
-      exeCandidates.push(exeDev2)
-    }
-    const binDev2 = join(base, 'parsers', 'bilibili_parser')
-    if (existsSync(binDev2)) {
-      exeCandidates.push(binDev2)
-    }
-  }
-
-  const exeItems = exeCandidates.map(cmd => ({ cmd, args: [url, ...argsExtra] }))
-  const embedded = getEmbeddedPythonCandidates().map(cmd => ({ cmd, args: [script, url, ...argsExtra] }))
-  const systemFallback = process.platform === 'win32'
-    ? [
-      { cmd: 'py', args: ['-3', script, url, ...argsExtra] },
-      { cmd: 'python', args: [script, url, ...argsExtra] },
-      { cmd: 'python3', args: [script, url, ...argsExtra] }
-    ]
-    : [
-      { cmd: 'python3', args: [script, url, ...argsExtra] },
-      { cmd: 'python', args: [script, url, ...argsExtra] }
-    ]
-  const candidates = [...exeItems, ...embedded, ...systemFallback]
-
-  const attempt = (index) => new Promise((resolve, reject) => {
-    const item = candidates[index]
-    if (!item) {
-      reject(new Error('未找到可用的 Python 环境'))
-      return
-    }
-
-    const env = { ...process.env }
-    const cookie = options && options.cookie ? `${options.cookie}` : ''
-    if (cookie && cookie.trim()) {
-      env.BILI_COOKIE = cookie
-    }
-    const child = spawn(item.cmd, item.args, { windowsHide: true, env })
-    let stdout = ''
-    let stderr = ''
-
-    child.stdout.on('data', (d) => { stdout += d.toString('utf8') })
-    child.stderr.on('data', (d) => { stderr += d.toString('utf8') })
-    child.on('error', (err) => {
-      if (err && err.code === 'ENOENT') {
-        resolve(attempt(index + 1))
-        return
-      }
-      reject(err)
-    })
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr })
-        return
-      }
-      const msg = (stderr || stdout || '').trim() || `python exit ${code}`
-      reject(new Error(msg))
-    })
-  })
-
-  return attempt(0)
-}
-
-export const resolveBilibiliResources = async (url, options = {}) => {
-  const { stdout } = await runBilibiliParser(url, options)
-  let parsed = null
-  try {
-    parsed = JSON.parse(stdout)
-  } catch (_) {
-    throw new Error('bilibili parse output invalid')
-  }
-  if (!parsed || parsed.ok !== true) {
-    const msg = parsed && parsed.error ? `${parsed.error}` : 'bilibili parse failed'
-    throw new Error(msg)
-  }
-
-  if (parsed.type === 'collection') {
-    return parsed
-  }
-
-  if (!Array.isArray(parsed.resources) || parsed.resources.length === 0) {
-    throw new Error('bilibili parse failed: no resources')
-  }
-  return parsed
-}
 
 const buildHeaderForUri = (form, uri, explicit = {}) => {
   const { userAgent, referer, cookie, authorization, fromBrowserExtension } = form || {}
@@ -415,108 +186,16 @@ export const buildUriPayload = async (form, autoCategorize = false, categories =
   uris = buildUrisFromCurl(uris)
   form = buildDefaultOptionsFromCurl(form, curlHeaders)
 
-  try {
-    const pref = store && store.state && store.state.preference && store.state.preference.config
-    const videoCookie = pref && pref.videoCookie
-    const videoPreferredQn = pref && pref.videoPreferredQn
-    const videoPreferredFormat = pref && pref.videoPreferredFormat
-    const hasBilibili = uris.some(u => isBilibiliCandidateUrl(u))
-    if (hasBilibili && pref) {
-      const hasFormCookie = form && form.cookie && `${form.cookie}`.trim()
-      if (!hasFormCookie && videoCookie) {
-        form.cookie = `${videoCookie}`
-      }
-      const hasFormVideoQn = form && form.videoQn !== undefined && form.videoQn !== null && `${form.videoQn}`.trim()
-      const hasConfigVideoQn = videoPreferredQn !== undefined && videoPreferredQn !== null && `${videoPreferredQn}`.trim()
-      if (!hasFormVideoQn && hasConfigVideoQn) {
-        form.videoQn = videoPreferredQn
-      }
-      const hasFormVideoFormat = form && form.videoFormat && `${form.videoFormat}`.trim()
-      const hasConfigVideoFormat = videoPreferredFormat && `${videoPreferredFormat}`.trim()
-      if (!hasFormVideoFormat && hasConfigVideoFormat) {
-        form.videoFormat = `${videoPreferredFormat}`.trim().toLowerCase()
-      }
-    }
-  } catch (_) {}
-
   const normalizedCookie = form && form.cookie ? normalizeCookie(form.cookie) : ''
   if (normalizedCookie) {
     form.cookie = normalizedCookie
   }
 
-  const desiredOuts = []
   const nextUris = []
   const optionsList = []
-  const bilibiliTitles = []
-  const bilibiliFormats = []
 
   for (const u of uris) {
-    if (isBilibiliCandidateUrl(u)) {
-      const parsed = await resolveBilibiliResources(u, {
-        qn: form && (form.videoQn !== undefined ? form.videoQn : form.qn),
-        cookie: form && form.cookie ? `${form.cookie}` : '',
-        forceSingle: true
-      })
-
-      if (parsed.type === 'collection') {
-        const collectionError = new Error('BILIBILI_COLLECTION')
-        collectionError.collection = parsed
-        collectionError.url = u
-        throw collectionError
-      }
-
-      const resources = parsed.resources || []
-      for (const r of resources) {
-        const resourceUrl = r && r.url ? `${r.url}` : ''
-        if (!resourceUrl) continue
-        nextUris.push(resourceUrl)
-        desiredOuts.push(r && r.name ? `${r.name}` : null)
-        bilibiliTitles.push(parsed && parsed.title ? `${parsed.title}` : null)
-        bilibiliFormats.push(form && form.videoFormat ? `${form.videoFormat}` : 'mp4')
-        const parsedReferer = r && r.referer ? `${r.referer}` : ''
-        const inferredReferer = inferRefererFromUrl(resourceUrl)
-        const effectiveReferer = !isEmpty(form.referer)
-          ? `${form.referer}`
-          : (parsedReferer || inferredReferer || 'https://www.bilibili.com/')
-        const effectiveUserAgent = !isEmpty(form.userAgent)
-          ? `${form.userAgent}`
-          : (r && r.user_agent ? `${r.user_agent}` : CHROME_UA)
-
-        const header = buildHeaderForUri(form, resourceUrl, {
-          referer: effectiveReferer,
-          userAgent: effectiveUserAgent
-        })
-        if (Array.isArray(header) && !header.some(h => /^Origin:/i.test(`${h}`))) {
-          header.push('Origin: https://www.bilibili.com')
-        }
-
-        // 确保Cookie正确传递到下载阶段
-        if (form && form.cookie) {
-          const cookieHeader = header.find(h => /^Cookie:/i.test(`${h}`))
-          if (!cookieHeader) {
-            const cookie = normalizeCookie(form.cookie)
-            if (cookie) {
-              header.push(`Cookie: ${cookie}`)
-            }
-          }
-        }
-
-        const perOptions = {
-          userAgent: effectiveUserAgent,
-          referer: effectiveReferer
-        }
-        if (!isEmpty(header)) {
-          perOptions.header = header
-        }
-        optionsList.push(perOptions)
-      }
-      continue
-    }
-
     nextUris.push(u)
-    desiredOuts.push(null)
-    bilibiliTitles.push(null)
-    bilibiliFormats.push(null)
 
     const customReferers = Array.isArray(form.customReferers) ? form.customReferers : []
     const customUserAgents = Array.isArray(form.customUserAgents) ? form.customUserAgents : []
@@ -534,15 +213,6 @@ export const buildUriPayload = async (form, autoCategorize = false, categories =
   if (Array.isArray(form.customOuts) && form.customOuts.length === uris.length) {
     outs = [...form.customOuts]
   }
-  outs = outs.map((o, i) => {
-    if (desiredOuts[i]) {
-      return desiredOuts[i]
-    }
-    if (bilibiliTitles[i]) {
-      return `${bilibiliTitles[i]}.${bilibiliFormats[i] || 'mp4'}`
-    }
-    return o
-  })
 
   let categorizedPaths = []
   if (shouldCategorizeFiles(autoCategorize, categories) && dir) {
@@ -566,9 +236,7 @@ export const buildUriPayload = async (form, autoCategorize = false, categories =
     options,
     optionsList,
     dirs: categorizedPaths.length > 0 ? categorizedPaths.map(item => item.categorizedDir) : null,
-    priorities: Array.isArray(form.priorities) ? [...form.priorities] : null,
-    bilibiliTitles,
-    bilibiliFormats
+    priorities: Array.isArray(form.priorities) ? [...form.priorities] : null
   }
   return result
 }

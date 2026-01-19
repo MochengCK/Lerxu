@@ -12,16 +12,15 @@
     @closed="handleClosed"
   >
     <el-form ref="taskForm" label-position="left" :model="form" :rules="rules">
-      <template v-if="type === 'uri' || type === 'video'">
+      <template v-if="taskType === 'uri'">
         <el-form-item>
           <div class="add-task-primary-input-wrap">
             <button type="button" class="add-task-type-floating__close" aria-label="Close" @click="handleClose">
               <i class="el-icon-close"></i>
             </button>
             <div class="add-task-type-floating__bar">
-              <el-radio-group :value="type" size="mini" @input="handleTaskTypeInput">
+              <el-radio-group :value="taskType" size="mini" @input="handleTaskTypeInput">
                 <el-radio-button label="uri">{{ $t('task.uri-task') }}</el-radio-button>
-                <el-radio-button label="video">{{ $t('task.video-task') }}</el-radio-button>
                 <el-radio-button label="torrent">{{ $t('task.torrent-task') }}</el-radio-button>
               </el-radio-group>
             </div>
@@ -30,103 +29,14 @@
               type="textarea"
               auto-complete="off"
               :autosize="{ minRows: 3, maxRows: 5 }"
-              :placeholder="type === 'video' ? $t('task.video-task-tips') : $t('task.uri-task-tips')"
+              :placeholder="$t('task.uri-task-tips')"
               @paste.native="handleUriPaste"
               v-model="form.uris"
             >
             </el-input>
           </div>
         </el-form-item>
-        <div
-          class="video-preview"
-          v-if="type === 'video' && (videoPreviewLoading || videoPreviewError || videoMeta || (videoQualities && videoQualities.length > 0) || videoCollection)"
-        >
-          <div class="video-preview__status" v-if="videoPreviewLoading">{{ $t('task.video-parsing') }}</div>
-          <div class="video-preview__error" v-else-if="videoPreviewError">{{ $t('task.video-parse-failed') }}：{{ videoPreviewError }}</div>
-          <div class="video-preview__meta" v-else-if="videoMeta">
-            <div class="video-preview__meta-item video-preview__quality-item" v-if="videoQualities.length > 0 || videoCollection">
-              <el-select
-                ref="videoQualitySelect"
-                class="video-quality-select video-quality-select--text"
-                v-model="form.videoQn"
-                :placeholder="$t('task.video-quality-placeholder')"
-                :disabled="videoPreviewLoading || videoQualities.length === 0"
-                @change="handleVideoQnChange"
-              >
-                <el-option
-                  v-for="q in videoQualities"
-                  :key="q.value"
-                  :label="q.label"
-                  :value="q.value"
-                />
-              </el-select>
-              <el-select
-                class="video-format-select"
-                v-model="form.videoFormat"
-                :placeholder="$t('task.video-format-placeholder')"
-                :disabled="videoPreviewLoading"
-                v-if="videoQualities.length > 0 || videoCollection"
-              >
-                <el-option
-                  v-for="f in videoFormats"
-                  :key="f.value"
-                  :label="f.label"
-                  :value="f.value"
-                />
-              </el-select>
-            </div>
-            <div class="video-preview__meta-item">
-              <span class="video-preview__meta-label">{{ $t('task.video-info-title') }}：</span>
-              <el-tooltip :content="videoMeta.title" placement="top" :open-delay="300" :disabled="!videoTitleOverflow">
-                <span ref="videoMetaTitle" class="video-preview__meta-value video-preview__meta-value--fade">{{ videoMeta.title }}</span>
-              </el-tooltip>
-            </div>
-            <div class="video-preview__meta-item" v-if="videoMeta.owner">
-              <span class="video-preview__meta-label">{{ $t('task.video-info-owner') }}：</span>
-              <el-tooltip :content="videoMeta.owner" placement="top" :open-delay="300" :disabled="!videoOwnerOverflow">
-                <span ref="videoMetaOwner" class="video-preview__meta-value video-preview__meta-value--fade">{{ videoMeta.owner }}</span>
-              </el-tooltip>
-            </div>
-            <div class="video-preview__meta-item" v-if="videoMeta.durationText">
-              <span class="video-preview__meta-label">{{ $t('task.video-info-duration') }}：</span>
-              <el-tooltip :content="videoMeta.durationText" placement="top" :open-delay="300" :disabled="!videoDurationOverflow">
-                <span ref="videoMetaDuration" class="video-preview__meta-value video-preview__meta-value--fade">{{ videoMeta.durationText }}</span>
-              </el-tooltip>
-            </div>
-            <div class="video-preview__meta-item" v-if="videoMeta.sizeText">
-              <span class="video-preview__meta-label">{{ $t('task.video-info-size') }}：</span>
-              <el-tooltip :content="videoMeta.sizeText" placement="top" :open-delay="300" :disabled="!videoSizeOverflow">
-                <span ref="videoMetaSize" class="video-preview__meta-value video-preview__meta-value--fade">{{ videoMeta.sizeText }}</span>
-              </el-tooltip>
-            </div>
-          </div>
-          <div class="video-collection-selector" v-if="videoCollection">
-            <div class="video-collection-selector__header">
-              <span class="video-collection-selector__header-title">{{ $t('task.collection-videos') }} ({{ videoCollection.total_videos }})</span>
-              <el-button size="mini" style="margin-left: 16px;" @click="toggleSelectAll">
-                {{ isAllSelected ? $t('task.deselect-all') : $t('task.select-all') }}
-              </el-button>
-            </div>
-            <div class="video-collection-selector__list">
-              <div
-                v-for="video in videoCollection.videos"
-                :key="video.index"
-                class="video-collection-selector__item"
-                :class="{ 'is-selected': isVideoSelected(video) }"
-                @click="toggleVideoSelection(video)"
-              >
-                <el-checkbox
-                  :value="isVideoSelected(video)"
-                  @click.native.prevent
-                ></el-checkbox>
-                <span class="video-collection-selector__item-index">{{ video.index }}.</span>
-                <span class="video-collection-selector__item-title">{{ video.title }}</span>
-                <span class="video-collection-selector__item-duration">{{ video.duration_text }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="parsed-preview" v-if="taskType !== 'video' && parsedTasks.length > 0">
+        <div class="parsed-preview" v-if="parsedTasks.length > 0">
           <div class="parsed-preview__header">{{ $t('task.parsed-tasks') }}</div>
           <el-table :data="parsedTasks" :border="false" :stripe="true" size="mini" style="width: 100%" height="150">
             <el-table-column :label="$t('task.task-name')" min-width="240">
@@ -170,9 +80,8 @@
               <i class="el-icon-close"></i>
             </button>
             <div class="add-task-type-floating__bar">
-              <el-radio-group :value="type" size="mini" @input="handleTaskTypeInput">
+              <el-radio-group :value="taskType" size="mini" @input="handleTaskTypeInput">
                 <el-radio-button label="uri">{{ $t('task.uri-task') }}</el-radio-button>
-                <el-radio-button label="video">{{ $t('task.video-task') }}</el-radio-button>
                 <el-radio-button label="torrent">{{ $t('task.torrent-task') }}</el-radio-button>
               </el-radio-group>
             </div>
@@ -365,9 +274,7 @@
   import {
     initTaskForm,
     buildUriPayload,
-    buildTorrentPayload,
-    resolveBilibiliResources,
-    isBilibiliUrl
+    buildTorrentPayload
   } from '@/utils/task'
   import { ADD_TASK_TYPE } from '@shared/constants'
   import { detectResource, splitTaskLinks, normalizeCookie, generateUniqueTaskName } from '@shared/utils'
@@ -399,31 +306,12 @@
         parsedTasks: [],
         lastDuplicateHistoryKey: '',
         keepTrailingNewline: false,
-        videoPreviewLoading: false,
-        videoPreviewError: '',
-        videoMeta: null,
-        videoQualities: [],
-        videoCollection: null,
-        selectedVideos: [],
-        videoPreviewTimer: null,
-        videoTitleOverflow: false,
-        videoOwnerOverflow: false,
-        videoDurationOverflow: false,
-        videoSizeOverflow: false,
         advancedPresets: [],
         selectedAdvancedPresetId: '',
         savePresetDialogVisible: false,
         savePresetName: '',
         clipboardTimer: null,
-        lastClipboardText: '',
-        videoFormats: [
-          { value: 'mp4', label: 'MP4' },
-          { value: 'mkv', label: 'MKV' },
-          { value: 'mov', label: 'MOV' },
-          { value: 'm4v', label: 'M4V' },
-          { value: 'flv', label: 'FLV' },
-          { value: 'ts', label: 'TS' }
-        ]
+        lastClipboardText: ''
       }
     },
     computed: {
@@ -442,18 +330,11 @@
         return !!(this.config && this.config.enablePriorityEngine)
       },
       taskType () {
-        return this.type
+        return this.type === 'video' ? ADD_TASK_TYPE.URI : this.type
       },
       dialogTop () {
         const advancedVisible = this.showAdvanced
         return advancedVisible ? '8vh' : '15vh'
-      },
-      isAllSelected () {
-        if (!this.videoCollection || !Array.isArray(this.videoCollection.videos)) {
-          return false
-        }
-        return this.videoCollection.videos.length > 0 &&
-          this.videoCollection.videos.every(video => this.selectedVideos.includes(video.index))
       }
     },
     watch: {
@@ -491,14 +372,11 @@
         if (this.isUriLikeType(this.taskType)) {
           this.updateUriPreview(val)
         }
-        if (this.taskType === 'video') {
-          this.scheduleVideoPreview(val)
-        }
       }
     },
     methods: {
       isUriLikeType (type) {
-        return type === ADD_TASK_TYPE.URI || type === 'video'
+        return type === ADD_TASK_TYPE.URI
       },
       applyUrlFromStore (current, previous) {
         if (!this.isUriLikeType(this.taskType)) {
@@ -515,14 +393,6 @@
           const next = existing ? `${existing}\n${cur}` : cur
           this.keepTrailingNewline = true
           this.form.uris = next
-        }
-        if (isBilibiliUrl(cur) && this.taskType !== 'video') {
-          this.$store.dispatch('app/changeAddTaskType', 'video')
-          setTimeout(() => {
-            if (this.taskType === 'video') {
-              this.scheduleVideoPreview(this.form.uris || cur)
-            }
-          }, 0)
         }
       },
       loadAdvancedPresets () {
@@ -653,11 +523,6 @@
             this.keepTrailingNewline = true
             this.ensureTrailingNewlineAndCaret()
           }
-
-          if (isBilibiliUrl(text) && this.taskType !== 'video') {
-            this.$store.dispatch('app/changeAddTaskType', 'video')
-            this.scheduleVideoPreview(this.form.uris || text)
-          }
         } catch (e) {
         }
       },
@@ -700,10 +565,6 @@
             this.updateUriPreview(this.form.uris)
             this.keepTrailingNewline = true
             this.ensureTrailingNewlineAndCaret()
-            if (isBilibiliUrl(text) && this.taskType !== 'video') {
-              this.$store.dispatch('app/changeAddTaskType', 'video')
-              this.scheduleVideoPreview(this.form.uris || text)
-            }
           }
           this.clipboardTimer = setInterval(checkClipboard, 1000)
         } catch (e) {
@@ -728,35 +589,6 @@
         if (this.isUriLikeType(this.taskType)) {
           if (this.addTaskUrlFromStore) {
             this.applyUrlFromStore(this.addTaskUrlFromStore, '')
-          }
-          const rawUris = this.form.uris || ''
-          if (rawUris && this.taskType !== 'video') {
-            const firstUrl = rawUris.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || ''
-            if (firstUrl && isBilibiliUrl(firstUrl)) {
-              this.$store.dispatch('app/changeAddTaskType', 'video')
-              setTimeout(() => {
-                if (this.taskType === 'video') {
-                  const cfg = this.config || {}
-                  if (!this.form.cookie && cfg.videoCookie) {
-                    this.form.cookie = `${cfg.videoCookie}`
-                  }
-                  if (this.form.videoQn === undefined) {
-                    this.$set(this.form, 'videoQn', cfg.videoPreferredQn !== undefined ? cfg.videoPreferredQn : '')
-                  }
-                  this.scheduleVideoPreview(this.form.uris || firstUrl)
-                }
-              }, 0)
-            }
-          }
-          if (this.taskType === 'video') {
-            const cfg = this.config || {}
-            if (!this.form.cookie && cfg.videoCookie) {
-              this.form.cookie = `${cfg.videoCookie}`
-            }
-            if (this.form.videoQn === undefined) {
-              this.$set(this.form, 'videoQn', cfg.videoPreferredQn !== undefined ? cfg.videoPreferredQn : '')
-            }
-            this.scheduleVideoPreview(this.form.uris || '')
           }
           if (!isEmpty(this.form.uris)) {
             this.updateUriPreview(this.form.uris)
@@ -856,14 +688,6 @@
         this.parsedTasks = []
         this.lastDuplicateHistoryKey = ''
         this._historyUrlSet = null
-        this.videoPreviewLoading = false
-        this.videoPreviewError = ''
-        this.videoMeta = null
-        this.videoQualities = []
-        if (this.videoPreviewTimer) {
-          clearTimeout(this.videoPreviewTimer)
-        }
-        this.videoPreviewTimer = null
         this.selectedAdvancedPresetId = ''
         this.savePresetDialogVisible = false
         this.savePresetName = ''
@@ -1034,184 +858,6 @@
       openVideoPreference () {
         this.$router.push({ path: '/preference/video' }).catch(() => {})
       },
-      handleVideoQnChange () {
-        this.scheduleVideoPreview(this.form.uris || '')
-      },
-      selectAllVideos () {
-        if (!this.videoCollection || !Array.isArray(this.videoCollection.videos)) {
-          return
-        }
-        this.selectedVideos = this.videoCollection.videos.map(video => video.index)
-      },
-      deselectAllVideos () {
-        this.selectedVideos = []
-      },
-      toggleSelectAll () {
-        if (this.isAllSelected) {
-          this.deselectAllVideos()
-        } else {
-          this.selectAllVideos()
-        }
-      },
-      isVideoSelected (video) {
-        return this.selectedVideos.includes(video.index)
-      },
-      toggleVideoSelection (video) {
-        if (this.isVideoSelected(video)) {
-          this.selectedVideos = this.selectedVideos.filter(index => index !== video.index)
-        } else {
-          this.selectedVideos = [...this.selectedVideos, video.index]
-        }
-      },
-      ensureVideoFormatDefault () {
-        const current = this.form && this.form.videoFormat
-        if (current === undefined || current === null || `${current}`.trim() === '') {
-          const cfg = this.config || {}
-          const pref = cfg.videoPreferredFormat
-          const allowed = ['mp4', 'mkv', 'mov', 'm4v', 'flv', 'ts']
-          let next = 'mp4'
-          if (pref && `${pref}`.trim()) {
-            const lower = `${pref}`.trim().toLowerCase()
-            if (allowed.includes(lower)) {
-              next = lower
-            }
-          }
-          this.$set(this.form, 'videoFormat', next)
-        }
-      },
-      scheduleVideoPreview (uris = '') {
-        if (this.taskType !== 'video') {
-          return
-        }
-        if (this.videoPreviewTimer) {
-          clearTimeout(this.videoPreviewTimer)
-        }
-        this.videoPreviewTimer = setTimeout(() => {
-          this.updateVideoPreview(uris)
-        }, 400)
-      },
-      async updateVideoPreview (uris = '') {
-        if (this.taskType !== 'video') {
-          return
-        }
-        const raw = `${uris || ''}`.trim()
-        const first = raw.split(/\r?\n/).map(s => s.trim()).filter(Boolean)[0] || ''
-        if (!first || !isBilibiliUrl(first)) {
-          this.videoPreviewLoading = false
-          this.videoPreviewError = ''
-          this.videoMeta = null
-          this.videoQualities = []
-          this.videoCollection = null
-          return
-        }
-        this.videoPreviewLoading = true
-        this.videoPreviewError = ''
-        try {
-          const cookie = normalizeCookie(this.form.cookie || '')
-          const parsed = await resolveBilibiliResources(first, {
-            qn: this.form.videoQn !== undefined ? this.form.videoQn : '',
-            cookie
-          })
-
-          if (parsed.type === 'collection') {
-            this.videoCollection = parsed
-            this.videoMeta = {
-              title: parsed.title || '',
-              owner: parsed.owner || '',
-              durationText: `${parsed.total_videos} ${this.$t('task.videos')}`,
-              sizeText: ''
-            }
-            this.selectedVideos = parsed.original_video_index ? [parsed.original_video_index] : []
-            this.ensureVideoFormatDefault()
-            const qualities = Array.isArray(parsed.qualities) ? parsed.qualities : []
-            const nextQualities = qualities
-              .map(q => {
-                const qn = q && q.qn !== undefined ? Number(q.qn) : NaN
-                if (!Number.isFinite(qn)) return null
-                const desc = q && q.desc ? `${q.desc}` : ''
-                const base = desc ? `${desc} (${qn})` : `${qn}`
-                const prefix = this.$t('task.video-quality')
-                return { value: qn, label: `${prefix}: ${base}` }
-              })
-              .filter(Boolean)
-            this.videoQualities = nextQualities
-            const currentQn = this.form.videoQn !== undefined && this.form.videoQn !== null && `${this.form.videoQn}`.trim()
-              ? Number(this.form.videoQn)
-              : null
-            if (nextQualities.length > 0 && (!currentQn || !nextQualities.some(q => q.value === currentQn))) {
-              const cfg = this.config || {}
-              const preferred = cfg.videoPreferredQn !== undefined && cfg.videoPreferredQn !== null
-                ? Number(cfg.videoPreferredQn)
-                : null
-              const fallback = preferred && nextQualities.some(q => q.value === preferred) ? preferred : nextQualities[0].value
-              this.$set(this.form, 'videoQn', fallback)
-            }
-            this.updateVideoMetaOverflow()
-            return
-          }
-
-          this.videoCollection = null
-          this.ensureVideoFormatDefault()
-          const qualities = Array.isArray(parsed.qualities) ? parsed.qualities : []
-          const nextQualities = qualities
-            .map(q => {
-              const qn = q && q.qn !== undefined ? Number(q.qn) : NaN
-              if (!Number.isFinite(qn)) return null
-              const desc = q && q.desc ? `${q.desc}` : ''
-              const base = desc ? `${desc} (${qn})` : `${qn}`
-              const prefix = this.$t('task.video-quality')
-              return { value: qn, label: `${prefix}: ${base}` }
-            })
-            .filter(Boolean)
-          this.videoQualities = nextQualities
-          const currentQn = this.form.videoQn !== undefined && this.form.videoQn !== null && `${this.form.videoQn}`.trim()
-            ? Number(this.form.videoQn)
-            : null
-          if (nextQualities.length > 0 && (!currentQn || !nextQualities.some(q => q.value === currentQn))) {
-            const cfg = this.config || {}
-            const preferred = cfg.videoPreferredQn !== undefined && cfg.videoPreferredQn !== null
-              ? Number(cfg.videoPreferredQn)
-              : null
-            const fallback = preferred && nextQualities.some(q => q.value === preferred) ? preferred : nextQualities[0].value
-            this.$set(this.form, 'videoQn', fallback)
-          }
-          const totalSize = parsed.total_size
-          const sizeText = totalSize && Number(totalSize) > 0 ? this.bytesToSize(Number(totalSize)) : ''
-          this.videoMeta = {
-            title: parsed.title || '',
-            owner: parsed.owner || '',
-            durationText: parsed.duration_text || '',
-            sizeText
-          }
-          this.updateVideoMetaOverflow()
-        } catch (e) {
-          this.videoPreviewError = e && e.message ? e.message : `${e}`
-          this.videoMeta = null
-          this.videoQualities = []
-          this.videoTitleOverflow = false
-          this.videoOwnerOverflow = false
-          this.videoDurationOverflow = false
-          this.videoSizeOverflow = false
-          this.videoSizeOverflow = false
-        } finally {
-          this.videoPreviewLoading = false
-        }
-      },
-      updateVideoMetaOverflow () {
-        this.$nextTick(() => {
-          const checkOverflow = (refName) => {
-            const el = this.$refs[refName]
-            if (!el || !el.scrollWidth || !el.clientWidth) {
-              return false
-            }
-            return el.scrollWidth > el.clientWidth + 1
-          }
-          this.videoTitleOverflow = checkOverflow('videoMetaTitle')
-          this.videoOwnerOverflow = checkOverflow('videoMetaOwner')
-          this.videoDurationOverflow = checkOverflow('videoMetaDuration')
-          this.videoSizeOverflow = checkOverflow('videoMetaSize')
-        })
-      },
       async fetchUriSizes (lines = []) {
         const buildHeaders = () => {
           const h = {}
@@ -1332,7 +978,7 @@
         }
 
         try {
-          if (this.isUriLikeType(this.type) && this.parsedTasks.length > 0) {
+          if (this.isUriLikeType(this.taskType) && this.parsedTasks.length > 0) {
             const buckets = {}
             const prios = []
             this.parsedTasks.forEach(item => {
@@ -1365,7 +1011,7 @@
             this.form.uris = urisOrdered.join('\n')
             this.form.priorities = ordered.map(i => Number(i.priority) || 0)
           }
-          await this.addTask(this.type, this.form)
+          await this.addTask(this.taskType, this.form)
 
           this.$store.dispatch('app/hideAddTaskDialog')
           if (this.form.newTaskShowDownloading) {
@@ -1379,106 +1025,7 @@
             })
           }
         } catch (err) {
-          if (err.message === 'BILIBILI_COLLECTION') {
-            // 保存集合数据供选择视频使用
-            this.videoCollection = err.collection
-            if (this.videoCollection && Array.isArray(this.videoCollection.videos)) {
-              // 如果没有手动选择，则自动选择所有视频
-              if (this.selectedVideos.length === 0) {
-                this.selectedVideos = this.videoCollection.videos.map(v => v.index)
-              }
-              const selectedVideoData = this.videoCollection.videos.filter(v => this.selectedVideos.includes(v.index))
-              if (selectedVideoData.length === 0) {
-                this.$msg.warning(this.$t('task.please-select-videos'))
-                return
-              }
-
-              const allVideoUrls = []
-              const allVideoReferers = []
-              const allVideoUserAgents = []
-              const allVideoNames = []
-              const qn = this.form.videoQn || null
-              const cookie = this.form.cookie || null
-
-              const parsePromises = selectedVideoData.map(async (video) => {
-                let videoUrl = null
-                if (video.bvid) {
-                  videoUrl = `https://www.bilibili.com/video/${video.bvid}`
-                } else if (video.aid) {
-                  videoUrl = `https://www.bilibili.com/video/av${video.aid}`
-                }
-
-                if (!videoUrl) {
-                  return null
-                }
-
-                try {
-                  const parsed = await resolveBilibiliResources(videoUrl, { qn, cookie, forceSingle: true })
-                  if (parsed && Array.isArray(parsed.resources)) {
-                    const results = []
-                    for (const r of parsed.resources) {
-                      if (r && r.url) {
-                        results.push({
-                          url: r.url,
-                          referer: r.referer || `https://www.bilibili.com/video/${video.bvid || video.aid}`,
-                          userAgent: r.user_agent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                          name: r.name || video.title || `video_${video.bvid || video.aid}`
-                        })
-                      }
-                    }
-                    return results
-                  }
-                } catch (parseErr) {
-                  console.error(`Failed to resolve video ${video.title}:`, parseErr)
-                  throw new Error(`${this.$t('task.video-parse-failed')}: ${video.title}`)
-                }
-                return null
-              })
-
-              const parseResults = await Promise.all(parsePromises)
-
-              for (const result of parseResults) {
-                if (!result) continue
-                for (const item of result) {
-                  allVideoUrls.push(item.url)
-                  allVideoReferers.push(item.referer)
-                  allVideoUserAgents.push(item.userAgent)
-                  allVideoNames.push(item.name)
-                }
-              }
-
-              if (allVideoUrls.length === 0) {
-                this.$msg.warning(this.$t('task.no-video-urls'))
-                return
-              }
-
-              this.form.uris = allVideoUrls.join('\n')
-              this.form.customReferers = allVideoReferers
-              this.form.customUserAgents = allVideoUserAgents
-              this.form.customOuts = allVideoNames
-              const autoCategorizeFiles = this.config.autoCategorizeFiles || false
-              const fileCategories = this.config.fileCategories || null
-              const payload = await buildUriPayload(this.form, autoCategorizeFiles, fileCategories)
-              this.$store.dispatch('task/addUri', payload).catch(err => {
-                this.$msg.error(err.message)
-              })
-              this.$store.dispatch('app/hideAddTaskDialog')
-              if (this.form.newTaskShowDownloading) {
-                const config = this.config || {}
-                const jumpTarget = this.form.newTaskJumpTarget || config.newTaskJumpTarget || 'downloading'
-                const status = jumpTarget === 'all' ? 'all' : 'active'
-                this.$router.push({
-                  path: `/task/${status}`
-                }).catch(err => {
-                  console.log(err)
-                })
-              }
-            } else {
-              this.$msg.error(err.message)
-            }
-          } else {
-            this.$msg.error(this.$t(err.message))
-          }
+          this.$msg.error(this.$t(err.message))
         }
       }
     }
@@ -1593,43 +1140,6 @@
   .task-split-input.el-input-number {
     width: 100%;
   }
-  .video-quality-select {
-    width: 100%;
-    max-width: 100%;
-  }
-  .video-quality-select--text {
-    display: inline-block;
-    vertical-align: baseline;
-    margin: 0;
-    :deep(.el-input) {
-      width: 100%;
-    }
-    :deep(.el-input__inner) {
-      border: none;
-      padding: 0 14px 0 0;
-      height: auto;
-      line-height: 1.4;
-      background: transparent;
-      box-shadow: none;
-      color: transparent;
-      font-size: 12px;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
-      mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
-    }
-    :deep(.el-input__suffix) {
-      right: 0;
-    }
-    :deep(.el-select__caret) {
-      font-size: 12px;
-      color: $--color-text-regular;
-    }
-  }
-  .video-preview__quality-item:hover .video-quality-select--text :deep(.el-input__inner) {
-    color: $--color-text-regular;
-  }
   .help-link {
     font-size: 12px;
     line-height: 14px;
@@ -1662,144 +1172,6 @@
         }
       }
     }
-  }
-
-  .video-preview {
-    margin-top: 8px;
-    padding: 10px 0;
-    border-radius: 6px;
-    background: transparent;
-  }
-
-  .video-preview__status {
-    font-size: 12px;
-    color: $--color-text-secondary;
-    margin-top: 6px;
-  }
-
-  .video-preview__error {
-    font-size: 12px;
-    color: $--color-danger;
-    margin-top: 6px;
-    word-break: break-all;
-  }
-
-  .video-preview__meta {
-    margin-top: 2px;
-    color: $--color-text-regular;
-  }
-
-  .video-preview__meta-item {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    margin-top: 2px;
-  }
-
-  .video-preview__quality-item {
-    margin-bottom: 3px;
-    .video-format-select {
-      min-width: 96px;
-    }
-  }
-
-  .video-preview__meta-label {
-    color: $--color-text-secondary;
-    flex: 0 0 auto;
-  }
-
-  .video-preview__meta-value {
-    flex: 1 1 auto;
-    overflow: hidden;
-    white-space: nowrap;
-    position: relative;
-    color: $--color-text-regular;
-    font-size: 12px;
-  }
-
-  .video-preview__meta-value--fade {
-    -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
-    mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
-  }
-
-  .video-collection-selector {
-    margin-top: 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 8px 0;
-    max-height: 200px;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .video-collection-selector__header {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    padding: 6px 8px 6px 2px;
-    border-bottom: 1px solid var(--border-color);
-    margin-bottom: 8px;
-  }
-
-  .video-collection-selector__header-title {
-    flex: 1 1 auto;
-    overflow: hidden;
-    white-space: nowrap;
-    position: relative;
-    color: var(--text-color-secondary);
-    font-size: 13px;
-    line-height: 1;
-    -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
-    mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
-  }
-
-  .video-collection-selector__list {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    overflow-y: auto;
-    max-height: 150px;
-  }
-
-  .video-collection-selector__item {
-    display: flex;
-    align-items: center;
-    padding: 6px 12px 6px 8px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-    gap: 8px;
-  }
-
-  .video-collection-selector__item:hover {
-    background-color: var(--border-color);
-  }
-
-  .video-collection-selector__item.is-selected {
-    background-color: rgba(64, 158, 255, 0.1);
-  }
-
-  .video-collection-selector__item-index {
-    flex: 0 0 auto;
-    color: var(--text-color-secondary);
-    font-size: 12px;
-  }
-
-  .video-collection-selector__item-title {
-    flex: 1 1 auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--text-color-primary);
-    font-size: 12px;
-  }
-
-  .video-collection-selector__item-duration {
-    flex: 0 0 auto;
-    color: var(--text-color-secondary);
-    font-size: 11px;
   }
 }
 

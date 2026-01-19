@@ -123,32 +123,6 @@ module.exports = async function (context) {
     console.log(`[afterPackHook] Removed ${removedCount} unused locale files, saved ${(savedSize / 1024 / 1024).toFixed(2)} MB`)
   }
 
-  const resourcesDir = join(dirname, 'resources')
-  const srcParsersDir = join(__dirname, '..', 'static', 'parsers')
-  const destParsersDir = join(resourcesDir, 'parsers')
-  
-  // 复制 parsers 目录，但排除 .py 文件（因为已经有编译好的可执行文件）
-  if (fs.existsSync(srcParsersDir)) {
-    if (!fs.existsSync(destParsersDir)) {
-      fs.mkdirSync(destParsersDir, { recursive: true })
-    }
-    const entries = fs.readdirSync(srcParsersDir, { withFileTypes: true })
-    for (const e of entries) {
-      // 跳过 .py 文件
-      if (e.isFile() && e.name.endsWith('.py')) {
-        console.log(`[afterPackHook] Skipped Python file: ${e.name}`)
-        continue
-      }
-      const src = join(srcParsersDir, e.name)
-      const dest = join(destParsersDir, e.name)
-      if (e.isDirectory()) {
-        copyDirRecursiveSync(src, dest)
-      } else if (e.isFile()) {
-        fs.copyFileSync(src, dest)
-      }
-    }
-  }
-
   // ffmpeg 不再预先打包，改为运行时按需下载
 
   if (context.electronPlatformName !== 'linux') {
