@@ -28,7 +28,7 @@
 
 ## 📖 Overview
 
-LinkCore Download Manager is a [simple], [beautiful], and [easy-to-use] cross-platform download manager built with modern web technologies. With an out-of-the-box intuitive interface, clear task flow, and minimal necessary settings, it makes download management simpler. It supports common download protocols and online video downloads, or video sniffing with extensions, covering everyday usage scenarios.
+LinkCore Download Manager is a [simple], [beautiful], and [easy-to-use] cross-platform download manager built with modern web technologies. With an out-of-the-box intuitive interface, clear task flow, and minimal necessary settings, it makes download management simpler. It supports common download protocols and online video downloading via browser extension parsing/sniffing, covering everyday usage scenarios.
 ***
 At the same time, LinkCore Download Manager also possesses professional-grade downloader capabilities: supporting BitTorrent/Magnet, UPnP/NAT-PMP port mapping, automatic Tracker updates, task priority and batch management, quick switching of download engines, and advanced option presets, satisfying advanced and heavy download scenarios.
 
@@ -47,8 +47,9 @@ At the same time, LinkCore Download Manager also possesses professional-grade do
 - **Magnet Links**: Direct download without .torrent files
 
 ### 🎬 Video Download
-- **Online Video Download**: Download online videos by adding video tasks within the app or using browser extensions for video sniffing
-- **Multi-task Video Batch Management**: Unified viewing, pausing/resuming, and deleting video download tasks in the task list, supporting a consistent management experience with other types of tasks
+- **Online Video Download (Browser Extension)**: Parse/sniff online video resources in your browser and send them to the app to create download tasks (required request headers are included to improve availability)
+- **Unified Task Management**: Video resources are added as regular download tasks, with the same pause/resume/delete experience as other task types
+- **Note**: The app no longer ships with a built-in video parsing/sniffing engine. To download videos, please install the extension and follow [Installation-Guide-English.txt](./extensions/linkcore-webextension/Installation-Guide-English.txt)
 
 ### 🎨 User Experience
 - **Simple Interface**: Modern intuitive design, supporting dark mode
