@@ -1,3 +1,4 @@
+(function () {
 const matchHotkey = (event) => {
   if (!event) return false
   if (event.shiftKey) return true
@@ -56,7 +57,24 @@ const applyClientLocaleToButton = (btn) => {
   }
 }
 
+const isPureMediaDocument = () => {
+  try {
+    const type = `${document.contentType || ''}`.toLowerCase()
+    if (type.startsWith('video/') || type.startsWith('audio/')) return true
+    if (!document.body) return false
+    const videos = document.body.querySelectorAll('video')
+    if (videos.length === 1) {
+      const bodyChildren = document.body.children ? document.body.children.length : 0
+      if (bodyChildren <= 2) return true
+    }
+  } catch (e) {}
+  return false
+}
+
 if (typeof window !== 'undefined' && window.addEventListener) {
+  if (isPureMediaDocument()) {
+    return
+  }
   window.addEventListener('keydown', (event) => {
     if (matchHotkey(event)) {
       sendToggleAutoHijackOverride()
@@ -3286,3 +3304,4 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 初始添加一次
   setTimeout(addVideoHoverListeners, 500)
 }
+})()

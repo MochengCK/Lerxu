@@ -2,6 +2,24 @@
 (function () {
   'use strict'
 
+  const isPureMediaDocument = () => {
+    try {
+      const type = `${document.contentType || ''}`.toLowerCase()
+      if (type.startsWith('video/') || type.startsWith('audio/')) return true
+      if (!document.body) return false
+      const videos = document.body.querySelectorAll('video')
+      if (videos.length === 1) {
+        const bodyChildren = document.body.children ? document.body.children.length : 0
+        if (bodyChildren <= 2) return true
+      }
+    } catch (e) {}
+    return false
+  }
+
+  if (isPureMediaDocument()) {
+    return
+  }
+
   // 多语言质量和类型映射
   const getLocalizedQuality = (quality, locale) => {
     const qualityTranslations = {
