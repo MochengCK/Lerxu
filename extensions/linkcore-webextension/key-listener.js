@@ -911,11 +911,22 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       bStyle.cursor = 'pointer'
       bStyle.background = 'transparent'
       bStyle.color = '#ffffff'
-      bStyle.fontSize = '18px'
-      bStyle.lineHeight = '32px'
-      bStyle.textAlign = 'center'
+      bStyle.display = 'flex'
+      bStyle.alignItems = 'center'
+      bStyle.justifyContent = 'center'
       bStyle.opacity = '0.95'
-      btn.textContent = '↓'
+      
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      svg.setAttribute('viewBox', '0 0 24 24')
+      svg.setAttribute('width', '20')
+      svg.setAttribute('height', '20')
+      svg.style.fill = 'currentColor'
+      
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      path.setAttribute('d', 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z')
+      
+      svg.appendChild(path)
+      btn.appendChild(svg)
 
       const extend = document.createElement('div')
       const exStyle = extend.style
@@ -1271,6 +1282,17 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         'fr': 'fichier',
         'de': 'Datei',
         'ru': 'файл'
+      },
+      'downloadAll': {
+        'en': 'Download all',
+        'zh_CN': '下载全部',
+        'zh_TW': '下載全部',
+        'ja': 'すべてダウンロード',
+        'ko': '모두 다운로드',
+        'es': 'Descargar todo',
+        'fr': 'Tout télécharger',
+        'de': 'Alle herunterladen',
+        'ru': 'Скачать все'
       }
     }
     
@@ -1353,16 +1375,16 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     dStyle.top = '0'
     dStyle.left = '0'
     dStyle.marginTop = '0'
-    dStyle.width = '400px'
-    dStyle.maxHeight = '400px'
-    dStyle.backgroundColor = '#ffffff'
+    dStyle.width = '350px'
+    dStyle.maxHeight = 'none' // Let content control the height
+    dStyle.backgroundColor = 'transparent'
     dStyle.borderRadius = '6px'
-    dStyle.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'
+    dStyle.boxShadow = 'none'
     dStyle.zIndex = '999999'
     dStyle.display = 'none'
     dStyle.flexDirection = 'column'
-    dStyle.overflow = 'hidden'
-    dStyle.border = '1px solid #e5e5e5'
+    dStyle.overflow = 'visible' // Allow shadow of floating button to show if needed, though button is inside
+    dStyle.border = 'none'
 
     // 顶部固定区域（放置清空按钮）
     const header = document.createElement('div')
@@ -1379,6 +1401,31 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     cStyle.maxHeight = '400px'
     cStyle.overflowY = 'auto'
     cStyle.overflowX = 'hidden'
+    cStyle.backgroundColor = '#ffffff'
+    cStyle.borderRadius = '16px'
+    cStyle.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'
+    cStyle.border = '1px solid #e5e5e5'
+    cStyle.marginTop = '4px'
+
+    // 添加自定义滚动条样式
+    const style = document.createElement('style')
+    style.textContent = `
+      #linkcore-resource-list::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      #linkcore-resource-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      #linkcore-resource-list::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.2);
+        border-radius: 3px;
+      }
+      #linkcore-resource-list::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 0, 0, 0.3);
+      }
+    `
+    dropdown.appendChild(style)
 
     dropdown.appendChild(header)
     dropdown.appendChild(content)
@@ -1386,30 +1433,40 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return dropdown
   }
 
-  // 创建清空资源按钮
-  const createClearButton = () => {
+  const createDropdownControls = (viewResources, referer) => {
+    const container = document.createElement('div')
+    container.id = 'linkcore-dropdown-controls'
+    const cStyle = container.style
+    cStyle.position = 'relative'
+    cStyle.display = 'inline-flex'
+    cStyle.width = '100%'
+    cStyle.boxSizing = 'border-box'
+    cStyle.alignItems = 'center'
+    cStyle.gap = '8px'
+    cStyle.padding = '5px 10px'
+    cStyle.borderRadius = '16px'
+    cStyle.backgroundColor = 'rgba(255, 255, 255, 0.96)'
+    cStyle.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)'
+
     const clearBtn = document.createElement('div')
     clearBtn.id = 'linkcore-clear-resources-btn'
-    const bStyle = clearBtn.style
-    bStyle.padding = '10px 12px'
-    bStyle.backgroundColor = '#fff1f0'
-    bStyle.borderTop = '1px solid #ffccc7'
-    bStyle.borderBottom = '1px solid #ffccc7'
-    bStyle.cursor = 'pointer'
-    bStyle.display = 'flex'
-    bStyle.alignItems = 'center'
-    bStyle.justifyContent = 'center'
-    bStyle.gap = '6px'
-    bStyle.transition = 'background-color 0.2s ease'
-    bStyle.fontSize = '12px'
-    bStyle.color = '#ff4d4f'
-    bStyle.fontWeight = '500'
+    const clearStyle = clearBtn.style
+    clearStyle.padding = '3px 8px'
+    clearStyle.cursor = 'pointer'
+    clearStyle.display = 'flex'
+    clearStyle.alignItems = 'center'
+    clearStyle.justifyContent = 'center'
+    clearStyle.gap = '4px'
+    clearStyle.transition = 'background-color 0.2s ease, color 0.2s ease'
+    clearStyle.fontSize = '12px'
+    clearStyle.color = '#ff4d4f'
+    clearStyle.borderRadius = '12px'
 
     clearBtn.addEventListener('mouseenter', () => {
-      clearBtn.style.backgroundColor = '#ffccc7'
+      clearBtn.style.backgroundColor = '#fff1f0'
     })
     clearBtn.addEventListener('mouseleave', () => {
-      clearBtn.style.backgroundColor = '#fff1f0'
+      clearBtn.style.backgroundColor = 'transparent'
     })
 
     clearBtn.addEventListener('click', () => {
@@ -1419,17 +1476,89 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       if (dropdown) dropdown.style.display = 'none'
     })
 
-    const icon = document.createElement('span')
-    icon.textContent = '🗑️'
-    icon.style.fontSize = '14px'
+    const clearText = document.createElement('span')
+    clearText.textContent = getLocalizedText('clearResourceList')
 
-    const text = document.createElement('span')
-    text.textContent = getLocalizedText('clearResourceList')
+    clearBtn.appendChild(clearText)
 
-    clearBtn.appendChild(icon)
-    clearBtn.appendChild(text)
+    const downloadAllBtn = document.createElement('div')
+    downloadAllBtn.id = 'linkcore-download-all-btn'
+    const dStyle = downloadAllBtn.style
+    dStyle.padding = '3px 10px'
+    dStyle.cursor = 'pointer'
+    dStyle.display = 'flex'
+    dStyle.alignItems = 'center'
+    dStyle.justifyContent = 'center'
+    dStyle.gap = '4px'
+    dStyle.transition = 'background-color 0.2s ease, color 0.2s ease'
+    dStyle.fontSize = '12px'
+    dStyle.color = '#ffffff'
+    dStyle.backgroundColor = '#00a1d6'
+    dStyle.borderRadius = '12px'
 
-    return clearBtn
+    downloadAllBtn.addEventListener('mouseenter', () => {
+      downloadAllBtn.style.backgroundColor = '#00b5f0'
+    })
+    downloadAllBtn.addEventListener('mouseleave', () => {
+      downloadAllBtn.style.backgroundColor = '#00a1d6'
+    })
+
+    downloadAllBtn.addEventListener('click', () => {
+      try {
+        const resources = viewResources || {}
+        const combined = Array.isArray(resources.combined) ? resources.combined : []
+        const m4s = Array.isArray(resources.m4s) ? resources.m4s : []
+        const videos = Array.isArray(resources.video) ? resources.video : []
+        const audios = Array.isArray(resources.audio) ? resources.audio : []
+
+        const hasM4s = m4s.length > 0
+
+        combined.forEach(resource => {
+          downloadCombinedResource(resource, referer)
+        })
+
+        m4s.forEach(resource => {
+          downloadSingleResource(resource, referer)
+        })
+
+        videos.forEach((resource, index) => {
+          if (!resource || typeof resource.url !== 'string') return
+          const isM4S = resource.url.includes('.m4s')
+          const shouldShowInM4SSection = isM4S && hasM4s
+          if (!shouldShowInM4SSection) {
+            downloadSingleResource(resource, referer, index)
+          }
+        })
+
+        audios.forEach((resource, index) => {
+          if (!resource || typeof resource.url !== 'string') return
+          const isM4S = resource.url.includes('.m4s')
+          const shouldShowInM4SSection = isM4S && hasM4s
+          if (!shouldShowInM4SSection) {
+            downloadSingleResource(resource, referer, index)
+          }
+        })
+      } catch (e) {
+      }
+
+      const dropdown = document.getElementById('linkcore-resource-dropdown')
+      if (dropdown) dropdown.style.display = 'none'
+    })
+
+    const downloadIcon = document.createElement('span')
+    downloadIcon.textContent = '⭳'
+    downloadIcon.style.fontSize = '14px'
+
+    const downloadText = document.createElement('span')
+    downloadText.textContent = getLocalizedText('downloadAll')
+
+    downloadAllBtn.appendChild(downloadIcon)
+    downloadAllBtn.appendChild(downloadText)
+
+    container.appendChild(clearBtn)
+    container.appendChild(downloadAllBtn)
+
+    return container
   }
 
   // 更新资源列表
@@ -1461,13 +1590,19 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     const referer = window.location.href
 
-    // 如果有资源，添加清空按钮到顶部固定区域
+    // 如果有资源，添加顶部浮动控制组件
     const header = document.getElementById('linkcore-dropdown-header')
     if (header) {
       header.innerHTML = ''
       if (hasAnySniffedResources(viewResources)) {
-        const clearBtn = createClearButton()
-        header.appendChild(clearBtn)
+        const controls = createDropdownControls(viewResources, referer)
+        const hStyle = header.style
+        hStyle.display = 'flex'
+        hStyle.justifyContent = 'flex-start'
+        hStyle.alignItems = 'center'
+        hStyle.padding = '0 0 4px 0'
+        hStyle.backgroundColor = 'transparent'
+        header.appendChild(controls)
       }
     }
 
@@ -1638,20 +1773,20 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           .trim()
 
         if (cleanTitle) {
-          displayName = `${cleanTitle}, ${ext}${getLocalizedText('completeVideo')}${sizeInfo}`
+          displayName = `${cleanTitle}, ${ext}${getLocalizedText('completeVideo')}`
           // 如果有质量信息，添加到文件名
           if (resource.quality) {
-            displayName = `${cleanTitle}, ${resource.quality}, ${ext}${getLocalizedText('completeVideo')}${sizeInfo}`
+            displayName = `${cleanTitle}, ${resource.quality}, ${ext}${getLocalizedText('completeVideo')}`
           }
         } else {
-          displayName = resource.name || `${getLocalizedText('completeVideo')} ${index + 1}${sizeInfo}`
+          displayName = resource.name || `${getLocalizedText('completeVideo')} ${index + 1}`
         }
       } else {
-        displayName = resource.name || `${getLocalizedText('completeVideo')} ${index + 1}${sizeInfo}`
+        displayName = resource.name || `${getLocalizedText('completeVideo')} ${index + 1}`
       }
     } catch (e) {
       displayName = resource.name || `完整视频 ${index + 1}`
-      displayName += ` (${formatFileSize(resource.size)})`
+      // displayName += ` (${formatFileSize(resource.size)})`
     }
 
     const name = document.createElement('div')
@@ -1817,20 +1952,20 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           .trim()
 
         if (cleanTitle) {
-          displayName = `${cleanTitle}, ${ext}${getLocalizedText('file')}${sizeInfo}`
+          displayName = `${cleanTitle}, ${ext}${getLocalizedText('file')}`
           // 如果有质量信息，添加到文件名
           if (resource.quality && resource.quality !== ext) {
-            displayName = `${cleanTitle}, ${resource.quality}, ${ext}${getLocalizedText('file')}${sizeInfo}`
+            displayName = `${cleanTitle}, ${resource.quality}, ${ext}${getLocalizedText('file')}`
           }
         } else {
-          displayName = resource.name || `${ext} ${index + 1}${sizeInfo}`
+          displayName = resource.name || `${ext} ${index + 1}`
         }
       } else {
-        displayName = resource.name || `${ext} ${index + 1}${sizeInfo}`
+        displayName = resource.name || `${ext} ${index + 1}`
       }
     } catch (e) {
       displayName = resource.name || `Resource ${index + 1}`
-      displayName += ` (${formatFileSize(resource.size)})`
+      // displayName += ` (${formatFileSize(resource.size)})`
     }
 
     const name = document.createElement('div')
@@ -2547,6 +2682,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     wStyle.pointerEvents = 'auto'
+    // 重置样式，防止受到宿主页面（如B站）样式的影响导致组件被放大
+    wStyle.zoom = '1'
+    wStyle.transform = 'none'
+    wStyle.fontSize = '14px'
+    wStyle.lineHeight = 'normal'
+    wStyle.letterSpacing = 'normal'
+    wStyle.fontFamily = 'sans-serif, Arial, "Microsoft YaHei"'
+    wStyle.boxSizing = 'border-box'
     
     // 根据当前状态设置初始显示状态
     if (isButtonClosedByUser()) {
@@ -2578,14 +2721,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     style.background = '#00a1d6'
     style.color = '#ffffff'
     style.border = 'none'
-    style.borderRadius = '4px'
+    style.borderRadius = '16px'
     style.cursor = 'pointer'
     style.fontSize = '12px'
     style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)'
     style.opacity = '0.9'
     style.transition = 'opacity 0.2s ease'
     style.pointerEvents = 'auto'
-    style.display = 'inline-block'
+    style.display = 'inline-flex'
+    style.alignItems = 'center'
     style.verticalAlign = 'top'
     style.overflow = 'visible'
 
@@ -2605,7 +2749,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     closeStyle.background = '#ff4d4f'
     closeStyle.color = '#ffffff'
     closeStyle.border = 'none'
-    closeStyle.borderRadius = '4px'
+    closeStyle.borderRadius = '16px'
     closeStyle.cursor = 'pointer'
     closeStyle.fontSize = '12px'
     closeStyle.fontWeight = 'bold'
@@ -2619,12 +2763,16 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     closeStyle.zIndex = '1'
     closeStyle.lineHeight = '18px'
 
-    const icon = document.createElement('span')
-    icon.textContent = '⭳'
-    const iconStyle = icon.style
-    iconStyle.display = 'inline-block'
-    iconStyle.marginRight = '6px'
-    iconStyle.fontSize = '14px'
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    icon.setAttribute('viewBox', '0 0 24 24')
+    icon.setAttribute('width', '16')
+    icon.setAttribute('height', '16')
+    icon.style.fill = 'currentColor'
+    icon.style.marginRight = '6px'
+    
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    path.setAttribute('d', 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z')
+    icon.appendChild(path)
 
     const countSpan = document.createElement('span')
     countSpan.className = 'linkcore-resource-count'
@@ -2640,7 +2788,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const buttonContainer = document.createElement('div')
     buttonContainer.style.display = 'inline-flex'
     buttonContainer.style.alignItems = 'stretch'
-    buttonContainer.style.borderRadius = '4px'
+    buttonContainer.style.borderRadius = '16px'
 
     // 关闭按钮点击事件
     closeBtn.addEventListener('click', (e) => {
