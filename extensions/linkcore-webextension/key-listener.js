@@ -184,6 +184,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       sniffedResources.combined = [...resourcesBackup.combined]
       sniffedResources.total = backupTotal
       updateButtonVisibility()
+      updateMainButtonResourceCount()
       return true
     }
     
@@ -204,6 +205,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       sniffedResources.m4s = [...resourcesBackup.m4s]
       sniffedResources.total = currentVideoAudio + currentCombined
       updateButtonVisibility()
+      updateMainButtonResourceCount()
       return true
     }
     
@@ -2503,7 +2505,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         const viewportWidth = window.innerWidth
         const viewportHeight = window.innerHeight
         const buttonWidth = 150
-        const buttonHeight = 36
+        const buttonHeight = 30
 
         let newTop = rect.top - 28
         let newRight = viewportWidth - rect.right
@@ -2525,7 +2527,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         const viewportWidth = window.innerWidth
         const viewportHeight = window.innerHeight
         const buttonWidth = 150
-        const buttonHeight = 36
+        const buttonHeight = 30
 
         let newTop = rect.top - 34
         let newRight = viewportWidth - rect.right
@@ -2572,7 +2574,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     applyClientLocaleToButton(btn)
     const style = btn.style
     style.position = 'relative'
-    style.padding = '6px 30px 6px 12px'
+    style.padding = '4px 40px 4px 12px'
     style.background = '#00a1d6'
     style.color = '#ffffff'
     style.border = 'none'
