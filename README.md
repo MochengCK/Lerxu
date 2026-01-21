@@ -210,12 +210,6 @@ Contributions are welcome! Whether you are fixing bugs, adding new features, or 
 - Add tests for new features
 - Update documentation as needed
 
-## 💰 Sponsor
-
-If you find this project helpful, please consider sponsoring to support the continuous development and maintenance of the project.
-
-- [Sponsor on Afdian](https://afdian.com/a/LinkCore)
-
 ## 🙏 Credits
 
 - This project is developed based on the open-source project [Motrix](https://github.com/agalwood/Motrix) by agalwood, with significant modifications and functional extensions.
