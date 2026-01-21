@@ -209,12 +209,6 @@ LinkCore-Download-Manager/
 - 为新功能添加测试
 - 按需更新文档
 
-## 💰 赞助
-
-如果您觉得这个项目对您有帮助，请考虑赞助以支持项目的持续开发和维护。
-
-- [在爱发电上赞助](https://afdian.com/a/LinkCore)
-
 ## 🙏 致谢
 
 - 本项目基于agalwood开源项目
