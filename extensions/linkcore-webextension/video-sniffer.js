@@ -122,6 +122,8 @@
     combined: []
   }
 
+  const clearedResourceUrls = new Set()
+
   let videoContextSeq = 1
   const videoContextMap = new WeakMap()
   const videoContextState = new Map()

@@ -2,7 +2,7 @@ import { ipcRenderer } from 'electron'
 import is from 'electron-is'
 import { isEmpty, clone } from 'lodash'
 import { existsSync } from 'fs'
-import { basename } from 'path'
+import { basename, resolve, isAbsolute } from 'path'
 import { Aria2 } from '@shared/aria2'
 import {
   separateConfig,
@@ -95,6 +95,48 @@ const cloneBittorrent = (bt) => {
     next.info = { ...bt.info }
   }
   return next
+}
+
+const ensureUniqueOut = (out, dir, existingNames) => {
+  const name = out ? `${out}` : ''
+  if (!name) {
+    return out
+  }
+  const names = existingNames instanceof Set ? existingNames : new Set()
+  const normalizedDir = dir ? `${dir}` : ''
+  const resolveOut = (candidate) => {
+    const c = candidate ? `${candidate}` : ''
+    if (!c) return ''
+    if (isAbsolute(c)) return resolve(c)
+    if (!normalizedDir) return ''
+    return resolve(normalizedDir, c)
+  }
+
+  const baseUnique = generateUniqueTaskName(name, names)
+  const basePath = resolveOut(baseUnique)
+  if (basePath && !existsSync(basePath)) {
+    return baseUnique
+  }
+
+  const lastDotIndex = name.lastIndexOf('.')
+  const nameWithoutExt = lastDotIndex > 0 ? name.substring(0, lastDotIndex) : name
+  const ext = lastDotIndex > 0 ? name.substring(lastDotIndex) : ''
+
+  for (let counter = 1; counter < 1000; counter++) {
+    const candidate = `${nameWithoutExt} (${counter})${ext}`
+    if (names.has(candidate)) {
+      continue
+    }
+    const p = resolveOut(candidate)
+    if (!p) {
+      return candidate
+    }
+    if (!existsSync(p)) {
+      return candidate
+    }
+  }
+
+  return baseUnique
 }
 
 const shouldAdoptHistoryFiles = (task, historyTask) => {
@@ -324,7 +366,7 @@ export default class Api {
 
       const out = outs && outs[index] ? outs[index] : undefined
       if (out) {
-        const uniqueOut = generateUniqueTaskName(out, existingNames)
+        const uniqueOut = ensureUniqueOut(out, engineOptions.dir, existingNames)
         engineOptions.out = uniqueOut
         existingNames.add(uniqueOut)
       }
@@ -377,7 +419,7 @@ export default class Api {
     const engineOptions = formatOptionsForEngine(options)
 
     if (engineOptions.out) {
-      const uniqueOut = generateUniqueTaskName(engineOptions.out, existingNames)
+      const uniqueOut = ensureUniqueOut(engineOptions.out, engineOptions.dir, existingNames)
       engineOptions.out = uniqueOut
       existingNames.add(uniqueOut)
     }

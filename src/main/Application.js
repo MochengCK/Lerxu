@@ -1504,7 +1504,6 @@ export default class Application extends EventEmitter {
 
           const currentHistoryRaw = taskHistoryStore.get('tasks', [])
           const currentHistory = Array.isArray(currentHistoryRaw) ? currentHistoryRaw : []
-          const currentGids = new Set(currentHistory.map(task => task && task.gid).filter(Boolean))
 
           // 过滤需要保存的任务（包括磁力链接任务）
           const tasksToSave = allTasks.filter(task => {
@@ -1517,14 +1516,28 @@ export default class Application extends EventEmitter {
             return isMagnetTask || isMetadataTask || ['complete', 'error', 'removed'].includes(status)
           })
 
-          // 添加新任务到历史记录
           const updatedHistory = [...currentHistory]
           tasksToSave.forEach(task => {
-            if (!currentGids.has(task.gid)) {
+            if (!task || !task.gid) {
+              return
+            }
+            const idx = updatedHistory.findIndex(t => t && t.gid === task.gid)
+            if (idx === -1) {
               updatedHistory.push({
                 ...task,
                 savedAt: Date.now()
               })
+              return
+            }
+            const prev = updatedHistory[idx] || {}
+            if (prev.deletedAt) {
+              return
+            }
+            const savedAt = prev.savedAt != null ? prev.savedAt : Date.now()
+            updatedHistory[idx] = {
+              ...prev,
+              ...task,
+              savedAt
             }
           })
 

@@ -51,22 +51,32 @@ class TaskHistory {
       return
     }
 
-    // 获取当前历史记录
     const currentHistory = this.getAllHistory()
-    const currentGids = new Set(currentHistory.map(task => task.gid))
-
-    // 添加新的任务到历史记录
     const updatedHistory = [...currentHistory]
     stoppedTasks.forEach(task => {
-      if (!currentGids.has(task.gid)) {
+      if (!task || !task.gid) {
+        return
+      }
+      const idx = updatedHistory.findIndex(t => t && t.gid === task.gid)
+      if (idx === -1) {
         updatedHistory.push({
           ...task,
           savedAt: Date.now()
         })
+        return
+      }
+      const prev = updatedHistory[idx] || {}
+      if (prev.deletedAt) {
+        return
+      }
+      const savedAt = prev.savedAt != null ? prev.savedAt : Date.now()
+      updatedHistory[idx] = {
+        ...prev,
+        ...task,
+        savedAt
       }
     })
 
-    // 保存更新后的历史记录
     taskHistoryStore.set('tasks', updatedHistory)
   }
 

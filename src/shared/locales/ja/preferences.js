@@ -308,5 +308,11 @@ export default {
   'priority-how-it-works': '動作原理：',
   'priority-rule-1': '高優先度タスク（優先度 > 0）はより多くの接続数と帯域幅を取得',
   'priority-rule-3': '通常タスク（優先度 = 0）は残りのリソースを平等に分け、完全にダウンロードできないことを保証します',
-  'priority-rule-auto-min': 'タスクあたりの最小接続数は「サーバーあたりの最大接続数」に基づいて自動的に調整されます（その1/4、範囲1-4）'
+  'priority-rule-auto-min': 'タスクあたりの最小接続数は「サーバーあたりの最大接続数」に基づいて自動的に調整されます（その1/4、範囲1-4）',
+  'video-merge': 'ビデオ結合',
+  'ffmpeg-status': 'FFmpeg ステータス',
+  'ffmpeg-installed': 'インストール済み',
+  'ffmpeg-not-installed': '未インストール',
+  'ffmpeg-path': 'パス',
+  'ffmpeg-open-folder': 'フォルダを開く'
 }

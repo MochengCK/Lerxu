@@ -472,7 +472,37 @@
         try {
           const gid = task && task.gid ? `${task.gid}` : ''
           if (gid) {
-            taskHistory.updateTask(gid, { ...task, status: TASK_STATUS.COMPLETE }, task)
+            const files = Array.isArray(task && task.files) ? task.files : []
+            const baseFile = files.length > 0 ? files[0] : null
+            let nextFiles = files
+            let total = task && task.totalLength ? `${task.totalLength}` : ''
+            let completed = task && task.completedLength ? `${task.completedLength}` : ''
+            if (finalPath) {
+              let length = 0
+              try {
+                const st = statSync(finalPath)
+                length = Number(st.size || 0)
+              } catch (_) {}
+              const fileEntry = {
+                ...(baseFile || {}),
+                path: finalPath,
+                ...(length > 0 ? { length: `${length}`, completedLength: `${length}` } : {})
+              }
+              nextFiles = [fileEntry, ...files.slice(1)]
+              if (length > 0) {
+                total = `${length}`
+                completed = `${length}`
+              }
+            }
+            const patch = {
+              ...task,
+              status: TASK_STATUS.COMPLETE,
+              ...(finalPath ? { dir: dirname(finalPath) } : {}),
+              ...(Array.isArray(nextFiles) && nextFiles.length > 0 ? { files: nextFiles } : {}),
+              ...(total ? { totalLength: total } : {}),
+              ...(completed ? { completedLength: completed } : {})
+            }
+            taskHistory.updateTask(gid, patch, task)
           }
         } catch (_) {}
         try {

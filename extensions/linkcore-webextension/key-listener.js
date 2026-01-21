@@ -49,7 +49,6 @@ const applyClientLocaleToButton = (btn) => {
       const key = direct ? raw : normalizeButtonLocale(raw)
       const text = buttonLocaleTexts[key]
       if (text) {
-        btn.textContent = text
         btn.title = text
       }
     })
@@ -211,6 +210,44 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return false
   }
 
+  const updateMainButtonResourceCount = () => {
+    try {
+      const btn = document.getElementById('linkcore-bilibili-download-btn')
+      if (!btn) return
+      const countSpan = btn.querySelector('.linkcore-resource-count')
+      if (!countSpan) return
+
+      const scoped = getUniversalScopedResources().resources
+      const resources = scoped || sniffedResources
+
+      const hasM4s = Array.isArray(resources.m4s) && resources.m4s.length > 0
+
+      const combinedCount = Array.isArray(resources.combined) ? resources.combined.length : 0
+      const m4sCount = hasM4s ? resources.m4s.length : 0
+
+      const videoList = Array.isArray(resources.video) ? resources.video : []
+      const audioList = Array.isArray(resources.audio) ? resources.audio : []
+
+      const videoCount = videoList.filter((resource) => {
+        if (!resource || typeof resource.url !== 'string') return true
+        const isM4S = resource.url.includes('.m4s')
+        const shouldShowInM4SSection = isM4S && hasM4s
+        return !shouldShowInM4SSection
+      }).length
+
+      const audioCount = audioList.filter((resource) => {
+        if (!resource || typeof resource.url !== 'string') return true
+        const isM4S = resource.url.includes('.m4s')
+        const shouldShowInM4SSection = isM4S && hasM4s
+        return !shouldShowInM4SSection
+      }).length
+
+      const totalItems = combinedCount + m4sCount + videoCount + audioCount
+      const safeTotal = totalItems > 0 ? totalItems : 0
+      countSpan.textContent = `${safeTotal} 个资源`
+    } catch (e) {}
+  }
+
   // 视频嗅探器配置
   let videoSnifferConfig = {
     enabled: true, // 默认启用
@@ -283,6 +320,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     
     // 备份资源
     backupResources()
+    updateMainButtonResourceCount()
     
     // 检查按钮是否被用户关闭，如果关闭则不显示
     if (!isButtonClosedByUser() && sniffedResources.total > 0) {
@@ -308,6 +346,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       
       // 备份资源
       backupResources()
+      updateMainButtonResourceCount()
       
       // 检查按钮是否被用户关闭，如果关闭则不显示
       if (!isButtonClosedByUser() && sniffedResources.total > 0) {
@@ -553,7 +592,6 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   const dedupeUniversalButtonWrappers = () => {
     try {
-      if (!isShortVideoFeedHost()) return
       const wrappers = collectUniversalButtonWrappers().filter(w => w && w.isConnected)
       if (wrappers.length <= 1) return
 
@@ -2530,16 +2568,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       }
     } catch (e) {
     }
-    btn.textContent = label
     btn.title = label
     applyClientLocaleToButton(btn)
     const style = btn.style
     style.position = 'relative'
-    style.padding = '6px 12px'
+    style.padding = '6px 30px 6px 12px'
     style.background = '#00a1d6'
     style.color = '#ffffff'
     style.border = 'none'
-    style.borderRadius = '4px 0 0 4px' // 左侧圆角，右侧直角
+    style.borderRadius = '4px'
     style.cursor = 'pointer'
     style.fontSize = '12px'
     style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)'
@@ -2548,6 +2585,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     style.pointerEvents = 'auto'
     style.display = 'inline-block'
     style.verticalAlign = 'top'
+    style.overflow = 'visible'
 
     // 创建关闭按钮
     const closeBtn = document.createElement('button')
@@ -2555,29 +2593,52 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     closeBtn.textContent = '×'
     closeBtn.title = 'Close'
     const closeStyle = closeBtn.style
-    closeStyle.position = 'relative'
-    closeStyle.padding = '6px 8px'
+    closeStyle.position = 'absolute'
+    closeStyle.right = '4px'
+    closeStyle.top = '50%'
+    closeStyle.transform = 'translateY(-50%)'
+    closeStyle.width = '18px'
+    closeStyle.height = '18px'
+    closeStyle.padding = '0'
     closeStyle.background = '#ff4d4f'
     closeStyle.color = '#ffffff'
     closeStyle.border = 'none'
-    closeStyle.borderRadius = '0 4px 4px 0' // 右侧圆角，左侧直角
+    closeStyle.borderRadius = '4px'
     closeStyle.cursor = 'pointer'
     closeStyle.fontSize = '12px'
     closeStyle.fontWeight = 'bold'
-    closeStyle.boxShadow = '0 2px 4px rgba(0,0,0,0.2)'
+    closeStyle.boxShadow = '0 1px 3px rgba(0,0,0,0.25)'
     closeStyle.opacity = '0.9'
     closeStyle.transition = 'opacity 0.2s ease'
     closeStyle.pointerEvents = 'auto'
-    closeStyle.display = 'inline-block'
-    closeStyle.verticalAlign = 'top'
-    closeStyle.marginLeft = '0' // 紧贴下载按钮
+    closeStyle.display = 'inline-flex'
+    closeStyle.alignItems = 'center'
+    closeStyle.justifyContent = 'center'
+    closeStyle.zIndex = '1'
+    closeStyle.lineHeight = '18px'
+
+    const icon = document.createElement('span')
+    icon.textContent = '⭳'
+    const iconStyle = icon.style
+    iconStyle.display = 'inline-block'
+    iconStyle.marginRight = '6px'
+    iconStyle.fontSize = '14px'
+
+    const countSpan = document.createElement('span')
+    countSpan.className = 'linkcore-resource-count'
+    const countStyle = countSpan.style
+    countStyle.display = 'inline-block'
+    countStyle.minWidth = '16px'
+    countStyle.textAlign = 'left'
+
+    btn.appendChild(icon)
+    btn.appendChild(countSpan)
 
     // 创建按钮容器
     const buttonContainer = document.createElement('div')
     buttonContainer.style.display = 'inline-flex'
     buttonContainer.style.alignItems = 'stretch'
     buttonContainer.style.borderRadius = '4px'
-    buttonContainer.style.overflow = 'hidden'
 
     // 关闭按钮点击事件
     closeBtn.addEventListener('click', (e) => {
@@ -2608,7 +2669,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 将按钮添加到容器
     buttonContainer.appendChild(btn)
-    buttonContainer.appendChild(closeBtn)
+    btn.appendChild(closeBtn)
     // 监听按钮悬停状态，防止悬停时位置被重置
     buttonContainer.addEventListener('mouseenter', () => {
       isButtonHovered = true
