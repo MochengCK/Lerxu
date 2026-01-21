@@ -2370,6 +2370,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       // 立即更新资源列表，不使用节流
       updateResourceList()
+      updateMainButtonResourceCount()
     } else {
       log('Hiding button - config loaded:', configLoaded, 'sniffer enabled:', snifferEnabled, 'has resources:', hasResources, 'button closed:', isButtonClosed)
       // 如果嗅探器被禁用或没有资源，隐藏按钮（除非被拖拽过）
@@ -2977,6 +2978,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       log('Button position:', rect)
       log('Button visible:', rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.left >= 0)
     }
+    updateMainButtonResourceCount()
 
     // 初始化后立即检查是否有资源
     setTimeout(() => {
