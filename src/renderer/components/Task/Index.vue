@@ -66,7 +66,7 @@
         </div>
         <mo-task-actions />
       </el-header>
-      <el-main class="panel-content">
+      <el-main class="panel-content" @contextmenu.native="onTaskPageContextMenu">
         <mo-task-list :category="categoryFilter" :keyword="taskSearchQuery" />
       </el-main>
     </el-container>
@@ -179,7 +179,7 @@
 </template>
 
 <script>
-  import { dialog } from '@electron/remote'
+  import { dialog, Menu, getCurrentWindow } from '@electron/remote'
   import { mapState } from 'vuex'
 
   import { commands } from '@/components/CommandManager/instance'
@@ -362,6 +362,58 @@
       }
     },
     methods: {
+      onTaskPageContextMenu (event) {
+        const target = event && event.target
+        if (!target || typeof target.closest !== 'function') {
+          return
+        }
+        if (
+          target.closest('.task-item') ||
+          target.closest('.task-item-actions') ||
+          target.closest('.task-item-actions-wrapper')
+        ) {
+          return
+        }
+        if (event && typeof event.preventDefault === 'function') {
+          event.preventDefault()
+        }
+
+        const menu = Menu.buildFromTemplate([
+          {
+            label: this.$t('task.new-task'),
+            click: () => commands.execute('application:new-task', { type: ADD_TASK_TYPE.URI })
+          },
+          {
+            label: this.$t('task.new-bt-task'),
+            click: () => commands.execute('application:new-bt-task')
+          },
+          { type: 'separator' },
+          {
+            label: this.$t('task.refresh-list'),
+            click: () => this.$store.dispatch('task/fetchList')
+          },
+          { type: 'separator' },
+          {
+            label: this.$t('task.pause-all-task'),
+            click: () => commands.execute('application:pause-all-task')
+          },
+          {
+            label: this.$t('task.resume-all-task'),
+            click: () => commands.execute('application:resume-all-task')
+          },
+          { type: 'separator' },
+          {
+            label: this.$t('task.select-all-task'),
+            click: () => commands.execute('application:select-all-task')
+          }
+        ])
+
+        menu.popup({
+          window: getCurrentWindow(),
+          x: event.x != null ? event.x : event.clientX,
+          y: event.y != null ? event.y : event.clientY
+        })
+      },
       onCategoryMouseEnter () {
         this.clearCategoryHoverCloseTimer()
       },
