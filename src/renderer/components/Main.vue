@@ -72,7 +72,7 @@
       :peers="currentTaskPeers"
     />
     <mo-dragger />
-    <div v-if="sidebarLayoutMode !== 'three-column'" class="aside-small-screen">
+    <div v-if="showMainFloatingAside" class="aside-small-screen">
       <ul class="menu small-menu">
         <li
           @click="nav('/task')"
@@ -151,7 +151,8 @@
         progressWindows: new Map(), // gid -> window
         progressTaskGids: new Set(),
         isFloatingBarSearchOpen: false,
-        isFloatingBarSearchExpanded: false
+        isFloatingBarSearchExpanded: false,
+        windowWidth: 0
       }
     },
     computed: {
@@ -204,6 +205,30 @@
       isSpeedometerShifted () {
         const { taskPlanVisible, addTaskVisible, hasModalDialogVisible } = this
         return !!(taskPlanVisible || addTaskVisible || hasModalDialogVisible)
+      },
+      isSmallWindow () {
+        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
+        if (!width) {
+          return false
+        }
+        return width < 700
+      },
+      isThreeColumn () {
+        if (this.sidebarLayoutMode !== 'three-column') {
+          return false
+        }
+        return !this.isSmallWindow
+      },
+      showMainFloatingAside () {
+        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
+        const mode = this.sidebarLayoutMode
+        if (mode !== 'three-column') {
+          return true
+        }
+        if (!width) {
+          return false
+        }
+        return width < 960
       }
     },
     watch: {
@@ -251,6 +276,12 @@
       },
       handleFloatingBarSearchExpanded (expanded) {
         this.isFloatingBarSearchExpanded = !!expanded
+      },
+      handleWindowResize () {
+        if (typeof window === 'undefined') {
+          return
+        }
+        this.windowWidth = window.innerWidth || 0
       },
       isAliveWindow (win) {
         if (!win) {
@@ -1728,6 +1759,13 @@
     },
     mounted () {
       this.updateModalMaskVisible()
+      if (typeof window !== 'undefined') {
+        this.handleWindowResize()
+        this._handleWindowResize = () => {
+          this.handleWindowResize()
+        }
+        window.addEventListener('resize', this._handleWindowResize)
+      }
       if (typeof MutationObserver === 'undefined') {
         return
       }
@@ -1752,6 +1790,10 @@
       commands.on('floating-bar:search-expanded', this.handleFloatingBarSearchExpanded)
     },
     beforeDestroy () {
+      if (typeof window !== 'undefined' && this._handleWindowResize) {
+        window.removeEventListener('resize', this._handleWindowResize)
+        this._handleWindowResize = null
+      }
       if (this._modalObserver) {
         try {
           this._modalObserver.disconnect()

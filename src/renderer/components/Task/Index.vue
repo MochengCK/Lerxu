@@ -4,7 +4,7 @@
     direction="horizontal"
   >
     <template v-if="isThreeColumn">
-      <mo-aside />
+      <mo-aside v-if="showMainAside" />
       <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav">
         <mo-task-subnav :current="status" />
       </el-aside>
@@ -71,7 +71,7 @@
       </el-main>
     </el-container>
 
-    <template v-if="!isThreeColumn">
+    <template v-if="showSmallScreenNav">
       <div
         v-if="subnavMode === 'floating'"
         class="subnav-small-screen subnav-right"
@@ -238,7 +238,8 @@
         taskDateCounts: {}, // 存储每个日期的任务数量
         showDateText: false,
         dateFilterBtnRect: {}, // 日期筛选按钮的位置信息
-        hoverDate: null // 悬停的日期
+        hoverDate: null, // 悬停的日期
+        windowWidth: 0
       }
     },
     computed: {
@@ -258,11 +259,37 @@
         sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating',
         prefTheme: state => state.config.theme
       }),
+      isSmallWindow () {
+        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
+        if (!width) {
+          return false
+        }
+        return width < 700
+      },
       isThreeColumn () {
-        return this.sidebarLayoutMode === 'three-column'
+        if (this.sidebarLayoutMode !== 'three-column') {
+          return false
+        }
+        return !this.isSmallWindow
+      },
+      showMainAside () {
+        if (!this.isThreeColumn) {
+          return false
+        }
+        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
+        if (!width) {
+          return false
+        }
+        return width >= 960
       },
       showThreeColumnSubnav () {
         return this.isThreeColumn && this.subnavMode !== 'title'
+      },
+      showSmallScreenNav () {
+        if (this.sidebarLayoutMode !== 'three-column') {
+          return true
+        }
+        return !this.isThreeColumn
       },
       subnavs () {
         return [
@@ -876,6 +903,12 @@
           this.$msg.error(this.$t('preferences.save-fail-message'))
         }
       },
+      handleWindowResize () {
+        if (typeof window === 'undefined') {
+          return
+        }
+        this.windowWidth = window.innerWidth || 0
+      },
       handleShowTaskInfo (payload) {
         const { task } = payload
         this.$store.dispatch('task/showTaskDetail', task)
@@ -885,6 +918,13 @@
       this.changeCurrentList()
     },
     mounted () {
+      if (typeof window !== 'undefined') {
+        this.handleWindowResize()
+        this._handleWindowResize = () => {
+          this.handleWindowResize()
+        }
+        window.addEventListener('resize', this._handleWindowResize)
+      }
       commands.on('pause-task', this.handlePauseTask)
       commands.on('resume-task', this.handleResumeTask)
       commands.on('stop-task-seeding', this.handleStopTaskSeeding)
@@ -896,6 +936,12 @@
       commands.on('copy-task-link', this.handleCopyTaskLink)
       commands.on('show-task-info', this.handleShowTaskInfo)
       commands.on('task:focus-search', this.handleFocusTaskSearch)
+    },
+    beforeDestroy () {
+      if (typeof window !== 'undefined' && this._handleWindowResize) {
+        window.removeEventListener('resize', this._handleWindowResize)
+        this._handleWindowResize = null
+      }
     },
     destroyed () {
       this.clearCategoryHoverCloseTimer()

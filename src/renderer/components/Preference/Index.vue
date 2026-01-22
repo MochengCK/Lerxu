@@ -5,7 +5,7 @@
     style="height: 100vh"
   >
     <template v-if="isThreeColumn">
-      <mo-aside />
+      <mo-aside v-if="showMainAside" />
       <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav">
         <router-view :key="$route.path" name="subnav" />
       </el-aside>
@@ -40,7 +40,7 @@
       <router-view :key="$route.path" name="form" />
     </el-container>
 
-    <template v-if="!isThreeColumn">
+    <template v-if="showSmallScreenNav">
       <div
         v-if="subnavMode === 'floating'"
         class="subnav-small-screen subnav-right"
@@ -91,16 +91,47 @@
       [SubnavSwitcher.name]: SubnavSwitcher,
       [Aside.name]: Aside
     },
+    data () {
+      return {
+        windowWidth: 0
+      }
+    },
     computed: {
       ...mapState('preference', {
         subnavMode: state => state.config.subnavMode || 'floating',
         sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating'
       }),
+      isSmallWindow () {
+        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
+        if (!width) {
+          return false
+        }
+        return width < 700
+      },
       isThreeColumn () {
-        return this.sidebarLayoutMode === 'three-column'
+        if (this.sidebarLayoutMode !== 'three-column') {
+          return false
+        }
+        return !this.isSmallWindow
+      },
+      showMainAside () {
+        if (!this.isThreeColumn) {
+          return false
+        }
+        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
+        if (!width) {
+          return false
+        }
+        return width >= 960
       },
       showThreeColumnSubnav () {
         return this.isThreeColumn && this.subnavMode !== 'title'
+      },
+      showSmallScreenNav () {
+        if (this.sidebarLayoutMode !== 'three-column') {
+          return true
+        }
+        return !this.isThreeColumn
       },
       subnavs () {
         return [
@@ -134,6 +165,27 @@
       },
       isActive (path) {
         return this.$route.path === path
+      },
+      handleWindowResize () {
+        if (typeof window === 'undefined') {
+          return
+        }
+        this.windowWidth = window.innerWidth || 0
+      }
+    },
+    mounted () {
+      if (typeof window !== 'undefined') {
+        this.handleWindowResize()
+        this._handleWindowResize = () => {
+          this.handleWindowResize()
+        }
+        window.addEventListener('resize', this._handleWindowResize)
+      }
+    },
+    beforeDestroy () {
+      if (typeof window !== 'undefined' && this._handleWindowResize) {
+        window.removeEventListener('resize', this._handleWindowResize)
+        this._handleWindowResize = null
       }
     },
     created () {
