@@ -138,11 +138,18 @@
     }
   }
 
+  const isTrustedBiliHost = (hostname) => {
+    const host = `${hostname || ''}`.toLowerCase()
+    if (!host) return false
+    const domains = ['bilivideo.com', 'mcdn.bilivideo.cn']
+    return domains.some(d => host === d || host.endsWith(`.${d}`))
+  }
+
   const normalizeUrlForDedup = (url) => {
     try {
       if (!url) return ''
       const urlObj = new URL(url)
-      if (url.includes('.m4s') && (urlObj.hostname.includes('bilivideo.com') || urlObj.hostname.includes('mcdn.bilivideo.cn'))) {
+      if (url.includes('.m4s') && isTrustedBiliHost(urlObj.hostname)) {
         const pathMatch = urlObj.pathname.match(/(\d+)-1-(\d+)\.m4s/)
         if (pathMatch) {
           const resourceId = pathMatch[1]
@@ -543,23 +550,32 @@
     }
     
     // 3. 特殊处理M4S文件 - B站音频质量编号检测
-    if (ext === 'm4s' && url.includes('bilivideo.com')) {
-      const audioQualityCodes = [
-        '30280', '30232', '30216', // 标准音频质量编号
-        '280', '232', '216' // 简化编号
-      ]
-      
-      for (const code of audioQualityCodes) {
-        if (url.includes(`-${code}.m4s`) || url.includes(`-${code}-`) || url.includes(`/${code}/`)) {
-          log('Detected as audio M4S by quality code:', code)
+    if (ext === 'm4s') {
+      let isBiliM4s = false
+      try {
+        const urlObj = new URL(url)
+        isBiliM4s = isTrustedBiliHost(urlObj.hostname) && urlObj.pathname.includes('.m4s')
+      } catch (e) {
+        isBiliM4s = false
+      }
+      if (isBiliM4s) {
+        const audioQualityCodes = [
+          '30280', '30232', '30216', // 标准音频质量编号
+          '280', '232', '216' // 简化编号
+        ]
+        
+        for (const code of audioQualityCodes) {
+          if (url.includes(`-${code}.m4s`) || url.includes(`-${code}-`) || url.includes(`/${code}/`)) {
+            log('Detected as audio M4S by quality code:', code)
+            return true
+          }
+        }
+        
+        // 检查URL中是否包含音频相关的路径或参数
+        if (url.includes('/audio/') || url.includes('_audio_') || url.includes('-audio-')) {
+          log('Detected as audio M4S by URL pattern')
           return true
         }
-      }
-      
-      // 检查URL中是否包含音频相关的路径或参数
-      if (url.includes('/audio/') || url.includes('_audio_') || url.includes('-audio-')) {
-        log('Detected as audio M4S by URL pattern')
-        return true
       }
     }
     
@@ -905,7 +921,7 @@
         try {
           const urlObj = new URL(url)
           // 对于M4S资源，使用资源ID和质量编号作为标识符
-          if (url.includes('.m4s') && (urlObj.hostname.includes('bilivideo.com') || urlObj.hostname.includes('mcdn.bilivideo.cn'))) {
+          if (url.includes('.m4s') && isTrustedBiliHost(urlObj.hostname)) {
             const pathMatch = urlObj.pathname.match(/(\d+)-1-(\d+)\.m4s/)
             if (pathMatch) {
               const resourceId = pathMatch[1]

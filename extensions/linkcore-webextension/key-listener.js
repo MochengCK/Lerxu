@@ -142,17 +142,33 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     audio: [],
     m4s: [],
     combined: [],
+    total: 0,
     timestamp: 0
+  }
+
+  const countAllResources = (res) => {
+    try {
+      const r = res || {}
+      const combined = Array.isArray(r.combined) ? r.combined.length : 0
+      const m4s = Array.isArray(r.m4s) ? r.m4s.length : 0
+      const video = Array.isArray(r.video) ? r.video.length : 0
+      const audio = Array.isArray(r.audio) ? r.audio.length : 0
+      return combined + m4s + video + audio
+    } catch (e) {
+      return 0
+    }
   }
 
   // 备份当前资源
   const backupResources = () => {
-    if (sniffedResources.total > 0) {
+    const total = countAllResources(sniffedResources)
+    if (total > 0) {
       resourcesBackup = {
         video: [...sniffedResources.video],
         audio: [...sniffedResources.audio],
         m4s: [...(sniffedResources.m4s || [])],
         combined: [...sniffedResources.combined],
+        total,
         timestamp: Date.now()
       }
       log('Resources backed up:', {
@@ -166,8 +182,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 检查是否需要从备份恢复资源
   const checkAndRestoreResources = () => {
-    const currentTotal = sniffedResources.total || 0
-    const backupTotal = resourcesBackup.video.length + resourcesBackup.audio.length
+    const currentTotal = countAllResources(sniffedResources)
+    const backupTotal = Number(resourcesBackup.total || 0) || countAllResources(resourcesBackup)
     const timeSinceBackup = Date.now() - resourcesBackup.timestamp
     
     // 如果当前资源为空，但备份有资源，且备份时间在30秒内，则恢复
@@ -182,28 +198,32 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       sniffedResources.audio = [...resourcesBackup.audio]
       sniffedResources.m4s = [...resourcesBackup.m4s]
       sniffedResources.combined = [...resourcesBackup.combined]
-      sniffedResources.total = backupTotal
+      sniffedResources.total = countAllResources(sniffedResources)
       updateButtonVisibility()
       updateMainButtonResourceCount()
       return true
     }
     
     // 检查是否只有部分资源丢失（比如只有单独资源消失但组合资源还在）
-    const currentVideoAudio = (sniffedResources.video?.length || 0) + (sniffedResources.audio?.length || 0)
-    const backupVideoAudio = resourcesBackup.video.length + resourcesBackup.audio.length
     const currentCombined = sniffedResources.combined?.length || 0
-    const backupCombined = resourcesBackup.combined.length
+    const currentM4s = sniffedResources.m4s?.length || 0
+    const currentVideoAudioM4s = (sniffedResources.video?.length || 0) + (sniffedResources.audio?.length || 0) + currentM4s
+    const backupVideoAudioM4s = resourcesBackup.video.length + resourcesBackup.audio.length + (resourcesBackup.m4s?.length || 0)
     
-    if (currentCombined > 0 && currentVideoAudio === 0 && backupVideoAudio > 0 && timeSinceBackup < 30000) {
+    if ((currentCombined > 0 || currentM4s > 0) && currentVideoAudioM4s === 0 && backupVideoAudioM4s > 0 && timeSinceBackup < 30000) {
       log('Restoring individual resources while keeping combined:', {
         restoring_video: resourcesBackup.video.length,
         restoring_audio: resourcesBackup.audio.length,
-        keeping_combined: currentCombined
+        restoring_m4s: resourcesBackup.m4s.length,
+        keeping_combined: currentCombined,
+        keeping_m4s: currentM4s
       })
       sniffedResources.video = [...resourcesBackup.video]
       sniffedResources.audio = [...resourcesBackup.audio]
-      sniffedResources.m4s = [...resourcesBackup.m4s]
-      sniffedResources.total = currentVideoAudio + currentCombined
+      if (currentM4s === 0) {
+        sniffedResources.m4s = [...resourcesBackup.m4s]
+      }
+      sniffedResources.total = countAllResources(sniffedResources)
       updateButtonVisibility()
       updateMainButtonResourceCount()
       return true
@@ -219,8 +239,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const countSpan = btn.querySelector('.linkcore-resource-count')
       if (!countSpan) return
 
-      const scoped = getUniversalScopedResources().resources
-      const resources = scoped || sniffedResources
+      let scoped = getUniversalScopedResources().resources
+      if (!hasAnySniffedResources(scoped) && checkAndRestoreResources()) {
+        scoped = getUniversalScopedResources().resources
+      }
+      const resources = hasAnySniffedResources(scoped) ? scoped : sniffedResources
 
       const hasM4s = Array.isArray(resources.m4s) && resources.m4s.length > 0
 
@@ -318,6 +341,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   document.addEventListener('linkcore-resources-updated', (event) => {
     log('Resources updated:', event.detail)
     sniffedResources = event.detail || { video: [], audio: [], m4s: [], combined: [], total: 0 }
+    sniffedResources.total = countAllResources(sniffedResources)
     log('Total resources:', sniffedResources.total)
     
     // 备份资源
@@ -344,6 +368,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     if (event.data && event.data.type === 'linkcore-resources-updated') {
       log('Received message from iframe:', event.data.data)
       sniffedResources = event.data.data || { video: [], audio: [], m4s: [], combined: [], total: 0 }
+      sniffedResources.total = countAllResources(sniffedResources)
       log('Total resources from iframe:', sniffedResources.total)
       
       // 备份资源
@@ -384,6 +409,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       audio: [],
       m4s: [],
       combined: [],
+      total: 0,
       timestamp: 0
     }
     log('Resources and backup cleared, was:', beforeCount, 'now: 0')
@@ -1438,7 +1464,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     container.id = 'linkcore-dropdown-controls'
     const cStyle = container.style
     cStyle.position = 'relative'
-    cStyle.display = 'inline-flex'
+    cStyle.display = 'flex'
     cStyle.width = '100%'
     cStyle.boxSizing = 'border-box'
     cStyle.alignItems = 'center'
@@ -1451,6 +1477,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const clearBtn = document.createElement('div')
     clearBtn.id = 'linkcore-clear-resources-btn'
     const clearStyle = clearBtn.style
+    clearStyle.flex = '1 1 0'
+    clearStyle.minWidth = '0'
     clearStyle.padding = '3px 8px'
     clearStyle.cursor = 'pointer'
     clearStyle.display = 'flex'
@@ -1484,6 +1512,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const downloadAllBtn = document.createElement('div')
     downloadAllBtn.id = 'linkcore-download-all-btn'
     const dStyle = downloadAllBtn.style
+    dStyle.flex = '1 1 0'
+    dStyle.minWidth = '0'
     dStyle.padding = '3px 10px'
     dStyle.cursor = 'pointer'
     dStyle.display = 'flex'
