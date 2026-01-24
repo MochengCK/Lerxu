@@ -777,6 +777,16 @@
                 {{ $t('preferences.clipboard-auto-paste-tips') }}
               </div>
             </el-col>
+            <el-col class="form-item-sub" :span="24" v-if="form.clipboardAutoPaste">
+              <div style="margin-left: 18px; margin-top: 8px;">
+                <el-checkbox v-model="form.clipboardAutoOpenAddTask" @change="autoSaveForm">
+                  {{ $t('preferences.clipboard-auto-open-add-task') }}
+                </el-checkbox>
+                <div class="el-form-item__info" style="margin-top: 8px;">
+                  {{ $t('preferences.clipboard-auto-open-add-task-tips') }}
+                </div>
+              </div>
+            </el-col>
           </el-form-item>
           </div>
         </div>
@@ -995,6 +1005,7 @@
       autoOpenTaskProgressWindow,
       taskProgressWindowMode,
       clipboardAutoPaste,
+      clipboardAutoOpenAddTask,
       floatingBarDisplayMode,
       enableSecurityScan,
       securityScanTool,
@@ -1102,6 +1113,7 @@
       autoOpenTaskProgressWindow: autoOpenTaskProgressWindow === undefined ? true : !!autoOpenTaskProgressWindow,
       taskProgressWindowMode: taskProgressWindowMode || 'first',
       clipboardAutoPaste: clipboardAutoPaste === undefined ? true : !!clipboardAutoPaste,
+      clipboardAutoOpenAddTask: clipboardAutoOpenAddTask === undefined ? false : !!clipboardAutoOpenAddTask,
       floatingBarDisplayMode: floatingBarDisplayMode || 'hover',
       enableSecurityScan: enableSecurityScan || false,
       securityScanTool: securityScanTool || 'system',

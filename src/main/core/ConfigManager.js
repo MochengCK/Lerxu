@@ -183,6 +183,8 @@ export default class ConfigManager {
         'task-plan-type': 'complete',
         'task-plan-time': '',
         'task-plan-action': 'none',
+        'clipboard-auto-paste': true,
+        'clipboard-auto-open-add-task': false,
         'enable-security-scan': false,
         'security-scan-tool': 'system',
         'custom-security-scan-path': '',

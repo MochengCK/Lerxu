@@ -60,6 +60,8 @@ export default {
   'clipboard-settings': 'Clipboard',
   'clipboard-auto-paste': 'Automatically listen to clipboard and paste new copied links',
   'clipboard-auto-paste-tips': 'When enabled, the new task dialog will capture newly copied URLs or video links and fill them into the input box automatically.',
+  'clipboard-auto-open-add-task': 'Capture new copied links in background and open the new task dialog',
+  'clipboard-auto-open-add-task-tips': 'When enabled, even if the new task dialog is not open, copying a download link will bring the app to front and open the new task dialog automatically.',
   'set-file-mtime-on-complete': 'Set file modification time to completion time',
   'auto-categorize-files': 'Auto Categorize Files',
   'auto-categorize-files-tips': 'When enabled, files will be automatically organized into folders based on their file extensions',

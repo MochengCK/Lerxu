@@ -40,6 +40,7 @@ export default class WindowManager extends EventEmitter {
     this.willQuit = false
 
     this.windowRecoveryState = new Map()
+    this.forceTopmostState = new WeakMap()
 
     this.handleBeforeQuit()
 
@@ -300,6 +301,11 @@ export default class WindowManager extends EventEmitter {
       this.removeWindow(page)
       this.clearWindowReloadTimer(page)
       this.windowRecoveryState.delete(page)
+      const forceState = this.forceTopmostState.get(window)
+      if (forceState && forceState.timer) {
+        clearTimeout(forceState.timer)
+      }
+      this.forceTopmostState.delete(window)
     })
   }
 
@@ -346,6 +352,69 @@ export default class WindowManager extends EventEmitter {
       window.show()
     }
     window.focus()
+  }
+
+  bringToFront (page) {
+    let window = this.getWindow(page)
+    if (!window) {
+      window = this.openWindow(page, { hidden: false })
+    }
+    if (!window) {
+      return
+    }
+    if (typeof window.isDestroyed === 'function' && window.isDestroyed()) {
+      return
+    }
+
+    try {
+      if (window.isMinimized && window.isMinimized()) {
+        window.restore()
+      }
+      if (window.show) {
+        window.show()
+      }
+      if (app && typeof app.focus === 'function') {
+        try {
+          app.focus({ steal: true })
+        } catch (e) {
+          try { app.focus() } catch (_) {}
+        }
+      }
+      if (window.focus) window.focus()
+      if (window.moveTop) window.moveTop()
+
+      if (window.setAlwaysOnTop) {
+        let state = this.forceTopmostState.get(window)
+        if (state && state.timer) {
+          clearTimeout(state.timer)
+          state.timer = null
+        }
+        if (!state) {
+          const originalAlwaysOnTop = window.isAlwaysOnTop && window.isAlwaysOnTop()
+          state = { originalAlwaysOnTop: !!originalAlwaysOnTop, timer: null }
+          this.forceTopmostState.set(window, state)
+        }
+
+        try {
+          window.setAlwaysOnTop(true)
+        } catch (e) {}
+
+        const timer = setTimeout(() => {
+          const current = this.forceTopmostState.get(window)
+          if (!current || current !== state || current.timer !== timer) {
+            return
+          }
+          this.forceTopmostState.delete(window)
+          if (!window || (typeof window.isDestroyed === 'function' && window.isDestroyed())) {
+            return
+          }
+          try {
+            window.setAlwaysOnTop(!!state.originalAlwaysOnTop)
+          } catch (e) {}
+        }, 250)
+        state.timer = timer
+      }
+    } catch (e) {}
   }
 
   hideWindow (page) {

@@ -43,6 +43,8 @@ export default {
   'clipboard-settings': '剪贴板',
   'clipboard-auto-paste': '自动监听剪贴板并粘贴新复制的链接',
   'clipboard-auto-paste-tips': '启用后，在新建任务窗口打开期间，自动捕获您新复制的 URL 或视频链接并填入输入框。',
+  'clipboard-auto-open-add-task': '在后台捕获新复制的链接并自动打开新建任务',
+  'clipboard-auto-open-add-task-tips': '启用后，即使新建任务窗口未打开，复制下载链接也会自动把程序置顶并弹出新建任务。',
   'security': '安全',
   'enable-security-scan': '下载完成后自动进行安全检测',
   'security-scan-tool': '杀毒软件',

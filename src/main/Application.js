@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import { readFile, unlink } from 'node:fs'
 import { extname, basename } from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
-import { app, shell, dialog, ipcMain } from 'electron'
+import { app, clipboard, shell, dialog, ipcMain } from 'electron'
 import { createServer } from 'node:http'
 import is from 'electron-is'
 import { isEmpty, isEqual } from 'lodash'
@@ -20,7 +20,7 @@ import {
   ADD_TASK_TYPE,
   TASK_STATUS
 } from '@shared/constants'
-import { bytesToSize, checkIsNeedRunAdvanced, getTaskName, removeExtensionDot, timeFormat, timeRemaining } from '@shared/utils'
+import { bytesToSize, checkIsNeedRunAdvanced, detectResource, sanitizeLink, getTaskName, removeExtensionDot, timeFormat, timeRemaining } from '@shared/utils'
 import {
   convertTrackerDataToComma,
   fetchBtTrackerFromSource,
@@ -63,6 +63,9 @@ export default class Application extends EventEmitter {
       formats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts'],
       autoCombine: true
     }
+    this._clipboardWatchTimer = null
+    this._clipboardLastText = ''
+    this._clipboardLastTriggerAt = 0
 
     // 安全机制：挑战-响应认证
     this.startupNonce = randomBytes(8).toString('hex')
@@ -598,7 +601,15 @@ export default class Application extends EventEmitter {
               }
 
               if (!silentDownload) {
-                this.show()
+                try {
+                  if (this.windowManager && typeof this.windowManager.bringToFront === 'function') {
+                    this.windowManager.bringToFront('index')
+                  } else {
+                    this.show()
+                  }
+                } catch (_) {
+                  this.show()
+                }
                 global.application.sendCommandToAll('application:new-task', taskPayload)
                 res.writeHead(200, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({ ok: true, dialog: true }))
@@ -1391,6 +1402,183 @@ export default class Application extends EventEmitter {
 
   show (page = 'index') {
     this.windowManager.showWindow(page)
+  }
+
+  startClipboardAutoOpenWatch () {
+    if (this._clipboardWatchTimer) {
+      return
+    }
+    try {
+      this._clipboardLastText = `${clipboard.readText() || ''}`
+    } catch (e) {
+      this._clipboardLastText = ''
+    }
+    this._clipboardWatchTimer = setInterval(() => {
+      this.checkClipboardAndAutoOpenAddTask()
+    }, 800)
+  }
+
+  stopClipboardAutoOpenWatch () {
+    if (this._clipboardWatchTimer) {
+      clearInterval(this._clipboardWatchTimer)
+      this._clipboardWatchTimer = null
+    }
+  }
+
+  isDownloadLinkLine (line = '') {
+    const s = `${line}`.trim()
+    if (!s) return false
+    const lower = s.toLowerCase()
+    if (lower.startsWith('magnet:') || lower.startsWith('thunder://') || lower.startsWith('ftp://')) {
+      return true
+    }
+    if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
+      return false
+    }
+
+    let url
+    try {
+      url = new URL(s)
+    } catch (_) {
+      return false
+    }
+
+    const pathname = `${url.pathname || ''}`.toLowerCase()
+
+    const lastSegment = pathname.split('/').filter(Boolean).slice(-1)[0] || ''
+    const dotIndex = lastSegment.lastIndexOf('.')
+    if (dotIndex > 0 && dotIndex < lastSegment.length - 1) {
+      const ext = lastSegment.slice(dotIndex + 1)
+      if (ext.length >= 2 && ext.length <= 8 && /[a-z]/i.test(ext)) {
+        return true
+      }
+    }
+
+    const search = `${url.search || ''}`.toLowerCase()
+    if (search.includes('response-content-disposition=') || search.includes('filename=') || search.includes('download=') || search.includes('attachment=1')) {
+      return true
+    }
+
+    if (pathname.includes('/download') || pathname.includes('/downloads') || pathname.includes('/dl/')) {
+      return true
+    }
+
+    return false
+  }
+
+  getDownloadUriFromClipboardHtml (plainText = '') {
+    let html = ''
+    try {
+      html = `${clipboard.readHTML() || ''}`.trim()
+    } catch (e) {
+      return ''
+    }
+    if (!html) return ''
+
+    let baseOrigin = ''
+    const baseMatch = /https?:\/\/[^\s"'<>]+/i.exec(html)
+    if (baseMatch && baseMatch[0]) {
+      try {
+        baseOrigin = new URL(baseMatch[0]).origin
+      } catch (_) {}
+    }
+
+    const hrefs = []
+    const hrefRe = /href\s*=\s*["']([^"']+)["']/ig
+    let match
+    while ((match = hrefRe.exec(html))) {
+      const raw = `${match[1] || ''}`.trim()
+      if (!raw) continue
+      hrefs.push(raw)
+    }
+    if (hrefs.length <= 0) return ''
+
+    const name = `${plainText || ''}`.trim()
+    const nameLower = name.toLowerCase()
+    const looksLikeFileName = /\.[a-z0-9]{1,8}$/i.test(name) && /[a-z]/i.test(name)
+
+    const normalizeHref = (h) => {
+      let v = `${h || ''}`.trim()
+      if (!v) return ''
+      v = v.replace(/&amp;/g, '&')
+      if (v.startsWith('//')) {
+        v = `https:${v}`
+      } else if (v.startsWith('/') && baseOrigin) {
+        v = `${baseOrigin}${v}`
+      }
+      return sanitizeLink(v)
+    }
+
+    const safeDecode = (v) => {
+      try {
+        return decodeURIComponent(v)
+      } catch (_) {
+        return v
+      }
+    }
+
+    const candidates = hrefs.map(normalizeHref).filter(Boolean)
+
+    if (looksLikeFileName && nameLower) {
+      for (const c of candidates) {
+        const rawLower = `${c}`.toLowerCase()
+        const decodedLower = `${safeDecode(c)}`.toLowerCase()
+        if (rawLower.includes(nameLower) || decodedLower.includes(nameLower)) {
+          if (this.isDownloadLinkLine(c)) return c
+        }
+      }
+    }
+
+    for (const c of candidates) {
+      if (this.isDownloadLinkLine(c)) return c
+    }
+
+    return ''
+  }
+
+  checkClipboardAndAutoOpenAddTask () {
+    let enabled = true
+    try {
+      const raw = this.configManager.getUserConfig('clipboard-auto-paste')
+      enabled = raw === undefined ? true : !!raw
+    } catch (e) {}
+    if (!enabled) return
+
+    let autoOpenEnabled = false
+    try {
+      const raw = this.configManager.getUserConfig('clipboard-auto-open-add-task')
+      autoOpenEnabled = raw === undefined ? false : !!raw
+    } catch (e) {}
+    if (!autoOpenEnabled) return
+
+    let text = ''
+    try {
+      text = `${clipboard.readText() || ''}`.trim()
+    } catch (e) {
+      return
+    }
+    if (!text) return
+    if (text === this._clipboardLastText) return
+    this._clipboardLastText = text
+
+    let uri = ''
+    if (detectResource(text)) {
+      const lines = text.split(/\r?\n/).map(v => sanitizeLink(`${v}`.trim())).filter(Boolean)
+      uri = lines.find(l => this.isDownloadLinkLine(l)) || ''
+    }
+    if (!uri) {
+      uri = this.getDownloadUriFromClipboardHtml(text)
+    }
+    if (!uri) return
+
+    const now = Date.now()
+    if (now - (this._clipboardLastTriggerAt || 0) < 1200) return
+    this._clipboardLastTriggerAt = now
+
+    try {
+      this.windowManager.bringToFront('index')
+      this.sendCommandToAll('application:new-task', { type: ADD_TASK_TYPE.URI, uri })
+    } catch (e) {}
   }
 
   hide (page) {
@@ -2419,6 +2607,10 @@ export default class Application extends EventEmitter {
       this.show(page)
     })
 
+    this.on('application:bring-to-front', ({ page }) => {
+      this.windowManager.bringToFront(page || 'index')
+    })
+
     this.on('application:hide', ({ page }) => {
       this.hide(page)
     })
@@ -2704,6 +2896,8 @@ export default class Application extends EventEmitter {
           }, 500)
         })
       }
+
+      this.startClipboardAutoOpenWatch()
     })
 
     this.configManager.userConfig.onDidAnyChange(() => this.handleConfigChange('user'))

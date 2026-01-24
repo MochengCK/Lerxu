@@ -13,6 +13,7 @@
       :class="getItemClass(item)"
       :style="getItemStyle(item)"
       @click.stop="(e) => handleItemClick(item, e)"
+      @contextmenu.stop.prevent="(e) => handleItemContextMenu(item, e)"
     >
       <mo-task-item
         :task="item"
@@ -28,10 +29,12 @@
 </template>
 
 <script>
+  import { Menu, getCurrentWindow } from '@electron/remote'
   import { mapState } from 'vuex'
   import { cloneDeep } from 'lodash'
   import {
     calcProgress,
+    checkTaskIsSeeder,
     getFileExtension,
     getFileNameFromFile,
     getTaskName
@@ -46,6 +49,8 @@
   } from '@shared/constants'
 
   import DragSelect from '@/components/DragSelect/Index'
+  import { getTaskActualPath } from '@/utils/native'
+  import { commands } from '@/components/CommandManager/instance'
   import TaskItem from './TaskItem'
 
   export default {
@@ -328,6 +333,164 @@
 
         this.selectedList = next
         this.$store.dispatch('task/selectTasks', cloneDeep(next))
+      },
+      handleItemContextMenu (item, event) {
+        const task = item || null
+        const gid = task && task.gid ? task.gid : ''
+        if (!gid) {
+          return
+        }
+        if (!this.selectedList.includes(gid)) {
+          this.selectedList = [gid]
+          this.$store.dispatch('task/selectTasks', [gid])
+        }
+
+        const selected = Array.isArray(this.selectedList) ? this.selectedList : []
+        const selectedUnique = Array.from(new Set(selected.map(x => `${x || ''}`.trim()).filter(Boolean)))
+        const isMultiSelected = selectedUnique.length > 1 && selectedUnique.includes(`${gid}`)
+
+        const template = isMultiSelected
+          ? this.getMultiTaskContextMenuTemplate(selectedUnique)
+          : this.getTaskContextMenuTemplate(task, event)
+
+        const menu = Menu.buildFromTemplate(template)
+        menu.popup({
+          window: getCurrentWindow(),
+          x: event.x != null ? event.x : event.clientX,
+          y: event.y != null ? event.y : event.clientY
+        })
+      },
+      getMultiTaskContextMenuTemplate (selectedGids = []) {
+        const gids = Array.isArray(selectedGids) ? selectedGids : []
+        const list = Array.isArray(this.taskList) ? this.taskList : []
+        const selectedTasks = list.filter(t => t && gids.includes(`${t.gid}`))
+
+        const canPause = selectedTasks.some(t => t && t.status === TASK_STATUS.ACTIVE)
+        const canResume = selectedTasks.some(t => t && (t.status === TASK_STATUS.PAUSED || t.status === TASK_STATUS.WAITING))
+
+        return [
+          {
+            label: this.$t('task.pause-task'),
+            enabled: canPause,
+            click: () => commands.execute('application:pause-task')
+          },
+          {
+            label: this.$t('task.resume-task'),
+            enabled: canResume,
+            click: () => commands.execute('application:resume-task')
+          },
+          { type: 'separator' },
+          {
+            label: this.$t('task.delete-selected-tasks'),
+            click: () => commands.emit('batch-delete-task', { deleteWithFiles: false })
+          },
+          {
+            label: `${this.$t('task.delete-selected-tasks')}（${this.$t('task.delete-task-label')}）`,
+            click: () => commands.emit('batch-delete-task', { deleteWithFiles: true })
+          },
+          { type: 'separator' },
+          {
+            label: this.$t('task.refresh-list'),
+            click: () => this.$store.dispatch('task/fetchList')
+          },
+          {
+            label: this.$t('task.select-all-task'),
+            click: () => commands.execute('application:select-all-task')
+          }
+        ]
+      },
+      getTaskContextMenuTemplate (task, event) {
+        const status = task && task.status ? task.status : ''
+        const isSeeder = checkTaskIsSeeder(task)
+        const taskName = getTaskName(task, {
+          defaultName: this.$t('task.get-task-name'),
+          maxLen: -1
+        })
+
+        let path = ''
+        try {
+          path = getTaskActualPath(task, this.preferenceConfig || {}) || ''
+        } catch (_) {
+          path = ''
+        }
+
+        const items = []
+
+        if (status === TASK_STATUS.ACTIVE) {
+          items.push({
+            label: this.$t('task.pause-task'),
+            click: () => commands.emit('pause-task', { task, taskName })
+          })
+        } else if (status === TASK_STATUS.PAUSED || status === TASK_STATUS.WAITING) {
+          items.push({
+            label: this.$t('task.resume-task'),
+            click: () => commands.emit('resume-task', { task, taskName })
+          })
+        }
+
+        if (isSeeder) {
+          items.push({
+            label: this.$t('task.stop'),
+            click: () => commands.emit('stop-task-seeding', { task })
+          })
+        }
+
+        if ([TASK_STATUS.ERROR, TASK_STATUS.COMPLETE, TASK_STATUS.REMOVED].includes(status)) {
+          items.push({
+            label: this.$t('task.restart'),
+            click: () => commands.emit('restart-task', {
+              task,
+              taskName,
+              showDialog: status === TASK_STATUS.COMPLETE || !!(event && event.altKey)
+            })
+          })
+        }
+
+        if (items.length > 0) {
+          items.push({ type: 'separator' })
+        }
+
+        items.push({
+          label: this.$t('task.reveal-in-folder'),
+          enabled: !!path,
+          click: () => commands.emit('reveal-in-folder', { path })
+        })
+
+        items.push({
+          label: this.$t('task.copy-link'),
+          click: () => commands.emit('copy-task-link', { task })
+        })
+
+        items.push({
+          label: this.$t('task.info'),
+          click: () => commands.emit('show-task-info', { task })
+        })
+
+        items.push({ type: 'separator' })
+
+        const deleteEventPayload = (deleteWithFiles) => ({ task, taskName, deleteWithFiles: !!deleteWithFiles })
+        const isRecordRemove = [TASK_STATUS.ERROR, TASK_STATUS.COMPLETE, TASK_STATUS.REMOVED].includes(status)
+        if (isRecordRemove) {
+          items.push({
+            label: this.$t('task.remove-record'),
+            click: () => commands.emit('delete-task-record', deleteEventPayload(false))
+          })
+          items.push({
+            label: `${this.$t('task.remove-record')}（${this.$t('task.remove-record-label')}）`,
+            click: () => commands.emit('delete-task-record', deleteEventPayload(true))
+          })
+        } else {
+          items.push({
+            label: this.$t('task.delete-task'),
+            click: () => commands.emit('delete-task', deleteEventPayload(false))
+          })
+          items.push({
+            label: `${this.$t('task.delete-task')}（${this.$t('task.delete-task-label')}）`,
+            click: () => commands.emit('delete-task', deleteEventPayload(true))
+          })
+        }
+
+        return items
       },
       handleListBlankClick (e) {
         if (!e || e.target !== e.currentTarget) {

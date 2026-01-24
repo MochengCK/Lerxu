@@ -71,6 +71,7 @@ const userKeys = [
   'task-plan-gids',
   'task-plan-only-when-idle',
   'clipboard-auto-paste',
+  'clipboard-auto-open-add-task',
   'floating-bar-display-mode',
   'preference-cards-collapsed',
   'enable-security-scan',
