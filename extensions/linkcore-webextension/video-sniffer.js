@@ -90,6 +90,23 @@
     }
   }
 
+  let cachedLocale = 'en'
+  try {
+    getCurrentLocale().then((locale) => {
+      cachedLocale = locale || 'en'
+    })
+  } catch (e) {}
+
+  try {
+    if (chrome && chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace === 'local' && changes && changes.browserLocale) {
+          cachedLocale = changes.browserLocale.newValue || 'en'
+        }
+      })
+    }
+  } catch (e) {}
+
   // 调试日志控制
   const DEBUG = false // 关闭调试日志
   const log = (...args) => {
@@ -123,6 +140,38 @@
   }
 
   const clearedResourceUrls = new Set()
+
+  let uiUpdateTimer = null
+  let lastUiUpdateAt = 0
+  const requestUIUpdate = (immediate = false) => {
+    try {
+      if (immediate) {
+        if (uiUpdateTimer) {
+          clearTimeout(uiUpdateTimer)
+          uiUpdateTimer = null
+        }
+        lastUiUpdateAt = Date.now()
+        updateUI()
+        return
+      }
+
+      const now = Date.now()
+      const elapsed = now - lastUiUpdateAt
+      if (elapsed >= 80 && !uiUpdateTimer) {
+        lastUiUpdateAt = now
+        updateUI()
+        return
+      }
+
+      if (uiUpdateTimer) return
+      const delay = Math.max(20, 80 - Math.max(0, elapsed))
+      uiUpdateTimer = setTimeout(() => {
+        uiUpdateTimer = null
+        lastUiUpdateAt = Date.now()
+        updateUI()
+      }, delay)
+    } catch (e) {}
+  }
 
   let videoContextSeq = 1
   const videoContextMap = new WeakMap()
@@ -290,7 +339,7 @@
         // 立即触发UI更新以应用新配置
         if (configChanged) {
           log('Config changed, triggering UI update')
-          updateUI()
+          requestUIUpdate(true)
         }
       })
     } catch (e) {
@@ -344,7 +393,7 @@
               log('AutoCombine setting changed, updating combinations')
             }
             
-            updateUI()
+            requestUIUpdate(true)
             log('Config change handling complete')
           }
         }
@@ -697,8 +746,7 @@
 
   // 解析资源信息（异步版本，支持多语言）
   async function parseResource(url, mimeType, size) {
-    // 获取当前语言设置
-    const currentLocale = await getCurrentLocale()
+    const currentLocale = cachedLocale || 'en'
     
     // 优先使用 MIME 类型获取扩展名（更准确）
     let ext = ''
@@ -1464,7 +1512,7 @@
       }
       
       if (shouldUpdate) {
-        updateUI()
+        requestUIUpdate(false)
       }
       return
     }
@@ -1500,7 +1548,7 @@
       }
       
       if (shouldUpdate) {
-        updateUI()
+        requestUIUpdate(false)
       }
       return
     }
@@ -1521,8 +1569,7 @@
       log('Current video resources count:', sniffedResources.video.length)
     }
 
-    // 立即更新UI显示
-    updateUI()
+    requestUIUpdate((sniffedResources.video.length + sniffedResources.audio.length) <= 1)
 
     // 如果没有大小信息，异步获取（不阻塞UI显示）
     if (!info.size || info.size === 0) {
@@ -1530,8 +1577,7 @@
         if (fetchedSize > 0) {
           info.size = fetchedSize
           log('Fetched resource size:', fetchedSize, 'for', url.substring(0, 100))
-          // 更新UI显示新的大小
-          updateUI()
+          requestUIUpdate(false)
         }
       }).catch(e => {
         log('Failed to fetch size:', e)
@@ -1572,11 +1618,11 @@
             existing.quality = info.quality
             changed = true
           }
-          if (changed) updateUI()
+          if (changed) requestUIUpdate(false)
           return
         }
         sniffedResources.audio.push(info)
-        updateUI()
+        requestUIUpdate((sniffedResources.video.length + sniffedResources.audio.length) <= 1)
         return
       }
 
@@ -1599,12 +1645,12 @@
           existing.quality = info.quality
           changed = true
         }
-        if (changed) updateUI()
+        if (changed) requestUIUpdate(false)
         return
       }
 
       sniffedResources.video.push(info)
-      updateUI()
+      requestUIUpdate((sniffedResources.video.length + sniffedResources.audio.length) <= 1)
     } catch (e) {}
   }
 
@@ -1999,7 +2045,15 @@
   // 监听资源请求
   window.addEventListener('linkcore-get-resources', () => {
     // Resource request received
-    updateUI()
+    requestUIUpdate(true)
+  })
+
+  window.addEventListener('message', (event) => {
+    try {
+      if (event && event.data && event.data.type === 'linkcore-clear-resources') {
+        window.dispatchEvent(new Event('linkcore-clear-resources'))
+      }
+    } catch (e) {}
   })
 
   // 监听清除资源事件（当切换到不同的视频预览时触发）
@@ -2020,7 +2074,7 @@
     clearedResourceUrls.clear()
     
     // 立即更新UI显示为空
-    updateUI()
+    requestUIUpdate(true)
     
     // 延迟一小段时间后重新检测当前正在播放的媒体资源
     setTimeout(() => {

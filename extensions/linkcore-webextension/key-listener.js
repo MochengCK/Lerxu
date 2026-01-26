@@ -146,6 +146,59 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     timestamp: 0
   }
 
+  let lastExplicitClearAt = 0
+
+  const getMaxResourceTimestamp = (res) => {
+    try {
+      const r = res || {}
+      const lists = [r.video, r.audio, r.m4s, r.combined]
+      let max = 0
+      lists.forEach(list => {
+        if (!Array.isArray(list)) return
+        list.forEach(item => {
+          const ts = Number(item && item.timestamp ? item.timestamp : 0)
+          if (ts > max) max = ts
+        })
+      })
+      return max
+    } catch (e) {
+      return 0
+    }
+  }
+
+  const shouldIgnoreResourcesUpdateAfterClear = (res) => {
+    try {
+      if (!lastExplicitClearAt) return false
+      const total = countAllResources(res)
+      if (!total) return false
+      const maxTs = getMaxResourceTimestamp(res)
+      return !!(maxTs && maxTs < lastExplicitClearAt)
+    } catch (e) {
+      return false
+    }
+  }
+
+  const broadcastClearResourcesToFrames = () => {
+    try {
+      const msg = { type: 'linkcore-clear-resources', at: Date.now() }
+      try {
+        const iframes = document.querySelectorAll('iframe')
+        iframes.forEach(iframe => {
+          try {
+            const w = iframe && iframe.contentWindow
+            if (w && w.postMessage) w.postMessage(msg, '*')
+          } catch (e) {}
+        })
+      } catch (e) {}
+
+      try {
+        if (window.top && window.top !== window && window.top.postMessage) {
+          window.top.postMessage(msg, '*')
+        }
+      } catch (e) {}
+    } catch (e) {}
+  }
+
   const countAllResources = (res) => {
     try {
       const r = res || {}
@@ -340,7 +393,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 只在 document 上监听（因为 video-sniffer.js 在 document 上触发）
   document.addEventListener('linkcore-resources-updated', (event) => {
     log('Resources updated:', event.detail)
-    sniffedResources = event.detail || { video: [], audio: [], m4s: [], combined: [], total: 0 }
+    const next = event.detail || { video: [], audio: [], m4s: [], combined: [], total: 0 }
+    if (shouldIgnoreResourcesUpdateAfterClear(next)) {
+      log('Ignoring stale resources update after clear')
+      return
+    }
+    sniffedResources = next
     sniffedResources.total = countAllResources(sniffedResources)
     log('Total resources:', sniffedResources.total)
     
@@ -365,9 +423,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 监听来自 iframe 的消息
   window.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'linkcore-clear-resources') {
+      window.dispatchEvent(new Event('linkcore-clear-resources'))
+      return
+    }
     if (event.data && event.data.type === 'linkcore-resources-updated') {
       log('Received message from iframe:', event.data.data)
-      sniffedResources = event.data.data || { video: [], audio: [], m4s: [], combined: [], total: 0 }
+      const next = event.data.data || { video: [], audio: [], m4s: [], combined: [], total: 0 }
+      if (shouldIgnoreResourcesUpdateAfterClear(next)) {
+        log('Ignoring stale iframe resources update after clear')
+        return
+      }
+      sniffedResources = next
       sniffedResources.total = countAllResources(sniffedResources)
       log('Total resources from iframe:', sniffedResources.total)
       
@@ -394,6 +461,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 监听清除资源事件
   window.addEventListener('linkcore-clear-resources', () => {
     log('Clearing resources')
+    lastExplicitClearAt = Date.now()
     const beforeCount = sniffedResources.total || 0
     log('Resources before clear:', beforeCount)
     sniffedResources = {
@@ -1500,6 +1568,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     clearBtn.addEventListener('click', () => {
       log('Clear button clicked')
       window.dispatchEvent(new Event('linkcore-clear-resources'))
+      broadcastClearResourcesToFrames()
       const dropdown = document.getElementById('linkcore-resource-dropdown')
       if (dropdown) dropdown.style.display = 'none'
     })

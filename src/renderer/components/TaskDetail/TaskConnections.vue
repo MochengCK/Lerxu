@@ -44,7 +44,9 @@
           min-width="150"
         >
           <template slot-scope="scope">
-            {{ scope.row.host }}
+            <el-tooltip :content="scope.row.host" placement="top" :disabled="!scope.row._hostOverflow">
+              <span class="mo-conn-host" @mouseenter="handleHostMouseEnter($event, scope.row)">{{ scope.row.host }}</span>
+            </el-tooltip>
           </template>
         </el-table-column>
         <el-table-column
@@ -177,6 +179,15 @@
       }
     },
     methods: {
+      handleHostMouseEnter (event, row) {
+        try {
+          const el = event && event.currentTarget
+          const overflow = !!(el && el.scrollWidth > el.clientWidth + 1)
+          if (row && row._hostOverflow !== overflow) {
+            this.$set(row, '_hostOverflow', overflow)
+          }
+        } catch (e) {}
+      },
       resetAndFetch () {
         this.connectionsData = null
         this.initialLoading = true
@@ -321,6 +332,16 @@
     .cell {
       padding-left: 0.5rem;
       padding-right: 0.5rem;
+    }
+
+    .mo-conn-host {
+      display: block;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: clip;
+      -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) calc(100% - 18px), rgba(0, 0, 0, 0) 100%);
+      mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) calc(100% - 18px), rgba(0, 0, 0, 0) 100%);
     }
 
     .speed-active {
