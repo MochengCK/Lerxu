@@ -321,10 +321,7 @@
           }
         })
 
-        const isDev = typeof __dirname === 'string' && __dirname.includes('src')
-        const url = isDev
-          ? `file://${__dirname.replace(/\\/g, '/').replace('src/main/pages', 'src/main/pages')}/video-sniffer-add-format.html`
-          : `file://${__dirname.replace(/\\/g, '/')}/video-sniffer-add-format.html`
+        const url = `file://${__dirname.replace(/\\/g, '/')}/video-sniffer-add-format.html`
 
         win.loadURL(url)
 

@@ -662,14 +662,24 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   }
 
+  const isHostMatchDomain = (host, domain) => {
+    try {
+      const h = `${host || ''}`.toLowerCase().replace(/\.$/, '')
+      const d = `${domain || ''}`.toLowerCase().replace(/^\.+/, '').replace(/\.$/, '')
+      if (!h || !d) return false
+      return h === d || h.endsWith(`.${d}`)
+    } catch (e) {
+      return false
+    }
+  }
+
   const isShortVideoFeedHost = () => {
     try {
       const host = (window.location && window.location.hostname ? window.location.hostname : '').toLowerCase()
       if (!host) return false
-      if (host.includes('douyin.com')) return true
-      if (host.includes('iesdouyin.com')) return true
-      if (host.includes('tiktok.com')) return true
-      return false
+      return isHostMatchDomain(host, 'douyin.com') ||
+        isHostMatchDomain(host, 'iesdouyin.com') ||
+        isHostMatchDomain(host, 'tiktok.com')
     } catch (e) {
       return false
     }

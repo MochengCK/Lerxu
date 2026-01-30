@@ -593,6 +593,16 @@
         }
       },
       looksLikeBilibiliSource (referer, headers) {
+        const isHostMatchDomain = (host, domain) => {
+          try {
+            const h = `${host || ''}`.toLowerCase().replace(/\.$/, '')
+            const d = `${domain || ''}`.toLowerCase().replace(/^\.+/, '').replace(/\.$/, '')
+            if (!h || !d) return false
+            return h === d || h.endsWith(`.${d}`)
+          } catch (_) {
+            return false
+          }
+        }
         const urls = []
         if (referer && typeof referer === 'string') {
           urls.push(referer)
@@ -620,7 +630,7 @@
           try {
             const url = new URL(u)
             const host = (url.hostname || '').toLowerCase()
-            if (host.includes('bilibili.com') || host.includes('b23.tv')) {
+            if (isHostMatchDomain(host, 'bilibili.com') || isHostMatchDomain(host, 'b23.tv')) {
               return true
             }
           } catch (_) {}
