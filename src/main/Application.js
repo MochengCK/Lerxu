@@ -3028,6 +3028,13 @@ export default class Application extends EventEmitter {
       })
     })
 
+    // Handle open-file-categories-settings
+    ipcMain.on('open-file-categories-settings', () => {
+      this.windowManager.openWindow('file-categories-settings', {
+        hidden: false
+      })
+    })
+
     // Handle video-sniffer-settings-updated
     ipcMain.on('video-sniffer-settings-updated', (event, settings) => {
       logger.log('[Motrix] Video sniffer settings updated:', settings)
@@ -3046,6 +3053,16 @@ export default class Application extends EventEmitter {
         'video-sniffer-auto-combine': settings.autoCombine
       })
       logger.log('[Motrix] Video sniffer config saved to disk')
+    })
+
+    // Handle file-categories-settings-updated
+    ipcMain.on('file-categories-settings-updated', (event, categories) => {
+      logger.log('[Motrix] File categories settings updated:', categories)
+
+      this.configManager.setUserConfig({
+        'file-categories': categories
+      })
+      logger.log('[Motrix] File categories config saved to disk')
     })
   }
 
@@ -3386,6 +3403,19 @@ export default class Application extends EventEmitter {
     // Get video sniffer config
     ipcMain.handle('get-video-sniffer-config', async () => {
       return this._videoSnifferConfig
+    })
+
+    // Get file categories config
+    ipcMain.handle('get-file-categories-config', async () => {
+      return this.configManager.getUserConfig('file-categories') || {
+        images: { name: 'image-files', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'] },
+        documents: { name: 'document-files', extensions: ['pdf', 'doc', 'docx', 'txt', 'rtf', 'xls', 'xlsx', 'ppt', 'pptx'] },
+        audio: { name: 'audio-files', extensions: ['mp3', 'wav', 'flac', 'aac', 'ogg', 'wma'] },
+        video: { name: 'video-files', extensions: ['mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm'] },
+        archives: { name: 'archive-files', extensions: ['zip', 'rar', '7z', 'tar', 'gz'] },
+        programs: { name: 'program-files', extensions: ['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm'] },
+        others: { name: 'other-files', extensions: [] }
+      }
     })
   }
 

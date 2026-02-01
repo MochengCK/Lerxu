@@ -12,9 +12,17 @@ export const DEFAULT_CATEGORIES = {
   others: { name: '其他', extensions: [] } // 其他文件类型
 }
 
+// 从URL或文件名中提取扩展名（处理查询参数）
+export const getFileExtension = (filename) => {
+  // 移除URL查询参数
+  const cleanFilename = filename.split('?')[0].split('#')[0]
+  const ext = extname(cleanFilename).toLowerCase().replace('.', '')
+  return ext
+}
+
 // 获取文件分类
 export const getFileCategory = (filename, categories = DEFAULT_CATEGORIES) => {
-  const ext = extname(filename).toLowerCase().replace('.', '')
+  const ext = getFileExtension(filename)
 
   for (const [category, categoryConfig] of Object.entries(categories)) {
     if (categoryConfig.extensions && categoryConfig.extensions.includes(ext)) {

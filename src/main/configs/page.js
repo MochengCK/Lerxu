@@ -15,6 +15,13 @@ const getVideoSnifferAddFormatUrl = () => {
   return `file://${path.join(__dirname, 'pages/video-sniffer-add-format.html').replace(/\\/g, '/')}`
 }
 
+const getFileCategoriesUrl = () => {
+  if (is.dev()) {
+    return `file://${path.resolve(__dirname, '../pages/file-categories.html').replace(/\\/g, '/')}`
+  }
+  return `file://${path.join(__dirname, 'pages/file-categories.html').replace(/\\/g, '/')}`
+}
+
 export default {
   index: {
     attrs: {
@@ -55,5 +62,19 @@ export default {
     bindCloseToHide: false,
     openDevTools: is.dev(),
     url: getVideoSnifferAddFormatUrl()
+  },
+  'file-categories-settings': {
+    attrs: {
+      title: '文件分类设置',
+      width: 700,
+      height: 550,
+      minHeight: 400,
+      resizable: true,
+      maximizable: false,
+      minimizable: true
+    },
+    bindCloseToHide: false,
+    openDevTools: is.dev(),
+    url: getFileCategoriesUrl()
   }
 }
