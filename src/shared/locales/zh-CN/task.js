@@ -285,5 +285,10 @@ export default {
   'tasks-count': '{count} 个任务',
   'prev-month': '上个月',
   'next-month': '下个月',
-  'dblclick-to-today': '双击回到今天'
+  'dblclick-to-today': '双击回到今天',
+  // 任务完成弹窗
+  'task-completed-title': '下载完成',
+  'open-file': '打开文件',
+  'open-folder': '打开文件夹',
+  'close': '关闭'
 }

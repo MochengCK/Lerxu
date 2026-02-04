@@ -25,6 +25,7 @@ const userKeys = [
   'new-task-show-downloading',
   'auto-open-task-progress-window',
   'task-progress-window-mode',
+  'show-task-completed-window',
   'new-task-jump-target',
   'no-confirm-before-delete-task',
   'open-at-login',

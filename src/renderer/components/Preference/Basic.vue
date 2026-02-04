@@ -606,6 +606,11 @@
                 {{ $t('preferences.auto-purge-record') }}
               </el-checkbox>
             </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.showTaskCompletedWindow" @change="autoSaveForm">
+                {{ $t('preferences.show-task-completed-window') }}
+              </el-checkbox>
+            </el-col>
 
             <!-- 分隔线 -->
             <el-col class="form-item-sub" :span="24">
@@ -911,6 +916,7 @@
       taskProgressMode,
       taskNotification,
       taskCompleteNotifyClickAction,
+      showTaskCompletedWindow,
       theme,
       traySpeedometer,
       backgroundType,
@@ -993,6 +999,7 @@
       taskProgressMode: taskProgressMode || 'component',
       taskNotification,
       taskCompleteNotifyClickAction: taskCompleteNotifyClickAction || 'open-folder',
+      showTaskCompletedWindow: showTaskCompletedWindow === undefined ? true : !!showTaskCompletedWindow,
       theme,
       traySpeedometer,
       backgroundType: backgroundType || 'color',

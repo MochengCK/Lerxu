@@ -150,6 +150,7 @@
         lastTaskStatuses: {},
         progressWindows: new Map(), // gid -> window
         progressTaskGids: new Set(),
+        completedTaskWindows: new Map(), // gid -> window for completed tasks
         isFloatingBarSearchOpen: false,
         isFloatingBarSearchExpanded: false,
         windowWidth: 0
@@ -503,6 +504,32 @@
               })
             } catch (e) {}
             this.updateProgressWindow(task)
+          } catch (e) {}
+        })
+
+        // Update all completed task windows
+        this.completedTaskWindows.forEach((win, gid) => {
+          if (!win || (win.isDestroyed && win.isDestroyed())) {
+            this.completedTaskWindows.delete(gid)
+            return
+          }
+
+          try {
+            const prefState = this.$store && this.$store.state && this.$store.state.preference
+            const prefConfig = prefState && prefState.config ? prefState.config : {}
+            const themeConfig = prefConfig.theme || APP_THEME.LIGHT
+            const appState = this.$store && this.$store.state && this.$store.state.app
+            const systemTheme = appState && appState.systemTheme ? appState.systemTheme : APP_THEME.LIGHT
+            const finalTheme = themeConfig === APP_THEME.AUTO ? systemTheme : themeConfig
+            const isDark = finalTheme === APP_THEME.DARK
+
+            const bodyBg = isDark ? '#1a1a1a' : '#ffffff'
+            if (typeof win.setBackgroundColor === 'function') {
+              win.setBackgroundColor(bodyBg)
+            }
+            try {
+              win.webContents.send('theme-changed', isDark ? 'dark' : 'light')
+            } catch (e) {}
           } catch (e) {}
         })
       },
@@ -1759,6 +1786,429 @@
         }
         this.progressTaskGids.delete(gid)
       },
+
+      // Open a window to show task completion notification
+      openCompletedTaskWindow (task) {
+        console.log('[Motrix] openCompletedTaskWindow called:', task)
+        if (!task) {
+          console.log('[Motrix] No task provided')
+          return
+        }
+        const gid = task && task.gid ? `${task.gid}` : ''
+        if (!gid) {
+          console.log('[Motrix] No gid found in task')
+          return
+        }
+        console.log('[Motrix] Opening completed task window for gid:', gid)
+
+        // Check if already showing a window for this task
+        const existingWindow = this.completedTaskWindows.get(gid)
+        if (this.isAliveWindow(existingWindow)) {
+          existingWindow.show()
+          existingWindow.focus()
+          return
+        }
+
+        const prefState = this.$store && this.$store.state && this.$store.state.preference
+        const prefConfig = prefState && prefState.config ? prefState.config : {}
+        const themeConfig = prefConfig.theme || APP_THEME.LIGHT
+        const appState = this.$store && this.$store.state && this.$store.state.app
+        const systemTheme = appState && appState.systemTheme ? appState.systemTheme : APP_THEME.LIGHT
+        const finalTheme = themeConfig === APP_THEME.AUTO ? systemTheme : themeConfig
+        const isDark = finalTheme === APP_THEME.DARK
+        const hideAppMenu = !!prefConfig.hideAppMenu
+        const isWin = process && process.platform === 'win32'
+        const isLinux = process && process.platform === 'linux'
+        const useCustomFrame = hideAppMenu && (isWin || isLinux)
+
+        // Remove existing window reference
+        if (existingWindow) {
+          this.completedTaskWindows.delete(gid)
+        }
+
+        const { BrowserWindow } = require('@electron/remote')
+        let icon = null
+        try {
+          const staticPath = (typeof window !== 'undefined' && window.__static) ? window.__static : null
+          if (staticPath) {
+            const path = require('node:path')
+            if (process && process.platform === 'win32') {
+              icon = path.join(staticPath, './L_ico_256x256.ico')
+            } else if (process && process.platform === 'linux') {
+              icon = path.join(staticPath, './512x512.png')
+            }
+          }
+        } catch (e) {}
+
+        const win = new BrowserWindow({
+          width: 360,
+          height: 200,
+          resizable: false,
+          minimizable: false,
+          maximizable: false,
+          useContentSize: true,
+          frame: !useCustomFrame,
+          backgroundColor: isDark ? '#1f1f1f' : '#ffffff',
+          icon,
+          parent: null,
+          modal: false,
+          show: false,
+          webPreferences: {
+            enableRemoteModule: true,
+            contextIsolation: false,
+            nodeIntegration: true
+          }
+        })
+        this.completedTaskWindows.set(gid, win)
+
+        win.on('closed', () => {
+          this.completedTaskWindows.delete(gid)
+        })
+
+        const html = this.buildCompletedTaskWindowHtml(task, useCustomFrame, isDark)
+        win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+
+        win.once('ready-to-show', () => {
+          if (!this.isAliveWindow(win)) {
+            this.completedTaskWindows.delete(gid)
+            return
+          }
+
+          const windowTitle = this.$t('task.task-completed-title') || '下载完成'
+          try {
+            win.setTitle(windowTitle)
+          } catch (e) {
+            this.completedTaskWindows.delete(gid)
+            return
+          }
+
+          if (hideAppMenu) {
+            if (typeof win.setMenuBarVisibility === 'function') {
+              win.setMenuBarVisibility(false)
+            }
+            if (win.setMenu) {
+              win.setMenu(null)
+            }
+          }
+
+          win.show()
+          win.focus()
+          // Keep on top briefly then allow normal stacking
+          win.setAlwaysOnTop(true)
+          setTimeout(() => {
+            try {
+              if (this.isAliveWindow(win)) {
+                win.setAlwaysOnTop(false)
+              }
+            } catch (e) {}
+          }, 100)
+        })
+      },
+
+      // Build HTML for completed task window
+      buildCompletedTaskWindowHtml (task, useCustomFrame = false, isDark = false) {
+        // Get task name from files or bittorrent info
+        let taskName = 'Unknown'
+        const files = Array.isArray(task.files) ? task.files : []
+        const { bittorrent } = task
+        if (bittorrent && bittorrent.info && bittorrent.info.name) {
+          taskName = bittorrent.info.name
+        } else if (files.length === 1) {
+          const file = files[0]
+          let path = file.path
+          if (!path && file.uris && file.uris.length > 0) {
+            path = decodeURI(file.uris[0].uri)
+          }
+          if (path) {
+            const index = path.lastIndexOf('/')
+            if (index >= 0) {
+              taskName = path.substring(index + 1)
+            } else {
+              taskName = path
+            }
+            // Remove query parameters
+            const q = taskName.indexOf('?')
+            if (q >= 0) taskName = taskName.substring(0, q)
+          }
+        } else if (files.length > 1) {
+          taskName = `${files.length} files`
+        }
+
+        const totalLength = task.totalLength || task.completedLength || 0
+        const formattedSize = this.formatBytes(totalLength)
+
+        // Get full file path for opening folder
+        let filePath = ''
+        if (files.length > 0) {
+          const file = files[0]
+          filePath = file.path || ''
+          if (!filePath && file.uris && file.uris.length > 0) {
+            const uri = decodeURI(file.uris[0].uri)
+            // Convert file:// URL to path
+            if (uri.startsWith('file://')) {
+              filePath = uri.substring(7)
+            } else {
+              filePath = uri
+            }
+          }
+        }
+        // If still no path, use task.dir + taskName
+        if (!filePath && task.dir && taskName) {
+          filePath = task.dir + '/' + taskName
+        }
+
+        const gid = task.gid || ''
+        const bgColor = isDark ? '#1a1a1a' : '#ffffff'
+        const textColor = isDark ? '#e0e0e0' : '#333333'
+        const secondaryTextColor = isDark ? '#909399' : '#606266'
+        const successColor = '#67c23a'
+        const buttonBg = isDark ? '#2a2a2a' : '#f5f7fa'
+        const buttonHoverBg = isDark ? '#3a3a3a' : '#e4e7ed'
+
+        const titleBarHtml = useCustomFrame
+          ? `
+          <div class="title-bar">
+            <span class="title-text">${this.$t('task.task-completed-title') || '下载完成'}</span>
+            <div class="title-actions">
+              <button class="title-btn" id="minimizeBtn">−</button>
+              <button class="title-btn" id="titleCloseBtn">×</button>
+            </div>
+          </div>
+          `
+          : ''
+
+        const titleBarCss = useCustomFrame
+          ? `
+          .title-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 12px;
+            background: ${bgColor};
+            -webkit-app-region: drag;
+            z-index: 1000;
+          }
+          .title-text {
+            font-size: 13px;
+            font-weight: 500;
+            color: ${textColor};
+            -webkit-app-region: drag;
+          }
+          .title-actions {
+            display: flex;
+            gap: 4px;
+            -webkit-app-region: no-drag;
+          }
+          .title-btn {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            border: none;
+            background: transparent;
+            color: ${secondaryTextColor};
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.3s;
+          }
+          .title-btn:hover {
+            background-color: ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'};
+            color: ${textColor};
+          }
+        `
+          : ''
+
+        const containerPadding = useCustomFrame ? '40px 16px 16px 16px' : '16px'
+        const scriptEnd = '</' + 'script>'
+
+        return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      background: ${bgColor};
+      color: ${textColor};
+      overflow: hidden;
+    }
+    ${titleBarCss}
+    .container {
+      padding: ${containerPadding};
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .icon-wrapper {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: ${successColor}20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+    .icon {
+      width: 28px;
+      height: 28px;
+      color: ${successColor};
+    }
+    .task-name {
+      font-size: 15px;
+      font-weight: 500;
+      color: ${textColor};
+      text-align: center;
+      margin-bottom: 4px;
+      max-width: 100%;
+      padding: 0 8px;
+      word-break: break-all;
+    }
+    .task-info {
+      font-size: 13px;
+      color: ${secondaryTextColor};
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .buttons {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+    }
+    .btn {
+      flex: 1;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      background: ${buttonBg};
+      color: ${textColor};
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-align: center;
+    }
+    .btn:hover {
+      background: ${buttonHoverBg};
+    }
+  </style>
+</head>
+<body>
+  ${titleBarHtml}
+  <div class="container">
+    <div class="task-name" title="${this.escapeHtml(taskName)}">${this.escapeHtml(taskName)}</div>
+    <div class="task-info">${formattedSize}</div>
+    <div class="buttons">
+      <button class="btn" id="openFileBtn">${this.$t('task.open-file') || '打开文件'}</button>
+      <button class="btn" id="openFolderBtn">${this.$t('task.open-folder') || '打开文件夹'}</button>
+      <button class="btn" id="closeBtn">${this.$t('task.close') || '关闭'}</button>
+    </div>
+  </div>
+  <script>
+    const { ipcRenderer } = require('electron')
+    const gid = '${gid}'
+    const filePath = ${JSON.stringify(filePath)}
+
+    document.getElementById('closeBtn').addEventListener('click', () => {
+      ipcRenderer.send('close-completed-task-window', gid)
+    })
+
+    const titleCloseBtn = document.getElementById('titleCloseBtn')
+    if (titleCloseBtn) {
+      titleCloseBtn.addEventListener('click', () => {
+        ipcRenderer.send('close-completed-task-window', gid)
+      })
+    }
+
+    const minimizeBtn = document.getElementById('minimizeBtn')
+    if (minimizeBtn) {
+      minimizeBtn.addEventListener('click', () => {
+        ipcRenderer.send('minimize-completed-task-window', gid)
+      })
+    }
+
+    document.getElementById('openFolderBtn').addEventListener('click', () => {
+      ipcRenderer.send('open-completed-task-folder', { gid, filePath })
+    })
+
+    document.getElementById('openFileBtn').addEventListener('click', () => {
+      ipcRenderer.send('open-completed-task-file', { gid, filePath })
+    })
+
+    // Listen for theme changes from main window
+    ipcRenderer.on('theme-changed', (event, theme) => {
+      const isDark = theme === 'dark'
+      const bgColor = isDark ? '#1a1a1a' : '#ffffff'
+      const textColor = isDark ? '#e0e0e0' : '#333333'
+      const secondaryTextColor = isDark ? '#909399' : '#606266'
+      const buttonBg = isDark ? '#2a2a2a' : '#f5f7fa'
+      const buttonHoverBg = isDark ? '#3a3a3a' : '#e4e7ed'
+
+      document.body.style.background = bgColor
+      document.body.style.color = textColor
+
+      // Update task name color
+      const taskNameEl = document.querySelector('.task-name')
+      if (taskNameEl) taskNameEl.style.color = textColor
+
+      // Update task info color
+      const taskInfoEl = document.querySelector('.task-info')
+      if (taskInfoEl) taskInfoEl.style.color = secondaryTextColor
+
+      // Update buttons
+      const buttons = document.querySelectorAll('.btn')
+      buttons.forEach(btn => {
+        btn.style.background = buttonBg
+        btn.style.color = textColor
+        btn.onmouseover = () => btn.style.background = buttonHoverBg
+        btn.onmouseout = () => btn.style.background = buttonBg
+      })
+
+      // Update title bar
+      const titleBar = document.querySelector('.title-bar')
+      if (titleBar) titleBar.style.background = bgColor
+
+      // Update title text color
+      const titleText = document.querySelector('.title-text')
+      if (titleText) titleText.style.color = textColor
+    })
+  ${scriptEnd}
+</body>
+</html>`
+      },
+
+      // Helper method to format bytes
+      formatBytes (bytes) {
+        if (!bytes || bytes === 0) return '0 B'
+        const k = 1024
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+        const i = Math.floor(Math.log(bytes) / Math.log(k))
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+      },
+
+      // Helper method to escape HTML special characters
+      escapeHtml (text) {
+        if (!text) return ''
+        const div = document.createElement('div')
+        div.textContent = text
+        return div.innerHTML
+      },
+
       handleTaskListChange (list) {
         const prev = this.lastTaskStatuses || {}
         let candidate = null
@@ -1829,6 +2279,27 @@
             this.updateProgressWindow(current)
           }
         })
+
+        // Check for newly completed tasks and show completion window
+        // Only show if prevStatus is defined (not initial load) and task just became complete
+        const prefState = this.$store && this.$store.state && this.$store.state.preference
+        const prefConfig = prefState && prefState.config ? prefState.config : {}
+        const showTaskCompletedWindow = prefConfig.showTaskCompletedWindow !== false
+
+        if (showTaskCompletedWindow) {
+          list.forEach(task => {
+            const gid = task && task.gid ? `${task.gid}` : ''
+            if (!gid) return
+            const prevStatus = prev[gid]
+            const currentStatus = task.status
+            // Show completion window when task becomes complete (but not on initial load)
+            console.log('[Motrix] Task status check:', gid, 'prev:', prevStatus, 'current:', currentStatus)
+            if (prevStatus && currentStatus === TASK_STATUS.COMPLETE && prevStatus !== TASK_STATUS.COMPLETE) {
+              console.log('[Motrix] Opening completed task window for:', gid)
+              this.openCompletedTaskWindow(task)
+            }
+          })
+        }
       }
     },
     mounted () {

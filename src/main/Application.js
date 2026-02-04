@@ -3021,6 +3021,64 @@ export default class Application extends EventEmitter {
       }
     })
 
+    // Handle close-completed-task-window
+    ipcMain.on('close-completed-task-window', (event, gid) => {
+      try {
+        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        if (win && typeof win.close === 'function') {
+          win.close()
+        }
+      } catch (e) {
+        logger.warn('[Motrix] Failed to close completed task window:', e.message)
+      }
+    })
+
+    // Handle open-completed-task-folder
+    ipcMain.on('open-completed-task-folder', (event, { gid, filePath }) => {
+      try {
+        const { showItemInFolder } = require('./utils/index')
+        if (filePath) {
+          showItemInFolder(filePath)
+        }
+        // Close the window after opening folder
+        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        if (win && typeof win.close === 'function') {
+          win.close()
+        }
+      } catch (e) {
+        logger.warn('[Motrix] Failed to open completed task folder:', e.message)
+      }
+    })
+
+    // Handle open-completed-task-file
+    ipcMain.on('open-completed-task-file', (event, { gid, filePath }) => {
+      try {
+        const { shell } = require('electron')
+        if (filePath) {
+          shell.openPath(filePath)
+        }
+        // Close the window after opening file
+        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        if (win && typeof win.close === 'function') {
+          win.close()
+        }
+      } catch (e) {
+        logger.warn('[Motrix] Failed to open completed task file:', e.message)
+      }
+    })
+
+    // Handle minimize-completed-task-window
+    ipcMain.on('minimize-completed-task-window', (event, gid) => {
+      try {
+        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        if (win && typeof win.minimize === 'function') {
+          win.minimize()
+        }
+      } catch (e) {
+        logger.warn('[Motrix] Failed to minimize completed task window:', e.message)
+      }
+    })
+
     // Handle open-video-detection-settings
     ipcMain.on('open-video-detection-settings', () => {
       this.windowManager.openWindow('video-detection-settings', {
