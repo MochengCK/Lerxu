@@ -22,7 +22,7 @@ import {
   PROXY_SCOPES,
   PROXY_SCOPE_OPTIONS
 } from '@shared/constants'
-import { CHROME_UA } from '@shared/ua'
+import { LINKCORE_UA } from '@shared/ua'
 import { separateConfig } from '@shared/utils'
 import { reduceTrackerString } from '@shared/utils/tracker'
 
@@ -88,7 +88,8 @@ export default class ConfigManager {
         'seed-ratio': 2,
         'seed-time': 2880,
         'split': getMaxConnectionPerServer(),
-        'user-agent': CHROME_UA
+        'user-agent': LINKCORE_UA,
+        'peer-id-prefix': 'LinkCore-'
       }
       /* eslint-enable quote-props */
     })

@@ -53,14 +53,17 @@ class TaskHistory {
       return
     }
 
-    // 过滤出已完成、已失败的任务，以及种子解析任务和磁力链接任务
+    // 过滤出已完成、已失败的任务，排除元数据解析任务
     const stoppedTasks = tasks.filter(task => {
       const { status } = task
-      // 检查是否为种子解析任务（名称以[METADATA]开头）
+      // 检查是否为种子解析任务（名称以[METADATA]开头）- 这些任务不应该保存到历史记录
       const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
+      if (isMetadataTask) {
+        return false
+      }
       // 检查是否为磁力链接任务
       const isMagnetTask = task.bittorrent && !task.bittorrent.info
-      return isMetadataTask || isMagnetTask || [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR].includes(status)
+      return isMagnetTask || [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR].includes(status)
     })
 
     if (stoppedTasks.length === 0) {

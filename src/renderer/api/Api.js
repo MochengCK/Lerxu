@@ -563,8 +563,12 @@ export default class Api {
 
           const stoppedTasks = result.filter(task => {
             const { status } = task
+            // 排除元数据解析任务 - 这些是临时任务，不应该保存到历史记录
             const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
-            return isMetadataTask || [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(status)
+            if (isMetadataTask) {
+              return false
+            }
+            return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(status)
           })
           taskHistory.saveStoppedTasks(stoppedTasks)
 

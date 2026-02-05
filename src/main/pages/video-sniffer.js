@@ -79,8 +79,8 @@
             }
           }
 
-          if (appConfig && appConfig['hide-app-menu']) {
-            useCustomFrame = appConfig['hide-app-menu']
+          if (appConfig && typeof appConfig['hide-app-menu'] !== 'undefined') {
+            useCustomFrame = !!appConfig['hide-app-menu']
             log('Use custom frame:', useCustomFrame)
             if (useCustomFrame) {
               document.body.classList.add('use-custom-frame')

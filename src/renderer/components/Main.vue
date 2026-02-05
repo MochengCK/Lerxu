@@ -1845,7 +1845,7 @@
           width: 360,
           height: 200,
           resizable: false,
-          minimizable: false,
+          minimizable: true,
           maximizable: false,
           useContentSize: true,
           frame: !useCustomFrame,

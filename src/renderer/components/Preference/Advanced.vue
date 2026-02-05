@@ -544,6 +544,7 @@
                 v-model="form.userAgent">
               </el-input>
               <el-button-group class="ua-group">
+                <el-button @click="() => changeUA('linkcore')">{{ $t('preferences.user-agent-linkcore') }}</el-button>
                 <el-button @click="() => changeUA('aria2')">{{ $t('preferences.user-agent-aria2') }}</el-button>
                 <el-button @click="() => changeUA('transmission')">{{ $t('preferences.user-agent-transmission') }}</el-button>
                 <el-button @click="() => changeUA('chrome')">{{ $t('preferences.user-agent-chrome') }}</el-button>

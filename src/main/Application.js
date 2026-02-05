@@ -1713,15 +1713,18 @@ export default class Application extends EventEmitter {
           const currentHistoryRaw = taskHistoryStore.get('tasks', [])
           const currentHistory = Array.isArray(currentHistoryRaw) ? currentHistoryRaw : []
 
-          // 过滤需要保存的任务（包括磁力链接任务）
+          // 过滤需要保存的任务（包括磁力链接任务，但排除元数据解析任务）
           const tasksToSave = allTasks.filter(task => {
             const { status, bittorrent } = task
+            // 检查是否为种子解析任务 - 这些是临时任务，不应该保存到历史记录
+            const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
+            if (isMetadataTask) {
+              return false
+            }
             // 检查是否为磁力链接任务
             const isMagnetTask = bittorrent && !bittorrent.info
-            // 检查是否为种子解析任务
-            const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
-            // 保存磁力链接任务、种子解析任务和已停止状态的任务
-            return isMagnetTask || isMetadataTask || ['complete', 'error', 'removed'].includes(status)
+            // 保存磁力链接任务和已停止状态的任务
+            return isMagnetTask || ['complete', 'error', 'removed'].includes(status)
           })
 
           const updatedHistory = [...currentHistory]

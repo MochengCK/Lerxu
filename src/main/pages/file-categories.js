@@ -43,6 +43,7 @@
           const text = await response.text()
           const match = text.match(/export default\s*\{([\s\S]*?)\}/)
           if (match && match[1]) {
+            // eslint-disable-next-line
             const func = new Function(`return {${match[1]}}`)
             translations = func()
             log('Translations loaded for locale:', locale, '(fallback)')
@@ -87,8 +88,8 @@
             }
           }
 
-          if (appConfig && appConfig['hide-app-menu']) {
-            useCustomFrame = appConfig['hide-app-menu']
+          if (appConfig && typeof appConfig['hide-app-menu'] !== 'undefined') {
+            useCustomFrame = !!appConfig['hide-app-menu']
             log('Use custom frame:', useCustomFrame)
             if (useCustomFrame) {
               document.body.classList.add('use-custom-frame')
@@ -318,7 +319,7 @@
   }
 
   function validateCategories () {
-    for (const [key, category] of Object.entries(categories)) {
+    for (const [, category] of Object.entries(categories)) {
       if (!category.name || category.name.trim() === '') {
         alert(t('file-categories-name-required') || '分类名称不能为空')
         return false

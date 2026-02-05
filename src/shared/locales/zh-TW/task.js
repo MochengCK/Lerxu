@@ -51,6 +51,13 @@ export default {
   'task-peer-host': '伺服器',
   'task-peer-ip': 'IP',
   'task-peer-client': '客戶端',
+  'task-peer-connection-time': '連接時間',
+  'peer-client-unknown': '未知',
+  'task-peer-location': '位置',
+  'task-peer-downloaded': '已下載',
+  'task-peer-progress': '進度',
+  'task-peer-upload-speed': '向他上傳',
+  'task-peer-download-speed': '向我發送',
   'navigate-to-downloading': '前往下載頁面',
   'show-advanced-options': '進階選項',
   'copyright-warning': '版權警告',
@@ -112,6 +119,8 @@ export default {
   'peers-filter-downloading': '下載中',
   'peers-filter-uploading': '上傳中',
   'peers-filter-idle': '閒置',
+  'peers-active-nodes': '活躍節點',
+  'peers-inactive-nodes': '不活躍節點',
   'peers-search': '搜尋主機/客戶端',
   'remove-record': '移除下載紀錄',
   'remove-record-confirm': '確定要移除 "{{taskName}}" 下載紀錄嗎？',
@@ -285,5 +294,6 @@ export default {
   'tasks-count': '{count} 個任務',
   'prev-month': '上個月',
   'next-month': '下個月',
-  'dblclick-to-today': '按兩下回到今天'
+  'dblclick-to-today': '按兩下回到今天',
+  'best-peer': '最佳節點'
 }

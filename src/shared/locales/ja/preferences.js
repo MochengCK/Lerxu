@@ -298,6 +298,7 @@ export default {
   'aria2-conf-table-action': '操作',
   'aria2-conf-delete': '削除',
   'aria2-conf-save': '保存',
+  'user-agent-linkcore': 'LinkCore',
   'user-agent-aria2': 'Aria2',
   'user-agent-transmission': 'Transmission',
   'user-agent-chrome': 'Chrome',

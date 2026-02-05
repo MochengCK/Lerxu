@@ -472,37 +472,45 @@
         try {
           const gid = task && task.gid ? `${task.gid}` : ''
           if (gid) {
-            const files = Array.isArray(task && task.files) ? task.files : []
-            const baseFile = files.length > 0 ? files[0] : null
-            let nextFiles = files
-            let total = task && task.totalLength ? `${task.totalLength}` : ''
-            let completed = task && task.completedLength ? `${task.completedLength}` : ''
-            if (finalPath) {
-              let length = 0
-              try {
-                const st = statSync(finalPath)
-                length = Number(st.size || 0)
-              } catch (_) {}
-              const fileEntry = {
-                ...(baseFile || {}),
-                path: finalPath,
-                ...(length > 0 ? { length: `${length}`, completedLength: `${length}` } : {})
+            // 检查是否为元数据任务 - 这些任务不应该保存到历史记录
+            const taskName = task && task.name ? `${task.name}` : ''
+            const isMetadataTask = taskName.startsWith('[METADATA]')
+            if (isMetadataTask) {
+              // 元数据任务完成后不保存到历史记录
+              console.log('[Motrix] Metadata task completed, skipping history save:', gid, taskName)
+            } else {
+              const files = Array.isArray(task && task.files) ? task.files : []
+              const baseFile = files.length > 0 ? files[0] : null
+              let nextFiles = files
+              let total = task && task.totalLength ? `${task.totalLength}` : ''
+              let completed = task && task.completedLength ? `${task.completedLength}` : ''
+              if (finalPath) {
+                let length = 0
+                try {
+                  const st = statSync(finalPath)
+                  length = Number(st.size || 0)
+                } catch (_) {}
+                const fileEntry = {
+                  ...(baseFile || {}),
+                  path: finalPath,
+                  ...(length > 0 ? { length: `${length}`, completedLength: `${length}` } : {})
+                }
+                nextFiles = [fileEntry, ...files.slice(1)]
+                if (length > 0) {
+                  total = `${length}`
+                  completed = `${length}`
+                }
               }
-              nextFiles = [fileEntry, ...files.slice(1)]
-              if (length > 0) {
-                total = `${length}`
-                completed = `${length}`
+              const patch = {
+                ...task,
+                status: TASK_STATUS.COMPLETE,
+                ...(finalPath ? { dir: dirname(finalPath) } : {}),
+                ...(Array.isArray(nextFiles) && nextFiles.length > 0 ? { files: nextFiles } : {}),
+                ...(total ? { totalLength: total } : {}),
+                ...(completed ? { completedLength: completed } : {})
               }
+              taskHistory.updateTask(gid, patch, task)
             }
-            const patch = {
-              ...task,
-              status: TASK_STATUS.COMPLETE,
-              ...(finalPath ? { dir: dirname(finalPath) } : {}),
-              ...(Array.isArray(nextFiles) && nextFiles.length > 0 ? { files: nextFiles } : {}),
-              ...(total ? { totalLength: total } : {}),
-              ...(completed ? { completedLength: completed } : {})
-            }
-            taskHistory.updateTask(gid, patch, task)
           }
         } catch (_) {}
         try {
@@ -1483,6 +1491,12 @@
           if (!gid) {
             return finalOutputPath
           }
+          // 检查是否为元数据任务 - 这些任务不应该保存到历史记录
+          const taskName = task && task.name ? `${task.name}` : ''
+          const isMetadataTask = taskName.startsWith('[METADATA]')
+          if (isMetadataTask) {
+            return finalOutputPath
+          }
           let length = 0
           try {
             const st = statSync(finalOutputPath)
@@ -1704,7 +1718,12 @@
             .map(it => (it.durationMs > 0 ? (it.bytes * 1000) / it.durationMs : 0))
             .filter(v => Number.isFinite(v) && v > 0).length
 
-          taskHistory.updateTask(gid, { averageDownloadSpeed: avg, averageSpeedSampleCount: count }, task)
+          // 检查是否为元数据任务 - 这些任务不应该保存到历史记录
+          const taskName = task && task.name ? `${task.name}` : ''
+          const isMetadataTask = taskName.startsWith('[METADATA]')
+          if (!isMetadataTask) {
+            taskHistory.updateTask(gid, { averageDownloadSpeed: avg, averageSpeedSampleCount: count }, task)
+          }
         } catch (_) {
         }
       },
@@ -2655,7 +2674,12 @@
             this._resumedCompletedFixedGids.add(gid)
 
             try {
-              taskHistory.updateTask(gid, { ...historyTask, status: TASK_STATUS.COMPLETE }, historyTask)
+              // 检查是否为元数据任务 - 这些任务不应该保存到历史记录
+              const taskName = historyTask && historyTask.name ? `${historyTask.name}` : ''
+              const isMetadataTask = taskName.startsWith('[METADATA]')
+              if (!isMetadataTask) {
+                taskHistory.updateTask(gid, { ...historyTask, status: TASK_STATUS.COMPLETE }, historyTask)
+              }
             } catch (_) {}
 
             try {

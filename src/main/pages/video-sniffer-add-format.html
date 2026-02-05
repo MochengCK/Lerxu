@@ -1,257 +1,269 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8">
-    <title>添加格式 - LinkCore Download Manager</title>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
 
+<head>
+  <meta charset="utf-8">
+  <title>添加格式 - LinkCore Download Manager</title>
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      background: #fff;
+      color: #333;
+      padding: 0;
+      transition: background 0.3s, color 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    @media (prefers-color-scheme: dark) {
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        font-size: 14px;
-        background: #fff;
-        color: #333;
-        padding: 0;
-        transition: background 0.3s, color 0.3s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 100vh;
-      }
-
-      @media (prefers-color-scheme: dark) {
-        body {
-          background: #1a1a1a;
-          color: #e0e0e0;
-        }
-      }
-
-      body.dark {
         background: #1a1a1a;
         color: #e0e0e0;
       }
+    }
 
-      .container {
-        width: 100%;
-        background: #fff;
-        padding: 24px;
-        transition: background 0.3s;
-      }
+    body.dark {
+      background: #1a1a1a;
+      color: #e0e0e0;
+    }
 
-      body.dark .container {
-        background: #1a1a1a;
-      }
+    .container {
+      width: 100%;
+      background: #fff;
+      padding: 24px;
+      transition: background 0.3s;
+    }
 
-      .form-item {
-        margin-bottom: 20px;
-      }
+    body.use-custom-frame .container {
+      padding-top: 56px;
+      /* 32px title bar + 24px padding */
+    }
 
-      .form-item:last-child {
-        margin-bottom: 0;
-      }
+    body.dark .container {
+      background: #1a1a1a;
+    }
 
-      .form-label {
-        display: block;
-        margin-bottom: 8px;
-        font-weight: 500;
-        color: #606266;
-        transition: color 0.3s;
-      }
+    .form-item {
+      margin-bottom: 20px;
+    }
 
-      body.dark .form-label {
-        color: #b0b0b0;
-      }
+    .form-item:last-child {
+      margin-bottom: 0;
+    }
 
-      input[type="text"] {
-        width: 100%;
-        padding: 8px 12px;
-        border: 1px solid #dcdfe6;
-        border-radius: 4px;
-        font-size: 14px;
-        outline: none;
-        transition: border-color .2s;
-        background: #fff;
-        color: #333;
-      }
+    .form-label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #606266;
+      transition: color 0.3s;
+    }
 
-      body.dark input[type="text"] {
-        border-color: #4a4a4a;
-        background: #2a2a2a;
-        color: #e0e0e0;
-      }
+    body.dark .form-label {
+      color: #b0b0b0;
+    }
 
-      input[type="text"]:focus {
-        border-color: #409EFF;
-      }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #dcdfe6;
+      border-radius: 4px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .2s;
+      background: #fff;
+      color: #333;
+    }
 
-      .button-group {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        margin-top: 20px;
-      }
+    body.dark input[type="text"] {
+      border-color: #4a4a4a;
+      background: #2a2a2a;
+      color: #e0e0e0;
+    }
 
-      .button-group button {
-        flex: 1;
-        padding: 8px 16px;
-        background: #409EFF;
-        color: #fff;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 14px;
-        transition: background .3s;
-      }
+    input[type="text"]:focus {
+      border-color: #409EFF;
+    }
 
-      .button-group button:hover {
-        background: #66b1ff;
-      }
+    .button-group {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 20px;
+    }
 
-      .button-group button:active {
-        background: #3a8ee6;
-      }
+    .button-group button {
+      flex: 1;
+      padding: 8px 16px;
+      background: #409EFF;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background .3s;
+    }
 
-      .button-secondary {
-        background: #fff;
-        color: #606266;
-        border: 1px solid #dcdfe6;
-      }
+    .button-group button:hover {
+      background: #66b1ff;
+    }
 
-      body.dark .button-secondary {
-        background: #2a2a2a;
-        color: #b0b0b0;
-        border-color: #4a4a4a;
-      }
+    .button-group button:active {
+      background: #3a8ee6;
+    }
 
-      .button-secondary:hover {
-        background: #f5f7fa;
-        border-color: #c6e2ff;
-        color: #409EFF;
-      }
+    .button-secondary {
+      background: #fff;
+      color: #606266;
+      border: 1px solid #dcdfe6;
+    }
 
-      body.dark .button-secondary:hover {
-        background: #3a3a3a;
-        border-color: #409EFF;
-        color: #409EFF;
-      }
+    body.dark .button-secondary {
+      background: #2a2a2a;
+      color: #b0b0b0;
+      border-color: #4a4a4a;
+    }
 
-      .title-bar {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 26px;
-        display: none;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0 16px;
-        background: #fff;
-        z-index: 1000;
-        transition: background 0.3s;
-      }
+    .button-secondary:hover {
+      background: #f5f7fa;
+      border-color: #c6e2ff;
+      color: #409EFF;
+    }
 
-      body.dark .title-bar {
-        background: #1a1a1a;
-      }
+    body.dark .button-secondary:hover {
+      background: #3a3a3a;
+      border-color: #409EFF;
+      color: #409EFF;
+    }
 
-      body.use-custom-frame .title-bar {
-        display: flex;
-        -webkit-app-region: drag;
-      }
+    .title-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 32px;
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: #fff;
+      z-index: 1000;
+      transition: background 0.3s;
+    }
 
-      .title-text {
-        font-size: 12px;
-        opacity: 0.85;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        margin-right: 8px;
-        color: #303133;
-        transition: color 0.3s;
-      }
+    body.dark .title-bar {
+      background: #1a1a1a;
+    }
 
-      body.use-custom-frame .title-text {
-        -webkit-app-region: drag;
-      }
+    body.use-custom-frame .title-bar {
+      display: flex;
+      -webkit-app-region: drag;
+    }
 
-      body.dark .title-text {
-        color: #e0e0e0;
-      }
+    .title-text {
+      font-size: 12px;
+      opacity: 0.85;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-right: 8px;
+      color: #303133;
+      transition: color 0.3s;
+    }
 
-      .title-actions {
-        display: flex;
-        gap: 4px;
-        -webkit-app-region: no-drag;
-      }
+    body.use-custom-frame .title-text {
+      -webkit-app-region: drag;
+    }
 
-      .title-btn {
-        width: 18px;
-        height: 18px;
-        border-radius: 3px;
-        border: none;
-        background: transparent;
-        color: #303133;
-        cursor: pointer;
-        padding: 0;
-        font-size: 14px;
-        line-height: 18px;
-        transition: background 0.3s, color 0.3s;
-      }
+    body.dark .title-text {
+      color: #e0e0e0;
+    }
 
-      body.dark .title-btn {
-        color: #e0e0e0;
-      }
+    .title-actions {
+      display: flex;
+      gap: 4px;
+      -webkit-app-region: no-drag;
+    }
 
-      .title-btn:hover {
-        background-color: rgba(0, 0, 0, 0.08);
-      }
+    .title-btn {
+      width: 18px;
+      height: 18px;
+      border-radius: 3px;
+      border: none;
+      background: transparent;
+      color: #303133;
+      cursor: pointer;
+      padding: 0;
+      font-size: 14px;
+      line-height: 18px;
+      transition: background 0.3s, color 0.3s;
+    }
 
-      body.dark .title-btn:hover {
-        background-color: rgba(255, 255, 255, 0.12);
-      }
-    </style>
-  </head>
-  <body>
-    <script>
-      (function() {
-        try {
-          const { ipcRenderer } = require('electron')
-          const appConfig = ipcRenderer.sendSync('get-app-config')
-          if (appConfig && appConfig.theme) {
-            const theme = appConfig.theme
-            if (theme === 'dark') {
+    body.dark .title-btn {
+      color: #e0e0e0;
+    }
+
+    .title-btn:hover {
+      background-color: rgba(0, 0, 0, 0.08);
+    }
+
+    body.dark .title-btn:hover {
+      background-color: rgba(255, 255, 255, 0.12);
+    }
+  </style>
+</head>
+
+<body>
+  <script>
+    (function () {
+      try {
+        const { ipcRenderer } = require('electron')
+        const appConfig = ipcRenderer.sendSync('get-app-config')
+        if (appConfig && appConfig.theme) {
+          const theme = appConfig.theme
+          if (theme === 'dark') {
+            document.body.classList.add('dark')
+          } else if (theme === 'auto') {
+            if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
               document.body.classList.add('dark')
-            } else if (theme === 'auto') {
-              if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                document.body.classList.add('dark')
-              }
             }
           }
-        } catch (e) {}
-      })()
-    </script>
-    <div class="title-bar">
-      <span class="title-text" id="titleText">添加格式</span>
-      <div class="title-actions">
-        <button class="title-btn" id="closeBtn">×</button>
-      </div>
+        }
+        if (appConfig && appConfig['hide-app-menu']) {
+          document.body.classList.add('use-custom-frame')
+        }
+      } catch (e) { }
+    })()
+  </script>
+  <div class="title-bar">
+    <span class="title-text" id="titleText">添加格式</span>
+    <div class="title-actions">
+      <button class="title-btn" id="closeBtn">×</button>
     </div>
-    <div class="container">
-      <div class="form-item">
-        <label class="form-label" id="formatLabel">格式</label>
-        <input type="text" id="formatInput" placeholder="输入格式（如 mp4）" />
-      </div>
-      <div class="button-group">
-        <button class="button-secondary" id="cancelBtn">取消</button>
-        <button id="confirmBtn">确定</button>
-      </div>
+  </div>
+  <div class="container">
+    <div class="form-item">
+      <label class="form-label" id="formatLabel">格式</label>
+      <input type="text" id="formatInput" placeholder="输入格式（如 mp4）" />
     </div>
+    <div class="button-group">
+      <button class="button-secondary" id="cancelBtn">取消</button>
+      <button id="confirmBtn">确定</button>
+    </div>
+  </div>
 
-    <script src="./video-sniffer-add-format.js"></script>
-  </body>
+  <script src="./video-sniffer-add-format.js"></script>
+</body>
+
 </html>

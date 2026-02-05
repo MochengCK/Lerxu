@@ -112,9 +112,18 @@ export const peerIdParser = (str) => {
     return UNKNOWN_PEERID_NAME
   }
 
+  if (decodedStr && decodedStr.startsWith('LinkCore')) {
+    return 'LinkCore (aria2)'
+  }
+
+  let client = parsed.client
+  if (client === 'aria2') {
+    client = 'LinkCore (aria2)'
+  }
+
   const result = parsed.version
-    ? `${parsed.client} v${parsed.version}`
-    : parsed.client
+    ? `${client} v${parsed.version}`
+    : client
   return result
 }
 

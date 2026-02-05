@@ -323,6 +323,7 @@ export default {
   'aria2-conf-table-action': 'Action',
   'aria2-conf-delete': 'Delete',
   'aria2-conf-save': 'Save',
+  'user-agent-linkcore': 'LinkCore',
   'user-agent-aria2': 'Aria2',
   'user-agent-transmission': 'Transmission',
   'user-agent-chrome': 'Chrome',

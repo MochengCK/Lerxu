@@ -577,6 +577,10 @@ const actions = {
           data.forEach(task => {
             const gid = task && task.gid ? `${task.gid}` : ''
             if (!gid) return
+            // 检查是否为元数据任务 - 这些任务不应该保存到历史记录
+            const taskName = task && task.name ? `${task.name}` : ''
+            const isMetadataTask = taskName.startsWith('[METADATA]')
+            if (isMetadataTask) return
             const status = `${task.status || ''}`
             if (![TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED].includes(status)) return
             const hasSavedAt = task.savedAt != null && Number(task.savedAt) > 0

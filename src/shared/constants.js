@@ -49,7 +49,7 @@ export const ENGINE_MAX_CONNECTION_PER_SERVER = 64
 export const APP_HTTP_PORT = 16900
 
 export const UNKNOWN_PEERID = '%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00'
-export const UNKNOWN_PEERID_NAME = 'unknown'
+export const UNKNOWN_PEERID_NAME = 'task.peer-client-unknown'
 export const GRAPHIC = '░▒▓█'
 
 export const ONE_SECOND = 1000

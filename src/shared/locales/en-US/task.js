@@ -61,7 +61,13 @@ export default {
   'task-peer-host': 'Host',
   'task-peer-ip': 'IP',
   'task-peer-client': 'Client',
+  'task-peer-connection-time': 'Connection Time',
+  'peer-client-unknown': 'Unknown',
+  'task-peer-location': 'Location',
   'task-peer-downloaded': 'Downloaded',
+  'task-peer-progress': 'Progress',
+  'task-peer-upload-speed': 'Upload Speed',
+  'task-peer-download-speed': 'Download Speed',
   'navigate-to-downloading': 'Navigate to Downloading',
   'show-advanced-options': 'Advanced Options',
   'copyright-warning': 'Copyright Warning',
@@ -154,6 +160,8 @@ export default {
   'peers-filter-downloading': 'Downloading',
   'peers-filter-uploading': 'Uploading',
   'peers-filter-idle': 'Idle',
+  'peers-active-nodes': 'Active Nodes',
+  'peers-inactive-nodes': 'Inactive Nodes',
   'peers-search': 'Search host/client',
   'search-tasks': 'Search tasks',
   'category-all': 'All',
@@ -286,5 +294,6 @@ export default {
   'tasks-count': '{count} tasks',
   'prev-month': 'Previous month',
   'next-month': 'Next month',
-  'dblclick-to-today': 'Double-click to go to today'
+  'dblclick-to-today': 'Double-click to go to today',
+  'best-peer': 'Best Peer'
 }
