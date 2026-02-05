@@ -479,7 +479,10 @@ export default class Api {
         const historyStatus = `${historyTask.status || ''}`
         const total = Number(task.totalLength || historyTask.totalLength || 0)
         const completed = Number(task.completedLength || historyTask.completedLength || 0)
+        // 检查是否在做种 - 做种任务不应该被强制改为历史状态
+        const isSeeding = task.bittorrent && task.seeder === 'true'
         const shouldCoerceToHistoryStatus =
+          !isSeeding &&
           activeStatuses.has(liveStatus) &&
           stoppedStatuses.has(historyStatus) &&
           Number.isFinite(total) && total > 0 &&

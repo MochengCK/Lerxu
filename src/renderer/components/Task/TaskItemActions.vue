@@ -423,7 +423,7 @@
       },
       taskStatus () {
         const { task, isSeeder } = this
-        if (isSeeder) {
+        if (isSeeder && task.status === TASK_STATUS.ACTIVE) {
           return TASK_STATUS.SEEDING
         } else {
           return task.status
@@ -457,12 +457,12 @@
         if (this.needUpdateLink) {
           return true
         }
-        const { taskActions, isSeeder, path } = this
+        const { taskActions, path } = this
         const canVerify = taskActions.indexOf('VERIFY') !== -1
-        if (!canVerify || isSeeder) {
+        if (!canVerify) {
           return false
         }
-        return path && existsSync(path)
+        return !!(path && existsSync(path))
       },
       verifyCanSlideOut () {
         const { path } = this

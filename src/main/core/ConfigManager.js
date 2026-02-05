@@ -57,8 +57,14 @@ export default class ConfigManager {
         'bt-exclude-tracker': EMPTY_STRING,
         'bt-force-encryption': false,
         'bt-load-saved-metadata': true,
+        'bt-max-peers': 0,
         'bt-save-metadata': true,
         'bt-tracker': EMPTY_STRING,
+        'bt-tracker-connect-timeout': 20,
+        'bt-tracker-timeout': 20,
+        'bt-enable-lpd': true,
+        'enable-peer-exchange': true,
+        'min-split-size': '4M',
         'continue': true,
         'dht-file-path': getDhtPath(IP_VERSION.V4),
         'dht-file-path6': getDhtPath(IP_VERSION.V6),
@@ -305,7 +311,7 @@ export default class ConfigManager {
 
   getSystemConfig (key, defaultValue) {
     if (typeof key === 'undefined' &&
-        typeof defaultValue === 'undefined') {
+      typeof defaultValue === 'undefined') {
       return this.systemConfig.store
     }
 
@@ -314,7 +320,7 @@ export default class ConfigManager {
 
   getUserConfig (key, defaultValue) {
     if (typeof key === 'undefined' &&
-        typeof defaultValue === 'undefined') {
+      typeof defaultValue === 'undefined') {
       return this.userConfig.store
     }
 

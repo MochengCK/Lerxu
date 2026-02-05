@@ -115,7 +115,8 @@
     bytesToSize,
     timeRemaining,
     timeFormat,
-    getTaskName
+    getTaskName,
+    checkTaskIsSeeder
   } from '@shared/utils'
   import {
     moveTaskFilesToTrash
@@ -2273,7 +2274,9 @@
             }
             return
           }
-          if (doneStatuses.includes(current.status)) {
+          // Don't close progress window if BT task is seeding
+          const isSeeding = checkTaskIsSeeder(current)
+          if (doneStatuses.includes(current.status) && !isSeeding) {
             this.closeProgressWindowByGid(gid)
           } else {
             this.updateProgressWindow(current)

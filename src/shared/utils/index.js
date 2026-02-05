@@ -54,11 +54,14 @@ export const extractSpeedUnit = (speed = '') => {
   return match[2]
 }
 
-export const bitfieldToPercent = (text) => {
+export const bitfieldToPercent = (text, format = false) => {
   if (!text || typeof text !== 'string') {
-    return '0'
+    return format ? '0.00' : 0
   }
-  const len = text.length - 1
+  const len = text.length
+  if (len === 0) {
+    return format ? '0.00' : 0
+  }
   let p
   let one = 0
   for (let i = 0; i < len; i++) {
@@ -68,7 +71,16 @@ export const bitfieldToPercent = (text) => {
       p >>= 1
     }
   }
-  return Math.floor(one / (4 * len) * 100).toString()
+  // 1 byte = 8 bits, each hex char represents 4 bits
+  // So total bits is len * 4
+  const percentage = (one / (len * 4)) * 100
+  const result = parseFloat(percentage.toFixed(2))
+
+  if (format) {
+    return result === 100 ? '100' : result.toFixed(2)
+  }
+
+  return result
 }
 
 export const bitfieldToGraphic = (text) => {
@@ -294,7 +306,8 @@ export const isMagnetTask = (task) => {
 
 export const checkTaskIsSeeder = (task) => {
   const { bittorrent, seeder } = task
-  return !!bittorrent && seeder === 'true'
+  // seeder 可能是字符串 "true" 或布尔值 true
+  return !!bittorrent && (seeder === 'true' || seeder === true)
 }
 
 export const getTaskUri = (task, withTracker = false) => {
@@ -970,7 +983,7 @@ export const handleTaskDuplicate = async (engineClient, taskData, historyTasks =
   const existingNames = new Set()
   allTasks.forEach(task => {
     const taskName = task.bittorrent?.info?.name ||
-                     (task.files?.[0]?.path ? task.files[0].path.split(/[\\/]/).pop() : '')
+      (task.files?.[0]?.path ? task.files[0].path.split(/[\\/]/).pop() : '')
     if (taskName) {
       existingNames.add(taskName)
     }

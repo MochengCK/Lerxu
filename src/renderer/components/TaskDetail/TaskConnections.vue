@@ -89,7 +89,7 @@
 </template>
 
 <script>
-  import { bytesToSize } from '@shared/utils'
+  import { bytesToSize, checkTaskIsSeeder } from '@shared/utils'
   import api from '@/api'
 
   export default {
@@ -151,12 +151,15 @@
       },
       'task.status': {
         handler (newStatus) {
-          // 只在任务暂停、完成、停止或出错时，清空连接列表
-          if (newStatus === 'paused' || newStatus === 'complete' || newStatus === 'stopped' || newStatus === 'error' || newStatus === 'removed') {
+          // 检查是否在做种，做种时不清空连接数据
+          const isSeeding = checkTaskIsSeeder(this.task)
+          // 只在任务暂停、完成（非做种）、停止或出错时，清空连接列表
+          if (newStatus === 'paused' || newStatus === 'stopped' || newStatus === 'error' || newStatus === 'removed' ||
+            (newStatus === 'complete' && !isSeeding)) {
             this.connectionsData = null
             this.initialLoading = false
-          } else if (newStatus === 'active' || newStatus === 'waiting') {
-            // 任务活跃或等待时获取连接信息
+          } else if (newStatus === 'active' || newStatus === 'waiting' || isSeeding) {
+            // 任务活跃、等待或做种时获取连接信息
             this.resetAndFetch()
           }
         }

@@ -70,7 +70,7 @@
       :md="rightColSpan.md"
       :lg="rightColSpan.lg"
     >
-      <div class="task-speed-info" v-if="isActive">
+      <div class="task-speed-info" v-if="isActive && !isSeeder">
         <div class="task-speed-text" v-if="isBT">
           <i><mo-icon name="arrow-up" width="10" height="14" /></i>
           <span>{{ task.uploadSpeed | bytesToSize }}/s</span>
@@ -112,6 +112,24 @@
       <div class="task-completion-time" v-else-if="isCompleted">
         <span>{{ $t('task.completed-at') }} {{ completionTime }}</span>
       </div>
+      <!-- 做种任务显示上传速度 -->
+      <div class="task-speed-info" v-else-if="isSeeder">
+        <div class="task-speed-text" v-if="isBT">
+          <i><mo-icon name="arrow-up" width="10" height="14" /></i>
+          <span>{{ task.uploadSpeed | bytesToSize }}/s</span>
+        </div>
+        <div class="task-speed-text" v-if="isBT">
+          <i><mo-icon name="magnet" width="10" height="14" /></i>
+          <span>{{ task.numSeeders }}</span>
+        </div>
+        <div class="task-speed-text">
+          <i><mo-icon name="node" width="10" height="14" /></i>
+          <span>{{ task.connections }}</span>
+        </div>
+        <div class="task-speed-text" v-if="isBT">
+          <span>{{ $t('task.task-ratio') }} {{ shareRatio }}</span>
+        </div>
+      </div>
     </el-col>
   </el-row>
   </div>
@@ -125,7 +143,8 @@
     timeFormat,
     timeRemaining,
     isMagnetTask,
-    calcProgress
+    calcProgress,
+    calcRatio
   } from '@shared/utils'
   import { TASK_STATUS } from '@shared/constants'
   import '@/components/Icons/arrow-up'
@@ -202,13 +221,19 @@
       },
       isCompleted () {
         const task = this.task || {}
-        return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(task.status)
+        const isSeeding = checkTaskIsSeeder(task)
+        // BT任务正在做种时不显示为已完成
+        if (task.status === TASK_STATUS.ACTIVE && isSeeding) {
+          return false
+        }
+        // 如果是已下载完成的BT任务（不论是 COMPLETE 还是 PAUSED），或者状态是 COMPLETE/ERROR/REMOVED，视为已完成（显示完成时间）
+        return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(task.status) || (task.status === TASK_STATUS.PAUSED && isSeeding)
       },
       isBT () {
         return this.task ? checkTaskIsBT(this.task) : false
       },
       isSeeder () {
-        return this.task ? checkTaskIsSeeder(this.task) : false
+        return this.isActive && this.task ? checkTaskIsSeeder(this.task) : false
       },
       seedingHintText () {
         if (!this.isBT) {
@@ -361,6 +386,11 @@
           return ''
         }
         return this.$t('task.waiting-download-data')
+      },
+      shareRatio () {
+        if (!this.task) return 0
+        const { totalLength, uploadLength } = this.task
+        return calcRatio(totalLength, uploadLength)
       }
     },
     watch: {

@@ -208,6 +208,10 @@
       },
       isCompleted () {
         const completedStatuses = ['complete', 'error', 'removed']
+        // 做种中的任务不算已完成，不显示完成时间
+        if (this.task.status === 'complete' && checkTaskIsSeeder(this.task)) {
+          return false
+        }
         return completedStatuses.includes(this.task.status)
       },
       completionTime () {

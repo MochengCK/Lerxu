@@ -118,7 +118,7 @@
       },
       taskStatus () {
         const { task, isSeeder } = this
-        if (isSeeder) {
+        if (isSeeder && task.status === TASK_STATUS.ACTIVE) {
           return TASK_STATUS.SEEDING
         } else {
           return task.status

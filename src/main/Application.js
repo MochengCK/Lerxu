@@ -1644,6 +1644,26 @@ export default class Application extends EventEmitter {
   }
 
   async quit () {
+    // 首先暂停所有活跃任务（而不是移除，以便下次启动时可以恢复）
+    try {
+      logger.info('[Motrix] Pausing all active tasks before quit')
+      const activeTasks = await this.engineClient.call('tellActive')
+      if (activeTasks && activeTasks.length > 0) {
+        logger.info(`[Motrix] Found ${activeTasks.length} active tasks to pause`)
+        // 暂停所有活跃任务（使用pause而不是remove，保留任务信息）
+        for (const task of activeTasks) {
+          try {
+            await this.engineClient.call('pause', task.gid)
+            logger.info(`[Motrix] Paused task: ${task.gid}`)
+          } catch (err) {
+            logger.warn(`[Motrix] Failed to pause task ${task.gid}:`, err.message)
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn('[Motrix] Failed to pause tasks:', error.message)
+    }
+
     // Check if auto-purge-record is enabled and purge records before quitting
     const autoPurgeRecord = this.configManager.getUserConfig('auto-purge-record', false)
     if (autoPurgeRecord) {

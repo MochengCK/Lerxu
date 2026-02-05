@@ -10,6 +10,8 @@ const taskHistoryStore = new Store({
   }
 })
 
+const MAX_HISTORY_ITEMS = 100// 最大历史记录数量
+
 class TaskHistory {
   getAllHistory () {
     const raw = taskHistoryStore.get('tasks', [])
@@ -20,6 +22,20 @@ class TaskHistory {
       if (t.deletedAt) return true
       return status !== TASK_STATUS.REMOVED
     })
+    // 如果历史记录过多，只保留最新的
+    if (cleaned.length > MAX_HISTORY_ITEMS) {
+      // 按 savedAt 或 createdAt 排序，保留最新的
+      cleaned.sort((a, b) => {
+        const tsA = parseInt(b.savedAt) || parseInt(b.createdAt) || 0
+        const tsB = parseInt(a.savedAt) || parseInt(a.createdAt) || 0
+        return tsA - tsB
+      })
+      const limited = cleaned.slice(0, MAX_HISTORY_ITEMS)
+      try {
+        taskHistoryStore.set('tasks', limited)
+      } catch (_) { }
+      return limited
+    }
     if (cleaned.length !== list.length) {
       try {
         taskHistoryStore.set('tasks', cleaned)

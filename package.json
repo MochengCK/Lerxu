@@ -52,6 +52,7 @@
     "electron-updater": "^6.1.0",
     "element-ui": "^2.15.13",
     "i18next": "^22.4.15",
+    "ip2region": "2.3.0",
     "lodash": "^4.17.21",
     "node-fetch": "^2.6.1",
     "normalize.css": "^8.0.1",

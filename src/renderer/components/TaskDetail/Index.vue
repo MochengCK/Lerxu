@@ -70,8 +70,8 @@
       <div v-show="activeTab === 'trackers'" v-if="isBT">
         <mo-task-trackers :task="task" />
       </div>
-      <div v-show="activeTab === 'peers'" v-if="isBT">
-        <mo-task-peers :peers="peers" />
+      <div v-show="activeTab === 'peers'" v-if="isBT" class="task-detail-pane">
+        <mo-task-peers ref="taskPeers" :peers="peers" />
       </div>
       <div v-show="activeTab === 'files'">
         <mo-task-files
@@ -213,7 +213,8 @@
         return checkTaskIsBT(this.task)
       },
       isSeeder () {
-        return checkTaskIsSeeder(this.task)
+        const task = this.task || {}
+        return task.status === TASK_STATUS.ACTIVE && checkTaskIsSeeder(task)
       },
       magnetHintText () {
         const task = this.task || {}
@@ -331,7 +332,7 @@
       },
       taskStatus () {
         const { task, isSeeder } = this
-        if (isSeeder) {
+        if (isSeeder && task.status === TASK_STATUS.ACTIVE) {
           return TASK_STATUS.SEEDING
         } else {
           return task.status
@@ -370,9 +371,15 @@
         return result
       },
       isCompleted () {
-        if (!this.task) return false
-        const completedStatuses = ['complete', 'error', 'removed']
-        return completedStatuses.includes(this.task.status)
+        const task = this.task || {}
+        if (!task.gid) return false
+        const isSeeder = checkTaskIsSeeder(task)
+        // BT任务正在做种时不显示为已完成
+        if (task.status === TASK_STATUS.ACTIVE && isSeeder) {
+          return false
+        }
+        // 如果是已下载完成的BT任务（不论是 COMPLETE 还是 PAUSED），或者状态是 COMPLETE/ERROR/REMOVED，视为已完成（显示完成时间）
+        return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(task.status) || (task.status === TASK_STATUS.PAUSED && isSeeder)
       },
       completionTime () {
         // 使用任务保存时间作为完成时间，如果没有保存时间则使用当前时间
@@ -411,6 +418,14 @@
       handleOpened () {
         const done = () => {
           this.drawerAnimationDone = true
+          if (this.activeTab === 'peers' && this.$refs.taskPeers) {
+            setImmediate(() => {
+              this.$refs.taskPeers.updateTableHeight()
+            })
+          }
+          if (this.activeTab === 'activity' && this.$refs.taskGraphic) {
+            this.$refs.taskGraphic.updateGraphicWidth()
+          }
         }
         if (typeof window !== 'undefined' && window.requestAnimationFrame) {
           window.requestAnimationFrame(() => window.requestAnimationFrame(done))
@@ -467,6 +482,11 @@
         switch (name) {
         case 'peers':
           this.$store.dispatch('task/toggleEnabledFetchPeers', true)
+          setImmediate(() => {
+            if (this.$refs.taskPeers) {
+              this.$refs.taskPeers.updateTableHeight()
+            }
+          })
           break
         case 'activity':
           this.$nextTick(() => {
@@ -487,6 +507,11 @@
         switch (tabName) {
         case 'peers':
           this.$store.dispatch('task/toggleEnabledFetchPeers', true)
+          setImmediate(() => {
+            if (this.$refs.taskPeers) {
+              this.$refs.taskPeers.updateTableHeight()
+            }
+          })
           break
         case 'activity':
           this.$nextTick(() => {
@@ -779,6 +804,8 @@
   .el-drawer__body {
     position: relative;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
   .task-detail-hint {
     padding: 0.25rem 1.25rem 0.5rem;
@@ -801,25 +828,6 @@
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-  }
-  .task-detail-actions {
-    position: sticky;
-    left: 0;
-    bottom: 1rem;
-    z-index: inherit;
-    width: 100%;
-    text-align: center;
-    font-size: 0;
-    padding: 0 1.25rem;
-    display: flex;
-    align-content: space-between;
-    justify-content: space-between;
-    .task-item-actions {
-      display: inline-block;
-      &> .task-item-action {
-        margin: 0 0.5rem;
-      }
     }
   }
   .task-detail-drawer-title {
@@ -908,15 +916,33 @@
 }
 
 .task-detail-content {
-  height: calc(100% - 0.5rem);
-  padding: 0.5rem 1.25rem 3.125rem;
+  flex: 1;
+  height: 0; /* Ensures flex container scrolls correctly */
+  padding: 0.5rem 1.25rem;
+  box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+.task-detail-pane {
+  height: 100%;
 }
 
 .task-detail-drawer {
   .action-wrapper {
     flex: 1;
+  }
+  .task-detail-actions {
+    position: relative; /* Reset from absolute/sticky */
+    z-index: 10;
+    width: 100%;
+    text-align: center;
+    font-size: 0;
+    padding: 0 1.25rem 1.5rem;
+    display: flex;
+    align-content: space-between;
+    justify-content: space-between;
+    flex-shrink: 0;
   }
   .action-wrapper-left {
     text-align: left;

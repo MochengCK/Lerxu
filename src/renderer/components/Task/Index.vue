@@ -611,7 +611,10 @@
       loadTaskDateCounts () {
         const history = taskHistory.getHistory()
         const counts = {}
-        history.forEach(task => {
+        // 限制处理的历史记录数量，避免卡顿
+        const maxHistoryItems = 100
+        const limitedHistory = history.length > maxHistoryItems ? history.slice(0, maxHistoryItems) : history
+        limitedHistory.forEach(task => {
           // 使用savedAt作为任务完成时间
           const timestamp = parseInt(task.savedAt) || parseInt(task.createdAt) || parseInt(task.creationTime) || 0
           if (timestamp > 0) {
