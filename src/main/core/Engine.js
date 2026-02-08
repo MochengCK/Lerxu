@@ -12,10 +12,12 @@ import {
   getAria2ConfPath,
   getSessionPath,
   getUserDataPath,
+  getAria2LogPath,
   transformConfig,
   getEngineBin,
   getEnginePath
 } from '../utils/index'
+import { getEngineConnectionPolicy } from '@shared/utils'
 
 const { platform, arch } = process
 
@@ -42,15 +44,18 @@ export default class Engine {
 
     const originBinPath = this.getEngineBinPath()
     const binPath = this.prepareEngineBinary(originBinPath)
-    const args = this.getStartArgs()
+    const args = this.getStartArgs(binPath)
 
     const enableEngineLogs = is.dev() || is.linux() || is.windows()
     logger.info('[Motrix] engine bin path:', binPath)
     logger.info('[Motrix] engine start args:', args)
 
+    // 获取引擎所在目录作为工作目录
+    const engineDir = require('path').dirname(binPath)
     this.instance = spawn(binPath, args, {
-      windowsHide: false,
-      stdio: enableEngineLogs ? 'pipe' : 'ignore'
+      windowsHide: true,
+      stdio: enableEngineLogs ? 'pipe' : 'ignore',
+      cwd: engineDir
     })
 
     this.instance.on('error', (err) => {
@@ -273,30 +278,64 @@ export default class Engine {
       logger.info(`[Motrix] Got engine from user config: ${binName}`)
     }
 
-    // 获取可用引擎列表
-    let availableEngines = []
+    // 获取可用引擎列表（递归扫描子目录）
+    const availableEngines = []
+    const scannedPaths = new Set() // 避免重复扫描
+
+    const scanDirectory = (dirPath, relativePrefix = '') => {
+      // 防止循环引用或重复扫描
+      const realPath = require('fs').realpathSync(dirPath)
+      if (scannedPaths.has(realPath)) {
+        return
+      }
+      scannedPaths.add(realPath)
+
+      try {
+        const files = require('fs').readdirSync(dirPath)
+        files.forEach(file => {
+          const fullPath = resolve(dirPath, file)
+          const relativePath = relativePrefix ? `${relativePrefix}/${file}` : file
+          const stats = require('fs').lstatSync(fullPath)
+
+          if (stats.isDirectory()) {
+            // 递归扫描子目录
+            scanDirectory(fullPath, relativePath)
+          } else if (stats.isFile()) {
+            const defaultBinName = getEngineBin(platform)
+            const isCandidate = file.includes('fluxcore') || file === defaultBinName
+            let isExecutable = platform === 'win32'
+              ? file.endsWith('.exe')
+              : (stats.mode & parseInt('111', 8)) !== 0
+            if (!isExecutable && platform !== 'win32' && isCandidate) {
+              try {
+                chmodSync(fullPath, 0o755)
+                const nextStats = require('fs').lstatSync(fullPath)
+                isExecutable = (nextStats.mode & parseInt('111', 8)) !== 0
+              } catch (_) {}
+            }
+
+            if ((isExecutable || platform !== 'win32') &&
+                isCandidate &&
+                !file.endsWith('.backup') && !file.endsWith('.tmp')) {
+              availableEngines.push(relativePath)
+            }
+          }
+        })
+      } catch (error) {
+        logger.warn(`[Motrix] Failed to scan directory ${dirPath}:`, error.message)
+      }
+    }
+
     try {
-      const files = require('fs').readdirSync(enginePath)
-      availableEngines = files.filter(file => {
-        const filePath = resolve(enginePath, file)
-        const stats = require('fs').lstatSync(filePath)
-        // 检查是否为可执行文件（aria2c）
-        const isExecutable = platform === 'win32'
-          ? file.endsWith('.exe')
-          : (stats.mode & parseInt('111', 8)) !== 0
+      scanDirectory(enginePath)
 
-        return stats.isFile() && isExecutable &&
-               file.includes('aria2c') &&
-               !file.endsWith('.backup') && !file.endsWith('.tmp')
-      })
-
-      const linkCoreRelative = 'src/LinkCore.exe'
-      const linkCoreFullPath = resolve(enginePath, linkCoreRelative)
-      if (existsSync(linkCoreFullPath)) {
-        availableEngines.push(linkCoreRelative)
+      const fluxCoreRelative = 'src/FluxCore.exe'
+      const fluxCoreFullPath = resolve(enginePath, fluxCoreRelative)
+      if (existsSync(fluxCoreFullPath) && !availableEngines.includes(fluxCoreRelative)) {
+        availableEngines.push(fluxCoreRelative)
       }
     } catch (error) {
-      logger.error('[Motrix] Failed to read engine directory:', error)
+      logger.error('[Motrix] Failed to scan engine directory:', error)
     }
 
     // 1. 检查当前配置的引擎是否存在
@@ -320,8 +359,8 @@ export default class Engine {
         binName = defaultBinName
       } else if (availableEngines.length > 0) {
         // 默认引擎文件不存在，使用可用引擎
-        // 优先选择包含1.37.0的aria2c引擎
-        const specificEngine = availableEngines.find(file => file.includes('1.37.0'))
+        // 优先选择包含 fluxcore 的引擎
+        const specificEngine = availableEngines.find(file => /fluxcore(\.exe)?$/i.test(file))
         if (specificEngine) {
           binName = specificEngine
         } else {
@@ -357,57 +396,57 @@ export default class Engine {
       ].join('\n')
       throw e
     }
+    if (platform !== 'win32') {
+      try {
+        const st = lstatSync(result)
+        const mode = Number(st && st.mode) || 0
+        if ((mode & parseInt('111', 8)) === 0) {
+          chmodSync(result, 0o755)
+        }
+      } catch (_) {}
+    }
 
     return result
   }
 
-  getStartArgs () {
+  getStartArgs (binPath) {
     const confPath = getAria2ConfPath(platform, arch)
+    const logPath = getAria2LogPath()
 
     const sessionPath = getSessionPath()
     const sessionIsExist = existsSync(sessionPath)
 
-    let result = [`--conf-path=${confPath}`, `--save-session=${sessionPath}`]
+    // 添加日志路径和日志级别参数
+    let result = [
+      `--conf-path=${confPath}`,
+      `--save-session=${sessionPath}`,
+      `--log=${logPath}`,
+      '--log-level=debug'
+    ]
     if (sessionIsExist) {
       result = [...result, `--input-file=${sessionPath}`]
     }
 
-    const binPath = this.getEngineBinPath()
-    const is136 = /1\.36\.0/.test(binPath)
-    const is137 = /1\.37\.0/.test(binPath)
-    const engineFile = String(binPath).split(/[\\/]/).pop() || ''
-    const isLinkCoreEngine = /^LinkCore(\.exe)?$/i.test(engineFile)
-    const isAria2cFamily = /^aria2c/i.test(engineFile)
-    const isStandardAria2c = isAria2cFamily && !isLinkCoreEngine
-    const isHighConnAria2c = is136 || is137
-
-    let allowedMax = 16
-    if (isLinkCoreEngine || isHighConnAria2c) {
-      allowedMax = 64
-    }
+    // 使用传入的 binPath 或重新获取
+    const enginePath = binPath || this.getEngineBinPath()
+    const enginePolicy = getEngineConnectionPolicy(enginePath)
+    const allowedMax = Math.max(0, Number(enginePolicy.max) || 16)
+    const defaultMax = Math.max(0, Number(enginePolicy.defaultMax) || allowedMax)
+    const splitMax = Math.max(0, Number(enginePolicy.splitMax) || allowedMax)
     const extraConfig = {
       ...this.systemConfig
     }
 
     const rawMax = this.systemConfig['max-connection-per-server']
     let desiredMax = Number(rawMax)
-    if (!Number.isFinite(desiredMax) || desiredMax < 0) {
-      desiredMax = allowedMax
-    } else if (desiredMax === 0) {
-      desiredMax = allowedMax
+    if (!Number.isFinite(desiredMax) || desiredMax <= 0) {
+      desiredMax = defaultMax
     }
     extraConfig['max-connection-per-server'] = Math.min(desiredMax, allowedMax)
     const desiredSplit = Number(this.systemConfig.split || 0)
-    const splitBaseline = allowedMax >= 64 ? 64 : 16
+    const splitBaseline = Math.min(splitMax, allowedMax >= 128 ? 128 : (allowedMax >= 64 ? 64 : 16))
     const baseSplit = desiredSplit >= splitBaseline ? desiredSplit : splitBaseline
-    if (isLinkCoreEngine || isHighConnAria2c) {
-      extraConfig.split = Math.min(baseSplit, 64)
-    } else if (isStandardAria2c) {
-      // 标准aria2c使用较小的split值以避免过多连接
-      extraConfig.split = Math.min(baseSplit, 16)
-    } else {
-      extraConfig.split = baseSplit
-    }
+    extraConfig.split = Math.min(baseSplit, splitMax)
 
     const keepSeeding = this.userConfig['keep-seeding']
     const seedRatio = this.systemConfig['seed-ratio']

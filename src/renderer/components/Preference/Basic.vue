@@ -56,6 +56,14 @@
               </el-checkbox>
             </el-col>
             <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.showTaskTypeBadge" @change="autoSaveForm">
+                {{ $t('preferences.show-task-type-badge') }}
+              </el-checkbox>
+              <div class="el-form-item__info" style="margin-top: 8px;">
+                {{ $t('preferences.show-task-type-badge-tips') }}
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
               <el-form-item :label="$t('preferences.task-progress-mode')">
                 <el-select
                   v-model="form.taskProgressMode"
@@ -559,6 +567,17 @@
                 :label="$t('preferences.seed-time')">
               </el-input-number>
             </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-switch
+                v-model="form.btLevelUpNotification"
+                :active-text="$t('preferences.bt-level-up-notification-label')"
+                @change="autoSaveForm"
+              >
+              </el-switch>
+              <div class="el-form-item__info" style="margin-top: 8px;">
+                {{ $t('preferences.bt-level-up-notification-tips') }}
+              </div>
+            </el-col>
           </el-form-item>
         </div>
 
@@ -886,6 +905,7 @@
       autoPurgeRecord,
       btForceEncryption,
       btSaveMetadata,
+      btLevelUpNotification,
       dir,
       downloadingFileSuffix,
       engineMaxConnectionPerServer,
@@ -943,7 +963,8 @@
       floatingBarDisplayMode,
       enableSecurityScan,
       securityScanTool,
-      customSecurityScanPath
+      customSecurityScanPath,
+      showTaskTypeBadge
     } = config
 
     let normalizedEngineMax = engineMaxConnectionPerServer
@@ -968,6 +989,7 @@
       btAutoDownloadContent,
       btForceEncryption,
       btSaveMetadata,
+      btLevelUpNotification: btLevelUpNotification === undefined ? true : !!btLevelUpNotification,
       continue: config.continue,
       dir,
       downloadingFileSuffix,
@@ -1052,7 +1074,8 @@
       floatingBarDisplayMode: floatingBarDisplayMode || 'hover',
       enableSecurityScan: enableSecurityScan || false,
       securityScanTool: securityScanTool || 'system',
-      customSecurityScanPath: customSecurityScanPath || ''
+      customSecurityScanPath: customSecurityScanPath || '',
+      showTaskTypeBadge: showTaskTypeBadge === undefined ? true : !!showTaskTypeBadge
     }
     return result
   }

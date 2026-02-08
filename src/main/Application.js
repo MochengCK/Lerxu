@@ -1326,13 +1326,67 @@ export default class Application extends EventEmitter {
     this.syncTrackers(source, proxy)
   }
 
-  autoResumeTask () {
+  async autoResumeTask () {
     const enabled = this.configManager.getUserConfig('resume-all-when-app-launched')
     if (!enabled) {
       return
     }
 
-    this.engineClient.call('unpauseAll')
+    // 获取所有暂停的任务
+    try {
+      const waitingTasks = await this.engineClient.call('tellWaiting', 0, 1000)
+      if (!waitingTasks || waitingTasks.length === 0) {
+        return
+      }
+
+      // 筛选出可以恢复的任务
+      const tasksToResume = []
+      for (const task of waitingTasks) {
+        const { status, bittorrent, totalLength, files } = task
+        // 只处理暂停状态的任务
+        if (status !== 'paused') {
+          continue
+        }
+
+        // 检查是否是磁力链接任务（通过 bittorrent 存在且 totalLength 为 0 判断）
+        const isMagnetWithoutMetadata = bittorrent && (!totalLength || totalLength === '0')
+
+        // 如果是磁力链接且没有元数据（totalLength 为 0），跳过恢复
+        if (isMagnetWithoutMetadata) {
+          logger.info(`[Motrix] Skipping magnet task ${task.gid} - no metadata yet`)
+          continue
+        }
+
+        // 额外检查：如果是BT任务但没有文件信息，也跳过
+        // 这种情况可能是元数据正在获取中
+        if (bittorrent && (!files || files.length === 0)) {
+          logger.info(`[Motrix] Skipping BT task ${task.gid} - no files info yet`)
+          continue
+        }
+
+        // 检查是否是元数据任务（名称以[METADATA]开头）
+        const taskName = files && files.length > 0 && files[0].path ? files[0].path : ''
+        if (taskName.includes('[METADATA]')) {
+          logger.info(`[Motrix] Skipping metadata task ${task.gid}`)
+          continue
+        }
+
+        tasksToResume.push(task.gid)
+      }
+
+      // 逐个恢复任务
+      for (const gid of tasksToResume) {
+        try {
+          await this.engineClient.call('unpause', gid)
+          logger.info(`[Motrix] Resumed task: ${gid}`)
+        } catch (err) {
+          logger.warn(`[Motrix] Failed to resume task ${gid}:`, err.message)
+        }
+      }
+    } catch (error) {
+      logger.warn('[Motrix] Failed to auto resume tasks:', error.message)
+      // 如果出错，不要回退到 unpauseAll，因为这可能会恢复不应该恢复的任务
+    }
   }
 
   initWindowManager () {

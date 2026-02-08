@@ -18,7 +18,13 @@
         </div>
         <div class="best-peer-item">
           <span class="best-peer-key">{{ $t('task.task-peer-location') }}:</span>
-          <span class="best-peer-value">{{ getLocationFromIp(bestPeer.ip) }}</span>
+          <span class="best-peer-value">
+            <span
+              v-if="getCountryCode(bestPeer.ip)"
+              :class="['fi', `fi-${getCountryCode(bestPeer.ip).toLowerCase()}`, 'mo-peer-flag']"
+            ></span>
+            {{ getLocationFromIp(bestPeer.ip) }}
+          </span>
         </div>
         <div class="best-peer-item">
           <span class="best-peer-key">{{ $t('task.task-peer-client') }}:</span>
@@ -54,6 +60,7 @@
         @sort-change="handleSortChange"
         @expand-change="handleExpandChange"
         @row-click="handleRowClick"
+        @row-contextmenu="handleRowContextMenu"
       >
         <el-table-column
           :label="$t('task.task-peer-host')"
@@ -65,8 +72,9 @@
               <span class="mo-peer-group-label">{{ scope.row.groupLabel }}</span>
             </template>
             <template v-else>
-              <el-tooltip :content="`${scope.row.ip}:${scope.row.port}`" placement="top" :disabled="!peerOverflowMap[`${scope.row.ip}:${scope.row.port}-_hostOverflow`]">
-                <span class="mo-peer-text" @mouseenter="handleTextMouseEnter($event, scope.row, '_hostOverflow')">{{ `${scope.row.ip}:${scope.row.port}` }}</span>
+              <!-- 所有peer都显示IP:Port格式，保持一致 -->
+              <el-tooltip :content="`${scope.row.ip}:${scope.row.port}`" placement="top" :disabled="!isTextOverflow(`${scope.row.ip}:${scope.row.port}`)">
+                <span class="mo-peer-text">{{ `${scope.row.ip}:${scope.row.port}` }}</span>
               </el-tooltip>
             </template>
           </template>
@@ -75,10 +83,16 @@
           :label="$t('task.task-peer-location')"
           prop="ip"
           sortable="custom"
-          min-width="80">
+          min-width="100">
           <template slot-scope="scope">
-            <el-tooltip :content="getLocationFromIp(scope.row.ip)" placement="top" :disabled="!peerOverflowMap[`${scope.row.ip}:${scope.row.port}-_locationOverflow`]">
-              <span class="mo-peer-text" @mouseenter="handleTextMouseEnter($event, scope.row, '_locationOverflow')">{{ getLocationFromIp(scope.row.ip) }}</span>
+            <el-tooltip :content="getLocationFromIp(scope.row.ip)" placement="top" :disabled="!isTextOverflow(getLocationFromIp(scope.row.ip))">
+              <span class="mo-peer-location">
+                <span
+                  v-if="getCountryCode(scope.row.ip)"
+                  :class="['fi', `fi-${getCountryCode(scope.row.ip).toLowerCase()}`, 'mo-peer-flag']"
+                ></span>
+                <span class="mo-peer-text">{{ getLocationFromIp(scope.row.ip) }}</span>
+              </span>
             </el-tooltip>
           </template>
         </el-table-column>
@@ -88,8 +102,8 @@
           sortable="custom"
           min-width="125">
           <template slot-scope="scope">
-            <el-tooltip :content="renderPeerClient(scope.row.peerId)" placement="top" :disabled="!peerOverflowMap[`${scope.row.ip}:${scope.row.port}-_clientOverflow`]">
-              <span class="mo-peer-text" @mouseenter="handleTextMouseEnter($event, scope.row, '_clientOverflow')">{{ renderPeerClient(scope.row.peerId) }}</span>
+            <el-tooltip :content="renderPeerClient(scope.row.peerId)" placement="top" :disabled="!isTextOverflow(renderPeerClient(scope.row.peerId))">
+              <span class="mo-peer-text">{{ renderPeerClient(scope.row.peerId) }}</span>
             </el-tooltip>
           </template>
         </el-table-column>
@@ -99,7 +113,33 @@
           sortable="custom"
           min-width="120">
           <template slot-scope="scope">
-            {{ formatDuration(scope.row.connectionTime) || '-' }}
+            <template v-if="scope.row.status === 'banned'">
+              <span style="color: #f56c6c;">{{ formatDuration(scope.row.remainingTime) }}</span>
+            </template>
+            <template v-else-if="scope.row.status === 'attempting'">
+              <span style="color: #909399;">{{ $t('task.peer-status-attempting') }}</span>
+            </template>
+            <template v-else>
+              {{ formatDuration(scope.row.connectionTime) || '-' }}
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column
+          :label="$t('task.task-peer-protocol')"
+          prop="protocol"
+          sortable="custom"
+          width="110">
+          <template slot-scope="scope">
+            {{ getPeerProtocol(scope.row) }}
+          </template>
+        </el-table-column>
+        <el-table-column
+          :label="$t('task.task-peer-source')"
+          prop="source"
+          sortable="custom"
+          width="90">
+          <template slot-scope="scope">
+            {{ getPeerSource(scope.row) }}
           </template>
         </el-table-column>
         <el-table-column
@@ -145,6 +185,55 @@
       </el-table>
     </div>
     <div class="mo-peers-bottom-bar"></div>
+
+    <!-- 右键菜单 -->
+    <div
+      v-show="contextMenuVisible"
+      class="mo-peer-context-menu"
+      :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }"
+    >
+      <template v-if="contextMenuPeer && contextMenuPeer.status === 'banned'">
+        <div class="context-menu-item" @click="banPeer(300)">
+          <i class="el-icon-circle-plus-outline"></i>
+          {{ $t('task.extend-ban-5min') }}
+        </div>
+        <div class="context-menu-item" @click="banPeer(3600)">
+          <i class="el-icon-circle-plus-outline"></i>
+          {{ $t('task.extend-ban-1hour') }}
+        </div>
+        <div class="context-menu-item" @click="banPeer(86400)">
+          <i class="el-icon-circle-plus-outline"></i>
+          {{ $t('task.extend-ban-1day') }}
+        </div>
+        <div class="context-menu-item" @click="banPeer(-1)">
+          <i class="el-icon-circle-plus-outline"></i>
+          {{ $t('task.extend-ban-forever') }}
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" @click="unbanPeer">
+          <i class="el-icon-circle-check"></i>
+          {{ $t('task.unban-peer') }}
+        </div>
+      </template>
+      <template v-else>
+        <div class="context-menu-item" @click="banPeer(300)">
+          <i class="el-icon-circle-close"></i>
+          {{ $t('task.ban-peer-5min') }}
+        </div>
+        <div class="context-menu-item" @click="banPeer(3600)">
+          <i class="el-icon-circle-close"></i>
+          {{ $t('task.ban-peer-1hour') }}
+        </div>
+        <div class="context-menu-item" @click="banPeer(86400)">
+          <i class="el-icon-circle-close"></i>
+          {{ $t('task.ban-peer-1day') }}
+        </div>
+        <div class="context-menu-item" @click="banPeer(-1)">
+          <i class="el-icon-circle-close"></i>
+          {{ $t('task.ban-peer-forever') }}
+        </div>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -156,6 +245,7 @@
     timeFormat
   } from '@shared/utils'
   import IP2Region from 'ip2region'
+  import 'flag-icons/css/flag-icons.min.css'
 
   // 初始化 ip2region 查询器
   let ipSearcher = null
@@ -174,9 +264,9 @@
     },
     props: {
       peers: {
-        type: Array,
+        type: [Object, Array],
         default: function () {
-          return []
+          return { connected: [], attempting: [], banned: [] }
         }
       },
       task: {
@@ -193,196 +283,261 @@
         sortProp: 'downloadSpeed',
         sortOrder: 'descending',
         tableHeight: '100%',
-        peerStartTimeMap: {},
-        expandedGroupKeys: ['group-active'],
-        peerOverflowMap: {}
+        expandedGroupKeys: ['group-connected'],
+        contextMenuVisible: false,
+        contextMenuX: 0,
+        contextMenuY: 0,
+        contextMenuPeer: null,
+        overflowMap: {} // 存储每个元素的溢出状态
       }
-    },
-    mounted () {
-      // this.updateTableHeight()
-      // window.addEventListener('resize', this.updateTableHeight)
-    },
-    beforeDestroy () {
-      // window.removeEventListener('resize', this.updateTableHeight)
     },
     computed: {
       bestPeer () {
-        const peers = this.peers || []
-        if (peers.length === 0) return null
+        let peers = this.peers || {}
+        // 兼容旧格式
+        if (Array.isArray(peers)) {
+          peers = { connected: peers }
+        }
+        const connected = Array.isArray(peers.connected) ? peers.connected : []
+        if (connected.length === 0) return null
         // 找到下载速度最快的 peer
-        return peers.reduce((best, current) => {
+        return connected.reduce((best, current) => {
           const bestSpeed = Number(best.downloadSpeed) || 0
           const currentSpeed = Number(current.downloadSpeed) || 0
           return currentSpeed > bestSpeed ? current : best
-        }, peers[0])
+        }, connected[0])
       },
       filteredPeers () {
-        const q = this.search.trim().toLowerCase()
-        const list = (this.peersWithTime || [])
-        const byMode = list.filter(p => {
-          const up = Number(p.uploadSpeed) || 0
-          const down = Number(p.downloadSpeed) || 0
-          const percent = bitfieldToPercent(p.bitfield)
-          switch (this.filterMode) {
-          case 'downloading':
-            return down > 0
-          case 'uploading':
-            return up > 0 || percent >= 100
-          case 'idle':
-            return up === 0 && down === 0
-          default:
-            return true
-          }
-        })
-        if (!q) return byMode
-        return byMode.filter(p => {
-          const host = `${p.ip}:${p.port}`.toLowerCase()
-          const client = peerIdParser(p.peerId).toLowerCase()
-          return host.includes(q) || client.includes(q)
-        })
+        // 这个computed已经不需要了，逻辑移到groupedPeers中
+        return []
       },
-      countAll () { return (this.peers || []).length },
-      countDownloading () { return (this.peers || []).filter(p => (Number(p.downloadSpeed) || 0) > 0).length },
+      countAll () {
+        const peers = this.peers || {}
+        if (Array.isArray(peers)) {
+          return peers.length
+        }
+        const connected = Array.isArray(peers.connected) ? peers.connected : []
+        const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
+        const banned = Array.isArray(peers.banned) ? peers.banned : []
+        return connected.length + attempting.length + banned.length
+      },
+      countDownloading () {
+        const peers = this.peers || {}
+        if (Array.isArray(peers)) {
+          return peers.filter(p => (Number(p.downloadSpeed) || 0) > 0).length
+        }
+        const connected = Array.isArray(peers.connected) ? peers.connected : []
+        return connected.filter(p => (Number(p.downloadSpeed) || 0) > 0).length
+      },
       countUploading () {
-        return (this.peers || []).filter(p => {
+        const peers = this.peers || {}
+        if (Array.isArray(peers)) {
+          return peers.filter(p => {
+            const up = Number(p.uploadSpeed) || 0
+            const percent = bitfieldToPercent(p.bitfield)
+            return up > 0 || percent >= 100
+          }).length
+        }
+        const connected = Array.isArray(peers.connected) ? peers.connected : []
+        return connected.filter(p => {
           const up = Number(p.uploadSpeed) || 0
           const percent = bitfieldToPercent(p.bitfield)
           return up > 0 || percent >= 100
         }).length
       },
-      countIdle () { return (this.peers || []).filter(p => (Number(p.uploadSpeed) || 0) === 0 && (Number(p.downloadSpeed) || 0) === 0).length },
-      sortedPeers () {
-        const peers = this.filteredPeers
-        if (!this.sortProp) return peers
-        return [...peers].sort((a, b) => {
-          let valA = a[this.sortProp]
-          let valB = b[this.sortProp]
-          // 处理 bitfield 排序（转换为百分比）
-          if (this.sortProp === 'bitfield') {
-            valA = bitfieldToPercent(valA)
-            valB = bitfieldToPercent(valB)
-          }
-          // 处理位置排序（根据IP获取位置后排序）
-          if (this.sortProp === 'ip') {
-            valA = this.getLocationFromIp(valA)
-            valB = this.getLocationFromIp(valB)
-            // 字符串排序
-            if (this.sortOrder === 'ascending') {
-              return valA.localeCompare(valB, 'zh-CN')
-            }
-            return valB.localeCompare(valA, 'zh-CN')
-          }
-          // 处理客户端排序（解析peerId后排序）
-          if (this.sortProp === 'peerId') {
-            valA = peerIdParser(valA)
-            valB = peerIdParser(valB)
-            // 字符串排序
-            if (this.sortOrder === 'ascending') {
-              return valA.localeCompare(valB, 'zh-CN')
-            }
-            return valB.localeCompare(valA, 'zh-CN')
-          }
-          // 转换为数字进行比较
-          valA = Number(valA) || 0
-          valB = Number(valB) || 0
-          if (this.sortOrder === 'ascending') {
-            return valA - valB
-          }
-          return valB - valA
-        })
+      countIdle () {
+        const peers = this.peers || {}
+        if (Array.isArray(peers)) {
+          return peers.filter(p => (Number(p.uploadSpeed) || 0) === 0 && (Number(p.downloadSpeed) || 0) === 0).length
+        }
+        const connected = Array.isArray(peers.connected) ? peers.connected : []
+        return connected.filter(p => (Number(p.uploadSpeed) || 0) === 0 && (Number(p.downloadSpeed) || 0) === 0).length
       },
-      peersWithTime () {
-        const now = Date.now()
-        return (this.peers || []).map(p => {
-          const key = `${p.ip}:${p.port}`
-          if (!this.peerStartTimeMap[key]) {
-            this.$set(this.peerStartTimeMap, key, now)
-          }
-          return {
-            ...p,
-            connectionTime: Math.floor((now - this.peerStartTimeMap[key]) / 1000)
-          }
-        })
+      sortedPeers () {
+        // 这个computed已经不需要了，逻辑移到groupedPeers中
+        return []
       },
       groupedPeers () {
-        const peers = this.sortedPeers
-        if (!peers || peers.length === 0) return []
+        let peers = this.peers || {}
 
-        const active = []
-        const inactive = []
-
-        peers.forEach(p => {
-          const downloadSpeed = Number(p.downloadSpeed) || 0
-          const uploadSpeed = Number(p.uploadSpeed) || 0
-          const hasTraffic = downloadSpeed > 0 || uploadSpeed > 0
-
-          const clientName = this.renderPeerClient(p.peerId)
-          const isUnknown = clientName === this.$t('task.peer-client-unknown') || clientName === 'task.peer-client-unknown'
-
-          // 活跃节点判定规则：
-          // 1. 已知客户端 (Recognized Client)
-          // 2. 或者是活跃节点 (Has Traffic) -> 即使客户端未知也视为活跃
-          if (!isUnknown || hasTraffic) {
-            active.push(p)
-          } else {
-            inactive.push(p)
+        // 兼容旧格式：如果peers是数组，转换为新格式
+        if (Array.isArray(peers)) {
+          peers = {
+            connected: peers,
+            attempting: [],
+            banned: []
           }
-        })
+        }
 
+        // 从新的数据结构中提取三种类型的节点
+        const connected = Array.isArray(peers.connected) ? peers.connected : []
+        const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
+        const banned = Array.isArray(peers.banned) ? peers.banned : []
+
+        // 调试：打印banned peers的数据
+        if (banned.length > 0) {
+          console.log('[TaskPeers] Banned peers data:', JSON.stringify(banned, null, 2))
+        }
+
+        // 应用过滤和搜索 - 优化：减少重复计算
+        const q = this.search.trim().toLowerCase()
+        const hasSearch = q.length > 0
+
+        const filterAndSearch = (peerList) => {
+          if (!peerList || peerList.length === 0) return []
+
+          return peerList.filter(p => {
+            // 搜索过滤
+            if (hasSearch) {
+              const host = `${p.ip}:${p.port}`.toLowerCase()
+              const client = peerIdParser(p.peerId || '').toLowerCase()
+              if (!host.includes(q) && !client.includes(q)) {
+                return false
+              }
+            }
+
+            // 模式过滤（仅对已连接节点有效）
+            if (p.status !== 'attempting' && p.status !== 'banned') {
+              const up = Number(p.uploadSpeed) || 0
+              const down = Number(p.downloadSpeed) || 0
+              const percent = bitfieldToPercent(p.bitfield)
+              switch (this.filterMode) {
+              case 'downloading':
+                return down > 0
+              case 'uploading':
+                return up > 0 || percent >= 100
+              case 'idle':
+                return up === 0 && down === 0
+              default:
+                return true
+              }
+            }
+            return true
+          })
+        }
+
+        const filteredConnected = filterAndSearch(connected)
+        const filteredAttempting = filterAndSearch(attempting)
+        const filteredBanned = filterAndSearch(banned)
+
+        // 排序 - 优化：使用浅拷贝，减少条件判断
+        const sortPeers = (peerList) => {
+          if (!this.sortProp || peerList.length === 0) return peerList
+
+          const sorted = peerList.slice() // 浅拷贝
+          const prop = this.sortProp
+          const isAsc = this.sortOrder === 'ascending'
+
+          sorted.sort((a, b) => {
+            let valA = a[prop]
+            let valB = b[prop]
+
+            if (prop === 'bitfield') {
+              valA = bitfieldToPercent(valA)
+              valB = bitfieldToPercent(valB)
+            } else if (prop === 'ip') {
+              valA = this.getLocationFromIp(valA)
+              valB = this.getLocationFromIp(valB)
+              return isAsc ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN')
+            } else if (prop === 'peerId') {
+              valA = peerIdParser(valA)
+              valB = peerIdParser(valB)
+              return isAsc ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN')
+            }
+
+            valA = Number(valA) || 0
+            valB = Number(valB) || 0
+            return isAsc ? valA - valB : valB - valA
+          })
+
+          return sorted
+        }
+
+        const sortedConnected = sortPeers(filteredConnected)
+        const sortedAttempting = sortPeers(filteredAttempting)
+        const sortedBanned = sortPeers(filteredBanned)
+
+        // 构建分组结构 - 优化：直接修改对象，避免展开运算符
         const result = []
-        if (active.length > 0) {
+        if (sortedConnected.length > 0) {
           result.push({
-            id: 'group-active',
+            id: 'group-connected',
             isGroup: true,
-            groupLabel: `${this.$t('task.peers-active-nodes')} (${active.length})`,
-            children: active.map(p => ({ ...p, id: `${p.peerId}-${p.ip}:${p.port}` }))
+            groupLabel: `${this.$t('task.peers-connected')} (${sortedConnected.length})`,
+            children: sortedConnected.map(p => {
+              p.status = 'connected'
+              p.id = `${p.peerId}-${p.ip}:${p.port}`
+              return p
+            })
           })
         }
-        if (inactive.length > 0) {
+        if (sortedAttempting.length > 0) {
           result.push({
-            id: 'group-inactive',
+            id: 'group-attempting',
             isGroup: true,
-            groupLabel: `${this.$t('task.peers-inactive-nodes')} (${inactive.length})`,
-            children: inactive.map(p => ({ ...p, id: `${p.peerId}-${p.ip}:${p.port}` }))
+            groupLabel: `${this.$t('task.peers-attempting')} (${sortedAttempting.length})`,
+            children: sortedAttempting.map(p => {
+              p.status = 'attempting'
+              p.id = `attempting-${p.ip}:${p.port}`
+              return p
+            })
           })
         }
+        if (sortedBanned.length > 0) {
+          result.push({
+            id: 'group-banned',
+            isGroup: true,
+            groupLabel: `${this.$t('task.peers-banned')} (${sortedBanned.length})`,
+            children: sortedBanned.map(p => {
+              p.status = 'banned'
+              p.id = `banned-${p.ip}`
+              return p
+            })
+          })
+        }
+
         return result
       }
     },
-    watch: {
-      peers: {
-        handler (newList) {
-          const now = Date.now()
-          const nextMap = { ...this.peerStartTimeMap }
-          let changed = false
-          const currentKeys = new Set()
-
-          newList.forEach(p => {
-            const key = `${p.ip}:${p.port}`
-            currentKeys.add(key)
-            if (!nextMap[key]) {
-              nextMap[key] = now
-              changed = true
-            }
-          })
-
-          // Cleanup old peers? maybe not needed or beneficial to keep for a while
-          // but if we want to be strict:
-          Object.keys(nextMap).forEach(key => {
-            if (!currentKeys.has(key)) {
-              delete nextMap[key]
-              changed = true
-            }
-          })
-
-          if (changed) {
-            this.peerStartTimeMap = nextMap
-          }
-        },
-        immediate: true
-      }
+    mounted () {
+      // 初始加载时检测溢出
+      this.$nextTick(() => {
+        this.detectTextOverflow()
+      })
+    },
+    updated () {
+      // 在DOM更新后检测所有文本元素的溢出状态
+      this.$nextTick(() => {
+        this.detectTextOverflow()
+      })
     },
     methods: {
+      detectTextOverflow () {
+        // 检测所有 .mo-peer-text 元素是否溢出
+        const textElements = this.$el.querySelectorAll('.mo-peer-text')
+        const newOverflowMap = {}
+
+        textElements.forEach(el => {
+          const isOverflow = el.scrollWidth > el.clientWidth + 1
+          if (isOverflow) {
+            el.classList.add('is-overflow')
+          } else {
+            el.classList.remove('is-overflow')
+          }
+
+          // 存储溢出状态，使用元素的文本内容作为key
+          const text = el.textContent.trim()
+          if (text) {
+            newOverflowMap[text] = isOverflow
+          }
+        })
+
+        this.overflowMap = newOverflowMap
+      },
+      isTextOverflow (text) {
+        // 检查特定文本是否溢出
+        return this.overflowMap[text] === true
+      },
       renderPeerClient (peerId) {
         const result = peerIdParser(peerId)
         if (result === 'task.peer-client-unknown') {
@@ -391,13 +546,14 @@
         return result
       },
       formatDuration (seconds) {
-        if (seconds <= 0) return '0s'
+        const s = Number(seconds) || 0
+        if (s <= 0) return '0s'
         const i18n = {
           hour: this.$t('app.hour') || 'h',
           minute: this.$t('app.minute') || 'm',
           second: this.$t('app.second') || 's'
         }
-        return timeFormat(seconds, { i18n })
+        return timeFormat(s, { i18n })
       },
       updateTableHeight () {
         // height="100%" handled by CSS
@@ -405,16 +561,6 @@
       handleSortChange ({ prop, order }) {
         this.sortProp = prop || 'downloadSpeed'
         this.sortOrder = order || 'descending'
-      },
-      handleTextMouseEnter (event, row, overflowKey) {
-        try {
-          const el = event && event.currentTarget
-          const overflow = !!(el && el.scrollWidth > el.clientWidth + 1)
-          const id = `${row.ip}:${row.port}-${overflowKey}`
-          if (this.peerOverflowMap[id] !== overflow) {
-            this.$set(this.peerOverflowMap, id, overflow)
-          }
-        } catch (e) {}
       },
       getLocationFromIp (ip) {
         if (!ip) return '-'
@@ -438,6 +584,259 @@
         }
         return '-'
       },
+      getCountryCode (ip) {
+        if (!ip) return null
+        // 使用 ip2region 查询地理位置并返回国家代码
+        if (ipSearcher) {
+          try {
+            const result = ipSearcher.search(ip)
+            if (result) {
+              const country = result.country || result.nation
+              if (country && country !== '0') {
+                // 将国家名称映射到国家代码
+                return this.countryNameToCode(country)
+              }
+            }
+          } catch (e) {
+            console.warn('[TaskPeers] ip2region search failed:', e.message)
+          }
+        }
+        return null
+      },
+      countryNameToCode (countryName) {
+        // 国家名称到ISO 3166-1 alpha-2代码的映射
+        const countryMap = {
+          // 亚洲
+          中国: 'CN',
+          日本: 'JP',
+          韩国: 'KR',
+          印度: 'IN',
+          新加坡: 'SG',
+          泰国: 'TH',
+          马来西亚: 'MY',
+          印度尼西亚: 'ID',
+          菲律宾: 'PH',
+          越南: 'VN',
+          香港: 'HK',
+          台湾: 'TW',
+          澳门: 'MO',
+          蒙古: 'MN',
+          朝鲜: 'KP',
+          缅甸: 'MM',
+          老挝: 'LA',
+          柬埔寨: 'KH',
+          文莱: 'BN',
+          东帝汶: 'TL',
+          尼泊尔: 'NP',
+          不丹: 'BT',
+          孟加拉国: 'BD',
+          斯里兰卡: 'LK',
+          马尔代夫: 'MV',
+          巴基斯坦: 'PK',
+          阿富汗: 'AF',
+          哈萨克斯坦: 'KZ',
+          乌兹别克斯坦: 'UZ',
+          土库曼斯坦: 'TM',
+          吉尔吉斯斯坦: 'KG',
+          塔吉克斯坦: 'TJ',
+          // 欧洲
+          英国: 'GB',
+          法国: 'FR',
+          德国: 'DE',
+          意大利: 'IT',
+          西班牙: 'ES',
+          荷兰: 'NL',
+          瑞士: 'CH',
+          瑞典: 'SE',
+          波兰: 'PL',
+          比利时: 'BE',
+          奥地利: 'AT',
+          挪威: 'NO',
+          丹麦: 'DK',
+          芬兰: 'FI',
+          爱尔兰: 'IE',
+          葡萄牙: 'PT',
+          希腊: 'GR',
+          捷克: 'CZ',
+          匈牙利: 'HU',
+          罗马尼亚: 'RO',
+          乌克兰: 'UA',
+          俄罗斯: 'RU',
+          白俄罗斯: 'BY',
+          保加利亚: 'BG',
+          塞尔维亚: 'RS',
+          克罗地亚: 'HR',
+          斯洛伐克: 'SK',
+          斯洛文尼亚: 'SI',
+          立陶宛: 'LT',
+          拉脱维亚: 'LV',
+          爱沙尼亚: 'EE',
+          冰岛: 'IS',
+          卢森堡: 'LU',
+          马耳他: 'MT',
+          摩纳哥: 'MC',
+          列支敦士登: 'LI',
+          安道尔: 'AD',
+          圣马力诺: 'SM',
+          梵蒂冈: 'VA',
+          // 北美洲
+          美国: 'US',
+          加拿大: 'CA',
+          墨西哥: 'MX',
+          古巴: 'CU',
+          牙买加: 'JM',
+          海地: 'HT',
+          多米尼加: 'DO',
+          巴拿马: 'PA',
+          哥斯达黎加: 'CR',
+          危地马拉: 'GT',
+          洪都拉斯: 'HN',
+          尼加拉瓜: 'NI',
+          萨尔瓦多: 'SV',
+          伯利兹: 'BZ',
+          // 南美洲
+          巴西: 'BR',
+          阿根廷: 'AR',
+          智利: 'CL',
+          秘鲁: 'PE',
+          哥伦比亚: 'CO',
+          委内瑞拉: 'VE',
+          厄瓜多尔: 'EC',
+          玻利维亚: 'BO',
+          巴拉圭: 'PY',
+          乌拉圭: 'UY',
+          圭亚那: 'GY',
+          苏里南: 'SR',
+          // 大洋洲
+          澳大利亚: 'AU',
+          新西兰: 'NZ',
+          斐济: 'FJ',
+          巴布亚新几内亚: 'PG',
+          所罗门群岛: 'SB',
+          瓦努阿图: 'VU',
+          萨摩亚: 'WS',
+          汤加: 'TO',
+          // 非洲
+          南非: 'ZA',
+          埃及: 'EG',
+          尼日利亚: 'NG',
+          肯尼亚: 'KE',
+          埃塞俄比亚: 'ET',
+          加纳: 'GH',
+          坦桑尼亚: 'TZ',
+          乌干达: 'UG',
+          阿尔及利亚: 'DZ',
+          摩洛哥: 'MA',
+          突尼斯: 'TN',
+          利比亚: 'LY',
+          苏丹: 'SD',
+          索马里: 'SO',
+          津巴布韦: 'ZW',
+          赞比亚: 'ZM',
+          莫桑比克: 'MZ',
+          博茨瓦纳: 'BW',
+          纳米比亚: 'NA',
+          安哥拉: 'AO',
+          喀麦隆: 'CM',
+          塞内加尔: 'SN',
+          科特迪瓦: 'CI',
+          马达加斯加: 'MG',
+          毛里求斯: 'MU',
+          // 中东
+          土耳其: 'TR',
+          以色列: 'IL',
+          沙特阿拉伯: 'SA',
+          阿联酋: 'AE',
+          伊朗: 'IR',
+          伊拉克: 'IQ',
+          叙利亚: 'SY',
+          约旦: 'JO',
+          黎巴嫩: 'LB',
+          科威特: 'KW',
+          卡塔尔: 'QA',
+          巴林: 'BH',
+          阿曼: 'OM',
+          也门: 'YE'
+        }
+        return countryMap[countryName] || null
+      },
+      getPeerSource (peer) {
+        // 判断peer来源
+        // 来源优先级：LPD > DHT > PEX > UDP Tracker > HTTP Tracker > 手动
+        if (!peer) return '-'
+
+        // 1. LPD - 本地发现（本地peer）
+        if (peer.localPeer === 'true' || peer.localPeer === true) {
+          return 'LPD'
+        }
+
+        // 2. DHT - DHT网络（支持DHT的peer）
+        // 注意：aria2中没有直接的DHT来源标记，这里作为预留
+        if (peer.fromDHT === 'true' || peer.fromDHT === true) {
+          return 'DHT'
+        }
+
+        // 3. PEX - Peer Exchange（支持扩展消息的peer可能来自PEX）
+        // 如果是入站连接且支持扩展消息，很可能是PEX
+        if (peer.extendedMessaging === 'true' || peer.extendedMessaging === true) {
+          if (peer.incoming === 'true' || peer.incoming === true) {
+            return 'PEX'
+          }
+        }
+
+        // 4. UDP Tracker / HTTP Tracker - tracker返回（出站连接）
+        if (peer.incoming !== 'true' && peer.incoming !== true) {
+          // 检查tracker协议类型
+          // 注意：aria2没有直接提供tracker协议类型，这里根据端口推测
+          // UDP tracker通常使用非标准端口，HTTP tracker使用标准端口
+          const port = parseInt(peer.port) || 0
+
+          // 如果有trackerProtocol字段（预留）
+          if (peer.trackerProtocol === 'udp' || peer.trackerProtocol === 'UDP') {
+            return 'UDP'
+          }
+          if (peer.trackerProtocol === 'http' || peer.trackerProtocol === 'HTTP' ||
+            peer.trackerProtocol === 'https' || peer.trackerProtocol === 'HTTPS') {
+            return 'HTTP'
+          }
+
+          // 根据端口推测（不太准确，但可以作为参考）
+          // 6881-6889 是常见的BT端口，可能来自HTTP tracker
+          // 其他端口可能来自UDP tracker
+          if (port >= 6881 && port <= 6889) {
+            return 'HTTP'
+          }
+
+          // 默认显示为Tracker（无法确定具体协议）
+          return 'Tracker'
+        }
+
+        // 5. 手动 - 用户手动添加或其他入站连接
+        return this.$t('task.peer-source-manual') || '手动'
+      },
+      getPeerProtocol (peer) {
+        if (!peer) return 'TCP'
+
+        // 协议显示规则：
+        // TCP: 传统 TCP 连接
+        // µTP: uTP / UDP-based (aria2目前不支持，保留用于未来)
+        // TCP + EXT: TCP + 扩展协议 (支持扩展消息或Fast扩展)
+        // µTP + EXT: µTP + 扩展协议 (保留用于未来)
+
+        // 检查是否支持扩展协议
+        const hasExtendedMessaging = peer.extendedMessaging === 'true' || peer.extendedMessaging === true
+        const hasFastExtension = peer.fastExtension === 'true' || peer.fastExtension === true
+        const hasExtension = hasExtendedMessaging || hasFastExtension
+
+        // 目前aria2主要使用TCP，uTP支持较少
+        // 未来如果需要支持uTP，可以通过peer对象中的其他字段判断
+
+        if (hasExtension) {
+          return 'TCP + EXT'
+        }
+
+        return 'TCP'
+      },
       handleExpandChange (row, expanded) {
         if (row.isGroup) {
           if (expanded) {
@@ -452,7 +851,7 @@
       handleSpanMethod ({ row, column, rowIndex, columnIndex }) {
         if (row.isGroup) {
           if (columnIndex === 0) {
-            return [1, 8]
+            return [1, 10]
           } else {
             return [0, 0]
           }
@@ -462,11 +861,167 @@
         if (row.isGroup) {
           return 'mo-peer-group-row'
         }
+        if (this.contextMenuVisible && this.contextMenuPeer && row.id === this.contextMenuPeer.id) {
+          return 'mo-peer-row-active'
+        }
         return ''
       },
       handleRowClick (row) {
         if (row.isGroup) {
           this.$refs.peerTable.toggleRowExpansion(row)
+        }
+      },
+      handleRowContextMenu (row, column, event) {
+        // 只对非分组行显示右键菜单
+        if (!row.isGroup) {
+          event.preventDefault()
+          this.contextMenuPeer = row
+
+          // 菜单尺寸（根据实际CSS计算）
+          const menuWidth = 150
+          const menuHeight = 4 * 36 + 10 // 4个菜单项 * 36px高度 + padding
+
+          // 获取窗口尺寸
+          const windowWidth = window.innerWidth
+          const windowHeight = window.innerHeight
+
+          // 计算菜单位置，确保不超出窗口边界
+          let x = event.clientX
+          let y = event.clientY
+
+          // 检查右边界
+          if (x + menuWidth > windowWidth) {
+            x = windowWidth - menuWidth - 5 // 留5px边距
+          }
+
+          // 检查底部边界
+          if (y + menuHeight > windowHeight) {
+            y = windowHeight - menuHeight - 5 // 留5px边距
+          }
+
+          // 确保不会超出左边界和顶部边界
+          if (x < 5) x = 5
+          if (y < 5) y = 5
+
+          this.contextMenuX = x
+          this.contextMenuY = y
+          this.contextMenuVisible = true
+
+          // 点击其他地方关闭菜单
+          const closeMenu = () => {
+            this.contextMenuVisible = false
+            this.contextMenuPeer = null
+            document.removeEventListener('click', closeMenu)
+          }
+          // 延迟添加监听器，避免立即触发
+          setTimeout(() => {
+            document.addEventListener('click', closeMenu)
+          }, 100)
+        }
+      },
+      async banPeer (duration) {
+        this.contextMenuVisible = false
+        const peer = this.contextMenuPeer
+        this.contextMenuPeer = null
+
+        if (!peer) {
+          return
+        }
+        const ip = String(peer.ip || '')
+        const isBanned = peer.status === 'banned'
+
+        if (!ip) {
+          this.$message.error('Invalid IP address')
+          return
+        }
+
+        console.log('[TaskPeers] Banning peer:', { gid: this.task.gid, ip, duration, isBanned, ipType: typeof ip })
+
+        try {
+          let durationText = ''
+          if (duration === 300) {
+            durationText = this.$t('task.ban-duration-5min')
+          } else if (duration === 3600) {
+            durationText = this.$t('task.ban-duration-1hour')
+          } else if (duration === 86400) {
+            durationText = this.$t('task.ban-duration-1day')
+          } else {
+            durationText = this.$t('task.ban-duration-forever')
+          }
+
+          // 根据节点状态显示不同的确认对话框
+          const confirmMessage = isBanned
+            ? this.$t('task.extend-ban-confirm', { ip, duration: durationText })
+            : this.$t('task.ban-peer-confirm', { ip, duration: durationText })
+          const confirmTitle = isBanned
+            ? this.$t('task.extend-ban-title')
+            : this.$t('task.ban-peer-title')
+
+          await this.$confirm(
+            confirmMessage,
+            confirmTitle,
+            {
+              confirmButtonText: this.$t('app.yes'),
+              cancelButtonText: this.$t('app.no'),
+              type: 'warning'
+            }
+          )
+
+          // 调用API封禁IP
+          await this.$store.dispatch('task/banPeer', {
+            gid: this.task.gid,
+            ip: ip,
+            duration: duration
+          })
+
+          this.$message.success(this.$t('task.ban-peer-success', { ip }))
+        } catch (err) {
+          if (err !== 'cancel') {
+            console.error('[TaskPeers] Ban peer failed:', err)
+            this.$message.error(this.$t('task.ban-peer-failed'))
+          }
+        }
+      },
+      async unbanPeer () {
+        this.contextMenuVisible = false
+        const peer = this.contextMenuPeer
+        this.contextMenuPeer = null
+
+        if (!peer) {
+          return
+        }
+        const ip = String(peer.ip || '')
+
+        if (!ip) {
+          this.$message.error('Invalid IP address')
+          return
+        }
+
+        console.log('[TaskPeers] Unbanning peer:', { gid: this.task.gid, ip, ipType: typeof ip })
+
+        try {
+          await this.$confirm(
+            this.$t('task.unban-peer-confirm', { ip }),
+            this.$t('task.unban-peer-title'),
+            {
+              confirmButtonText: this.$t('app.yes'),
+              cancelButtonText: this.$t('app.no'),
+              type: 'info'
+            }
+          )
+
+          // 调用API解除封禁
+          await this.$store.dispatch('task/unbanPeer', {
+            gid: this.task.gid,
+            ip: ip
+          })
+
+          this.$message.success(this.$t('task.unban-peer-success', { ip }))
+        } catch (err) {
+          if (err !== 'cancel') {
+            console.error('[TaskPeers] Unban peer failed:', err)
+            this.$message.error(this.$t('task.unban-peer-failed'))
+          }
         }
       }
     }
@@ -487,7 +1042,8 @@
 }
 .mo-peers-bottom-bar {
   height: 1px;
-  background-color: #ebeef5;
+  background-color: #dcdfe6;
+  margin-top: -1px;
 }
 .el-table.mo-peer-table {
   height: 100% !important;
@@ -507,9 +1063,23 @@
     white-space: nowrap;
     overflow: hidden;
     position: relative;
-    // 渐隐效果 - 始终启用，通过渐变锚点控制，仅在内容接近末尾时生效
-    mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
+    // 只在溢出时应用渐隐效果
+    &.is-overflow {
+      mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
+      -webkit-mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
+    }
+  }
+  .mo-peer-location {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mo-peer-flag {
+    width: 20px;
+    height: 15px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    box-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
   }
   .mo-peer-group-label {
     font-weight: 600;
@@ -573,6 +1143,12 @@
     }
   }
 }
+.el-table__body .mo-peer-row-active > td {
+  background-color: rgba(64, 158, 255, 0.12) !important;
+}
+.el-table.mo-peer-table .el-table__body tr.mo-peer-row-active:hover > td {
+  background-color: rgba(64, 158, 255, 0.12) !important;
+}
 .mo-peers-toolbar {
   display: flex;
   align-items: center;
@@ -614,6 +1190,52 @@
 .best-peer-value {
   color: #606266;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  .mo-peer-flag {
+    width: 20px;
+    height: 15px;
+    border-radius: 2px;
+    box-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+  }
+}
+
+// 右键菜单样式
+.mo-peer-context-menu {
+  position: fixed;
+  z-index: 9999;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  padding: 5px 0;
+  min-width: 150px;
+
+  .context-menu-item {
+    height: 36px;
+    line-height: 36px;
+    padding: 0 20px;
+    font-size: 13px;
+    color: #606266;
+    cursor: pointer;
+
+    i {
+      margin-right: 8px;
+      color: #f56c6c;
+    }
+
+    &:hover {
+      background-color: #ecf5ff;
+      color: #409eff;
+    }
+  }
+
+  .context-menu-divider {
+    height: 1px;
+    background-color: #e4e7ed;
+    margin: 5px 0;
+  }
 }
 
 // 暗色主题适配 - 与 el-table 保持一致
@@ -622,7 +1244,7 @@
   border-color: #404040;
 }
 .theme-dark .mo-peers-bottom-bar {
-  background-color: #333;
+  background-color: #4c4d4f;
 }
 .theme-dark .best-peer-label {
   color: #c0c4cc;
@@ -638,6 +1260,23 @@
 }
 .theme-dark .mo-peer-group-label {
   color: #c0c4cc;
+}
+.theme-dark .mo-peer-context-menu {
+  background: #2b2b2b;
+  border-color: #404040;
+
+  .context-menu-item {
+    color: #c0c4cc;
+
+    &:hover {
+      background-color: rgba(64, 158, 255, 0.2);
+      color: #409eff;
+    }
+  }
+
+  .context-menu-divider {
+    background-color: #4c4d4f;
+  }
 }
 .theme-dark .mo-peer-table {
   background-color: transparent;
@@ -672,5 +1311,11 @@
   .el-table--border::after, .el-table--group::after, .el-table::before {
     display: none !important;
   }
+}
+.theme-dark .el-table__body .mo-peer-row-active > td {
+  background-color: rgba(64, 158, 255, 0.2) !important;
+}
+.theme-dark .el-table.mo-peer-table .el-table__body tr.mo-peer-row-active:hover > td {
+  background-color: rgba(64, 158, 255, 0.2) !important;
 }
 </style>

@@ -17,6 +17,8 @@ import {
   APP_THEME,
   ENGINE_RPC_HOST,
   GRAPHIC,
+  ENGINE_CONNECTION_FALLBACK,
+  ENGINE_CONNECTION_POLICY,
   NONE_SELECTED_FILES,
   SELECTED_ALL_FILES,
   RESOURCE_TAGS,
@@ -37,6 +39,29 @@ export const bytesToSize = (bytes, precision = 1) => {
   const i = parseInt(Math.floor(Math.log(b) / Math.log(1024)), 10)
   if (i === 0) { return `${b} ${sizes[i]}` }
   return `${(b / (1024 ** i)).toFixed(precision)} ${sizes[i]}`
+}
+
+export const normalizeEngineBinary = (engineBinary = '') => {
+  const name = String(engineBinary).split(/[\\/]/).pop() || ''
+  return name.replace(/\.exe$/i, '').toLowerCase()
+}
+
+export const getEngineConnectionPolicy = (engineBinary = '') => {
+  const normalized = String(engineBinary).toLowerCase()
+  const key = normalizeEngineBinary(engineBinary)
+  if (ENGINE_CONNECTION_POLICY[key]) {
+    return ENGINE_CONNECTION_POLICY[key]
+  }
+  if (/fluxcore/.test(normalized)) {
+    return ENGINE_CONNECTION_POLICY.fluxcore
+  }
+  if (/1\.36\.0/.test(normalized)) {
+    return ENGINE_CONNECTION_POLICY['aria2-1.36.0']
+  }
+  if (/1\.37\.0/.test(normalized)) {
+    return ENGINE_CONNECTION_POLICY['aria2-1.37.0']
+  }
+  return ENGINE_CONNECTION_FALLBACK
 }
 
 export const extractSpeedUnit = (speed = '') => {
@@ -100,25 +125,55 @@ export const peerIdParser = (str) => {
     return UNKNOWN_PEERID_NAME
   }
 
-  let parsed = {}
+  // 优先检查 FluxCore/LinkCore，在 bittorrent-peerid 解析之前
+  // 这样可以避免 FC 前缀被错误识别为 FileCroc
   let decodedStr
   try {
-    // decodeURI or decodeURIComponent cannot parse '%2DUT360W%2D%92%B6%EBh%1F%A1%DBfo%F6%D5I'
     decodedStr = unescape(str)
-    const buffer = Buffer.from(decodedStr, 'binary')
+
+    // 检查是否是 FluxCore 或 LinkCore
+    if (decodedStr && (decodedStr.startsWith('FluxCore') || decodedStr.startsWith('LinkCore'))) {
+      // 尝试提取版本号，格式如 "FluxCore/1.0.2"
+      const match = decodedStr.match(/^(FluxCore|LinkCore)\/?([\d.]+)?/)
+      if (match) {
+        const version = match[2]
+        return version ? `FluxCore v${version}` : 'FluxCore'
+      }
+      return 'FluxCore'
+    }
+
+    // 检查 Peer ID 是否以 -FX 开头（Azureus 风格）
+    // 格式：-FX1020-xxxxxxxxxxxx
+    if (decodedStr && decodedStr.startsWith('-FX')) {
+      const versionMatch = decodedStr.match(/^-FX(\d)(\d)(\d)(\d)-/)
+      if (versionMatch) {
+        const version = `${versionMatch[1]}.${versionMatch[2]}.${versionMatch[3]}`
+        return `FluxCore v${version}`
+      }
+      return 'FluxCore'
+    }
+  } catch (e) {
+    console.log('peerIdParser.precheck.fail', e, str)
+  }
+
+  let parsed = {}
+  try {
+    const buffer = Buffer.from(decodedStr || unescape(str), 'binary')
     parsed = bitTorrentPeerId(buffer)
   } catch (e) {
     console.log('peerIdParser.fail', e, str, decodedStr)
     return UNKNOWN_PEERID_NAME
   }
 
-  if (decodedStr && decodedStr.startsWith('LinkCore')) {
-    return 'LinkCore (aria2)'
+  let client = parsed.client
+
+  // 如果被错误识别为 FileCroc，改为 FluxCore
+  if (client === 'FileCroc') {
+    client = 'FluxCore'
   }
 
-  let client = parsed.client
   if (client === 'aria2') {
-    client = 'LinkCore (aria2)'
+    client = 'FluxCore'
   }
 
   const result = parsed.version

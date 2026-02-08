@@ -1,7 +1,7 @@
 export const engineBinMap = {
-  darwin: 'aria2c',
-  win32: 'aria2c1.37.0.exe',
-  linux: 'aria2c'
+  darwin: 'fluxcore',
+  win32: 'fluxcore.exe',
+  linux: 'fluxcore'
 }
 
 export const engineArchMap = {

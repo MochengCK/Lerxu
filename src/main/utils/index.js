@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { access, constants, existsSync, lstatSync, readdirSync } from 'node:fs'
+import { access, chmodSync, constants, existsSync, lstatSync, readdirSync } from 'node:fs'
 import { app, nativeTheme, shell, session } from 'electron'
 import is from 'electron-is'
 
@@ -41,6 +41,14 @@ export const getEnginePidPath = () => {
 export const getDhtPath = (protocol) => {
   const name = protocol === IP_VERSION.V6 ? 'dht6.dat' : 'dht.dat'
   return resolve(getUserDataPath(), `./${name}`)
+}
+
+export const getAria2LogPath = () => {
+  return resolve(getUserDataPath(), './aria2-debug.log')
+}
+
+export const getAria2LogDir = () => {
+  return getUserDataPath()
 }
 
 export const getEngineBin = (platform) => {
@@ -99,7 +107,8 @@ export const getAria2ConfPath = (platform, arch) => {
 export const transformConfig = (config) => {
   const result = []
   for (const [k, v] of Object.entries(config)) {
-    if (v !== '') {
+    // 过滤掉空字符串、undefined 和 null
+    if (v !== '' && v !== undefined && v !== null) {
       result.push(`--${k}=${v}`)
     }
   }
@@ -254,7 +263,7 @@ export const showItemInFolder = (fullPath) => {
 }
 
 /**
- * 获取引擎目录下的所有引擎
+ * 获取引擎目录下的所有引擎（递归扫描子目录）
  * @param {string} platform - 平台
  * @param {string} arch - 架构
  * @returns {Array} 引擎列表
@@ -262,46 +271,74 @@ export const showItemInFolder = (fullPath) => {
 export const getEngineList = (platform, arch) => {
   const enginePath = getEnginePath(platform, arch)
   const engines = []
+  const scannedPaths = new Set() // 避免重复扫描
 
-  try {
-    if (existsSync(enginePath)) {
-      const files = readdirSync(enginePath)
+  const scanDirectory = (dirPath, relativePrefix = '') => {
+    // 防止循环引用或重复扫描
+    let realPath
+    try {
+      realPath = require('fs').realpathSync(dirPath)
+    } catch (e) {
+      realPath = dirPath
+    }
+    if (scannedPaths.has(realPath)) {
+      return
+    }
+    scannedPaths.add(realPath)
+
+    try {
+      const files = readdirSync(dirPath)
       const binName = getEngineBin(platform)
 
-      // 查找所有可执行文件，识别引擎目录下的所有可执行文件
       files.forEach(file => {
-        const filePath = resolve(enginePath, file)
-        const stats = lstatSync(filePath)
+        const fullPath = resolve(dirPath, file)
+        const relativePath = relativePrefix ? `${relativePrefix}/${file}` : file
+        const stats = lstatSync(fullPath)
 
-        // 过滤条件：
-        // 1. 必须是文件
-        // 2. 不是备份文件（不以.backup结尾）
-        // 3. 不是临时文件（不以.tmp结尾）
-        // 4. 不是日志文件（不以.log结尾）
-        // 5. 不是配置文件（不以.conf结尾）
-        if (stats.isFile() &&
-            !file.endsWith('.backup') &&
+        if (stats.isDirectory()) {
+          // 递归扫描子目录
+          scanDirectory(fullPath, relativePath)
+        } else if (stats.isFile()) {
+          if (!file.endsWith('.backup') &&
             !file.endsWith('.tmp') &&
             !file.endsWith('.log') &&
             !file.endsWith('.conf') &&
             !file.endsWith('.txt') &&
             !file.endsWith('.md')) {
-          // 检查是否为可执行文件
-          const isExecutable = platform === 'win32'
-            ? file.endsWith('.exe')
-            : (stats.mode & parseInt('111', 8)) !== 0 // Unix系统检查执行权限
+            let isExecutable = platform === 'win32'
+              ? file.endsWith('.exe')
+              : (stats.mode & parseInt('111', 8)) !== 0
+            const isCandidate = file.includes('fluxcore') || file === binName
+            if (!isExecutable && platform !== 'win32' && isCandidate) {
+              try {
+                chmodSync(fullPath, 0o755)
+                const nextStats = lstatSync(fullPath)
+                isExecutable = (nextStats.mode & parseInt('111', 8)) !== 0
+              } catch (_) {}
+            }
 
-          if (isExecutable) {
-            engines.push({
-              name: file,
-              path: filePath,
-              size: stats.size,
-              modified: stats.mtime,
-              isDefault: file === binName
-            })
+            if (isExecutable || (platform !== 'win32' && isCandidate)) {
+              engines.push({
+                name: relativePath,
+                path: fullPath,
+                size: stats.size,
+                modified: stats.mtime,
+                isDefault: relativePath === binName
+              })
+            }
           }
         }
       })
+    } catch (error) {
+      logger.warn(`[Motrix] Failed to scan directory ${dirPath}:`, error.message)
+    }
+  }
+
+  try {
+    if (existsSync(enginePath)) {
+      scanDirectory(enginePath)
+
+      const binName = getEngineBin(platform)
 
       // 确保默认引擎位于列表首位（如果存在）
       const defaultBinPath = resolve(enginePath, binName)

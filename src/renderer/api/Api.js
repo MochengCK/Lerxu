@@ -673,13 +673,28 @@ export default class Api {
         ['aria2.getPeers', ...peersArgs]
       ]).then((data) => {
         console.log('[Motrix] fetchTaskItemWithPeers:', data)
-        const result = data[0] && data[0][0]
-        const peers = data[1] && data[1][0]
-        result.peers = peers || []
+
+        // multicall 返回的是 [result1, result2]，每个result是 [value] 或 value
+        // 需要处理两种可能的格式
+        let result, peers
+
+        if (Array.isArray(data) && data.length >= 2) {
+          // 提取第一个结果（tellStatus）
+          result = Array.isArray(data[0]) ? data[0][0] : data[0]
+          // 提取第二个结果（getPeers）
+          peers = Array.isArray(data[1]) ? data[1][0] : data[1]
+        }
+
         console.log('[Motrix] fetchTaskItemWithPeers.result:', result)
         console.log('[Motrix] fetchTaskItemWithPeers.peers:', peers)
 
-        resolve(result)
+        // 确保result存在再设置peers
+        if (result) {
+          result.peers = peers || { connected: [], attempting: [], banned: [] }
+          resolve(result)
+        } else {
+          reject(new Error('No task data returned'))
+        }
       }).catch((err) => {
         console.log('[Motrix] fetchTaskItemWithPeers fail:', err.message)
         reject(err)
@@ -691,6 +706,33 @@ export default class Api {
     const { gid, keys } = params
     const args = compactUndefined([gid, keys])
     return this.client.call('getPeers', ...args)
+  }
+
+  banPeer (params = {}) {
+    const { gid, ip, duration } = params
+    console.log('[Motrix API] banPeer called with:', { gid, ip, duration, types: { gid: typeof gid, ip: typeof ip, duration: typeof duration } })
+
+    // Ensure all parameters are the correct type
+    const gidStr = String(gid)
+    const ipStr = String(ip)
+    const durationInt = Number(duration)
+
+    console.log('[Motrix API] banPeer converted:', { gidStr, ipStr, durationInt })
+
+    return this.client.call('aria2.banPeer', gidStr, ipStr, durationInt)
+  }
+
+  unbanPeer (params = {}) {
+    const { gid, ip } = params
+    console.log('[Motrix API] unbanPeer called with:', { gid, ip, types: { gid: typeof gid, ip: typeof ip } })
+
+    // Ensure all parameters are the correct type
+    const gidStr = String(gid)
+    const ipStr = String(ip)
+
+    console.log('[Motrix API] unbanPeer converted:', { gidStr, ipStr })
+
+    return this.client.call('aria2.unbanPeer', gidStr, ipStr)
   }
 
   // 获取任务的服务器/连接详细信息
@@ -887,5 +929,66 @@ export default class Api {
       console.warn('[Motrix] rebalancePriority failed:', err.message)
       return { success: false, error: err.message }
     })
+  }
+
+  // BT Level System Methods
+
+  /**
+   * Get BT level information from engine
+   * @returns {Promise<Object>} Level data with XP breakdown and statistics
+   */
+  async getBtLevel () {
+    try {
+      const response = await this.client.call('getBtLevel')
+
+      // Convert string fields to BigInt for large numbers
+      return {
+        level: response.level,
+        totalXP: response.totalXP,
+        downloadXP: response.downloadXP,
+        uploadXP: response.uploadXP,
+        ratioXP: response.ratioXP,
+        peerXP: response.peerXP,
+        timeXP: response.timeXP,
+        downloadBytes: BigInt(response.downloadBytes || '0'),
+        uploadBytes: BigInt(response.uploadBytes || '0'),
+        seedTimeSeconds: BigInt(response.seedTimeSeconds || '0'),
+        maxPeers: response.maxPeers,
+        shareRatio: response.shareRatio,
+        currentLevelThreshold: response.currentLevelThreshold,
+        nextLevelThreshold: response.nextLevelThreshold,
+        xpToNextLevel: response.xpToNextLevel
+      }
+    } catch (err) {
+      console.error('[Motrix] getBtLevel failed:', err)
+      throw err
+    }
+  }
+
+  /**
+   * Set BT statistics (for migration from localStorage)
+   * @param {Object} stats - Statistics to set
+   * @param {BigInt} stats.downloadBytes - Total download bytes
+   * @param {BigInt} stats.uploadBytes - Total upload bytes
+   * @param {BigInt} stats.seedTimeSeconds - Total seed time in seconds
+   * @param {number} stats.maxPeers - Maximum peer count
+   * @returns {Promise<Object>} Success response
+   */
+  async setBtStatistics (stats) {
+    try {
+      // Convert BigInt to string for JSON-RPC
+      const params = {
+        downloadBytes: stats.downloadBytes.toString(),
+        uploadBytes: stats.uploadBytes.toString(),
+        seedTimeSeconds: stats.seedTimeSeconds.toString(),
+        maxPeers: stats.maxPeers
+      }
+
+      const response = await this.client.call('setBtStatistics', params)
+      return response
+    } catch (err) {
+      console.error('[Motrix] setBtStatistics failed:', err)
+      throw err
+    }
   }
 }

@@ -69,6 +69,16 @@ const router = new Router({
               props: {
                 subnav: { current: 'lab' }
               }
+            },
+            {
+              path: 'bittorrent',
+              components: {
+                subnav: require('@/components/Subnav/PreferenceSubnav').default,
+                form: require('@/components/Preference/BitTorrent').default
+              },
+              props: {
+                subnav: { current: 'bittorrent' }
+              }
             }
           ]
         }

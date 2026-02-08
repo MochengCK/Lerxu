@@ -82,7 +82,9 @@ const userKeys = [
   'task-detail-frosted-blur',
   'task-view-mode',
   'task-filter-date',
-  'task-created-at-map'
+  'task-created-at-map',
+  'bt-level-up-notification',
+  'show-task-type-badge'
 ]
 
 const systemKeys = [

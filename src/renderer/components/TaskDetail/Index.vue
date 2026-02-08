@@ -71,7 +71,7 @@
         <mo-task-trackers :task="task" />
       </div>
       <div v-show="activeTab === 'peers'" v-if="isBT" class="task-detail-pane">
-        <mo-task-peers ref="taskPeers" :peers="peers" />
+        <mo-task-peers ref="taskPeers" :peers="peers" :task="task" />
       </div>
       <div v-show="activeTab === 'files'">
         <mo-task-files
@@ -158,9 +158,9 @@
         }
       },
       peers: {
-        type: Array,
+        type: [Object, Array],
         default: function () {
-          return []
+          return { connected: [], attempting: [], banned: [] }
         }
       },
       visible: {
@@ -418,6 +418,12 @@
       handleOpened () {
         const done = () => {
           this.drawerAnimationDone = true
+
+          // 如果当前标签是peers，启用节点数据获取
+          if (this.activeTab === 'peers') {
+            this.$store.dispatch('task/toggleEnabledFetchPeers', true)
+          }
+
           if (this.activeTab === 'peers' && this.$refs.taskPeers) {
             setImmediate(() => {
               this.$refs.taskPeers.updateTableHeight()
@@ -438,6 +444,8 @@
       },
       handleClose (done) {
         this.drawerAnimationDone = false
+        // 关闭任务详情时禁用节点数据获取
+        this.$store.dispatch('task/toggleEnabledFetchPeers', false)
         this.$store.dispatch('task/hideTaskDetail')
         window.removeEventListener('resize', this.resizeHandler)
         if (this.resizeHandler && this.resizeHandler.cancel) {

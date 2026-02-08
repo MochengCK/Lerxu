@@ -36,7 +36,7 @@ At the same time, LinkCore Download Manager also possesses professional-grade do
 
 ### 🚀 Performance & Reliability
 - **High-Speed Download**: Optimized for maximum download performance
-- **Multi-threading Support**: Each task supports up to 64 threads
+- **Multi-threading Support**: Each task supports up to 128 threads
 - **Concurrent Downloads**: Can manage up to 10 download tasks simultaneously
 - **Stable Connection**: Robust error handling and automatic retry mechanism
 
@@ -137,9 +137,8 @@ LinkCore Download Manager currently supports the following platforms:
 </table>
 
 ### Engine Version & Connections
-
-- The program builds in and uses `aria2c 1.37.0` by default. This version does not support setting "Max connections per server" to 64 (it will cause tasks to fail to download), so the app automatically compensates by limiting this value to 16 under this version, while maintaining `split=64` chunk concurrency.
-- If you need to run with "Max connections per server" at 64, you can quickly switch to `aria2c 1.36.0` in the "Preferences → Advanced → Engine" card. After switching, `max-connection-per-server=64` will be allowed, while retaining `split=64`.
+- The program builds in and uses the `FluxCore` download engine by default, while still adapting to other engines (such as `aria2c 1.36.0` / `1.37.0`). The app automatically aligns "Max connections per server" with each engine’s limit for stability and compatibility.
+- Compatibility example: `aria2c 1.37.0` caps "Max connections per server" at `16`, while `aria2c 1.36.0` caps at `64`. After switching engines, the app applies the corresponding policy and keeps existing chunk concurrency settings.
 - Tip: The real concurrency for HTTP/FTP single-source download is `min(split, max-connection-per-server)`; BT or multi-mirror downloads can stack concurrency, having less impact on overall speed.
 
 ## 🛠️ Development Guide
@@ -216,7 +215,7 @@ Contributions are welcome! Whether you are fixing bugs, adding new features, or 
 - UI Framework: [Vue.js](https://vuejs.org/)
 - Desktop Framework: [Electron](https://www.electronjs.org/)
 - Video Processing: [FFmpeg](https://ffmpeg.org/)
-- Download Engine: [aria2](https://aria2.github.io/)
+- Download Engine: [FluxCore](https://github.com/MochengCK/FluxCore)
 
 ## 📞 Support
 

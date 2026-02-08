@@ -72,6 +72,19 @@
               <mo-icon name="preference-advanced" width="20" height="20" />
             </el-tooltip>
           </li>
+          <li
+            @click="navPreference('bittorrent')"
+            :class="{ active: isActive('/preference/bittorrent') }"
+          >
+            <el-tooltip
+              effect="dark"
+              :content="$t('preferences.bittorrent')"
+              placement="left"
+              :open-delay="500"
+            >
+              <mo-icon name="preference-bt" width="20" height="20" />
+            </el-tooltip>
+          </li>
         </ul>
       </div>
     </template>
@@ -84,6 +97,7 @@
   import Aside from '@/components/Aside/Index'
   import '@/components/Icons/preference-basic'
   import '@/components/Icons/preference-advanced'
+  import '@/components/Icons/preference-bt'
 
   export default {
     name: 'mo-content-preference',
@@ -144,12 +158,17 @@
             key: 'advanced',
             title: this.$t('preferences.advanced'),
             route: '/preference/advanced'
+          },
+          {
+            key: 'bittorrent',
+            title: this.$t('preferences.bittorrent'),
+            route: '/preference/bittorrent'
           }
         ]
       },
       title () {
         const rawPath = `${this.$route.path || ''}`
-        const m = rawPath.match(/^\/preference\/(basic|advanced)(?:\/|$)/)
+        const m = rawPath.match(/^\/preference\/(basic|advanced|bittorrent)(?:\/|$)/)
         const key = m && m[1] ? m[1] : 'basic'
         const subnav = this.subnavs.find((item) => item.key === key)
         return subnav ? subnav.title : this.$t('preferences.basic')
@@ -289,18 +308,19 @@
   .preference-card {
     background: $--panel-background;
     border-radius: 12px;
-    padding: 24px;
+    padding: 28px;
     border: 1px solid $--border-color-light;
     transition: all 0.3s ease;
   }
 
   .card-title {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
     color: $--color-text-primary;
-    margin-bottom: 20px;
-    padding-bottom: 12px;
+    margin-bottom: 24px;
+    padding-bottom: 14px;
     border-bottom: 1px solid $--border-color-light;
+    letter-spacing: 0.3px;
   }
 
   .card-content {
@@ -334,18 +354,25 @@
   }
 
   .el-form-item.el-form-item--mini {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
   }
 
   .el-form-item__content {
     color: $--color-text-regular;
+    line-height: 1.6;
   }
 
   .form-item-sub {
-    margin-bottom: 8px;
+    margin-bottom: 12px;
+    line-height: 1.6;
     &:last-of-type {
       margin-bottom: 0;
     }
+  }
+
+  .el-form-item__info {
+    line-height: 1.6;
+    margin-top: 6px;
   }
 }
 

@@ -43,7 +43,17 @@ export const MAX_NUM_OF_DIRECTORIES = 5
 export const ENGINE_RPC_HOST = '127.0.0.1'
 export const ENGINE_RPC_PORT = 16800
 export const ENGINE_MAX_CONCURRENT_DOWNLOADS = 10
-export const ENGINE_MAX_CONNECTION_PER_SERVER = 64
+export const ENGINE_MAX_CONNECTION_PER_SERVER = 128
+export const ENGINE_CONNECTION_FALLBACK = {
+  defaultMax: 16,
+  max: 16,
+  splitMax: 16
+}
+export const ENGINE_CONNECTION_POLICY = {
+  fluxcore: { defaultMax: 32, max: 128, splitMax: 128 },
+  'aria2-1.36.0': { defaultMax: 64, max: 64, splitMax: 64 },
+  'aria2-1.37.0': { defaultMax: 16, max: 16, splitMax: 16 }
+}
 
 // Local app HTTP endpoint for browser extension
 export const APP_HTTP_PORT = 16900

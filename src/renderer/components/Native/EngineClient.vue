@@ -2379,11 +2379,25 @@
         try {
           const gid = task.gid
           const detailed = await api.fetchTaskItemWithPeers({ gid })
-          const peers = Array.isArray(detailed.peers) ? detailed.peers : []
+
+          // 处理新的peers数据结构
+          const peers = detailed.peers || { connected: [], attempting: [], banned: [] }
+          let peerCount = 0
+
+          if (Array.isArray(peers)) {
+            // 兼容旧格式
+            peerCount = peers.length
+          } else {
+            // 新格式：统计所有类型的节点
+            const connected = Array.isArray(peers.connected) ? peers.connected : []
+            const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
+            const banned = Array.isArray(peers.banned) ? peers.banned : []
+            peerCount = connected.length + attempting.length + banned.length
+          }
+
           const bt = detailed.bittorrent || {}
           const announceList = bt.announceList || []
           const trackerCount = Array.isArray(announceList) ? announceList.length : 0
-          const peerCount = peers.length
 
           let phase = 'contacting_trackers'
           if (trackerCount === 0) {

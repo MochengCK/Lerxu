@@ -3,7 +3,9 @@ import {
   getEnginePath,
   getAria2BinPath,
   getAria2ConfPath,
-  getSessionPath
+  getSessionPath,
+  getAria2LogPath,
+  getAria2LogDir
 } from '../utils'
 
 const { platform, arch } = process
@@ -27,7 +29,9 @@ export default class Context {
       'session-path': getSessionPath(),
       'engine-path': getEnginePath(platform, arch),
       'aria2-bin-path': getAria2BinPath(platform, arch),
-      'aria2-conf-path': getAria2ConfPath(platform, arch)
+      'aria2-conf-path': getAria2ConfPath(platform, arch),
+      'aria2-log-path': getAria2LogPath(),
+      'aria2-log-dir': getAria2LogDir()
     }
 
     logger.info('[Motrix] Context.init===>', this.context)

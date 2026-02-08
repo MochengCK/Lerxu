@@ -20,6 +20,15 @@
         </i>
         <span>{{ $t('preferences.advanced') }}</span>
       </li>
+      <li
+        @click="() => nav('bittorrent')"
+        :class="[ current === 'bittorrent' ? 'active' : '' ]"
+        >
+        <i class="subnav-icon">
+          <mo-icon name='preference-bt' width="20" height="20" />
+        </i>
+        <span>{{ $t('preferences.bittorrent') }}</span>
+      </li>
     </ul>
   </nav>
 </template>
@@ -27,6 +36,7 @@
 <script>
   import '@/components/Icons/preference-basic'
   import '@/components/Icons/preference-advanced'
+  import '@/components/Icons/preference-bt'
   import { mapState, mapActions } from 'vuex'
 
   export default {

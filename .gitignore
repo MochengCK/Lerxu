@@ -24,3 +24,5 @@ dist/web/*
 # release
 release/*
 *.md
+*.sh
+FluxCore/

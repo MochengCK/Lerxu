@@ -831,10 +831,17 @@ const actions = {
         const uniqueFilename = getUniqueFilename(dir, normalizedOptions.out, suffix)
         normalizedOptions.out = `${uniqueFilename}${suffix}`
       }
+    } else if (!suffix && hasSingleOptionOut) {
+      const onlyUri = uris[0]
+      if (onlyUri && !`${onlyUri}`.startsWith('magnet:')) {
+        const dir = Array.isArray(dirs) && dirs[0] ? dirs[0] : defaultDir
+        const uniqueFilename = getUniqueFilename(dir, normalizedOptions.out, '')
+        normalizedOptions.out = uniqueFilename
+      }
     }
 
-    const shouldDeriveOutsForSuffix = !!(suffix && Array.isArray(uris) && uris.length > 0 && !hasOuts && !hasSingleOptionOut)
-    const baseOuts = shouldDeriveOutsForSuffix
+    const shouldDeriveOuts = !!(Array.isArray(uris) && uris.length > 0 && !hasOuts && !hasSingleOptionOut)
+    const baseOuts = shouldDeriveOuts
       ? uris.map((uri) => {
         if (!uri || `${uri}`.startsWith('magnet:')) {
           return null
@@ -857,6 +864,16 @@ const actions = {
             const uniqueFilename = getUniqueFilename(dir, out, suffix)
             return uniqueFilename + suffix
           }
+        }
+        return out
+      })
+    } else if (!suffix && shouldDeriveOuts && Array.isArray(baseOuts)) {
+      newOuts = baseOuts.map((out, index) => {
+        const uri = uris[index]
+        if (out && uri && !uri.startsWith('magnet:')) {
+          const dir = Array.isArray(dirs) && dirs[index] ? dirs[index] : defaultDir
+          const uniqueFilename = getUniqueFilename(dir, out, '')
+          return uniqueFilename === out ? null : uniqueFilename
         }
         return out
       })
@@ -988,12 +1005,14 @@ const actions = {
   pauseTask ({ dispatch }, task) {
     const { gid } = task
     const isBT = checkTaskIsBT(task)
+    // BT任务使用强制暂停以加快暂停速度
+    // 普通HTTP/FTP任务使用普通暂停
     const promise = isBT ? api.forcePauseTask({ gid }) : api.pauseTask({ gid })
-    promise.finally(() => {
-      dispatch('fetchList')
-      dispatch('saveSession')
-    })
     return promise
+      .finally(() => {
+        dispatch('fetchList')
+        dispatch('saveSession')
+      })
   },
   resumeTask ({ dispatch }, task) {
     const { gid } = task
@@ -1072,7 +1091,22 @@ const actions = {
     const options = {
       seedTime: 0
     }
+    // 先设置seedTime为0停止做种，然后暂停任务
+    // 这样任务会变成PAUSED状态，可以通过"恢复"按钮继续做种
     return dispatch('changeTaskOption', { gid, options })
+      .then(() => {
+        return api.pauseTask({ gid })
+      })
+      .then(() => {
+        dispatch('fetchList')
+        dispatch('saveSession')
+      })
+  },
+  banPeer (_, { gid, ip, duration }) {
+    return api.banPeer({ gid, ip, duration })
+  },
+  unbanPeer (_, { gid, ip }) {
+    return api.unbanPeer({ gid, ip })
   },
   removeTaskRecord ({ state, dispatch }, task) {
     const { gid, status } = task

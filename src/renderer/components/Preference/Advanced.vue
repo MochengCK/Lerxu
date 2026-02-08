@@ -604,6 +604,19 @@
               </el-row>
             </el-col>
             <el-col class="form-item-sub" :span="24">
+              {{ $t('preferences.aria2-log-path') }}
+              <el-input placeholder="" disabled v-model="aria2LogPath">
+                <el-button
+                  slot="append"
+                  v-if="isRenderer"
+                  @click="openAria2LogFolder"
+                  style="padding: 0 10px;"
+                >
+                  <mo-icon name="folder" width="10" height="10" />
+                </el-button>
+              </el-input>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
               <el-button plain type="warning" @click="() => onSessionResetClick()">
                 {{ $t('preferences.session-reset') }}
               </el-button>
@@ -756,7 +769,8 @@
     convertCommaToLine,
     convertLineToComma,
     diffConfig,
-    generateRandomInt
+    generateRandomInt,
+    getEngineConnectionPolicy
   } from '@shared/utils'
   import { reduceTrackerString } from '@shared/utils/tracker'
   import '@/components/Icons/dice'
@@ -764,6 +778,7 @@
   import '@/components/Icons/refresh'
   import '@/components/Icons/select-all'
   import '@/components/Icons/deselect-all'
+  import '@/components/Icons/folder'
   import { getLanguage } from '@shared/locales'
   import { getLocaleManager } from '@/components/Locale'
 
@@ -951,7 +966,9 @@
         config: state => state.config,
         aria2ConfPath: state => state.config.aria2ConfPath,
         logPath: state => state.config.logPath,
-        sessionPath: state => state.config.sessionPath
+        sessionPath: state => state.config.sessionPath,
+        aria2LogPath: state => state.config.aria2LogPath,
+        aria2LogDir: state => state.config.aria2LogDir
       }),
       aria2ConfFilteredItems () {
         const q = `${this.aria2ConfSearch}`.toLowerCase()
@@ -1180,6 +1197,37 @@
           this.$electron.shell.openPath(folderPath)
         } catch (e) {
           console.warn('[FFmpeg] Open folder failed:', e)
+        }
+      },
+      openAria2LogFolder () {
+        const { existsSync } = require('node:fs')
+        const { dirname } = require('node:path')
+
+        // 优先尝试打开日志文件
+        if (this.aria2LogPath && existsSync(this.aria2LogPath)) {
+          try {
+            this.$electron.shell.showItemInFolder(this.aria2LogPath)
+            return
+          } catch (e) {
+            console.warn('[Aria2] Show log file failed:', e)
+          }
+        }
+
+        // 如果文件不存在，打开日志目录
+        if (this.aria2LogDir) {
+          try {
+            this.$electron.shell.openPath(this.aria2LogDir)
+          } catch (e) {
+            console.warn('[Aria2] Open log directory failed:', e)
+          }
+        } else if (this.aria2LogPath) {
+          // 降级：从日志路径提取目录
+          try {
+            const folderPath = dirname(this.aria2LogPath)
+            this.$electron.shell.openPath(folderPath)
+          } catch (e) {
+            console.warn('[Aria2] Open log folder failed:', e)
+          }
         }
       },
       filterCards (keyword) {
@@ -2375,19 +2423,12 @@
         this.formOriginal = cloneDeep(this.form)
       },
       getEngineMaxConnection (engineBinary) {
-        if (!engineBinary) {
-          return ENGINE_MAX_CONNECTION_PER_SERVER
-        }
-
-        if (engineBinary.includes('1.37.0')) {
-          return 16
-        }
-
-        if (/LinkCore\.exe$/i.test(engineBinary)) {
-          return 64
-        }
-
-        return ENGINE_MAX_CONNECTION_PER_SERVER
+        const policy = getEngineConnectionPolicy(engineBinary)
+        return Number(policy && policy.max) || ENGINE_MAX_CONNECTION_PER_SERVER
+      },
+      getEngineDefaultConnection (engineBinary) {
+        const policy = getEngineConnectionPolicy(engineBinary)
+        return Number(policy && policy.defaultMax) || ENGINE_MAX_CONNECTION_PER_SERVER
       },
       submitForm (formName) {
         this.$refs[formName].validate((valid) => {
@@ -2403,9 +2444,10 @@
           if ('engineBinary' in data) {
             const engineBinary = data.engineBinary
             const engineMaxConnectionPerServer = this.getEngineMaxConnection(engineBinary)
+            const engineDefaultConnectionPerServer = this.getEngineDefaultConnection(engineBinary)
             data['engine-binary'] = data.engineBinary
             data['engine-max-connection-per-server'] = engineMaxConnectionPerServer
-            data['max-connection-per-server'] = engineMaxConnectionPerServer
+            data['max-connection-per-server'] = engineDefaultConnectionPerServer
             delete data.engineBinary
           }
 

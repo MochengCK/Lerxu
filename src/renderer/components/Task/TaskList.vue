@@ -333,6 +333,17 @@
 
         this.selectedList = next
         this.$store.dispatch('task/selectTasks', cloneDeep(next))
+
+        // 如果侧边栏已经打开，更新显示的任务
+        const taskDetailVisible = this.$store.state.task.taskDetailVisible
+        if (taskDetailVisible && next.length > 0) {
+          // 显示第一个选中的任务
+          const firstSelectedGid = next[0]
+          const task = this.taskList.find(t => t.gid === firstSelectedGid)
+          if (task) {
+            this.$store.dispatch('task/showTaskDetail', task)
+          }
+        }
       },
       handleItemContextMenu (item, event) {
         const task = item || null

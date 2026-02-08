@@ -22,8 +22,8 @@ import {
   PROXY_SCOPES,
   PROXY_SCOPE_OPTIONS
 } from '@shared/constants'
-import { LINKCORE_UA } from '@shared/ua'
-import { separateConfig } from '@shared/utils'
+import { LINKCORE_BT_UA, LINKCORE_PEER_ID_PREFIX, CHROME_UA } from '@shared/ua'
+import { separateConfig, getEngineConnectionPolicy } from '@shared/utils'
 import { reduceTrackerString } from '@shared/utils/tracker'
 
 export default class ConfigManager {
@@ -46,6 +46,9 @@ export default class ConfigManager {
    *
    */
   initSystemConfig () {
+    const defaultEngineBinary = engineBinMap[process.platform] || 'fluxcore'
+    const enginePolicy = getEngineConnectionPolicy(defaultEngineBinary)
+    const defaultConn = Number(enginePolicy && enginePolicy.defaultMax) || getMaxConnectionPerServer()
     this.systemConfig = new Store({
       name: 'system',
       cwd: getConfigBasePath(),
@@ -75,7 +78,7 @@ export default class ConfigManager {
         'follow-torrent': true,
         'listen-port': 21301,
         'max-concurrent-downloads': 10,
-        'max-connection-per-server': getMaxConnectionPerServer(),
+        'max-connection-per-server': defaultConn,
         'max-download-limit': 0,
         'max-overall-download-limit': 0,
         'max-overall-upload-limit': 0,
@@ -87,9 +90,10 @@ export default class ConfigManager {
         'remote-time': true,
         'seed-ratio': 2,
         'seed-time': 2880,
-        'split': getMaxConnectionPerServer(),
-        'user-agent': LINKCORE_UA,
-        'peer-id-prefix': 'LinkCore-'
+        'split': defaultConn,
+        'user-agent': CHROME_UA,
+        'peer-id-prefix': LINKCORE_PEER_ID_PREFIX,
+        'bt-user-agent': LINKCORE_BT_UA
       }
       /* eslint-enable quote-props */
     })
@@ -97,6 +101,8 @@ export default class ConfigManager {
   }
 
   initUserConfig () {
+    const defaultEngineBinary = engineBinMap[process.platform] || 'fluxcore'
+    const enginePolicy = getEngineConnectionPolicy(defaultEngineBinary)
     this.userConfig = new Store({
       name: 'user',
       cwd: getConfigBasePath(),
@@ -122,8 +128,8 @@ export default class ConfigManager {
         'task-priorities': {},
         'task-multi-select-modifier': 'ctrl',
         'enable-upnp': true,
-        'engine-binary': engineBinMap[process.platform] || 'aria2c',
-        'engine-max-connection-per-server': getMaxConnectionPerServer(),
+        'engine-binary': defaultEngineBinary,
+        'engine-max-connection-per-server': Number(enginePolicy && enginePolicy.max) || getMaxConnectionPerServer(),
         'favorite-directories': [],
         'hide-app-menu': false,
         'history-directories': [],
@@ -195,7 +201,9 @@ export default class ConfigManager {
         'enable-security-scan': false,
         'security-scan-tool': 'system',
         'custom-security-scan-path': '',
-        'task-view-mode': 'list'
+        'task-view-mode': 'list',
+        'bt-level-up-notification': true,
+        'show-task-type-badge': true
       }
       /* eslint-enable quote-props */
     })
@@ -234,6 +242,12 @@ export default class ConfigManager {
     // Fix spawn ENAMETOOLONG on Windows
     const tracker = reduceTrackerString(this.systemConfig.get('bt-tracker'))
     this.setSystemConfig('bt-tracker', tracker)
+
+    // 同步用户设置的 User-Agent 到系统配置
+    const userAgent = this.getUserConfig('userAgent')
+    if (userAgent) {
+      this.setSystemConfig('user-agent', userAgent)
+    }
   }
 
   fixUserConfig () {

@@ -35,7 +35,7 @@ LinkCore Download Manager是一款【简洁】【美观】【易用】的跨平�
 
 ### 🚀 性能与可靠性
 - **高速下载**：针对最大下载性能进行了优化
-- **多线程支持**：每个任务最多支持64个线程
+- **多线程支持**：每个任务最多支持128个线程
 - **并发下载**：可同时管理多达10个下载任务
 - **稳定连接**：强大的错误处理和自动重试机制
 
@@ -136,9 +136,8 @@ LinkCore Download Manager目前支持以下平台：
 </table>
 
 ### 引擎版本与连接数
-
-- 程序默认内置并使用 `aria2c 1.37.0`，该版本不支持将“单服务器最大连接数”设置为 64（会导致任务无法下载），因此应用在该版本下会自动兼容，将此值限制为 16，同时保持 `split=64` 的分片并发。
-- 如需在“单服务器最大连接数”为 64 的场景下运行，可在“偏好设置 → 高级 → 引擎”卡片中快速切换到 `aria2c 1.36.0`。切换后将允许 `max-connection-per-server=64`，同时保留 `split=64`。
+- 程序默认内置并使用 `FluxCore` 下载引擎；同时适配其他下载引擎（如 `aria2c 1.36.0` / `1.37.0`），应用会根据不同引擎的连接上限自动调整“单服务器最大连接数”，以保证稳定与兼容。
+- 兼容示例：`aria2c 1.37.0` 的“单服务器最大连接数”上限为 `16`；`aria2c 1.36.0` 上限为 `64`。切换引擎后，应用会自动采用对应策略并保留既有分片并发设置。
 - 提示：HTTP/FTP 单源下载的真实并发为 `min(split, max-connection-per-server)`；BT 或多镜像源下载可叠加并发，对整体速度影响较小。
 
 ## 🛠️ 开发指南
@@ -217,7 +216,7 @@ LinkCore-Download-Manager/
 - UI框架：[Vue.js](https://vuejs.org/)
 - 桌面框架：[Electron](https://www.electronjs.org/)
 - 视频处理：[FFmpeg](https://ffmpeg.org/)
-- 下载引擎：[aria2](https://aria2.github.io/)
+- 下载引擎：[FluxCore](https://github.com/MochengCK/FluxCore)
 
 ## 📞 支持
 
