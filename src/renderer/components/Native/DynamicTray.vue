@@ -20,15 +20,22 @@
 </template>
 
 <script>
+  import { ipcRenderer } from 'electron'
   import { mapState } from 'vuex'
 
   import { getInverseTheme } from '@shared/utils'
   import { APP_THEME } from '@shared/constants'
+  import TrayWorker from '@/workers/tray.worker'
 
   const cache = {}
 
   export default {
     name: 'mo-dynamic-tray',
+    data () {
+      return {
+        trayWorker: null
+      }
+    },
     computed: {
       ...mapState('app', {
         iconStatus: state => state.stat.numActive > 0 ? 'active' : 'normal',
@@ -63,11 +70,62 @@
       }
     },
     mounted () {
+      this.ensureTrayWorker()
       setTimeout(async () => {
         await this.drawTray()
       }, 200)
     },
+    beforeDestroy () {
+      if (!this.trayWorker) {
+        return
+      }
+      try {
+        this.trayWorker.terminate()
+      } catch (e) {}
+      if (global.app && global.app.trayWorker === this.trayWorker) {
+        global.app.trayWorker = null
+      }
+      this.trayWorker = null
+    },
     methods: {
+      ensureTrayWorker () {
+        if (this.trayWorker) {
+          return this.trayWorker
+        }
+        if (global.app && global.app.trayWorker) {
+          this.trayWorker = global.app.trayWorker
+          return this.trayWorker
+        }
+        const worker = new TrayWorker()
+        worker.addEventListener('message', (event) => {
+          const { type, payload } = event.data
+
+          switch (type) {
+          case 'initialized':
+          case 'log':
+            console.log('[Motrix] Log from Tray Worker: ', payload)
+            break
+          case 'tray:drawed':
+            this.updateTray(payload)
+            break
+          default:
+            console.warn('[Motrix] Tray Worker unhandled message type:', type, payload)
+          }
+        })
+        this.trayWorker = worker
+        if (global.app) {
+          global.app.trayWorker = worker
+        }
+        return worker
+      },
+      async updateTray (payload) {
+        const { tray } = payload || {}
+        if (!tray) {
+          return
+        }
+        const ab = await tray.arrayBuffer()
+        ipcRenderer.send('command', 'application:update-tray', ab)
+      },
       async getIcon (key) {
         if (cache[key]) {
           return cache[key]
@@ -89,8 +147,11 @@
         } = this
 
         const icon = await this.getIcon(iconKey)
-
-        global.app.trayWorker.postMessage({
+        const worker = this.ensureTrayWorker()
+        if (!worker) {
+          return
+        }
+        worker.postMessage({
           type: 'tray:draw',
           payload: {
             theme,

@@ -1,14 +1,5 @@
 <template>
   <div class="mo-task-peers">
-    <div class="mo-peers-toolbar">
-      <el-button-group>
-        <el-button size="mini" :type="filterMode==='all'?'primary':'default'" @click="filterMode='all'">{{ $t('task.peers-filter-all') }} ({{ countAll }})</el-button>
-        <el-button size="mini" :type="filterMode==='downloading'?'primary':'default'" @click="filterMode='downloading'">{{ $t('task.peers-filter-downloading') }} ({{ countDownloading }})</el-button>
-        <el-button size="mini" :type="filterMode==='uploading'?'primary':'default'" @click="filterMode='uploading'">{{ $t('task.peers-filter-uploading') }} ({{ countUploading }})</el-button>
-        <el-button size="mini" :type="filterMode==='idle'?'primary':'default'" @click="filterMode='idle'">{{ $t('task.peers-filter-idle') }} ({{ countIdle }})</el-button>
-      </el-button-group>
-      <el-input class="mo-peers-search" size="mini" :placeholder="$t('task.peers-search')" v-model="search" clearable />
-    </div>
     <div class="mo-best-peer" v-if="bestPeer">
       <div class="best-peer-label">{{ $t('task.best-peer') }}</div>
       <div class="best-peer-info">
@@ -119,8 +110,28 @@
             <template v-else-if="scope.row.status === 'attempting'">
               <span style="color: #909399;">{{ $t('task.peer-status-attempting') }}</span>
             </template>
+            <template v-else-if="scope.row.status === 'disconnected'">
+              -
+            </template>
             <template v-else>
               {{ formatDuration(scope.row.connectionTime) || '-' }}
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column
+          :label="$t('task.task-peer-status')"
+          min-width="120">
+          <template slot-scope="scope">
+            <template v-if="scope.row.isGroup">
+              -
+            </template>
+            <template v-else-if="scope.row.status === 'disconnected'">
+              <el-tooltip :content="getPeerFailureDetailText(scope.row)" placement="top" :disabled="!hasPeerFailureCounts(scope.row)">
+                <span class="mo-peer-text">{{ getPeerFailureSummaryText(scope.row) }}</span>
+              </el-tooltip>
+            </template>
+            <template v-else>
+              {{ getPeerStatus(scope.row) }}
             </template>
           </template>
         </el-table-column>
@@ -266,7 +277,13 @@
       peers: {
         type: [Object, Array],
         default: function () {
-          return { connected: [], attempting: [], banned: [] }
+          return { connected: [], attempting: [], banned: [], disconnected: [] }
+        }
+      },
+      searchText: {
+        type: String,
+        default: function () {
+          return ''
         }
       },
       task: {
@@ -288,7 +305,11 @@
         contextMenuX: 0,
         contextMenuY: 0,
         contextMenuPeer: null,
-        overflowMap: {} // 存储每个元素的溢出状态
+        overflowMap: {},
+        attemptStats: {},
+        disconnectedMap: {},
+        lastAttemptingMap: {},
+        lastConnectedMap: {}
       }
     },
     computed: {
@@ -319,7 +340,8 @@
         const connected = Array.isArray(peers.connected) ? peers.connected : []
         const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
         const banned = Array.isArray(peers.banned) ? peers.banned : []
-        return connected.length + attempting.length + banned.length
+        const mergedDisconnected = this.getMergedDisconnectedPeers(peers)
+        return connected.length + attempting.length + banned.length + mergedDisconnected.length
       },
       countDownloading () {
         const peers = this.peers || {}
@@ -365,7 +387,8 @@
           peers = {
             connected: peers,
             attempting: [],
-            banned: []
+            banned: [],
+            disconnected: []
           }
         }
 
@@ -373,6 +396,12 @@
         const connected = Array.isArray(peers.connected) ? peers.connected : []
         const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
         const banned = Array.isArray(peers.banned) ? peers.banned : []
+        const disconnected = this.getMergedDisconnectedPeers(peers)
+
+        connected.forEach(p => { p.status = 'connected' })
+        attempting.forEach(p => { p.status = 'attempting' })
+        banned.forEach(p => { p.status = 'banned' })
+        disconnected.forEach(p => { p.status = 'disconnected' })
 
         // 调试：打印banned peers的数据
         if (banned.length > 0) {
@@ -397,7 +426,7 @@
             }
 
             // 模式过滤（仅对已连接节点有效）
-            if (p.status !== 'attempting' && p.status !== 'banned') {
+            if (p.status !== 'attempting' && p.status !== 'banned' && p.status !== 'disconnected') {
               const up = Number(p.uploadSpeed) || 0
               const down = Number(p.downloadSpeed) || 0
               const percent = bitfieldToPercent(p.bitfield)
@@ -455,7 +484,9 @@
 
         const sortedConnected = sortPeers(filteredConnected)
         const sortedAttempting = sortPeers(filteredAttempting)
+        const filteredDisconnected = filterAndSearch(disconnected)
         const sortedBanned = sortPeers(filteredBanned)
+        const sortedDisconnected = sortPeers(filteredDisconnected)
 
         // 构建分组结构 - 优化：直接修改对象，避免展开运算符
         const result = []
@@ -467,6 +498,18 @@
             children: sortedConnected.map(p => {
               p.status = 'connected'
               p.id = `${p.peerId}-${p.ip}:${p.port}`
+              return p
+            })
+          })
+        }
+        if (sortedDisconnected.length > 0) {
+          result.push({
+            id: 'group-disconnected',
+            isGroup: true,
+            groupLabel: `${this.$t('task.peers-disconnected')} (${sortedDisconnected.length})`,
+            children: sortedDisconnected.map(p => {
+              p.status = 'disconnected'
+              p.id = `disconnected-${p.ip}:${p.port}`
               return p
             })
           })
@@ -511,7 +554,193 @@
         this.detectTextOverflow()
       })
     },
+    watch: {
+      searchText: {
+        handler (value) {
+          this.search = value || ''
+        },
+        immediate: true
+      },
+      peers: {
+        handler (peers) {
+          this.updateAttemptStats(peers)
+        },
+        immediate: true
+      }
+    },
     methods: {
+      normalizePeers (peers) {
+        if (Array.isArray(peers)) {
+          return { connected: peers, attempting: [], banned: [], disconnected: [] }
+        }
+        return {
+          connected: Array.isArray(peers.connected) ? peers.connected : [],
+          attempting: Array.isArray(peers.attempting) ? peers.attempting : [],
+          banned: Array.isArray(peers.banned) ? peers.banned : [],
+          disconnected: Array.isArray(peers.disconnected) ? peers.disconnected : []
+        }
+      },
+      peerKey (peer) {
+        if (!peer) return ''
+        const ip = peer.ip || ''
+        const port = peer.port || ''
+        return port ? `${ip}:${port}` : `${ip}`
+      },
+      getMergedDisconnectedPeers (peers) {
+        const normalized = this.normalizePeers(peers || {})
+        const merged = {}
+        normalized.disconnected.forEach(p => {
+          const key = this.peerKey(p)
+          if (key) {
+            merged[key] = p
+          }
+        })
+        Object.keys(this.disconnectedMap || {}).forEach(key => {
+          if (!merged[key]) {
+            merged[key] = this.disconnectedMap[key]
+          }
+        })
+        return Object.values(merged)
+      },
+      updateAttemptStats (peers) {
+        const normalized = this.normalizePeers(peers || {})
+        const currentAttemptingMap = {}
+        const currentConnectedMap = {}
+
+        normalized.attempting.forEach(p => {
+          const key = this.peerKey(p)
+          if (key) {
+            currentAttemptingMap[key] = p
+          }
+        })
+
+        normalized.connected.forEach(p => {
+          const key = this.peerKey(p)
+          if (key) {
+            currentConnectedMap[key] = p
+          }
+        })
+
+        Object.keys(currentAttemptingMap).forEach(key => {
+          if (!this.lastAttemptingMap[key]) {
+            const prev = this.attemptStats[key] || { attempts: 0, fails: 0, tcpFails: 0, utpFails: 0, udpFails: 0 }
+            const next = { ...prev, attempts: prev.attempts + 1 }
+            this.$set(this.attemptStats, key, next)
+          }
+        })
+
+        Object.keys(this.lastAttemptingMap).forEach(key => {
+          if (!currentAttemptingMap[key] && !currentConnectedMap[key]) {
+            const lastPeer = this.lastAttemptingMap[key]
+            const prev = this.attemptStats[key] || { attempts: 0, fails: 0, tcpFails: 0, utpFails: 0, udpFails: 0 }
+            const type = this.classifyFailType(lastPeer)
+            const next = { ...prev, fails: prev.fails + 1 }
+            if (type === 'utp') next.utpFails = (next.utpFails || 0) + 1
+            else if (type === 'udp') next.udpFails = (next.udpFails || 0) + 1
+            else next.tcpFails = (next.tcpFails || 0) + 1
+            this.$set(this.attemptStats, key, next)
+            if (lastPeer) {
+              this.$set(this.disconnectedMap, key, {
+                ...lastPeer,
+                status: 'disconnected',
+                lastDisconnectedAt: Date.now()
+              })
+            }
+          }
+        })
+
+        normalized.disconnected.forEach(p => {
+          const key = this.peerKey(p)
+          if (key) {
+            this.$set(this.disconnectedMap, key, {
+              ...p,
+              status: 'disconnected',
+              lastDisconnectedAt: Date.now()
+            })
+          }
+        })
+
+        Object.keys(currentConnectedMap).forEach(key => {
+          if (this.disconnectedMap[key]) {
+            this.$delete(this.disconnectedMap, key)
+          }
+        })
+
+        this.lastAttemptingMap = currentAttemptingMap
+        this.lastConnectedMap = currentConnectedMap
+      },
+      classifyFailType (peer) {
+        let errorText = ''
+        if (peer) {
+          errorText = `${peer.error || peer.errorMessage || peer.failureReason || peer.disconnectReason || peer.reason || ''}`.toLowerCase()
+        }
+        if (!peer) return 'tcp'
+        if (peer.utp === true || peer.protocol === 'utp' || peer.protocol === 'UTP' || errorText.includes('utp')) {
+          return 'utp'
+        }
+        if (peer.udpHolePunch === true || peer.udpHolePunching === true || peer.holePunch === true || peer.holePunching === true || peer.udpPunching === true || errorText.includes('punch') || errorText.includes('hole') || errorText.includes('udp')) {
+          return 'udp'
+        }
+        return 'tcp'
+      },
+      getPeerFailureCounts (peer) {
+        if (peer) {
+          const hasTcp = Object.prototype.hasOwnProperty.call(peer, 'tcpFails')
+          const hasUtp = Object.prototype.hasOwnProperty.call(peer, 'utpFails')
+          const hasUdp = Object.prototype.hasOwnProperty.call(peer, 'udpFails')
+          if (hasTcp || hasUtp || hasUdp) {
+            return {
+              tcp: Number(peer.tcpFails) || 0,
+              utp: Number(peer.utpFails) || 0,
+              udp: Number(peer.udpFails) || 0
+            }
+          }
+        }
+        const key = this.peerKey(peer)
+        if (!key) return { tcp: 0, utp: 0, udp: 0 }
+        const stat = this.attemptStats[key] || {}
+        return {
+          tcp: Number(stat.tcpFails) || 0,
+          utp: Number(stat.utpFails) || 0,
+          udp: Number(stat.udpFails) || 0
+        }
+      },
+      hasPeerFailureCounts (peer) {
+        const { tcp, utp, udp } = this.getPeerFailureCounts(peer)
+        return tcp > 0 || utp > 0 || udp > 0
+      },
+      getPeerFailureSummaryText (peer) {
+        const { tcp, utp, udp } = this.getPeerFailureCounts(peer)
+        const parts = []
+        if (tcp > 0) parts.push(`TCP ${tcp}`)
+        if (utp > 0) parts.push(`UTP ${utp}`)
+        if (udp > 0) parts.push(`UDP ${udp}`)
+        return parts.length > 0 ? parts.join(' ') : 'TCP 0'
+      },
+      getPeerFailureDetailText (peer) {
+        const { tcp, utp, udp } = this.getPeerFailureCounts(peer)
+        const parts = []
+        if (tcp > 0) parts.push(`${this.$t('task.peer-status-tcp-failed')} ${tcp}`)
+        if (utp > 0) parts.push(`${this.$t('task.peer-status-utp-failed')} ${utp}`)
+        if (udp > 0) parts.push(`${this.$t('task.peer-status-udp-punch-failed')} ${udp}`)
+        return parts.length > 0 ? parts.join(' ') : ''
+      },
+      getAttemptStatText (peer) {
+        if (!peer) return ''
+        const attempts = Number(peer.attempts) || 0
+        const fails = Number(peer.fails) || 0
+        if (attempts > 0 || fails > 0) {
+          return this.$t('task.peer-status-attempts', { attempts, fails })
+        }
+        const key = this.peerKey(peer)
+        if (!key) return ''
+        const stat = this.attemptStats[key]
+        if (!stat) return ''
+        const fallbackAttempts = Number(stat.attempts) || 0
+        const fallbackFails = Number(stat.fails) || 0
+        if (fallbackAttempts === 0 && fallbackFails === 0) return ''
+        return this.$t('task.peer-status-attempts', { attempts: fallbackAttempts, fails: fallbackFails })
+      },
       detectTextOverflow () {
         // 检测所有 .mo-peer-text 元素是否溢出
         const textElements = this.$el.querySelectorAll('.mo-peer-text')
@@ -766,8 +995,8 @@
         if (!peer) return '-'
 
         // 1. LPD - 本地发现（本地peer）
-        if (peer.localPeer === 'true' || peer.localPeer === true) {
-          return 'LPD'
+        if (peer.lsd === 'true' || peer.lsd === true || peer.localPeer === 'true' || peer.localPeer === true) {
+          return 'LSD'
         }
 
         // 2. DHT - DHT网络（支持DHT的peer）
@@ -837,6 +1066,38 @@
 
         return 'TCP'
       },
+      getPeerStatus (peer) {
+        if (!peer) return '-'
+        if (peer.status === 'banned') {
+          return this.$t('task.peer-status-banned')
+        }
+        if (peer.status === 'attempting') {
+          const errorText = `${peer.error || peer.errorMessage || peer.failureReason || peer.disconnectReason || peer.reason || ''}`.toLowerCase()
+          if (peer.utp === true || peer.protocol === 'utp' || peer.protocol === 'UTP' || errorText.includes('utp')) {
+            return this.$t('task.peer-status-utp-failed')
+          }
+          if (peer.udpHolePunch === true || peer.udpHolePunching === true || peer.holePunch === true || peer.holePunching === true || peer.udpPunching === true || errorText.includes('punch') || errorText.includes('hole') || errorText.includes('udp')) {
+            return this.$t('task.peer-status-udp-punch-failed')
+          }
+          if (errorText.includes('tcp') || errorText.length > 0) {
+            return this.$t('task.peer-status-tcp-failed')
+          }
+          return this.$t('task.peer-status-attempting')
+        }
+        const down = Number(peer.downloadSpeed) || 0
+        const up = Number(peer.uploadSpeed) || 0
+        const percent = bitfieldToPercent(peer.bitfield)
+        if (down > 0) {
+          return this.$t('task.peer-status-downloading')
+        }
+        if (up > 0) {
+          return this.$t('task.peer-status-uploading')
+        }
+        if (percent >= 100) {
+          return this.$t('task.peer-status-seeding')
+        }
+        return this.$t('task.peer-status-idle')
+      },
       handleExpandChange (row, expanded) {
         if (row.isGroup) {
           if (expanded) {
@@ -851,7 +1112,7 @@
       handleSpanMethod ({ row, column, rowIndex, columnIndex }) {
         if (row.isGroup) {
           if (columnIndex === 0) {
-            return [1, 10]
+            return [1, 11]
           } else {
             return [0, 0]
           }
@@ -1148,15 +1409,6 @@
 }
 .el-table.mo-peer-table .el-table__body tr.mo-peer-row-active:hover > td {
   background-color: rgba(64, 158, 255, 0.12) !important;
-}
-.mo-peers-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-.mo-peers-search {
-  max-width: 220px;
 }
 .mo-best-peer {
   background: transparent;

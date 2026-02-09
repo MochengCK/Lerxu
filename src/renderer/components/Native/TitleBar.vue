@@ -101,4 +101,12 @@
     }
   }
 }
+
+.has-custom-titlebar .title-bar .title-bar-dragger {
+  margin-left: 220px;
+}
+
+.is-preference-window .title-bar .title-bar-dragger {
+  margin-left: 220px;
+}
 </style>

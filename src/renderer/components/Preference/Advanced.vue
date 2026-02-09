@@ -9,7 +9,7 @@
         :rules="rules"
       >
         <!-- 自动更新设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.auto-update') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -49,7 +49,7 @@
         </div>
 
         <!-- 代理设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.proxy') }}</h3>
           <el-form-item size="mini">
             <el-radio-group
@@ -129,7 +129,7 @@
         </div>
 
         <!-- BT Tracker设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.bt-tracker') }}</h3>
           <el-form-item size="mini">
             <div class="form-item-sub bt-tracker">
@@ -282,7 +282,7 @@
         </div>
 
         <!-- RPC设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.rpc') }}</h3>
           <el-form-item size="mini">
             <el-row style="margin-bottom: 8px;">
@@ -337,7 +337,7 @@
         </div>
 
         <!-- 端口设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.port') }}</h3>
           <el-form-item size="mini">
             <el-row style="margin-bottom: 8px;">
@@ -398,7 +398,7 @@
         </div>
 
         <!-- 下载协议设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.download-protocol') }}</h3>
           <el-form-item size="mini">
             {{ $t('preferences.protocols-default-client') }}
@@ -422,7 +422,7 @@
         </div>
 
         <!-- 引擎信息卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.engine') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -479,7 +479,7 @@
         </div>
 
         <!-- 优先级引擎设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.priority-engine') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -506,7 +506,7 @@
         </div>
 
         <!-- 视频合并设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.video-merge') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -531,7 +531,7 @@
         </div>
 
         <!-- 用户代理设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.user-agent') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -555,7 +555,7 @@
         </div>
 
         <!-- 开发者选项卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.developer') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -862,6 +862,12 @@
     components: {
       [ShowInFolder.name]: ShowInFolder
     },
+    props: {
+      category: {
+        type: String,
+        default: 'advanced'
+      }
+    },
     data () {
       const { locale } = this.$store.state.preference.config
       const formOriginal = initForm(this.$store.state.preference.config)
@@ -934,25 +940,64 @@
         return config.subnavMode || 'floating'
       },
       isRenderer: () => is.renderer(),
+      activeCategory () {
+        return this.category || 'advanced'
+      },
       title () {
-        return this.$t('preferences.advanced')
+        const subnav = this.subnavs.find(item => item.key === this.activeCategory)
+        return subnav ? subnav.title : this.$t('preferences.advanced')
+      },
+      preferenceBasePath () {
+        const path = `${this.$route.path || ''}`
+        return path.startsWith('/preference-window') ? '/preference-window' : '/preference'
       },
       subnavs () {
+        const base = this.preferenceBasePath
         return [
           {
             key: 'basic',
             title: this.$t('preferences.basic'),
-            route: '/preference/basic'
+            route: `${base}/basic`
+          },
+          {
+            key: 'appearance',
+            title: this.$t('preferences.appearance'),
+            route: `${base}/appearance`
+          },
+          {
+            key: 'transfer',
+            title: this.$t('preferences.transfer-settings'),
+            route: `${base}/transfer`
+          },
+          {
+            key: 'task',
+            title: this.$t('preferences.task-manage'),
+            route: `${base}/task`
+          },
+          {
+            key: 'file',
+            title: this.$t('preferences.file-manage'),
+            route: `${base}/file`
+          },
+          {
+            key: 'security',
+            title: this.$t('preferences.security'),
+            route: `${base}/security`
           },
           {
             key: 'advanced',
             title: this.$t('preferences.advanced'),
-            route: '/preference/advanced'
+            route: `${base}/advanced`
+          },
+          {
+            key: 'bittorrent',
+            title: this.$t('preferences.bittorrent'),
+            route: `${base}/bittorrent`
           },
           {
             key: 'lab',
             title: this.$t('preferences.lab'),
-            route: '/preference/lab'
+            route: `${base}/lab`
           }
         ]
       },
@@ -1031,8 +1076,14 @@
       searchKeyword: {
         immediate: true,
         handler (val) {
-          this.filterCards(val)
+          this.applyFilters(val)
         }
+      },
+      category: {
+        handler () {
+          this.applyFilters(this.searchKeyword)
+        },
+        immediate: true
       },
       form: {
         handler () {
@@ -1090,6 +1141,7 @@
     },
     async mounted () {
       await this.fetchEngineList()
+      await this.fetchEngineInfo()
       this.rebuildTrackerSourceOptions()
       this.checkFfmpegStatus()
       try {
@@ -1230,13 +1282,25 @@
           }
         }
       },
-      filterCards (keyword) {
+      applyFilters (keyword) {
+        this.filterCards(keyword, this.activeCategory)
+      },
+      filterCards (keyword, category) {
         this.$nextTick(() => {
           if (!this.$el) return
           const cards = this.$el.querySelectorAll('.preference-card')
           const k = (keyword || '').toLowerCase()
+          const activeCategory = category || ''
+          const allowAll = !activeCategory || activeCategory === 'advanced'
           let visibleCount = 0
           cards.forEach(card => {
+            const rawCategory = `${card.dataset.category || ''}`.trim()
+            const categories = rawCategory ? rawCategory.split(/\s+/) : []
+            const categoryMatch = allowAll || categories.includes(activeCategory)
+            if (!categoryMatch) {
+              card.style.display = 'none'
+              return
+            }
             if (!k) {
               card.style.display = ''
               visibleCount++
@@ -1250,7 +1314,7 @@
               card.style.display = 'none'
             }
           })
-          this.hasNoResults = visibleCount === 0 && k !== ''
+          this.hasNoResults = visibleCount === 0 && (k !== '' || !allowAll)
         })
       },
       getBuiltinOrigins () {
@@ -1581,6 +1645,13 @@
         } catch (error) {
           console.error('Failed to get engine list:', error)
           this.$msg.error(this.$t('preferences.engine-list-fetch-error') || 'Failed to fetch engine list')
+        }
+      },
+      async fetchEngineInfo () {
+        try {
+          await this.$store.dispatch('app/fetchEngineInfo')
+        } catch (error) {
+          console.error('Failed to get engine info:', error)
         }
       },
       autoSaveForm () {

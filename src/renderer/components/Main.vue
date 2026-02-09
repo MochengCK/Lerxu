@@ -63,8 +63,9 @@
       </div>
     </el-dialog>
     <mo-speedometer :class="{ 'is-shifted': isSpeedometerShifted }" />
-    <mo-add-task :visible="addTaskVisible" :type="addTaskType" />
+    <mo-add-task v-if="addTaskVisible" :visible="addTaskVisible" :type="addTaskType" />
     <mo-task-detail
+      v-if="taskDetailVisible"
       :visible="taskDetailVisible"
       :gid="currentTaskGid"
       :task="currentTaskItem"
@@ -74,19 +75,6 @@
     <mo-dragger />
     <div v-if="showMainFloatingAside" class="aside-small-screen">
       <ul class="menu small-menu">
-        <li
-          @click="nav('/task')"
-          :class="{ active: currentPage === '/task' }"
-        >
-          <el-tooltip
-            effect="dark"
-            :content="$t('menu.task')"
-            placement="right"
-            :open-delay="500"
-          >
-            <mo-icon name="menu-task" width="20" height="20" />
-          </el-tooltip>
-        </li>
         <li
           @click="nav('/preference')"
           :class="{ active: currentPage === '/preference' }"
@@ -126,7 +114,6 @@
   import AddTask from '@/components/Task/AddTask'
   import TaskDetail from '@/components/TaskDetail/Index'
   import Dragger from '@/components/Dragger/Index'
-  import '@/components/Icons/menu-task'
   import '@/components/Icons/task-plan'
   import '@/components/Icons/menu-preference'
 
@@ -368,6 +355,10 @@
         return list.map(x => `${x || ''}`.trim()).filter(Boolean)
       },
       nav (page) {
+        if (page === '/preference') {
+          this.$electron.ipcRenderer.send('open-preference-window')
+          return
+        }
         this.$router.push({
           path: page
         }).catch(err => {

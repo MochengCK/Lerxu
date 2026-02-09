@@ -311,7 +311,8 @@
         savePresetDialogVisible: false,
         savePresetName: '',
         clipboardTimer: null,
-        lastClipboardText: ''
+        lastClipboardText: '',
+        dialogOpenInitialized: false
       }
     },
     computed: {
@@ -335,6 +336,14 @@
       dialogTop () {
         const advancedVisible = this.showAdvanced
         return advancedVisible ? '8vh' : '15vh'
+      }
+    },
+    mounted () {
+      if (this.visible && !this.dialogOpenInitialized) {
+        this.handleOpen()
+        this.$nextTick(() => {
+          this.handleOpened()
+        })
       }
     },
     watch: {
@@ -582,6 +591,7 @@
         }
       },
       handleOpen () {
+        this.dialogOpenInitialized = true
         this.form = initTaskForm(this.$store.state)
         this.selectedAdvancedPresetId = ''
         this.onAdvancedPresetChange('')
@@ -613,6 +623,7 @@
         this.$store.dispatch('app/updateAddTaskOptions', {})
       },
       handleClosed () {
+        this.dialogOpenInitialized = false
         this.reset()
       },
       handleHotkey (event) {

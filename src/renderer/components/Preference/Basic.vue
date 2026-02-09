@@ -8,8 +8,7 @@
       :model="form"
       :rules="rules"
     >
-        <!-- 外观设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="appearance">
           <h3 class="card-title">{{ $t('preferences.appearance') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -19,6 +18,12 @@
                 ref="themeSwitcher"
               />
             </el-col>
+          </el-form-item>
+        </div>
+
+        <div class="preference-card" data-category="appearance">
+          <h3 class="card-title">{{ $t('preferences.ui') }}</h3>
+          <el-form-item size="mini">
             <el-col v-if="showHideAppMenuOption" class="form-item-sub" :span="16">
               <el-checkbox v-model="form.hideAppMenu" @change="autoSaveForm">
                 {{ $t('preferences.hide-app-menu') }}
@@ -29,6 +34,22 @@
                 {{ $t('preferences.auto-hide-window') }}
               </el-checkbox>
             </el-col>
+            <el-col v-if="isMac" class="form-item-sub" :span="16">
+              <el-checkbox v-model="form.traySpeedometer" @change="autoSaveForm">
+                {{ $t('preferences.tray-speedometer') }}
+              </el-checkbox>
+            </el-col>
+            <el-col class="form-item-sub" :span="16">
+              <el-checkbox v-model="form.showProgressBar" @change="autoSaveForm">
+                {{ $t('preferences.show-progress-bar') }}
+              </el-checkbox>
+            </el-col>
+          </el-form-item>
+        </div>
+
+        <div class="preference-card" data-category="appearance">
+          <h3 class="card-title">{{ $t('preferences.task-detail-default-transparent') }}</h3>
+          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.taskDetailDefaultTransparent" @change="autoSaveForm">
                 {{ $t('preferences.task-detail-default-transparent') }}
@@ -45,16 +66,12 @@
                 />
               </el-form-item>
             </el-col>
-            <el-col v-if="isMac" class="form-item-sub" :span="16">
-              <el-checkbox v-model="form.traySpeedometer" @change="autoSaveForm">
-                {{ $t('preferences.tray-speedometer') }}
-              </el-checkbox>
-            </el-col>
-            <el-col class="form-item-sub" :span="16">
-              <el-checkbox v-model="form.showProgressBar" @change="autoSaveForm">
-                {{ $t('preferences.show-progress-bar') }}
-              </el-checkbox>
-            </el-col>
+          </el-form-item>
+        </div>
+
+        <div class="preference-card" data-category="appearance">
+          <h3 class="card-title">{{ $t('preferences.show-task-type-badge') }}</h3>
+          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.showTaskTypeBadge" @change="autoSaveForm">
                 {{ $t('preferences.show-task-type-badge') }}
@@ -63,6 +80,12 @@
                 {{ $t('preferences.show-task-type-badge-tips') }}
               </div>
             </el-col>
+          </el-form-item>
+        </div>
+
+        <div class="preference-card" data-category="appearance">
+          <h3 class="card-title">{{ $t('preferences.task-progress-mode') }}</h3>
+          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-form-item :label="$t('preferences.task-progress-mode')">
                 <el-select
@@ -81,6 +104,12 @@
                 </el-select>
               </el-form-item>
             </el-col>
+          </el-form-item>
+        </div>
+
+        <div class="preference-card" data-category="appearance">
+          <h3 class="card-title">{{ $t('preferences.subnav-mode') }}</h3>
+          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-form-item :label="$t('preferences.subnav-mode')">
                 <el-select
@@ -135,41 +164,11 @@
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col class="form-item-sub" :span="24" style="margin-top: 12px;">
-              <div style="display: flex; gap: 8px; flex-wrap: nowrap;">
-                <el-button
-                  size="mini"
-                  type="primary"
-                  style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                  @click="exportUiConfigToFile"
-                >导出 JSON 文件</el-button>
-                <el-button
-                  size="mini"
-                  type="primary"
-                  style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
-                  @click="exportUiConfigToClipboard"
-                >{{ $t('preferences.copy-as-text') }}</el-button>
-                <el-button
-                  size="mini"
-                  type="primary"
-                  plain
-                  style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border-color: #409EFF; color: #409EFF;"
-                  @click="importUiConfigFromFile"
-                >导入JSON文件</el-button>
-                <el-button
-                  size="mini"
-                  type="primary"
-                  plain
-                  style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border-color: #409EFF; color: #409EFF;"
-                  @click="importUiConfigFromTextPrompt"
-                >{{ $t('preferences.paste-and-import') }}</el-button>
-              </div>
-            </el-col>
           </el-form-item>
         </div>
 
         <!-- 背景设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="appearance">
           <span style="display: none;">外观</span>
           <div class="card-title background-type-nav">
             <div class="background-type-nav__left">
@@ -272,8 +271,43 @@
           </el-form-item>
         </div>
 
+        <div class="preference-bottom-actions" data-category="appearance">
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <div style="display: flex; gap: 8px; flex-wrap: nowrap;">
+                <el-button
+                  size="mini"
+                  type="primary"
+                  style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                  @click="exportUiConfigToFile"
+                >导出 JSON 文件</el-button>
+                <el-button
+                  size="mini"
+                  type="primary"
+                  style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                  @click="exportUiConfigToClipboard"
+                >{{ $t('preferences.copy-as-text') }}</el-button>
+                <el-button
+                  size="mini"
+                  type="primary"
+                  plain
+                  style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border-color: #409EFF; color: #409EFF;"
+                  @click="importUiConfigFromFile"
+                >导入JSON文件</el-button>
+                <el-button
+                  size="mini"
+                  type="primary"
+                  plain
+                  style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border-color: #409EFF; color: #409EFF;"
+                  @click="importUiConfigFromTextPrompt"
+                >{{ $t('preferences.paste-and-import') }}</el-button>
+              </div>
+            </el-col>
+          </el-form-item>
+        </div>
+
         <!-- 运行模式卡片 (仅Mac) -->
-        <div v-if="isMac" class="preference-card">
+        <div v-if="isMac" class="preference-card" data-category="basic">
           <h3 class="card-title">{{ $t('preferences.run-mode') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -290,7 +324,7 @@
         </div>
 
         <!-- 语言设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="basic">
           <h3 class="card-title">{{ $t('preferences.language') }}</h3>
           <div class="language-container">
             <!-- 语言选择框 -->
@@ -321,7 +355,7 @@
         </div>
 
         <!-- 快捷键卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="basic">
           <h3 class="card-title">{{ $t('preferences.shortcuts') }}</h3>
           <el-form-item size="mini">
             <el-row :gutter="8" style="margin-bottom: 8px;">
@@ -347,7 +381,7 @@
         </div>
 
         <!-- 启动设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="basic">
           <h3 class="card-title">{{ $t('preferences.startup') }}</h3>
           <el-form-item size="mini">
             <el-col
@@ -373,7 +407,7 @@
         </div>
 
         <!-- 扩展卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="basic">
           <h3 class="card-title">{{ $t('preferences.browser-extensions') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -437,7 +471,7 @@
         </div>
 
         <!-- 下载目录卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="transfer">
           <h3 class="card-title">{{ $t('preferences.default-dir') }}</h3>
           <el-form-item size="mini">
             <el-input placeholder="" v-model="form.dir" :readonly="isMas">
@@ -458,7 +492,7 @@
         </div>
 
         <!-- 传输设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="transfer">
           <h3 class="card-title">{{ $t('preferences.transfer-settings') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -510,7 +544,7 @@
         </div>
 
         <!-- BT设置卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="transfer">
           <h3 class="card-title">{{ $t('preferences.bt-settings') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -581,11 +615,10 @@
           </el-form-item>
         </div>
 
-        <!-- 任务管理卡片 -->
-        <div class="preference-card">
+        <!-- 任务并发卡片 -->
+        <div class="preference-card" data-category="task">
           <h3 class="card-title">{{ $t('preferences.task-manage') }}</h3>
           <el-form-item size="mini">
-            <!-- 单设置项 -->
             <el-col class="form-item-sub" :span="24">
               {{ $t('preferences.max-concurrent-downloads') }}
               <el-input-number
@@ -615,6 +648,13 @@
                 {{ $t('preferences.continue') }}
               </el-checkbox>
             </el-col>
+          </el-form-item>
+        </div>
+
+        <!-- 任务删除与记录卡片 -->
+        <div class="preference-card" data-category="task">
+          <h3 class="card-title">{{ $t('preferences.auto-purge-record') }}</h3>
+          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.noConfirmBeforeDeleteTask" @change="autoSaveForm">
                 {{ $t('preferences.no-confirm-before-delete-task') }}
@@ -625,18 +665,13 @@
                 {{ $t('preferences.auto-purge-record') }}
               </el-checkbox>
             </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.showTaskCompletedWindow" @change="autoSaveForm">
-                {{ $t('preferences.show-task-completed-window') }}
-              </el-checkbox>
-            </el-col>
+          </el-form-item>
+        </div>
 
-            <!-- 分隔线 -->
-            <el-col class="form-item-sub" :span="24">
-              <div class="settings-divider"></div>
-            </el-col>
-
-            <!-- 多设置项 -->
+        <!-- 任务进度与新任务卡片 -->
+        <div class="preference-card" data-category="task">
+          <h3 class="card-title">{{ $t('preferences.new-task-show-downloading') }}</h3>
+          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.autoOpenTaskProgressWindow" @change="autoSaveForm">
                 {{ $t('preferences.auto-open-task-progress-window') }}
@@ -670,6 +705,18 @@
                 </el-radio-group>
               </el-tooltip>
             </el-col>
+          </el-form-item>
+        </div>
+
+        <!-- 任务完成与通知卡片 -->
+        <div class="preference-card" data-category="task">
+          <h3 class="card-title">{{ $t('preferences.show-task-completed-window') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.showTaskCompletedWindow" @change="autoSaveForm">
+                {{ $t('preferences.show-task-completed-window') }}
+              </el-checkbox>
+            </el-col>
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.taskNotification" @change="autoSaveForm">
                 {{ $t('preferences.task-completed-notify') }}
@@ -699,7 +746,7 @@
         </div>
 
         <!-- 文件管理卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="file">
           <h3 class="card-title">{{ $t('preferences.file-manage') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -718,7 +765,13 @@
                 {{ $t('preferences.set-file-mtime-on-complete') }}
               </el-checkbox>
             </el-col>
-            <!-- 自动分类文件设置 -->
+          </el-form-item>
+        </div>
+
+        <!-- 文件分类卡片 -->
+        <div class="preference-card" data-category="file">
+          <h3 class="card-title">{{ $t('preferences.auto-categorize-files') }}</h3>
+          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.autoCategorizeFiles" @change="autoSaveForm">
                 {{ $t('preferences.auto-categorize-files') }}
@@ -739,7 +792,7 @@
         </div>
 
         <!-- 安全卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="security">
           <h3 class="card-title">{{ $t('preferences.security') }}</h3>
           <div class="card-content">
           <el-form-item size="mini">
@@ -789,7 +842,7 @@
         </div>
 
         <!-- 剪贴板卡片 -->
-        <div class="preference-card">
+        <div class="preference-card" data-category="task">
           <h3 class="card-title">{{ $t('preferences.clipboard-settings') }}</h3>
           <div class="card-content">
           <el-form-item size="mini">
@@ -1087,6 +1140,12 @@
       [SelectDirectory.name]: SelectDirectory,
       [ThemeSwitcher.name]: ThemeSwitcher
     },
+    props: {
+      category: {
+        type: String,
+        default: 'basic'
+      }
+    },
     data () {
       const { locale } = this.$store.state.preference.config
       const formOriginal = initForm(this.$store.state.preference.config)
@@ -1129,8 +1188,12 @@
       isMac: () => is.macOS(),
       isMas: () => is.mas(),
       isLinux () { return is.linux() },
+      activeCategory () {
+        return this.category || 'basic'
+      },
       title () {
-        return this.$t('preferences.basic')
+        const subnav = this.subnavs.find(item => item.key === this.activeCategory)
+        return subnav ? subnav.title : this.$t('preferences.basic')
       },
       subnavMode () {
         const { config = {} } = this
@@ -1211,22 +1274,57 @@
           }
         ]
       },
+      preferenceBasePath () {
+        const path = `${this.$route.path || ''}`
+        return path.startsWith('/preference-window') ? '/preference-window' : '/preference'
+      },
       subnavs () {
+        const base = this.preferenceBasePath
         return [
           {
             key: 'basic',
             title: this.$t('preferences.basic'),
-            route: '/preference/basic'
+            route: `${base}/basic`
+          },
+          {
+            key: 'appearance',
+            title: this.$t('preferences.appearance'),
+            route: `${base}/appearance`
+          },
+          {
+            key: 'transfer',
+            title: this.$t('preferences.transfer-settings'),
+            route: `${base}/transfer`
+          },
+          {
+            key: 'task',
+            title: this.$t('preferences.task-manage'),
+            route: `${base}/task`
+          },
+          {
+            key: 'file',
+            title: this.$t('preferences.file-manage'),
+            route: `${base}/file`
+          },
+          {
+            key: 'security',
+            title: this.$t('preferences.security'),
+            route: `${base}/security`
           },
           {
             key: 'advanced',
             title: this.$t('preferences.advanced'),
-            route: '/preference/advanced'
+            route: `${base}/advanced`
+          },
+          {
+            key: 'bittorrent',
+            title: this.$t('preferences.bittorrent'),
+            route: `${base}/bittorrent`
           },
           {
             key: 'lab',
             title: this.$t('preferences.lab'),
-            route: '/preference/lab'
+            route: `${base}/lab`
           }
         ]
       },
@@ -1316,7 +1414,13 @@
     watch: {
       searchKeyword: {
         handler (val) {
-          this.filterCards(val)
+          this.applyFilters(val)
+        },
+        immediate: true
+      },
+      category: {
+        handler () {
+          this.applyFilters(this.searchKeyword)
         },
         immediate: true
       },
@@ -1419,13 +1523,24 @@
           )
         })
       },
-      filterCards (keyword) {
+      applyFilters (keyword) {
+        this.filterCards(keyword, this.activeCategory)
+      },
+      filterCards (keyword, category) {
         this.$nextTick(() => {
           if (!this.$el) return
-          const cards = this.$el.querySelectorAll('.preference-card')
+          const cards = this.$el.querySelectorAll('.preference-card, .preference-bottom-actions')
           const k = (keyword || '').toLowerCase()
+          const activeCategory = category || ''
           let visibleCount = 0
           cards.forEach(card => {
+            const rawCategory = `${card.dataset.category || ''}`.trim()
+            const categories = rawCategory ? rawCategory.split(/\s+/) : []
+            const categoryMatch = !activeCategory || categories.includes(activeCategory)
+            if (!categoryMatch) {
+              card.style.display = 'none'
+              return
+            }
             if (!k) {
               card.style.display = ''
               visibleCount++
@@ -1439,7 +1554,7 @@
               card.style.display = 'none'
             }
           })
-          this.hasNoResults = visibleCount === 0 && k !== ''
+          this.hasNoResults = visibleCount === 0 && (k !== '' || activeCategory)
         })
       },
       getShortcutCommands () {
@@ -2376,6 +2491,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.preference-bottom-actions {
+  padding: 0;
+  width: 100%;
 }
 
 .background-type-nav :deep(.el-radio-group) {

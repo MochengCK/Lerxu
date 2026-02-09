@@ -22,7 +22,9 @@
         </el-table-column>
         <el-table-column
           :label="$t('task.file-extension')"
-          width="80">
+          width="80"
+          class-name="task-file-extension"
+          show-overflow-tooltip>
           <template slot-scope="scope">{{ scope.row.extension | removeExtensionDot }}</template>
         </el-table-column>
         <el-table-column
@@ -225,5 +227,14 @@
     color: $--color-text-regular;
     line-height: 1.75rem;
   }
+}
+
+.mo-task-files .task-file-extension .cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  display: block;
+  -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0) 100%);
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0) 100%);
 }
 </style>

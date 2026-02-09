@@ -690,7 +690,7 @@ export default class Api {
 
         // 确保result存在再设置peers
         if (result) {
-          result.peers = peers || { connected: [], attempting: [], banned: [] }
+          result.peers = peers || { connected: [], attempting: [], banned: [], disconnected: [] }
           resolve(result)
         } else {
           reject(new Error('No task data returned'))

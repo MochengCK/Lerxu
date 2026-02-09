@@ -37,9 +37,16 @@
             </el-radio-button>
           </el-radio-group>
         </div>
-        <span class="task-detail-nav-close-btn" @click="handleHeaderClose">
-          <i class="el-icon-close"></i>
-        </span>
+        <div class="task-detail-nav-actions">
+          <el-input
+            v-if="activeTab === 'peers' && isBT"
+            v-model="peerSearch"
+            size="mini"
+            class="task-detail-peer-search"
+            :placeholder="$t('task.peers-search')"
+            clearable
+          />
+        </div>
       </div>
     </div>
     <div v-if="statusHintText" class="task-detail-hint">
@@ -71,7 +78,7 @@
         <mo-task-trackers :task="task" />
       </div>
       <div v-show="activeTab === 'peers'" v-if="isBT" class="task-detail-pane">
-        <mo-task-peers ref="taskPeers" :peers="peers" :task="task" />
+        <mo-task-peers ref="taskPeers" :peers="peers" :task="task" :search-text="peerSearch" />
       </div>
       <div v-show="activeTab === 'files'">
         <mo-task-files
@@ -160,7 +167,7 @@
       peers: {
         type: [Object, Array],
         default: function () {
-          return { connected: [], attempting: [], banned: [] }
+          return { connected: [], attempting: [], banned: [], disconnected: [] }
         }
       },
       visible: {
@@ -175,6 +182,7 @@
         formLabelWidth: calcFormLabelWidth(locale),
         locale,
         activeTab: 'general',
+        peerSearch: '',
         graphicWidth: 0,
         optionsChanged: false,
         filesSelection: EMPTY_STRING,
@@ -438,9 +446,6 @@
           return
         }
         setTimeout(done, 0)
-      },
-      handleHeaderClose () {
-        this.handleClose()
       },
       handleClose (done) {
         this.drawerAnimationDone = false
@@ -873,53 +878,13 @@
   .task-detail-nav-bar :deep(.el-radio-button:last-child .el-radio-button__inner) {
     border-radius: 0 4px 4px 0;
   }
-  .task-detail-nav-close-btn {
-    display: inline-flex;
+  .task-detail-nav-actions {
+    display: flex;
     align-items: center;
-    justify-content: center;
-    height: 32px;
-    min-width: 32px;
-    padding: 0 8px;
-    font-size: 16px;
-    font-weight: 500;
-    background: transparent;
-    border: none;
-    color: #303133;
-    cursor: pointer;
-    box-sizing: border-box;
-    transition: all 0.3s;
-    position: relative;
-    z-index: 1;
-    i {
-      color: #303133;
-      font-size: 16px;
-    }
+    gap: 12px;
   }
-  .task-detail-nav-close-btn:hover {
-    color: #409eff;
-    background-color: transparent;
-    i {
-      color: #409eff;
-    }
-  }
-}
-
-.theme-dark .task-detail-drawer {
-  .task-detail-nav-close-btn {
-    background: transparent;
-    border: none;
-    color: #c0c4cc;
-    i {
-      color: #c0c4cc;
-      font-size: 16px;
-    }
-  }
-  .task-detail-nav-close-btn:hover {
-    color: #409eff;
-    background-color: transparent;
-    i {
-      color: #409eff;
-    }
+  .task-detail-peer-search {
+    max-width: 240px;
   }
 }
 

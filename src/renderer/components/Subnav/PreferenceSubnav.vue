@@ -1,42 +1,20 @@
 <template>
   <nav class="subnav-inner">
-    <h3>{{ title }}</h3>
+    <h3 v-if="!isStandalone">{{ title }}</h3>
     <ul>
       <li
-        @click="() => nav('basic')"
-        :class="[ current === 'basic' ? 'active' : '' ]"
-        >
-        <i class="subnav-icon">
-          <mo-icon name='preference-basic' width="20" height="20" />
-        </i>
-        <span>{{ $t('preferences.basic') }}</span>
-      </li>
-      <li
-        @click="() => nav('advanced')"
-        :class="[ current === 'advanced' ? 'active' : '' ]"
-        >
-        <i class="subnav-icon">
-          <mo-icon name='preference-advanced' width="20" height="20" />
-        </i>
-        <span>{{ $t('preferences.advanced') }}</span>
-      </li>
-      <li
-        @click="() => nav('bittorrent')"
-        :class="[ current === 'bittorrent' ? 'active' : '' ]"
-        >
-        <i class="subnav-icon">
-          <mo-icon name='preference-bt' width="20" height="20" />
-        </i>
-        <span>{{ $t('preferences.bittorrent') }}</span>
+        v-for="item in subnavItems"
+        :key="item.key"
+        @click="() => nav(item.key)"
+        :class="[ current === item.key ? 'active' : '' ]"
+      >
+        <span>{{ item.title }}</span>
       </li>
     </ul>
   </nav>
 </template>
 
 <script>
-  import '@/components/Icons/preference-basic'
-  import '@/components/Icons/preference-advanced'
-  import '@/components/Icons/preference-bt'
   import { mapState, mapActions } from 'vuex'
 
   export default {
@@ -49,16 +27,33 @@
     },
     data () {
       return {
-        appVersion: '',
-        isDownloading: false,
-        downloadProgress: 0
+        appVersion: ''
       }
     },
     computed: {
       ...mapState('app', ['isCheckingUpdate']),
       ...mapState('preference', ['updateAvailable', 'newVersion', 'isDownloadingUpdate', 'downloadProgress', 'releaseNotes']),
+      preferenceBasePath () {
+        const path = `${this.$route.path || ''}`
+        return path.startsWith('/preference-window') ? '/preference-window' : '/preference'
+      },
+      isStandalone () {
+        return this.preferenceBasePath === '/preference-window'
+      },
       title () {
         return this.$t('subnav.preferences')
+      },
+      subnavItems () {
+        return [
+          { key: 'basic', title: this.$t('preferences.basic') },
+          { key: 'appearance', title: this.$t('preferences.appearance') },
+          { key: 'transfer', title: this.$t('preferences.transfer-settings') },
+          { key: 'task', title: this.$t('preferences.task-manage') },
+          { key: 'file', title: this.$t('preferences.file-manage') },
+          { key: 'security', title: this.$t('preferences.security') },
+          { key: 'advanced', title: this.$t('preferences.advanced') },
+          { key: 'bittorrent', title: this.$t('preferences.bittorrent') }
+        ]
       },
       isChecking () {
         return this.isCheckingUpdate
@@ -123,8 +118,9 @@
       ...mapActions('app', ['updateCheckingUpdate']),
       ...mapActions('preference', ['updateUpdateAvailable', 'updateNewVersion', 'updateLastCheckUpdateTime', 'updateIsDownloadingUpdate', 'updateDownloadProgress', 'updateReleaseNotes']),
       nav (category = 'basic') {
+        const base = this.preferenceBasePath
         this.$router.push({
-          path: `/preference/${category}`
+          path: `${base}/${category}`
         }).catch(err => {
           console.log(err)
         })

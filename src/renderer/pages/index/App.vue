@@ -1,5 +1,9 @@
 <template>
-  <div id="app" :style="appRootStyle">
+  <div
+    id="app"
+    :style="appRootStyle"
+    :class="{ 'has-custom-titlebar': showWindowActions && isPreferenceWindow, 'is-preference-window': isPreferenceWindow }"
+  >
     <div
       v-if="shouldUseBackgroundImage"
       class="app-background-layer"
@@ -12,10 +16,11 @@
     <div class="app-content">
       <router-view />
       <mo-engine-client
+        v-if="!isPreferenceWindow"
         :secret="rpcSecret"
       />
-      <mo-ipc v-if="isRenderer" />
-      <mo-dynamic-tray v-if="enableTraySpeedometer" />
+      <mo-ipc v-if="isRenderer && !isPreferenceWindow" />
+      <mo-dynamic-tray v-if="enableTraySpeedometer && !isPreferenceWindow" />
     </div>
   </div>
 </template>
@@ -68,6 +73,13 @@
     computed: {
       isMac: () => is.macOS(),
       isRenderer: () => is.renderer(),
+      isPreferenceWindow () {
+        const path = `${this.$route.path || ''}`
+        const hashPath = typeof window !== 'undefined' && window.location && window.location.hash
+          ? `${window.location.hash}`
+          : ''
+        return path.startsWith('/preference-window') || hashPath.startsWith('#/preference-window')
+      },
       ...mapState('app', {
         systemTheme: state => state.systemTheme,
         addTaskVisible: state => state.addTaskVisible
@@ -201,6 +213,11 @@
       }
     },
     methods: {
+      updateWindowTitle () {
+        if (!this.isPreferenceWindow) return
+        if (typeof document === 'undefined') return
+        document.title = this.$t('subnav.preferences')
+      },
       bringMainWindowToFront () {
         try {
           const { getCurrentWindow } = require('@electron/remote')
@@ -321,6 +338,7 @@
     },
     mounted () {
       this._updateMessageShown = false
+      this.updateWindowTitle()
       const onUpdateAvailable = (event, version, releaseNotes) => {
         const cfg = (this.$store.state.preference && this.$store.state.preference.config) || {}
         const autoCheckEnabled = !!cfg.autoCheckUpdate
@@ -342,7 +360,7 @@
                   duration: 10000,
                   showClose: true,
                   onClick: () => {
-                    this.$router.push({ path: '/preference/advanced' }).catch(err => console.log(err))
+                    this.$electron.ipcRenderer.send('open-preference-window', { category: 'advanced' })
                   }
                 })
               }
@@ -382,6 +400,7 @@
       locale (val) {
         const lng = getLanguage(val)
         getLocaleManager().changeLanguage(lng)
+        this.updateWindowTitle()
       },
       backgroundClass () {
         this.updateRootClassName()
@@ -443,5 +462,11 @@
   z-index: 1;
   height: 100%;
   width: 100%;
+}
+
+.has-custom-titlebar .app-content {
+  padding-top: 36px;
+  box-sizing: border-box;
+  height: calc(100% - 36px);
 }
 </style>

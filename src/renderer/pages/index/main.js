@@ -1,5 +1,4 @@
 import is from 'electron-is'
-import { ipcRenderer } from 'electron'
 import Vue from 'vue'
 import VueI18Next from '@panter/vue-i18next'
 import { sync } from 'vuex-router-sync'
@@ -13,45 +12,11 @@ import { getLocaleManager } from '@/components/Locale'
 import Icon from '@/components/Icons/Icon'
 import Msg from '@/components/Msg'
 import { commands } from '@/components/CommandManager/instance'
-import TrayWorker from '@/workers/tray.worker'
 
 import '@/components/Theme/Index.scss'
 
-const updateTray = is.renderer()
-  ? async (payload) => {
-    const { tray } = payload
-    if (!tray) {
-      return
-    }
-
-    const ab = await tray.arrayBuffer()
-    ipcRenderer.send('command', 'application:update-tray', ab)
-  }
-  : () => {}
-
-function initTrayWorker () {
-  const worker = new TrayWorker()
-
-  worker.addEventListener('message', (event) => {
-    const { type, payload } = event.data
-
-    switch (type) {
-    case 'initialized':
-    case 'log':
-      console.log('[Motrix] Log from Tray Worker: ', payload)
-      break
-    case 'tray:drawed':
-      updateTray(payload)
-      break
-    default:
-      console.warn('[Motrix] Tray Worker unhandled message type:', type, payload)
-    }
-  })
-
-  return worker
-}
-
-function init (config) {
+function init (config, options = {}) {
+  const { isPreferenceWindow } = options
   if (is.renderer()) {
     Vue.use(require('vue-electron'))
   }
@@ -103,23 +68,30 @@ function init (config) {
     store.dispatch('app/updateCurrentPage', page)
   })
 
-  global.app.commands = commands
-  require('./commands')
-
-  global.app.trayWorker = initTrayWorker()
+  if (!isPreferenceWindow) {
+    global.app.commands = commands
+    require('./commands')
+  }
 
   setTimeout(() => {
     loading.close()
   }, 400)
 }
 
+const isPreferenceWindow = typeof window !== 'undefined' &&
+  window.location &&
+  window.location.hash &&
+  window.location.hash.startsWith('#/preference-window')
+
 store.dispatch('preference/fetchPreference')
   .then((config) => {
     console.info('[Motrix] load preference:', config)
-    // Initialize task view mode from preferences
-    store.dispatch('task/initializeViewMode', config)
-    store.dispatch('task/initializeFilterDate', config)
-    init(config)
+    if (!isPreferenceWindow) {
+      // Initialize task view mode from preferences
+      store.dispatch('task/initializeViewMode', config)
+      store.dispatch('task/initializeFilterDate', config)
+    }
+    init(config, { isPreferenceWindow })
   })
   .catch((err) => {
     alert(err)

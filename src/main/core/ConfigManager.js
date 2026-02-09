@@ -16,15 +16,26 @@ import {
   ENGINE_RPC_PORT,
   IP_VERSION,
   LOGIN_SETTING_OPTIONS,
-  NGOSANG_TRACKERS_BEST_IP_URL_CDN,
-  NGOSANG_TRACKERS_BEST_URL_CDN,
   PROXY_MODE,
   PROXY_SCOPES,
-  PROXY_SCOPE_OPTIONS
+  PROXY_SCOPE_OPTIONS,
+  TRACKER_SOURCE_OPTIONS
 } from '@shared/constants'
 import { LINKCORE_BT_UA, LINKCORE_PEER_ID_PREFIX, CHROME_UA } from '@shared/ua'
 import { separateConfig, getEngineConnectionPolicy } from '@shared/utils'
 import { reduceTrackerString } from '@shared/utils/tracker'
+
+const getDefaultTrackerSources = () => {
+  const sources = []
+  ;(TRACKER_SOURCE_OPTIONS || []).forEach(group => {
+    ;(group.options || []).forEach(opt => {
+      if (opt.value && !sources.includes(opt.value)) {
+        sources.push(opt.value)
+      }
+    })
+  })
+  return sources
+}
 
 export default class ConfigManager {
   constructor () {
@@ -180,10 +191,7 @@ export default class ConfigManager {
           'subnav'
         ],
         'task-detail-frosted-blur': 4,
-        'tracker-source': [
-          NGOSANG_TRACKERS_BEST_IP_URL_CDN,
-          NGOSANG_TRACKERS_BEST_URL_CDN
-        ],
+        'tracker-source': getDefaultTrackerSources(),
         'tray-theme': APP_THEME.AUTO,
         'tray-speedometer': is.macOS(),
         'update-channel': 'latest',
@@ -237,6 +245,11 @@ export default class ConfigManager {
     } else {
       this.setSystemConfig('all-proxy', EMPTY_STRING)
       this.setSystemConfig('no-proxy', EMPTY_STRING)
+    }
+
+    const lpdEnabled = this.systemConfig.get('bt-enable-lpd')
+    if (lpdEnabled === undefined || lpdEnabled === null) {
+      this.setSystemConfig('bt-enable-lpd', true)
     }
 
     // Fix spawn ENAMETOOLONG on Windows
@@ -317,10 +330,7 @@ export default class ConfigManager {
     })
 
     if (this.getUserConfig('tracker-source').length === 0) {
-      this.setUserConfig('tracker-source', [
-        NGOSANG_TRACKERS_BEST_IP_URL_CDN,
-        NGOSANG_TRACKERS_BEST_URL_CDN
-      ])
+      this.setUserConfig('tracker-source', getDefaultTrackerSources())
     }
   }
 

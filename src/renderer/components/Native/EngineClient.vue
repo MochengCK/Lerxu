@@ -89,6 +89,13 @@
       }
     },
     methods: {
+      isPreferenceWindow () {
+        const path = this.$route && this.$route.path ? `${this.$route.path}` : ''
+        const hashPath = typeof window !== 'undefined' && window.location && window.location.hash
+          ? `${window.location.hash}`
+          : ''
+        return path.startsWith('/preference-window') || hashPath.startsWith('#/preference-window')
+      },
       maybeEnterIdleInterval () {
         const hidden = typeof document !== 'undefined' && !!document.hidden
         const stat = (this.$store.state.app && this.$store.state.app.stat) ? this.$store.state.app.stat : {}
@@ -2381,7 +2388,7 @@
           const detailed = await api.fetchTaskItemWithPeers({ gid })
 
           // 处理新的peers数据结构
-          const peers = detailed.peers || { connected: [], attempting: [], banned: [] }
+          const peers = detailed.peers || { connected: [], attempting: [], banned: [], disconnected: [] }
           let peerCount = 0
 
           if (Array.isArray(peers)) {
@@ -2392,7 +2399,8 @@
             const connected = Array.isArray(peers.connected) ? peers.connected : []
             const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
             const banned = Array.isArray(peers.banned) ? peers.banned : []
-            peerCount = connected.length + attempting.length + banned.length
+            const disconnected = Array.isArray(peers.disconnected) ? peers.disconnected : []
+            peerCount = connected.length + attempting.length + banned.length + disconnected.length
           }
 
           const bt = detailed.bittorrent || {}
@@ -2718,6 +2726,9 @@
       }
     },
     created () {
+      if (this.isPreferenceWindow()) {
+        return
+      }
       this.bindEngineEvents()
       this._resumedCompletedFixing = false
       this._resumedCompletedLastRun = 0
@@ -2726,6 +2737,9 @@
       this._pollingKickAt = 0
     },
     mounted () {
+      if (this.isPreferenceWindow()) {
+        return
+      }
       setTimeout(() => {
         this.$store.dispatch('app/fetchEngineInfo')
         this.$store.dispatch('app/fetchEngineOptions')
@@ -2744,6 +2758,9 @@
       }
     },
     destroyed () {
+      if (this.isPreferenceWindow()) {
+        return
+      }
       this.$store.dispatch('task/saveSession')
 
       this.unbindEngineEvents()

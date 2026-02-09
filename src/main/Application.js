@@ -3170,6 +3170,24 @@ export default class Application extends EventEmitter {
       })
     })
 
+    // Handle open-preference-window
+    ipcMain.on('open-preference-window', (event, payload = {}) => {
+      const { category } = payload || {}
+      const win = this.windowManager.openWindow('preference', {
+        hidden: false
+      })
+      if (win && category) {
+        const sendNavigateCommand = () => {
+          win.webContents.send('command', 'application:open-preference-category', { category })
+        }
+        if (win.webContents.isLoading()) {
+          win.webContents.once('did-finish-load', sendNavigateCommand)
+        } else {
+          sendNavigateCommand()
+        }
+      }
+    })
+
     // Handle video-sniffer-settings-updated
     ipcMain.on('video-sniffer-settings-updated', (event, settings) => {
       logger.log('[Motrix] Video sniffer settings updated:', settings)

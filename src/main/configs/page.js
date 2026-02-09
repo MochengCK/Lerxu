@@ -22,6 +22,13 @@ const getFileCategoriesUrl = () => {
   return `file://${path.join(__dirname, 'pages/file-categories.html').replace(/\\/g, '/')}`
 }
 
+const getPreferenceUrl = () => {
+  if (is.dev()) {
+    return 'http://localhost:9080/#/preference-window'
+  }
+  return `file://${path.join(__dirname, 'index.html').replace(/\\/g, '/')}#/preference-window`
+}
+
 export default {
   index: {
     attrs: {
@@ -35,6 +42,21 @@ export default {
     bindCloseToHide: true,
     openDevTools: is.dev(),
     url: is.dev() ? 'http://localhost:9080' : `file://${path.join(__dirname, 'index.html').replace(/\\/g, '/')}`
+  },
+  preference: {
+    attrs: {
+      title: '偏好设置',
+      width: 980,
+      height: 720,
+      minWidth: 720,
+      minHeight: 520,
+      resizable: true,
+      maximizable: true,
+      minimizable: true
+    },
+    bindCloseToHide: false,
+    openDevTools: is.dev(),
+    url: getPreferenceUrl()
   },
   'video-detection-settings': {
     attrs: {

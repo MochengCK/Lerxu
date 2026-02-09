@@ -1,22 +1,7 @@
 <template>
   <el-aside width="78px" :class="['aside', { 'draggable': asideDraggable }]" :style="vibrancy">
     <div class="aside-inner">
-      <ul class="menu top-menu">
-        <li
-          @click="nav('/task')"
-          class="non-draggable"
-          :class="{ active: currentPage === '/task' }"
-        >
-          <el-tooltip
-            effect="dark"
-            :content="$t('menu.task')"
-            placement="right"
-            :open-delay="500"
-          >
-            <mo-icon name="menu-task" width="20" height="20" />
-          </el-tooltip>
-        </li>
-      </ul>
+      <ul class="menu top-menu"></ul>
       <ul class="menu bottom-menu">
         <li
           @click="nav('/preference')"
@@ -40,7 +25,6 @@
 <script>
   import is from 'electron-is'
   import { mapState } from 'vuex'
-  import '@/components/Icons/menu-task'
   import '@/components/Icons/menu-preference'
 
   export default {
@@ -64,6 +48,10 @@
     },
     methods: {
       nav (page) {
+        if (page === '/preference') {
+          this.$electron.ipcRenderer.send('open-preference-window')
+          return
+        }
         this.$router.push({
           path: page
         }).catch(err => {

@@ -1,5 +1,6 @@
 import { Message } from 'element-ui'
 import { base64StringToBlob } from 'blob-util'
+import { ipcRenderer } from 'electron'
 
 import router from '@/router'
 import store from '@/store'
@@ -122,7 +123,16 @@ const navigateTaskList = (payload = {}) => {
 }
 
 const navigatePreferences = () => {
-  router.push({ path: '/preference' }).catch(err => {
+  ipcRenderer.send('open-preference-window')
+}
+
+const openPreferenceCategory = (payload = {}) => {
+  const { category = 'advanced' } = payload || {}
+  const hash = typeof window !== 'undefined' && window.location && window.location.hash
+    ? `${window.location.hash}`
+    : ''
+  const base = hash.startsWith('#/preference-window') ? '/preference-window' : '/preference'
+  router.push({ path: `${base}/${category}` }).catch(err => {
     console.log(err)
   })
 }
@@ -187,6 +197,7 @@ const updateEngineList = (payload = {}) => {
 
 commands.register('application:task-list', navigateTaskList)
 commands.register('application:preferences', navigatePreferences)
+commands.register('application:open-preference-category', openPreferenceCategory)
 
 commands.register('application:new-task', addTask)
 commands.register('application:new-bt-task', showAddBtTask)

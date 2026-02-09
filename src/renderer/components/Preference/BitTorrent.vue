@@ -473,7 +473,9 @@
       },
       openBtStatsPage () {
         // 跳转到设置页面的 BT 统计标签（点击升级通知时调用）
-        router.push({ path: '/preference/bittorrent' }).catch(() => {})
+        const path = `${this.$route.path || ''}`
+        const base = path.startsWith('/preference-window') ? '/preference-window' : '/preference'
+        router.push({ path: `${base}/bittorrent` }).catch(() => {})
       }
     }
   }
