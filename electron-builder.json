@@ -142,7 +142,6 @@
     "nsis": {
       "artifactName": "LinkCore.Download.Manager-Setup-${version}.${ext}",
       "useZip": false,
-      "solidCompression": false,
       "unicode": true,
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
