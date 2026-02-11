@@ -145,6 +145,7 @@ while [ -h "$SOURCE" ]; do
   [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
+export LD_LIBRARY_PATH="$DIR/resources/engine/lib:$DIR/resources/lib:${LD_LIBRARY_PATH:-}"
 "$DIR"/${binName}.bin --no-sandbox "$@"
 `
   fs.writeFileSync(wrapperPath, wrapperScript)
@@ -156,7 +157,7 @@ DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
   if (fs.existsSync(engineDir)) {
     const files = fs.readdirSync(engineDir)
     files.forEach((file) => {
-      if (file.startsWith('aria2c')) {
+      if (file.startsWith('aria2c') || file.startsWith('fluxcore')) {
         const target = join(engineDir, file)
         try {
           fs.chmodSync(target, 0o755)
