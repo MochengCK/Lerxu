@@ -52,12 +52,10 @@ export default class Engine {
 
     // 获取引擎所在目录作为工作目录
     const engineDir = require('path').dirname(binPath)
-    const spawnEnv = this.buildEngineSpawnEnv(binPath, originBinPath)
     this.instance = spawn(binPath, args, {
       windowsHide: true,
       stdio: enableEngineLogs ? 'pipe' : 'ignore',
-      cwd: engineDir,
-      env: spawnEnv
+      cwd: engineDir
     })
 
     this.instance.on('error', (err) => {
@@ -96,63 +94,9 @@ export default class Engine {
       })
 
       this.instance.stderr.on('data', (data) => {
-        const text = data.toString()
-        logger.error('[Motrix] engine stderr===>', text)
-        if (platform === 'linux' && /error while loading shared libraries/i.test(text)) {
-          logger.error('[Motrix] Linux shared library missing. Bundle required .so files into resources/engine or resources/lib, or install system packages.')
-        }
+        logger.error('[Motrix] engine stderr===>', data.toString())
       })
     }
-  }
-
-  buildEngineSpawnEnv (binPath, originBinPath) {
-    const env = { ...process.env }
-    if (platform !== 'linux') {
-      return env
-    }
-
-    const pathMod = require('path')
-    const libPaths = []
-    const pushPath = (p) => {
-      if (!p) return
-      const full = pathMod.resolve(`${p}`)
-      if (existsSync(full)) {
-        libPaths.push(full)
-      }
-    }
-
-    const binDir = pathMod.dirname(binPath || '')
-    const originDir = pathMod.dirname(originBinPath || '')
-    const packagedEngineDir = getEnginePath(platform, arch)
-    const appResources = process.resourcesPath || ''
-
-    pushPath(binDir)
-    pushPath(pathMod.join(binDir, 'lib'))
-    pushPath(originDir)
-    pushPath(pathMod.join(originDir, 'lib'))
-    pushPath(packagedEngineDir)
-    pushPath(pathMod.join(packagedEngineDir, 'lib'))
-    pushPath(pathMod.join(packagedEngineDir, 'deps'))
-    if (appResources) {
-      pushPath(pathMod.join(appResources, 'engine'))
-      pushPath(pathMod.join(appResources, 'engine', 'lib'))
-      pushPath(pathMod.join(appResources, 'lib'))
-    }
-
-    const existing = `${env.LD_LIBRARY_PATH || ''}`.trim()
-    const existingParts = existing ? existing.split(':').filter(Boolean) : []
-    const merged = [...libPaths, ...existingParts]
-    const unique = []
-    const seen = new Set()
-    merged.forEach(p => {
-      const key = `${p}`.trim()
-      if (!key || seen.has(key)) return
-      seen.add(key)
-      unique.push(key)
-    })
-    env.LD_LIBRARY_PATH = unique.join(':')
-    logger.info('[Motrix] engine LD_LIBRARY_PATH:', env.LD_LIBRARY_PATH)
-    return env
   }
 
   prepareEngineBinary (originBinPath) {

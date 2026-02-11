@@ -77,28 +77,6 @@ jobs:
     - name: Install dependencies
       run: npm install --legacy-peer-deps
 
-    - name: Bundle Linux engine runtime libs
-      if: matrix.platform == 'linux'
-      shell: bash
-      run: |
-        set -euo pipefail
-        BIN="extra/linux/x64/engine/fluxcore"
-        LIB_DIR="extra/linux/x64/engine/lib"
-        mkdir -p "$LIB_DIR"
-        if [[ ! -f "$BIN" ]]; then
-          echo "skip: $BIN not found"
-          exit 0
-        fi
-        ldd "$BIN" | awk '/=> \// {print $3}' | while read -r lib; do
-          name="$(basename "$lib")"
-          case "$name" in
-            libssh2.so.*|libgcrypt.so.*|libgpg-error.so.*|libgmp.so.*|libcares.so.*|libxml2.so.*|libsqlite3.so.*|libz.so.*|libexpat.so.*)
-              cp -Lv "$lib" "$LIB_DIR/$name" || true
-              ;;
-          esac
-        done
-        ls -la "$LIB_DIR" || true
-      
     - name: Build application
       run: npm run build:dir
       env:
