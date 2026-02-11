@@ -30,7 +30,7 @@
 // `electron-builder`
 
 const fs = require('node:fs')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { join } = require('node:path')
 const { chdir } = require('node:process')
 
@@ -53,6 +53,72 @@ const copyDirRecursiveSync = (srcDir, destDir) => {
     if (e.isFile()) {
       fs.copyFileSync(src, dest)
     }
+  }
+}
+
+const copyFileIfNeeded = (src, dest) => {
+  try {
+    if (!src || !dest) return false
+    if (!fs.existsSync(src)) return false
+    if (fs.existsSync(dest)) return true
+    fs.copyFileSync(src, dest)
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
+const bundleLinuxEngineDeps = (dirname, engineDir) => {
+  try {
+    const target = join(engineDir, 'fluxcore')
+    if (!fs.existsSync(target)) {
+      return
+    }
+    const ldd = spawnSync('ldd', [target], {
+      windowsHide: true,
+      encoding: 'utf8',
+      timeout: 5000
+    })
+    if (!ldd || ldd.status !== 0) {
+      console.warn('[afterPackHook] ldd failed for fluxcore, skip bundling Linux engine deps')
+      return
+    }
+    const output = `${ldd.stdout || ''}`
+    const depsDir = join(dirname, 'resources', 'lib')
+    if (!fs.existsSync(depsDir)) {
+      fs.mkdirSync(depsDir, { recursive: true })
+    }
+
+    // Keep bundling narrow to avoid shipping glibc toolchain libs.
+    const allowPrefixes = [
+      'libssh2.so',
+      'libgcrypt.so',
+      'libgpg-error.so',
+      'libgmp.so',
+      'libcares.so',
+      'libxml2.so',
+      'libsqlite3.so',
+      'libz.so',
+      'libexpat.so'
+    ]
+    let copied = 0
+    output.split(/\r?\n/).forEach(line => {
+      const m = line.match(/^\s*([^\s]+)\s+=>\s+([^\s]+)\s+\(/)
+      if (!m) return
+      const soname = `${m[1] || ''}`.trim()
+      const fullPath = `${m[2] || ''}`.trim()
+      if (!soname || !fullPath || fullPath === 'not') return
+      if (!allowPrefixes.some(p => soname.startsWith(p))) return
+      const dest = join(depsDir, soname)
+      if (copyFileIfNeeded(fullPath, dest)) {
+        copied++
+      }
+    })
+    if (copied > 0) {
+      console.log(`[afterPackHook] Bundled ${copied} Linux engine dependencies into resources/lib`)
+    }
+  } catch (e) {
+    console.warn('[afterPackHook] Failed to bundle Linux engine deps:', e && e.message ? e.message : e)
   }
 }
 
@@ -155,13 +221,14 @@ DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
   if (fs.existsSync(engineDir)) {
     const files = fs.readdirSync(engineDir)
     files.forEach((file) => {
-      if (file.startsWith('aria2c')) {
+      if (file.startsWith('aria2c') || file.startsWith('fluxcore')) {
         const target = join(engineDir, file)
         try {
           fs.chmodSync(target, 0o755)
         } catch (e) {}
       }
     })
+    bundleLinuxEngineDeps(dirname, engineDir)
   }
 
   chdir(originalDir)
