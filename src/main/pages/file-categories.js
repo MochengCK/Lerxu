@@ -56,7 +56,8 @@
   }
 
   function t (key) {
-    return translations[key] || key
+    if (!translations) return ''
+    return Object.prototype.hasOwnProperty.call(translations, key) ? translations[key] : ''
   }
 
   function applyTheme (theme) {
@@ -182,7 +183,7 @@
 
     const keys = Object.keys(categories)
     if (keys.length === 0) {
-      categoryList.innerHTML = '<div class="empty-tip">暂无分类规则</div>'
+      categoryList.innerHTML = `<div class="empty-tip">${t('file-categories-empty-tip') || '暂无分类规则'}</div>`
       return
     }
 

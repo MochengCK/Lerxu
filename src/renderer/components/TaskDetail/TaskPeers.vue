@@ -725,11 +725,14 @@
       },
       getPeerFailureSummaryText (peer) {
         const { tcp, utp, udp } = this.getPeerFailureCounts(peer)
+        const tcpLabel = this.$t('task.peer-failure-short-tcp')
+        const utpLabel = this.$t('task.peer-failure-short-utp')
+        const udpLabel = this.$t('task.peer-failure-short-udp')
         const parts = []
-        if (tcp > 0) parts.push(`TCP ${tcp}`)
-        if (utp > 0) parts.push(`UTP ${utp}`)
-        if (udp > 0) parts.push(`UDP ${udp}`)
-        return parts.length > 0 ? parts.join(' ') : 'TCP 0'
+        if (tcp > 0) parts.push(`${tcpLabel} ${tcp}`)
+        if (utp > 0) parts.push(`${utpLabel} ${utp}`)
+        if (udp > 0) parts.push(`${udpLabel} ${udp}`)
+        return parts.length > 0 ? parts.join(' ') : `${tcpLabel} 0`
       },
       getPeerFailureDetailText (peer) {
         const { tcp, utp, udp } = this.getPeerFailureCounts(peer)
@@ -1010,20 +1013,20 @@
 
         // 1. LPD - 本地发现（本地peer）
         if (peer.lsd === 'true' || peer.lsd === true || peer.localPeer === 'true' || peer.localPeer === true) {
-          return 'LSD'
+          return this.$t('task.peer-source-lsd')
         }
 
         // 2. DHT - DHT网络（支持DHT的peer）
         // 注意：aria2中没有直接的DHT来源标记，这里作为预留
         if (peer.fromDHT === 'true' || peer.fromDHT === true) {
-          return 'DHT'
+          return this.$t('task.peer-source-dht')
         }
 
         // 3. PEX - Peer Exchange（支持扩展消息的peer可能来自PEX）
         // 如果是入站连接且支持扩展消息，很可能是PEX
         if (peer.extendedMessaging === 'true' || peer.extendedMessaging === true) {
           if (peer.incoming === 'true' || peer.incoming === true) {
-            return 'PEX'
+            return this.$t('task.peer-source-pex')
           }
         }
 
@@ -1036,29 +1039,29 @@
 
           // 如果有trackerProtocol字段（预留）
           if (peer.trackerProtocol === 'udp' || peer.trackerProtocol === 'UDP') {
-            return 'UDP'
+            return this.$t('task.peer-source-udp')
           }
           if (peer.trackerProtocol === 'http' || peer.trackerProtocol === 'HTTP' ||
             peer.trackerProtocol === 'https' || peer.trackerProtocol === 'HTTPS') {
-            return 'HTTP'
+            return this.$t('task.peer-source-http')
           }
 
           // 根据端口推测（不太准确，但可以作为参考）
           // 6881-6889 是常见的BT端口，可能来自HTTP tracker
           // 其他端口可能来自UDP tracker
           if (port >= 6881 && port <= 6889) {
-            return 'HTTP'
+            return this.$t('task.peer-source-http')
           }
 
           // 默认显示为Tracker（无法确定具体协议）
-          return 'Tracker'
+          return this.$t('task.peer-source-tracker')
         }
 
         // 5. 手动 - 用户手动添加或其他入站连接
-        return this.$t('task.peer-source-manual') || '手动'
+        return this.$t('task.peer-source-manual')
       },
       getPeerProtocol (peer) {
-        if (!peer) return 'TCP'
+        if (!peer) return this.$t('task.peer-protocol-tcp')
 
         // 协议显示规则：
         // TCP: 传统 TCP 连接
@@ -1075,10 +1078,10 @@
         // 未来如果需要支持uTP，可以通过peer对象中的其他字段判断
 
         if (hasExtension) {
-          return 'TCP + EXT'
+          return this.$t('task.peer-protocol-tcp-ext')
         }
 
-        return 'TCP'
+        return this.$t('task.peer-protocol-tcp')
       },
       getPeerStatus (peer) {
         if (!peer) return '-'

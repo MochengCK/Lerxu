@@ -1,6 +1,6 @@
 <template>
   <div :key="task.gid" :class="['task-item', `task-item--${viewMode}`]" v-on:dblclick="onDbClick">
-    <div v-if="showTaskTypeBadge" class="task-type-badge" :class="`task-type-badge--${taskType}`">
+    <div v-if="showTaskTypeBadge" class="task-type-badge" :class="[`task-type-badge--${taskType}`, { 'is-magnet-en': taskType === 'magnet' && taskTypeLabel === 'Magnet' }]">
       {{ taskTypeLabel }}
     </div>
     <div class="task-name">
@@ -318,6 +318,10 @@
     transform: translateY(-55%);
   }
 
+  &.task-type-badge--http {
+    transform: translateY(-55%);
+  }
+
   &.task-type-badge--https {
     transform: translateY(-55%);
   }
@@ -325,6 +329,11 @@
   &.task-type-badge--magnet {
     font-size: 88px;
     height: 88px;
+    transform: translateY(-55%);
+
+    &.is-magnet-en {
+      font-size: 96px;
+    }
   }
 }
 

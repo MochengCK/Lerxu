@@ -21,6 +21,7 @@ export default {
   'file-categories-settings-title': '文件分类设置',
   'file-categories': '文件分类',
   'file-categories-tips': '自定义文件自动分类规则',
+  'file-categories-empty-tip': '暂无分类规则',
   'file-categories-folder-name': '文件夹名称',
   'file-categories-extensions': '扩展名（如：jpg,png,gif）',
   'file-categories-remove': '删除',

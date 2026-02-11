@@ -1,6 +1,6 @@
 <template>
   <el-tag :effect="theme" class="tag-task-status" :type="type">
-    {{ status && status.toUpperCase() }}
+    {{ statusText }}
   </el-tag>
 </template>
 
@@ -39,6 +39,16 @@
       },
       color () {
         return colors[this.status]
+      },
+      statusText () {
+        const raw = `${this.status || ''}`.trim()
+        if (!raw) return ''
+        const key = `task.status-${raw.toLowerCase()}`
+        const translated = this.$t(key)
+        if (translated && translated !== key) {
+          return translated
+        }
+        return raw.toUpperCase()
       }
     }
   }

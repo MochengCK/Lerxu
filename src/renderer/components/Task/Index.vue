@@ -4,8 +4,15 @@
     direction="horizontal"
   >
     <template v-if="isThreeColumn">
-      <mo-aside v-if="showMainAside" :class="{ 'is-auto-hide-aside': autoHideAside && !isThreeColumn }" />
-      <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav" :class="{ 'is-auto-hide-subnav': autoHideSubnav && !isThreeColumn }">
+      <el-aside
+        v-if="showThreeColumnSubnav"
+        width="220px"
+        class="subnav"
+        :class="{ 'is-auto-hide-subnav': autoHideSubnav }"
+        style="background: transparent"
+        @mouseenter.native="onSubnavEnter"
+        @mouseleave.native="onSubnavLeave"
+      >
         <mo-task-subnav :current="status" />
       </el-aside>
     </template>
@@ -71,11 +78,12 @@
     </el-container>
 
     <div
-      v-if="subnavMode === 'floating'"
+      v-if="subnavMode === 'floating' || (isThreeColumn && autoHideSubnav)"
+      v-show="!isSubnavHovered"
       class="right-floating-panel"
-      :class="{ 'is-auto-hide-subnav': autoHideSubnav && !isThreeColumn && !datePickerVisible, 'is-proximity-hovered': isSubnavProximityHovered }"
+      :class="{ 'is-auto-hide-subnav': autoHideSubnav && !datePickerVisible, 'is-proximity-hovered': isSubnavProximityHovered }"
     >
-      <template v-if="showSmallScreenNav">
+      <template v-if="showSmallScreenNav || (isThreeColumn && autoHideSubnav)">
         <div class="subnav-small-screen subnav-right">
           <ul class="menu small-menu">
             <li
@@ -128,6 +136,19 @@
                 :open-delay="500"
               >
                 <mo-icon name="task-stop" width="20" height="20" />
+              </el-tooltip>
+            </li>
+            <li
+              v-if="isThreeColumn && autoHideSubnav"
+              @click="openPreference"
+            >
+              <el-tooltip
+                effect="dark"
+                :content="$t('subnav.preferences')"
+                placement="left"
+                :open-delay="500"
+              >
+                <mo-icon name="menu-preference" width="20" height="20" />
               </el-tooltip>
             </li>
           </ul>
@@ -198,6 +219,7 @@
   import '@/components/Icons/task-pause'
   import '@/components/Icons/task-stop'
   import '@/components/Icons/date-filter'
+  import '@/components/Icons/menu-preference'
   import {
     getTaskUri,
     parseHeader
@@ -279,7 +301,7 @@
         return this.showWindowActions && !this.isTitlebarCompact
       },
       shouldShowTitleBarText () {
-        return this.shouldMoveTitleToTitlebar && this.subnavMode !== 'title'
+        return !this.isThreeColumn && this.shouldMoveTitleToTitlebar && this.subnavMode !== 'title'
       },
       isTitlebarCompact () {
         const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
@@ -389,6 +411,7 @@
       title: 'updateTitleBarText',
       showWindowActions: 'updateTitleBarText',
       subnavMode: 'updateTitleBarText',
+      isThreeColumn: 'updateTitleBarText',
       blockCategoryHoverOpen (val) {
         if (val) {
           this.forceCloseCategorySelect()
@@ -1030,6 +1053,21 @@
         this.windowWidth = window.innerWidth || 0
         this.updateTitleBarText()
       },
+      onSubnavEnter () {
+        if (this.subnavHoverTimer) {
+          clearTimeout(this.subnavHoverTimer)
+          this.subnavHoverTimer = null
+        }
+        this.isSubnavHovered = true
+      },
+      onSubnavLeave () {
+        if (this.subnavHoverTimer) {
+          clearTimeout(this.subnavHoverTimer)
+        }
+        this.subnavHoverTimer = setTimeout(() => {
+          this.isSubnavHovered = false
+        }, 400)
+      },
       updateSubnavProximityHover (event) {
         if (!this.autoHideSubnav || this.datePickerVisible || this.subnavMode !== 'floating') {
           if (this.isSubnavProximityHovered) {
@@ -1070,6 +1108,9 @@
       handleShowTaskInfo (payload) {
         const { task } = payload
         this.$store.dispatch('task/showTaskDetail', task)
+      },
+      openPreference () {
+        this.$electron.ipcRenderer.send('open-preference-window')
       }
     },
     created () {
