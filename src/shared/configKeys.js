@@ -17,6 +17,7 @@ const userKeys = [
   'hide-app-menu',
   'history-directories',
   'keep-seeding',
+  'stop-seeding-action',
   'keep-window-state',
   'last-check-update-time',
   'last-sync-tracker-time',
@@ -66,6 +67,9 @@ const userKeys = [
   'extension-shift-toggle-enabled',
   'subnav-mode',
   'sidebar-layout-mode',
+  'auto-hide-aside',
+  'auto-hide-subnav',
+  'auto-hide-floating-bar',
   'task-plan-type',
   'task-plan-time',
   'task-plan-action',
@@ -80,10 +84,13 @@ const userKeys = [
   'custom-security-scan-path',
   'task-detail-default-transparent',
   'task-detail-frosted-blur',
+  'date-filter-frosted',
+  'date-filter-frosted-blur',
   'task-view-mode',
   'task-filter-date',
   'task-created-at-map',
   'bt-level-up-notification',
+  'bt-ip-ban-list',
   'show-task-type-badge'
 ]
 

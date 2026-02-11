@@ -42,8 +42,10 @@ const state = {
   addTaskUrl: '',
   addTaskTorrents: [],
   addTaskOptions: {},
+  taskPlanVisible: false,
   progress: 0,
-  isCheckingUpdate: false
+  isCheckingUpdate: false,
+  titleBarText: ''
 }
 
 const getters = {
@@ -97,8 +99,12 @@ const mutations = {
   },
   UPDATE_ADD_TASK_OPTIONS (state, options) {
     state.addTaskOptions = {
+      ...state.addTaskOptions,
       ...options
     }
+  },
+  UPDATE_TASK_PLAN_VISIBLE (state, visible) {
+    state.taskPlanVisible = visible
   },
   UPDATE_INTERVAL (state, millisecond) {
     let interval = millisecond
@@ -129,6 +135,9 @@ const mutations = {
   UPDATE_CHECKING_UPDATE (state, isChecking) {
     state.isCheckingUpdate = isChecking
   },
+  UPDATE_TITLE_BAR_TEXT (state, text) {
+    state.titleBarText = text || ''
+  },
   UPDATE_ENGINE_LIST (state, engineListData) {
     state.engineList = {
       engines: engineListData.engines || [],
@@ -149,6 +158,9 @@ const actions = {
   },
   updateCurrentPage ({ commit }, page) {
     commit('UPDATE_CURRENT_PAGE', page)
+  },
+  updateTitleBarText ({ commit }, text) {
+    commit('UPDATE_TITLE_BAR_TEXT', text)
   },
   fetchEngineInfo ({ commit }) {
     return new Promise((resolve, reject) => {

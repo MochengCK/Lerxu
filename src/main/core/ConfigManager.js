@@ -145,6 +145,7 @@ export default class ConfigManager {
         'hide-app-menu': false,
         'history-directories': [],
         'keep-seeding': false,
+        'stop-seeding-action': 'pause',
         'keep-window-state': false,
         'last-check-update-time': 0,
         'last-sync-tracker-time': 0,

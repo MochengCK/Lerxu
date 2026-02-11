@@ -120,6 +120,8 @@
         </el-table-column>
         <el-table-column
           :label="$t('task.task-peer-status')"
+          prop="status"
+          sortable="custom"
           min-width="120">
           <template slot-scope="scope">
             <template v-if="scope.row.isGroup">
@@ -195,8 +197,6 @@
         </el-table-column>
       </el-table>
     </div>
-    <div class="mo-peers-bottom-bar"></div>
-
     <!-- 右键菜单 -->
     <div
       v-show="contextMenuVisible"
@@ -396,7 +396,13 @@
         const connected = Array.isArray(peers.connected) ? peers.connected : []
         const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
         const banned = Array.isArray(peers.banned) ? peers.banned : []
-        const disconnected = this.getMergedDisconnectedPeers(peers)
+        let disconnected = this.getMergedDisconnectedPeers(peers)
+
+        // 限制“已断开”分类只显示最新100行
+        disconnected.sort((a, b) => (b.lastDisconnectedAt || 0) - (a.lastDisconnectedAt || 0))
+        if (disconnected.length > 100) {
+          disconnected = disconnected.slice(0, 100)
+        }
 
         connected.forEach(p => { p.status = 'connected' })
         attempting.forEach(p => { p.status = 'attempting' })
@@ -471,6 +477,14 @@
             } else if (prop === 'peerId') {
               valA = peerIdParser(valA)
               valB = peerIdParser(valB)
+              return isAsc ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN')
+            } else if (prop === 'status') {
+              const getText = (p) => {
+                if (p.status === 'disconnected') return this.getPeerFailureSummaryText(p)
+                return this.getPeerStatus(p)
+              }
+              valA = getText(a)
+              valB = getText(b)
               return isAsc ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN')
             }
 
@@ -1294,26 +1308,45 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  .mo-table-wrapper {
+    border: 1px solid #dcdfe6;
+    border-radius: 4px;
+    box-sizing: border-box;
+  }
 }
 .mo-table-wrapper {
   flex: 1;
   overflow: hidden;
   min-height: 200px;
   position: relative;
-}
-.mo-peers-bottom-bar {
-  height: 1px;
-  background-color: #dcdfe6;
-  margin-top: -1px;
+  border-radius: 4px;
 }
 .el-table.mo-peer-table {
   height: 100% !important;
   border: none !important;
-  &::before {
+  border-radius: 4px;
+  overflow: hidden;
+  &::before, &::after {
     display: none !important;
   }
-  th.el-table__cell {
+  .el-table--border::after, .el-table--group::after {
+    display: none !important;
+  }
+  // 修复滚动条出现时表头错位问题（针对自定义滚动条优化）
+  th.gutter, colgroup.gutter {
+    display: none !important;
+    width: 0 !important;
+  }
+  .el-table__header colgroup col[name="gutter"] {
+    display: none !important;
+    width: 0 !important;
+  }
+  // 修复底部边框重复导致粗细不一
+  .el-table__body tr:last-child td {
     border-bottom: none !important;
+  }
+  th.el-table__cell {
+    border-bottom: 1px solid #ebeef5 !important;
   }
   .cell {
     padding-left: 10px !important;
@@ -1353,6 +1386,9 @@
   .mo-peer-group-row {
     background-color: #f5f7fa !important;
     cursor: pointer;
+    position: sticky;
+    top: 0;
+    z-index: 10;
   }
   // 严格强制单行高度并修复对齐
   .el-table__row {
@@ -1493,10 +1529,7 @@
 // 暗色主题适配 - 与 el-table 保持一致
 .theme-dark .mo-best-peer {
   background: transparent;
-  border-color: #404040;
-}
-.theme-dark .mo-peers-bottom-bar {
-  background-color: #4c4d4f;
+  border-color: #4c4d4f;
 }
 .theme-dark .best-peer-label {
   color: #c0c4cc;
@@ -1508,7 +1541,7 @@
   color: #c0c4cc;
 }
 .theme-dark .mo-peer-group-row {
-  background-color: transparent !important;
+  background-color: #2b2b2b !important;
 }
 .theme-dark .mo-peer-group-label {
   color: #c0c4cc;
@@ -1530,7 +1563,11 @@
     background-color: #4c4d4f;
   }
 }
+.theme-dark .mo-task-peers .mo-table-wrapper {
+  border-color: #4c4d4f;
+}
 .theme-dark .mo-peer-table {
+  border-color: transparent !important;
   background-color: transparent;
   .el-table__row {
     background-color: transparent;
@@ -1539,7 +1576,7 @@
     background-color: rgba(255, 255, 255, 0.05) !important;
   }
   .mo-peer-group-row {
-    background-color: transparent !important;
+    background-color: #2b2b2b !important;
     color: #c0c4cc;
     .mo-peer-group-label {
       color: #c0c4cc;

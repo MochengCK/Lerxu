@@ -18,7 +18,7 @@
       "**/node_modules/node-fetch/**/*",
       "**/node_modules/ws/**/*"
     ],
-    "compression": "maximum",
+    "compression": "normal",
     "directories": {
       "output": "release"
     },
@@ -141,6 +141,8 @@
     },
     "nsis": {
       "artifactName": "LinkCore.Download.Manager-Setup-${version}.${ext}",
+      "useZip": true,
+      "unicode": true,
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,

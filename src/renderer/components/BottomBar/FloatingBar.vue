@@ -412,6 +412,27 @@
     transform: translateX(-50%);
     z-index: 200;
     pointer-events: none;
+    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+
+    &.is-auto-hide-floating-bar {
+      transform: translateX(-50%) translateY(80px);
+
+      &::before {
+        content: '';
+        position: absolute;
+        top: -100px;
+        left: 0;
+        width: 100%;
+        height: 100px;
+        cursor: pointer;
+        pointer-events: auto;
+      }
+    }
+
+    &.is-auto-hide-floating-bar:hover,
+    &.is-auto-hide-floating-bar.is-hovered {
+      transform: translateX(-50%) translateY(0);
+    }
 
     &.is-always-show {
       .floating-bar-inner {
@@ -507,15 +528,26 @@
       border: 1px solid $--speedometer-border-color;
       background-color: $--task-item-action-verify-background;
       padding: 0;
-      pointer-events: none;
+      pointer-events: auto;
       cursor: pointer;
       z-index: 2;
       opacity: 0;
-      transition: width 0.15s ease-out, transform 0.15s ease-out, opacity 0.15s ease-out, background-color 0.15s;
+      transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1), transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s;
       transition-delay: 0s;
       overflow: hidden;
       color: $--task-item-action-color;
       box-sizing: border-box;
+
+      &::before {
+        content: '';
+        position: absolute;
+        top: -20px;
+        left: 0;
+        width: 100px;
+        height: 80px;
+        background: transparent;
+        z-index: -1;
+      }
 
       i {
         position: absolute;
@@ -538,7 +570,7 @@
         color: inherit;
         font-size: 12px;
         opacity: 0;
-        transition: opacity 0.1s linear 0s;
+        transition: opacity 0.3s ease 0.1s;
       }
       &.is-expanded {
         width: 220px;
@@ -546,12 +578,12 @@
       }
       &.is-expanded .floating-bar-search-input {
         opacity: 1;
-        transition: opacity 0.2s ease-out 0s;
+        transition: opacity 0.3s ease 0.1s;
       }
 
-      &.is-expanded {
+      &.is-expanded,
+      &:hover {
         opacity: 1;
-        pointer-events: auto;
         transform: translateY(-50%) translateX(35px);
       }
 
@@ -561,11 +593,16 @@
       }
     }
 
-    &:hover .floating-bar-search {
+    &:hover .floating-bar-search,
+    &.is-hovered .floating-bar-search {
       opacity: 1;
-      pointer-events: auto;
       transform: translateY(-50%) translateX(35px);
-      transition-delay: 0s;
+    }
+
+    &:hover .floating-bar-sort-button,
+    &.is-hovered .floating-bar-sort-button {
+      opacity: 1;
+      transform: translateY(-50%) translateX(-35px);
     }
 
     .floating-bar-sort-button {
@@ -580,7 +617,7 @@
       background-color: $--task-item-action-verify-background;
       cursor: pointer;
       padding: 0;
-      transition: transform 0.15s ease-out, opacity 0.15s ease-out, background-color 0.15s;
+      transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s;
       transition-delay: 0s;
       opacity: 0;
       pointer-events: none;
@@ -702,14 +739,15 @@
       }
     }
 
-    &:hover .floating-bar-sort-button {
+    &:hover .floating-bar-sort-button,
+    &.is-hovered .floating-bar-sort-button {
       opacity: 1;
       pointer-events: auto;
       transform: translateY(-50%) translateX(-35px);
-      transition-delay: 0s;
     }
 
-    &:hover .floating-bar-inner {
+    &:hover .floating-bar-inner,
+    &.is-hovered .floating-bar-inner {
       opacity: 1;
       border-color: $--speedometer-hover-border-color;
     }

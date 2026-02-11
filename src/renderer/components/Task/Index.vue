@@ -4,8 +4,8 @@
     direction="horizontal"
   >
     <template v-if="isThreeColumn">
-      <mo-aside v-if="showMainAside" />
-      <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav">
+      <mo-aside v-if="showMainAside" :class="{ 'is-auto-hide-aside': autoHideAside && !isThreeColumn }" />
+      <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav" :class="{ 'is-auto-hide-subnav': autoHideSubnav && !isThreeColumn }">
         <mo-task-subnav :current="status" />
       </el-aside>
     </template>
@@ -16,35 +16,34 @@
     >
       <el-header
         class="panel-header"
-        height="84"
+        :class="{ 'is-collapsed': shouldMoveTitleToTitlebar }"
+        :height="shouldMoveTitleToTitlebar ? '0' : '84'"
       >
         <h4
-          v-if="subnavMode !== 'title'"
+          v-if="subnavMode !== 'title' && !shouldMoveTitleToTitlebar"
           class="task-title hidden-xs-only"
         >
           {{ title }}
         </h4>
         <h4
-          v-if="subnavMode === 'floating'"
+          v-if="subnavMode === 'floating' && !shouldMoveTitleToTitlebar"
           class="task-title hidden-sm-and-up"
         >
           {{ title }}
         </h4>
         <mo-subnav-switcher
           v-if="subnavMode === 'title'"
+          :class="['task-subnav-switch', { 'task-subnav-switch--titlebar': shouldMoveTitleToTitlebar }]"
           :title="title"
           :subnavs="subnavs"
         />
         <div
-          class="task-category-select"
-          @mouseenter="onCategoryMouseEnter"
-          @mouseleave="onCategoryMouseLeave"
-          @mousedown.prevent
-          @selectstart.prevent
+          :class="['task-category-select', { 'task-category-select--titlebar': shouldMoveTitleToTitlebar }]"
         >
           <el-select
             ref="categorySelect"
             v-model="categoryFilter"
+            :disabled="blockCategoryHoverOpen"
             size="mini"
             :placeholder="$t('task.category-all')"
             popper-class="task-category-select-dropdown"
@@ -64,81 +63,82 @@
             <el-option :label="$t('task.category-documents')" value="documents" />
           </el-select>
         </div>
-        <mo-task-actions />
+        <mo-task-actions :showInTitlebar="shouldMoveActionsToTitlebar" />
       </el-header>
       <el-main class="panel-content" @contextmenu.native="onTaskPageContextMenu">
-        <mo-task-list :category="categoryFilter" :keyword="taskSearchQuery" />
+        <mo-task-list :category="categoryFilter" :keyword="taskSearchQuery" :collapsed="shouldMoveTitleToTitlebar" />
       </el-main>
     </el-container>
 
-    <template v-if="showSmallScreenNav">
-      <div
-        v-if="subnavMode === 'floating'"
-        class="subnav-small-screen subnav-right"
-      >
-        <ul class="menu small-menu">
-          <li
-            @click="navStatus('all')"
-            :class="{ active: status === 'all' || status === 'date' }"
-          >
-            <el-tooltip
-              effect="dark"
-              :content="$t('task.all')"
-              placement="left"
-              :open-delay="500"
+    <div
+      v-if="subnavMode === 'floating'"
+      class="right-floating-panel"
+      :class="{ 'is-auto-hide-subnav': autoHideSubnav && !isThreeColumn && !datePickerVisible, 'is-proximity-hovered': isSubnavProximityHovered }"
+    >
+      <template v-if="showSmallScreenNav">
+        <div class="subnav-small-screen subnav-right">
+          <ul class="menu small-menu">
+            <li
+              @click="navStatus('all')"
+              :class="{ active: status === 'all' || status === 'date' }"
             >
-              <mo-icon name="menu-task" width="20" height="20" />
-            </el-tooltip>
-          </li>
-          <li
-            @click="navStatus('active')"
-            :class="{ active: status === 'active' }"
-          >
-            <el-tooltip
-              effect="dark"
-              :content="$t('task.active')"
-              placement="left"
-              :open-delay="500"
+              <el-tooltip
+                effect="dark"
+                :content="$t('task.all')"
+                placement="left"
+                :open-delay="500"
+              >
+                <mo-icon name="menu-task" width="20" height="20" />
+              </el-tooltip>
+            </li>
+            <li
+              @click="navStatus('active')"
+              :class="{ active: status === 'active' }"
             >
-              <mo-icon name="task-start" width="20" height="20" />
-            </el-tooltip>
-          </li>
-          <li
-            @click="navStatus('waiting')"
-            :class="{ active: status === 'waiting' }"
-          >
-            <el-tooltip
-              effect="dark"
-              :content="$t('task.waiting')"
-              placement="left"
-              :open-delay="500"
+              <el-tooltip
+                effect="dark"
+                :content="$t('task.active')"
+                placement="left"
+                :open-delay="500"
+              >
+                <mo-icon name="task-start" width="20" height="20" />
+              </el-tooltip>
+            </li>
+            <li
+              @click="navStatus('waiting')"
+              :class="{ active: status === 'waiting' }"
             >
-              <mo-icon name="task-pause" width="20" height="20" />
-            </el-tooltip>
-          </li>
-          <li
-            @click="navStatus('stopped')"
-            :class="{ active: status === 'stopped' }"
-          >
-            <el-tooltip
-              effect="dark"
-              :content="$t('task.stopped')"
-              placement="left"
-              :open-delay="500"
+              <el-tooltip
+                effect="dark"
+                :content="$t('task.waiting')"
+                placement="left"
+                :open-delay="500"
+              >
+                <mo-icon name="task-pause" width="20" height="20" />
+              </el-tooltip>
+            </li>
+            <li
+              @click="navStatus('stopped')"
+              :class="{ active: status === 'stopped' }"
             >
-              <mo-icon name="task-stop" width="20" height="20" />
-            </el-tooltip>
-          </li>
-        </ul>
-      </div>
-      <div v-if="subnavMode === 'floating'" class="subnav-divider"></div>
-    </template>
+              <el-tooltip
+                effect="dark"
+                :content="$t('task.stopped')"
+                placement="left"
+                :open-delay="500"
+              >
+                <mo-icon name="task-stop" width="20" height="20" />
+              </el-tooltip>
+            </li>
+          </ul>
+        </div>
+        <div class="subnav-divider"></div>
+      </template>
 
-    <template v-if="subnavMode === 'floating'">
       <div
         ref="dateFilterBtn"
         class="date-filter-standalone"
-        :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible, 'date-filter-standalone--three-column': isThreeColumn }"
+        :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible, 'date-filter-standalone--three-column': isThreeColumn, 'is-frosted': dateFilterFrosted }"
         @click.stop="onDateFilterClick"
         @mouseenter="onDateFilterHover"
         @mouseleave="onDateFilterLeave"
@@ -164,22 +164,24 @@
           <mo-icon name="date-filter" width="24" height="24" />
         </div>
       </div>
-      <mo-custom-date-picker
-        v-if="datePickerVisible"
-        v-model="selectedDate"
-        :task-counts="taskDateCounts"
-        :trigger-rect="dateFilterBtnRect"
-        @change="onDateChange"
-        @hover="onDateHover"
-        @clear="onDateClear"
-        @close="closeDatePicker"
-      />
-    </template>
+    </div>
+    <mo-custom-date-picker
+      v-if="subnavMode === 'floating' && datePickerVisible"
+      v-model="selectedDate"
+      :frosted="dateFilterFrosted"
+      :task-counts="taskDateCounts"
+      :trigger-rect="dateFilterBtnRect"
+      @change="onDateChange"
+      @hover="onDateHover"
+      @clear="onDateClear"
+      @close="closeDatePicker"
+    />
   </el-container>
 </template>
 
 <script>
   import { dialog, Menu, getCurrentWindow } from '@electron/remote'
+  import is from 'electron-is'
   import { mapState } from 'vuex'
 
   import { commands } from '@/components/CommandManager/instance'
@@ -239,6 +241,7 @@
         showDateText: false,
         dateFilterBtnRect: {}, // 日期筛选按钮的位置信息
         hoverDate: null, // 悬停的日期
+        isSubnavProximityHovered: false,
         windowWidth: 0
       }
     },
@@ -248,17 +251,43 @@
         selectedGidList: state => state.selectedGidList,
         selectedGidListCount: state => state.selectedGidList.length,
         taskSearchKeyword: state => state.searchKeyword,
-        storeFilterDate: state => state.filterDate
+        storeFilterDate: state => state.filterDate,
+        taskDetailVisible: state => state.taskDetailVisible
       }),
       ...mapState('app', {
-        systemTheme: state => state.systemTheme
+        systemTheme: state => state.systemTheme,
+        addTaskVisible: state => state.addTaskVisible,
+        taskPlanVisible: state => state.taskPlanVisible
       }),
       ...mapState('preference', {
         noConfirmBeforeDelete: state => state.config.noConfirmBeforeDeleteTask,
         subnavMode: state => state.config.subnavMode || 'floating',
         sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating',
-        prefTheme: state => state.config.theme
+        prefTheme: state => state.config.theme,
+        dateFilterFrosted: state => state.config.dateFilterFrosted,
+        autoHideAside: state => state.config.autoHideAside,
+        autoHideSubnav: state => state.config.autoHideSubnav,
+        hideAppMenu: state => state.config.hideAppMenu
       }),
+      showWindowActions () {
+        return (is.windows() || is.linux()) && !!this.hideAppMenu
+      },
+      shouldMoveActionsToTitlebar () {
+        return this.shouldMoveTitleToTitlebar
+      },
+      shouldMoveTitleToTitlebar () {
+        return this.showWindowActions && !this.isTitlebarCompact
+      },
+      shouldShowTitleBarText () {
+        return this.shouldMoveTitleToTitlebar && this.subnavMode !== 'title'
+      },
+      isTitlebarCompact () {
+        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
+        if (!width) {
+          return false
+        }
+        return width < 780
+      },
       isSmallWindow () {
         const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
         if (!width) {
@@ -350,10 +379,21 @@
           return this.hoverDate
         }
         return this.currentDateText
+      },
+      blockCategoryHoverOpen () {
+        return !!(this.taskDetailVisible || this.addTaskVisible || this.taskPlanVisible)
       }
     },
     watch: {
       status: 'onStatusChange',
+      title: 'updateTitleBarText',
+      showWindowActions: 'updateTitleBarText',
+      subnavMode: 'updateTitleBarText',
+      blockCategoryHoverOpen (val) {
+        if (val) {
+          this.forceCloseCategorySelect()
+        }
+      },
       storeFilterDate: {
         immediate: true,
         handler (val) {
@@ -362,6 +402,10 @@
       }
     },
     methods: {
+      updateTitleBarText () {
+        const text = this.shouldShowTitleBarText ? this.title : ''
+        this.$store.dispatch('app/updateTitleBarText', text)
+      },
       onTaskPageContextMenu (event) {
         const target = event && event.target
         if (!target || typeof target.closest !== 'function') {
@@ -414,22 +458,37 @@
           y: event.y != null ? event.y : event.clientY
         })
       },
-      onCategoryMouseEnter () {
-        this.clearCategoryHoverCloseTimer()
-      },
       onCategoryMouseLeave () {
         this.scheduleCloseCategorySelect()
       },
+      forceCloseCategorySelect () {
+        this.clearCategoryHoverCloseTimer()
+        const select = this.$refs.categorySelect
+        if (select && select.visible) {
+          select.visible = false
+        }
+        this.unbindCategoryPopperEvents()
+        this.blurCategorySelect()
+      },
       openCategorySelect () {
+        if (this.blockCategoryHoverOpen) {
+          this.forceCloseCategorySelect()
+          return
+        }
         const select = this.$refs.categorySelect
         if (!select || select.visible) {
           return
         }
 
+        this.clearCategoryHoverCloseTimer()
+
         // 清除文本选择
         this.clearTextSelection()
 
-        select.toggleMenu()
+        // 确保使用 visible 状态来切换，而不是简单的 toggleMenu
+        if (!select.visible) {
+          select.visible = true
+        }
 
         this.$nextTick(() => {
           this.bindCategoryPopperEvents()
@@ -459,7 +518,9 @@
             return
           }
 
-          select.toggleMenu()
+          if (select.visible) {
+            select.visible = false
+          }
           this.blurCategorySelect()
         }, 120)
       },
@@ -488,6 +549,10 @@
         }, 10)
       },
       onCategoryVisibleChange (visible) {
+        if (visible && this.blockCategoryHoverOpen) {
+          this.forceCloseCategorySelect()
+          return
+        }
         if (visible) {
           this.$nextTick(() => {
             this.bindCategoryPopperEvents()
@@ -963,6 +1028,44 @@
           return
         }
         this.windowWidth = window.innerWidth || 0
+        this.updateTitleBarText()
+      },
+      updateSubnavProximityHover (event) {
+        if (!this.autoHideSubnav || this.datePickerVisible || this.subnavMode !== 'floating') {
+          if (this.isSubnavProximityHovered) {
+            this.isSubnavProximityHovered = false
+          }
+          return
+        }
+        if (!event) {
+          return
+        }
+        const width = typeof window !== 'undefined' ? window.innerWidth : 0
+        const height = typeof window !== 'undefined' ? window.innerHeight : 0
+        if (!width || !height) {
+          return
+        }
+        const centerY = height / 2
+        const top = centerY - 120
+        const bottom = centerY + 180
+        const withinY = event.clientY >= top && event.clientY <= bottom
+        const withinX = event.clientX >= width - 100
+        const next = withinX && withinY
+        if (next !== this.isSubnavProximityHovered) {
+          this.isSubnavProximityHovered = next
+        }
+      },
+      handleWindowMouseMoveForSubnav (event) {
+        this._subnavMouseEvent = event
+        if (this._subnavMouseRaf) {
+          return
+        }
+        this._subnavMouseRaf = window.requestAnimationFrame(() => {
+          this._subnavMouseRaf = null
+          const lastEvent = this._subnavMouseEvent
+          this._subnavMouseEvent = null
+          this.updateSubnavProximityHover(lastEvent)
+        })
       },
       handleShowTaskInfo (payload) {
         const { task } = payload
@@ -979,6 +1082,10 @@
           this.handleWindowResize()
         }
         window.addEventListener('resize', this._handleWindowResize)
+        this._handleWindowMouseMoveForSubnav = (event) => {
+          this.handleWindowMouseMoveForSubnav(event)
+        }
+        window.addEventListener('mousemove', this._handleWindowMouseMoveForSubnav)
       }
       commands.on('pause-task', this.handlePauseTask)
       commands.on('resume-task', this.handleResumeTask)
@@ -991,12 +1098,22 @@
       commands.on('copy-task-link', this.handleCopyTaskLink)
       commands.on('show-task-info', this.handleShowTaskInfo)
       commands.on('task:focus-search', this.handleFocusTaskSearch)
+      this.updateTitleBarText()
     },
     beforeDestroy () {
       if (typeof window !== 'undefined' && this._handleWindowResize) {
         window.removeEventListener('resize', this._handleWindowResize)
         this._handleWindowResize = null
       }
+      if (typeof window !== 'undefined' && this._handleWindowMouseMoveForSubnav) {
+        window.removeEventListener('mousemove', this._handleWindowMouseMoveForSubnav)
+        this._handleWindowMouseMoveForSubnav = null
+      }
+      if (this._subnavMouseRaf) {
+        window.cancelAnimationFrame(this._subnavMouseRaf)
+        this._subnavMouseRaf = null
+      }
+      this.$store.dispatch('app/updateTitleBarText', '')
     },
     destroyed () {
       this.clearCategoryHoverCloseTimer()
@@ -1017,6 +1134,21 @@
 </script>
 
 <style lang="scss">
+.panel-header {
+  position: relative;
+  z-index: 100;
+  transition: all 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+.panel-header.is-collapsed {
+  padding: 0 !important;
+  min-height: 0 !important;
+  overflow: visible;
+  z-index: 6000;
+  border-bottom: none !important;
+  margin: 0 !important;
+}
+
 .task-category-select {
   position: absolute;
   top: 44px;
@@ -1029,6 +1161,80 @@
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+  transition: all 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.task-category-select.task-category-select--titlebar {
+  position: fixed;
+  top: 7px;
+  height: auto;
+  align-items: center;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  z-index: 10000;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  transition: opacity 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.has-custom-titlebar .task-category-select.task-category-select--titlebar {
+  justify-content: center;
+  padding-left: 0;
+}
+
+.is-task-detail-open .task-category-select.task-category-select--titlebar,
+.is-add-task-open .task-category-select.task-category-select--titlebar,
+.is-task-plan-open .task-category-select.task-category-select--titlebar {
+  z-index: 1999;
+  opacity: 0;
+  pointer-events: none;
+  transition: none;
+}
+.is-task-detail-open .task-category-select.task-category-select--titlebar .el-select,
+.is-add-task-open .task-category-select.task-category-select--titlebar .el-select,
+.is-task-plan-open .task-category-select.task-category-select--titlebar .el-select {
+  pointer-events: none !important;
+}
+
+.is-task-detail-open .task-subnav-switch.task-subnav-switch--titlebar,
+.is-add-task-open .task-subnav-switch.task-subnav-switch--titlebar,
+.is-task-plan-open .task-subnav-switch.task-subnav-switch--titlebar {
+  z-index: 1999;
+}
+
+.task-subnav-switch {
+  display: block;
+  margin: 0;
+  transition: all 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+.task-subnav-switch:not(.task-subnav-switch--titlebar) {
+  margin-left: -6px;
+}
+
+.task-subnav-switch.task-subnav-switch--titlebar {
+  position: fixed;
+  top: 9px;
+  left: 16px;
+  transform: none;
+  z-index: 10000;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  transition: opacity 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.has-custom-titlebar .task-subnav-switch.task-subnav-switch--titlebar {
+  left: 16px;
+}
+
+@media only screen and (min-width: 568px) {
+  .task-subnav-switch.task-subnav-switch--titlebar {
+    left: 36px;
+  }
+  .has-custom-titlebar .task-subnav-switch.task-subnav-switch--titlebar {
+    left: 36px;
+  }
+  .has-custom-titlebar .task-category-select.task-category-select--titlebar {
+    padding-left: 0;
+  }
 }
 
 .task-category-select .el-select {
@@ -1036,6 +1242,10 @@
   pointer-events: auto;
   opacity: 0.75;
   transition: opacity 0.2s ease;
+}
+
+.task-category-select.task-category-select--titlebar .el-select {
+  -webkit-app-region: no-drag;
 }
 
 .task-category-select .el-select .el-input__inner {
@@ -1107,6 +1317,84 @@
   opacity: 0.5;
   transition: opacity 0.3s ease;
   padding: 8px;
+  pointer-events: auto;
+}
+
+/* 右侧悬浮面板容器 */
+.right-floating-panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  z-index: 2000;
+  pointer-events: auto;
+}
+
+.is-add-task-open .right-floating-panel,
+.is-task-plan-open .right-floating-panel {
+  z-index: 1999;
+}
+
+/* 针对子元素的独立滑入滑出逻辑，确保不覆盖原有的 transform */
+
+/* 1. 子菜单 */
+.right-floating-panel.is-auto-hide-subnav .subnav-small-screen.subnav-right {
+  transform: translateY(-50%) translateX(120px);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
+}
+
+.right-floating-panel.is-auto-hide-subnav:hover .subnav-small-screen.subnav-right,
+.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .subnav-small-screen.subnav-right {
+  transform: translateY(-50%) translateX(0);
+}
+
+/* 2. 分隔线 */
+.right-floating-panel.is-auto-hide-subnav .subnav-divider {
+  transform: translateX(120px);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
+}
+
+.right-floating-panel.is-auto-hide-subnav:hover .subnav-divider,
+.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .subnav-divider {
+  transform: translateX(0);
+}
+
+/* 3. 日期筛选按钮 (普通模式) */
+.right-floating-panel.is-auto-hide-subnav .date-filter-standalone:not(.date-filter-standalone--three-column) {
+  transform: translateX(120px);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease;
+}
+
+.right-floating-panel.is-auto-hide-subnav:hover .date-filter-standalone:not(.date-filter-standalone--three-column),
+.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .date-filter-standalone:not(.date-filter-standalone--three-column) {
+  transform: translateX(0);
+}
+
+/* 4. 日期筛选按钮 (三栏模式) */
+.right-floating-panel.is-auto-hide-subnav .date-filter-standalone.date-filter-standalone--three-column {
+  transform: translateY(-50%) translateX(120px);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease;
+}
+
+.right-floating-panel.is-auto-hide-subnav:hover .date-filter-standalone.date-filter-standalone--three-column,
+.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .date-filter-standalone.date-filter-standalone--three-column {
+  transform: translateY(-50%) translateX(0);
+}
+
+/* 鼠标靠近感应区域 */
+.right-floating-panel.is-auto-hide-subnav::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  height: 400px;
+  transform: translateY(-50%);
+  left: -100px;
+  width: 100px;
+  background: transparent;
+  cursor: default;
+  pointer-events: none;
+  z-index: -1;
 }
 
 .subnav-small-screen.subnav-right:hover {
@@ -1192,6 +1480,7 @@
   border-radius: 1px;
   z-index: 1000;
   opacity: 0.3;
+  pointer-events: none;
 }
 
 /* 日期筛选独立按钮样式 */
@@ -1217,6 +1506,7 @@
   -ms-user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
+  pointer-events: auto;
 }
 
 .date-filter-standalone.date-filter-standalone--three-column {
@@ -1225,32 +1515,26 @@
   transform: translateY(-50%);
 }
 
-.theme-light.has-app-background-image .date-filter-standalone {
+.theme-light .date-filter-standalone.is-frosted,
+.theme-dark .date-filter-standalone.is-frosted {
   background-color: transparent !important;
   background: transparent !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }
 
-.theme-dark.has-app-background-image .date-filter-standalone {
-  background-color: transparent !important;
-  background: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-.theme-light.has-app-background-image .date-filter-standalone.active,
-.theme-light.has-app-background-image .date-filter-standalone.has-filter,
-.theme-light.has-app-background-image .date-filter-standalone:hover:not(.has-filter):not(.active) {
+.theme-light .date-filter-standalone.is-frosted.active,
+.theme-light .date-filter-standalone.is-frosted.has-filter,
+.theme-light .date-filter-standalone.is-frosted:hover:not(.has-filter):not(.active) {
   background-color: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
   background: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
   backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;
   -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;
 }
 
-.theme-dark.has-app-background-image .date-filter-standalone.active,
-.theme-dark.has-app-background-image .date-filter-standalone.has-filter,
-.theme-dark.has-app-background-image .date-filter-standalone:hover:not(.has-filter):not(.active) {
+.theme-dark .date-filter-standalone.is-frosted.active,
+.theme-dark .date-filter-standalone.is-frosted.has-filter,
+.theme-dark .date-filter-standalone.is-frosted:hover:not(.has-filter):not(.active) {
   background-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
   background: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
   backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;

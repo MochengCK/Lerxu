@@ -2,7 +2,7 @@
   <div
     id="app"
     :style="appRootStyle"
-    :class="{ 'has-custom-titlebar': showWindowActions && isPreferenceWindow, 'is-preference-window': isPreferenceWindow }"
+    :class="{ 'has-custom-titlebar': showWindowActions, 'show-window-actions': showWindowActions, 'is-preference-window': isPreferenceWindow, 'is-task-detail-open': taskDetailVisible, 'is-add-task-open': addTaskVisible, 'is-task-plan-open': taskPlanVisible }"
   >
     <div
       v-if="shouldUseBackgroundImage"
@@ -12,6 +12,7 @@
     <mo-title-bar
       v-if="isRenderer"
       :showActions="showWindowActions"
+      :titleText="titleBarText"
     />
     <div class="app-content">
       <router-view />
@@ -80,9 +81,25 @@
           : ''
         return path.startsWith('/preference-window') || hashPath.startsWith('#/preference-window')
       },
+      isTaskPage () {
+        const path = `${this.$route.path || ''}`
+        const hashPath = typeof window !== 'undefined' && window.location && window.location.hash
+          ? `${window.location.hash}`
+          : ''
+        const hashRoute = hashPath.startsWith('#') ? hashPath.slice(1) : hashPath
+        const targetPath = path || hashRoute
+        return targetPath.startsWith('/task')
+      },
       ...mapState('app', {
         systemTheme: state => state.systemTheme,
-        addTaskVisible: state => state.addTaskVisible
+        addTaskVisible: state => state.addTaskVisible,
+        titleBarText: state => state.titleBarText
+      }),
+      ...mapState('task', {
+        taskDetailVisible: state => state.taskDetailVisible
+      }),
+      ...mapState('app', {
+        taskPlanVisible: state => state.taskPlanVisible
       }),
       ...mapState('preference', {
         showWindowActions: state => {
@@ -101,7 +118,9 @@
         backgroundUiFrostedBlur: state => state.config.backgroundUiFrostedBlur,
         backgroundUiFrostedBlurScope: state => state.config.backgroundUiFrostedBlurScope,
         taskDetailDefaultTransparent: state => state.config.taskDetailDefaultTransparent,
-        taskDetailFrostedBlur: state => state.config.taskDetailFrostedBlur
+        taskDetailFrostedBlur: state => state.config.taskDetailFrostedBlur,
+        dateFilterFrosted: state => state.config.dateFilterFrosted,
+        dateFilterFrostedBlur: state => state.config.dateFilterFrostedBlur
       }),
       ...mapGetters('preference', [
         'theme',
@@ -207,6 +226,12 @@
         const { isMac, isRenderer, traySpeedometer, runMode } = this
         return isMac && isRenderer && traySpeedometer && runMode !== APP_RUN_MODE.HIDE_TRAY
       },
+      titleBarTextForWindow () {
+        if (!this.showWindowActions || this.isPreferenceWindow) {
+          return ''
+        }
+        return this.titleBarText || ''
+      },
       clipboardAutoPasteEnabled () {
         if (this.clipboardAutoPaste === undefined) return true
         return !!this.clipboardAutoPaste
@@ -217,6 +242,22 @@
         if (!this.isPreferenceWindow) return
         if (typeof document === 'undefined') return
         document.title = this.$t('subnav.preferences')
+      },
+      handlePreferenceCommand (command, ...args) {
+        if (!this.isPreferenceWindow) return
+        if (command === 'application:update-system-theme') {
+          const data = args[0]
+          if (data && data.theme) {
+            this.$store.dispatch('app/updateSystemTheme', data.theme)
+          }
+          return
+        }
+        if (command === 'application:update-theme') {
+          const data = args[0]
+          if (data && data.theme) {
+            this.$store.dispatch('preference/updateAppTheme', data.theme)
+          }
+        }
       },
       bringMainWindowToFront () {
         try {
@@ -296,12 +337,29 @@
         }
       },
       getUiOpacityForScope (scope) {
+        if (scope === 'date-filter' && this.dateFilterFrosted) {
+          if (this.shouldUseBackgroundImage) {
+            const scopes = Array.isArray(this.backgroundUiOpacityScope) ? this.backgroundUiOpacityScope : null
+            if (!scopes || scopes.includes(scope)) {
+              return this.uiOpacity
+            }
+            return 0.8
+          }
+          return 0.8
+        }
+
         if (!this.shouldUseBackgroundImage) return 1
         const scopes = Array.isArray(this.backgroundUiOpacityScope) ? this.backgroundUiOpacityScope : null
         if (!scopes) return this.uiOpacity
         return scopes.includes(scope) ? this.uiOpacity : 1
       },
       getUiFrostedBlurForScope (scope) {
+        if (scope === 'date-filter' && this.dateFilterFrosted) {
+          const raw = Number(this.dateFilterFrostedBlur)
+          const val = Number.isFinite(raw) ? raw : 6
+          return Math.min(Math.max(val, 0), 10)
+        }
+
         if (!this.shouldUseBackgroundImage) return 0
         const scopes = Array.isArray(this.backgroundUiFrostedBlurScope) ? this.backgroundUiFrostedBlurScope : null
         if (!scopes) return this.uiFrostedBlur
@@ -339,6 +397,12 @@
     mounted () {
       this._updateMessageShown = false
       this.updateWindowTitle()
+      if (this.isRenderer && this.isPreferenceWindow) {
+        this._preferenceCommandHandler = (event, command, ...args) => {
+          this.handlePreferenceCommand(command, ...args)
+        }
+        this.$electron.ipcRenderer.on('command', this._preferenceCommandHandler)
+      }
       const onUpdateAvailable = (event, version, releaseNotes) => {
         const cfg = (this.$store.state.preference && this.$store.state.preference.config) || {}
         const autoCheckEnabled = !!cfg.autoCheckUpdate
@@ -385,6 +449,9 @@
       this._updateHandlers = { onUpdateAvailable, onUpdateNotAvailable, onUpdateError }
     },
     destroyed () {
+      if (this._preferenceCommandHandler) {
+        this.$electron.ipcRenderer.removeListener('command', this._preferenceCommandHandler)
+      }
       const h = this._updateHandlers || {}
       if (h.onUpdateAvailable) {
         this.$electron.ipcRenderer.removeListener('update-available', h.onUpdateAvailable)
@@ -437,6 +504,12 @@
       },
       backgroundImageCssValue () {
         this.updateRootCssVars()
+      },
+      dateFilterFrosted () {
+        this.updateRootCssVars()
+      },
+      dateFilterFrostedBlur () {
+        this.updateRootCssVars()
       }
     }
   }
@@ -459,14 +532,19 @@
 
 .app-content {
   position: relative;
-  z-index: 1;
+  /* z-index: 1; */
   height: 100%;
   width: 100%;
 }
 
 .has-custom-titlebar .app-content {
-  padding-top: 36px;
+  padding-top: 42px;
   box-sizing: border-box;
-  height: calc(100% - 36px);
+  height: calc(100% - 42px);
+}
+
+.is-preference-window.has-custom-titlebar .app-content {
+  padding-top: 0;
+  height: 100%;
 }
 </style>

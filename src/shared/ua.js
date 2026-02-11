@@ -1,28 +1,24 @@
-// LinkCore 下载器 User-Agent 配置
-// 区分 HTTP 下载和 BT 下载的标识
+// LinkCore downloader User-Agent config.
+// Split identifiers for HTTP and BT traffic.
 
-// BT 下载 User-Agent
-// 用于 Tracker HTTP 请求和 DHT 网络
-export const LINKCORE_BT_UA = 'FluxCore/1.0.2'
+// BT User-Agent used for tracker HTTP and DHT related identity.
+export const LINKCORE_BT_UA = 'FluxCore/1.0.6'
 
-// Peer ID 前缀: 遵循 BT 协议 20 字节规范
-// 格式: -FXxxxx- (8字节前缀 + 12字节随机数)
-// FX = FluXcore, 1020 = 版本 1.0.2
-export const LINKCORE_PEER_ID_PREFIX = '-FX1020-'
+// Peer ID prefix: 20-byte BT peer id format, "-FXxxxx-" + 12 random chars.
+export const LINKCORE_PEER_ID_PREFIX = '-FX1060-'
 
-// BT 客户端名称: 用于 BEP 10 扩展握手
+// BT client name used in BEP10 extension handshake.
 export const LINKCORE_CLIENT_NAME = 'FluxCore (based on aria2)'
 
-// HTTP 下载默认 User-Agent（Chrome 浏览器）
-// 用户可以在偏好设置中自定义
+// Default HTTP User-Agent (browser style), user can override in preferences.
 export const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
-// 其他可选 UA（用于特定场景）
+// Other optional UA values.
 export const ARIA2_UA = 'aria2/1.37.0'
 export const TRANSMISSION_UA = 'Transmission/3.00'
 export const DU_UA = 'netdisk;6.0.0.12;PC;PC-Windows;10.0.16299;WindowsBaiduYunGuanJia'
 
-// 默认导出（向后兼容）
+// Backward compatible export.
 export const LINKCORE_UA = LINKCORE_BT_UA
 
 export default {

@@ -48,6 +48,28 @@
         </div>
 
         <div class="preference-card" data-category="appearance">
+          <h3 class="card-title">{{ $t('preferences.date-filter-frosted') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.dateFilterFrosted" @change="autoSaveForm">
+                {{ $t('preferences.date-filter-frosted') }}
+              </el-checkbox>
+            </el-col>
+            <el-col v-if="form.dateFilterFrosted" class="form-item-sub" :span="24">
+              <el-form-item class="background-slider-item" :label="$t('preferences.date-filter-frosted-strength')">
+                <el-slider
+                  v-model="form.dateFilterFrostedBlur"
+                  :min="0"
+                  :max="10"
+                  :step="1"
+                  @change="autoSaveForm"
+                />
+              </el-form-item>
+            </el-col>
+          </el-form-item>
+        </div>
+
+        <div class="preference-card" data-category="appearance">
           <h3 class="card-title">{{ $t('preferences.task-detail-default-transparent') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -162,6 +184,21 @@
                     value="always"
                   />
                 </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-form-item :label="$t('preferences.auto-hide-aside')">
+                <el-checkbox v-model="form.autoHideAside" @change="autoSaveForm" />
+              </el-form-item>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-form-item :label="$t('preferences.auto-hide-subnav')">
+                <el-checkbox v-model="form.autoHideSubnav" @change="autoSaveForm" />
+              </el-form-item>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-form-item :label="$t('preferences.auto-hide-floating-bar')">
+                <el-checkbox v-model="form.autoHideFloatingBar" @change="autoSaveForm" />
               </el-form-item>
             </el-col>
           </el-form-item>
@@ -568,6 +605,32 @@
                 {{ $t('preferences.bt-force-encryption') }}
               </el-checkbox>
             </el-col>
+          </el-form-item>
+        </div>
+
+        <!-- BT IP封禁卡片 -->
+        <div class="preference-card" data-category="transfer">
+          <h3 class="card-title">{{ $t('preferences.bt-ip-ban-list') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <el-input
+                type="textarea"
+                :rows="3"
+                v-model="btIpBanListText"
+                :placeholder="$t('preferences.bt-ip-ban-placeholder')"
+              >
+              </el-input>
+              <div class="el-form-item__info" style="margin-top: 8px;">
+                {{ $t('preferences.bt-ip-ban-tips') }}
+              </div>
+            </el-col>
+          </el-form-item>
+        </div>
+
+        <!-- 做种设置卡片 -->
+        <div class="preference-card" data-category="transfer">
+          <h3 class="card-title">{{ $t('preferences.bt-seeding-settings') }}</h3>
+          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-switch
                 v-model="form.keepSeeding"
@@ -601,6 +664,20 @@
                 :label="$t('preferences.seed-time')">
               </el-input-number>
             </el-col>
+            <el-col class="form-item-sub" :span="24">
+              {{ $t('preferences.stop-seeding-action') }}
+              <el-radio-group v-model="form.stopSeedingAction" @change="autoSaveForm">
+                <el-radio label="pause">{{ $t('preferences.stop-seeding-action-pause') }}</el-radio>
+                <el-radio label="complete">{{ $t('preferences.stop-seeding-action-complete') }}</el-radio>
+              </el-radio-group>
+            </el-col>
+          </el-form-item>
+        </div>
+
+        <!-- BT通知卡片 -->
+        <div class="preference-card" data-category="transfer">
+          <h3 class="card-title">{{ $t('preferences.bt-level-up-notification-label') }}</h3>
+          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-switch
                 v-model="form.btLevelUpNotification"
@@ -934,6 +1011,21 @@
     return normalized || 'ctrl'
   }
 
+  const normalizeBtIpBanList = (value) => {
+    const list = Array.isArray(value)
+      ? value
+      : `${value || ''}`.split(/[\n,;，；\s]+/g)
+    const result = []
+    const seen = new Set()
+    list.forEach(item => {
+      const text = `${item || ''}`.trim()
+      if (!text || seen.has(text)) return
+      seen.add(text)
+      result.push(text)
+    })
+    return result
+  }
+
   const BACKGROUND_UI_FROSTED_BLUR_SCOPE_OPTIONS = [
     'date-filter',
     'task-category-select',
@@ -957,6 +1049,7 @@
       autoHideWindow,
       autoPurgeRecord,
       btForceEncryption,
+      btIpBanList,
       btSaveMetadata,
       btLevelUpNotification,
       dir,
@@ -966,6 +1059,7 @@
       followTorrent,
       hideAppMenu,
       keepSeeding,
+      stopSeedingAction,
       keepWindowState,
       locale,
       maxConcurrentDownloads,
@@ -986,6 +1080,8 @@
       seedRatio,
       seedTime,
       showProgressBar,
+      dateFilterFrosted,
+      dateFilterFrostedBlur,
       taskProgressMode,
       taskNotification,
       taskCompleteNotifyClickAction,
@@ -1009,6 +1105,10 @@
       taskMultiSelectModifier,
       subnavMode,
       sidebarLayoutMode,
+      autoHideAside,
+      autoHideSubnav,
+      autoHideFloatingBar,
+      autoHideTaskPlan,
       autoOpenTaskProgressWindow,
       taskProgressWindowMode,
       clipboardAutoPaste,
@@ -1041,6 +1141,7 @@
       autoPurgeRecord: autoPurgeRecord || false,
       btAutoDownloadContent,
       btForceEncryption,
+      btIpBanList: normalizeBtIpBanList(btIpBanList),
       btSaveMetadata,
       btLevelUpNotification: btLevelUpNotification === undefined ? true : !!btLevelUpNotification,
       continue: config.continue,
@@ -1051,6 +1152,7 @@
       followTorrent,
       hideAppMenu,
       keepSeeding,
+      stopSeedingAction: stopSeedingAction === 'complete' ? 'complete' : 'pause',
       keepWindowState,
       locale,
       maxConcurrentDownloads,
@@ -1071,6 +1173,10 @@
       seedRatio,
       seedTime,
       showProgressBar,
+      dateFilterFrosted: dateFilterFrosted === undefined ? false : !!dateFilterFrosted,
+      dateFilterFrostedBlur: (typeof dateFilterFrostedBlur === 'number' && Number.isFinite(dateFilterFrostedBlur))
+        ? Math.min(Math.max(dateFilterFrostedBlur, 0), 10)
+        : 6,
       taskProgressMode: taskProgressMode || 'component',
       taskNotification,
       taskCompleteNotifyClickAction: taskCompleteNotifyClickAction || 'open-folder',
@@ -1120,6 +1226,10 @@
       taskMultiSelectModifier: normalizeTaskMultiSelectModifier(taskMultiSelectModifier),
       subnavMode: subnavMode || 'floating',
       sidebarLayoutMode: sidebarLayoutMode || 'floating',
+      autoHideAside: autoHideAside === undefined ? false : !!autoHideAside,
+      autoHideSubnav: autoHideSubnav === undefined ? false : !!autoHideSubnav,
+      autoHideFloatingBar: autoHideFloatingBar === undefined ? false : !!autoHideFloatingBar,
+      autoHideTaskPlan: autoHideTaskPlan === undefined ? false : !!autoHideTaskPlan,
       autoOpenTaskProgressWindow: autoOpenTaskProgressWindow === undefined ? true : !!autoOpenTaskProgressWindow,
       taskProgressWindowMode: taskProgressWindowMode || 'first',
       clipboardAutoPaste: clipboardAutoPaste === undefined ? true : !!clipboardAutoPaste,
@@ -1159,6 +1269,12 @@
       }
       if (!('taskProgressWindowMode' in formOriginal)) {
         this.$set(formOriginal, 'taskProgressWindowMode', 'first')
+      }
+      if (!('btIpBanList' in form)) {
+        this.$set(form, 'btIpBanList', [])
+      }
+      if (!('btIpBanList' in formOriginal)) {
+        this.$set(formOriginal, 'btIpBanList', [])
       }
       if (!('sidebarLayoutMode' in form)) {
         this.$set(form, 'sidebarLayoutMode', 'floating')
@@ -1236,6 +1352,16 @@
         },
         set (value) {
           return value
+        }
+      },
+      btIpBanListText: {
+        get () {
+          const list = Array.isArray(this.form.btIpBanList) ? this.form.btIpBanList : []
+          return list.join('\n')
+        },
+        set (value) {
+          this.form.btIpBanList = normalizeBtIpBanList(value)
+          this.autoSaveForm()
         }
       },
       runModes () {
@@ -1858,6 +1984,8 @@
           theme: this.form.theme,
           taskDetailDefaultTransparent: !!this.form.taskDetailDefaultTransparent,
           taskDetailFrostedBlur: this.normalizeUiNumber(this.form.taskDetailFrostedBlur, 0, 10, 0),
+          dateFilterFrosted: !!this.form.dateFilterFrosted,
+          dateFilterFrostedBlur: this.normalizeUiNumber(this.form.dateFilterFrostedBlur, 0, 10, 6),
           subnavMode: this.form.subnavMode === 'title' ? 'title' : 'floating',
           sidebarLayoutMode: this.form.sidebarLayoutMode === 'three-column' ? 'three-column' : 'floating',
           floatingBarDisplayMode: this.form.floatingBarDisplayMode === 'always' ? 'always' : 'hover',
@@ -1920,6 +2048,8 @@
         if (keys.has('theme')) candidate.theme = data.theme
         if (keys.has('taskDetailDefaultTransparent')) candidate.taskDetailDefaultTransparent = !!data.taskDetailDefaultTransparent
         if (keys.has('taskDetailFrostedBlur')) candidate.taskDetailFrostedBlur = this.normalizeUiNumber(data.taskDetailFrostedBlur, 0, 10, 0)
+        if (keys.has('dateFilterFrosted')) candidate.dateFilterFrosted = !!data.dateFilterFrosted
+        if (keys.has('dateFilterFrostedBlur')) candidate.dateFilterFrostedBlur = this.normalizeUiNumber(data.dateFilterFrostedBlur, 0, 10, 6)
         if (keys.has('subnavMode')) candidate.subnavMode = data.subnavMode === 'title' ? 'title' : 'floating'
         if (keys.has('sidebarLayoutMode')) candidate.sidebarLayoutMode = data.sidebarLayoutMode === 'three-column' ? 'three-column' : 'floating'
         if (keys.has('floatingBarDisplayMode')) candidate.floatingBarDisplayMode = data.floatingBarDisplayMode === 'always' ? 'always' : 'hover'
@@ -1973,7 +2103,7 @@
           return value === 'background' ? this.$t('preferences.task-progress-mode-background') : this.$t('preferences.task-progress-mode-component')
         }
 
-        if (key === 'taskDetailDefaultTransparent' || key === 'showProgressBar') {
+        if (key === 'taskDetailDefaultTransparent' || key === 'showProgressBar' || key === 'dateFilterFrosted') {
           return value ? '开启' : '关闭'
         }
 
@@ -1982,7 +2112,7 @@
           if (!Number.isFinite(n)) return '--'
           return `${Math.round(n * 100)}%`
         }
-        if (key === 'taskDetailFrostedBlur' || key === 'backgroundUiFrostedBlur' || key === 'backgroundImageFrostedBlur') {
+        if (key === 'taskDetailFrostedBlur' || key === 'backgroundUiFrostedBlur' || key === 'backgroundImageFrostedBlur' || key === 'dateFilterFrostedBlur') {
           const n = Number(value)
           if (!Number.isFinite(n)) return '--'
           return `${Math.round(n)}`
@@ -2006,6 +2136,8 @@
           theme: '主题',
           taskDetailDefaultTransparent: this.$t('preferences.task-detail-default-transparent'),
           taskDetailFrostedBlur: this.$t('preferences.task-detail-frosted-strength'),
+          dateFilterFrosted: this.$t('preferences.date-filter-frosted'),
+          dateFilterFrostedBlur: this.$t('preferences.date-filter-frosted-strength'),
           subnavMode: this.$t('preferences.subnav-mode'),
           sidebarLayoutMode: this.$t('preferences.sidebar-layout-mode'),
           floatingBarDisplayMode: this.$t('preferences.floating-bar-display-mode'),

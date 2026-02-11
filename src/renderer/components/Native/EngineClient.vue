@@ -13,7 +13,7 @@
     showItemInFolder
   } from '@/utils/native'
 
-  import { checkTaskIsBT, getTaskName, isMagnetTask } from '@shared/utils'
+  import { checkTaskIsBT, getTaskName, getTaskUri, isMagnetTask } from '@shared/utils'
   import { TASK_STATUS } from '@shared/constants'
   import { spawn, spawnSync } from 'node:child_process'
   import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync } from 'node:fs'
@@ -34,7 +34,8 @@
         dataAccessLastCompletedMap: {},
         pollingCount: 0,
         taskSpeedSampleBaseMap: {},
-        downloadStartNotifiedGids: new Set()
+        downloadStartNotifiedGids: new Set(),
+        segmentErrorRetryMap: {}
       }
     },
     computed: {
@@ -179,6 +180,9 @@
 
         this.fetchTaskItem({ gid })
           .then(async (task) => {
+            if (!task) {
+              return
+            }
             const { dir } = task
             this.$store.dispatch('preference/recordHistoryDirectory', dir)
             const taskName = getTaskName(task)
@@ -307,6 +311,9 @@
 
         this.fetchTaskItem({ gid })
           .then((task) => {
+            if (!task) {
+              return
+            }
             const taskName = getTaskName(task)
             const message = this.$t('task.download-pause-message', { taskName })
             this.$msg.info(message)
@@ -316,6 +323,9 @@
         const [{ gid }] = event
         this.fetchTaskItem({ gid })
           .then((task) => {
+            if (!task) {
+              return
+            }
             const taskName = getTaskName(task)
             const message = this.$t('task.download-stop-message', { taskName })
             this.$msg.info(message)
@@ -325,6 +335,9 @@
         const [{ gid }] = event
         this.fetchTaskItem({ gid })
           .then((task) => {
+            if (!task) {
+              return
+            }
             const taskName = getTaskName(task)
             const { errorCode, errorMessage } = task
             console.error(`[Motrix] download error gid: ${gid}, #${errorCode}, ${errorMessage}`)
@@ -335,6 +348,10 @@
             const link = `<a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Error#${errorCode}" rel="noopener noreferrer">${errorCode}</a>`
 
             const msg = `${errorMessage || ''}`
+            const segmentPath = this.extractSegmentFilePath(msg)
+            if (segmentPath && checkTaskIsBT(task)) {
+              this.tryRepairSegmentFile(task, segmentPath).catch(() => {})
+            }
             const parseHttpStatus = (text) => {
               const m = `${text || ''}`.match(/\b(\d{3})\b/)
               return m ? Number(m[1]) || 0 : 0
@@ -386,6 +403,68 @@
             })
           })
       },
+      extractSegmentFilePath (text = '') {
+        const raw = `${text || ''}`
+        const match = raw.match(/segment file\s+(.+?\.aria2)\b/i)
+        if (!match) {
+          return ''
+        }
+        const path = match[1] ? `${match[1]}` : ''
+        return path.replace(/^["']|["']$/g, '')
+      },
+      async tryRepairSegmentFile (task, segmentPath) {
+        const gid = task && task.gid ? `${task.gid}` : ''
+        if (!gid) {
+          return false
+        }
+        const retryMap = this.segmentErrorRetryMap || {}
+        const count = Number(retryMap[gid] || 0)
+        if (count >= 1) {
+          return false
+        }
+        this.$set(this.segmentErrorRetryMap, gid, count + 1)
+
+        try {
+          if (segmentPath && existsSync(segmentPath)) {
+            try {
+              unlinkSync(segmentPath)
+            } catch (e) {
+              console.warn('[Motrix] Failed to remove segment file:', segmentPath, e)
+            }
+          }
+
+          const uri = getTaskUri(task)
+          if (!uri) {
+            return false
+          }
+
+          let options = {}
+          try {
+            const opt = await api.getOption({ gid })
+            const out = opt && opt.out ? `${opt.out}` : getTaskName(task)
+            options = {
+              dir: opt && opt.dir ? `${opt.dir}` : undefined,
+              header: opt && opt.header ? opt.header : undefined,
+              split: opt && opt.split ? opt.split : undefined
+            }
+            if (out) {
+              options.out = out
+            }
+          } catch (_) {}
+
+          await this.$store.dispatch('task/addUri', {
+            uris: [uri],
+            options
+          })
+
+          await api.removeTaskRecord({ gid }).catch(() => {})
+          this.$msg.warning('检测到任务续传文件损坏，已尝试自动重建任务')
+          return true
+        } catch (e) {
+          console.warn('[Motrix] Auto repair segment file failed:', e)
+          return false
+        }
+      },
       onDownloadComplete (event) {
         this.$store.dispatch('task/fetchList')
         const [{ gid }] = event
@@ -393,6 +472,9 @@
 
         this.fetchTaskItem({ gid })
           .then((task) => {
+            if (!task) {
+              return
+            }
             this.handleDownloadComplete(task, false)
           })
       },
@@ -408,6 +490,9 @@
 
         this.fetchTaskItem({ gid })
           .then((task) => {
+            if (!task) {
+              return
+            }
             this.handleDownloadComplete(task, true)
           })
       },
@@ -2480,7 +2565,7 @@
       },
       checkDataAccessStatus () {
         const list = this.$store.state.task.taskList || []
-        const activeStatuses = ['active', 'waiting']
+        const activeStatuses = ['active']
         list.forEach(task => {
           const gid = task.gid
           const status = task.status

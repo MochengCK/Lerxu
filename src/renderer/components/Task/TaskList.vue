@@ -1,6 +1,6 @@
 <template>
   <mo-drag-select
-    :class="['task-list', `task-list--${viewMode}`]"
+    :class="['task-list', `task-list--${viewMode}`, { 'is-collapsed': collapsed }]"
     v-if="displayTaskList.length > 0"
     attribute="attr"
     @change="handleDragSelectChange"
@@ -67,6 +67,10 @@
       keyword: {
         type: String,
         default: ''
+      },
+      collapsed: {
+        type: Boolean,
+        default: false
       }
     },
     data () {
@@ -606,9 +610,14 @@
 
 <style lang="scss">
 .task-list {
-  padding: 16px 16px 64px 16px;
+  padding: 24px 16px 64px 16px;
   min-height: 100%;
   box-sizing: border-box;
+  transition: padding-top 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
+
+  &.is-collapsed {
+    padding-top: 55px;
+  }
 
   // 列表视图（默认）
   &.task-list--list {
@@ -628,19 +637,35 @@
   &.task-list--grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-    grid-auto-rows: 110px; // 明确设置每行的高度
+    grid-auto-rows: 104px;
     row-gap: 8px; // 行间距与列表视图的margin-bottom保持完全一致
     column-gap: 16px; // 列间距（左右间隔）
 
     .task-item-wrapper {
       margin-bottom: 0;
       z-index: 1; // 确保网格项有合适的层级
-      height: 110px; // 确保wrapper高度正确
+      height: 104px;
 
       // 当有弹窗时提升层级
       &:hover {
         z-index: 50;
       }
+    }
+  }
+}
+
+.show-window-actions {
+  .task-list {
+    &.is-collapsed {
+      padding-top: 55px;
+    }
+  }
+}
+
+.has-custom-titlebar {
+  .task-list {
+    &.is-collapsed {
+      padding-top: 12px;
     }
   }
 }
@@ -652,15 +677,15 @@
     // 列表视图样式
     position: relative; // 确保背景进度条能正确定位
     border-radius: 6px; // 与TaskItem的圆角保持一致
-    height: 110px; // 与网格视图保持完全一致的高度
-    min-height: 110px; // 确保最小高度
+    height: 104px;
+    min-height: 104px;
 
     // 内容层
     & > .task-item {
       position: relative;
       z-index: 1;
-      height: 110px; // 明确设置高度
-      min-height: 110px; // 确保最小高度
+      height: 104px;
+      min-height: 104px;
       margin-bottom: 0; // 移除margin，由wrapper控制间距
       box-sizing: border-box; // 确保padding包含在高度内
     }
@@ -671,13 +696,13 @@
     border-radius: 6px; // 与TaskItem的圆角保持一致
     overflow: visible; // 改为visible，让弹窗能够显示
     position: relative;
-    height: 110px; // 固定高度，与列表视图一致
+    height: 100px; // 固定高度，与列表视图一致
 
     // 内容层 - TaskItem会处理自己的样式
     & > .task-item {
       position: relative;
       z-index: 1;
-      height: 110px; // 明确设置高度，不使用100%
+      height: 100px; // 明确设置高度，不使用100%
       box-sizing: border-box;
       margin-bottom: 0; // 覆盖列表视图的margin-bottom
       overflow: visible; // 确保TaskItem内的弹窗能显示
@@ -744,7 +769,7 @@
 // 暗色主题支持
 .theme-dark {
   .task-item-wrapper--grid {
-    height: 110px; // 与亮色主题保持一致
+    height: 100px; // 与亮色主题保持一致
 
     & > .task-item {
       height: 100%;

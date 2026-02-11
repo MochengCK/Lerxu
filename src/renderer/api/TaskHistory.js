@@ -61,9 +61,13 @@ class TaskHistory {
       if (isMetadataTask) {
         return false
       }
-      // 检查是否为磁力链接任务
-      const isMagnetTask = task.bittorrent && !task.bittorrent.info
-      return isMagnetTask || [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR].includes(status)
+      // 排除尚未获取元数据的磁力任务
+      const isTransientMagnet = task.bittorrent && !task.bittorrent.info
+      if (isTransientMagnet) {
+        return false
+      }
+      const statusKey = `${status || ''}`
+      return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(statusKey)
     })
 
     if (stoppedTasks.length === 0) {

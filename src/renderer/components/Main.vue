@@ -1,17 +1,28 @@
 <template>
   <el-container id="container">
     <router-view />
-    <mo-floating-bar />
+    <mo-floating-bar
+      :class="{
+        'is-auto-hide-floating-bar': autoHideFloatingBar && !isFloatingBarSearchExpanded && !isBottomHovered,
+        'is-hovered': isBottomHovered
+      }"
+      @mouseenter.native="isBottomHovered = true"
+      @mouseleave.native="isBottomHovered = false"
+    />
     <el-tooltip effect="dark" :content="$t('app.task-plan')" placement="top" :open-delay="500">
       <button
         class="mo-task-plan"
         :class="{
           'is-planned': isTaskPlanPlanned,
+          'is-auto-hide-task-plan': autoHideFloatingBar && !isFloatingBarSearchExpanded && !isTaskPlanPlanned,
           'is-search-open': isFloatingBarSearchOpen,
-          'is-search-expanded': isFloatingBarSearchExpanded
+          'is-search-expanded': isFloatingBarSearchExpanded,
+          'is-hovered': isBottomHovered
         }"
         type="button"
         @click="onTaskPlanClick"
+        @mouseenter="isBottomHovered = true"
+        @mouseleave="isBottomHovered = false"
       >
         <mo-icon name="task-plan" width="20" height="20" />
       </button>
@@ -21,6 +32,7 @@
       width="360px"
       custom-class="task-plan-dialog"
       append-to-body
+      :modal="true"
     >
       <div slot="title" class="task-plan-dialog-title">
         <el-radio-group v-model="taskPlanType" size="mini">
@@ -73,7 +85,7 @@
       :peers="currentTaskPeers"
     />
     <mo-dragger />
-    <div v-if="showMainFloatingAside" class="aside-small-screen">
+    <div v-if="showMainFloatingAside" class="aside-small-screen" :class="{ 'is-auto-hide-aside': autoHideAside, 'is-proximity-hovered': isAsideProximityHovered }">
       <ul class="menu small-menu">
         <li
           @click="nav('/preference')"
@@ -128,7 +140,6 @@
     },
     data () {
       return {
-        taskPlanVisible: false,
         taskPlanAction: '',
         taskPlanType: 'complete',
         taskPlanTime: '',
@@ -141,6 +152,8 @@
         completedTaskWindows: new Map(), // gid -> window for completed tasks
         isFloatingBarSearchOpen: false,
         isFloatingBarSearchExpanded: false,
+        isBottomHovered: false,
+        isAsideProximityHovered: false,
         windowWidth: 0
       }
     },
@@ -151,6 +164,14 @@
         currentPage: state => state.currentPage,
         systemTheme: state => state.systemTheme
       }),
+      taskPlanVisible: {
+        get () {
+          return this.$store.state.app.taskPlanVisible
+        },
+        set (val) {
+          this.$store.commit('app/UPDATE_TASK_PLAN_VISIBLE', val)
+        }
+      },
       ...mapState('task', {
         taskDetailVisible: state => state.taskDetailVisible,
         currentTaskGid: state => state.currentTaskGid,
@@ -166,7 +187,9 @@
         taskPlanTimeFromConfig: state => (state.config && state.config.taskPlanTime) || '',
         taskPlanOnlyWhenIdleFromConfig: state => !!(state.config && state.config.taskPlanOnlyWhenIdle),
         prefTheme: state => state.config && state.config.theme,
-        sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating'
+        sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating',
+        autoHideAside: state => state.config.autoHideAside,
+        autoHideFloatingBar: state => state.config.autoHideFloatingBar
       }),
       isTaskPlanPlanned () {
         return (this.taskPlanActionFromConfig || 'none') !== 'none'
@@ -271,6 +294,73 @@
           return
         }
         this.windowWidth = window.innerWidth || 0
+      },
+      updateAsideProximityHover (event) {
+        if (!this.showMainFloatingAside || !this.autoHideAside) {
+          if (this.isAsideProximityHovered) {
+            this.isAsideProximityHovered = false
+          }
+          return
+        }
+        if (!event) {
+          return
+        }
+        const height = typeof window !== 'undefined' ? window.innerHeight : 0
+        if (!height) {
+          return
+        }
+        const aside = this.$el && this.$el.querySelector ? this.$el.querySelector('.aside-small-screen') : null
+        const asideHeight = aside ? aside.offsetHeight : 0
+        const zoneHeight = Math.max(asideHeight || 0, 120) + 100
+        const centerY = height / 2
+        const top = centerY - zoneHeight / 2
+        const bottom = centerY + zoneHeight / 2
+        const withinY = event.clientY >= top && event.clientY <= bottom
+        const withinX = event.clientX <= 120
+        const next = withinX && withinY
+        if (next !== this.isAsideProximityHovered) {
+          this.isAsideProximityHovered = next
+        }
+      },
+      updateBottomProximityHover (event) {
+        if (!this.autoHideFloatingBar || !event) {
+          return
+        }
+        const height = typeof window !== 'undefined' ? window.innerHeight : 0
+        const width = typeof window !== 'undefined' ? window.innerWidth : 0
+        if (!height || !width) {
+          return
+        }
+        const top = height - 160
+        const bottom = height
+        const withinY = event.clientY >= top && event.clientY <= bottom
+
+        const centerX = width / 2
+        const left = centerX - 260
+        const right = centerX + 320
+        const withinX = event.clientX >= left && event.clientX <= right
+
+        const next = withinX && withinY
+        if (next !== this.isBottomHovered) {
+          this.isBottomHovered = next
+        }
+        const shouldOpen = next || this.isFloatingBarSearchExpanded
+        if (shouldOpen !== this.isFloatingBarSearchOpen) {
+          this.isFloatingBarSearchOpen = shouldOpen
+        }
+      },
+      handleWindowMouseMoveForAside (event) {
+        this._asideMouseEvent = event
+        if (this._asideMouseRaf) {
+          return
+        }
+        this._asideMouseRaf = window.requestAnimationFrame(() => {
+          this._asideMouseRaf = null
+          const lastEvent = this._asideMouseEvent
+          this._asideMouseEvent = null
+          this.updateAsideProximityHover(lastEvent)
+          this.updateBottomProximityHover(lastEvent)
+        })
       },
       isAliveWindow (win) {
         if (!win) {
@@ -2304,6 +2394,10 @@
           this.handleWindowResize()
         }
         window.addEventListener('resize', this._handleWindowResize)
+        this._handleWindowMouseMoveForAside = (event) => {
+          this.handleWindowMouseMoveForAside(event)
+        }
+        window.addEventListener('mousemove', this._handleWindowMouseMoveForAside)
       }
       if (typeof MutationObserver === 'undefined') {
         return
@@ -2332,6 +2426,14 @@
       if (typeof window !== 'undefined' && this._handleWindowResize) {
         window.removeEventListener('resize', this._handleWindowResize)
         this._handleWindowResize = null
+      }
+      if (typeof window !== 'undefined' && this._handleWindowMouseMoveForAside) {
+        window.removeEventListener('mousemove', this._handleWindowMouseMoveForAside)
+        this._handleWindowMouseMoveForAside = null
+      }
+      if (this._asideMouseRaf) {
+        window.cancelAnimationFrame(this._asideMouseRaf)
+        this._asideMouseRaf = null
       }
       if (this._modalObserver) {
         try {
@@ -2368,9 +2470,10 @@
     border: 1px solid $--speedometer-border-color;
     background-color: $--floating-bar-background;
     opacity: 0.5;
-    transition: opacity 0.15s ease-out,
-      border-color 0.15s ease-out,
-      transform 0.15s ease-out;
+    transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.2s,
+      background-color 0.2s,
+      transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
     cursor: pointer;
     user-select: none;
     outline: none;
@@ -2392,7 +2495,48 @@
     &.is-planned {
       opacity: 1;
       border-color: #c2e7b0;
-      animation: pulse-green 1s infinite;
+      animation: pulse-green 1.6s ease-out infinite;
+    }
+
+    /* 自动隐藏逻辑 */
+    &.is-auto-hide-task-plan {
+      transform: translateX(87px) translateY(80px);
+      overflow: visible;
+
+      /* 感应区域 */
+      &::before {
+        content: '';
+        position: absolute;
+        top: -100px;
+        left: 0;
+        width: 100%;
+        height: 150px;
+        background: transparent;
+        cursor: default;
+        pointer-events: auto;
+        z-index: 0;
+      }
+
+      &:hover,
+      &.is-hovered {
+        transform: translateX(121px) translateY(0);
+      }
+
+      &.is-search-open {
+        transform: translateX(121px) translateY(80px);
+        &:hover,
+        &.is-hovered {
+          transform: translateX(121px) translateY(0);
+        }
+      }
+
+      &.is-search-expanded {
+        transform: translateX(277px) translateY(80px);
+        &:hover,
+        &.is-hovered {
+          transform: translateX(277px) translateY(0);
+        }
+      }
     }
 
     &.is-planned:hover {
@@ -2408,6 +2552,13 @@
     &.is-search-expanded {
       transform: translateX(277px);
       transition-delay: 0s;
+    }
+
+    &.is-hovered {
+      transform: translateX(121px);
+    }
+    &.is-hovered.is-search-expanded {
+      transform: translateX(277px);
     }
   }
 
@@ -2483,8 +2634,33 @@
     opacity: 0.5;
     transition: opacity 0.3s ease;
     padding: 8px;
+
     &:hover {
       opacity: 1;
+    }
+
+    &.is-auto-hide-aside {
+      transform: translateY(-50%) translateX(calc(-100% - 20px));
+      transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
+
+      /* 感应区域 */
+      &::before {
+        content: '';
+        position: absolute;
+        top: -50px;
+        bottom: -50px;
+        right: -100px;
+        width: 150px;
+        background: transparent;
+        cursor: default;
+        pointer-events: none;
+        z-index: -1;
+      }
+
+      &:hover,
+      &.is-proximity-hovered {
+        transform: translateY(-50%) translateX(0);
+      }
     }
   }
 

@@ -1,7 +1,7 @@
 <template>
   <div
     class="custom-date-picker"
-    :class="{ 'position-top': positionTop }"
+    :class="{ 'position-top': positionTop, 'is-frosted': frosted }"
     :style="pickerStyle"
     v-click-outside="handleClickOutside"
     @keydown="handleKeydown"
@@ -65,6 +65,10 @@
       value: {
         type: String,
         default: ''
+      },
+      frosted: {
+        type: Boolean,
+        default: false
       },
       taskCounts: {
         type: Object,
@@ -282,11 +286,23 @@
   -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
 }
 
+.theme-light .custom-date-picker.is-frosted {
+  background-color: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
+  backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
+  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
+}
+
 .theme-dark .custom-date-picker {
   background-color: #2d2d2d;
 }
 
 .theme-dark.has-app-background-image .custom-date-picker {
+  background-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
+  backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
+  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
+}
+
+.theme-dark .custom-date-picker.is-frosted {
   background-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
   backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
   -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
@@ -318,12 +334,20 @@
   border-bottom-color: rgba(255, 255, 255, var(--app-ui-opacity, 0.9));
 }
 
+.theme-light .custom-date-picker.is-frosted .picker-arrow {
+  border-bottom-color: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
+}
+
 .theme-dark .custom-date-picker .picker-arrow {
   border-bottom-color: #2d2d2d;
 }
 
 .theme-dark.has-app-background-image .custom-date-picker .picker-arrow {
   border-bottom-color: rgba(45, 45, 45, var(--app-ui-opacity, 0.9));
+}
+
+.theme-dark .custom-date-picker.is-frosted .picker-arrow {
+  border-bottom-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
 }
 
 /* 选择框在按钮上方时，箭头指向下方 */
@@ -338,12 +362,20 @@
   border-top-color: rgba(255, 255, 255, var(--app-ui-opacity, 0.9));
 }
 
+.theme-light .custom-date-picker.is-frosted.position-top .picker-arrow {
+  border-top-color: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
+}
+
 .theme-dark .custom-date-picker.position-top .picker-arrow {
   border-top-color: #2d2d2d;
 }
 
 .theme-dark.has-app-background-image .custom-date-picker.position-top .picker-arrow {
   border-top-color: rgba(45, 45, 45, var(--app-ui-opacity, 0.9));
+}
+
+.theme-dark .custom-date-picker.is-frosted.position-top .picker-arrow {
+  border-top-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
 }
 
 .custom-date-picker .picker-header {

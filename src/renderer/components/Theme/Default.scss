@@ -147,6 +147,10 @@ iframe {
     color: $--link-color;
   }
 }
+.el-notification,
+.el-message {
+  z-index: 9000 !important;
+}
 
 .tab-title-dialog {
   .el-dialog__header {
@@ -210,6 +214,11 @@ iframe {
     background-color: transparent !important;
     background: transparent !important;
   }
+
+  .title-bar {
+    background-color: transparent !important;
+    background: transparent !important;
+  }
 }
 
 .theme-light.has-app-background-image {
@@ -258,9 +267,27 @@ iframe {
   color: $--aside-text-color;
 }
 
+.aside.is-auto-hide-aside {
+  transform: translateX(calc(-100% + 12px));
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.aside.is-auto-hide-aside:hover {
+  transform: translateX(0);
+}
+
 .subnav {
   background-color: $--subnav-background;
   color: $--subnav-text-color;
+}
+
+.subnav.is-auto-hide-subnav {
+  transform: translateX(calc(-100% + 12px));
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.subnav.is-auto-hide-subnav:hover {
+  transform: translateX(0);
 }
 
 .main {
@@ -291,25 +318,51 @@ iframe {
       padding: 8px 10px;
       font-size: 0;
       line-height: 20px;
-      border-radius: 3px;
+      border-radius: 6px;
       cursor: pointer;
+      position: relative;
+      z-index: 1;
+      transition: all 0.25s;
 
       i,
       span {
         display: inline-block;
         vertical-align: middle;
         font-size: 14px;
+        transition: color 0.25s;
       }
 
       &:hover,
       &.active {
-        background-color: $--subnav-active-background;
-
         i,
         span,
         svg {
           color: $--subnav-active-text-color;
         }
+      }
+
+      &.active {
+        background-color: $--subnav-active-background;
+      }
+    }
+
+    &.preference-subnav-ul {
+      position: relative;
+
+      .nav-slider {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background-color: $--subnav-active-background;
+        border-radius: 6px;
+        transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        z-index: 0;
+        will-change: transform;
+      }
+
+      li.active {
+        background-color: transparent !important;
       }
     }
   }
@@ -350,6 +403,12 @@ iframe {
     position: relative;
     padding: 0;
     height: 100%;
+  }
+}
+
+.show-window-actions {
+  .panel .panel-header {
+    border-bottom: none;
   }
 }
 

@@ -69,10 +69,10 @@
           if (val === TASK_STATUS.COMPLETE) {
             this.ensureFixedDisplayName()
           }
-        },
-        taskFullName () {
-          this.updateTaskNameTruncation()
         }
+      },
+      taskFullName () {
+        this.updateTaskNameTruncation()
       }
     },
     computed: {
@@ -89,31 +89,20 @@
         return this.preferenceConfig?.showTaskTypeBadge !== false
       },
       taskType () {
-        const { task } = this
-        if (!task) return 'http'
-
-        // 判断是否为BT任务
-        if (task.bittorrent) {
-          return 'bt'
-        }
-
-        // 判断是否为磁力链接
-        if (task.infoHash && !task.bittorrent) {
-          return 'magnet'
-        }
-
-        // 判断URL类型
-        const uris = task.files && task.files[0] && task.files[0].uris
-        if (uris && uris.length > 0) {
-          const uri = uris[0].uri || ''
-          if (uri.startsWith('ftp://') || uri.startsWith('ftps://')) {
-            return 'ftp'
+        const type = this.task && this.task.taskType ? `${this.task.taskType}`.toLowerCase() : ''
+        const hasInfoHash = !!(this.task && this.task.infoHash)
+        const hasBittorrent = !!(this.task && this.task.bittorrent)
+        if (['bt', 'magnet', 'http', 'https', 'ftp'].includes(type)) {
+          if (type === 'http' && (hasBittorrent || hasInfoHash)) {
+            const btInfo = hasBittorrent && this.task.bittorrent && this.task.bittorrent.info
+            return btInfo ? 'bt' : 'magnet'
           }
-          if (uri.startsWith('https://')) {
-            return 'https'
-          }
+          return type
         }
-
+        if (hasBittorrent || hasInfoHash) {
+          const btInfo = hasBittorrent && this.task.bittorrent && this.task.bittorrent.info
+          return btInfo ? 'bt' : 'magnet'
+        }
         return 'http'
       },
       taskTypeLabel () {
@@ -246,14 +235,14 @@
 <style lang="scss">
 .task-item {
   position: relative;
-  min-height: 110px; // 统一设置为110px，确保所有视图下高度一致
-  padding: 16px 12px; // 恢复原来的padding
+  min-height: 104px;
+  padding: 16px 12px;
   background-color: $--task-item-background;
   border: 1px solid $--task-item-border-color;
   border-radius: 6px;
   margin-bottom: 16px;
   transition: $--border-transition-base;
-  box-sizing: border-box; // 确保padding包含在高度内
+  box-sizing: border-box;
 
   &:hover {
     border-color: $--task-item-hover-border-color;
@@ -265,31 +254,29 @@
     right: 12px;
   }
 
-  // 网格视图样式
   &.task-item--grid {
     margin-bottom: 0;
-    border: 1px solid $--task-item-border-color; // 恢复边框，与列表视图一致
-    border-radius: 6px; // 恢复圆角，与列表视图一致
-    background-color: $--task-item-background; // 使用与列表视图相同的背景色
-    height: 110px; // 固定高度，确保一致性
-    min-height: 110px; // 与基础样式保持一致
-    padding: 16px 12px; // 恢复原来的padding
-    overflow: visible; // 改为visible，让弹窗能够显示
-    transition: $--border-transition-base; // 与列表视图一致的过渡效果
-    box-sizing: border-box; // 确保padding包含在高度内
+    border: 1px solid $--task-item-border-color;
+    border-radius: 6px;
+    background-color: $--task-item-background;
+    height: 104px;
+    min-height: 104px;
+    padding: 16px 12px;
+    overflow: visible;
+    transition: $--border-transition-base;
+    box-sizing: border-box;
 
-    // 悬停效果与列表视图完全一致
     &:hover {
-      border-color: $--task-item-hover-border-color; // 只改变边框色，与列表视图一致
+      border-color: $--task-item-hover-border-color;
     }
 
     .task-name {
-      margin-right: 170px; // 与列表视图保持一致
-      margin-bottom: 1.5rem; // 与列表视图保持一致
+      margin-right: 170px;
+      margin-bottom: 1.25rem;
 
       .task-name__text {
-        font-size: 14px; // 与列表视图保持一致
-        line-height: 26px; // 与列表视图保持一致
+        font-size: 14px;
+        line-height: 26px;
         display: block;
         overflow: hidden;
         white-space: nowrap;
@@ -300,14 +287,13 @@
     }
 
     .task-item-actions-wrapper {
-      top: 16px; // 与列表视图保持一致
-      right: 12px; // 与列表视图保持一致
-      z-index: 10; // 确保操作按钮和弹窗在最上层
+      top: 16px;
+      right: 12px;
+      z-index: 10;
     }
   }
 }
 
-// 任务类型标签 - 绝对定位，不占用空间
 .task-type-badge {
   position: absolute;
   left: 8px;
@@ -328,24 +314,20 @@
   line-height: 1;
   height: 120px;
 
-  // BT任务向上移动
   &.task-type-badge--bt {
     transform: translateY(-55%);
   }
 
-  // HTTPS向上移动
   &.task-type-badge--https {
     transform: translateY(-55%);
   }
 
-  // 磁力链接使用较小字体
   &.task-type-badge--magnet {
     font-size: 88px;
     height: 88px;
   }
 }
 
-// 暗色主题下的类型标签 - 在反色基础上调亮
 .theme-dark .task-type-badge {
   color: #5f5b54;
   opacity: 0.3;
@@ -363,23 +345,21 @@
   -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-task-item, var(--app-ui-frosted-blur, 0px)));
 }
 
-// 背景进度条模式下的TaskItem样式调整
 .task-item-wrapper--background-progress .task-item {
-  background: transparent !important; // 强制透明背景，让进度条可见
-  border: none !important; // 移除边框，由wrapper控制
+  background: transparent !important;
+  border: none !important;
 
   &:hover {
-    background: transparent !important; // 悬停时保持透明，不添加额外背景
+    background: transparent !important;
   }
 }
 
-// 暗色主题下的背景进度条模式
 .theme-dark .task-item-wrapper--background-progress .task-item {
-  background: transparent !important; // 暗色主题也使用透明背景
-  border: none !important; // 移除边框，由wrapper控制
+  background: transparent !important;
+  border: none !important;
 
   &:hover {
-    background: transparent !important; // 悬停时保持透明，不添加额外背景
+    background: transparent !important;
   }
 }
 
@@ -389,9 +369,9 @@
 
 .task-name {
   color: #505753;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.25rem;
   margin-right: 170px;
-  margin-left: 0; // 不需要额外的左边距，因为已经在padding中留出空间
+  margin-left: 0;
   min-height: 26px;
 
   .task-name__text {

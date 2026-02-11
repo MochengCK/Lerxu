@@ -133,7 +133,7 @@ export const peerIdParser = (str) => {
 
     // 检查是否是 FluxCore 或 LinkCore
     if (decodedStr && (decodedStr.startsWith('FluxCore') || decodedStr.startsWith('LinkCore'))) {
-      // 尝试提取版本号，格式如 "FluxCore/1.0.2"
+      // 尝试提取版本号，格式如 "FluxCore/1.0.6"
       const match = decodedStr.match(/^(FluxCore|LinkCore)\/?([\d.]+)?/)
       if (match) {
         const version = match[2]
@@ -143,7 +143,7 @@ export const peerIdParser = (str) => {
     }
 
     // 检查 Peer ID 是否以 -FX 开头（Azureus 风格）
-    // 格式：-FX1020-xxxxxxxxxxxx
+    // 格式：-FX1060-xxxxxxxxxxxx
     if (decodedStr && decodedStr.startsWith('-FX')) {
       const versionMatch = decodedStr.match(/^-FX(\d)(\d)(\d)(\d)-/)
       if (versionMatch) {
@@ -375,8 +375,18 @@ export const checkTaskIsSeeder = (task) => {
 }
 
 export const getTaskUri = (task, withTracker = false) => {
-  const { files } = task
+  const { files, infoHash, bittorrent } = task || {}
   let result = ''
+  // Some restored BT tasks may temporarily miss `bittorrent` metadata but still
+  // carry `infoHash`. Build a minimal magnet link in that case.
+  if (infoHash) {
+    if (bittorrent) {
+      result = buildMagnetLink(task, withTracker)
+    } else {
+      result = `magnet:?xt=urn:btih:${infoHash}`
+    }
+    return result
+  }
   if (checkTaskIsBT(task)) {
     result = buildMagnetLink(task, withTracker)
     return result
@@ -385,6 +395,10 @@ export const getTaskUri = (task, withTracker = false) => {
   if (files && files.length === 1) {
     const { uris } = files[0]
     result = uris[0].uri
+    const fallback = `${result || ''}`.match(/^[a-zA-Z]:\/\/.*?([0-9a-fA-F]{40})\.torrent(?:[?#].*)?$/)
+    if (fallback && fallback[1]) {
+      result = `magnet:?xt=urn:btih:${fallback[1].toLowerCase()}`
+    }
   }
 
   return result
@@ -425,8 +439,8 @@ export const checkTaskTitleIsEmpty = (task) => {
 }
 
 export const checkTaskIsBT = (task = {}) => {
-  const { bittorrent } = task
-  return !!bittorrent
+  const { bittorrent, infoHash } = task || {}
+  return !!bittorrent || !!infoHash
 }
 
 export const isTorrent = (file) => {

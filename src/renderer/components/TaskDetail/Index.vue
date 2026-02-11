@@ -1,7 +1,7 @@
 <template>
   <el-drawer
     :custom-class="drawerClass"
-    size="61.8%"
+    size="73.7%"
     v-if="gid"
     :with-header="true"
     :show-close="false"
@@ -46,6 +46,9 @@
             :placeholder="$t('task.peers-search')"
             clearable
           />
+          <button type="button" class="task-detail-close" aria-label="Close" @click="handleClose">
+            <i class="el-icon-close"></i>
+          </button>
         </div>
       </div>
     </div>
@@ -211,7 +214,7 @@
         return Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 10) : 0
       },
       shouldEnableBackdrop () {
-        return this.drawerAnimationDone && this.taskDetailDefaultTransparentEnabled && this.taskDetailFrostedBlurValue > 0
+        return this.taskDetailDefaultTransparentEnabled && this.taskDetailFrostedBlurValue > 0
       },
       drawerClass () {
         const base = 'panel task-detail-drawer'
@@ -272,43 +275,17 @@
       },
       statusHintText () {
         const task = this.task || {}
-        if (!task || !task.gid) {
+        if (!task) {
           return ''
         }
-        if (this.isBT && this.isSeeder) {
-          return this.$t('task.bt-seeding-continue')
-        }
-        const magnetText = this.magnetHintText
-        if (magnetText) {
-          return magnetText
-        }
-        const status = task.status
-        const isMagnet = isMagnetTask(task)
-        if (isMagnet) {
+        const raw = `${task.statusHint || ''}`.trim()
+        if (!raw) {
           return ''
         }
-        if (status === TASK_STATUS.ERROR) {
-          const reason = this.resolveErrorReason(task.errorCode, task.errorMessage)
-          if (reason) {
-            return this.$t('task.download-fail-with-reason', { reason })
-          }
-          return this.$t('task.download-fail-notify')
+        if (raw.startsWith('task.')) {
+          return this.$t(raw)
         }
-        const waitingStatuses = [TASK_STATUS.ACTIVE, TASK_STATUS.WAITING]
-        if (!waitingStatuses.includes(status)) {
-          return ''
-        }
-        const downloadSpeed = Number(task.downloadSpeed || 0)
-        if (downloadSpeed > 0) {
-          return ''
-        }
-        const gid = task.gid
-        const statusInfo = (this.dataAccessStatuses && gid && this.dataAccessStatuses[gid]) || {}
-        const elapsedSec = Number(statusInfo.elapsedSec || 0)
-        if (elapsedSec < 10) {
-          return ''
-        }
-        return this.$t('task.waiting-download-data')
+        return raw
       },
       resolveErrorReason () {
         return (errorCode, errorMessage = '') => {
@@ -811,7 +788,7 @@
 .task-detail-drawer {
   min-width: 478px;
   .el-drawer__header {
-    padding-top: 2rem;
+    padding: 3rem 0.75rem 0;
     margin-bottom: 0;
   }
   .el-drawer__body {
@@ -821,7 +798,7 @@
     flex-direction: column;
   }
   .task-detail-hint {
-    padding: 0.25rem 1.25rem 0.5rem;
+    padding: 0.25rem 0.75rem 0.5rem;
     color: #9B9B9B;
     .task-detail-hint__text {
       display: inline-block;
@@ -832,7 +809,7 @@
     }
   }
   .task-detail-completion-time {
-    padding: 0.25rem 1.25rem 0.5rem;
+    padding: 0.25rem 0.75rem 0.5rem;
     color: #9B9B9B;
     font-size: 0.875rem;
     .task-detail-completion-time__text {
@@ -883,6 +860,21 @@
     align-items: center;
     gap: 12px;
   }
+  .task-detail-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #909399;
+    cursor: pointer;
+  }
+  .task-detail-close:hover {
+    color: $--color-primary;
+  }
   .task-detail-peer-search {
     max-width: 240px;
   }
@@ -891,7 +883,7 @@
 .task-detail-content {
   flex: 1;
   height: 0; /* Ensures flex container scrolls correctly */
-  padding: 0.5rem 1.25rem;
+  padding: 0.5rem 0.75rem;
   box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;

@@ -11,7 +11,9 @@ import {
   mergeTaskResult,
   changeKeysToCamelCase,
   changeKeysToKebabCase,
-  generateUniqueTaskName
+  generateUniqueTaskName,
+  checkTaskIsBT,
+  checkTaskIsSeeder
 } from '@shared/utils'
 import { ENGINE_RPC_HOST, TASK_STATUS } from '@shared/constants'
 import taskHistory from './TaskHistory'
@@ -59,6 +61,21 @@ const isStoppedCategoryStatus = (status) => {
     s === TASK_STATUS.COMPLETE ||
     s === TASK_STATUS.ERROR ||
     s === TASK_STATUS.REMOVED
+}
+
+const isHistoryStoppedStatus = (status) => {
+  const s = `${status || ''}`
+  return s === TASK_STATUS.COMPLETE ||
+    s === TASK_STATUS.ERROR ||
+    s === TASK_STATUS.REMOVED
+}
+
+const isTransientMagnetTask = (task) => {
+  if (!task || typeof task !== 'object') {
+    return false
+  }
+  const bt = task.bittorrent
+  return !!(bt && !bt.info)
 }
 
 const isNonEmptyString = (value) => {
@@ -479,10 +496,18 @@ export default class Api {
         const historyStatus = `${historyTask.status || ''}`
         const total = Number(task.totalLength || historyTask.totalLength || 0)
         const completed = Number(task.completedLength || historyTask.completedLength || 0)
-        // 检查是否在做种 - 做种任务不应该被强制改为历史状态
-        const isSeeding = task.bittorrent && task.seeder === 'true'
+        // Do not coerce active BT tasks to stopped history status when they are
+        // seeding (or ready-to-seed right after app restart).
+        const isBtTask = checkTaskIsBT(task) || checkTaskIsBT(historyTask)
+        const isSeeding = checkTaskIsSeeder(task) || checkTaskIsSeeder(historyTask)
+        const isBtCompletedActive = isBtTask &&
+          activeStatuses.has(liveStatus) &&
+          Number.isFinite(total) &&
+          total > 0 &&
+          Number.isFinite(completed) &&
+          completed >= total
         const shouldCoerceToHistoryStatus =
-          !isSeeding &&
+          !(isSeeding || isBtCompletedActive || (isBtTask && activeStatuses.has(liveStatus))) &&
           activeStatuses.has(liveStatus) &&
           stoppedStatuses.has(historyStatus) &&
           Number.isFinite(total) && total > 0 &&
@@ -573,13 +598,18 @@ export default class Api {
           taskHistory.saveStoppedTasks(stoppedTasks)
 
           result = this._mergeHistoryToTasks(result)
+          // 移除已停止状态下的临时磁力任务，避免出现无效重复记录
+          result = result.filter(task => !(isTransientMagnetTask(task) && isHistoryStoppedStatus(task && task.status)))
 
           // 获取历史记录并合并到结果中
           const historyTasks = taskHistory.getHistory()
           if (historyTasks.length > 0) {
-            // 合并历史任务，避免重复
+            // 合并历史任务，避免重复，仅展示真正已停止的记录
             const currentGids = new Set(result.map(task => task.gid))
-            const newHistoryTasks = historyTasks.filter(task => !currentGids.has(task.gid))
+            const newHistoryTasks = historyTasks
+              .filter(task => isHistoryStoppedStatus(task && task.status))
+              .filter(task => !isTransientMagnetTask(task))
+              .filter(task => !currentGids.has(task.gid))
             result = [...result, ...newHistoryTasks]
           }
 
@@ -609,11 +639,13 @@ export default class Api {
         .then(stoppedTasks => {
           // 获取历史记录中的任务
           const historyTasks = taskHistory.getHistory()
+          const historyStoppedTasks = historyTasks
+            .filter(task => isHistoryStoppedStatus(task && task.status))
+            .filter(task => !isTransientMagnetTask(task))
 
           // 如果没有从Aria2获取到已停止的任务，直接返回历史记录
           if (stoppedTasks.length === 0) {
-            return historyTasks
-              .filter(task => isStoppedCategoryStatus(task && task.status))
+            return historyStoppedTasks
               .filter(task => !looksLikeBilibiliDashPart(task))
           }
 
@@ -621,12 +653,14 @@ export default class Api {
           taskHistory.saveStoppedTasks(stoppedTasks)
 
           stoppedTasks = this._mergeHistoryToTasks(stoppedTasks)
+          // 移除已停止状态下的临时磁力任务，避免出现无效重复记录
+          stoppedTasks = stoppedTasks.filter(task => !(isTransientMagnetTask(task) && isHistoryStoppedStatus(task && task.status)))
 
           // 合并Aria2任务和历史记录任务，避免重复
           const currentGids = new Set(stoppedTasks.map(task => task.gid))
-          const newHistoryTasks = historyTasks
+          const newHistoryTasks = historyStoppedTasks
             .filter(task => !currentGids.has(task.gid))
-            .filter(task => isStoppedCategoryStatus(task && task.status))
+            .filter(task => isHistoryStoppedStatus(task && task.status))
           stoppedTasks = stoppedTasks.filter(task => isStoppedCategoryStatus(task && task.status))
 
           let merged = [...stoppedTasks, ...newHistoryTasks]
@@ -644,7 +678,8 @@ export default class Api {
           console.log('[Motrix] fetch stopped task list fail, fallback to history:', err)
           const history = taskHistory.getHistory()
           return history
-            .filter(task => isStoppedCategoryStatus(task && task.status))
+            .filter(task => isHistoryStoppedStatus(task && task.status))
+            .filter(task => !isTransientMagnetTask(task))
             .filter(task => !looksLikeBilibiliDashPart(task))
         })
     default:

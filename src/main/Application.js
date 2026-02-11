@@ -1342,20 +1342,13 @@ export default class Application extends EventEmitter {
       // 筛选出可以恢复的任务
       const tasksToResume = []
       for (const task of waitingTasks) {
-        const { status, bittorrent, totalLength, files } = task
+        const { status, bittorrent, files } = task
         // 只处理暂停状态的任务
         if (status !== 'paused') {
           continue
         }
 
-        // 检查是否是磁力链接任务（通过 bittorrent 存在且 totalLength 为 0 判断）
-        const isMagnetWithoutMetadata = bittorrent && (!totalLength || totalLength === '0')
-
-        // 如果是磁力链接且没有元数据（totalLength 为 0），跳过恢复
-        if (isMagnetWithoutMetadata) {
-          logger.info(`[Motrix] Skipping magnet task ${task.gid} - no metadata yet`)
-          continue
-        }
+        // 允许自动恢复磁力任务以继续获取元数据，避免重启后长期停在 0 速度
 
         // 额外检查：如果是BT任务但没有文件信息，也跳过
         // 这种情况可能是元数据正在获取中
@@ -1767,18 +1760,16 @@ export default class Application extends EventEmitter {
           const currentHistoryRaw = taskHistoryStore.get('tasks', [])
           const currentHistory = Array.isArray(currentHistoryRaw) ? currentHistoryRaw : []
 
-          // 过滤需要保存的任务（包括磁力链接任务，但排除元数据解析任务）
+          // 过滤需要保存的任务（仅保存已停止状态的任务，排除元数据解析任务）
           const tasksToSave = allTasks.filter(task => {
-            const { status, bittorrent } = task
+            const { status } = task
             // 检查是否为种子解析任务 - 这些是临时任务，不应该保存到历史记录
             const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
             if (isMetadataTask) {
               return false
             }
-            // 检查是否为磁力链接任务
-            const isMagnetTask = bittorrent && !bittorrent.info
-            // 保存磁力链接任务和已停止状态的任务
-            return isMagnetTask || ['complete', 'error', 'removed'].includes(status)
+            // 仅保存已停止状态的任务
+            return ['complete', 'error', 'removed'].includes(status)
           })
 
           const updatedHistory = [...currentHistory]

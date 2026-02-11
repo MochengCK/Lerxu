@@ -9,9 +9,9 @@
       :lg="leftColSpan.lg"
     >
       <el-tooltip
-        v-if="linkUpdateHintText"
+        v-if="statusHintText"
         effect="dark"
-        :content="linkUpdateHintText"
+        :content="statusHintText"
         placement="top"
         :disabled="!isStatusTruncated"
       >
@@ -19,49 +19,15 @@
           ref="statusText"
           class="task-magnet-hint task-magnet-hint--ellipsis"
         >
-          {{ linkUpdateHintText }}
+          {{ statusHintText }}
         </div>
       </el-tooltip>
-      <div
-        v-else-if="seedingHintText"
-        class="task-magnet-hint task-magnet-hint--ellipsis"
-      >
-        {{ seedingHintText }}
-      </div>
-      <el-tooltip
-        v-else-if="!magnetHintText && dataAccessHintText"
-        effect="dark"
-        :content="dataAccessHintText"
-        placement="top"
-        :disabled="!isStatusTruncated"
-      >
-        <div
-          ref="statusText"
-          class="task-magnet-hint task-magnet-hint--ellipsis"
-        >
-          {{ dataAccessHintText }}
-        </div>
-      </el-tooltip>
-      <div v-else-if="!magnetHintText && (task.completedLength > 0 || task.totalLength > 0)">
+      <div v-else-if="task.completedLength > 0 || task.totalLength > 0">
         <span>{{ task.completedLength | bytesToSize(2) }}</span>
         <span v-if="task.totalLength > 0"> / {{ task.totalLength | bytesToSize(2) }}</span>
         <span v-if="downloadPercentText" class="task-progress-sep"></span>
         <span v-if="downloadPercentText" class="task-progress-percent">{{ downloadPercentText }}</span>
       </div>
-      <el-tooltip
-        v-if="magnetHintText"
-        effect="dark"
-        :content="magnetHintText"
-        placement="top"
-        :disabled="!isStatusTruncated"
-      >
-        <div
-          ref="magnetHintText"
-          class="task-magnet-hint task-magnet-hint--ellipsis"
-        >
-          {{ magnetHintText }}
-        </div>
-      </el-tooltip>
     </el-col>
     <el-col
       class="task-progress-info-right"
@@ -70,7 +36,10 @@
       :md="rightColSpan.md"
       :lg="rightColSpan.lg"
     >
-      <div class="task-speed-info" v-if="isActive && !isSeeder">
+      <div class="task-completion-time" v-if="statusRightText">
+        <span>{{ statusRightText }}</span>
+      </div>
+      <div class="task-speed-info" v-else-if="isActive && !isSeeder">
         <div class="task-speed-text" v-if="isBT">
           <i><mo-icon name="arrow-up" width="10" height="14" /></i>
           <span>{{ task.uploadSpeed | bytesToSize }}/s</span>
@@ -235,32 +204,27 @@
       isSeeder () {
         return this.isActive && this.task ? checkTaskIsSeeder(this.task) : false
       },
-      seedingHintText () {
-        if (!this.isBT) {
-          return ''
-        }
-        if (!this.isSeeder) {
-          return ''
-        }
-        return this.$t('task.bt-seeding-continue')
-      },
-      linkUpdateHintText () {
+      statusHintText () {
         const task = this.task || {}
-        const gid = task && task.gid ? `${task.gid}` : ''
-        const map = this.taskLinkUpdateHints || {}
-        const hint = gid ? map[gid] : null
-        if (!hint) {
+        const raw = `${task.statusHint || ''}`.trim()
+        if (!raw) {
           return ''
         }
-        const code = Number(hint.httpStatus) || 0
-        if (code === 403) return this.$t('task.link-update-hint-403')
-        if (code === 401) return this.$t('task.link-update-hint-401')
-        if (code === 410) return this.$t('task.link-update-hint-410')
-        if (code === 404) return this.$t('task.link-update-hint-404')
-        if (code === 416) return this.$t('task.link-update-hint-416')
-        return code > 0
-          ? this.$t('task.link-update-hint-with-code', { code })
-          : this.$t('task.link-update-hint')
+        if (raw.startsWith('task.')) {
+          return this.$t(raw)
+        }
+        return raw
+      },
+      statusRightText () {
+        const task = this.task || {}
+        const raw = `${task.statusRightText || ''}`.trim()
+        if (!raw) {
+          return ''
+        }
+        if (raw.startsWith('task.')) {
+          return this.$t(raw)
+        }
+        return raw
       },
       remaining () {
         const { totalLength, completedLength, downloadSpeed } = this.task
@@ -372,8 +336,7 @@
           }
           return this.$t('task.download-fail-notify')
         }
-        const waitingStatuses = [TASK_STATUS.ACTIVE, TASK_STATUS.WAITING]
-        if (!waitingStatuses.includes(status)) {
+        if (status !== TASK_STATUS.ACTIVE) {
           return ''
         }
         if (downloadSpeed > 0) {
@@ -394,13 +357,7 @@
       }
     },
     watch: {
-      linkUpdateHintText () {
-        this.updateStatusTruncation()
-      },
-      dataAccessHintText () {
-        this.updateStatusTruncation()
-      },
-      magnetHintText () {
+      statusHintText () {
         this.updateStatusTruncation()
       }
     },
@@ -444,7 +401,7 @@
       },
       updateStatusTruncation () {
         this.$nextTick(() => {
-          const el = this.$refs.magnetHintText || this.$refs.statusText
+          const el = this.$refs.statusText
           if (!el || !el.scrollWidth || !el.clientWidth) {
             this.isStatusTruncated = false
             return
@@ -466,7 +423,7 @@
   line-height: 0.875rem;
   min-height: 0.875rem;
   color: #9B9B9B;
-  margin-top: 0.5rem;
+  margin-top: 0.6rem;
   i {
     font-style: normal;
   }
@@ -558,6 +515,6 @@
   width: 100%;
 }
 .task-magnet-hint-row {
-  margin-top: 4px;
+  margin-top: 2px;
 }
 </style>

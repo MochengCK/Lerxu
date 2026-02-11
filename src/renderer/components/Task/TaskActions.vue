@@ -1,5 +1,5 @@
 <template>
-  <div class="task-actions">
+  <div :class="['task-actions', { 'task-actions--titlebar': showInTitlebar }]">
     <el-tooltip
       class="item"
       effect="dark"
@@ -36,6 +36,10 @@
       </i>
     </el-tooltip>
     <div class="view-mode-nav">
+      <div
+        class="view-mode-nav__highlight"
+        :class="{ 'is-grid': viewMode === 'grid' }"
+      ></div>
       <el-tooltip
         effect="dark"
         placement="bottom"
@@ -82,7 +86,16 @@
     name: 'mo-task-actions',
     components: {
     },
-    props: ['task'],
+    props: {
+      task: {
+        type: Object,
+        default: null
+      },
+      showInTitlebar: {
+        type: Boolean,
+        default: false
+      }
+    },
     data () {
       return {
         refreshing: false
@@ -151,7 +164,7 @@
   cursor: default;
   text-align: right;
   color: $--task-action-color;
-  transition: all 0.25s;
+  transition: all 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
   display: flex;
   align-items: center;
 
@@ -171,7 +184,38 @@
   }
 }
 
+.task-actions.task-actions--titlebar {
+  position: fixed;
+  top: 9px;
+  right: 160px;
+  z-index: 10000;
+  overflow: visible;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  transition: opacity 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+.is-task-detail-open .task-actions.task-actions--titlebar,
+  .is-add-task-open .task-actions.task-actions--titlebar,
+  .is-task-plan-open .task-actions.task-actions--titlebar {
+    z-index: 1999;
+    opacity: 0;
+    pointer-events: none;
+    transition: none;
+  }
+
+.task-actions.task-actions--titlebar::after {
+  content: '';
+  position: absolute;
+  right: -10px;
+  top: 4px;
+  width: 1px;
+  height: 16px;
+  background-color: $--task-action-color;
+  opacity: 0.5;
+}
 .view-mode-nav {
+  position: relative;
   display: inline-flex;
   align-items: center;
   background-color: rgba(0, 0, 0, 0.06);
@@ -181,7 +225,26 @@
   height: 24px;
   box-sizing: border-box;
 
+  &__highlight {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 28px;
+    height: 20px;
+    border-radius: 6px;
+    background-color: $--color-primary;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 1;
+    transform: translate3d(0, 0, 0);
+
+    &.is-grid {
+      transform: translate3d(100%, 0, 0);
+    }
+  }
+
   &__item {
+    position: relative;
+    z-index: 2;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -197,7 +260,7 @@
     }
 
     &--active {
-      background-color: $--color-primary;
+      background-color: transparent;
       color: #fff;
 
       &:hover {
@@ -209,6 +272,9 @@
 
 // 暗色主题支持
 .theme-dark {
+  .task-actions.task-actions--titlebar::after {
+    background-color: $--dk-task-action-color;
+  }
   .view-mode-nav {
     background-color: rgba(255, 255, 255, 0.1);
 
@@ -220,7 +286,7 @@
       }
 
       &--active {
-        background-color: $--color-primary;
+        background-color: transparent;
         color: #fff;
 
         &:hover {

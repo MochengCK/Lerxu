@@ -1,13 +1,18 @@
 <template>
   <nav class="subnav-inner">
     <h3 v-if="!isStandalone">{{ title }}</h3>
-    <ul>
+    <ul class="preference-subnav-ul">
+      <div class="nav-slider" :style="sliderStyle"></div>
       <li
         v-for="item in subnavItems"
         :key="item.key"
         @click="() => nav(item.key)"
-        :class="[ current === item.key ? 'active' : '' ]"
+        :class="['subnav-item', `subnav-item--${item.key}`, current === item.key ? 'active' : '' ]"
       >
+        <i v-if="item.icon" class="subnav-icon">
+          <mo-icon :name="item.icon" width="18" height="18" />
+        </i>
+        <i v-else class="subnav-icon subnav-icon--empty"></i>
         <span>{{ item.title }}</span>
       </li>
     </ul>
@@ -16,6 +21,14 @@
 
 <script>
   import { mapState, mapActions } from 'vuex'
+  import '@/components/Icons/preference-basic'
+  import '@/components/Icons/preference-advanced'
+  import '@/components/Icons/preference-appearance'
+  import '@/components/Icons/preference-transfer'
+  import '@/components/Icons/preference-task'
+  import '@/components/Icons/preference-file'
+  import '@/components/Icons/preference-security'
+  import '@/components/Icons/preference-bt'
 
   export default {
     name: 'mo-preference-subnav',
@@ -27,7 +40,9 @@
     },
     data () {
       return {
-        appVersion: ''
+        appVersion: '',
+        sliderTop: 0,
+        sliderHeight: 36
       }
     },
     computed: {
@@ -45,18 +60,31 @@
       },
       subnavItems () {
         return [
-          { key: 'basic', title: this.$t('preferences.basic') },
-          { key: 'appearance', title: this.$t('preferences.appearance') },
-          { key: 'transfer', title: this.$t('preferences.transfer-settings') },
-          { key: 'task', title: this.$t('preferences.task-manage') },
-          { key: 'file', title: this.$t('preferences.file-manage') },
-          { key: 'security', title: this.$t('preferences.security') },
-          { key: 'advanced', title: this.$t('preferences.advanced') },
-          { key: 'bittorrent', title: this.$t('preferences.bittorrent') }
+          { key: 'basic', title: this.$t('preferences.basic'), icon: 'preference-basic' },
+          { key: 'appearance', title: this.$t('preferences.appearance'), icon: 'preference-appearance' },
+          { key: 'transfer', title: this.$t('preferences.transfer-settings'), icon: 'preference-transfer' },
+          { key: 'task', title: this.$t('preferences.task-manage'), icon: 'preference-task' },
+          { key: 'file', title: this.$t('preferences.file-manage'), icon: 'preference-file' },
+          { key: 'security', title: this.$t('preferences.security'), icon: 'preference-security' },
+          { key: 'advanced', title: this.$t('preferences.advanced'), icon: 'preference-advanced' },
+          { key: 'bittorrent', title: this.$t('preferences.bittorrent'), icon: 'preference-bt' }
         ]
       },
       isChecking () {
         return this.isCheckingUpdate
+      },
+      currentIndex () {
+        return this.subnavItems.findIndex(item => item.key === this.current)
+      },
+      sliderStyle () {
+        const index = this.currentIndex
+        if (index === -1) return { display: 'none' }
+        const top = Number.isFinite(this.sliderTop) ? this.sliderTop : 0
+        const height = Number.isFinite(this.sliderHeight) ? this.sliderHeight : 36
+        return {
+          transform: `translateY(${top}px)`,
+          height: `${height}px`
+        }
       }
     },
     async mounted () {
@@ -67,6 +95,8 @@
       } catch (error) {
         console.error('[Motrix] Failed to get app version:', error)
       }
+
+      this.updateSliderFromDom()
 
       // 监听更新事件
       this.$electron.ipcRenderer.on('checking-for-update', () => {
@@ -114,6 +144,18 @@
       this.$electron.ipcRenderer.removeAllListeners('update-error')
       this.$electron.ipcRenderer.removeAllListeners('download-progress')
     },
+    watch: {
+      current () {
+        this.$nextTick(() => {
+          this.updateSliderFromDom()
+        })
+      },
+      subnavItems () {
+        this.$nextTick(() => {
+          this.updateSliderFromDom()
+        })
+      }
+    },
     methods: {
       ...mapActions('app', ['updateCheckingUpdate']),
       ...mapActions('preference', ['updateUpdateAvailable', 'updateNewVersion', 'updateLastCheckUpdateTime', 'updateIsDownloadingUpdate', 'updateDownloadProgress', 'updateReleaseNotes']),
@@ -124,6 +166,17 @@
         }).catch(err => {
           console.log(err)
         })
+      },
+      updateSliderFromDom () {
+        if (!this.$el) {
+          return
+        }
+        const activeItem = this.$el.querySelector('.preference-subnav-ul li.active')
+        if (!activeItem) {
+          return
+        }
+        this.sliderTop = activeItem.offsetTop || 0
+        this.sliderHeight = activeItem.offsetHeight || 36
       },
 
       // 获取版本显示文本
@@ -276,6 +329,20 @@
 </script>
 
 <style lang="scss">
+.preference-subnav-ul .subnav-icon {
+  height: 18px;
+}
+
+.preference-subnav-ul .subnav-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.preference-subnav-ul li:not(.subnav-item--basic):not(.subnav-item--advanced) .subnav-icon svg {
+  transform: scale(1.12);
+  transform-origin: center;
+}
+
 .version-item {
   cursor: pointer;
   transition: all 0.3s ease;

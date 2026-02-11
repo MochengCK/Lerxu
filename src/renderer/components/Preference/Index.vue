@@ -1,17 +1,17 @@
 <template>
   <el-container
-    class="main panel"
+    class="main panel preference-panel"
     direction="horizontal"
     :class="{ 'preference-standalone': isStandalone }"
     style="height: 100vh"
   >
     <el-aside v-if="isStandalone" width="220px" class="subnav preference-subnav-left">
-      <router-view :key="$route.path" name="subnav" />
+      <router-view name="subnav" />
     </el-aside>
     <template v-if="isThreeColumn">
       <mo-aside v-if="showMainAside" />
       <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav">
-        <router-view :key="$route.path" name="subnav" />
+        <router-view name="subnav" />
       </el-aside>
     </template>
 
@@ -64,10 +64,12 @@
     </template>
     <div v-if="isStandalone" class="preference-bottom-search">
       <button
-        :class="['floating-bar-search preference-search', { 'is-expanded': isPreferenceSearchOpen, 'is-hovered': isPreferenceSearchHovering }]"
+        :class="['floating-bar-search preference-search', { 'is-expanded': isPreferenceSearchOpen, 'is-hovered': isPreferenceSearchHovering, 'is-pressed': isPreferenceSearchPressed }]"
         @click="focusPreferenceSearch"
         @mouseenter="handlePreferenceSearchMouseEnter"
         @mouseleave="handlePreferenceSearchMouseLeave"
+        @mousedown="handlePreferenceSearchMouseDown"
+        @mouseup="handlePreferenceSearchMouseUp"
       >
         <input
           ref="preferenceSearchInput"
@@ -89,6 +91,8 @@
   import { mapState } from 'vuex'
   import SubnavSwitcher from '@/components/Subnav/SubnavSwitcher'
   import Aside from '@/components/Aside/Index'
+  import PreferenceAdvanced from '@/components/Preference/Advanced'
+  import PreferenceBitTorrent from '@/components/Preference/BitTorrent'
 
   export default {
     name: 'mo-content-preference',
@@ -101,10 +105,13 @@
         windowWidth: 0,
         isPreferenceSearchHovering: false,
         isPreferenceSearchFocused: false,
+        isPreferenceSearchPressed: false,
         preferenceSearchTimer: null,
         isPreferenceSearchAutoNavigating: false,
         preferenceSearchToken: 0,
-        pendingPreferenceSearchKeyword: ''
+        pendingPreferenceSearchKeyword: '',
+        preferenceSearchIndex: {},
+        preferenceSearchStaticIndexReady: false
       }
     },
     computed: {
@@ -246,12 +253,39 @@
       },
       handlePreferenceSearchMouseLeave () {
         this.isPreferenceSearchHovering = false
+        this.isPreferenceSearchPressed = false
+        this.removePreferenceSearchMouseUpListener()
+      },
+      handlePreferenceSearchMouseDown () {
+        this.isPreferenceSearchPressed = true
+        this.addPreferenceSearchMouseUpListener()
+      },
+      handlePreferenceSearchMouseUp () {
+        this.isPreferenceSearchPressed = false
+        this.removePreferenceSearchMouseUpListener()
       },
       handlePreferenceSearchFocus () {
         this.isPreferenceSearchFocused = true
       },
       handlePreferenceSearchBlur () {
         this.isPreferenceSearchFocused = false
+      },
+      addPreferenceSearchMouseUpListener () {
+        if (typeof window === 'undefined') {
+          return
+        }
+        if (!this._preferenceSearchMouseUpHandler) {
+          this._preferenceSearchMouseUpHandler = () => {
+            this.handlePreferenceSearchMouseUp()
+          }
+        }
+        window.addEventListener('mouseup', this._preferenceSearchMouseUpHandler)
+      },
+      removePreferenceSearchMouseUpListener () {
+        if (typeof window === 'undefined' || !this._preferenceSearchMouseUpHandler) {
+          return
+        }
+        window.removeEventListener('mouseup', this._preferenceSearchMouseUpHandler)
       },
       schedulePreferenceSearch (keyword) {
         if (this.preferenceSearchTimer) {
@@ -281,36 +315,18 @@
           this.pendingPreferenceSearchKeyword = keyword
           return
         }
+        this.ensurePreferenceSearchStaticIndex()
         const currentCategory = this.currentPreferenceCategory
-        const currentMatched = await this.checkCurrentPreferenceMatch(normalized)
+        await this.updatePreferenceSearchIndexFromCurrentForm()
         if (token !== this.preferenceSearchToken) {
           return
         }
-        if (currentMatched) {
+        const matchedCategory = this.findPreferenceSearchMatch(normalized, currentCategory)
+        if (!matchedCategory || matchedCategory === currentCategory) {
           return
         }
         this.isPreferenceSearchAutoNavigating = true
-        const categories = this.subnavItems.map(item => item.key).filter(key => key !== currentCategory)
-        let matchedCategory = ''
-        for (const key of categories) {
-          await this.navigateToPreferenceCategory(key)
-          if (token !== this.preferenceSearchToken) {
-            this.isPreferenceSearchAutoNavigating = false
-            return
-          }
-          const matched = await this.checkCurrentPreferenceMatch(normalized)
-          if (token !== this.preferenceSearchToken) {
-            this.isPreferenceSearchAutoNavigating = false
-            return
-          }
-          if (matched) {
-            matchedCategory = key
-            break
-          }
-        }
-        if (!matchedCategory) {
-          await this.navigateToPreferenceCategory(currentCategory)
-        }
+        await this.navigateToPreferenceCategory(matchedCategory)
         this.isPreferenceSearchAutoNavigating = false
         if (this.pendingPreferenceSearchKeyword) {
           const nextKeyword = this.pendingPreferenceSearchKeyword
@@ -327,28 +343,88 @@
         await this.$nextTick()
         await new Promise(resolve => setTimeout(resolve, 0))
       },
-      async checkCurrentPreferenceMatch (keyword) {
+      ensurePreferenceSearchStaticIndex () {
+        if (this.preferenceSearchStaticIndexReady) {
+          return
+        }
+        const index = { ...this.preferenceSearchIndex }
+        const entries = [
+          { key: 'advanced', component: PreferenceAdvanced },
+          { key: 'bittorrent', component: PreferenceBitTorrent }
+        ]
+        entries.forEach(entry => {
+          const keys = this.extractPreferenceKeysFromComponent(entry.component)
+          if (!keys.length) {
+            return
+          }
+          const text = keys.map(key => `${this.$t(key) || ''}`).join(' ').toLowerCase()
+          if (text) {
+            index[entry.key] = text
+          }
+        })
+        this.preferenceSearchIndex = index
+        this.preferenceSearchStaticIndexReady = true
+      },
+      extractPreferenceKeysFromComponent (component) {
+        const render = component && (component.render || (component.options && component.options.render))
+        if (typeof render !== 'function') {
+          return []
+        }
+        const source = `${render.toString() || ''}`
+        const matches = source.match(/preferences\.[a-z0-9-]+/gi) || []
+        return Array.from(new Set(matches))
+      },
+      async updatePreferenceSearchIndexFromCurrentForm () {
         await this.$nextTick()
         await new Promise(resolve => setTimeout(resolve, 0))
         const formComponent = this.$refs.preferenceForm
         if (!formComponent || !formComponent.$el) {
-          return false
-        }
-        if (typeof formComponent.hasNoResults === 'boolean') {
-          return !formComponent.hasNoResults
+          return
         }
         const cards = formComponent.$el.querySelectorAll('.preference-card, .preference-bottom-actions')
+        const currentCategory = this.currentPreferenceCategory
+        const nextIndex = { ...this.preferenceSearchIndex }
         if (!cards.length) {
           const text = `${formComponent.$el.textContent || ''}`.toLowerCase()
-          return text.includes(keyword)
+          nextIndex[currentCategory] = text
+          this.preferenceSearchIndex = nextIndex
+          return
         }
-        return Array.from(cards).some(card => {
-          if (card.style && card.style.display === 'none') {
-            return false
+        const basicCategories = new Set(['basic', 'appearance', 'transfer', 'task', 'file', 'security'])
+        if (basicCategories.has(currentCategory)) {
+          const categoryTextMap = {}
+          Array.from(cards).forEach(card => {
+            const text = `${card.textContent || ''}`.toLowerCase()
+            const rawCategory = `${card.dataset.category || ''}`.trim()
+            const categories = rawCategory ? rawCategory.split(/\s+/) : [currentCategory]
+            categories.forEach(category => {
+              if (!categoryTextMap[category]) {
+                categoryTextMap[category] = text
+              } else {
+                categoryTextMap[category] = `${categoryTextMap[category]} ${text}`
+              }
+            })
+          })
+          Object.keys(categoryTextMap).forEach(category => {
+            nextIndex[category] = categoryTextMap[category]
+          })
+          this.preferenceSearchIndex = nextIndex
+          return
+        }
+        const text = Array.from(cards).map(card => card.textContent || '').join(' ').toLowerCase()
+        nextIndex[currentCategory] = text
+        this.preferenceSearchIndex = nextIndex
+      },
+      findPreferenceSearchMatch (keyword, currentCategory) {
+        const index = this.preferenceSearchIndex || {}
+        const categories = [currentCategory, ...this.subnavItems.map(item => item.key).filter(key => key !== currentCategory)]
+        for (const key of categories) {
+          const text = index[key]
+          if (text && text.includes(keyword)) {
+            return key
           }
-          const text = `${card.textContent || ''}`.toLowerCase()
-          return text.includes(keyword)
-        })
+        }
+        return ''
       }
     },
     mounted () {
@@ -365,6 +441,7 @@
         window.removeEventListener('resize', this._handleWindowResize)
         this._handleWindowResize = null
       }
+      this.removePreferenceSearchMouseUpListener()
     }
   }
 </script>
@@ -381,6 +458,15 @@
   opacity: 0.5;
   transition: opacity 0.3s ease;
   padding: 8px;
+}
+
+.subnav-small-screen.subnav-right.is-auto-hide-subnav {
+  transform: translateY(-50%) translateX(calc(100% - 12px));
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
+}
+
+.subnav-small-screen.subnav-right.is-auto-hide-subnav:hover {
+  transform: translateY(-50%) translateX(0);
 }
 
 .subnav-small-screen.subnav-right:hover {
@@ -463,6 +549,26 @@
   margin-bottom: 0;
 }
 
+.preference-panel .panel-header {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background-color: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(var(--app-ui-frosted-blur, 10px));
+  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur, 10px));
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.theme-dark .preference-panel .panel-header {
+  background-color: rgba(45, 45, 45, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.preference-panel:not(.preference-standalone) .form-preference {
+  margin-top: -84px;
+  padding-top: 96px;
+}
+
 .preference-standalone .preference-subnav-left {
   background: transparent;
   backdrop-filter: none;
@@ -476,7 +582,7 @@
 }
 
 .preference-standalone .subnav-inner {
-  margin-top: 10px;
+  margin-top: 46px;
 }
 
 .preference-standalone .panel-header {
@@ -484,8 +590,12 @@
 }
 
 .preference-standalone .form-preference {
-  padding-top: 10px;
+  padding-top: 42px;
   padding-bottom: 72px;
+}
+
+.preference-standalone ::-webkit-scrollbar-track {
+  margin-top: 46px;
 }
 
 .form-preference {
@@ -692,6 +802,7 @@
   top: auto;
   left: auto;
   transform: none;
+  transform-origin: center;
   opacity: 1;
   pointer-events: auto;
   width: 220px;
@@ -703,7 +814,8 @@
   overflow: hidden;
   color: $--task-item-action-color;
   box-sizing: border-box;
-  transition: width 0.15s ease-out, transform 0.15s ease-out, background-color 0.15s, border-color 0.15s;
+  will-change: transform;
+  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1), transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s, border-color 0.2s;
 }
 
 .preference-bottom-search .floating-bar-search.is-expanded {
@@ -712,9 +824,13 @@
 }
 
 .preference-bottom-search .floating-bar-search.is-hovered {
-  transform: translateY(-6px) scale(1.03);
+  transform: translate3d(0, -6px, 0) scale(1.03);
   border-color: $--speedometer-hover-border-color;
   background-color: $--floating-bar-item-hover-background;
+}
+
+.preference-bottom-search .floating-bar-search.is-pressed {
+  transform: translate3d(0, -2px, 0) scale(0.985);
 }
 
 .preference-bottom-search .floating-bar-search-input {
@@ -729,7 +845,7 @@
   color: inherit;
   font-size: 12px;
   opacity: 0;
-  transition: opacity 0.2s ease-out;
+  transition: opacity 0.3s ease 0.1s;
 }
 
 .preference-bottom-search .floating-bar-search.is-expanded .floating-bar-search-input {

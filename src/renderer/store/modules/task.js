@@ -1,7 +1,7 @@
 import Vue from 'vue'
 import api from '@/api'
 import { EMPTY_STRING, TASK_STATUS } from '@shared/constants'
-import { checkTaskIsBT, getFileNameFromFile, intersection } from '@shared/utils'
+import { checkTaskIsBT, getFileNameFromFile, getTaskUri, intersection } from '@shared/utils'
 import taskHistory from '@/api/TaskHistory'
 import fetch from 'node-fetch'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
@@ -57,6 +57,35 @@ function capObjectByTimestamp (obj, cap, getTs) {
 }
 
 // 排序辅助函数
+function brokenTorrentUriToMagnet (uri) {
+  const text = `${uri || ''}`.trim()
+  if (!text) {
+    return EMPTY_STRING
+  }
+  const match = text.match(/^[a-zA-Z]:\/\/.*?([0-9a-fA-F]{40})\.torrent(?:[?#].*)?$/)
+  if (!match || !match[1]) {
+    return EMPTY_STRING
+  }
+  return `magnet:?xt=urn:btih:${match[1].toLowerCase()}`
+}
+
+function normalizeBtIpBanList (value) {
+  const list = Array.isArray(value)
+    ? value
+    : `${value || ''}`.split(/[\n,;，；\s]+/g)
+  const result = []
+  const seen = new Set()
+  list.forEach(item => {
+    const text = `${item || ''}`.trim()
+    if (!text || seen.has(text)) {
+      return
+    }
+    seen.add(text)
+    result.push(text)
+  })
+  return result
+}
+
 function sortTaskList (taskList, field, order) {
   return [...taskList].sort((a, b) => {
     let valueA, valueB
@@ -190,6 +219,13 @@ const mutations = {
     taskList.forEach(newTask => {
       const oldTask = oldMap.get(newTask.gid)
       if (oldTask) {
+        // Engine-derived transient hint fields must be cleared when absent
+        // in latest payload, otherwise stale paused/checking text may stick.
+        ;['statusHint', 'statusRightText'].forEach((k) => {
+          if (!Object.prototype.hasOwnProperty.call(newTask, k) && Object.prototype.hasOwnProperty.call(oldTask, k)) {
+            Vue.delete(oldTask, k)
+          }
+        })
         // Update existing task properties
         Object.keys(newTask).forEach(key => {
           if (oldTask[key] !== newTask[key]) {
@@ -758,6 +794,28 @@ const actions = {
     const config = rootState.preference.config || {}
     const suffix = config.downloadingFileSuffix
     const normalizedOptions = options ? { ...options } : {}
+    const normalizedUris = Array.isArray(uris)
+      ? uris.map((uri) => {
+        const magnet = brokenTorrentUriToMagnet(uri)
+        return magnet || uri
+      })
+      : uris
+    const isMagnetLikeUri = (uri) => /^magnet:/i.test(`${uri || ''}`.trim())
+    const hasMagnetUri = Array.isArray(normalizedUris) && normalizedUris.some(uri => isMagnetLikeUri(uri))
+    if (hasMagnetUri) {
+      if (typeof normalizedOptions.allowOverwrite === 'undefined') {
+        normalizedOptions.allowOverwrite = true
+      }
+      if (typeof normalizedOptions.autoFileRenaming === 'undefined') {
+        normalizedOptions.autoFileRenaming = false
+      }
+      if (typeof normalizedOptions.btHashCheckSeed === 'undefined') {
+        normalizedOptions.btHashCheckSeed = true
+      }
+      if (typeof normalizedOptions.btSeedUnverified === 'undefined') {
+        normalizedOptions.btSeedUnverified = true
+      }
+    }
     const safeGetNameFromUri = (uri) => {
       try {
         return getFileNameFromFile({ uris: [{ uri }] })
@@ -818,32 +876,34 @@ const actions = {
     }
 
     const hasOuts = Array.isArray(outs) && outs.length > 0
-    const hasSingleOptionOut = !!(Array.isArray(uris) && uris.length === 1 && normalizedOptions && typeof normalizedOptions.out === 'string' && normalizedOptions.out.trim() !== '')
+    const hasSingleOptionOut = !!(Array.isArray(normalizedUris) && normalizedUris.length === 1 && normalizedOptions && typeof normalizedOptions.out === 'string' && normalizedOptions.out.trim() !== '')
 
     // 获取默认下载目录
     const defaultDir = (options && options.dir) || config.dir || ''
 
-    if (suffix && hasSingleOptionOut) {
-      const onlyUri = uris[0]
-      if (onlyUri && !`${onlyUri}`.startsWith('magnet:') && !normalizedOptions.out.endsWith(suffix)) {
+    if (hasSingleOptionOut && Array.isArray(normalizedUris) && normalizedUris.length === 1 && isMagnetLikeUri(normalizedUris[0])) {
+      delete normalizedOptions.out
+    } else if (suffix && hasSingleOptionOut) {
+      const onlyUri = normalizedUris[0]
+      if (onlyUri && !isMagnetLikeUri(onlyUri) && !normalizedOptions.out.endsWith(suffix)) {
         // 检查文件是否存在，如果存在则添加序号
         const dir = Array.isArray(dirs) && dirs[0] ? dirs[0] : defaultDir
         const uniqueFilename = getUniqueFilename(dir, normalizedOptions.out, suffix)
         normalizedOptions.out = `${uniqueFilename}${suffix}`
       }
     } else if (!suffix && hasSingleOptionOut) {
-      const onlyUri = uris[0]
-      if (onlyUri && !`${onlyUri}`.startsWith('magnet:')) {
+      const onlyUri = normalizedUris[0]
+      if (onlyUri && !isMagnetLikeUri(onlyUri)) {
         const dir = Array.isArray(dirs) && dirs[0] ? dirs[0] : defaultDir
         const uniqueFilename = getUniqueFilename(dir, normalizedOptions.out, '')
         normalizedOptions.out = uniqueFilename
       }
     }
 
-    const shouldDeriveOuts = !!(Array.isArray(uris) && uris.length > 0 && !hasOuts && !hasSingleOptionOut)
+    const shouldDeriveOuts = !!(Array.isArray(normalizedUris) && normalizedUris.length > 0 && !hasOuts && !hasSingleOptionOut)
     const baseOuts = shouldDeriveOuts
-      ? uris.map((uri) => {
-        if (!uri || `${uri}`.startsWith('magnet:')) {
+      ? normalizedUris.map((uri) => {
+        if (!uri || isMagnetLikeUri(uri)) {
           return null
         }
         const name = safeGetNameFromUri(`${uri}`)
@@ -855,9 +915,9 @@ const actions = {
 
     if (suffix && Array.isArray(baseOuts)) {
       newOuts = baseOuts.map((out, index) => {
-        const uri = uris[index]
+        const uri = normalizedUris[index]
         // Only append suffix if out is present and uri is not a magnet link
-        if (out && uri && !uri.startsWith('magnet:')) {
+        if (out && uri && !isMagnetLikeUri(uri)) {
           if (!out.endsWith(suffix)) {
             // 检查文件是否存在，如果存在则添加序号
             const dir = Array.isArray(dirs) && dirs[index] ? dirs[index] : defaultDir
@@ -869,8 +929,8 @@ const actions = {
       })
     } else if (!suffix && shouldDeriveOuts && Array.isArray(baseOuts)) {
       newOuts = baseOuts.map((out, index) => {
-        const uri = uris[index]
-        if (out && uri && !uri.startsWith('magnet:')) {
+        const uri = normalizedUris[index]
+        if (out && uri && !isMagnetLikeUri(uri)) {
           const dir = Array.isArray(dirs) && dirs[index] ? dirs[index] : defaultDir
           const uniqueFilename = getUniqueFilename(dir, out, '')
           return uniqueFilename === out ? null : uniqueFilename
@@ -879,7 +939,21 @@ const actions = {
       })
     }
 
-    return api.addUri({ uris, outs: newOuts, options: normalizedOptions, optionsList, dirs })
+    if (Array.isArray(newOuts) && Array.isArray(normalizedUris) && normalizedUris.length > 0) {
+      newOuts = newOuts.map((out, index) => {
+        const uri = normalizedUris[index]
+        if (!isMagnetLikeUri(uri)) {
+          return out
+        }
+        const text = `${out || ''}`.trim().toLowerCase()
+        if (!text || text === 'magnet:' || text === 'magnet:?') {
+          return null
+        }
+        return out
+      })
+    }
+
+    return api.addUri({ uris: normalizedUris, outs: newOuts, options: normalizedOptions, optionsList, dirs })
       .then((res) => {
         if (Array.isArray(res)) {
           const gids = res.map(r => r && r[0]).filter(Boolean)
@@ -946,7 +1020,20 @@ const actions = {
   },
   addTorrent ({ dispatch }, data) {
     const { torrent, options } = data
-    return api.addTorrent({ torrent, options })
+    const normalizedOptions = options ? { ...options } : {}
+    if (typeof normalizedOptions.allowOverwrite === 'undefined') {
+      normalizedOptions.allowOverwrite = true
+    }
+    if (typeof normalizedOptions.autoFileRenaming === 'undefined') {
+      normalizedOptions.autoFileRenaming = false
+    }
+    if (typeof normalizedOptions.btHashCheckSeed === 'undefined') {
+      normalizedOptions.btHashCheckSeed = true
+    }
+    if (typeof normalizedOptions.btSeedUnverified === 'undefined') {
+      normalizedOptions.btSeedUnverified = true
+    }
+    return api.addTorrent({ torrent, options: normalizedOptions })
       .then((gid) => {
         try {
           if (gid) {
@@ -1003,7 +1090,10 @@ const actions = {
       })
   },
   pauseTask ({ dispatch }, task) {
-    const { gid } = task
+    const { gid, status } = task
+    if (status !== TASK_STATUS.ACTIVE) {
+      return Promise.resolve(true)
+    }
     const isBT = checkTaskIsBT(task)
     // BT任务使用强制暂停以加快暂停速度
     // 普通HTTP/FTP任务使用普通暂停
@@ -1015,8 +1105,72 @@ const actions = {
       })
   },
   resumeTask ({ dispatch }, task) {
-    const { gid } = task
-    return api.resumeTask({ gid })
+    const { gid, status } = task
+    if (status === TASK_STATUS.WAITING) {
+      return Promise.resolve(true)
+    }
+    if (status !== TASK_STATUS.PAUSED) {
+      return Promise.resolve(true)
+    }
+    const repairBtBrokenUri = async () => {
+      try {
+        const snapshot = await api.fetchTaskItem({ gid })
+        const files = Array.isArray(snapshot && snapshot.files) ? snapshot.files : []
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i] || {}
+          const uris = Array.isArray(file.uris) ? file.uris : []
+          const brokenUris = uris
+            .map((u) => (u && u.uri ? `${u.uri}` : EMPTY_STRING))
+            .filter((u) => !!brokenTorrentUriToMagnet(u))
+          if (brokenUris.length === 0) {
+            continue
+          }
+
+          let magnet = getTaskUri(snapshot)
+          if (!/^magnet:/i.test(`${magnet || ''}`)) {
+            magnet = brokenTorrentUriToMagnet(brokenUris[0])
+          }
+          if (!/^magnet:/i.test(`${magnet || ''}`)) {
+            continue
+          }
+
+          await api.changeUri({
+            gid,
+            fileIndex: i + 1,
+            delUris: brokenUris,
+            addUris: [magnet]
+          })
+        }
+      } catch (_) {}
+    }
+    const ensureBtResumeOptions = async () => {
+      if (!checkTaskIsBT(task)) {
+        return
+      }
+      try {
+        const option = await dispatch('getTaskOption', gid)
+        const out = option && option.out ? `${option.out}`.trim() : ''
+        if (!/^magnet:/i.test(out)) {
+          return
+        }
+        const btName = task && task.bittorrent && task.bittorrent.info && task.bittorrent.info.name
+          ? `${task.bittorrent.info.name}`.trim()
+          : ''
+        const taskName = task && task.name ? `${task.name}`.trim() : ''
+        const infoHash = task && task.infoHash ? `${task.infoHash}`.trim() : ''
+        const fallbackOut = btName || (/^magnet:/i.test(taskName) ? '' : taskName) || (infoHash ? `${infoHash}.torrent` : '')
+        if (!fallbackOut) {
+          return
+        }
+        await dispatch('changeTaskOption', {
+          gid,
+          options: { out: fallbackOut }
+        })
+      } catch (_) {}
+    }
+    return repairBtBrokenUri()
+      .then(() => ensureBtResumeOptions())
+      .then(() => api.resumeTask({ gid }))
       .finally(() => {
         dispatch('fetchList')
         dispatch('saveSession')
@@ -1087,26 +1241,60 @@ const actions = {
     const list = [...seedingList.slice(0, idx), ...seedingList.slice(idx + 1)]
     commit('UPDATE_SEEDING_LIST', list)
   },
-  stopSeeding ({ dispatch }, { gid }) {
-    const options = {
-      seedTime: 0
+  stopSeeding ({ dispatch, rootState }, { gid }) {
+    const config = (rootState.preference && rootState.preference.config) || {}
+    const action = `${config.stopSeedingAction || 'pause'}`.trim().toLowerCase()
+    const shouldComplete = action === 'complete'
+
+    const promise = shouldComplete
+      ? dispatch('changeTaskOption', {
+        gid,
+        options: { seedTime: 0 }
+      })
+      : api.forcePauseTask({ gid }).catch(() => api.pauseTask({ gid }))
+
+    return promise.then(() => {
+      dispatch('fetchList')
+      dispatch('saveSession')
+    })
+  },
+  async banPeer ({ dispatch, rootState }, { gid, ip, duration }) {
+    await api.banPeer({ gid, ip, duration })
+
+    const ipText = `${ip || ''}`.trim()
+    const durationNum = Number(duration)
+    if (!ipText || durationNum !== -1) {
+      return
     }
-    // 先设置seedTime为0停止做种，然后暂停任务
-    // 这样任务会变成PAUSED状态，可以通过"恢复"按钮继续做种
-    return dispatch('changeTaskOption', { gid, options })
-      .then(() => {
-        return api.pauseTask({ gid })
-      })
-      .then(() => {
-        dispatch('fetchList')
-        dispatch('saveSession')
-      })
+
+    try {
+      const config = (rootState.preference && rootState.preference.config) || {}
+      const currentList = normalizeBtIpBanList(config.btIpBanList)
+      if (!currentList.includes(ipText)) {
+        await dispatch('preference/save', { btIpBanList: [...currentList, ipText] }, { root: true })
+      }
+    } catch (err) {
+      console.warn('[task] sync btIpBanList after permanent peer ban failed:', err)
+    }
   },
-  banPeer (_, { gid, ip, duration }) {
-    return api.banPeer({ gid, ip, duration })
-  },
-  unbanPeer (_, { gid, ip }) {
-    return api.unbanPeer({ gid, ip })
+  async unbanPeer ({ dispatch, rootState }, { gid, ip }) {
+    await api.unbanPeer({ gid, ip })
+
+    const ipText = `${ip || ''}`.trim()
+    if (!ipText) {
+      return
+    }
+
+    try {
+      const config = (rootState.preference && rootState.preference.config) || {}
+      const currentList = normalizeBtIpBanList(config.btIpBanList)
+      const nextList = currentList.filter(item => item !== ipText)
+      if (nextList.length !== currentList.length) {
+        await dispatch('preference/save', { btIpBanList: nextList }, { root: true })
+      }
+    } catch (err) {
+      console.warn('[task] sync btIpBanList after peer unban failed:', err)
+    }
   },
   removeTaskRecord ({ state, dispatch }, task) {
     const { gid, status } = task

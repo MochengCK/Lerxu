@@ -63,6 +63,12 @@ function buildBilibiliParser () {
       return
     }
     const distOutput = path.join(projectRoot, 'dist', outputName)
+    // Source parser script is optional in some environments.
+    // If source and prebuilt outputs are both missing, skip silently.
+    if (!fs.existsSync(sourcePy) && !fs.existsSync(distOutput)) {
+      resolve()
+      return
+    }
     if (fs.existsSync(distOutput)) {
       if (!fs.existsSync(staticDir)) {
         fs.mkdirSync(staticDir, { recursive: true })
@@ -92,7 +98,7 @@ function buildBilibiliParser () {
       const child = spawn(cmd, args, {
         cwd: projectRoot,
         stdio: 'inherit',
-        shell: true
+        shell: false
       })
       child.on('error', () => {
         next()
