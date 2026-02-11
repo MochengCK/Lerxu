@@ -145,7 +145,7 @@ while [ -h "$SOURCE" ]; do
   [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
 done
 DIR="$(cd -P "$(dirname "$SOURCE")" >/dev/null 2>&1 && pwd)"
-export LD_LIBRARY_PATH="$DIR/resources/engine/lib:$DIR/resources/lib:${LD_LIBRARY_PATH:-}"
+export LD_LIBRARY_PATH="$DIR/resources/engine/lib:$DIR/resources/lib:\${LD_LIBRARY_PATH:-}"
 "$DIR"/${binName}.bin --no-sandbox "$@"
 `
   fs.writeFileSync(wrapperPath, wrapperScript)
