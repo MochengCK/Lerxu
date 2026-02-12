@@ -205,15 +205,15 @@
   import is from 'electron-is'
   import { mapState } from 'vuex'
 
+  import api from '@/api'
   import { commands } from '@/components/CommandManager/instance'
-  import { ADD_TASK_TYPE } from '@shared/constants'
+  import { ADD_TASK_TYPE, TASK_STATUS } from '@shared/constants'
   import TaskActions from '@/components/Task/TaskActions'
   import TaskList from '@/components/Task/TaskList'
   import Aside from '@/components/Aside/Index'
   import SubnavSwitcher from '@/components/Subnav/SubnavSwitcher'
   import TaskSubnav from '@/components/Subnav/TaskSubnav'
   import CustomDatePicker from '@/components/Task/DatePicker'
-  import taskHistory from '@/api/TaskHistory'
   import '@/components/Icons/menu-task'
   import '@/components/Icons/task-start'
   import '@/components/Icons/task-pause'
@@ -271,6 +271,7 @@
     computed: {
       ...mapState('task', {
         taskList: state => state.taskList,
+        currentList: state => state.currentList,
         selectedGidList: state => state.selectedGidList,
         selectedGidListCount: state => state.selectedGidList.length,
         taskSearchKeyword: state => state.searchKeyword,
@@ -697,20 +698,39 @@
         // 否则打开日期选择器
         this.toggleDatePicker()
       },
-      loadTaskDateCounts () {
-        const history = taskHistory.getHistory()
+      async loadTaskDateCounts () {
         const counts = {}
-        // 限制处理的历史记录数量，避免卡顿
-        const maxHistoryItems = 100
-        const limitedHistory = history.length > maxHistoryItems ? history.slice(0, maxHistoryItems) : history
-        limitedHistory.forEach(task => {
-          // 使用savedAt作为任务完成时间
-          const timestamp = parseInt(task.savedAt) || parseInt(task.createdAt) || parseInt(task.creationTime) || 0
-          if (timestamp > 0) {
-            const date = new Date(timestamp)
-            const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-            counts[dateStr] = (counts[dateStr] || 0) + 1
+        const normalizeTimestamp = (value) => {
+          const raw = parseInt(value)
+          if (!Number.isFinite(raw) || raw <= 0) return 0
+          if (raw < 1000000000000) return raw * 1000
+          return raw
+        }
+        let data = []
+        try {
+          data = await api.fetchTaskList({ type: this.currentList })
+        } catch (e) {
+          data = []
+        }
+        data.forEach(task => {
+          const status = `${task && task.status ? task.status : ''}`
+          const isInProgress = [TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED].includes(status)
+          const timestamp = isInProgress
+            ? (normalizeTimestamp(task.startTime) ||
+              normalizeTimestamp(task.startedAt) ||
+              normalizeTimestamp(task.createdAt) ||
+              normalizeTimestamp(task.creationTime))
+            : (normalizeTimestamp(task.savedAt) ||
+              normalizeTimestamp(task.completedTime) ||
+              normalizeTimestamp(task.stopTime) ||
+              normalizeTimestamp(task.createdAt) ||
+              normalizeTimestamp(task.creationTime))
+          if (timestamp <= 0) {
+            return
           }
+          const date = new Date(timestamp)
+          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+          counts[dateStr] = (counts[dateStr] || 0) + 1
         })
         this.taskDateCounts = counts
       },

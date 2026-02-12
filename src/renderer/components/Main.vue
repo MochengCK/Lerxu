@@ -21,8 +21,6 @@
         }"
         type="button"
         @click="onTaskPlanClick"
-        @mouseenter="isBottomHovered = true"
-        @mouseleave="isBottomHovered = false"
       >
         <mo-icon name="task-plan" width="20" height="20" />
       </button>
@@ -324,6 +322,10 @@
       },
       updateBottomProximityHover (event) {
         if (!this.autoHideFloatingBar || !event) {
+          return
+        }
+        const target = event.target
+        if (target && target.closest && target.closest('.mo-task-plan')) {
           return
         }
         const height = typeof window !== 'undefined' ? window.innerHeight : 0
@@ -2517,14 +2519,12 @@
         z-index: 0;
       }
 
-      &:hover,
       &.is-hovered {
         transform: translateX(121px) translateY(0);
       }
 
       &.is-search-open {
         transform: translateX(121px) translateY(80px);
-        &:hover,
         &.is-hovered {
           transform: translateX(121px) translateY(0);
         }
@@ -2532,7 +2532,6 @@
 
       &.is-search-expanded {
         transform: translateX(277px) translateY(80px);
-        &:hover,
         &.is-hovered {
           transform: translateX(277px) translateY(0);
         }
