@@ -11,15 +11,15 @@
           <span class="best-peer-key">{{ $t('task.task-peer-location') }}:</span>
           <span class="best-peer-value">
             <span
-              v-if="getCountryCode(bestPeer.ip)"
-              :class="['fi', `fi-${getCountryCode(bestPeer.ip).toLowerCase()}`, 'mo-peer-flag']"
+              v-if="getPeerCountryCode(bestPeer.ip)"
+              :class="getPeerCountryClass(bestPeer.ip)"
             ></span>
-            {{ getLocationFromIp(bestPeer.ip) }}
+            {{ getPeerLocation(bestPeer.ip) }}
           </span>
         </div>
         <div class="best-peer-item">
           <span class="best-peer-key">{{ $t('task.task-peer-client') }}:</span>
-          <span class="best-peer-value">{{ renderPeerClient(bestPeer.peerId) }}</span>
+          <span class="best-peer-value">{{ renderPeerClient(bestPeer) }}</span>
         </div>
         <div class="best-peer-item">
           <span class="best-peer-key">{{ $t('task.task-peer-progress') }}:</span>
@@ -35,7 +35,7 @@
         </div>
       </div>
     </div>
-    <div class="mo-table-wrapper" ref="tableWrapper">
+    <div class="mo-table-wrapper" ref="tableWrapper" @contextmenu.prevent="handleTableContextMenu">
       <el-table
         stripe
         ref="peerTable"
@@ -76,13 +76,13 @@
           sortable="custom"
           min-width="100">
           <template slot-scope="scope">
-            <el-tooltip :content="getLocationFromIp(scope.row.ip)" placement="top" :disabled="!isTextOverflow(getLocationFromIp(scope.row.ip))">
+            <el-tooltip :content="getPeerLocation(scope.row.ip)" placement="top" :disabled="!isTextOverflow(getPeerLocation(scope.row.ip))">
               <span class="mo-peer-location">
                 <span
-                  v-if="getCountryCode(scope.row.ip)"
-                  :class="['fi', `fi-${getCountryCode(scope.row.ip).toLowerCase()}`, 'mo-peer-flag']"
+                  v-if="getPeerCountryCode(scope.row.ip)"
+                  :class="getPeerCountryClass(scope.row.ip)"
                 ></span>
-                <span class="mo-peer-text">{{ getLocationFromIp(scope.row.ip) }}</span>
+                <span class="mo-peer-text">{{ getPeerLocation(scope.row.ip) }}</span>
               </span>
             </el-tooltip>
           </template>
@@ -93,8 +93,8 @@
           sortable="custom"
           min-width="125">
           <template slot-scope="scope">
-            <el-tooltip :content="renderPeerClient(scope.row.peerId)" placement="top" :disabled="!isTextOverflow(renderPeerClient(scope.row.peerId))">
-              <span class="mo-peer-text">{{ renderPeerClient(scope.row.peerId) }}</span>
+            <el-tooltip :content="getPeerClientTooltip(scope.row)" placement="top" :disabled="!getPeerClientTooltip(scope.row)">
+              <span class="mo-peer-text">{{ renderPeerClient(scope.row) }}</span>
             </el-tooltip>
           </template>
         </el-table-column>
@@ -203,7 +203,30 @@
       class="mo-peer-context-menu"
       :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }"
     >
-      <template v-if="contextMenuPeer && contextMenuPeer.status === 'banned'">
+      <template v-if="contextMenuType === 'blank'">
+        <div class="context-menu-item" @click="resetPeerGroupVisibility">
+          <i class="el-icon-refresh"></i>
+          {{ $t('task.peers-group-show-all') }}
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item" @click="togglePeerGroupVisibility('connected')">
+          <i class="el-icon-check" :style="{ opacity: peerGroupVisibility.connected ? 1 : 0 }"></i>
+          {{ $t('task.peers-group-connected') }}
+        </div>
+        <div class="context-menu-item" @click="togglePeerGroupVisibility('attempting')">
+          <i class="el-icon-check" :style="{ opacity: peerGroupVisibility.attempting ? 1 : 0 }"></i>
+          {{ $t('task.peers-group-attempting') }}
+        </div>
+        <div class="context-menu-item" @click="togglePeerGroupVisibility('banned')">
+          <i class="el-icon-check" :style="{ opacity: peerGroupVisibility.banned ? 1 : 0 }"></i>
+          {{ $t('task.peers-group-banned') }}
+        </div>
+        <div class="context-menu-item" @click="togglePeerGroupVisibility('disconnected')">
+          <i class="el-icon-check" :style="{ opacity: peerGroupVisibility.disconnected ? 1 : 0 }"></i>
+          {{ $t('task.peers-group-disconnected') }}
+        </div>
+      </template>
+      <template v-else-if="contextMenuPeer && contextMenuPeer.status === 'banned'">
         <div class="context-menu-item" @click="banPeer(300)">
           <i class="el-icon-circle-plus-outline"></i>
           {{ $t('task.extend-ban-5min') }}
@@ -309,10 +332,26 @@
         attemptStats: {},
         disconnectedMap: {},
         lastAttemptingMap: {},
-        lastConnectedMap: {}
+        lastConnectedMap: {},
+        peerOrderMap: {},
+        peerOrderSeed: 1,
+        countryCodeCache: {},
+        locationCache: {},
+        contextMenuType: '',
+        contextMenuCloseHandler: null
       }
     },
     computed: {
+      peerGroupVisibility () {
+        const config = (this.$store && this.$store.state && this.$store.state.preference && this.$store.state.preference.config) || {}
+        const raw = config.peerGroupVisibility || {}
+        return {
+          connected: raw.connected !== false,
+          attempting: raw.attempting !== false,
+          banned: raw.banned !== false,
+          disconnected: raw.disconnected !== false
+        }
+      },
       bestPeer () {
         let peers = this.peers || {}
         // 兼容旧格式
@@ -404,10 +443,34 @@
           disconnected = disconnected.slice(0, 100)
         }
 
-        connected.forEach(p => { p.status = 'connected' })
-        attempting.forEach(p => { p.status = 'attempting' })
-        banned.forEach(p => { p.status = 'banned' })
-        disconnected.forEach(p => { p.status = 'disconnected' })
+        const normalizeEngineStatus = (peer) => {
+          if (!peer) return
+          const status = `${peer.engineStatus || ''}`.toLowerCase()
+          if (status === 'banned' || status === 'attempting' || status === 'downloading' || status === 'uploading' || status === 'seeding' || status === 'idle') {
+            peer.engineStatus = status
+            return
+          }
+          if (Object.prototype.hasOwnProperty.call(peer, 'engineStatus')) {
+            peer.engineStatus = ''
+          }
+        }
+
+        connected.forEach(p => {
+          normalizeEngineStatus(p)
+          p.status = 'connected'
+        })
+        attempting.forEach(p => {
+          normalizeEngineStatus(p)
+          p.status = 'attempting'
+        })
+        banned.forEach(p => {
+          normalizeEngineStatus(p)
+          p.status = 'banned'
+        })
+        disconnected.forEach(p => {
+          normalizeEngineStatus(p)
+          p.status = 'disconnected'
+        })
 
         // 调试：打印banned peers的数据
         if (banned.length > 0) {
@@ -451,6 +514,9 @@
           })
         }
 
+        const allPeers = connected.concat(attempting, banned, disconnected)
+        allPeers.forEach(p => this.ensurePeerOrder(p))
+
         const filteredConnected = filterAndSearch(connected)
         const filteredAttempting = filterAndSearch(attempting)
         const filteredBanned = filterAndSearch(banned)
@@ -466,31 +532,54 @@
           sorted.sort((a, b) => {
             let valA = a[prop]
             let valB = b[prop]
+            const orderA = this.getPeerOrder(a)
+            const orderB = this.getPeerOrder(b)
 
             if (prop === 'bitfield') {
               valA = bitfieldToPercent(valA)
               valB = bitfieldToPercent(valB)
-            } else if (prop === 'ip') {
+            }
+
+            if (prop === 'ip') {
               valA = this.getLocationFromIp(valA)
               valB = this.getLocationFromIp(valB)
-              return isAsc ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN')
-            } else if (prop === 'peerId') {
-              valA = peerIdParser(valA)
-              valB = peerIdParser(valB)
-              return isAsc ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN')
-            } else if (prop === 'status') {
+              const compare = isAsc
+                ? valA.localeCompare(valB, 'zh-CN')
+                : valB.localeCompare(valA, 'zh-CN')
+              return compare === 0 ? orderA - orderB : compare
+            }
+
+            if (prop === 'peerId') {
+              const aUnknown = this.isPeerClientUnknown(a)
+              const bUnknown = this.isPeerClientUnknown(b)
+              if (!isAsc && aUnknown !== bUnknown) {
+                return aUnknown ? 1 : -1
+              }
+              valA = this.renderPeerClient(a)
+              valB = this.renderPeerClient(b)
+              const compare = isAsc
+                ? valA.localeCompare(valB, 'zh-CN')
+                : valB.localeCompare(valA, 'zh-CN')
+              return compare === 0 ? orderA - orderB : compare
+            }
+
+            if (prop === 'status') {
               const getText = (p) => {
                 if (p.status === 'disconnected') return this.getPeerFailureSummaryText(p)
                 return this.getPeerStatus(p)
               }
               valA = getText(a)
               valB = getText(b)
-              return isAsc ? valA.localeCompare(valB, 'zh-CN') : valB.localeCompare(valA, 'zh-CN')
+              const compare = isAsc
+                ? valA.localeCompare(valB, 'zh-CN')
+                : valB.localeCompare(valA, 'zh-CN')
+              return compare === 0 ? orderA - orderB : compare
             }
 
             valA = Number(valA) || 0
             valB = Number(valB) || 0
-            return isAsc ? valA - valB : valB - valA
+            const compare = isAsc ? valA - valB : valB - valA
+            return compare === 0 ? orderA - orderB : compare
           })
 
           return sorted
@@ -504,7 +593,7 @@
 
         // 构建分组结构 - 优化：直接修改对象，避免展开运算符
         const result = []
-        if (sortedConnected.length > 0) {
+        if (sortedConnected.length > 0 && this.peerGroupVisibility.connected) {
           result.push({
             id: 'group-connected',
             isGroup: true,
@@ -516,7 +605,7 @@
             })
           })
         }
-        if (sortedDisconnected.length > 0) {
+        if (sortedDisconnected.length > 0 && this.peerGroupVisibility.disconnected) {
           result.push({
             id: 'group-disconnected',
             isGroup: true,
@@ -528,7 +617,7 @@
             })
           })
         }
-        if (sortedAttempting.length > 0) {
+        if (sortedAttempting.length > 0 && this.peerGroupVisibility.attempting) {
           result.push({
             id: 'group-attempting',
             isGroup: true,
@@ -540,7 +629,7 @@
             })
           })
         }
-        if (sortedBanned.length > 0) {
+        if (sortedBanned.length > 0 && this.peerGroupVisibility.banned) {
           result.push({
             id: 'group-banned',
             isGroup: true,
@@ -599,6 +688,19 @@
         const ip = peer.ip || ''
         const port = peer.port || ''
         return port ? `${ip}:${port}` : `${ip}`
+      },
+      ensurePeerOrder (peer) {
+        const key = this.peerKey(peer)
+        if (!key) return
+        if (!Object.prototype.hasOwnProperty.call(this.peerOrderMap, key)) {
+          this.$set(this.peerOrderMap, key, this.peerOrderSeed)
+          this.peerOrderSeed += 1
+        }
+      },
+      getPeerOrder (peer) {
+        const key = this.peerKey(peer)
+        if (!key) return Number.MAX_SAFE_INTEGER
+        return this.peerOrderMap[key] || Number.MAX_SAFE_INTEGER
       },
       getMergedDisconnectedPeers (peers) {
         const normalized = this.normalizePeers(peers || {})
@@ -784,10 +886,113 @@
         // 检查特定文本是否溢出
         return this.overflowMap[text] === true
       },
-      renderPeerClient (peerId) {
+      getPeerCountryCode (ip) {
+        if (!ip) return null
+        const key = `${ip}`
+        if (Object.prototype.hasOwnProperty.call(this.countryCodeCache, key)) {
+          return this.countryCodeCache[key]
+        }
+        if (this.isPrivateIp(ip)) {
+          this.$set(this.countryCodeCache, key, null)
+          return null
+        }
+        const code = this.getCountryCode(ip)
+        this.$set(this.countryCodeCache, key, code)
+        return code
+      },
+      getPeerCountryClass (ip) {
+        const code = this.getPeerCountryCode(ip)
+        if (!code) return ''
+        if (code === 'local') {
+          return ['mo-peer-flag', 'mo-peer-flag-local']
+        }
+        return ['fi', `fi-${code.toLowerCase()}`, 'mo-peer-flag']
+      },
+      isPrivateIp (ip) {
+        const value = `${ip || ''}`.trim()
+        if (!value) return false
+        const lower = value.toLowerCase()
+        if (lower === 'localhost') return true
+        if (lower === '::1') return true
+        if (lower.startsWith('fc') || lower.startsWith('fd')) return true
+        if (lower.startsWith('fe80:')) return true
+        const parts = value.split('.').map(p => Number(p))
+        if (parts.length !== 4 || parts.some(n => Number.isNaN(n))) return false
+        const [a, b] = parts
+        if (a === 10) return true
+        if (a === 127) return true
+        if (a === 192 && b === 168) return true
+        if (a === 169 && b === 254) return true
+        if (a === 172 && b >= 16 && b <= 31) return true
+        return false
+      },
+      getPeerLocation (ip) {
+        if (!ip) return '-'
+        const key = `${ip}`
+        if (Object.prototype.hasOwnProperty.call(this.locationCache, key)) {
+          return this.locationCache[key]
+        }
+        const location = this.getLocationFromIp(ip)
+        this.$set(this.locationCache, key, location)
+        return location
+      },
+      getPeerIdPrefix (peer) {
+        const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
+        if (!peerId) return ''
+        let decoded = ''
+        try {
+          decoded = unescape(peerId)
+        } catch (e) {
+          decoded = `${peerId}`
+        }
+        const value = `${decoded || peerId}`.trim()
+        if (!value) return ''
+        return value.length >= 8 ? value.slice(0, 8) : value
+      },
+      getSafePeerIdPrefix (peer) {
+        const prefix = this.getPeerIdPrefix(peer)
+        if (!prefix) return ''
+        if (!/^[A-Za-z0-9-]+$/.test(prefix)) {
+          return ''
+        }
+        return prefix
+      },
+      isPeerClientUnknown (peer) {
+        const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
+        const result = peerIdParser(peerId)
+        if (result !== 'task.peer-client-unknown') {
+          return false
+        }
+        const clientName = typeof peer === 'object' && peer
+          ? (peer.clientName || peer.client || peer.client_name || peer.userAgent || peer.agent || peer.name || '')
+          : ''
+        return !`${clientName}`.trim()
+      },
+      getPeerClientTooltip (peer) {
+        if (this.isPeerClientUnknown(peer)) {
+          return ''
+        }
+        const clientText = this.renderPeerClient(peer)
+        const prefix = this.getPeerIdPrefix(peer)
+        if (!prefix) return ''
+        if (this.isTextOverflow(clientText)) {
+          return `${clientText} / ${prefix}`
+        }
+        return prefix
+      },
+      renderPeerClient (peer) {
+        const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
         const result = peerIdParser(peerId)
         if (result === 'task.peer-client-unknown') {
-          return this.$t('task.peer-client-unknown')
+          const clientName = typeof peer === 'object' && peer
+            ? (peer.clientName || peer.client || peer.client_name || peer.userAgent || peer.agent || peer.name || '')
+            : ''
+          const normalizedName = `${clientName}`.trim()
+          if (normalizedName) {
+            return `${normalizedName} / N/A`
+          }
+          const prefix = this.getSafePeerIdPrefix(peer)
+          return prefix || '-'
         }
         return result
       },
@@ -832,15 +1037,19 @@
       },
       getCountryCode (ip) {
         if (!ip) return null
-        // 使用 ip2region 查询地理位置并返回国家代码
         if (ipSearcher) {
           try {
             const result = ipSearcher.search(ip)
             if (result) {
               const country = result.country || result.nation
-              if (country && country !== '0') {
-                // 将国家名称映射到国家代码
-                return this.countryNameToCode(country)
+              const province = result.province
+              const city = result.city
+              const candidates = [country, province, city]
+                .map(value => `${value || ''}`.trim())
+                .filter(value => value && value !== '0')
+              for (const value of candidates) {
+                const code = this.countryNameToCode(value)
+                if (code) return code
               }
             }
           } catch (e) {
@@ -850,7 +1059,8 @@
         return null
       },
       countryNameToCode (countryName) {
-        // 国家名称到ISO 3166-1 alpha-2代码的映射
+        const name = `${countryName || ''}`.trim()
+        if (!name) return null
         const countryMap = {
           // 亚洲
           中国: 'CN',
@@ -860,6 +1070,7 @@
           新加坡: 'SG',
           泰国: 'TH',
           马来西亚: 'MY',
+          马拉雅: 'MY',
           印度尼西亚: 'ID',
           菲律宾: 'PH',
           越南: 'VN',
@@ -887,47 +1098,145 @@
           塔吉克斯坦: 'TJ',
           // 欧洲
           英国: 'GB',
+          'United Kingdom': 'GB',
+          UK: 'GB',
+          'Great Britain': 'GB',
+          England: 'GB',
+          Scotland: 'GB',
+          Wales: 'GB',
+          'Northern Ireland': 'GB',
           法国: 'FR',
+          France: 'FR',
           德国: 'DE',
+          Germany: 'DE',
           意大利: 'IT',
+          Italy: 'IT',
           西班牙: 'ES',
+          Spain: 'ES',
           荷兰: 'NL',
+          Netherlands: 'NL',
+          'The Netherlands': 'NL',
+          Holland: 'NL',
           瑞士: 'CH',
+          Switzerland: 'CH',
           瑞典: 'SE',
+          Sweden: 'SE',
           波兰: 'PL',
+          Poland: 'PL',
           比利时: 'BE',
+          Belgium: 'BE',
           奥地利: 'AT',
+          Austria: 'AT',
           挪威: 'NO',
+          Norway: 'NO',
           丹麦: 'DK',
+          Denmark: 'DK',
           芬兰: 'FI',
+          Finland: 'FI',
           爱尔兰: 'IE',
+          Ireland: 'IE',
+          'Republic of Ireland': 'IE',
           葡萄牙: 'PT',
+          Portugal: 'PT',
           希腊: 'GR',
+          Greece: 'GR',
           捷克: 'CZ',
+          'Czech Republic': 'CZ',
+          Czechia: 'CZ',
           匈牙利: 'HU',
+          Hungary: 'HU',
           罗马尼亚: 'RO',
+          Romania: 'RO',
           乌克兰: 'UA',
+          Ukraine: 'UA',
           俄罗斯: 'RU',
+          Russia: 'RU',
+          'Russian Federation': 'RU',
           白俄罗斯: 'BY',
+          Belarus: 'BY',
           保加利亚: 'BG',
+          Bulgaria: 'BG',
           塞尔维亚: 'RS',
+          Serbia: 'RS',
           克罗地亚: 'HR',
+          Croatia: 'HR',
           斯洛伐克: 'SK',
+          Slovakia: 'SK',
           斯洛文尼亚: 'SI',
+          Slovenia: 'SI',
           立陶宛: 'LT',
+          Lithuania: 'LT',
           拉脱维亚: 'LV',
+          Latvia: 'LV',
           爱沙尼亚: 'EE',
+          Estonia: 'EE',
           冰岛: 'IS',
+          Iceland: 'IS',
           卢森堡: 'LU',
+          Luxembourg: 'LU',
           马耳他: 'MT',
+          Malta: 'MT',
           摩纳哥: 'MC',
+          Monaco: 'MC',
           列支敦士登: 'LI',
+          Liechtenstein: 'LI',
           安道尔: 'AD',
+          Andorra: 'AD',
           圣马力诺: 'SM',
+          'San Marino': 'SM',
           梵蒂冈: 'VA',
+          'Vatican City': 'VA',
+          Cyprus: 'CY',
+          塞浦路斯: 'CY',
+          Moldova: 'MD',
+          摩尔多瓦: 'MD',
+          欧洲: 'EU',
+          Europe: 'EU',
+          欧盟: 'EU',
+          欧洲联盟: 'EU',
+          'European Union': 'EU',
+          EU: 'EU',
           // 北美洲
           美国: 'US',
           加拿大: 'CA',
+          安大略: 'CA',
+          安大略省: 'CA',
+          Ontario: 'CA',
+          魁北克: 'CA',
+          魁北克省: 'CA',
+          Quebec: 'CA',
+          不列颠哥伦比亚: 'CA',
+          不列颠哥伦比亚省: 'CA',
+          'British Columbia': 'CA',
+          卑诗: 'CA',
+          卑诗省: 'CA',
+          Alberta: 'CA',
+          阿尔伯塔: 'CA',
+          阿尔伯塔省: 'CA',
+          Manitoba: 'CA',
+          马尼托巴: 'CA',
+          马尼托巴省: 'CA',
+          Saskatchewan: 'CA',
+          萨斯喀彻温: 'CA',
+          萨斯喀彻温省: 'CA',
+          'Nova Scotia': 'CA',
+          新斯科舍: 'CA',
+          新斯科舍省: 'CA',
+          'New Brunswick': 'CA',
+          新不伦瑞克: 'CA',
+          新不伦瑞克省: 'CA',
+          'Newfoundland and Labrador': 'CA',
+          纽芬兰与拉布拉多: 'CA',
+          纽芬兰与拉布拉多省: 'CA',
+          'Prince Edward Island': 'CA',
+          爱德华王子岛: 'CA',
+          爱德华王子岛省: 'CA',
+          Yukon: 'CA',
+          育空: 'CA',
+          'Northwest Territories': 'CA',
+          西北地区: 'CA',
+          Nunavut: 'CA',
+          努纳武特: 'CA',
           墨西哥: 'MX',
           古巴: 'CU',
           牙买加: 'JM',
@@ -964,30 +1273,59 @@
           汤加: 'TO',
           // 非洲
           南非: 'ZA',
+          'South Africa': 'ZA',
           埃及: 'EG',
+          Egypt: 'EG',
           尼日利亚: 'NG',
+          Nigeria: 'NG',
           肯尼亚: 'KE',
+          Kenya: 'KE',
           埃塞俄比亚: 'ET',
+          Ethiopia: 'ET',
           加纳: 'GH',
+          Ghana: 'GH',
           坦桑尼亚: 'TZ',
+          Tanzania: 'TZ',
           乌干达: 'UG',
+          Uganda: 'UG',
           阿尔及利亚: 'DZ',
+          Algeria: 'DZ',
           摩洛哥: 'MA',
+          Morocco: 'MA',
           突尼斯: 'TN',
+          Tunisia: 'TN',
           利比亚: 'LY',
+          Libya: 'LY',
           苏丹: 'SD',
+          Sudan: 'SD',
           索马里: 'SO',
+          Somalia: 'SO',
           津巴布韦: 'ZW',
+          Zimbabwe: 'ZW',
           赞比亚: 'ZM',
+          Zambia: 'ZM',
           莫桑比克: 'MZ',
+          Mozambique: 'MZ',
           博茨瓦纳: 'BW',
+          Botswana: 'BW',
           纳米比亚: 'NA',
+          Namibia: 'NA',
           安哥拉: 'AO',
+          Angola: 'AO',
           喀麦隆: 'CM',
+          Cameroon: 'CM',
           塞内加尔: 'SN',
+          Senegal: 'SN',
           科特迪瓦: 'CI',
+          'Côte d’Ivoire': 'CI',
+          "Côte d'Ivoire": 'CI',
+          "Cote d'Ivoire": 'CI',
+          'Cote d Ivoire': 'CI',
+          'Ivory Coast': 'CI',
           马达加斯加: 'MG',
+          Madagascar: 'MG',
           毛里求斯: 'MU',
+          Mauritius: 'MU',
           // 中东
           土耳其: 'TR',
           以色列: 'IL',
@@ -1004,116 +1342,40 @@
           阿曼: 'OM',
           也门: 'YE'
         }
-        return countryMap[countryName] || null
+        return countryMap[name] || null
       },
       getPeerSource (peer) {
-        // 判断peer来源
-        // 来源优先级：LPD > DHT > PEX > UDP Tracker > HTTP Tracker > 手动
         if (!peer) return '-'
-
-        // 1. LPD - 本地发现（本地peer）
-        if (peer.lsd === 'true' || peer.lsd === true || peer.localPeer === 'true' || peer.localPeer === true) {
-          return this.$t('task.peer-source-lsd')
-        }
-
-        // 2. DHT - DHT网络（支持DHT的peer）
-        // 注意：aria2中没有直接的DHT来源标记，这里作为预留
-        if (peer.fromDHT === 'true' || peer.fromDHT === true) {
-          return this.$t('task.peer-source-dht')
-        }
-
-        // 3. PEX - Peer Exchange（支持扩展消息的peer可能来自PEX）
-        // 如果是入站连接且支持扩展消息，很可能是PEX
-        if (peer.extendedMessaging === 'true' || peer.extendedMessaging === true) {
-          if (peer.incoming === 'true' || peer.incoming === true) {
-            return this.$t('task.peer-source-pex')
-          }
-        }
-
-        // 4. UDP Tracker / HTTP Tracker - tracker返回（出站连接）
-        if (peer.incoming !== 'true' && peer.incoming !== true) {
-          // 检查tracker协议类型
-          // 注意：aria2没有直接提供tracker协议类型，这里根据端口推测
-          // UDP tracker通常使用非标准端口，HTTP tracker使用标准端口
-          const port = parseInt(peer.port) || 0
-
-          // 如果有trackerProtocol字段（预留）
-          if (peer.trackerProtocol === 'udp' || peer.trackerProtocol === 'UDP') {
-            return this.$t('task.peer-source-udp')
-          }
-          if (peer.trackerProtocol === 'http' || peer.trackerProtocol === 'HTTP' ||
-            peer.trackerProtocol === 'https' || peer.trackerProtocol === 'HTTPS') {
-            return this.$t('task.peer-source-http')
-          }
-
-          // 根据端口推测（不太准确，但可以作为参考）
-          // 6881-6889 是常见的BT端口，可能来自HTTP tracker
-          // 其他端口可能来自UDP tracker
-          if (port >= 6881 && port <= 6889) {
-            return this.$t('task.peer-source-http')
-          }
-
-          // 默认显示为Tracker（无法确定具体协议）
-          return this.$t('task.peer-source-tracker')
-        }
-
-        // 5. 手动 - 用户手动添加或其他入站连接
-        return this.$t('task.peer-source-manual')
+        const source = `${peer.source || ''}`.toLowerCase()
+        if (source === 'lsd') return this.$t('task.peer-source-lsd')
+        if (source === 'dht') return this.$t('task.peer-source-dht')
+        if (source === 'pex') return this.$t('task.peer-source-pex')
+        if (source === 'tracker') return this.$t('task.peer-source-tracker')
+        if (source === 'manual') return this.$t('task.peer-source-manual')
+        if (peer.localPeer === 'true' || peer.localPeer === true) return this.$t('task.peer-source-lsd')
+        if (peer.fromDHT === 'true' || peer.fromDHT === true) return this.$t('task.peer-source-dht')
+        if (peer.fromPEX === 'true' || peer.fromPEX === true) return this.$t('task.peer-source-pex')
+        return '-'
       },
       getPeerProtocol (peer) {
-        if (!peer) return this.$t('task.peer-protocol-tcp')
-
-        // 协议显示规则：
-        // TCP: 传统 TCP 连接
-        // µTP: uTP / UDP-based (aria2目前不支持，保留用于未来)
-        // TCP + EXT: TCP + 扩展协议 (支持扩展消息或Fast扩展)
-        // µTP + EXT: µTP + 扩展协议 (保留用于未来)
-
-        // 检查是否支持扩展协议
-        const hasExtendedMessaging = peer.extendedMessaging === 'true' || peer.extendedMessaging === true
-        const hasFastExtension = peer.fastExtension === 'true' || peer.fastExtension === true
-        const hasExtension = hasExtendedMessaging || hasFastExtension
-
-        // 目前aria2主要使用TCP，uTP支持较少
-        // 未来如果需要支持uTP，可以通过peer对象中的其他字段判断
-
-        if (hasExtension) {
-          return this.$t('task.peer-protocol-tcp-ext')
-        }
-
-        return this.$t('task.peer-protocol-tcp')
+        if (!peer) return '-'
+        const protocol = `${peer.protocol || ''}`.toLowerCase()
+        if (protocol === 'tcp') return this.$t('task.peer-protocol-tcp')
+        if (protocol === 'utp') return this.$t('task.peer-protocol-utp')
+        if (protocol === 'tcp-ext') return this.$t('task.peer-protocol-tcp-ext')
+        if (protocol === 'utp-ext') return this.$t('task.peer-protocol-utp-ext')
+        return protocol || '-'
       },
       getPeerStatus (peer) {
         if (!peer) return '-'
-        if (peer.status === 'banned') {
-          return this.$t('task.peer-status-banned')
-        }
-        if (peer.status === 'attempting') {
-          const errorText = `${peer.error || peer.errorMessage || peer.failureReason || peer.disconnectReason || peer.reason || ''}`.toLowerCase()
-          if (peer.utp === true || peer.protocol === 'utp' || peer.protocol === 'UTP' || errorText.includes('utp')) {
-            return this.$t('task.peer-status-utp-failed')
-          }
-          if (peer.udpHolePunch === true || peer.udpHolePunching === true || peer.holePunch === true || peer.holePunching === true || peer.udpPunching === true || errorText.includes('punch') || errorText.includes('hole') || errorText.includes('udp')) {
-            return this.$t('task.peer-status-udp-punch-failed')
-          }
-          if (errorText.includes('tcp') || errorText.length > 0) {
-            return this.$t('task.peer-status-tcp-failed')
-          }
-          return this.$t('task.peer-status-attempting')
-        }
-        const down = Number(peer.downloadSpeed) || 0
-        const up = Number(peer.uploadSpeed) || 0
-        const percent = bitfieldToPercent(peer.bitfield)
-        if (down > 0) {
-          return this.$t('task.peer-status-downloading')
-        }
-        if (up > 0) {
-          return this.$t('task.peer-status-uploading')
-        }
-        if (percent >= 100) {
-          return this.$t('task.peer-status-seeding')
-        }
-        return this.$t('task.peer-status-idle')
+        const status = `${peer.engineStatus || ''}`.toLowerCase()
+        if (status === 'banned') return this.$t('task.peer-status-banned')
+        if (status === 'attempting') return this.$t('task.peer-status-attempting')
+        if (status === 'downloading') return this.$t('task.peer-status-downloading')
+        if (status === 'uploading') return this.$t('task.peer-status-uploading')
+        if (status === 'seeding') return this.$t('task.peer-status-seeding')
+        if (status === 'idle') return this.$t('task.peer-status-idle')
+        return '-'
       },
       handleExpandChange (row, expanded) {
         if (row.isGroup) {
@@ -1154,53 +1416,103 @@
         if (!row.isGroup) {
           event.preventDefault()
           this.contextMenuPeer = row
+          this.contextMenuType = 'peer'
 
-          // 菜单尺寸（根据实际CSS计算）
-          const menuWidth = 150
-          const menuHeight = 4 * 36 + 10 // 4个菜单项 * 36px高度 + padding
-
-          // 获取窗口尺寸
-          const windowWidth = window.innerWidth
-          const windowHeight = window.innerHeight
-
-          // 计算菜单位置，确保不超出窗口边界
-          let x = event.clientX
-          let y = event.clientY
-
-          // 检查右边界
-          if (x + menuWidth > windowWidth) {
-            x = windowWidth - menuWidth - 5 // 留5px边距
-          }
-
-          // 检查底部边界
-          if (y + menuHeight > windowHeight) {
-            y = windowHeight - menuHeight - 5 // 留5px边距
-          }
-
-          // 确保不会超出左边界和顶部边界
-          if (x < 5) x = 5
-          if (y < 5) y = 5
-
-          this.contextMenuX = x
-          this.contextMenuY = y
-          this.contextMenuVisible = true
-
-          // 点击其他地方关闭菜单
-          const closeMenu = () => {
-            this.contextMenuVisible = false
-            this.contextMenuPeer = null
-            document.removeEventListener('click', closeMenu)
-          }
-          // 延迟添加监听器，避免立即触发
-          setTimeout(() => {
-            document.addEventListener('click', closeMenu)
-          }, 100)
+          const isBanned = row && row.status === 'banned'
+          const menuWidth = 160
+          const menuItems = isBanned ? 5 : 4
+          const menuHeight = menuItems * 36 + 10
+          this.openContextMenu(event, menuWidth, menuHeight)
         }
       },
-      async banPeer (duration) {
-        this.contextMenuVisible = false
-        const peer = this.contextMenuPeer
+      handleTableContextMenu (event) {
+        const target = event && event.target
+        if (target && (target.closest('.el-table__row') || target.closest('.el-table__header-wrapper'))) {
+          return
+        }
         this.contextMenuPeer = null
+        this.contextMenuType = 'blank'
+        const menuWidth = 180
+        const menuItems = 5
+        const menuHeight = menuItems * 36 + 10
+        this.openContextMenu(event, menuWidth, menuHeight)
+      },
+      openContextMenu (event, menuWidth, menuHeight) {
+        const windowWidth = window.innerWidth
+        const windowHeight = window.innerHeight
+        let x = event.clientX
+        let y = event.clientY
+
+        if (x + menuWidth > windowWidth) {
+          x = windowWidth - menuWidth - 5
+        }
+
+        if (y + menuHeight > windowHeight) {
+          y = windowHeight - menuHeight - 5
+        }
+
+        if (x < 5) x = 5
+        if (y < 5) y = 5
+
+        this.contextMenuX = x
+        this.contextMenuY = y
+        this.contextMenuVisible = true
+
+        if (this.contextMenuCloseHandler) {
+          document.removeEventListener('click', this.contextMenuCloseHandler)
+        }
+        this.contextMenuCloseHandler = (e) => {
+          const target = e && e.target
+          if (target && target.closest && target.closest('.mo-peer-context-menu')) {
+            return
+          }
+          this.closeContextMenu()
+        }
+        setTimeout(() => {
+          document.addEventListener('click', this.contextMenuCloseHandler)
+        }, 100)
+      },
+      closeContextMenu () {
+        this.contextMenuVisible = false
+        this.contextMenuPeer = null
+        this.contextMenuType = ''
+        if (this.contextMenuCloseHandler) {
+          document.removeEventListener('click', this.contextMenuCloseHandler)
+          this.contextMenuCloseHandler = null
+        }
+      },
+      togglePeerGroupVisibility (key) {
+        const current = this.peerGroupVisibility
+        const next = {
+          connected: current.connected,
+          attempting: current.attempting,
+          banned: current.banned,
+          disconnected: current.disconnected
+        }
+        if (Object.prototype.hasOwnProperty.call(next, key)) {
+          next[key] = !next[key]
+          this.savePeerGroupVisibility(next)
+        }
+        this.closeContextMenu()
+      },
+      resetPeerGroupVisibility () {
+        const next = {
+          connected: true,
+          attempting: true,
+          banned: true,
+          disconnected: true
+        }
+        this.savePeerGroupVisibility(next)
+        this.closeContextMenu()
+      },
+      savePeerGroupVisibility (next) {
+        this.$store.dispatch('preference/save', {
+          peerGroupVisibility: next
+        })
+      },
+      async banPeer (duration) {
+        const peer = this.contextMenuPeer
+        this.closeContextMenu()
 
         if (!peer) {
           return
@@ -1261,9 +1573,8 @@
         }
       },
       async unbanPeer () {
-        this.contextMenuVisible = false
         const peer = this.contextMenuPeer
-        this.contextMenuPeer = null
+        this.closeContextMenu()
 
         if (!peer) {
           return
@@ -1377,6 +1688,13 @@
     border-radius: 2px;
     flex-shrink: 0;
     box-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+  }
+  .mo-peer-flag-local {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #67c23a;
+    box-shadow: inset 0 0 0 2px #f5f7fa, 0 0 1px rgba(0, 0, 0, 0.2);
   }
   .mo-peer-group-label {
     font-weight: 600;

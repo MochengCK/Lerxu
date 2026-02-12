@@ -263,6 +263,7 @@
         showDateText: false,
         dateFilterBtnRect: {}, // 日期筛选按钮的位置信息
         hoverDate: null, // 悬停的日期
+        isSubnavHovered: false,
         isSubnavProximityHovered: false,
         windowWidth: 0
       }

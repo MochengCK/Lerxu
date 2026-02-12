@@ -829,23 +829,7 @@ export default class Application extends EventEmitter {
     try {
       const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
-      logger.info('[Motrix] Pausing all active tasks before shutdown')
-      const activeTasks = await this.engineClient.call('tellActive')
-
-      if (activeTasks && activeTasks.length > 0) {
-        logger.info(`[Motrix] Found ${activeTasks.length} active tasks, pausing them...`)
-
-        const pausePromises = activeTasks.map(task =>
-          this.engineClient.call('pause', task.gid)
-        )
-
-        await Promise.allSettled(pausePromises)
-        logger.info('[Motrix] All active tasks paused')
-
-        await wait(500)
-      } else {
-        logger.info('[Motrix] No active tasks found')
-      }
+      await this.pauseTasksBeforeExit('shutdown')
 
       await Promise.race([
         this.engineClient.call('saveSession'),
@@ -1690,26 +1674,41 @@ export default class Application extends EventEmitter {
     await Promise.allSettled(this.stop())
   }
 
-  async quit () {
-    // 首先暂停所有活跃任务（而不是移除，以便下次启动时可以恢复）
+  async pauseTasksBeforeExit (reason) {
+    const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
     try {
-      logger.info('[Motrix] Pausing all active tasks before quit')
-      const activeTasks = await this.engineClient.call('tellActive')
-      if (activeTasks && activeTasks.length > 0) {
-        logger.info(`[Motrix] Found ${activeTasks.length} active tasks to pause`)
-        // 暂停所有活跃任务（使用pause而不是remove，保留任务信息）
-        for (const task of activeTasks) {
-          try {
-            await this.engineClient.call('pause', task.gid)
-            logger.info(`[Motrix] Paused task: ${task.gid}`)
-          } catch (err) {
-            logger.warn(`[Motrix] Failed to pause task ${task.gid}:`, err.message)
-          }
-        }
+      logger.info(`[Motrix] Pausing tasks before ${reason}`)
+      const [activeTasks, waitingTasks] = await Promise.all([
+        this.engineClient.call('tellActive'),
+        this.engineClient.call('tellWaiting', 0, 1000)
+      ])
+      const tasks = [
+        ...(Array.isArray(activeTasks) ? activeTasks : []),
+        ...(Array.isArray(waitingTasks) ? waitingTasks : [])
+      ]
+      if (tasks.length === 0) {
+        logger.info('[Motrix] No active or waiting tasks found')
+        return
       }
+      logger.info(`[Motrix] Found ${tasks.length} active/waiting tasks, pausing them...`)
+      const pausePromises = tasks.map(task => {
+        const gid = task && task.gid
+        if (!gid) {
+          return Promise.resolve()
+        }
+        const method = task && task.bittorrent ? 'forcePause' : 'pause'
+        return this.engineClient.call(method, gid)
+      })
+      await Promise.allSettled(pausePromises)
+      logger.info('[Motrix] All active/waiting tasks paused')
+      await wait(500)
     } catch (error) {
       logger.warn('[Motrix] Failed to pause tasks:', error.message)
     }
+  }
+
+  async quit () {
+    await this.pauseTasksBeforeExit('quit')
 
     // Check if auto-purge-record is enabled and purge records before quitting
     const autoPurgeRecord = this.configManager.getUserConfig('auto-purge-record', false)
