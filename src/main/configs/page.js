@@ -54,7 +54,7 @@ export default {
       maximizable: true,
       minimizable: true
     },
-    bindCloseToHide: false,
+    bindCloseToHide: true,
     openDevTools: is.dev(),
     url: getPreferenceUrl()
   },
