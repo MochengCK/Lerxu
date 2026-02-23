@@ -9,8 +9,7 @@
       <router-view name="subnav" />
     </el-aside>
     <template v-if="isThreeColumn">
-      <mo-aside v-if="showMainAside" />
-      <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav">
+      <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav three-column-subnav">
         <router-view name="subnav" />
       </el-aside>
     </template>
@@ -118,6 +117,7 @@
       ...mapState('preference', {
         subnavMode: state => state.config.subnavMode || 'floating',
         sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating',
+        autoHideAside: state => state.config.autoHideAside,
         preferenceSearchKeyword: state => state.searchKeyword
       }),
       preferenceSearchValue: {
@@ -152,17 +152,9 @@
         return !this.isSmallWindow
       },
       showMainAside () {
-        if (this.isStandalone) {
-          return false
-        }
-        if (!this.isThreeColumn) {
-          return false
-        }
-        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
-        if (!width) {
-          return false
-        }
-        return width >= 960
+        // In three-column mode, the main aside is not shown;
+        // the subnav takes its place as the left sidebar
+        return false
       },
       showThreeColumnSubnav () {
         if (this.isStandalone) {
@@ -174,10 +166,11 @@
         if (this.isStandalone) {
           return false
         }
-        if (this.sidebarLayoutMode !== 'three-column') {
-          return true
+        // In three-column mode, small screen nav is not needed
+        if (this.isThreeColumn) {
+          return false
         }
-        return !this.isThreeColumn
+        return true
       },
       subnavs () {
         return this.subnavItems.map(item => ({

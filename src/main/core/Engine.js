@@ -34,7 +34,7 @@ export default class Engine {
     this.configManager = options.configManager // 接收ConfigManager实例
   }
 
-  start () {
+  async start () {
     const pidPath = getEnginePidPath()
     logger.info('[Motrix] Engie pid path:', pidPath)
 
@@ -44,6 +44,16 @@ export default class Engine {
 
     const originBinPath = this.getEngineBinPath()
     const binPath = this.prepareEngineBinary(originBinPath)
+
+    // 在启动前更新 DNS 配置
+    try {
+      const { updateDNSInConfig } = require('../utils/update-dns-config')
+      const confPath = getAria2ConfPath(platform, arch)
+      await updateDNSInConfig(confPath, this.configManager)
+    } catch (error) {
+      logger.warn('[Motrix] Failed to update DNS configuration:', error.message)
+    }
+
     const args = this.getStartArgs(binPath)
 
     const enableEngineLogs = is.dev() || is.linux() || is.windows()

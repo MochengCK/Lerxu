@@ -404,5 +404,8 @@ export default {
   'ffmpeg-installed': 'Installed',
   'ffmpeg-not-installed': 'Not Installed',
   'ffmpeg-path': 'Path',
-  'ffmpeg-open-folder': 'Open Folder'
+  'ffmpeg-open-folder': 'Open Folder',
+  'dns-acceleration': 'DNS Acceleration',
+  'enable-smart-dns': 'Enable Smart DNS Acceleration',
+  'enable-smart-dns-tips': 'Detects the network environment and tests candidate DNS response speed, then selects a faster server set to improve resolution efficiency. Results are cached for a period and periodically retested to adapt to network changes. Requires engine restart to take effect.'
 }

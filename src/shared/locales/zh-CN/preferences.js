@@ -391,5 +391,8 @@ export default {
   'ffmpeg-installed': '已安装',
   'ffmpeg-not-installed': '未安装',
   'ffmpeg-path': '路径',
-  'ffmpeg-open-folder': '打开目录'
+  'ffmpeg-open-folder': '打开目录',
+  'dns-acceleration': 'DNS 加速',
+  'enable-smart-dns': '启用智能 DNS 加速',
+  'enable-smart-dns-tips': '自动检测网络环境并测试候选 DNS 的响应速度，选择更快的服务器组合以提升解析效率。结果会缓存一段时间并定期复测以适应网络变化。开启后需要重启引擎生效。'
 }

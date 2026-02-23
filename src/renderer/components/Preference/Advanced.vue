@@ -336,6 +336,21 @@
           </el-form-item>
         </div>
 
+        <!-- DNS 加速设置卡片 -->
+        <div class="preference-card" data-category="advanced">
+          <h3 class="card-title">{{ $t('preferences.dns-acceleration') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.enableSmartDns" @change="autoSaveForm">
+                {{ $t('preferences.enable-smart-dns') }}
+              </el-checkbox>
+              <div class="el-form-item__info" style="margin-top: 8px;">
+                {{ $t('preferences.enable-smart-dns-tips') }}
+              </div>
+            </el-col>
+          </el-form-item>
+        </div>
+
         <!-- 端口设置卡片 -->
         <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.port') }}</h3>
@@ -791,6 +806,7 @@
       btTracker,
       dhtListenPort,
       enablePriorityEngine,
+      enableSmartDns,
       enableUpnp,
       hideAppMenu,
       lastCheckUpdateTime,
@@ -812,6 +828,7 @@
     } = config
     // 兼容旧的kebab-case配置键
     const parsedEngineBinary = engineBinary || config['engine-binary'] || ''
+    const parsedEnableSmartDns = enableSmartDns !== undefined ? enableSmartDns : (config['enable-smart-dns'] !== undefined ? config['enable-smart-dns'] : false)
     // 兼容旧版代理配置（旧版使用 enable 字段，新版使用 mode 字段）
     const clonedProxy = cloneDeep(proxy) || {}
     if (!clonedProxy.mode) {
@@ -835,6 +852,7 @@
       btTracker: convertCommaToLine(btTracker),
       dhtListenPort,
       enablePriorityEngine: enablePriorityEngine !== undefined ? enablePriorityEngine : false,
+      enableSmartDns: parsedEnableSmartDns,
       enableUpnp,
       hideAppMenu,
       lastCheckUpdateTime,
@@ -2526,6 +2544,12 @@
           if ('autoSyncTrackerTime' in data) {
             data['auto-sync-tracker-time'] = data.autoSyncTrackerTime
             delete data.autoSyncTrackerTime
+          }
+
+          // 显式处理enableSmartDns字段，转换为kebab-case
+          if ('enableSmartDns' in data) {
+            data['enable-smart-dns'] = data.enableSmartDns
+            delete data.enableSmartDns
           }
 
           const {

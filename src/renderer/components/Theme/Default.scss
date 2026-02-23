@@ -58,11 +58,13 @@ iframe {
   align-items: center;
   justify-content: center;
 }
+
 .el-dialog {
   margin: 0 auto !important;
   border-radius: 12px;
   overflow: hidden;
 }
+
 .el-message-box {
   border-radius: 12px;
   overflow: hidden;
@@ -72,9 +74,11 @@ iframe {
   .el-message-box__status {
     display: none;
   }
+
   .el-message-box__message {
     padding-left: 0;
   }
+
   .el-message-box__btns {
     display: flex;
     justify-content: flex-end;
@@ -99,6 +103,7 @@ iframe {
     z-index: 2001;
   }
 }
+
 .el-progress-bar__inner {
   transition: all 0.4s cubic-bezier(0.08, 0.82, 0.17, 1) 0s;
 }
@@ -123,10 +128,12 @@ iframe {
     opacity: 0.1;
     width: 0;
   }
+
   20% {
     opacity: 0.5;
     width: 0;
   }
+
   100% {
     opacity: 0;
     width: 100%;
@@ -143,10 +150,12 @@ iframe {
 .el-message__content {
   line-height: 18px;
   word-break: break-all;
+
   a {
     color: $--link-color;
   }
 }
+
 .el-notification,
 .el-message {
   z-index: 9000 !important;
@@ -158,6 +167,7 @@ iframe {
     position: relative;
     z-index: 10;
   }
+
   .el-dialog__body {
     padding-top: 10px;
     padding-bottom: 10px;
@@ -173,7 +183,8 @@ iframe {
   line-height: 1;
   padding-top: 4px;
   color: $--color-info;
-  > a {
+
+  >a {
     margin-right: 10px;
   }
 }
@@ -183,6 +194,7 @@ iframe {
     padding-left: 34px;
     padding-right: 5px;
   }
+
   &.is-controls-right .el-input__inner {
     padding-left: 5px;
     padding-right: 34px;
@@ -268,11 +280,15 @@ iframe {
 }
 
 .aside.is-auto-hide-aside {
+  position: absolute;
+  height: 100%;
+  z-index: 1000;
   transform: translateX(calc(-100% + 12px));
   transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.aside.is-auto-hide-aside:hover {
+.aside.is-auto-hide-aside:hover,
+.aside.is-auto-hide-aside.is-proximity-hovered {
   transform: translateX(0);
 }
 
@@ -282,12 +298,48 @@ iframe {
 }
 
 .subnav.is-auto-hide-subnav {
+  position: absolute;
+  height: 100%;
+  z-index: 999;
   transform: translateX(calc(-100% + 12px));
   transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.subnav.is-auto-hide-subnav:hover {
+.subnav.is-auto-hide-subnav:hover,
+.subnav.is-auto-hide-subnav.is-proximity-hovered {
   transform: translateX(0);
+}
+
+/* Three-column subnav: push behavior (keeps content in flow and resizes) */
+/* In three-column mode, the left sidebar is the main sidebar, controlled by autoHideAside */
+.subnav.three-column-subnav.is-auto-hide-aside {
+  position: relative;
+  height: auto;
+  z-index: 999;
+  margin-left: -220px;
+  transform: none;
+  overflow: hidden;
+  transition: margin-left 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.subnav.three-column-subnav.is-auto-hide-aside:hover,
+.subnav.three-column-subnav.is-auto-hide-aside.is-proximity-hovered {
+  margin-left: 0;
+  transform: none;
+  overflow: visible;
+}
+
+/* Three-column subnav: larger hover detection zone on the right side */
+.subnav.three-column-subnav.is-auto-hide-aside::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -100px;
+  width: 100px;
+  background: transparent;
+  cursor: default;
+  z-index: -1;
 }
 
 .main {
@@ -334,6 +386,7 @@ iframe {
 
       &:hover,
       &.active {
+
         i,
         span,
         svg {
@@ -384,13 +437,16 @@ iframe {
 }
 
 .panel {
+  position: relative;
   background: $--panel-background;
+
   .panel-header {
     position: relative;
     padding: 44px 0 12px;
     margin: 0 16px;
     border-bottom: 2px solid $--panel-border-color;
     user-select: none;
+
     h4 {
       margin: 0;
       color: $--panel-title-color;
@@ -399,6 +455,7 @@ iframe {
       line-height: 24px;
     }
   }
+
   .panel-content {
     position: relative;
     padding: 0;
@@ -421,6 +478,7 @@ iframe {
   border-bottom: none;
   overflow-x: hidden;
   overflow-y: auto;
+
   .el-table th {
     padding: 2px 0;
   }
@@ -433,7 +491,8 @@ iframe {
   line-height: 0;
   border: 1px solid $--task-detail-box-border;
   border-radius: $--border-radius-base;
-  &> svg {
+
+  &>svg {
     display: block;
     margin: 0 auto;
   }
@@ -446,7 +505,7 @@ iframe {
 
 @media only screen and (max-width:567px) {
   .hidden-xs-only {
-    display:none !important
+    display: none !important
   }
 }
 
@@ -457,24 +516,30 @@ iframe {
       margin-right: 36px;
     }
   }
+
   .task-list {
     padding-left: 36px;
     padding-right: 36px;
   }
+
   .form-preference {
     padding-left: 36px;
     padding-right: 36px;
   }
+
   .form-actions {
     padding: 24px 36px;
   }
+
   .mo-speedometer {
     right: 14px;
   }
+
   .hidden-sm-and-up {
     display: none !important;
   }
 }
+
 @media only screen and (min-width: 568px) and (max-width: 991px) {
   .hidden-sm-only {
     display: none !important;

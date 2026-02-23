@@ -92,6 +92,10 @@
   margin-top: 12px;
 }
 
+#app:not(.has-custom-titlebar) .subnav-inner.task-subnav {
+  margin-top: 44px;
+}
+
 .subnav-inner {
   li.subnav-divider {
     display: block;

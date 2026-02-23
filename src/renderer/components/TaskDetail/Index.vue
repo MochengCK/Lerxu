@@ -786,6 +786,9 @@
 }
 
 .task-detail-drawer {
+  position: absolute !important;
+  right: 0 !important;
+  left: auto !important;
   min-width: 478px;
   .el-drawer__header {
     padding: 3rem 0.75rem 0;

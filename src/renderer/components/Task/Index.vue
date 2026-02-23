@@ -7,8 +7,8 @@
       <el-aside
         v-if="showThreeColumnSubnav"
         width="220px"
-        class="subnav"
-        :class="{ 'is-auto-hide-subnav': autoHideSubnav }"
+        class="subnav three-column-subnav"
+        :class="{ 'is-auto-hide-aside': autoHideAside, 'is-proximity-hovered': isSubnavProximityHovered }"
         style="background: transparent"
         @mouseenter.native="onSubnavEnter"
         @mouseleave.native="onSubnavLeave"
@@ -78,13 +78,12 @@
     </el-container>
 
     <div
-      v-if="subnavMode === 'floating' || (isThreeColumn && autoHideSubnav)"
-      v-show="!isSubnavHovered"
+      v-if="showRightFloatingPanel"
       class="right-floating-panel"
       :class="{ 'is-auto-hide-subnav': autoHideSubnav && !datePickerVisible, 'is-proximity-hovered': isSubnavProximityHovered }"
     >
-      <template v-if="showSmallScreenNav || (isThreeColumn && autoHideSubnav)">
-        <div class="subnav-small-screen subnav-right">
+      <template v-if="showSmallScreenNav">
+        <div class="subnav-small-screen subnav-right" v-show="!isSubnavHovered">
           <ul class="menu small-menu">
             <li
               @click="navStatus('all')"
@@ -138,28 +137,15 @@
                 <mo-icon name="task-stop" width="20" height="20" />
               </el-tooltip>
             </li>
-            <li
-              v-if="isThreeColumn && autoHideSubnav"
-              @click="openPreference"
-            >
-              <el-tooltip
-                effect="dark"
-                :content="$t('subnav.preferences')"
-                placement="left"
-                :open-delay="500"
-              >
-                <mo-icon name="menu-preference" width="20" height="20" />
-              </el-tooltip>
-            </li>
           </ul>
         </div>
-        <div class="subnav-divider"></div>
+        <div class="subnav-divider" v-show="!isSubnavHovered"></div>
       </template>
 
       <div
         ref="dateFilterBtn"
         class="date-filter-standalone"
-        :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible, 'date-filter-standalone--three-column': isThreeColumn, 'is-frosted': dateFilterFrosted }"
+        :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible, 'is-frosted': dateFilterFrosted }"
         @click.stop="onDateFilterClick"
         @mouseenter="onDateFilterHover"
         @mouseleave="onDateFilterLeave"
@@ -187,7 +173,50 @@
       </div>
     </div>
     <mo-custom-date-picker
-      v-if="subnavMode === 'floating' && datePickerVisible"
+      v-if="showRightFloatingPanel && datePickerVisible"
+      v-model="selectedDate"
+      :frosted="dateFilterFrosted"
+      :task-counts="taskDateCounts"
+      :trigger-rect="dateFilterBtnRect"
+      @change="onDateChange"
+      @hover="onDateHover"
+      @clear="onDateClear"
+      @close="closeDatePicker"
+    />
+
+    <!-- 三栏式布局下单独的日期筛选按钮（右侧 = 子侧边栏） -->
+    <div
+      v-if="isThreeColumn"
+      ref="dateFilterBtn"
+      class="date-filter-standalone date-filter-standalone--three-column"
+      :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible, 'is-frosted': dateFilterFrosted, 'is-auto-hide-subnav': autoHideSubnav && !datePickerVisible, 'is-proximity-hovered': isDateFilterProximityHovered, 'is-aside-hovered': autoHideSubnav && (isSubnavHovered || isSubnavProximityHovered) }"
+      @click.stop="onDateFilterClick"
+      @mouseenter="onDateFilterHover"
+      @mouseleave="onDateFilterLeave"
+      @mousedown.prevent
+      @selectstart.prevent
+      @dragstart.prevent
+    >
+      <span
+        class="date-filter-text"
+        :class="{ visible: datePickerVisible || showDateText || storeFilterDate }"
+        @mousedown.prevent
+        @selectstart.prevent
+        @dragstart.prevent
+      >
+        {{ displayDateText }}
+      </span>
+      <div
+        class="date-filter-icon"
+        @mousedown.prevent
+        @selectstart.prevent
+        @dragstart.prevent
+      >
+        <mo-icon name="date-filter" width="24" height="24" />
+      </div>
+    </div>
+    <mo-custom-date-picker
+      v-if="isThreeColumn && datePickerVisible"
       v-model="selectedDate"
       :frosted="dateFilterFrosted"
       :task-counts="taskDateCounts"
@@ -265,6 +294,7 @@
         hoverDate: null, // 悬停的日期
         isSubnavHovered: false,
         isSubnavProximityHovered: false,
+        isDateFilterProximityHovered: false,
         windowWidth: 0
       }
     },
@@ -326,23 +356,28 @@
         return !this.isSmallWindow
       },
       showMainAside () {
-        if (!this.isThreeColumn) {
-          return false
-        }
-        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
-        if (!width) {
-          return false
-        }
-        return width >= 960
+        // In three-column mode, the main aside is not shown;
+        // the subnav takes its place as the left sidebar
+        return false
       },
       showThreeColumnSubnav () {
         return this.isThreeColumn && this.subnavMode !== 'title'
       },
       showSmallScreenNav () {
-        if (this.sidebarLayoutMode !== 'three-column') {
-          return true
+        // In three-column mode, small screen nav icons are not needed
+        // (subnav is the left sidebar already)
+        if (this.isThreeColumn) {
+          return false
         }
-        return !this.isThreeColumn
+        return true
+      },
+      showRightFloatingPanel () {
+        // In three-column mode, the right floating panel (date filter + nav icons)
+        // is completely hidden since the subnav is now on the left
+        if (this.isThreeColumn) {
+          return false
+        }
+        return this.subnavMode === 'floating'
       },
       subnavs () {
         return [
@@ -1090,6 +1125,36 @@
         }, 400)
       },
       updateSubnavProximityHover (event) {
+        // In three-column mode, the left sidebar is the main sidebar
+        // so we detect proximity on the left edge using autoHideAside
+        if (this.isThreeColumn) {
+          if (!this.autoHideAside) {
+            if (this.isSubnavProximityHovered) {
+              this.isSubnavProximityHovered = false
+            }
+            return
+          }
+          if (!event) {
+            return
+          }
+          const height = typeof window !== 'undefined' ? window.innerHeight : 0
+          if (!height) {
+            return
+          }
+          const el = this.$el && this.$el.querySelector ? this.$el.querySelector('.three-column-subnav') : null
+          const subnavHeight = el ? el.offsetHeight : 0
+          const zoneHeight = Math.max(subnavHeight || 0, 200) + 100
+          const centerY = height / 2
+          const top = centerY - zoneHeight / 2
+          const bottom = centerY + zoneHeight / 2
+          const withinY = event.clientY >= top && event.clientY <= bottom
+          const withinX = event.clientX <= 120
+          const next = withinX && withinY
+          if (next !== this.isSubnavProximityHovered) {
+            this.isSubnavProximityHovered = next
+          }
+          return
+        }
         if (!this.autoHideSubnav || this.datePickerVisible || this.subnavMode !== 'floating') {
           if (this.isSubnavProximityHovered) {
             this.isSubnavProximityHovered = false
@@ -1124,7 +1189,34 @@
           const lastEvent = this._subnavMouseEvent
           this._subnavMouseEvent = null
           this.updateSubnavProximityHover(lastEvent)
+          this.updateDateFilterProximityHover(lastEvent)
         })
+      },
+      updateDateFilterProximityHover (event) {
+        // Only active in three-column mode with autoHideSubnav
+        if (!this.isThreeColumn || !this.autoHideSubnav || this.datePickerVisible) {
+          if (this.isDateFilterProximityHovered) {
+            this.isDateFilterProximityHovered = false
+          }
+          return
+        }
+        if (!event) {
+          return
+        }
+        const width = typeof window !== 'undefined' ? window.innerWidth : 0
+        const height = typeof window !== 'undefined' ? window.innerHeight : 0
+        if (!width || !height) {
+          return
+        }
+        const centerY = height / 2
+        const top = centerY - 80
+        const bottom = centerY + 80
+        const withinY = event.clientY >= top && event.clientY <= bottom
+        const withinX = event.clientX >= width - 100
+        const next = withinX && withinY
+        if (next !== this.isDateFilterProximityHovered) {
+          this.isDateFilterProximityHovered = next
+        }
       },
       handleShowTaskInfo (payload) {
         const { task } = payload
@@ -1422,26 +1514,15 @@
   transform: translateX(0);
 }
 
-/* 3. 日期筛选按钮 (普通模式) */
-.right-floating-panel.is-auto-hide-subnav .date-filter-standalone:not(.date-filter-standalone--three-column) {
+/* 3. 日期筛选按钮 */
+.right-floating-panel.is-auto-hide-subnav .date-filter-standalone {
   transform: translateX(120px);
   transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease;
 }
 
-.right-floating-panel.is-auto-hide-subnav:hover .date-filter-standalone:not(.date-filter-standalone--three-column),
-.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .date-filter-standalone:not(.date-filter-standalone--three-column) {
+.right-floating-panel.is-auto-hide-subnav:hover .date-filter-standalone,
+.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .date-filter-standalone {
   transform: translateX(0);
-}
-
-/* 4. 日期筛选按钮 (三栏模式) */
-.right-floating-panel.is-auto-hide-subnav .date-filter-standalone.date-filter-standalone--three-column {
-  transform: translateY(-50%) translateX(120px);
-  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease;
-}
-
-.right-floating-panel.is-auto-hide-subnav:hover .date-filter-standalone.date-filter-standalone--three-column,
-.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .date-filter-standalone.date-filter-standalone--three-column {
-  transform: translateY(-50%) translateX(0);
 }
 
 /* 鼠标靠近感应区域 */
@@ -1571,10 +1652,32 @@
   pointer-events: auto;
 }
 
+/* 三栏模式下的日期筛选按钮位置 */
 .date-filter-standalone.date-filter-standalone--three-column {
   right: 10px;
   top: 50%;
   transform: translateY(-50%);
+  transition: width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
+}
+
+/* 当左侧主侧边栏悬停显示时，隐藏右侧日期筛选按钮（子侧边栏） */
+.date-filter-standalone.date-filter-standalone--three-column.is-aside-hovered {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(60px);
+}
+
+/* 子侧边栏自动隐藏：右侧日期筛选按钮完全隐藏 */
+.date-filter-standalone.date-filter-standalone--three-column.is-auto-hide-subnav {
+  transform: translateY(-50%) translateX(calc(100% + 20px));
+  transition: width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 鼠标接近右侧边缘时显示 */
+.date-filter-standalone.date-filter-standalone--three-column.is-auto-hide-subnav.is-proximity-hovered,
+.date-filter-standalone.date-filter-standalone--three-column.is-auto-hide-subnav:hover {
+  transform: translateY(-50%) translateX(0);
+  opacity: 1;
 }
 
 .theme-light .date-filter-standalone.is-frosted,

@@ -230,11 +230,13 @@
         return !this.isSmallWindow
       },
       showMainFloatingAside () {
-        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
-        const mode = this.sidebarLayoutMode
-        if (mode !== 'three-column') {
+        if (this.isThreeColumn) {
+          return false
+        }
+        if (!this.isThreeColumn) {
           return true
         }
+        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
         if (!width) {
           return false
         }

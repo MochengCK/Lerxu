@@ -796,7 +796,7 @@ export default class Application extends EventEmitter {
     }
   }
 
-  startEngine () {
+  async startEngine () {
     const self = this
 
     try {
@@ -805,7 +805,7 @@ export default class Application extends EventEmitter {
         userConfig: this.configManager.getUserConfig(),
         configManager: this.configManager // 将configManager传递给Engine
       })
-      this.engine.start()
+      await this.engine.start()
     } catch (err) {
       const message = err && err.message ? err.message : String(err)
       const detail = err && err.details
@@ -2056,12 +2056,12 @@ export default class Application extends EventEmitter {
     app.clearRecentDocuments()
 
     const sessionPath = this.context.get('session-path')
-    setTimeout(() => {
+    setTimeout(async () => {
       unlink(sessionPath, (err) => {
         logger.info('[Motrix] Removed the download seesion file:', err)
       })
 
-      this.engine.start()
+      await this.engine.start()
     }, 3000)
   }
 

@@ -9,9 +9,9 @@
       :lg="leftColSpan.lg"
     >
       <el-tooltip
-        v-if="statusHintText"
+        v-if="connectingStatusText"
         effect="dark"
-        :content="statusHintText"
+        :content="connectingStatusText"
         placement="top"
         :disabled="!isStatusTruncated"
       >
@@ -19,7 +19,7 @@
           ref="statusText"
           class="task-magnet-hint task-magnet-hint--ellipsis"
         >
-          {{ statusHintText }}
+          {{ connectingStatusText }}
         </div>
       </el-tooltip>
       <div v-else-if="task.completedLength > 0 || task.totalLength > 0">
@@ -215,6 +215,26 @@
         }
         return raw
       },
+      connectingStatusText () {
+        const task = this.task || {}
+        const engineStatus = `${task.engineStatus || ''}`.trim()
+        const statusHint = `${task.statusHint || ''}`.trim()
+        const engineConnectingHints = [
+          'task.status-waiting',
+          'task.status-magnet-downloading'
+        ]
+        const hintConnectingHints = [
+          'task.waiting-download-data',
+          'task.magnet-fetching-metadata'
+        ]
+        if (engineConnectingHints.includes(engineStatus)) {
+          return this.$t(engineStatus)
+        }
+        if (hintConnectingHints.includes(statusHint)) {
+          return this.$t(statusHint)
+        }
+        return ''
+      },
       statusRightText () {
         const task = this.task || {}
         const raw = `${task.statusRightText || ''}`.trim()
@@ -357,7 +377,7 @@
       }
     },
     watch: {
-      statusHintText () {
+      connectingStatusText () {
         this.updateStatusTruncation()
       }
     },

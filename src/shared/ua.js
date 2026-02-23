@@ -2,10 +2,10 @@
 // Split identifiers for HTTP and BT traffic.
 
 // BT User-Agent used for tracker HTTP and DHT related identity.
-export const LINKCORE_BT_UA = 'FluxCore/1.0.6'
+export const LINKCORE_BT_UA = 'FluxCore/1.1.3'
 
 // Peer ID prefix: 20-byte BT peer id format, "-FXxxxx-" + 12 random chars.
-export const LINKCORE_PEER_ID_PREFIX = '-FX1060-'
+export const LINKCORE_PEER_ID_PREFIX = '-FX1130-'
 
 // BT client name used in BEP10 extension handshake.
 export const LINKCORE_CLIENT_NAME = 'FluxCore (based on aria2)'

@@ -106,6 +106,8 @@
 <script>
   import { mapState } from 'vuex'
   import router from '@/router'
+  import api from '@/api'
+  import BtLevelMigration from '@/utils/BtLevelMigration'
   import { bytesToSize } from '@shared/utils'
 
   // 等级定义（使用国际化 key）
@@ -121,68 +123,9 @@
     { level: 9, titleKey: 'bt-level-9', minXP: 20000 }
   ]
 
-  // 辅助函数：验证统计数据完整性
-  function verifyStatsIntegrity (stats) {
-    // 简单的完整性检查，确保数据有效
-    if (!stats || typeof stats !== 'object') return null
-    if (typeof stats.totalDownloaded !== 'number' || stats.totalDownloaded < 0) return null
-    if (typeof stats.totalUploaded !== 'number' || stats.totalUploaded < 0) return null
-    return stats
-  }
-
-  // 辅助函数：计算签名（简单的哈希）
-  function computeStatsSignature (stats) {
-    const str = JSON.stringify(stats)
-    let hash = 0
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i)
-      hash = ((hash << 5) - hash) + char
-      hash = hash & hash
-    }
-    return hash.toString(36)
-  }
-
-  // 辅助函数：计算XP
-  function calculateXP (stats) {
-    const dlXP = (stats.totalDownloaded / (1024 * 1024 * 1024)) * 10 // 每GB下载 = 10 XP
-    const ulXP = (stats.totalUploaded / (1024 * 1024 * 1024)) * 15 // 每GB上传 = 15 XP
-    const shareRatio = stats.totalDownloaded > 0 ? stats.totalUploaded / stats.totalDownloaded : 0
-    const shareRatioBonus = shareRatio >= 1 ? Math.min(shareRatio * 50, 200) : 0 // 分享率奖励
-    const peerXP = stats.totalPeers * 2 // 每个peer = 2 XP
-    const timeXP = (stats.totalSeedHours || 0) * 5 // 每小时做种 = 5 XP
-
-    return {
-      dlXP,
-      ulXP,
-      shareRatioBonus,
-      peerXP,
-      timeXP,
-      total: dlXP + ulXP + shareRatioBonus + peerXP + timeXP
-    }
-  }
-
-  // 辅助函数：获取等级信息
-  function getLevelInfo (xp) {
-    let currentLevel = LEVELS[0]
-    let nextLevel = LEVELS[1]
-
-    for (let i = 0; i < LEVELS.length; i++) {
-      if (xp >= LEVELS[i].minXP) {
-        currentLevel = LEVELS[i]
-        nextLevel = LEVELS[i + 1] || { ...LEVELS[i], minXP: LEVELS[i].minXP + 10000 }
-      } else {
-        break
-      }
-    }
-
-    return {
-      level: currentLevel.level,
-      titleKey: currentLevel.titleKey,
-      currentLevelXP: currentLevel.minXP,
-      nextLevelXP: nextLevel.minXP,
-      progress: xp - currentLevel.minXP,
-      required: nextLevel.minXP - currentLevel.minXP
-    }
+  function getLevelTitleKey (level) {
+    const found = LEVELS.find(item => item.level === level)
+    return (found && found.titleKey) || LEVELS[LEVELS.length - 1].titleKey
   }
 
   export default {
@@ -199,16 +142,6 @@
             return false
           }
         })(), // 首次渲染前从 localStorage 加载，避免切换回来时误触发收起动画
-        btStats: {
-          totalTasks: 0,
-          completedTasks: 0,
-          seedingTasks: 0,
-          totalDownloaded: 0,
-          totalUploaded: 0,
-          totalSeedTime: '0h',
-          totalPeers: 0,
-          activeDays: 0
-        },
         userStats: {
           xp: 0,
           dlXP: 0,
@@ -262,14 +195,12 @@
         console.warn('[BT Stats] Failed to load last level:', e)
       }
 
-      // 计算任务统计和用户XP（前端计算）
-      this.calculateBTStats()
-      this.calculateUserXP()
+      await this.migrateBtStats()
+      await this.fetchBtLevel()
 
       // 每5秒更新一次统计数据
       this.updateTimer = setInterval(() => {
-        this.calculateBTStats()
-        this.calculateUserXP()
+        this.fetchBtLevel()
       }, 5000)
     },
     beforeDestroy () {
@@ -280,6 +211,59 @@
       }
     },
     methods: {
+      async migrateBtStats () {
+        try {
+          const migration = new BtLevelMigration(api)
+          await migration.migrate()
+        } catch (error) {
+          console.warn('[BT Stats] Migration failed:', error)
+        }
+      },
+      async fetchBtLevel () {
+        try {
+          const data = await api.getBtLevel()
+          const level = Number(data.level || 1)
+          const currentLevelXP = Number(data.currentLevelThreshold || 0)
+          const nextLevelXP = Number(data.nextLevelThreshold || 0)
+          const downloadBytes = Number(data.downloadBytes || 0)
+          const uploadBytes = Number(data.uploadBytes || 0)
+          const seedTimeSeconds = Number(data.seedTimeSeconds || 0)
+          const maxPeers = Number(data.maxPeers || 0)
+          const levelInfo = {
+            level,
+            titleKey: getLevelTitleKey(level),
+            currentLevelXP,
+            nextLevelXP,
+            isMaxLevel: level >= LEVELS.length || (nextLevelXP > 0 && nextLevelXP <= currentLevelXP)
+          }
+
+          this.userStats = {
+            xp: Number(data.totalXP || 0),
+            dlXP: Number(data.downloadXP || 0),
+            ulXP: Number(data.uploadXP || 0),
+            shareRatioBonus: Number(data.ratioXP || 0),
+            peerXP: Number(data.peerXP || 0),
+            timeXP: Number(data.timeXP || 0),
+            totalDownloaded: Number.isFinite(downloadBytes) ? downloadBytes : 0,
+            totalUploaded: Number.isFinite(uploadBytes) ? uploadBytes : 0,
+            totalPeers: Number.isFinite(maxPeers) ? maxPeers : 0,
+            totalSeedHours: Number.isFinite(seedTimeSeconds) ? (seedTimeSeconds / 3600) : 0
+          }
+
+          if (this.lastLevel !== null && levelInfo.level > this.lastLevel) {
+            this.showLevelUpNotification(levelInfo)
+          }
+
+          this.userLevel = levelInfo
+          this.lastLevel = levelInfo.level
+
+          try {
+            localStorage.setItem('bt-user-level', levelInfo.level.toString())
+          } catch (e) {}
+        } catch (error) {
+          console.warn('[BT Stats] Failed to fetch BT level:', error)
+        }
+      },
       toggleXpBreakdown () {
         this.xpBreakdownCollapsed = !this.xpBreakdownCollapsed
         try {
@@ -288,125 +272,6 @@
       },
       formatBytes (bytes) {
         return bytesToSize(bytes)
-      },
-      calculateBTStats () {
-        const taskList = this.$store.state.task.taskList || []
-        const btTasks = taskList.filter(task => task.bittorrent)
-
-        this.btStats.totalTasks = btTasks.length
-        this.btStats.completedTasks = btTasks.filter(task => task.status === 'complete').length
-        this.btStats.seedingTasks = btTasks.filter(task => {
-          return task.status === 'active' && task.seeder === 'true'
-        }).length
-
-        let totalDownloaded = 0
-        let totalUploaded = 0
-        let totalSeedHours = 0
-        let totalPeers = 0
-        const activeDaysSet = new Set()
-
-        btTasks.forEach(task => {
-          totalDownloaded += Number(task.completedLength || 0)
-          totalUploaded += Number(task.uploadLength || 0)
-
-          // 统计节点数
-          if (task.connections) {
-            totalPeers += Number(task.connections)
-          }
-
-          // 估算做种时间
-          if (task.seedTime) {
-            totalSeedHours += Number(task.seedTime)
-          } else if (task.status === 'complete' && Number(task.uploadLength || 0) > 0) {
-            totalSeedHours += 1
-          }
-
-          // 记录活跃日期（简化处理，使用任务完成日期）
-          if (task.completedTime) {
-            const date = new Date(Number(task.completedTime) * 1000).toDateString()
-            activeDaysSet.add(date)
-          }
-        })
-
-        this.btStats.totalDownloaded = totalDownloaded
-        this.btStats.totalUploaded = totalUploaded
-        this.btStats.totalSeedTime = totalSeedHours + 'h'
-        this.btStats.totalPeers = totalPeers
-        this.btStats.activeDays = activeDaysSet.size || Math.floor(totalSeedHours / 24) || 1
-      },
-      calculateUserXP () {
-        // 从本地存储读取历史数据（校验签名，防止手动篡改）
-        let savedStats = {}
-        try {
-          const saved = localStorage.getItem('bt-user-stats')
-          if (saved) {
-            const parsed = JSON.parse(saved)
-            savedStats = verifyStatsIntegrity(parsed) || {}
-          }
-        } catch (e) {
-          console.warn('[BT Stats] Failed to load saved stats:', e)
-        }
-
-        // 计算实际做种小时数（从任务数据中提取）
-        let totalSeedHours = 0
-        const taskList = this.$store.state.task.taskList || []
-        const btTasks = taskList.filter(task => task.bittorrent)
-        btTasks.forEach(task => {
-          // 如果有做种时间字段，使用它
-          if (task.seedTime) {
-            totalSeedHours += Number(task.seedTime)
-          } else if (task.status === 'complete' && Number(task.uploadLength || 0) > 0) {
-            // 估算：已完成的任务且有上传的，按 1 小时计算
-            totalSeedHours += 1
-          }
-        })
-
-        // 合并当前数据和历史数据（取最大值，防止数据回退）
-        const stats = {
-          totalDownloaded: Math.max(this.btStats.totalDownloaded, savedStats.totalDownloaded || 0),
-          totalUploaded: Math.max(this.btStats.totalUploaded, savedStats.totalUploaded || 0),
-          totalPeers: Math.max(this.btStats.totalPeers, savedStats.totalPeers || 0),
-          totalSeedHours: Math.max(totalSeedHours, savedStats.totalSeedHours || 0)
-        }
-
-        // 计算 XP
-        const xp = calculateXP(stats)
-
-        this.userStats = {
-          xp: xp.total,
-          dlXP: xp.dlXP,
-          ulXP: xp.ulXP,
-          shareRatioBonus: xp.shareRatioBonus,
-          peerXP: xp.peerXP,
-          timeXP: xp.timeXP,
-          ...stats
-        }
-
-        // 获取等级信息
-        const levelInfo = getLevelInfo(xp.total)
-
-        // 检测是否升级
-        if (this.lastLevel !== null && levelInfo.level > this.lastLevel) {
-          this.showLevelUpNotification(levelInfo)
-        }
-
-        this.userLevel = {
-          level: levelInfo.level,
-          titleKey: levelInfo.titleKey,
-          currentLevelXP: levelInfo.currentLevelXP,
-          nextLevelXP: levelInfo.nextLevelXP,
-          isMaxLevel: levelInfo.level === 9
-        }
-        this.lastLevel = levelInfo.level
-
-        // 保存到本地存储（附带签名，用于校验防篡改）
-        try {
-          localStorage.setItem('bt-user-stats', JSON.stringify(stats))
-          localStorage.setItem('bt-user-stats-sig', computeStatsSignature(stats))
-          localStorage.setItem('bt-user-level', levelInfo.level.toString())
-        } catch (e) {
-          console.warn('[BT Stats] Failed to save stats:', e)
-        }
       },
       formatSeedTime (hours) {
         if (hours < 1) return '< 1h'
@@ -440,6 +305,7 @@
 
         // 点击消息时打开BT统计页面（等待 DOM 渲染完成）
         const bindClick = () => {
+          if (!msgInstance || !msgInstance.$el) return
           const el = msgInstance.$el
           if (el && !el.dataset.btLevelUpBound) {
             el.dataset.btLevelUpBound = '1'

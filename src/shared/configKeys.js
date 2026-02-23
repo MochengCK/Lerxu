@@ -80,6 +80,7 @@ const userKeys = [
   'floating-bar-display-mode',
   'preference-cards-collapsed',
   'enable-security-scan',
+  'enable-smart-dns',
   'security-scan-tool',
   'custom-security-scan-path',
   'task-detail-default-transparent',

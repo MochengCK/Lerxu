@@ -1,5 +1,5 @@
 <template>
-  <el-aside width="78px" :class="['aside', { 'draggable': asideDraggable }]" :style="vibrancy">
+  <el-aside width="78px" :class="['aside', { 'draggable': asideDraggable, 'is-auto-hide-aside': autoHideAside, 'is-proximity-hovered': isAsideProximityHovered }]" :style="vibrancy">
     <div class="aside-inner">
       <ul class="menu top-menu"></ul>
       <ul class="menu bottom-menu">
@@ -31,9 +31,17 @@
     name: 'mo-aside',
     components: {
     },
+    data () {
+      return {
+        isAsideProximityHovered: false
+      }
+    },
     computed: {
       ...mapState('app', {
         currentPage: state => state.currentPage
+      }),
+      ...mapState('preference', {
+        autoHideAside: state => state.config.autoHideAside
       }),
       asideDraggable () {
         return is.macOS()
@@ -47,6 +55,43 @@
       }
     },
     methods: {
+      updateAsideProximityHover (event) {
+        if (!this.autoHideAside) {
+          if (this.isAsideProximityHovered) {
+            this.isAsideProximityHovered = false
+          }
+          return
+        }
+        if (!event) {
+          return
+        }
+        const height = typeof window !== 'undefined' ? window.innerHeight : 0
+        if (!height) {
+          return
+        }
+        const zoneHeight = Math.max(this.$el ? this.$el.offsetHeight : 0, 120) + 100
+        const centerY = height / 2
+        const top = centerY - zoneHeight / 2
+        const bottom = centerY + zoneHeight / 2
+        const withinY = event.clientY >= top && event.clientY <= bottom
+        const withinX = event.clientX <= 120
+        const next = withinX && withinY
+        if (next !== this.isAsideProximityHovered) {
+          this.isAsideProximityHovered = next
+        }
+      },
+      handleWindowMouseMoveForAside (event) {
+        this._asideMouseEvent = event
+        if (this._asideMouseRaf) {
+          return
+        }
+        this._asideMouseRaf = window.requestAnimationFrame(() => {
+          this._asideMouseRaf = null
+          const lastEvent = this._asideMouseEvent
+          this._asideMouseEvent = null
+          this.updateAsideProximityHover(lastEvent)
+        })
+      },
       nav (page) {
         if (page === '/preference') {
           this.$electron.ipcRenderer.send('open-preference-window')
@@ -57,6 +102,24 @@
         }).catch(err => {
           console.log(err)
         })
+      }
+    },
+    mounted () {
+      if (typeof window !== 'undefined') {
+        this._handleWindowMouseMoveForAside = (event) => {
+          this.handleWindowMouseMoveForAside(event)
+        }
+        window.addEventListener('mousemove', this._handleWindowMouseMoveForAside)
+      }
+    },
+    beforeDestroy () {
+      if (typeof window !== 'undefined' && this._handleWindowMouseMoveForAside) {
+        window.removeEventListener('mousemove', this._handleWindowMouseMoveForAside)
+        this._handleWindowMouseMoveForAside = null
+      }
+      if (this._asideMouseRaf) {
+        window.cancelAnimationFrame(this._asideMouseRaf)
+        this._asideMouseRaf = null
       }
     }
   }
