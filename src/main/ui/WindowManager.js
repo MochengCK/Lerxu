@@ -468,10 +468,9 @@ export default class WindowManager extends EventEmitter {
 
   handleAllWindowClosed () {
     app.on('window-all-closed', (event) => {
-      // 阻止默认的退出行为
+      // 阻止默认的退出行为，保持应用在后台运行（系统托盘）
+      // 用户需要通过菜单或托盘明确选择退出才能关闭程序
       event.preventDefault()
-
-      // 这样可以保持应用在后台运行（系统托盘）
     })
   }
 
