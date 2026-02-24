@@ -3560,6 +3560,35 @@ export default class Application extends EventEmitter {
         others: { name: 'other-files', extensions: [] }
       }
     })
+
+    // Get task list (for checking completed tasks across all categories)
+    ipcMain.handle('get-task-list', async (_event, payload = {}) => {
+      try {
+        const type = payload && payload.type ? String(payload.type) : 'all'
+        let tasks = []
+        
+        if (type === 'active') {
+          tasks = await this.engineClient.call('tellActive')
+        } else if (type === 'waiting') {
+          tasks = await this.engineClient.call('tellWaiting', 0, 999)
+        } else if (type === 'stopped') {
+          tasks = await this.engineClient.call('tellStopped', 0, 999)
+        } else {
+          // Get all tasks
+          const [active, waiting, stopped] = await Promise.all([
+            this.engineClient.call('tellActive'),
+            this.engineClient.call('tellWaiting', 0, 999),
+            this.engineClient.call('tellStopped', 0, 999)
+          ])
+          tasks = [...active, ...waiting, ...stopped]
+        }
+        
+        return tasks || []
+      } catch (err) {
+        logger.warn('[Motrix] Failed to get task list:', err.message)
+        return []
+      }
+    })
   }
 
   /**

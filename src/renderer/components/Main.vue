@@ -2375,6 +2375,7 @@
         const showTaskCompletedWindow = prefConfig.showTaskCompletedWindow !== false
 
         if (showTaskCompletedWindow) {
+          // 检查当前列表中新完成的任务
           list.forEach(task => {
             const gid = task && task.gid ? `${task.gid}` : ''
             if (!gid) return
@@ -2387,6 +2388,38 @@
               this.openCompletedTaskWindow(task)
             }
           })
+
+          // 检查从当前列表中消失但之前是活跃状态的任务
+          // 这些任务可能已经完成并移到了其他分类
+          const disappearedGids = Object.keys(prev).filter(gid => {
+            const prevStatus = prev[gid]
+            // 如果之前是活跃/等待/暂停状态，但现在不在当前列表中了
+            if ([TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED].includes(prevStatus)) {
+              const stillInList = list.some(task => task && `${task.gid}` === gid)
+              return !stillInList
+            }
+            return false
+          })
+
+          // 如果有消失的任务，异步获取它们的最新状态
+          if (disappearedGids.length > 0) {
+            console.log('[Motrix] Checking disappeared tasks:', disappearedGids)
+            // 使用 API 直接获取所有任务（不受分类过滤限制，包含历史记录）
+            api.fetchTaskList({ type: 'all' })
+              .then(allTasks => {
+                if (!Array.isArray(allTasks)) return
+                disappearedGids.forEach(gid => {
+                  const task = allTasks.find(t => t && `${t.gid}` === gid)
+                  if (task && task.status === TASK_STATUS.COMPLETE) {
+                    console.log('[Motrix] Opening completed task window for disappeared task:', gid)
+                    this.openCompletedTaskWindow(task)
+                  }
+                })
+              })
+              .catch(err => {
+                console.warn('[Motrix] Failed to check disappeared tasks:', err)
+              })
+          }
         }
       }
     },
