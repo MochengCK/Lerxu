@@ -1076,3 +1076,13 @@ export const handleTaskDuplicate = async (engineClient, taskData, historyTasks =
     duplicateCount
   }
 }
+
+// GitHub 镜像加速工具
+export {
+  isGithubUrl,
+  convertToMirrorUrl,
+  getGithubUrlsWithMirrors,
+  fetchWithGithubMirror,
+  getGithubApiMirrorUrl,
+  getGithubMirrorConfig
+} from './github-mirror'

@@ -32,6 +32,8 @@ export default {
   'task-cookie': 'Cookie',
   'task-proxy': 'Proxy',
   'task-error-info': 'Error',
+  'github-mirror': 'GitHub Mirror',
+  'github-original': 'Original URL',
   'task-piece': 'Piece',
   'task-piece-length': 'Piece Size',
   'task-num-pieces': 'Pieces',

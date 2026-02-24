@@ -239,6 +239,15 @@ export default {
   'proxy-scope-update-app': '更新应用程序',
   'proxy-scope-update-trackers': '更新 Tracker 列表',
   'proxy-tips': '查看代理配置说明',
+  'github-mirror': 'GitHub 镜像',
+  'use-github-mirror': '使用 GitHub 镜像加速',
+  'github-mirror-tips': '启用后，从 GitHub 获取资源时将使用镜像站点加速访问，适用于网络访问 GitHub 受限的地区',
+  'github-mirror-select-placeholder': '选择或输入镜像站点',
+  'github-mirror-builtin': '内置镜像',
+  'github-mirror-order-tips': '将按照选择顺序依次尝试镜像站点，支持手动输入自定义镜像',
+  'check-github-mirror-latency': '检测镜像延迟',
+  'checking': '检测中',
+  'github-mirror-timeout': '超时',
   'bt-tracker': 'Tracker 服务器',
   'bt-tracker-input-tips': 'Tracker 服务器，一行一个',
   'bt-tracker-tips': '推荐使用：',
@@ -391,8 +400,5 @@ export default {
   'ffmpeg-installed': '已安装',
   'ffmpeg-not-installed': '未安装',
   'ffmpeg-path': '路径',
-  'ffmpeg-open-folder': '打开目录',
-  'dns-acceleration': 'DNS 加速',
-  'enable-smart-dns': '启用智能 DNS 加速',
-  'enable-smart-dns-tips': '自动检测网络环境并测试候选 DNS 的响应速度，选择更快的服务器组合以提升解析效率。结果会缓存一段时间并定期复测以适应网络变化。开启后需要重启引擎生效。'
+  'ffmpeg-open-folder': '打开目录'
 }

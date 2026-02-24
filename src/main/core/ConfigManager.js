@@ -212,8 +212,7 @@ export default class ConfigManager {
         'custom-security-scan-path': '',
         'task-view-mode': 'list',
         'bt-level-up-notification': true,
-        'show-task-type-badge': true,
-        'enable-smart-dns': true
+        'show-task-type-badge': true
       }
       /* eslint-enable quote-props */
     })

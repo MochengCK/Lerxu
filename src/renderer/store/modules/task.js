@@ -1,7 +1,6 @@
-import Vue from 'vue'
 import api from '@/api'
 import { EMPTY_STRING, TASK_STATUS } from '@shared/constants'
-import { checkTaskIsBT, getFileNameFromFile, getTaskUri, intersection } from '@shared/utils'
+import { checkTaskIsBT, getFileNameFromFile, getTaskUri, intersection, isGithubUrl, getGithubUrlsWithMirrors } from '@shared/utils'
 import taskHistory from '@/api/TaskHistory'
 import fetch from 'node-fetch'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
@@ -221,35 +220,48 @@ const mutations = {
       if (oldTask) {
         // Engine-derived transient hint fields must be cleared when absent
         // in latest payload, otherwise stale paused/checking text may stick.
+        const clearedFields = {}
         ;['statusHint', 'statusRightText'].forEach((k) => {
           if (!Object.prototype.hasOwnProperty.call(newTask, k) && Object.prototype.hasOwnProperty.call(oldTask, k)) {
-            Vue.delete(oldTask, k)
+            clearedFields[k] = undefined
           }
         })
-        // Update existing task properties
-        Object.keys(newTask).forEach(key => {
-          if (oldTask[key] !== newTask[key]) {
-            Vue.set(oldTask, key, newTask[key])
+
+        // 创建新对象而不是修改旧对象，确保 Vue 能检测到变化
+        // 这样可以确保进度等关键属性的更新能正确触发组件重新渲染
+        const updatedTask = {
+          ...oldTask,
+          ...newTask,
+          ...clearedFields
+        }
+
+        // 清理 undefined 字段
+        Object.keys(clearedFields).forEach(k => {
+          if (clearedFields[k] === undefined) {
+            delete updatedTask[k]
           }
         })
-        newList.push(oldTask)
+
+        newList.push(updatedTask)
       } else {
         newList.push(newTask)
       }
     })
 
-    // 先设置未排序的列表
-    state.taskList = newList
+    // 直接替换整个数组，确保 Vue 能检测到变化
+    // 使用 splice 方法清空并重新填充数组，这样可以保持数组引用不变
+    // 同时触发 Vue 的响应式更新
+    state.taskList.splice(0, state.taskList.length, ...newList)
 
     // 重新应用当前的排序（如果有的话）
     if (state.sortField && state.sortOrder && state.sortField !== 'name') {
       // 只有在非默认排序时才重新排序，避免不必要的排序操作
       const sortedList = sortTaskList(state.taskList, state.sortField, state.sortOrder)
-      state.taskList = sortedList
+      state.taskList.splice(0, state.taskList.length, ...sortedList)
     } else if (state.sortField === 'name' && state.sortOrder !== 'asc') {
       // 名称排序但非升序时也需要重新排序
       const sortedList = sortTaskList(state.taskList, state.sortField, state.sortOrder)
-      state.taskList = sortedList
+      state.taskList.splice(0, state.taskList.length, ...sortedList)
     }
   },
   UPDATE_SELECTED_GID_LIST (state, gidList) {
@@ -793,14 +805,39 @@ const actions = {
     // Handle downloading file suffix
     const config = rootState.preference.config || {}
     const suffix = config.downloadingFileSuffix
+
+    // GitHub 镜像配置
+    const useGithubMirror = config.useGithubMirror !== undefined ? config.useGithubMirror : (config['use-github-mirror'] !== undefined ? config['use-github-mirror'] : true)
+    const githubMirrorUrls = config.githubMirrorUrls || config['github-mirror-urls'] || []
+
+    console.log('[GitHub Mirror] Config:', { useGithubMirror, githubMirrorUrls })
+
     const normalizedOptions = options ? { ...options } : {}
+
+    // 处理 URI，应用 GitHub 镜像转换
+    // 对于 GitHub URL，返回包含所有镜像的数组，让 aria2 自动进行故障转移
     const normalizedUris = Array.isArray(uris)
       ? uris.map((uri) => {
         const magnet = brokenTorrentUriToMagnet(uri)
-        return magnet || uri
+        const finalUri = magnet || uri
+
+        // 如果是 GitHub URL 且启用了镜像，返回镜像 URL 数组
+        if (isGithubUrl(finalUri)) {
+          const mirrorUrls = getGithubUrlsWithMirrors(finalUri, githubMirrorUrls, useGithubMirror)
+          console.log('[GitHub Mirror] Converting URL:', finalUri, '→', mirrorUrls)
+          // 返回所有镜像 URL 数组，aria2 会自动尝试所有源
+          return mirrorUrls.length > 0 ? mirrorUrls : [finalUri]
+        }
+
+        // 非 GitHub URL 返回单个 URL 的数组
+        return [finalUri]
       })
       : uris
-    const isMagnetLikeUri = (uri) => /^magnet:/i.test(`${uri || ''}`.trim())
+    const isMagnetLikeUri = (uri) => {
+      // uri 可能是字符串或数组（GitHub 镜像情况）
+      const uriStr = Array.isArray(uri) ? uri[0] : uri
+      return /^magnet:/i.test(`${uriStr || ''}`.trim())
+    }
     const hasMagnetUri = Array.isArray(normalizedUris) && normalizedUris.some(uri => isMagnetLikeUri(uri))
     if (hasMagnetUri) {
       if (typeof normalizedOptions.allowOverwrite === 'undefined') {
@@ -818,7 +855,9 @@ const actions = {
     }
     const safeGetNameFromUri = (uri) => {
       try {
-        return getFileNameFromFile({ uris: [{ uri }] })
+        // uri 可能是字符串或数组（GitHub 镜像情况）
+        const uriStr = Array.isArray(uri) ? uri[0] : uri
+        return getFileNameFromFile({ uris: [{ uri: uriStr }] })
       } catch (_) {
         return ''
       }

@@ -388,7 +388,9 @@ export default class Api {
         existingNames.add(uniqueOut)
       }
 
-      const args = compactUndefined([[uri], engineOptions])
+      // uri 可能是单个 URL 字符串，也可能是 URL 数组（用于 GitHub 镜像故障转移）
+      const uriArray = Array.isArray(uri) ? uri : [uri]
+      const args = compactUndefined([uriArray, engineOptions])
       return ['aria2.addUri', ...args]
     })
     return this.client.multicall(tasks)

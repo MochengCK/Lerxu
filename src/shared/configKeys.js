@@ -80,7 +80,6 @@ const userKeys = [
   'floating-bar-display-mode',
   'preference-cards-collapsed',
   'enable-security-scan',
-  'enable-smart-dns',
   'security-scan-tool',
   'custom-security-scan-path',
   'task-detail-default-transparent',
@@ -93,7 +92,9 @@ const userKeys = [
   'bt-level-up-notification',
   'bt-ip-ban-list',
   'show-task-type-badge',
-  'peer-group-visibility'
+  'peer-group-visibility',
+  'use-github-mirror',
+  'github-mirror-urls'
 ]
 
 const systemKeys = [

@@ -191,9 +191,9 @@ const actions = {
     commit('UPDATE_RELEASE_NOTES', releaseNotes)
   },
   fetchBtTracker (_, trackerSource = []) {
-    const { proxy = { enable: false } } = state.config
-    console.log('fetchBtTracker', trackerSource, proxy)
-    return fetchBtTrackerFromSource(trackerSource, proxy)
+    const { proxy = { enable: false }, useGithubMirror, githubMirrorUrls } = state.config
+    console.log('fetchBtTracker', trackerSource, proxy, { useGithubMirror, githubMirrorUrls })
+    return fetchBtTrackerFromSource(trackerSource, proxy, { useGithubMirror, githubMirrorUrls })
   },
   toggleEngineMode () {
 

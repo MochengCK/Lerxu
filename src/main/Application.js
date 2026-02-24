@@ -3566,7 +3566,7 @@ export default class Application extends EventEmitter {
       try {
         const type = payload && payload.type ? String(payload.type) : 'all'
         let tasks = []
-        
+
         if (type === 'active') {
           tasks = await this.engineClient.call('tellActive')
         } else if (type === 'waiting') {
@@ -3582,7 +3582,7 @@ export default class Application extends EventEmitter {
           ])
           tasks = [...active, ...waiting, ...stopped]
         }
-        
+
         return tasks || []
       } catch (err) {
         logger.warn('[Motrix] Failed to get task list:', err.message)

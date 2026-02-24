@@ -234,6 +234,15 @@ export default {
   'proxy-scope-update-app': 'Update Application',
   'proxy-scope-update-trackers': 'Update Trackers',
   'proxy-tips': 'View Proxy Manual',
+  'github-mirror': 'GitHub Mirror',
+  'use-github-mirror': 'Use GitHub Mirror Acceleration',
+  'github-mirror-tips': 'When enabled, resources from GitHub will be accessed through mirror sites for faster access, suitable for regions with restricted GitHub access',
+  'github-mirror-select-placeholder': 'Select or enter mirror sites',
+  'github-mirror-builtin': 'Built-in Mirrors',
+  'github-mirror-order-tips': 'Mirror sites will be tried in the selected order. Custom mirrors can be manually entered',
+  'check-github-mirror-latency': 'Check Mirror Latency',
+  'checking': 'Checking',
+  'github-mirror-timeout': 'Timeout',
   'bt-tracker': 'Tracker Servers',
   'bt-tracker-input-tips': 'Tracker servers, one per line',
   'bt-tracker-tips': 'Recommended: ',
@@ -404,8 +413,5 @@ export default {
   'ffmpeg-installed': 'Installed',
   'ffmpeg-not-installed': 'Not Installed',
   'ffmpeg-path': 'Path',
-  'ffmpeg-open-folder': 'Open Folder',
-  'dns-acceleration': 'DNS Acceleration',
-  'enable-smart-dns': 'Enable Smart DNS Acceleration',
-  'enable-smart-dns-tips': 'Detects the network environment and tests candidate DNS response speed, then selects a faster server set to improve resolution efficiency. Results are cached for a period and periodically retested to adapt to network changes. Requires engine restart to take effect.'
+  'ffmpeg-open-folder': 'Open Folder'
 }

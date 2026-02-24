@@ -128,6 +128,81 @@
           </el-form-item>
         </div>
 
+        <!-- GitHub 镜像设置卡片 -->
+        <div class="preference-card" data-category="advanced">
+          <h3 class="card-title">{{ $t('preferences.github-mirror') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.useGithubMirror" @change="autoSaveForm">
+                {{ $t('preferences.use-github-mirror') }}
+              </el-checkbox>
+              <div class="el-form-item__info" style="margin-top: 8px;">
+                {{ $t('preferences.github-mirror-tips') }}
+              </div>
+            </el-col>
+          </el-form-item>
+          <el-form-item size="mini" v-if="form.useGithubMirror" style="margin-top: -8px;">
+            <el-col class="form-item-sub" :span="24">
+              <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                <div style="flex: 1;">
+                  <el-select
+                    v-model="form.githubMirrorUrls"
+                    multiple
+                    filterable
+                    allow-create
+                    :placeholder="$t('preferences.github-mirror-select-placeholder')"
+                    @change="onGithubMirrorChange"
+                    style="width: 100%;"
+                  >
+                    <el-option-group :label="$t('preferences.github-mirror-builtin')">
+                      <el-option
+                        v-for="mirror in builtinGithubMirrors"
+                        :key="mirror.value"
+                        :label="mirror.label"
+                        :value="mirror.value"
+                      >
+                        <span style="float: left">{{ mirror.label }}</span>
+                        <span style="float: right; font-size: 13px; margin-right: 8px;">
+                          <span v-if="mirror.checking" style="color: #909399;">
+                            <i class="el-icon-loading"></i> {{ $t('preferences.checking') }}
+                          </span>
+                          <span v-else-if="mirror.latency !== null" :style="{ color: getLatencyColor(mirror.latency), fontWeight: '500' }">
+                            {{ formatLatency(mirror.latency) }}
+                          </span>
+                        </span>
+                      </el-option>
+                    </el-option-group>
+                  </el-select>
+                </div>
+                <div style="margin-left: 4px;">
+                  <el-tooltip
+                    class="item"
+                    effect="dark"
+                    :content="$t('preferences.check-github-mirror-latency')"
+                    placement="bottom"
+                  >
+                    <el-button
+                      @click="checkSelectedGithubMirrors"
+                      class="sync-tracker-btn"
+                      :disabled="githubMirrorCheckingAll"
+                    >
+                      <mo-icon
+                        name="refresh"
+                        width="12"
+                        height="12"
+                        :spin="githubMirrorCheckingAll"
+                      />
+                    </el-button>
+                  </el-tooltip>
+                </div>
+              </div>
+              <div class="el-form-item__info" style="margin-top: 8px;">
+                {{ $t('preferences.github-mirror-order-tips') }}
+              </div>
+            </el-col>
+          </el-form-item>
+        </div>
+
         <!-- BT Tracker设置卡片 -->
         <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.bt-tracker') }}</h3>
@@ -333,21 +408,6 @@
                 </div>
               </el-col>
             </el-row>
-          </el-form-item>
-        </div>
-
-        <!-- DNS 加速设置卡片 -->
-        <div class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.dns-acceleration') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.enableSmartDns" @change="autoSaveForm">
-                {{ $t('preferences.enable-smart-dns') }}
-              </el-checkbox>
-              <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.enable-smart-dns-tips') }}
-              </div>
-            </el-col>
           </el-form-item>
         </div>
 
@@ -806,7 +866,6 @@
       btTracker,
       dhtListenPort,
       enablePriorityEngine,
-      enableSmartDns,
       enableUpnp,
       hideAppMenu,
       lastCheckUpdateTime,
@@ -824,11 +883,21 @@
       trackerSourceMap,
       useProxy,
       userAgent,
-      engineBinary
+      engineBinary,
+      useGithubMirror,
+      githubMirrorUrls
     } = config
+    // 兼容旧的单个镜像配置
+    const githubMirrorUrl = config.githubMirrorUrl || config['github-mirror-url']
+    // 兼容 kebab-case 配置键
+    const parsedUseGithubMirror = useGithubMirror !== undefined ? useGithubMirror : config['use-github-mirror']
+    const parsedGithubMirrorUrls = githubMirrorUrls || config['github-mirror-urls']
+    // 默认镜像列表
+    const defaultMirrors = [
+      'ghproxy.net'
+    ]
     // 兼容旧的kebab-case配置键
     const parsedEngineBinary = engineBinary || config['engine-binary'] || ''
-    const parsedEnableSmartDns = enableSmartDns !== undefined ? enableSmartDns : (config['enable-smart-dns'] !== undefined ? config['enable-smart-dns'] : false)
     // 兼容旧版代理配置（旧版使用 enable 字段，新版使用 mode 字段）
     const clonedProxy = cloneDeep(proxy) || {}
     if (!clonedProxy.mode) {
@@ -852,7 +921,6 @@
       btTracker: convertCommaToLine(btTracker),
       dhtListenPort,
       enablePriorityEngine: enablePriorityEngine !== undefined ? enablePriorityEngine : false,
-      enableSmartDns: parsedEnableSmartDns,
       enableUpnp,
       hideAppMenu,
       lastCheckUpdateTime,
@@ -870,7 +938,11 @@
       trackerSourceMap: typeof trackerSourceMap === 'object' && trackerSourceMap ? { ...trackerSourceMap } : (config['tracker-source-map'] || {}),
       useProxy,
       userAgent,
-      engineBinary: parsedEngineBinary
+      engineBinary: parsedEngineBinary,
+      useGithubMirror: parsedUseGithubMirror !== undefined ? parsedUseGithubMirror : false,
+      githubMirrorUrls: Array.isArray(parsedGithubMirrorUrls) && parsedGithubMirrorUrls.length > 0
+        ? parsedGithubMirrorUrls
+        : (githubMirrorUrl ? [githubMirrorUrl] : defaultMirrors)
     }
     return result
   }
@@ -901,6 +973,12 @@
         proxyScopeOptions: PROXY_SCOPE_OPTIONS,
         rules: {},
         trackerSourceOptions: [],
+        builtinGithubMirrors: [
+          { value: 'ghproxy.net', label: 'ghproxy.net', latency: null, checking: false }
+        ],
+        githubMirrorCheckingAll: false,
+        mirrorCheckTimeout: null,
+        previousGithubMirrorUrls: [], // 保存上一次选择的镜像列表
         trackerSyncing: false,
         saveTimeout: null,
         trackerSourceConfigVisible: false,
@@ -1162,6 +1240,18 @@
       await this.fetchEngineInfo()
       this.rebuildTrackerSourceOptions()
       this.checkFfmpegStatus()
+
+      // 初始化 previousGithubMirrorUrls
+      this.previousGithubMirrorUrls = [...(this.form.githubMirrorUrls || [])]
+
+      // 自动检测已选择的 GitHub 镜像延迟
+      if (this.form.useGithubMirror && this.form.githubMirrorUrls && this.form.githubMirrorUrls.length > 0) {
+        // 延迟1秒后开始检测，避免阻塞页面加载
+        setTimeout(() => {
+          this.checkSelectedGithubMirrors()
+        }, 1000)
+      }
+
       try {
         const appConfig = await this.$electron.ipcRenderer.invoke('get-app-config')
         this.appVersion = appConfig.version
@@ -1173,6 +1263,154 @@
       handlePriorityEngineChange (val) {
         this.$electron.ipcRenderer.send('command', 'application:toggle-priority-engine', val)
         this.autoSaveForm()
+      },
+      // GitHub 镜像延迟检测
+      async checkGithubMirrorLatency (mirror) {
+        // 使用一个小的测试文件来检测延迟
+        // 使用 GitHub 的 favicon 或其他小文件
+        const testUrl = `https://${mirror.value}/https://raw.githubusercontent.com/github/explore/main/README.md`
+        const startTime = Date.now()
+
+        try {
+          // 在 Electron 中使用 fetch，但添加更宽松的选项
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 8000) // 增加到8秒超时
+
+          const response = await fetch(testUrl, {
+            method: 'GET',
+            signal: controller.signal,
+            cache: 'no-cache',
+            mode: 'cors',
+            credentials: 'omit'
+          })
+
+          clearTimeout(timeoutId)
+
+          // 检查响应状态
+          if (response.ok) {
+            const latency = Date.now() - startTime
+            console.log(`[GitHub Mirror] ${mirror.value} latency: ${latency}ms`)
+            return latency
+          } else {
+            console.warn(`[GitHub Mirror] ${mirror.value} returned status: ${response.status}`)
+            return -1
+          }
+        } catch (error) {
+          const latency = Date.now() - startTime
+          console.warn(`[GitHub Mirror] Check ${mirror.value} failed after ${latency}ms:`, error.message)
+          return -1
+        }
+      },
+      async checkAllGithubMirrors () {
+        this.githubMirrorCheckingAll = true
+
+        // 并发检测所有镜像
+        const checkPromises = this.builtinGithubMirrors.map(async (mirror) => {
+          mirror.checking = true
+          const latency = await this.checkGithubMirrorLatency(mirror)
+          mirror.latency = latency
+          mirror.checking = false
+        })
+
+        await Promise.all(checkPromises)
+        this.githubMirrorCheckingAll = false
+      },
+      async checkSelectedGithubMirrors () {
+        // 只检测已选择的镜像
+        const selectedMirrors = this.builtinGithubMirrors.filter(mirror =>
+          this.form.githubMirrorUrls && this.form.githubMirrorUrls.includes(mirror.value)
+        )
+
+        if (selectedMirrors.length === 0) {
+          return
+        }
+
+        console.log('[GitHub Mirror] Checking selected mirrors:', selectedMirrors.map(m => m.value))
+
+        this.githubMirrorCheckingAll = true
+
+        // 并发检测选中的镜像
+        const checkPromises = selectedMirrors.map(async (mirror) => {
+          mirror.checking = true
+          const latency = await this.checkGithubMirrorLatency(mirror)
+          mirror.latency = latency
+          mirror.checking = false
+        })
+
+        await Promise.all(checkPromises)
+        this.githubMirrorCheckingAll = false
+      },
+      onGithubMirrorChange (newValue) {
+        // 保存配置
+        this.autoSaveForm()
+
+        // 找出新添加的镜像（在新列表中但不在旧列表中的）
+        const previousUrls = this.previousGithubMirrorUrls || []
+        const currentUrls = newValue || []
+        const newlyAddedUrls = currentUrls.filter(url => !previousUrls.includes(url))
+
+        // 更新保存的列表
+        this.previousGithubMirrorUrls = [...currentUrls]
+
+        // 如果有新添加的镜像，自动检测它们
+        if (newlyAddedUrls.length > 0) {
+          console.log('[GitHub Mirror] Newly added mirrors:', newlyAddedUrls)
+
+          // 延迟一小段时间，避免频繁切换时重复检测
+          if (this.mirrorCheckTimeout) {
+            clearTimeout(this.mirrorCheckTimeout)
+          }
+
+          this.mirrorCheckTimeout = setTimeout(() => {
+            this.checkSpecificMirrors(newlyAddedUrls)
+          }, 500)
+        }
+      },
+      async checkSpecificMirrors (mirrorUrls) {
+        // 检测指定的镜像
+        const mirrorsToCheck = this.builtinGithubMirrors.filter(mirror =>
+          mirrorUrls.includes(mirror.value)
+        )
+
+        if (mirrorsToCheck.length === 0) {
+          return
+        }
+
+        console.log('[GitHub Mirror] Checking specific mirrors:', mirrorsToCheck.map(m => m.value))
+
+        // 并发检测指定的镜像
+        const checkPromises = mirrorsToCheck.map(async (mirror) => {
+          mirror.checking = true
+          const latency = await this.checkGithubMirrorLatency(mirror)
+          mirror.latency = latency
+          mirror.checking = false
+        })
+
+        await Promise.all(checkPromises)
+      },
+      formatLatency (latency) {
+        if (latency === null) {
+          return ''
+        }
+        if (latency < 0) {
+          return this.$t('preferences.github-mirror-timeout')
+        }
+        if (latency < 1000) {
+          return `${latency}ms`
+        }
+        return `${(latency / 1000).toFixed(2)}s`
+      },
+      getLatencyColor (latency) {
+        if (latency < 0) {
+          return '#F56C6C' // 红色 - 失败
+        }
+        if (latency < 500) {
+          return '#67C23A' // 绿色 - 快速
+        }
+        if (latency < 1500) {
+          return '#E6A23C' // 橙色 - 中等
+        }
+        return '#F56C6C' // 红色 - 慢
       },
       checkFfmpegStatus () {
         // 异步检测，避免阻塞 UI
@@ -2546,10 +2784,14 @@
             delete data.autoSyncTrackerTime
           }
 
-          // 显式处理enableSmartDns字段，转换为kebab-case
-          if ('enableSmartDns' in data) {
-            data['enable-smart-dns'] = data.enableSmartDns
-            delete data.enableSmartDns
+          // 显式处理 GitHub 镜像字段，转换为kebab-case
+          if ('useGithubMirror' in data) {
+            data['use-github-mirror'] = data.useGithubMirror
+            delete data.useGithubMirror
+          }
+          if ('githubMirrorUrls' in data) {
+            data['github-mirror-urls'] = data.githubMirrorUrls
+            delete data.githubMirrorUrls
           }
 
           const {
