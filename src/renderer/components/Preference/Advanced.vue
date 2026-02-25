@@ -133,23 +133,12 @@
           <h3 class="card-title">{{ $t('preferences.github-mirror') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.useGithubMirror" @change="autoSaveForm">
-                {{ $t('preferences.use-github-mirror') }}
-              </el-checkbox>
-              <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.github-mirror-tips') }}
-              </div>
-            </el-col>
-          </el-form-item>
-          <el-form-item size="mini" v-if="form.useGithubMirror" style="margin-top: -8px;">
-            <el-col class="form-item-sub" :span="24">
               <div style="display: flex; align-items: center; margin-bottom: 8px;">
                 <div style="flex: 1;">
                   <el-select
                     v-model="form.githubMirrorUrls"
                     multiple
                     filterable
-                    allow-create
                     :placeholder="$t('preferences.github-mirror-select-placeholder')"
                     @change="onGithubMirrorChange"
                     style="width: 100%;"
@@ -174,7 +163,7 @@
                     </el-option-group>
                   </el-select>
                 </div>
-                <div style="margin-left: 4px;">
+                <div style="display:flex; align-items:center; margin-left:4px;">
                   <el-tooltip
                     class="item"
                     effect="dark"
@@ -194,10 +183,24 @@
                       />
                     </el-button>
                   </el-tooltip>
+                  <el-tooltip
+                    class="item"
+                    effect="dark"
+                    :content="$t('preferences.add-mirror')"
+                    placement="bottom"
+                  >
+                    <el-button
+                      @click="openGithubMirrorConfigDialog"
+                      class="sync-tracker-btn"
+                      style="margin-left:4px"
+                    >
+                      <mo-icon name="link" width="12" height="12" />
+                    </el-button>
+                  </el-tooltip>
                 </div>
               </div>
               <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.github-mirror-order-tips') }}
+                {{ $t('preferences.github-mirror-tips') }}
               </div>
             </el-col>
           </el-form-item>
@@ -801,6 +804,33 @@
         <el-button type="primary" @click="addTrackerSourceFromInput">{{ $t('app.submit') }}</el-button>
       </div>
     </el-dialog>
+
+    <el-dialog
+      custom-class="tracker-source-dialog"
+      width="640px"
+      :visible.sync="githubMirrorConfigVisible"
+      :show-close="false"
+      :append-to-body="true"
+    >
+      <div style="display:flex; align-items:center; justify-content:center; padding:8px;">
+        <el-input
+          v-model="githubMirrorInput"
+          :placeholder="$t('preferences.github-mirror-input-placeholder')"
+          clearable
+          style="max-width:480px;"
+        >
+          <template slot="prepend">
+            <button type="button" class="tracker-source-close-btn" @click="githubMirrorConfigVisible = false">
+              <i class="el-icon-close"></i>
+            </button>
+          </template>
+        </el-input>
+      </div>
+      <div slot="footer" class="tracker-source-dialog__footer">
+        <el-button @click="githubMirrorConfigVisible = false">{{ $t('app.cancel') }}</el-button>
+        <el-button type="primary" @click="addGithubMirrorFromInput">{{ $t('app.submit') }}</el-button>
+      </div>
+    </el-dialog>
     <div
       v-if="updatePreviewVisible"
       class="update-preview-mask"
@@ -884,18 +914,14 @@
       useProxy,
       userAgent,
       engineBinary,
-      useGithubMirror,
       githubMirrorUrls
     } = config
     // 兼容旧的单个镜像配置
     const githubMirrorUrl = config.githubMirrorUrl || config['github-mirror-url']
     // 兼容 kebab-case 配置键
-    const parsedUseGithubMirror = useGithubMirror !== undefined ? useGithubMirror : config['use-github-mirror']
     const parsedGithubMirrorUrls = githubMirrorUrls || config['github-mirror-urls']
-    // 默认镜像列表
-    const defaultMirrors = [
-      'ghproxy.net'
-    ]
+    // 默认镜像列表（默认为空，用户需要手动选择）
+    const defaultMirrors = []
     // 兼容旧的kebab-case配置键
     const parsedEngineBinary = engineBinary || config['engine-binary'] || ''
     // 兼容旧版代理配置（旧版使用 enable 字段，新版使用 mode 字段）
@@ -939,7 +965,6 @@
       useProxy,
       userAgent,
       engineBinary: parsedEngineBinary,
-      useGithubMirror: parsedUseGithubMirror !== undefined ? parsedUseGithubMirror : false,
       githubMirrorUrls: Array.isArray(parsedGithubMirrorUrls) && parsedGithubMirrorUrls.length > 0
         ? parsedGithubMirrorUrls
         : (githubMirrorUrl ? [githubMirrorUrl] : defaultMirrors)
@@ -979,6 +1004,8 @@
         githubMirrorCheckingAll: false,
         mirrorCheckTimeout: null,
         previousGithubMirrorUrls: [], // 保存上一次选择的镜像列表
+        githubMirrorConfigVisible: false,
+        githubMirrorInput: '',
         trackerSyncing: false,
         saveTimeout: null,
         trackerSourceConfigVisible: false,
@@ -1245,7 +1272,7 @@
       this.previousGithubMirrorUrls = [...(this.form.githubMirrorUrls || [])]
 
       // 自动检测已选择的 GitHub 镜像延迟
-      if (this.form.useGithubMirror && this.form.githubMirrorUrls && this.form.githubMirrorUrls.length > 0) {
+      if (this.form.githubMirrorUrls && this.form.githubMirrorUrls.length > 0) {
         // 延迟1秒后开始检测，避免阻塞页面加载
         setTimeout(() => {
           this.checkSelectedGithubMirrors()
@@ -1339,6 +1366,40 @@
 
         await Promise.all(checkPromises)
         this.githubMirrorCheckingAll = false
+      },
+      openGithubMirrorConfigDialog () {
+        this.githubMirrorInput = ''
+        this.githubMirrorConfigVisible = true
+      },
+      addGithubMirrorFromInput () {
+        const input = (this.githubMirrorInput || '').trim()
+        if (!input) {
+          this.$msg.error(this.$t('preferences.github-mirror-input-empty'))
+          return
+        }
+
+        // 移除协议前缀（如果有）
+        const mirrorUrl = input.replace(/^https?:\/\//, '')
+
+        // 检查是否已存在
+        if (this.form.githubMirrorUrls && this.form.githubMirrorUrls.includes(mirrorUrl)) {
+          this.$msg.warning(this.$t('preferences.github-mirror-already-exists'))
+          this.githubMirrorConfigVisible = false
+          return
+        }
+
+        // 添加到列表
+        const currentUrls = this.form.githubMirrorUrls || []
+        this.form.githubMirrorUrls = [...currentUrls, mirrorUrl]
+
+        // 保存配置
+        this.autoSaveForm()
+
+        // 关闭对话框
+        this.githubMirrorConfigVisible = false
+
+        // 自动检测新添加的镜像
+        this.$msg.success(this.$t('preferences.github-mirror-add-success'))
       },
       onGithubMirrorChange (newValue) {
         // 保存配置

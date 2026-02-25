@@ -55,26 +55,29 @@
             this.displayPercent = p
           } else if (!this.isActive) {
             this.displayPercent = p
+          } else if (Math.abs(p - this.displayPercent) > 2) {
+            this.displayPercent = p
           }
           this.baseCompleted = Number.isFinite(this.completed) ? this.completed : 0
           this.baseTime = Date.now()
         },
         immediate: true
       },
-      speed (val) {
-        this.currentSpeed = Number.isFinite(val) ? val : 0
-        if (this.currentSpeed > 0 && this.baseTime === 0) {
-          this.baseCompleted = Number.isFinite(this.completed) ? this.completed : 0
-          this.baseTime = Date.now()
-        }
+      speed: {
+        handler (val) {
+          this.currentSpeed = Number.isFinite(val) ? val : 0
+          if (this.currentSpeed > 0 && this.baseTime === 0) {
+            this.baseCompleted = Number.isFinite(this.completed) ? this.completed : 0
+            this.baseTime = Date.now()
+          }
+        },
+        immediate: true
       },
       status (val) {
-        if (val !== TASK_STATUS.ACTIVE) {
-          if (val === TASK_STATUS.COMPLETE || val === TASK_STATUS.SEEDING) {
-            this.displayPercent = 100
-          } else {
-            this.displayPercent = this.percent
-          }
+        if (val === TASK_STATUS.COMPLETE || val === TASK_STATUS.SEEDING) {
+          this.displayPercent = 100
+        } else {
+          this.displayPercent = this.percent
         }
       }
     },
@@ -167,9 +170,7 @@
         if (!Number.isFinite(next)) {
           next = actual
         }
-        if (!Number.isFinite(this.displayPercent) || next > this.displayPercent) {
-          this.displayPercent = next
-        }
+        this.displayPercent = next
       }, interval)
     },
     beforeDestroy () {

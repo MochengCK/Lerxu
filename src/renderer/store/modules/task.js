@@ -807,8 +807,9 @@ const actions = {
     const suffix = config.downloadingFileSuffix
 
     // GitHub 镜像配置
-    const useGithubMirror = config.useGithubMirror !== undefined ? config.useGithubMirror : (config['use-github-mirror'] !== undefined ? config['use-github-mirror'] : true)
+    // 如果选择了镜像，则自动启用镜像功能
     const githubMirrorUrls = config.githubMirrorUrls || config['github-mirror-urls'] || []
+    const useGithubMirror = githubMirrorUrls.length > 0
 
     console.log('[GitHub Mirror] Config:', { useGithubMirror, githubMirrorUrls })
 
