@@ -2,7 +2,7 @@
   "productName": "LinkCore Download Manager",
   "appId": "app.linkcore.native",
   "extraMetadata": {
-    "main": "dist/electron/main.js"
+    "main": "./dist/electron/main.js"
   },
   "afterPack": "./build/afterPackHook.js",
   "afterSign": "./build/afterSignHook.js",
