@@ -23,7 +23,10 @@
     "output": "release"
   },
   "files": [
-    "dist/electron/**/*",
+    {
+      "from": "dist/electron",
+      "to": "dist/electron"
+    },
     "package.json",
     "extensions/**/*",
     "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
