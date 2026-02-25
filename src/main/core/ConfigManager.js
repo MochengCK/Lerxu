@@ -239,10 +239,11 @@ export default class ConfigManager {
       this.setSystemConfig('all-proxy', server)
       this.setSystemConfig('no-proxy', bypass)
     } else if (proxyMode === PROXY_MODE.SYSTEM && scope.includes(PROXY_SCOPES.DOWNLOAD)) {
-      // 系统代理由 Electron 自动处理，此处清空 aria2 代理配置
-      // aria2 不支持直接使用系统代理，需要在前端获取系统代理地址后传递
+      // 系统代理模式：在启动时获取系统代理并设置
+      // 注意：这里是同步代码，但 getSystemHttpProxy 是异步的
+      // 所以我们先设置为空，稍后在 Application.js 中异步获取并更新
       this.setSystemConfig('all-proxy', EMPTY_STRING)
-      this.setSystemConfig('no-proxy', EMPTY_STRING)
+      this.setSystemConfig('no-proxy', bypass)
     } else {
       this.setSystemConfig('all-proxy', EMPTY_STRING)
       this.setSystemConfig('no-proxy', EMPTY_STRING)

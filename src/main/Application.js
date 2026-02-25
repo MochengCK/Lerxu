@@ -96,6 +96,9 @@ export default class Application extends EventEmitter {
 
     this.initUPnPManager()
 
+    // 在启动引擎前，如果使用系统代理模式，先获取系统代理地址
+    await this.initSystemProxyIfNeeded()
+
     this.startEngine()
 
     this.initEngineClient()
@@ -135,6 +138,37 @@ export default class Application extends EventEmitter {
     await this.autoFetchEngineList()
 
     this.emit('application:initialized')
+  }
+
+  async initSystemProxyIfNeeded () {
+    try {
+      const proxy = this.configManager.getUserConfig('proxy', { mode: PROXY_MODE.SYSTEM })
+      let proxyMode = proxy.mode
+      if (!proxyMode && proxy.enable !== undefined) {
+        proxyMode = proxy.enable ? PROXY_MODE.CUSTOM : PROXY_MODE.NONE
+      }
+      const { bypass, scope = [] } = proxy
+
+      if (proxyMode === PROXY_MODE.SYSTEM && scope.includes(PROXY_SCOPES.DOWNLOAD)) {
+        logger.info('[Motrix] System proxy mode enabled, fetching system proxy...')
+        const systemProxy = await getSystemHttpProxy()
+        if (systemProxy) {
+          logger.info('[Motrix] System proxy detected:', systemProxy)
+          this.configManager.setSystemConfig({
+            'all-proxy': systemProxy,
+            'no-proxy': bypass || ''
+          })
+        } else {
+          logger.warn('[Motrix] No system proxy detected, downloads will use direct connection')
+          this.configManager.setSystemConfig({
+            'all-proxy': '',
+            'no-proxy': ''
+          })
+        }
+      }
+    } catch (error) {
+      logger.warn('[Motrix] Failed to initialize system proxy:', error.message)
+    }
   }
 
   initAppHttpServer () {

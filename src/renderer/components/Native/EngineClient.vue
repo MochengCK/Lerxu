@@ -2679,8 +2679,25 @@
           return this.$t('task.error-reason-not-found')
         }
         if (code === 1) {
+          // Fake-IP 错误（代理软件）
+          if (/fake-ip|198\.18\.|198\.19\./i.test(msg)) {
+            return this.$t('task.error-reason-fake-ip')
+          }
+          // DNS 解析错误
+          if (/DNS|name resolution|hostname|getaddrinfo|no data/i.test(msg)) {
+            return this.$t('task.error-reason-dns')
+          }
+          // SSL/TLS 错误
           if (/SSL|TLS|certificate/i.test(msg)) {
             return this.$t('task.error-reason-ssl')
+          }
+          // 连接超时
+          if (/timeout|timed out/i.test(msg)) {
+            return this.$t('task.error-reason-timeout')
+          }
+          // 连接被拒绝
+          if (/connection refused|refused/i.test(msg)) {
+            return this.$t('task.error-reason-refused')
           }
           return this.$t('task.error-reason-network')
         }
