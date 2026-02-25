@@ -1,205 +1,205 @@
 {
-    "productName": "LinkCore Download Manager",
-    "appId": "app.linkcore.native",
-    "extraMetadata": {
-      "main": "dist/electron/main.js"
-    },
-    "afterPack": "./build/afterPackHook.js",
-    "afterSign": "./build/afterSignHook.js",
-    "npmRebuild": false,
-    "buildDependenciesFromSource": false,
-    "fileAssociations": [
-      {
-        "ext": "torrent",
-        "mimeType": "application/x-bittorrent",
-        "name": "Torrent",
-        "role": "Viewer"
-      }
-    ],
-    "asar": true,
-    "asarUnpack": [
-      "**/node_modules/node-fetch/**/*",
-      "**/node_modules/ws/**/*"
-    ],
-    "compression": "normal",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/electron/**/*",
-      "extensions/**/*",
-      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
-      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
-      "!**/node_modules/*.d.ts",
-      "!**/node_modules/.bin",
-      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
-      "!.editorconfig",
-      "!**/._*",
-      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
-      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
-      "!**/{appveyor.yml,.travis.yml,circle.yml}",
-      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}",
-      "!ffmpeg-8.0.1-essentials_build",
-      "!ffmpeg-8.0.1-essentials_build/**/*",
-      "!ffmpeg-release-amd64-static.tar.xz",
-      "!ffmpeg-*-static",
-      "!ffmpeg-*-static/**/*",
-      "!screenshots/**/*",
-      "!scripts/**/*",
-      "!build/**/*",
-      "!.github/**/*",
-      "!*.md",
-      "!*.yml",
-      "!*.yaml"
-    ],
-    "protocols": [
-      {
-        "name": "Motrix Protocol",
-        "schemes": [
-          "mo",
-          "motrix"
-        ]
-      },
-      {
-        "name": "Magnet Protocol",
-        "schemes": [
-          "magnet"
-        ]
-      },
-      {
-        "name": "Thunder Protocol",
-        "schemes": [
-          "thunder"
-        ]
-      }
-    ],
-    "dmg": {
-      "window": {
-        "width": 540,
-        "height": 380
-      },
-      "contents": [
-        {
-          "x": 410,
-          "y": 230,
-          "type": "link",
-          "path": "/Applications"
-        },
-        {
-          "x": 130,
-          "y": 230,
-          "type": "file"
-        }
+  "productName": "LinkCore Download Manager",
+  "appId": "app.linkcore.native",
+  "extraMetadata": {
+    "main": "dist/electron/main.js"
+  },
+  "afterPack": "./build/afterPackHook.js",
+  "afterSign": "./build/afterSignHook.js",
+  "npmRebuild": false,
+  "buildDependenciesFromSource": false,
+  "fileAssociations": [
+    {
+      "ext": "torrent",
+      "mimeType": "application/x-bittorrent",
+      "name": "Torrent",
+      "role": "Viewer"
+    }
+  ],
+  "asar": true,
+  "asarUnpack": [
+    "**/node_modules/node-fetch/**/*",
+    "**/node_modules/ws/**/*"
+  ],
+  "compression": "normal",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/electron/**/*",
+    "extensions/**/*",
+    "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+    "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+    "!**/node_modules/*.d.ts",
+    "!**/node_modules/.bin",
+    "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+    "!.editorconfig",
+    "!**/._*",
+    "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+    "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+    "!**/{appveyor.yml,.travis.yml,circle.yml}",
+    "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}",
+    "!ffmpeg-8.0.1-essentials_build",
+    "!ffmpeg-8.0.1-essentials_build/**/*",
+    "!ffmpeg-release-amd64-static.tar.xz",
+    "!ffmpeg-*-static",
+    "!ffmpeg-*-static/**/*",
+    "!screenshots/**/*",
+    "!scripts/**/*",
+    "!build/**/*",
+    "!.github/**/*",
+    "!*.md",
+    "!*.yml",
+    "!*.yaml"
+  ],
+  "protocols": [
+    {
+      "name": "Motrix Protocol",
+      "schemes": [
+        "mo",
+        "motrix"
       ]
     },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "type": "development",
-      "darkModeSupport": true,
-      "hardenedRuntime": false,
-      "notarize": false,
-      "extraResources": {
-        "from": "./extra/darwin/${arch}/",
-        "to": "./",
-        "filter": [
-          "**/*"
+    {
+      "name": "Magnet Protocol",
+      "schemes": [
+        "magnet"
+      ]
+    },
+    {
+      "name": "Thunder Protocol",
+      "schemes": [
+        "thunder"
+      ]
+    }
+  ],
+  "dmg": {
+    "window": {
+      "width": 540,
+      "height": 380
+    },
+    "contents": [
+      {
+        "x": 410,
+        "y": 230,
+        "type": "link",
+        "path": "/Applications"
+      },
+      {
+        "x": 130,
+        "y": 230,
+        "type": "file"
+      }
+    ]
+  },
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": [
+          "x64",
+          "arm64"
         ]
       },
-      "category": "public.app-category.utilities",
-      "icon": "./static/L.icns"
-    },
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "./build/icon.ico",
-      "extraResources": {
-        "from": "./extra/win32/${arch}/",
-        "to": "./",
-        "filter": [
-          "**/*"
-        ]
-      },
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
-    },
-    "nsis": {
-      "artifactName": "LinkCore.Download.Manager-Setup-${version}.${ext}",
-      "useZip": false,
-      "unicode": true,
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "perMachine": false,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "LinkCore Download Manager",
-      "deleteAppDataOnUninstall": false
-    },
-    "appx": {
-      "artifactName": "LinkCore.Download.Manager-${version}-${arch}.${ext}",
-      "applicationId": "app.motrix.native",
-      "identityName": "59744DrrOot.Motrix",
-      "publisher": "CN=5BB4961D-30D8-4993-9ADF-05E1E1F5A395",
-      "publisherDisplayName": "Dr_rOot"
-    },
-    "portable": {
-      "artifactName": "LinkCore.Download.Manager-${version}-${arch}.${ext}"
-    },
-    "linux": {
-      "category": "Network",
-      "icon": "./static",
-      "mimeTypes": [
-        "application/x-bittorrent",
-        "x-scheme-handler/magnet"
-      ],
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "deb",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "extraResources": {
-        "from": "./extra/linux/${arch}/",
-        "to": "./",
-        "filter": [
-          "**/*"
+      {
+        "target": "zip",
+        "arch": [
+          "x64",
+          "arm64"
         ]
       }
+    ],
+    "type": "development",
+    "darkModeSupport": true,
+    "hardenedRuntime": false,
+    "notarize": false,
+    "extraResources": {
+      "from": "./extra/darwin/${arch}/",
+      "to": "./",
+      "filter": [
+        "**/*"
+      ]
     },
-    "publish": [
-  {
-    "provider": "github",
-    "owner": "MochengCK",
-    "repo": "LinkCore-Download-Manager"
-  }
-]
-  }
+    "category": "public.app-category.utilities",
+    "icon": "./static/L.icns"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "icon": "./build/icon.ico",
+    "extraResources": {
+      "from": "./extra/win32/${arch}/",
+      "to": "./",
+      "filter": [
+        "**/*"
+      ]
+    },
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
+  },
+  "nsis": {
+    "artifactName": "LinkCore.Download.Manager-Setup-${version}.${ext}",
+    "useZip": false,
+    "unicode": true,
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "perMachine": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "LinkCore Download Manager",
+    "deleteAppDataOnUninstall": false
+  },
+  "appx": {
+    "artifactName": "LinkCore.Download.Manager-${version}-${arch}.${ext}",
+    "applicationId": "app.motrix.native",
+    "identityName": "59744DrrOot.Motrix",
+    "publisher": "CN=5BB4961D-30D8-4993-9ADF-05E1E1F5A395",
+    "publisherDisplayName": "Dr_rOot"
+  },
+  "portable": {
+    "artifactName": "LinkCore.Download.Manager-${version}-${arch}.${ext}"
+  },
+  "linux": {
+    "category": "Network",
+    "icon": "./static",
+    "mimeTypes": [
+      "application/x-bittorrent",
+      "x-scheme-handler/magnet"
+    ],
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": [
+          "x64",
+          "arm64"
+        ]
+      },
+      {
+        "target": "deb",
+        "arch": [
+          "x64",
+          "arm64"
+        ]
+      }
+    ],
+    "extraResources": {
+      "from": "./extra/linux/${arch}/",
+      "to": "./",
+      "filter": [
+        "**/*"
+      ]
+    }
+  },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "MochengCK",
+      "repo": "LinkCore-Download-Manager"
+    }
+  ]
+}
