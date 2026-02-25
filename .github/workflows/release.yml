@@ -57,9 +57,32 @@ jobs:
           sudo apt-get install -y ruby ruby-dev rubygems build-essential
           sudo gem install fpm
 
-      - name: Build and publish
+      - name: Build webpack bundles
+        run: npm run build:github
+        env:
+          NODE_ENV: 'production'
+
+      - name: Verify build output
+        shell: bash
+        run: |
+          echo "Checking dist/electron directory..."
+          if [ -f "dist/electron/main.js" ]; then
+            echo "✓ main.js found"
+          else
+            echo "✗ main.js not found"
+            exit 1
+          fi
+          if [ -f "dist/electron/renderer.js" ]; then
+            echo "✓ renderer.js found"
+          else
+            echo "✗ renderer.js not found"
+            exit 1
+          fi
+          echo "Build verification passed!"
+
+      - name: Build and publish with electron-builder
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           SKIP_NOTARIZE: 'true'
-        run: npm run release
+        run: npx electron-builder --publish onTagOrDraft

@@ -134,17 +134,37 @@ function build () {
   })
 
   let results = ''
+  let completedTasks = 0
 
-  m.on('success', () => {
-    process.stdout.write('\x1B[2J\x1B[0f')
-    console.log(`\n\n${results}`)
-    console.log(`${okayLog}take it away ${chalk.yellow('`electron-builder`')}\n`)
-    process.exit()
-  })
+  const checkCompletion = () => {
+    completedTasks++
+    if (completedTasks === tasks.length) {
+      process.stdout.write('\x1B[2J\x1B[0f')
+      console.log(`\n\n${results}`)
+      console.log(`${okayLog}take it away ${chalk.yellow('`electron-builder`')}\n`)
+      
+      // 验证输出文件是否存在
+      const mainPath = path.join(__dirname, '../dist/electron/main.js')
+      const rendererPath = path.join(__dirname, '../dist/electron/renderer.js')
+      
+      if (!fs.existsSync(mainPath)) {
+        console.error(`${errorLog}main.js not found at ${mainPath}`)
+        process.exit(1)
+      }
+      if (!fs.existsSync(rendererPath)) {
+        console.error(`${errorLog}renderer.js not found at ${rendererPath}`)
+        process.exit(1)
+      }
+      
+      console.log(`${doneLog}Build files verified`)
+      process.exit(0)
+    }
+  }
 
   pack(mainConfig).then(result => {
     results += result + '\n\n'
     m.success('main')
+    checkCompletion()
   }).catch(err => {
     m.error('main')
     console.log(`\n  ${errorLog}failed to build main process`)
@@ -155,6 +175,7 @@ function build () {
   pack(rendererConfig).then(result => {
     results += result + '\n\n'
     m.success('renderer')
+    checkCompletion()
   }).catch(err => {
     m.error('renderer')
     console.log(`\n  ${errorLog}failed to build renderer process`)
