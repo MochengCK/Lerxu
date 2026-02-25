@@ -66,14 +66,15 @@ jobs:
         shell: bash
         run: |
           echo "Checking dist/electron directory..."
+          ls -la dist/electron/ || true
           if [ -f "dist/electron/main.js" ]; then
-            echo "✓ main.js found"
+            echo "✓ main.js found ($(stat -f%z dist/electron/main.js 2>/dev/null || stat -c%s dist/electron/main.js) bytes)"
           else
             echo "✗ main.js not found"
             exit 1
           fi
           if [ -f "dist/electron/renderer.js" ]; then
-            echo "✓ renderer.js found"
+            echo "✓ renderer.js found ($(stat -f%z dist/electron/renderer.js 2>/dev/null || stat -c%s dist/electron/renderer.js) bytes)"
           else
             echo "✗ renderer.js not found"
             exit 1
@@ -85,4 +86,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           SKIP_NOTARIZE: 'true'
+          DEBUG: 'electron-builder'
         run: npx electron-builder --publish onTagOrDraft
