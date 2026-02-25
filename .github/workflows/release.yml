@@ -66,20 +66,34 @@ jobs:
         shell: bash
         run: |
           echo "Checking dist/electron directory..."
-          ls -la dist/electron/ || true
+          ls -la dist/electron/ 2>/dev/null || dir dist\\electron\\ || echo "Directory listing failed"
+          
+          echo ""
+          echo "Checking for main.js..."
           if [ -f "dist/electron/main.js" ]; then
-            echo "✓ main.js found ($(stat -f%z dist/electron/main.js 2>/dev/null || stat -c%s dist/electron/main.js) bytes)"
+            SIZE=$(stat -f%z dist/electron/main.js 2>/dev/null || stat -c%s dist/electron/main.js 2>/dev/null || echo "unknown")
+            echo "✓ main.js found ($SIZE bytes)"
           else
             echo "✗ main.js not found"
+            echo "Contents of dist directory:"
+            find dist -type f 2>/dev/null || echo "find command failed"
             exit 1
           fi
-          if [ -f "dist/electron/renderer.js" ]; then
-            echo "✓ renderer.js found ($(stat -f%z dist/electron/renderer.js 2>/dev/null || stat -c%s dist/electron/renderer.js) bytes)"
+          
+          echo ""
+          echo "Checking for index.js (renderer)..."
+          if [ -f "dist/electron/index.js" ]; then
+            SIZE=$(stat -f%z dist/electron/index.js 2>/dev/null || stat -c%s dist/electron/index.js 2>/dev/null || echo "unknown")
+            echo "✓ index.js found ($SIZE bytes)"
           else
-            echo "✗ renderer.js not found"
+            echo "✗ index.js not found"
+            echo "Contents of dist/electron directory:"
+            find dist/electron -type f 2>/dev/null || echo "find command failed"
             exit 1
           fi
-          echo "Build verification passed!"
+          
+          echo ""
+          echo "✓ Build verification passed!"
 
       - name: Build and publish with electron-builder
         env:
@@ -87,4 +101,26 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
           SKIP_NOTARIZE: 'true'
           DEBUG: 'electron-builder'
-        run: npx electron-builder --publish onTagOrDraft
+        run: |
+          echo "Starting electron-builder..."
+          npx electron-builder --publish onTagOrDraft 2>&1 | tee electron-builder.log
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo ""
+            echo "❌ electron-builder failed with exit code $EXIT_CODE"
+            echo ""
+            echo "Last 50 lines of output:"
+            tail -n 50 electron-builder.log
+            exit $EXIT_CODE
+          fi
+        shell: bash
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.os }}
+          path: |
+            electron-builder.log
+            *.log
+          retention-days: 7

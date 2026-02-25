@@ -145,14 +145,14 @@ function build () {
       
       // 验证输出文件是否存在
       const mainPath = path.join(__dirname, '../dist/electron/main.js')
-      const rendererPath = path.join(__dirname, '../dist/electron/renderer.js')
+      const rendererPath = path.join(__dirname, '../dist/electron/index.js') // renderer 输出为 index.js
       
       if (!fs.existsSync(mainPath)) {
         console.error(`${errorLog}main.js not found at ${mainPath}`)
         process.exit(1)
       }
       if (!fs.existsSync(rendererPath)) {
-        console.error(`${errorLog}renderer.js not found at ${rendererPath}`)
+        console.error(`${errorLog}index.js not found at ${rendererPath}`)
         process.exit(1)
       }
       
