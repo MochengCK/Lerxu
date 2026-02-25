@@ -1,0 +1,7 @@
+{
+  "entry": {
+    "main": "E:\\新建文件夹\\LinkCore Download Manager\\src\\main\\index.js"
+  },
+  "output_path": "E:\\新建文件夹\\LinkCore Download Manager\\dist\\electron",
+  "output_filename": "[name].js"
+}
