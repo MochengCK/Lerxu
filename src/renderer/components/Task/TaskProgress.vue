@@ -56,7 +56,10 @@
           } else if (!this.isActive) {
             this.displayPercent = p
           } else if (Math.abs(p - this.displayPercent) > 2) {
-            this.displayPercent = p
+            // 确保进度只能前进，不能后退（防止回弹）
+            if (p > this.displayPercent) {
+              this.displayPercent = p
+            }
           }
           this.baseCompleted = Number.isFinite(this.completed) ? this.completed : 0
           this.baseTime = Date.now()
@@ -139,7 +142,10 @@
         }
         const actual = this.percent
         if (this.lastIndeterminate) {
-          this.displayPercent = actual
+          // 从不确定状态切换时，只在实际进度更大时更新
+          if (actual > this.displayPercent) {
+            this.displayPercent = actual
+          }
           this.lastIndeterminate = false
         }
         if (!(this.currentSpeed > 0 && this.baseTime > 0)) {
@@ -170,7 +176,10 @@
         if (!Number.isFinite(next)) {
           next = actual
         }
-        this.displayPercent = next
+        // 确保进度只能前进，不能后退
+        if (next >= this.displayPercent) {
+          this.displayPercent = next
+        }
       }, interval)
     },
     beforeDestroy () {
