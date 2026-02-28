@@ -817,6 +817,7 @@ const actions = {
 
     // 处理 URI，应用 GitHub 镜像转换
     // 对于 GitHub URL，返回包含所有镜像的数组，让 aria2 自动进行故障转移
+    let hasMultipleMirrors = false
     const normalizedUris = Array.isArray(uris)
       ? uris.map((uri) => {
         const magnet = brokenTorrentUriToMagnet(uri)
@@ -826,6 +827,10 @@ const actions = {
         if (isGithubUrl(finalUri)) {
           const mirrorUrls = getGithubUrlsWithMirrors(finalUri, githubMirrorUrls, useGithubMirror)
           console.log('[GitHub Mirror] Converting URL:', finalUri, '→', mirrorUrls)
+          // 如果有多个镜像 URL，标记需要启用多镜像并发
+          if (mirrorUrls.length > 1) {
+            hasMultipleMirrors = true
+          }
           // 返回所有镜像 URL 数组，aria2 会自动尝试所有源
           return mirrorUrls.length > 0 ? mirrorUrls : [finalUri]
         }
@@ -834,6 +839,34 @@ const actions = {
         return [finalUri]
       })
       : uris
+
+    // 如果检测到有多个镜像，自动启用多镜像并发下载
+    if (hasMultipleMirrors && !normalizedOptions['uri-selector']) {
+      normalizedOptions['uri-selector'] = 'multimirror'
+      console.log('[GitHub Mirror] Auto-enabled multi-mirror concurrent download')
+
+      // 确保有足够的总连接数
+      if (!normalizedOptions.split || normalizedOptions.split < 8) {
+        normalizedOptions.split = 16
+        console.log('[GitHub Mirror] Set split to 16 for multi-mirror download')
+      }
+
+      // 每个服务器的最大连接数应该足够大，以便每个镜像都能建立多个连接
+      // 设置为 split 的一半，这样两个镜像可以平分连接
+      const splitValue = normalizedOptions.split || 16
+      const maxPerServer = Math.max(4, Math.floor(splitValue / 2))
+      if (!normalizedOptions['max-connection-per-server'] || normalizedOptions['max-connection-per-server'] < maxPerServer) {
+        normalizedOptions['max-connection-per-server'] = maxPerServer
+        console.log(`[GitHub Mirror] Set max-connection-per-server to ${maxPerServer} for multi-mirror download`)
+      }
+
+      // 设置最小分段大小为 1MB，确保小文件也能分段
+      if (!normalizedOptions['min-split-size']) {
+        normalizedOptions['min-split-size'] = '1M'
+        console.log('[GitHub Mirror] Set min-split-size to 1M for multi-mirror download')
+      }
+    }
+
     const isMagnetLikeUri = (uri) => {
       // uri 可能是字符串或数组（GitHub 镜像情况）
       const uriStr = Array.isArray(uri) ? uri[0] : uri

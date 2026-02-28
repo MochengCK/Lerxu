@@ -296,6 +296,12 @@ export default class WindowManager extends EventEmitter {
     this.windows[page] = null
   }
 
+  clearWindows () {
+    // Clear all windows from the registry
+    this.windows = {}
+    logger.info('[Motrix] All windows cleared from registry')
+  }
+
   bindAfterClosed (page, window) {
     window.on('closed', (event) => {
       this.removeWindow(page)

@@ -1427,6 +1427,95 @@ export default class Application extends EventEmitter {
         this.dockManager.hide()
       }
     })
+
+    // Background memory release
+    this.initBackgroundMemoryRelease()
+  }
+
+  initBackgroundMemoryRelease () {
+    // Track if app is in background
+    this.isAppInBackground = false
+
+    // Listen to all window blur events
+    app.on('browser-window-blur', () => {
+      // Check if all windows are hidden/minimized
+      const allWindowsHidden = this.windowManager.getWindowList().every(win => {
+        return win && (!win.isVisible() || win.isMinimized())
+      })
+
+      if (allWindowsHidden && !this.isAppInBackground) {
+        this.isAppInBackground = true
+        logger.info('[Motrix] App entered background, releasing memory')
+        this.releaseBackgroundMemory()
+      }
+    })
+
+    // Listen to window focus events
+    app.on('browser-window-focus', () => {
+      if (this.isAppInBackground) {
+        this.isAppInBackground = false
+        logger.info('[Motrix] App returned to foreground')
+      }
+    })
+
+    // Also listen to window hide/minimize events
+    this.windowManager.getWindowList().forEach(win => {
+      if (!win) return
+
+      win.on('hide', () => {
+        setTimeout(() => {
+          const allWindowsHidden = this.windowManager.getWindowList().every(w => {
+            return w && (!w.isVisible() || w.isMinimized())
+          })
+          if (allWindowsHidden && !this.isAppInBackground) {
+            this.isAppInBackground = true
+            logger.info('[Motrix] All windows hidden, releasing memory')
+            this.releaseBackgroundMemory()
+          }
+        }, 100)
+      })
+
+      win.on('minimize', () => {
+        setTimeout(() => {
+          const allWindowsHidden = this.windowManager.getWindowList().every(w => {
+            return w && (!w.isVisible() || w.isMinimized())
+          })
+          if (allWindowsHidden && !this.isAppInBackground) {
+            this.isAppInBackground = true
+            logger.info('[Motrix] All windows minimized, releasing memory')
+            this.releaseBackgroundMemory()
+          }
+        }, 100)
+      })
+    })
+  }
+
+  releaseBackgroundMemory () {
+    try {
+      // Send command to all renderer processes to release memory
+      this.windowManager.getWindowList().forEach(win => {
+        if (win && win.webContents) {
+          // Clear renderer cache
+          win.webContents.session.clearCache()
+
+          // Send message to renderer to cleanup
+          win.webContents.send('application:background-memory-release')
+
+          // Reduce polling frequency for background tasks
+          win.webContents.send('application:reduce-polling-frequency')
+        }
+      })
+
+      // Force garbage collection if available
+      if (global.gc) {
+        global.gc()
+        logger.info('[Motrix] Forced garbage collection')
+      }
+
+      logger.info('[Motrix] Background memory release completed')
+    } catch (err) {
+      logger.warn('[Motrix] Failed to release background memory:', err.message)
+    }
   }
 
   storeWindowState (data = {}) {

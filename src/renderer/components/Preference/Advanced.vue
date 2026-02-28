@@ -920,8 +920,8 @@
     const githubMirrorUrl = config.githubMirrorUrl || config['github-mirror-url']
     // 兼容 kebab-case 配置键
     const parsedGithubMirrorUrls = githubMirrorUrls || config['github-mirror-urls']
-    // 默认镜像列表（默认为空，用户需要手动选择）
-    const defaultMirrors = []
+    // 默认镜像列表（默认选择所有内置镜像）
+    const defaultMirrors = ['ghproxy.net']
     // 兼容旧的kebab-case配置键
     const parsedEngineBinary = engineBinary || config['engine-binary'] || ''
     // 兼容旧版代理配置（旧版使用 enable 字段，新版使用 mode 字段）
