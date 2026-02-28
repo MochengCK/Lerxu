@@ -230,17 +230,9 @@
         return !this.isSmallWindow
       },
       showMainFloatingAside () {
-        if (this.isThreeColumn) {
-          return false
-        }
-        if (!this.isThreeColumn) {
-          return true
-        }
-        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
-        if (!width) {
-          return false
-        }
-        return width < 960
+        // 悬浮模式和三栏模式都不显示独立的设置按钮
+        // 因为设置按钮已经集成到左侧任务导航中
+        return false
       }
     },
     watch: {

@@ -2,7 +2,7 @@
   <div
     id="app"
     :style="appRootStyle"
-    :class="{ 'has-custom-titlebar': showWindowActions, 'show-window-actions': showWindowActions, 'is-preference-window': isPreferenceWindow, 'is-task-detail-open': taskDetailVisible, 'is-add-task-open': addTaskVisible, 'is-task-plan-open': taskPlanVisible }"
+    :class="{ 'has-custom-titlebar': showWindowActions, 'show-window-actions': showWindowActions, 'is-preference-window': isPreferenceWindow, 'is-task-detail-open': taskDetailVisible, 'is-add-task-open': addTaskVisible, 'is-task-plan-open': taskPlanVisible, 'has-three-column-layout': isThreeColumn, 'is-aside-auto-hide': isAsideAutoHide, 'is-aside-hovered': isAsideHovered }"
   >
     <div
       v-if="shouldUseBackgroundImage"
@@ -68,7 +68,8 @@
       return {
         clipboardWatchTimer: null,
         lastClipboardText: '',
-        lastClipboardTriggerAt: 0
+        lastClipboardTriggerAt: 0,
+        windowWidth: 0
       }
     },
     computed: {
@@ -120,7 +121,9 @@
         taskDetailDefaultTransparent: state => state.config.taskDetailDefaultTransparent,
         taskDetailFrostedBlur: state => state.config.taskDetailFrostedBlur,
         dateFilterFrosted: state => state.config.dateFilterFrosted,
-        dateFilterFrostedBlur: state => state.config.dateFilterFrostedBlur
+        dateFilterFrostedBlur: state => state.config.dateFilterFrostedBlur,
+        sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating',
+        autoHideAside: state => state.config.autoHideAside
       }),
       ...mapGetters('preference', [
         'theme',
@@ -235,6 +238,27 @@
       clipboardAutoPasteEnabled () {
         if (this.clipboardAutoPaste === undefined) return true
         return !!this.clipboardAutoPaste
+      },
+      isSmallWindow () {
+        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
+        if (!width) {
+          return false
+        }
+        return width < 700
+      },
+      isThreeColumn () {
+        if (this.sidebarLayoutMode !== 'three-column') {
+          return false
+        }
+        return !this.isSmallWindow
+      },
+      isAsideAutoHide () {
+        return this.isThreeColumn && this.autoHideAside
+      },
+      isAsideHovered () {
+        // 从Task/Index.vue组件获取侧边栏悬停状态
+        // 这个状态会通过事件或store传递
+        return this.$store.state.app.isAsideHovered || false
       }
     },
     methods: {
@@ -388,6 +412,12 @@
         UI_OPACITY_SCOPES.forEach(scope => {
           document.documentElement.style.setProperty(`--app-ui-opacity-${scope}`, `${this.getUiOpacityForScope(scope)}`)
         })
+      },
+      handleWindowResize () {
+        if (typeof window === 'undefined') {
+          return
+        }
+        this.windowWidth = window.innerWidth || 0
       }
     },
     beforeMount () {
@@ -397,6 +427,13 @@
     mounted () {
       this._updateMessageShown = false
       this.updateWindowTitle()
+      if (typeof window !== 'undefined') {
+        this.handleWindowResize()
+        this._handleWindowResize = () => {
+          this.handleWindowResize()
+        }
+        window.addEventListener('resize', this._handleWindowResize)
+      }
       if (this.isRenderer && this.isPreferenceWindow) {
         this._preferenceCommandHandler = (event, command, ...args) => {
           this.handlePreferenceCommand(command, ...args)
@@ -449,6 +486,10 @@
       this._updateHandlers = { onUpdateAvailable, onUpdateNotAvailable, onUpdateError }
     },
     destroyed () {
+      if (typeof window !== 'undefined' && this._handleWindowResize) {
+        window.removeEventListener('resize', this._handleWindowResize)
+        this._handleWindowResize = null
+      }
       if (this._preferenceCommandHandler) {
         this.$electron.ipcRenderer.removeListener('command', this._preferenceCommandHandler)
       }

@@ -45,7 +45,8 @@ const state = {
   taskPlanVisible: false,
   progress: 0,
   isCheckingUpdate: false,
-  titleBarText: ''
+  titleBarText: '',
+  isAsideHovered: false
 }
 
 const getters = {
@@ -138,6 +139,9 @@ const mutations = {
   UPDATE_TITLE_BAR_TEXT (state, text) {
     state.titleBarText = text || ''
   },
+  UPDATE_ASIDE_HOVERED (state, hovered) {
+    state.isAsideHovered = !!hovered
+  },
   UPDATE_ENGINE_LIST (state, engineListData) {
     state.engineList = {
       engines: engineListData.engines || [],
@@ -161,6 +165,9 @@ const actions = {
   },
   updateTitleBarText ({ commit }, text) {
     commit('UPDATE_TITLE_BAR_TEXT', text)
+  },
+  updateAsideHovered ({ commit }, hovered) {
+    commit('UPDATE_ASIDE_HOVERED', hovered)
   },
   fetchEngineInfo ({ commit }) {
     return new Promise((resolve, reject) => {

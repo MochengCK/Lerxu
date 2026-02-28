@@ -149,6 +149,23 @@
   }
 }
 
+/* 三栏式布局下，标题栏文字与任务卡片左侧对齐 */
+.has-three-column-layout .title-bar .title-bar-title {
+  margin-left: calc(220px + 20px + 12px); /* 侧边栏宽度 + el-main padding + 任务卡片padding */
+  transition: margin-left 0.35s cubic-bezier(0.22, 1, 0.36, 1); /* 与侧边栏动画同步 */
+  @media only screen and (min-width: 568px) {
+    margin-left: calc(220px + 20px + 12px);
+  }
+}
+
+/* 三栏式布局下，当侧边栏自动隐藏且未悬停时，标题栏文字位置与悬浮模式一致 */
+.has-three-column-layout.is-aside-auto-hide:not(.is-aside-hovered) .title-bar .title-bar-title {
+  margin-left: 16px; /* 与悬浮模式保持一致 */
+  @media only screen and (min-width: 568px) {
+    margin-left: 36px; /* 与悬浮模式保持一致 */
+  }
+}
+
 .show-window-actions .title-bar {
   background: transparent;
   background-color: transparent;

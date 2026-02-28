@@ -101,7 +101,7 @@
     display: block;
     width: auto;
     height: 1px;
-    margin: 8px -20px 8px 30px;
+    margin: 8px 10px;
     padding: 0;
     line-height: 0;
     background-color: rgba(0, 0, 0, 0.25);

@@ -3,6 +3,88 @@
     class="main panel"
     direction="horizontal"
   >
+    <!-- 左侧悬浮任务状态导航 - 仅悬浮模式使用 -->
+    <div
+      v-if="showLeftFloatingNav"
+      class="subnav-small-screen subnav-left"
+      :class="{ 'is-auto-hide-aside': autoHideAside, 'is-proximity-hovered': isSubnavProximityHovered }"
+      @mouseenter="onSubnavEnter"
+      @mouseleave="onSubnavLeave"
+    >
+      <ul class="menu small-menu">
+        <li
+          @click="navStatus('all')"
+          :class="{ active: status === 'all' || status === 'date' }"
+        >
+          <el-tooltip
+            effect="dark"
+            :content="$t('task.all')"
+            placement="right"
+            :open-delay="500"
+          >
+            <mo-icon name="menu-task" width="20" height="20" />
+          </el-tooltip>
+        </li>
+        <li
+          @click="navStatus('active')"
+          :class="{ active: status === 'active' }"
+        >
+          <el-tooltip
+            effect="dark"
+            :content="$t('task.active')"
+            placement="right"
+            :open-delay="500"
+          >
+            <mo-icon name="task-start" width="20" height="20" />
+          </el-tooltip>
+        </li>
+        <li
+          @click="navStatus('waiting')"
+          :class="{ active: status === 'waiting' }"
+        >
+          <el-tooltip
+            effect="dark"
+            :content="$t('task.waiting')"
+            placement="right"
+            :open-delay="500"
+          >
+            <mo-icon name="task-pause" width="20" height="20" />
+          </el-tooltip>
+        </li>
+        <li
+          @click="navStatus('stopped')"
+          :class="{ active: status === 'stopped' }"
+        >
+          <el-tooltip
+            effect="dark"
+            :content="$t('task.stopped')"
+            placement="right"
+            :open-delay="500"
+          >
+            <mo-icon name="task-stop" width="20" height="20" />
+          </el-tooltip>
+        </li>
+      </ul>
+      <!-- 分隔线 -->
+      <div class="subnav-divider-left"></div>
+      <!-- 设置按钮 -->
+      <ul class="menu small-menu">
+        <li
+          @click="openPreference"
+          :class="{ active: false }"
+        >
+          <el-tooltip
+            effect="dark"
+            :content="$t('subnav.preferences')"
+            placement="right"
+            :open-delay="500"
+          >
+            <mo-icon name="menu-preference" width="20" height="20" />
+          </el-tooltip>
+        </li>
+      </ul>
+    </div>
+
     <template v-if="isThreeColumn">
       <el-aside
         v-if="showThreeColumnSubnav"
@@ -80,71 +162,11 @@
     <div
       v-if="showRightFloatingPanel"
       class="right-floating-panel"
-      :class="{ 'is-auto-hide-subnav': autoHideSubnav && !datePickerVisible, 'is-proximity-hovered': isSubnavProximityHovered }"
+      :class="{ 'is-auto-hide-subnav': autoHideSubnav && !datePickerVisible, 'is-proximity-hovered': isDateFilterProximityHovered }"
     >
-      <template v-if="showSmallScreenNav">
-        <div class="subnav-small-screen subnav-right" v-show="!isSubnavHovered">
-          <ul class="menu small-menu">
-            <li
-              @click="navStatus('all')"
-              :class="{ active: status === 'all' || status === 'date' }"
-            >
-              <el-tooltip
-                effect="dark"
-                :content="$t('task.all')"
-                placement="left"
-                :open-delay="500"
-              >
-                <mo-icon name="menu-task" width="20" height="20" />
-              </el-tooltip>
-            </li>
-            <li
-              @click="navStatus('active')"
-              :class="{ active: status === 'active' }"
-            >
-              <el-tooltip
-                effect="dark"
-                :content="$t('task.active')"
-                placement="left"
-                :open-delay="500"
-              >
-                <mo-icon name="task-start" width="20" height="20" />
-              </el-tooltip>
-            </li>
-            <li
-              @click="navStatus('waiting')"
-              :class="{ active: status === 'waiting' }"
-            >
-              <el-tooltip
-                effect="dark"
-                :content="$t('task.waiting')"
-                placement="left"
-                :open-delay="500"
-              >
-                <mo-icon name="task-pause" width="20" height="20" />
-              </el-tooltip>
-            </li>
-            <li
-              @click="navStatus('stopped')"
-              :class="{ active: status === 'stopped' }"
-            >
-              <el-tooltip
-                effect="dark"
-                :content="$t('task.stopped')"
-                placement="left"
-                :open-delay="500"
-              >
-                <mo-icon name="task-stop" width="20" height="20" />
-              </el-tooltip>
-            </li>
-          </ul>
-        </div>
-        <div class="subnav-divider" v-show="!isSubnavHovered"></div>
-      </template>
-
       <div
         ref="dateFilterBtn"
-        class="date-filter-standalone"
+        class="date-filter-standalone date-filter-floating"
         :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible, 'is-frosted': dateFilterFrosted }"
         @click.stop="onDateFilterClick"
         @mouseenter="onDateFilterHover"
@@ -333,7 +355,8 @@
         return this.showWindowActions && !this.isTitlebarCompact
       },
       shouldShowTitleBarText () {
-        return !this.isThreeColumn && this.shouldMoveTitleToTitlebar && this.subnavMode !== 'title'
+        // 三栏模式和悬浮模式都在标题栏显示分类名称
+        return this.shouldMoveTitleToTitlebar && this.subnavMode !== 'title'
       },
       isTitlebarCompact () {
         const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
@@ -355,6 +378,16 @@
         }
         return !this.isSmallWindow
       },
+      showLeftFloatingNav () {
+        // 悬浮模式下显示左侧小图标导航
+        if (this.isThreeColumn) {
+          return false
+        }
+        if (this.subnavMode === 'title') {
+          return false
+        }
+        return this.subnavMode === 'floating'
+      },
       showMainAside () {
         // In three-column mode, the main aside is not shown;
         // the subnav takes its place as the left sidebar
@@ -364,12 +397,8 @@
         return this.isThreeColumn && this.subnavMode !== 'title'
       },
       showSmallScreenNav () {
-        // In three-column mode, small screen nav icons are not needed
-        // (subnav is the left sidebar already)
-        if (this.isThreeColumn) {
-          return false
-        }
-        return true
+        // 右侧小屏幕导航不再需要（已移到左侧）
+        return false
       },
       showRightFloatingPanel () {
         // In three-column mode, the right floating panel (date filter + nav icons)
@@ -464,6 +493,18 @@
     methods: {
       updateTitleBarText () {
         const text = this.shouldShowTitleBarText ? this.title : ''
+        console.log('[TitleBar Debug]', {
+          shouldShowTitleBarText: this.shouldShowTitleBarText,
+          shouldMoveTitleToTitlebar: this.shouldMoveTitleToTitlebar,
+          showWindowActions: this.showWindowActions,
+          isTitlebarCompact: this.isTitlebarCompact,
+          hideAppMenu: this.hideAppMenu,
+          windowWidth: this.windowWidth,
+          subnavMode: this.subnavMode,
+          isThreeColumn: this.isThreeColumn,
+          title: this.title,
+          text: text
+        })
         this.$store.dispatch('app/updateTitleBarText', text)
       },
       onTaskPageContextMenu (event) {
@@ -1115,8 +1156,17 @@
           this.subnavHoverTimer = null
         }
         this.isSubnavHovered = true
+        // 更新全局状态，用于标题栏文字位置调整
+        if (this.isThreeColumn && this.autoHideAside) {
+          this.$store.dispatch('app/updateAsideHovered', true)
+        }
       },
       onSubnavLeave () {
+        // 立即更新全局状态，让标题栏文字立即开始移动
+        if (this.isThreeColumn && this.autoHideAside) {
+          this.$store.dispatch('app/updateAsideHovered', false)
+        }
+
         if (this.subnavHoverTimer) {
           clearTimeout(this.subnavHoverTimer)
         }
@@ -1125,12 +1175,12 @@
         }, 400)
       },
       updateSubnavProximityHover (event) {
-        // In three-column mode, the left sidebar is the main sidebar
-        // so we detect proximity on the left edge using autoHideAside
+        // 三栏模式：检测左侧子侧边栏
         if (this.isThreeColumn) {
           if (!this.autoHideAside) {
             if (this.isSubnavProximityHovered) {
               this.isSubnavProximityHovered = false
+              this.$store.dispatch('app/updateAsideHovered', false)
             }
             return
           }
@@ -1152,10 +1202,15 @@
           const next = withinX && withinY
           if (next !== this.isSubnavProximityHovered) {
             this.isSubnavProximityHovered = next
+            // 立即更新全局状态，用于标题栏文字位置调整
+            // 只有在接近区域内或者正在悬停时才显示
+            const shouldShow = next || this.isSubnavHovered
+            this.$store.dispatch('app/updateAsideHovered', shouldShow)
           }
           return
         }
-        if (!this.autoHideSubnav || this.datePickerVisible || this.subnavMode !== 'floating') {
+        // 悬浮模式：检测左侧小图标导航
+        if (!this.autoHideAside || this.subnavMode !== 'floating') {
           if (this.isSubnavProximityHovered) {
             this.isSubnavProximityHovered = false
           }
@@ -1164,16 +1219,18 @@
         if (!event) {
           return
         }
-        const width = typeof window !== 'undefined' ? window.innerWidth : 0
         const height = typeof window !== 'undefined' ? window.innerHeight : 0
-        if (!width || !height) {
+        if (!height) {
           return
         }
+        const el = this.$el && this.$el.querySelector ? this.$el.querySelector('.subnav-left') : null
+        const subnavHeight = el ? el.offsetHeight : 0
+        const zoneHeight = Math.max(subnavHeight || 0, 200) + 100
         const centerY = height / 2
-        const top = centerY - 120
-        const bottom = centerY + 180
+        const top = centerY - zoneHeight / 2
+        const bottom = centerY + zoneHeight / 2
         const withinY = event.clientY >= top && event.clientY <= bottom
-        const withinX = event.clientX >= width - 100
+        const withinX = event.clientX <= 120
         const next = withinX && withinY
         if (next !== this.isSubnavProximityHovered) {
           this.isSubnavProximityHovered = next
@@ -1192,14 +1249,34 @@
           this.updateDateFilterProximityHover(lastEvent)
         })
       },
+      handleWindowMouseLeave () {
+        // 鼠标离开窗口时，重置所有悬停状态
+        if (this.isThreeColumn && this.autoHideAside) {
+          this.isSubnavProximityHovered = false
+          this.$store.dispatch('app/updateAsideHovered', false)
+
+          // 如果有悬停计时器，立即执行
+          if (this.subnavHoverTimer) {
+            clearTimeout(this.subnavHoverTimer)
+            this.subnavHoverTimer = null
+          }
+          this.isSubnavHovered = false
+        }
+
+        // 重置日期筛选按钮的接近状态
+        if (this.isDateFilterProximityHovered) {
+          this.isDateFilterProximityHovered = false
+        }
+      },
       updateDateFilterProximityHover (event) {
-        // Only active in three-column mode with autoHideSubnav
-        if (!this.isThreeColumn || !this.autoHideSubnav || this.datePickerVisible) {
+        // 右侧日期筛选按钮的接近检测
+        if (!this.autoHideSubnav || this.datePickerVisible) {
           if (this.isDateFilterProximityHovered) {
             this.isDateFilterProximityHovered = false
           }
           return
         }
+        // 悬浮模式和三栏模式都启用
         if (!event) {
           return
         }
@@ -1240,6 +1317,12 @@
           this.handleWindowMouseMoveForSubnav(event)
         }
         window.addEventListener('mousemove', this._handleWindowMouseMoveForSubnav)
+
+        // 监听鼠标离开窗口事件
+        this._handleWindowMouseLeave = () => {
+          this.handleWindowMouseLeave()
+        }
+        document.addEventListener('mouseleave', this._handleWindowMouseLeave)
       }
       commands.on('pause-task', this.handlePauseTask)
       commands.on('resume-task', this.handleResumeTask)
@@ -1263,11 +1346,16 @@
         window.removeEventListener('mousemove', this._handleWindowMouseMoveForSubnav)
         this._handleWindowMouseMoveForSubnav = null
       }
+      if (typeof document !== 'undefined' && this._handleWindowMouseLeave) {
+        document.removeEventListener('mouseleave', this._handleWindowMouseLeave)
+        this._handleWindowMouseLeave = null
+      }
       if (this._subnavMouseRaf) {
         window.cancelAnimationFrame(this._subnavMouseRaf)
         this._subnavMouseRaf = null
       }
       this.$store.dispatch('app/updateTitleBarText', '')
+      this.$store.dispatch('app/updateAsideHovered', false)
     },
     destroyed () {
       this.clearCategoryHoverCloseTimer()
@@ -1460,90 +1548,46 @@
   max-width: 160px;
 }
 
-.subnav-small-screen.subnav-right {
+/* 左侧悬浮任务状态导航 - 悬浮模式使用 */
+.subnav-small-screen.subnav-left {
   position: fixed;
-  right: 10px;
+  left: 10px;
   top: 50%;
   transform: translateY(-50%);
   z-index: 1000;
   background-color: transparent;
   border-radius: 100px;
   opacity: 0.5;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.3s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   padding: 8px;
   pointer-events: auto;
 }
 
-/* 右侧悬浮面板容器 */
-.right-floating-panel {
-  position: fixed;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 0;
-  z-index: 2000;
-  pointer-events: auto;
-}
-
-.is-add-task-open .right-floating-panel,
-.is-task-plan-open .right-floating-panel {
-  z-index: 1999;
-}
-
-/* 针对子元素的独立滑入滑出逻辑，确保不覆盖原有的 transform */
-
-/* 1. 子菜单 */
-.right-floating-panel.is-auto-hide-subnav .subnav-small-screen.subnav-right {
-  transform: translateY(-50%) translateX(120px);
-  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
-}
-
-.right-floating-panel.is-auto-hide-subnav:hover .subnav-small-screen.subnav-right,
-.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .subnav-small-screen.subnav-right {
-  transform: translateY(-50%) translateX(0);
-}
-
-/* 2. 分隔线 */
-.right-floating-panel.is-auto-hide-subnav .subnav-divider {
-  transform: translateX(120px);
-  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
-}
-
-.right-floating-panel.is-auto-hide-subnav:hover .subnav-divider,
-.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .subnav-divider {
-  transform: translateX(0);
-}
-
-/* 3. 日期筛选按钮 */
-.right-floating-panel.is-auto-hide-subnav .date-filter-standalone {
-  transform: translateX(120px);
-  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease;
-}
-
-.right-floating-panel.is-auto-hide-subnav:hover .date-filter-standalone,
-.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .date-filter-standalone {
-  transform: translateX(0);
-}
-
-/* 鼠标靠近感应区域 */
-.right-floating-panel.is-auto-hide-subnav::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  height: 400px;
-  transform: translateY(-50%);
-  left: -100px;
-  width: 100px;
-  background: transparent;
-  cursor: default;
-  pointer-events: none;
-  z-index: -1;
-}
-
-.subnav-small-screen.subnav-right:hover {
+.subnav-small-screen.subnav-left:hover {
   opacity: 1;
 }
 
+/* 自动隐藏左侧导航 */
+.subnav-small-screen.subnav-left.is-auto-hide-aside {
+  transform: translateY(-50%) translateX(-120px);
+}
+
+.subnav-small-screen.subnav-left.is-auto-hide-aside.is-proximity-hovered,
+.subnav-small-screen.subnav-left.is-auto-hide-aside:hover {
+  transform: translateY(-50%) translateX(0);
+}
+
+/* 左侧导航分隔线 */
+.subnav-divider-left {
+  width: 16px;
+  height: 2px;
+  background-color: $--icon-color;
+  border-radius: 1px;
+  opacity: 0.3;
+  margin: 8px auto;
+}
+
+/* 通用小屏幕导航样式 */
 .subnav-small-screen .menu {
   list-style: none;
   padding: 0;
@@ -1564,12 +1608,13 @@
   outline: none;
   border: none;
   box-shadow: none;
-  &:focus,
-  &:active {
-    outline: none;
-    border: none;
-    box-shadow: none;
-  }
+}
+
+.subnav-small-screen .menu > li:focus,
+.subnav-small-screen .menu > li:active {
+  outline: none;
+  border: none;
+  box-shadow: none;
 }
 
 .subnav-small-screen .menu > li:hover {
@@ -1612,25 +1657,53 @@
   margin-bottom: 0;
 }
 
-/* 子侧边栏与日期筛选按钮之间的分隔线 */
-.subnav-divider {
+.subnav-small-screen.subnav-right {
   position: fixed;
-  right: 26px;
-  top: calc(50% + 97px);
-  width: 16px;
-  height: 2px;
-  background-color: $--icon-color;
-  border-radius: 1px;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 1000;
-  opacity: 0.3;
-  pointer-events: none;
+  background-color: transparent;
+  border-radius: 100px;
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+  padding: 8px;
+  pointer-events: auto;
 }
 
-/* 日期筛选独立按钮样式 */
-.date-filter-standalone {
+/* 右侧悬浮面板容器 */
+.right-floating-panel {
   position: fixed;
-  right: 18px;
-  top: calc(50% + 108px);
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  z-index: 2000;
+  pointer-events: auto;
+}
+
+.is-add-task-open .right-floating-panel,
+.is-task-plan-open .right-floating-panel {
+  z-index: 1999;
+}
+
+/* 针对子元素的独立滑入滑出逻辑，确保不覆盖原有的 transform */
+
+/* 1. 日期筛选按钮 */
+.right-floating-panel.is-auto-hide-subnav .date-filter-standalone {
+  transform: translateX(120px);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease;
+}
+
+.right-floating-panel.is-auto-hide-subnav:hover .date-filter-standalone,
+.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .date-filter-standalone {
+  transform: translateX(0);
+}
+
+/* 子侧边栏与日期筛选按钮之间的分隔线 - 已移除 */
+
+/* 日期筛选独立按钮样式 - 基础样式 */
+.date-filter-standalone {
   width: 32px;
   height: 32px;
   background-color: var(--speedometer-background);
@@ -1639,10 +1712,8 @@
   align-items: center;
   justify-content: flex-end;
   cursor: pointer;
-  transition: width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease;
   overflow: hidden;
   opacity: 0.5;
-  z-index: 1000;
   user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
@@ -1652,7 +1723,38 @@
   pointer-events: auto;
 }
 
-/* 三栏模式下的日期筛选按钮位置 */
+/* 悬浮模式下的日期筛选按钮 */
+.date-filter-standalone.date-filter-floating {
+  position: fixed;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1000;
+  transition: width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 悬浮模式自动隐藏 */
+.right-floating-panel.is-auto-hide-subnav .date-filter-standalone.date-filter-floating {
+  transform: translateY(-50%) translateX(calc(100% + 20px));
+}
+
+.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .date-filter-standalone.date-filter-floating,
+.right-floating-panel.is-auto-hide-subnav .date-filter-standalone.date-filter-floating:hover {
+  transform: translateY(-50%) translateX(0);
+  opacity: 1;
+}
+
+/* 三栏模式下的日期筛选按钮 */
+.date-filter-standalone:not(.date-filter-floating) {
+  position: fixed;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1000;
+  transition: width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 三栏模式下的日期筛选按钮样式 */
 .date-filter-standalone.date-filter-standalone--three-column {
   right: 10px;
   top: 50%;
