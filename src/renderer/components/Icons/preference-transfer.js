@@ -5,9 +5,9 @@ Icon.register({
     'width': 24,
     'height': 24,
     'paths': [{
-      'd': 'M7,6l5-4l5,4h-3v7h-4V6H7z'
+      'd': 'M8,2L3,8h3v9h4V8h3L8,2z'
     }, {
-      'd': 'M17,18l-5,4l-5-4h3v-7h4v7H17z'
+      'd': 'M16,22l5-6h-3V7h-4v9h-3L16,22z'
     }]
   }
 })

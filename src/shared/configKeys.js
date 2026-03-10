@@ -64,6 +64,8 @@ const userKeys = [
   'extension-intercept-all-downloads',
   'extension-silent-download',
   'extension-skip-file-extensions',
+  'extension-exclude-domains',
+  'extension-min-file-size',
   'extension-shift-toggle-enabled',
   'subnav-mode',
   'sidebar-layout-mode',

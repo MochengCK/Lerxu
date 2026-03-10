@@ -557,6 +557,7 @@
             const controlsItemColor = isDark ? '#e5e5e5' : '#606266'
             const controlsItemHoverBg = isDark ? '#333333' : '#f2f6fc'
             const titleBtnHoverBg = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'
+            const indicatorBg = isDark ? '#3a3a3a' : '#e8e8e8'
 
             if (typeof win.setBackgroundColor === 'function') {
               win.setBackgroundColor(bodyBg)
@@ -575,6 +576,7 @@
                 controlsItemColor,
                 controlsItemHoverBg,
                 titleBtnHoverBg,
+                indicatorBg,
                 tabBg: isDark ? '#2a2a2a' : '#f5f7fa',
                 tabColor: isDark ? '#b0b0b0' : '#606266',
                 tabBorder: isDark ? '#4a4a4a' : '#dcdfe6',
@@ -753,6 +755,7 @@
         const controlsItemColor = isDark ? '#e5e5e5' : '#606266'
         const controlsItemHoverBg = isDark ? '#333333' : '#f2f6fc'
         const titleBtnHoverBg = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'
+        const indicatorBg = isDark ? '#3a3a3a' : '#e8e8e8'
         const titleBarStyle = useCustomFrame
           ? '.title-bar{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;-webkit-app-region:drag;background-color:VAR_BODY_BG;}'
           : '.title-bar{display:none;}'
@@ -781,6 +784,7 @@
           '.tab-content{display:none;}',
           '.tab-content.active{display:block;}',
           '.bar{height:6px;background:VAR_BAR_BG;border-radius:3px;overflow:hidden;margin-bottom:8px;}',
+          '.bar-fixed{position:fixed;top:160px;left:12px;right:12px;height:6px;background:VAR_BAR_BG;border-radius:3px;overflow:hidden;z-index:999;}',
           '.bar-inner{height:100%;background:VAR_BAR_INNER;width:0;transition:width .2s ease;}',
           '.meta{color:VAR_META_COLOR;font-size:12px;margin-bottom:8px;}',
           '.meta-line{margin-bottom:2px;}',
@@ -814,10 +818,21 @@
           '.connections-panel{position:fixed;top:220px;left:0;right:0;padding:12px 0;background-color:VAR_BODY_BG;box-sizing:border-box;}',
           '.controls{position:fixed;top:170px;left:12px;right:12px;display:flex;justify-content:space-between;padding:8px 0;background-color:VAR_BODY_BG;pointer-events:none;z-index:1000;}',
           '.controls-left{display:flex;pointer-events:auto;}',
+          '.controls-left .controls-btn{position:relative;}',
+          '#pinBtn{margin-left:-18px;z-index:0;border-radius:0 18px 18px 0;width:46px;background-color:VAR_CONTROLS_ITEM_HOVER_BG;}',
+          '#pinBtn:hover{background-color:VAR_CONTROLS_BORDER;}',
+          '#connToggle{z-index:1;}',
           '.controls-inner{display:flex;align-items:center;justify-content:flex-end;gap:8px;pointer-events:auto;}',
           '.controls-divider{display:none;}',
+          '.pause-resume-group{display:flex;background-color:VAR_CONTROLS_BG;border-radius:18px;box-shadow:0 2px 8px rgba(0,0,0,0.15);border:1px solid VAR_CONTROLS_BORDER;overflow:hidden;position:relative;margin-left:8px;}',
+          '.pause-resume-indicator{position:absolute;width:32px;height:32px;background-color:VAR_INDICATOR_BG;border-radius:50%;top:2px;left:2px;transition:transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);z-index:0;box-shadow:inset 0 1px 3px rgba(0,0,0,0.1);}',
+          '.pause-resume-indicator.right{transform:translateX(36px);}',
+          '.pause-resume-group .controls-btn{border-radius:0;border:none;box-shadow:none;margin:0;background-color:transparent;width:36px;height:36px;position:relative;z-index:1;}',
+          '.pause-resume-group .controls-btn:first-child{border-radius:18px 0 0 18px;}',
+          '.pause-resume-group .controls-btn:last-child{border-radius:0 18px 18px 0;}',
           '.controls-btn{width:36px;height:36px;border-radius:50%;border:none;background-color:VAR_CONTROLS_BG;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;color:VAR_CONTROLS_ITEM_COLOR;transition:background-color .2s ease,opacity .2s ease;box-shadow:0 2px 8px rgba(0,0,0,0.15);border:1px solid VAR_CONTROLS_BORDER;}',
           '.controls-btn:hover:not(:disabled){background-color:VAR_CONTROLS_ITEM_HOVER_BG;}',
+          '.pause-resume-group .controls-btn:hover:not(:disabled){background-color:transparent;color:#409EFF;}',
           '.controls-btn:disabled{cursor:not-allowed;opacity:0.4;}',
           '.controls-btn-icon{width:14px;height:14px;display:block;position:relative;}',
           '.icon-pause::before,.icon-pause::after{content:"";position:absolute;top:1px;bottom:1px;width:3px;border-radius:1px;background:currentColor;}',
@@ -830,7 +845,9 @@
           '.icon-connections{display:inline-block;width:14px;height:14px;position:relative;transition:transform .2s ease;}',
           '.icon-connections::before{content:"";position:absolute;width:0;height:0;border-style:solid;border-width:5px 5px 0 5px;border-color:currentColor transparent transparent transparent;left:2px;top:7px;}',
           '.icon-connections::after{content:"";position:absolute;width:2px;height:8px;background:currentColor;left:6px;top:3px;}',
-          '.controls-btn.active .icon-connections{transform:rotate(180deg);}'
+          '.controls-btn.active .icon-connections{transform:rotate(180deg);}',
+          '.icon-pin-svg{display:inline-block;width:14px;height:14px;transition:all .2s ease;margin-left:8px;}',
+          '.controls-btn.active .icon-pin-svg{color:#409EFF;}'
         ].join('').replace(/VAR_BODY_BG/g, bodyBg)
           .replace(/VAR_TEXT_COLOR/g, textColor)
           .replace(/VAR_STATUS_COLOR/g, statusColor)
@@ -843,6 +860,7 @@
           .replace(/VAR_CONTROLS_ITEM_COLOR/g, controlsItemColor)
           .replace(/VAR_CONTROLS_ITEM_HOVER_BG/g, controlsItemHoverBg)
           .replace(/VAR_TITLE_BTN_HOVER_BG/g, titleBtnHoverBg)
+          .replace(/VAR_INDICATOR_BG/g, indicatorBg)
           .replace(/VAR_PIECE_COMPLETED/g, '#67c23a')
           .replace(/VAR_PIECE_PARTIAL/g, '#e6a23c')
           .replace(/VAR_PIECE_PENDING/g, isDark ? '#4a4a4a' : '#dcdfe6')
@@ -872,7 +890,6 @@
           '<button class="tab-btn" data-tab="pieces" id="tabPieces" style="display:none;"></button>',
           '</div>',
           '<div class="tab-content active" id="contentInfo">',
-          '<div class="bar"><div class="bar-inner" id="bar"></div></div>',
           '<div class="meta">',
           '<div class="meta-line" id="size"></div>',
           '<div class="meta-line" id="speed"></div>',
@@ -905,13 +922,18 @@
           '</div>',
           '</div>',
           '</div>',
+          '<div class="bar-fixed"><div class="bar-inner" id="bar"></div></div>',
           '<div class="controls">',
           '<div class="controls-left">',
           '<button id="connToggle" class="controls-btn" title="连接详情"><span class="controls-btn-icon icon-connections"></span></button>',
+          '<button id="pinBtn" class="controls-btn" title="固定窗口"><svg class="icon-pin-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" width="14" height="14" fill="none"><path d="M 8.5 0.5 L 13.5 5.5 L 10.5 8.5 L 10 10.5 L 7.5 8 L 3.5 12 L 2.5 11 L 6.5 7 L 4 4.5 L 6 4 Z" fill="currentColor"/><circle cx="11" cy="3" r="1" fill="currentColor" opacity="0.35"/></svg></button>',
           '</div>',
           '<div class="controls-inner">',
-          '<button id="pause" class="controls-btn"><span class="controls-btn-icon icon-pause"></span></button>',
-          '<button id="resume" class="controls-btn"><span class="controls-btn-icon icon-resume"></span></button>',
+          '<div class="pause-resume-group">',
+          '<div class="pause-resume-indicator" id="pauseResumeIndicator"></div>',
+          '<button id="pause" class="controls-btn" title="暂停"><span class="controls-btn-icon icon-pause"></span></button>',
+          '<button id="resume" class="controls-btn" title="继续"><span class="controls-btn-icon icon-resume"></span></button>',
+          '</div>',
           '<button id="cancel" class="controls-btn"><span class="controls-btn-icon icon-cancel"></span></button>',
           '</div>',
           '</div>',
@@ -958,6 +980,7 @@
           'const pauseBtn = document.getElementById("pause");',
           'const resumeBtn = document.getElementById("resume");',
           'const cancelBtn = document.getElementById("cancel");',
+          'const pauseResumeIndicator = document.getElementById("pauseResumeIndicator");',
           'const connToggleBtn = document.getElementById("connToggle");',
           'const connectionsPanel = document.getElementById("connectionsPanel");',
           'const hostTooltipEl = document.getElementById("hostTooltip");',
@@ -1016,6 +1039,15 @@
           '      connToggleBtn.classList.toggle("active", isPanelOpen);',
           '    }',
           '    hideHostTooltip();',
+          '  };',
+          '}',
+          'const pinBtn = document.getElementById("pinBtn");',
+          'let isPinned = false;',
+          'if (pinBtn) {',
+          '  pinBtn.onclick = function() {',
+          '    isPinned = !isPinned;',
+          '    pinBtn.classList.toggle("active", isPinned);',
+          '    ipcRenderer.invoke("set-progress-window-always-on-top", isPinned).catch(() => {});',
           '  };',
           '}',
           'function switchTab(tab) {',
@@ -1112,9 +1144,18 @@
           '  if (barEl) {',
           '    barEl.style.backgroundColor = barInner;',
           '  }',
+          '  const barFixedEl = document.querySelector(".bar-fixed");',
+          '  if (barFixedEl) {',
+          '    barFixedEl.style.backgroundColor = barBg;',
+          '  }',
           '  const controlsEl = document.querySelector(".controls");',
           '  if (controlsEl) {',
           '    controlsEl.style.backgroundColor = bodyBg;',
+          '  }',
+          '  const pauseResumeGroupEl = document.querySelector(".pause-resume-group");',
+          '  if (pauseResumeGroupEl) {',
+          '    pauseResumeGroupEl.style.backgroundColor = controlsBg;',
+          '    pauseResumeGroupEl.style.borderColor = controlsBorder;',
           '  }',
           '  const dividerEls = document.querySelectorAll(".controls-divider");',
           '  if (dividerEls && dividerEls.length) {',
@@ -1126,12 +1167,18 @@
           '  if (btnEls && btnEls.length) {',
           '    btnEls.forEach(el => {',
           '      el.style.color = controlsItemColor;',
-          '      el.style.backgroundColor = controlsBg;',
+          '      if (!el.closest(".pause-resume-group")) {',
+          '        el.style.backgroundColor = controlsBg;',
+          '      }',
           '    });',
           '  }',
           '  const styleEl = document.getElementById("dynamic-theme-style");',
           '  if (styleEl) {',
-          '    styleEl.textContent = ".title-btn:hover{background-color:" + titleBtnHoverBg + ";}.controls-btn:hover:not(:disabled){background-color:" + controlsItemHoverBg + ";}";',
+          '    styleEl.textContent = ".title-btn:hover{background-color:" + titleBtnHoverBg + ";}.controls-btn:hover:not(:disabled):not(.pause-resume-group .controls-btn){background-color:" + controlsItemHoverBg + ";}";',
+          '  }',
+          '  const indicatorBg = payload.indicatorBg || "#e8e8e8";',
+          '  if (pauseResumeIndicator) {',
+          '    pauseResumeIndicator.style.backgroundColor = indicatorBg;',
           '  }',
           '  const connSummaryEl = document.querySelector(".conn-summary");',
           '  if (connSummaryEl) {',
@@ -1401,12 +1448,17 @@
           '  if (pauseBtn) {',
           '    pauseBtn.title = payload.pauseText || "";',
           '    pauseBtn.disabled = !payload.canPause;',
-          '    pauseBtn.style.display = payload.showPause ? \'flex\' : \'none\';',
           '  }',
           '  if (resumeBtn) {',
           '    resumeBtn.title = payload.resumeText || "";',
           '    resumeBtn.disabled = !payload.canResume;',
-          '    resumeBtn.style.display = payload.showResume ? \'flex\' : \'none\';',
+          '  }',
+          '  if (pauseResumeIndicator) {',
+          '    if (payload.isPaused) {',
+          '      pauseResumeIndicator.classList.remove("right");',
+          '    } else {',
+          '      pauseResumeIndicator.classList.add("right");',
+          '    }',
           '  }',
           '  if (cancelBtn) {',
           '    cancelBtn.title = payload.cancelText || "";',

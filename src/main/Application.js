@@ -321,52 +321,128 @@ export default class Application extends EventEmitter {
         }
 
         if (url.startsWith('/linkcore/ext-config')) {
-          try {
-            const interceptAllDownloads = !!this.configManager.getUserConfig('extension-intercept-all-downloads', false)
-            const silentDownload = !!this.configManager.getUserConfig('extension-silent-download', false)
-            const shiftToggleEnabled = !!this.configManager.getUserConfig('extension-shift-toggle-enabled', false)
-            const skipRaw = this.configManager.getUserConfig('extension-skip-file-extensions', '')
-            let skipFileExtensions = []
-            if (typeof skipRaw === 'string') {
-              const normalizeSkipExt = (x) => removeExtensionDot(`${x}`.trim().toLowerCase())
-              skipFileExtensions = skipRaw.split(/[,;\n]/).map(normalizeSkipExt).filter(Boolean)
-            } else if (Array.isArray(skipRaw)) {
-              const normalizeSkipExt = (x) => removeExtensionDot(`${x}`.trim().toLowerCase())
-              skipFileExtensions = skipRaw.map(normalizeSkipExt).filter(Boolean)
+          if (req.method === 'GET') {
+            try {
+              const interceptAllDownloads = !!this.configManager.getUserConfig('extension-intercept-all-downloads', false)
+              const silentDownload = !!this.configManager.getUserConfig('extension-silent-download', false)
+              const shiftToggleEnabled = !!this.configManager.getUserConfig('extension-shift-toggle-enabled', false)
+              const minFileSize = Number(this.configManager.getUserConfig('extension-min-file-size', 0)) || 0
+              const skipRaw = this.configManager.getUserConfig('extension-skip-file-extensions', '')
+              let skipFileExtensions = []
+              if (typeof skipRaw === 'string') {
+                const normalizeSkipExt = (x) => removeExtensionDot(`${x}`.trim().toLowerCase())
+                skipFileExtensions = skipRaw.split(/[,;\n]/).map(normalizeSkipExt).filter(Boolean)
+              } else if (Array.isArray(skipRaw)) {
+                const normalizeSkipExt = (x) => removeExtensionDot(`${x}`.trim().toLowerCase())
+                skipFileExtensions = skipRaw.map(normalizeSkipExt).filter(Boolean)
+              }
+
+              const excludeDomainsRaw = this.configManager.getUserConfig('extension-exclude-domains', '')
+              let excludeDomains = []
+              if (typeof excludeDomainsRaw === 'string') {
+                excludeDomains = excludeDomainsRaw.split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
+              } else if (Array.isArray(excludeDomainsRaw)) {
+                excludeDomains = excludeDomainsRaw.map(x => `${x}`.trim()).filter(Boolean)
+              }
+
+              const videoSnifferEnabled = this._videoSnifferConfig.enabled
+              const videoSnifferFormats = this._videoSnifferConfig.formats
+              const videoSnifferAutoCombine = this._videoSnifferConfig.autoCombine
+              const theme = this.configManager.getUserConfig('theme', APP_THEME.AUTO)
+              const systemTheme = this.themeManager ? this.themeManager.getSystemTheme() : null
+              const effectiveTheme = theme === APP_THEME.AUTO ? (systemTheme || APP_THEME.LIGHT) : theme
+
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({
+                interceptAllDownloads,
+                silentDownload,
+                shiftToggleEnabled,
+                minFileSize,
+                skipFileExtensions,
+                excludeDomains,
+                videoSnifferEnabled,
+                videoSnifferFormats,
+                videoSnifferAutoCombine,
+                theme,
+                effectiveTheme
+              }))
+            } catch (err) {
+              res.writeHead(500, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({
+                interceptAllDownloads: false,
+                silentDownload: false,
+                shiftToggleEnabled: false,
+                minFileSize: 0,
+                skipFileExtensions: [],
+                excludeDomains: [],
+                videoSnifferEnabled: false,
+                videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts'],
+                videoSnifferAutoCombine: true,
+                theme: APP_THEME.AUTO,
+                effectiveTheme: APP_THEME.LIGHT
+              }))
             }
+          } else if (req.method === 'POST') {
+            let body = ''
+            req.on('data', (chunk) => {
+              body += chunk
+            })
+            req.on('end', async () => {
+              try {
+                const payload = body ? JSON.parse(body) : {}
 
-            const videoSnifferEnabled = this._videoSnifferConfig.enabled
-            const videoSnifferFormats = this._videoSnifferConfig.formats
-            const videoSnifferAutoCombine = this._videoSnifferConfig.autoCombine
-            const theme = this.configManager.getUserConfig('theme', APP_THEME.AUTO)
-            const systemTheme = this.themeManager ? this.themeManager.getSystemTheme() : null
-            const effectiveTheme = theme === APP_THEME.AUTO ? (systemTheme || APP_THEME.LIGHT) : theme
+                if (payload.excludeDomains !== undefined) {
+                  const current = this.configManager.getUserConfig('extension-exclude-domains', '')
+                  const newDomains = Array.isArray(payload.excludeDomains)
+                    ? payload.excludeDomains
+                    : (payload.excludeDomains || '').split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
 
-            res.writeHead(200, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({
-              interceptAllDownloads,
-              silentDownload,
-              shiftToggleEnabled,
-              skipFileExtensions,
-              videoSnifferEnabled,
-              videoSnifferFormats,
-              videoSnifferAutoCombine,
-              theme,
-              effectiveTheme
-            }))
-          } catch (err) {
-            res.writeHead(500, { 'Content-Type': 'application/json' })
-            res.end(JSON.stringify({
-              interceptAllDownloads: false,
-              silentDownload: false,
-              shiftToggleEnabled: false,
-              skipFileExtensions: [],
-              videoSnifferEnabled: false,
-              videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts'],
-              videoSnifferAutoCombine: true,
-              theme: APP_THEME.AUTO,
-              effectiveTheme: APP_THEME.LIGHT
-            }))
+                  const existingDomains = current
+                    ? current.split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
+                    : []
+
+                  const allDomains = new Set([...existingDomains, ...newDomains])
+                  // 使用逗号分隔保存，符合 ConfigManager 的期望格式
+                  this.configManager.setUserConfig('extension-exclude-domains', Array.from(allDomains).join(','))
+
+                  // 通知渲染进程配置已更新
+                  this.sendCommandToAll('preference:update-from-extension')
+                }
+
+                if (payload.skipFileExtensions !== undefined) {
+                  const current = this.configManager.getUserConfig('extension-skip-file-extensions', '')
+                  const newExts = Array.isArray(payload.skipFileExtensions)
+                    ? payload.skipFileExtensions
+                    : (payload.skipFileExtensions || '').split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
+
+                  const existingExts = current
+                    ? current.split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
+                    : []
+
+                  const removeExtensionDot = (x) => {
+                    let s = `${x}`.trim()
+                    while (s.startsWith('.')) {
+                      s = s.substring(1)
+                    }
+                    return s.toLowerCase()
+                  }
+
+                  const allExts = new Set([...existingExts.map(removeExtensionDot), ...newExts.map(removeExtensionDot)])
+                  // 使用逗号分隔保存，符合 ConfigManager 的期望格式
+                  this.configManager.setUserConfig('extension-skip-file-extensions', Array.from(allExts).join(','))
+
+                  // 通知渲染进程配置已更新
+                  this.sendCommandToAll('preference:update-from-extension')
+                }
+
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true }))
+              } catch (err) {
+                console.error('[LinkCore] Failed to update ext config:', err)
+                res.writeHead(500, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false }))
+              }
+            })
           }
           return
         }
@@ -3481,6 +3557,20 @@ export default class Application extends EventEmitter {
         }
       } catch (e) {
         logger.warn('[Motrix] Failed to resize progress window:', e.message)
+      }
+      return { success: false }
+    })
+
+    // Set progress window always on top
+    ipcMain.handle('set-progress-window-always-on-top', async (event, isPinned) => {
+      try {
+        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        if (win && typeof win.setAlwaysOnTop === 'function') {
+          win.setAlwaysOnTop(isPinned)
+          return { success: true }
+        }
+      } catch (e) {
+        logger.warn('[Motrix] Failed to set progress window always on top:', e.message)
       }
       return { success: false }
     })

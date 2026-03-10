@@ -200,6 +200,8 @@ export default class ConfigManager {
         'extension-intercept-all-downloads': false,
         'extension-silent-download': false,
         'extension-skip-file-extensions': '',
+        'extension-exclude-domains': '',
+        'extension-min-file-size': 0,
         'extension-shift-toggle-enabled': false,
         'sidebar-layout-mode': 'floating',
         'task-plan-type': 'complete',

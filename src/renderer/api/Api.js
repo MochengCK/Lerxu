@@ -783,6 +783,17 @@ export default class Api {
       })
   }
 
+  // 获取BT任务的追踪器统计信息
+  fetchTaskTrackers (params = {}) {
+    const { gid } = params
+    const args = compactUndefined([gid])
+    return this.client.call('getTrackers', ...args)
+      .catch((error) => {
+        console.log('[Motrix] fetchTaskTrackers fail:', error.message)
+        return []
+      })
+  }
+
   pauseTask (params = {}) {
     const { gid } = params
     const args = compactUndefined([gid])

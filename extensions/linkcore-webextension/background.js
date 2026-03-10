@@ -8,6 +8,7 @@ const extConfigDefaults = {
   interceptAllDownloads: false,
   silentDownload: false,
   skipFileExtensions: [],
+  minFileSize: 0,
   shiftToggleEnabled: false,
   videoSnifferEnabled: true,
   videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts'],
@@ -316,8 +317,11 @@ const syncExtConfigFromClient = async () => {
     const interceptAllDownloads = !!data.interceptAllDownloads
     const silentDownload = !!data.silentDownload
     const shiftToggleEnabled = !!data.shiftToggleEnabled
+    const minFileSize = Number(data.minFileSize) || 0
     const rawList = Array.isArray(data.skipFileExtensions) ? data.skipFileExtensions : []
     const skipFileExtensions = rawList.map(x => `${x}`.trim().toLowerCase()).filter(Boolean)
+    const rawDomainList = Array.isArray(data.excludeDomains) ? data.excludeDomains : []
+    const excludeDomains = rawDomainList.map(x => `${x}`.trim()).filter(Boolean)
     
     // 视频嗅探器配置
     const videoSnifferEnabled = data.videoSnifferEnabled !== undefined ? !!data.videoSnifferEnabled : true
@@ -340,6 +344,8 @@ const syncExtConfigFromClient = async () => {
       interceptAllDownloads,
       silentDownload,
       skipFileExtensions,
+      excludeDomains,
+      minFileSize,
       shiftToggleEnabled,
       videoSnifferEnabled,
       videoSnifferFormats,
@@ -837,6 +843,164 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     handleAddFromContent()
     return true
   }
+
+  if (msg && msg.type === 'addExcludeDomain' && msg.domain) {
+    const handleAddExcludeDomain = async () => {
+      try {
+        // 先获取当前配置
+        const currentConfig = await tryChannel('/linkcore/ext-config', {
+          method: 'GET'
+        }, 3000)
+        
+        let excludeDomains = []
+        if (currentConfig && currentConfig.resp) {
+          const data = await currentConfig.resp.json()
+          if (Array.isArray(data.excludeDomains)) {
+            excludeDomains = data.excludeDomains
+          }
+        }
+        
+        const domain = msg.domain.toLowerCase().trim()
+        const existingIndex = excludeDomains.findIndex(d => d.toLowerCase().trim() === domain)
+        
+        if (existingIndex !== -1) {
+          // 域名已存在，移除它
+          excludeDomains.splice(existingIndex, 1)
+          const result = await tryChannel('/linkcore/ext-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ excludeDomains })
+          }, 3000)
+          
+          if (result && result.resp && result.resp.ok) {
+            sendResponse({ ok: true, removed: true })
+          } else {
+            sendResponse({ ok: false })
+          }
+        } else {
+          // 域名不存在，添加它
+          excludeDomains.push(domain)
+          const result = await tryChannel('/linkcore/ext-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ excludeDomains })
+          }, 3000)
+          
+          if (result && result.resp && result.resp.ok) {
+            sendResponse({ ok: true, added: true })
+          } else {
+            sendResponse({ ok: false })
+          }
+        }
+      } catch (e) {
+        console.error('[Background] Failed to add/remove exclude domain:', e)
+        sendResponse({ ok: false })
+      }
+    }
+    handleAddExcludeDomain()
+    return true
+  }
+
+  if (msg && msg.type === 'getExcludeDomains') {
+    const handleGetExcludeDomains = async () => {
+      try {
+        const result = await tryChannel('/linkcore/ext-config', {
+          method: 'GET'
+        }, 3000)
+        
+        if (result && result.resp) {
+          const data = await result.resp.json()
+          sendResponse({ excludeDomains: data.excludeDomains || [] })
+        } else {
+          sendResponse({ excludeDomains: [] })
+        }
+      } catch (e) {
+        console.error('[Background] Failed to get exclude domains:', e)
+        sendResponse({ excludeDomains: [] })
+      }
+    }
+    handleGetExcludeDomains()
+    return true
+  }
+
+  if (msg && msg.type === 'addSkipFileType' && msg.fileType) {
+    const handleAddSkipFileType = async () => {
+      try {
+        const result = await tryChannel('/linkcore/ext-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ skipFileExtensions: [msg.fileType] })
+        }, 3000)
+        
+        if (result && result.resp && result.resp.ok) {
+          sendResponse({ ok: true })
+        } else {
+          sendResponse({ ok: false })
+        }
+      } catch (e) {
+        console.error('[Background] Failed to add skip file type:', e)
+        sendResponse({ ok: false })
+      }
+    }
+    handleAddSkipFileType()
+    return true
+  }
+
+  if (msg && msg.type === 'addSkipFileTypes' && Array.isArray(msg.fileTypes)) {
+    const handleAddSkipFileTypes = async () => {
+      let response = { ok: false, error: 'unknown' }
+      try {
+        console.log('[Background] Adding skip file types:', msg.fileTypes)
+        
+        // 先获取当前配置
+        const currentConfig = await tryChannel('/linkcore/ext-config', {
+          method: 'GET'
+        }, 5000)
+        
+        let skipFileExtensions = []
+        if (currentConfig && currentConfig.resp) {
+          const data = await currentConfig.resp.json()
+          console.log('[Background] Current config data:', data)
+          if (Array.isArray(data.skipFileExtensions)) {
+            skipFileExtensions = data.skipFileExtensions
+          }
+        }
+        
+        // 合并并去重（与程序逻辑一致）
+        const allExtensions = [...skipFileExtensions, ...msg.fileTypes]
+        const uniqueExtensions = Array.from(new Set(allExtensions))
+        
+        console.log('[Background] Sending skipFileExtensions:', uniqueExtensions)
+        
+        const result = await tryChannel('/linkcore/ext-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ skipFileExtensions: uniqueExtensions })
+        }, 5000)
+        
+        console.log('[Background] POST result:', result)
+        
+        if (result && result.resp && result.resp.ok) {
+          response = { ok: true, added: msg.fileTypes.length }
+        } else {
+          console.error('[Background] POST failed, result:', result)
+          response = { ok: false, error: 'POST failed' }
+        }
+      } catch (e) {
+        console.error('[Background] Failed to add skip file types:', e)
+        response = { ok: false, error: e.message }
+      }
+      
+      // 确保总是发送响应
+      try {
+        sendResponse(response)
+      } catch (e) {
+        console.error('[Background] Failed to send response:', e)
+      }
+    }
+    handleAddSkipFileTypes()
+    return true
+  }
 })
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   let url = info.linkUrl || info.srcUrl || info.pageUrl
@@ -870,6 +1034,39 @@ chrome.downloads.onCreated.addListener((item) => {
     if (!effectiveAutoHijack) return
     const url = item && item.url ? item.url : ''
     if (!url || !/^https?:/i.test(url)) return
+    
+    // 检查是否在排除域名列表中
+    try {
+      const downloadUrl = new URL(url)
+      const downloadDomain = downloadUrl.hostname
+      
+      // 检查 referer 域名
+      let refererDomain = ''
+      if (item.referrer) {
+        try {
+          const refererUrl = new URL(item.referrer)
+          refererDomain = refererUrl.hostname
+        } catch (e) {}
+      }
+      
+      // 获取排除域名列表
+      const excludeDomains = Array.isArray(extConfig.excludeDomains) ? extConfig.excludeDomains : []
+      
+      // 检查下载域名或 referer 域名是否在排除列表中
+      const isDomainExcluded = excludeDomains.some(domain => {
+        const normalizedDomain = domain.toLowerCase().trim()
+        return downloadDomain.toLowerCase().includes(normalizedDomain) || 
+               (refererDomain && refererDomain.toLowerCase().includes(normalizedDomain))
+      })
+      
+      if (isDomainExcluded) {
+        console.log('[LinkCore] Domain excluded, skipping download:', downloadDomain)
+        return
+      }
+    } catch (e) {
+      console.error('[LinkCore] Error checking excluded domain:', e)
+    }
+    
     try {
       let name = ''
       if (item && item.filename) {
@@ -885,6 +1082,26 @@ chrome.downloads.onCreated.addListener((item) => {
       const ext = name && name.indexOf('.') !== -1 ? name.split('.').pop().toLowerCase() : ''
       if (ext && Array.isArray(extConfig.skipFileExtensions) && extConfig.skipFileExtensions.includes(ext)) {
         return
+      }
+      
+      // 检查文件大小限制（minFileSize 单位为 MB）
+      const minFileSizeMB = Number(extConfig.minFileSize) || 0
+      if (minFileSizeMB > 0) {
+        // 获取文件大小（字节）
+        // totalBytes 是文件总大小，如果未知则为 -1
+        const totalBytes = item.totalBytes || 0
+        const fileSizeMB = totalBytes / (1024 * 1024)
+        
+        // 如果已知文件大小且小于最小限制，跳过拦截
+        if (totalBytes > 0 && fileSizeMB < minFileSizeMB) {
+          console.log('[LinkCore] File size (' + fileSizeMB.toFixed(2) + 'MB) below minimum (' + minFileSizeMB + 'MB), skipping:', url)
+          return
+        }
+        
+        // 如果文件大小未知（totalBytes 为 0 或 -1），继续拦截
+        if (totalBytes <= 0) {
+          console.log('[LinkCore] File size unknown, will intercept anyway:', url)
+        }
       }
     } catch (e) {
     }

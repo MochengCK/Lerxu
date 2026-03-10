@@ -4,12 +4,8 @@ Icon.register({
   'preference-file': {
     'width': 24,
     'height': 24,
-    'paths': [{
-      'd': 'M6,3h9l5,5v11c0,1.1-0.9,2-2,2H6c-1.1,0-2-0.9-2-2V5C4,3.9,4.9,3,6,3z M14,4.5V9h4.5L14,4.5z'
-    }, {
-      'd': 'M7.5,13.5h9v2h-9v-2z'
-    }, {
-      'd': 'M7.5,16.5h6.5v2H7.5V16.5z'
-    }]
+    'raw': `<svg viewBox="0 0 24 24">
+  <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M14,2H6C4.9,2,4,2.9,4,4v16c0,1.1,0.9,2,2,2h12c1.1,0,2-0.9,2-2V8L14,2z M13,3.5V9h5.5L13,3.5z M7,12h10v2H7V12z M7,15h7v2H7V15z"/>
+</svg>`
   }
 })

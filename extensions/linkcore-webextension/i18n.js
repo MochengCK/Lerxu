@@ -14,7 +14,16 @@ const translations = {
     autoHijack: "Auto-hijack browser downloads",
     connected: "Connected",
     disconnected: "Disconnected",
-    contextMenuDownload: "Download with LinkCore"
+    contextMenuDownload: "Download with LinkCore",
+    labelExcludeCurrentSite: "Exclude this site",
+    labelRemoveFromExclude: "Restore download",
+    labelAdded: "Added",
+    labelRemoved: "Removed",
+    labelSuccess: "Success",
+    labelFailed: "Failed",
+    labelAdd: "Add",
+    placeholderInputExt: "Enter file extension",
+    placeholderExample: "Example: exe, zip, rar"
   },
   zh_CN: {
     extensionName: "LinkCore Download Manager",
@@ -30,7 +39,16 @@ const translations = {
     autoHijack: "自动接管浏览器下载",
     connected: "已连接",
     disconnected: "未连接",
-    contextMenuDownload: "使用 LinkCore 下载"
+    contextMenuDownload: "使用 LinkCore 下载",
+    labelExcludeCurrentSite: "不接管此网站",
+    labelRemoveFromExclude: "恢复接管",
+    labelAdded: "已添加",
+    labelRemoved: "已移除",
+    labelSuccess: "成功",
+    labelFailed: "操作失败",
+    labelAdd: "添加",
+    placeholderInputExt: "输入文件扩展名",
+    placeholderExample: "示例: exe, zip, rar"
   },
   zh_TW: {
     extensionName: "LinkCore Download Manager",

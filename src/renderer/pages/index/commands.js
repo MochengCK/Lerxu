@@ -213,6 +213,7 @@ commands.register('application:select-all-task', selectAllTask)
 commands.register('application:show-task-detail', showTaskDetail)
 
 commands.register('application:update-preference-config', fetchPreference)
+commands.register('preference:update-from-extension', fetchPreference)
 commands.register('application:update-system-theme', updateSystemTheme)
 commands.register('application:update-theme', updateTheme)
 commands.register('application:update-locale', updateLocale)

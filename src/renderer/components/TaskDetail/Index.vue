@@ -77,7 +77,7 @@
       <div v-show="activeTab === 'activity'">
         <mo-task-activity ref="taskGraphic" :task="task" />
       </div>
-      <div v-show="activeTab === 'trackers'" v-if="isBT">
+      <div v-show="activeTab === 'trackers'" v-if="isBT" class="task-detail-pane">
         <mo-task-trackers :task="task" />
       </div>
       <div v-show="activeTab === 'peers'" v-if="isBT" class="task-detail-pane">

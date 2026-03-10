@@ -485,13 +485,74 @@
                   {{ $t('preferences.extension-shift-toggle-enabled') }}
                 </el-checkbox>
               </div>
+              <div class="settings-divider" style="margin-top: 16px; margin-bottom: 8px;"></div>
               <div class="form-item-sub" style="margin-top: 8px;">
                 {{ $t('preferences.extension-skip-file-extensions') }}
-                <el-input
-                  v-model="form.extensionSkipFileExtensions"
-                  @change="autoSaveForm"
-                  :placeholder="$t('preferences.extension-skip-file-extensions-tips')"
-                />
+                <div class="extension-tag-input" @click="focusExtensionInput">
+                  <transition-group name="tag-fade" tag="div" class="tags-container">
+                    <el-tag
+                      v-for="ext in extensionTags"
+                      :key="ext"
+                      closable
+                      size="small"
+                      @close="removeExtension(ext)"
+                      class="extension-tag">
+                      {{ ext }}
+                    </el-tag>
+                  </transition-group>
+                  <input
+                    ref="extensionInput"
+                    v-model="extensionInput"
+                    type="text"
+                    class="extension-input"
+                    :placeholder="extensionTags.length === 0 ? $t('preferences.extension-skip-file-extensions-tips') : ''"
+                    @keydown.enter="addExtension"
+                    @keydown.delete="handleDeleteKey"
+                    @blur="addExtension"
+                  />
+                </div>
+              </div>
+              <div class="form-item-sub" style="margin-top: 16px;">
+                {{ $t('preferences.extension-exclude-domains') }}
+                <div class="extension-tag-input" @click="focusDomainInput">
+                  <transition-group name="tag-fade" tag="div" class="tags-container">
+                    <el-tag
+                      v-for="domain in domainTags"
+                      :key="domain"
+                      closable
+                      size="small"
+                      @close="removeDomain(domain)"
+                      class="extension-tag">
+                      {{ domain }}
+                    </el-tag>
+                  </transition-group>
+                  <input
+                    ref="domainInput"
+                    v-model="domainInput"
+                    type="text"
+                    class="extension-input"
+                    :placeholder="domainTags.length === 0 ? $t('preferences.extension-exclude-domains-tips') : ''"
+                    @keydown.enter="addDomain"
+                    @keydown.delete="handleDomainDeleteKey"
+                    @blur="addDomain"
+                  />
+                </div>
+              </div>
+              <div class="form-item-sub" style="margin-top: 16px;">
+                {{ $t('preferences.extension-min-file-size') }}
+                <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                  <el-input-number
+                    v-model="form.extensionMinFileSize"
+                    controls-position="right"
+                    :min="0"
+                    :max="10240"
+                    :step="1"
+                    :precision="0"
+                    size="small"
+                    style="flex: 1; max-width: 150px;"
+                  />
+                  <span style="color: var(--text-secondary);">MB</span>
+                </div>
               </div>
               <div class="form-item-sub" style="margin-top: 16px;">
                 <el-button
@@ -969,6 +1030,7 @@
     changedConfig,
     checkIsNeedRestart,
     convertLineToComma,
+    convertCommaToLine,
     diffConfig,
     extractSpeedUnit
   } from '@shared/utils'
@@ -1075,6 +1137,8 @@
       extensionInterceptAllDownloads,
       extensionSilentDownload,
       extensionSkipFileExtensions,
+      extensionExcludeDomains,
+      extensionMinFileSize,
       extensionShiftToggleEnabled,
       runMode,
       seedRatio,
@@ -1167,7 +1231,9 @@
       resumeAllWhenAppLaunched,
       extensionInterceptAllDownloads: extensionInterceptAllDownloads || false,
       extensionSilentDownload: extensionSilentDownload || false,
-      extensionSkipFileExtensions: extensionSkipFileExtensions || '',
+      extensionSkipFileExtensions: convertCommaToLine(extensionSkipFileExtensions || ''),
+      extensionExcludeDomains: convertCommaToLine(extensionExcludeDomains || ''),
+      extensionMinFileSize: typeof extensionMinFileSize === 'number' ? extensionMinFileSize : 0,
       extensionShiftToggleEnabled: extensionShiftToggleEnabled || false,
       runMode,
       seedRatio,
@@ -1296,7 +1362,9 @@
         hasNoResults: false,
         collapseTagsBackgroundUiOpacityScope: false,
         collapseTagsBackgroundUiFrostedBlurScope: false,
-        textMeasureCanvas: null
+        textMeasureCanvas: null,
+        extensionInput: '',
+        domainInput: ''
       }
     },
     computed: {
@@ -1317,6 +1385,26 @@
       },
       maxConcurrentDownloads () {
         return ENGINE_MAX_CONCURRENT_DOWNLOADS
+      },
+      extensionTags () {
+        const value = this.form.extensionSkipFileExtensions || ''
+        if (!value.trim()) return []
+
+        // 支持逗号和换行符分隔
+        return value
+          .split(/[\n,]+/)
+          .map(ext => ext.trim())
+          .filter(ext => ext.length > 0)
+      },
+      domainTags () {
+        const value = this.form.extensionExcludeDomains || ''
+        if (!value.trim()) return []
+
+        // 支持逗号和换行符分隔
+        return value
+          .split(/[\n,]+/)
+          .map(domain => domain.trim())
+          .filter(domain => domain.length > 0)
       },
       maxOverallDownloadLimitParsed: {
         get () {
@@ -1550,6 +1638,10 @@
         },
         immediate: true
       },
+      'form.extensionExcludeDomains' (newVal) {
+        // 当配置变化时，更新表单显示
+        // 这个 watcher 确保从浏览器扩展添加的域名能实时显示在界面上
+      },
       form: {
         handler () {
           // Only save if form has changed from original
@@ -1569,6 +1661,21 @@
         if (this.form.maxConnectionPerServer > val) {
           this.form.maxConnectionPerServer = val
           this.formOriginal.maxConnectionPerServer = val
+        }
+      },
+      'config.extensionExcludeDomains' (newVal) {
+        // Update form when extension exclude domains changes externally
+        if (newVal !== undefined && newVal !== this.form.extensionExcludeDomains) {
+          this.form.extensionExcludeDomains = newVal
+          this.formOriginal.extensionExcludeDomains = newVal
+        }
+      },
+      'config.extensionSkipFileExtensions' (newVal) {
+        // Update form when extension skip file extensions changes externally
+        if (newVal !== undefined && newVal !== this.form.extensionSkipFileExtensions) {
+          // 将逗号分隔格式转换为换行符格式
+          this.form.extensionSkipFileExtensions = convertCommaToLine(newVal)
+          this.formOriginal.extensionSkipFileExtensions = convertCommaToLine(newVal)
         }
       },
       // 监控语言变化，更新localeChanged状态
@@ -1594,9 +1701,23 @@
     mounted () {
       window.addEventListener('resize', this.updateUiScopeSelectCollapse)
       this.updateUiScopeSelectCollapse()
+      // 使用 ipcRenderer 直接监听从浏览器扩展更新配置的命令
+      if (this.$electron && this.$electron.ipcRenderer) {
+        this._extensionUpdateHandler = (event, command) => {
+          if (command === 'preference:update-from-extension') {
+            console.log('[Basic] Received preference:update-from-extension, syncing config...')
+            this.syncFormConfig()
+          }
+        }
+        this.$electron.ipcRenderer.on('command', this._extensionUpdateHandler)
+      }
     },
     beforeDestroy () {
       window.removeEventListener('resize', this.updateUiScopeSelectCollapse)
+      // 移除 ipcRenderer 监听
+      if (this.$electron && this.$electron.ipcRenderer && this._extensionUpdateHandler) {
+        this.$electron.ipcRenderer.removeListener('command', this._extensionUpdateHandler)
+      }
     },
     methods: {
       measureTextWidth (text, font) {
@@ -2440,6 +2561,120 @@
         this.form.dir = dir
         this.autoSaveForm()
       },
+      addExtension () {
+        const input = this.extensionInput.trim()
+        if (!input) return
+
+        // 分割扩展名（支持多种分隔符：逗号、分号、空格）
+        const newExtensions = input
+          .split(/[,，;；\s]+/)
+          .map(ext => ext.trim().toLowerCase().replace(/^\./, '')) // 移除开头的点并转小写
+          .filter(ext => ext.length > 0)
+
+        if (newExtensions.length === 0) {
+          this.extensionInput = ''
+          return
+        }
+
+        // 获取现有扩展名
+        const existingExtensions = this.extensionTags
+
+        // 合并并去重
+        const allExtensions = [...existingExtensions, ...newExtensions]
+        const uniqueExtensions = Array.from(new Set(allExtensions))
+
+        // 更新表单（使用换行符分隔）
+        this.form.extensionSkipFileExtensions = uniqueExtensions.join('\n')
+
+        // 清空输入框
+        this.extensionInput = ''
+
+        // 保存
+        this.autoSaveForm()
+      },
+      removeExtension (ext) {
+        // 从列表中移除指定扩展名
+        const extensions = this.extensionTags.filter(e => e !== ext)
+
+        // 更新表单（使用换行符分隔）
+        this.form.extensionSkipFileExtensions = extensions.join('\n')
+
+        // 保存
+        this.autoSaveForm()
+      },
+      focusExtensionInput () {
+        // 点击容器时聚焦到输入框
+        this.$nextTick(() => {
+          if (this.$refs.extensionInput) {
+            this.$refs.extensionInput.focus()
+          }
+        })
+      },
+      handleDeleteKey (event) {
+        // 当输入框为空且按下删除键时，删除最后一个标签
+        if (this.extensionInput === '' && this.extensionTags.length > 0) {
+          event.preventDefault()
+          const lastExt = this.extensionTags[this.extensionTags.length - 1]
+          this.removeExtension(lastExt)
+        }
+      },
+      addDomain () {
+        const input = this.domainInput.trim()
+        if (!input) return
+
+        // 分割域名（支持多种分隔符：逗号、分号、空格）
+        const newDomains = input
+          .split(/[,，;；\s]+/)
+          .map(domain => domain.trim().toLowerCase())
+          .filter(domain => domain.length > 0)
+
+        if (newDomains.length === 0) {
+          this.domainInput = ''
+          return
+        }
+
+        // 获取现有域名
+        const existingDomains = this.domainTags
+
+        // 合并并去重
+        const allDomains = [...existingDomains, ...newDomains]
+        const uniqueDomains = Array.from(new Set(allDomains))
+
+        // 更新表单（使用换行符分隔）
+        this.form.extensionExcludeDomains = uniqueDomains.join('\n')
+
+        // 清空输入框
+        this.domainInput = ''
+
+        // 保存
+        this.autoSaveForm()
+      },
+      removeDomain (domain) {
+        // 从列表中移除指定域名
+        const domains = this.domainTags.filter(d => d !== domain)
+
+        // 更新表单（使用换行符分隔）
+        this.form.extensionExcludeDomains = domains.join('\n')
+
+        // 保存
+        this.autoSaveForm()
+      },
+      focusDomainInput () {
+        // 点击容器时聚焦到输入框
+        this.$nextTick(() => {
+          if (this.$refs.domainInput) {
+            this.$refs.domainInput.focus()
+          }
+        })
+      },
+      handleDomainDeleteKey (event) {
+        // 当输入框为空且按下删除键时，删除最后一个标签
+        if (this.domainInput === '' && this.domainTags.length > 0) {
+          event.preventDefault()
+          const lastDomain = this.domainTags[this.domainTags.length - 1]
+          this.removeDomain(lastDomain)
+        }
+      },
       handleNativeDirectorySelected (dir) {
         this.form.dir = dir
         this.$store.dispatch('preference/recordHistoryDirectory', dir)
@@ -2512,14 +2747,23 @@
         this.autoSaveForm()
       },
       syncFormConfig () {
+        console.log('[Basic] syncFormConfig called')
+
         this.$store.dispatch('preference/fetchPreference')
           .then((config) => {
+            console.log('[Basic] Fetched config:', config)
             this.form = initForm(config)
             this.formOriginal = cloneDeep(this.form)
+            console.log('[Basic] Form updated:', this.form)
           })
       },
       submitForm (formName) {
-        this.$refs[formName].validate((valid) => {
+        const form = this.$refs[formName]
+        if (!form) {
+          console.error('[Motrix] form ref not found:', formName)
+          return false
+        }
+        form.validate((valid) => {
           if (!valid) {
             console.error('[Motrix] preference form valid:', valid)
             return false
@@ -2534,6 +2778,8 @@
             autoHideWindow,
             btAutoDownloadContent,
             btTracker,
+            extensionSkipFileExtensions,
+            extensionExcludeDomains,
             rpcListenPort
           } = data
 
@@ -2547,6 +2793,16 @@
             data.btTracker = reduceTrackerString(convertLineToComma(btTracker))
           }
 
+          if (extensionSkipFileExtensions) {
+            // 将换行符格式转换为逗号分隔格式
+            data.extensionSkipFileExtensions = convertLineToComma(extensionSkipFileExtensions)
+          }
+
+          if (extensionExcludeDomains) {
+            // 将换行符格式转换为逗号分隔格式
+            data.extensionExcludeDomains = convertLineToComma(extensionExcludeDomains)
+          }
+
           if (rpcListenPort === EMPTY_STRING) {
             data.rpcListenPort = this.rpcDefaultPort
           }
@@ -2556,7 +2812,10 @@
           this.$store.dispatch('preference/save', data)
             .then(() => {
               this.$store.dispatch('app/fetchEngineOptions')
-              this.syncFormConfig()
+              // 不立即调用 syncFormConfig，避免覆盖正在编辑的数据
+              // this.syncFormConfig()
+              // 只更新 formOriginal，保持 form 不变
+              this.formOriginal = cloneDeep(this.form)
               // Don't show success message for auto-save to avoid constant notifications
             })
             .catch(() => {
@@ -2618,6 +2877,214 @@
 </script>
 
 <style lang="scss" scoped>
+.extension-tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background-color: #fff;
+  min-height: 32px;
+  cursor: text;
+  transition: border-color 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+
+  &:hover {
+    border-color: #c0c4cc;
+  }
+
+  &:focus-within {
+    border-color: #5b5bfa;
+  }
+}
+
+.tags-container {
+  display: contents;
+}
+
+// 标签进入和离开动画
+.tag-fade-enter-active {
+  animation: tag-fade-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.tag-fade-leave-active {
+  animation: tag-fade-out 0.2s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.tag-fade-move {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes tag-fade-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes tag-fade-out {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+
+.theme-dark .extension-tag-input {
+  background-color: #373737;
+  border-color: #5f5f5f;
+
+  &:hover {
+    border-color: #6f6f6f;
+  }
+
+  &:focus-within {
+    border-color: #5b5bfa;
+  }
+}
+
+.extension-tag {
+  margin: 0 !important;
+  flex-shrink: 0;
+  background-color: transparent !important;
+  border-color: #c0c4cc !important;
+  color: #606266 !important;
+  transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 24px !important;
+  padding: 0 8px !important;
+  line-height: 24px !important;
+  box-sizing: border-box !important;
+
+  &:hover {
+    background-color: #f5f7fa !important;
+    border-color: #909399 !important;
+    color: #303133 !important;
+  }
+
+  :deep(span) {
+    line-height: 24px;
+    position: relative;
+    top: -2px;
+  }
+
+  :deep(.el-tag__content) {
+    line-height: 24px !important;
+    position: relative;
+    top: -2px;
+  }
+
+  :deep(.el-icon-close) {
+    color: #909399 !important;
+    transition: color 0.2s;
+    margin-left: 4px !important;
+    margin-right: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    padding: 0 !important;
+    width: 14px !important;
+    height: 14px !important;
+    line-height: 14px !important;
+    text-align: center !important;
+    border-radius: 50%;
+    font-size: 12px !important;
+    vertical-align: middle !important;
+    display: inline-block !important;
+    position: relative !important;
+    top: 0 !important;
+    transform: translateY(0) !important;
+
+    &:hover {
+      background-color: #e4e7ed !important;
+      color: #606266 !important;
+    }
+
+    &::before {
+      display: inline-block;
+      vertical-align: middle;
+    }
+  }
+}
+
+.theme-dark .extension-tag {
+  border-color: #606266 !important;
+  color: #e5e5e5 !important;
+
+  &:hover {
+    background-color: #2a2a2a !important;
+    border-color: #909399 !important;
+    color: #ffffff !important;
+  }
+
+  :deep(.el-icon-close) {
+    color: #8c8c8c;
+
+    &:hover {
+      background-color: #3a3a3a;
+      color: #e5e5e5;
+    }
+  }
+}
+
+.extension-input {
+  flex: 1;
+  min-width: 120px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: #606266;
+  padding: 2px 4px;
+  line-height: 1.5;
+
+  &::placeholder {
+    color: #c0c4cc;
+  }
+
+  &::selection {
+    background-color: rgba(91, 91, 250, 0.3);
+    color: inherit;
+  }
+}
+
+.theme-dark .extension-input {
+  color: #e5e5e5;
+
+  &::placeholder {
+    color: #8c8c8c;
+  }
+
+  &::selection {
+    background-color: rgba(91, 91, 250, 0.4);
+    color: inherit;
+  }
+}
+
+.tag-input-container {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--input-background-color);
+  min-height: 60px;
+}
+
+.tags-wrapper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .background-type-nav {
   display: flex;
   align-items: center;
