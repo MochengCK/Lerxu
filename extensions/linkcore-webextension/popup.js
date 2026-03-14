@@ -110,21 +110,25 @@ const checkCurrentSiteExcluded = async () => {
       const url = new URL(tab.url)
       const domain = url.hostname.toLowerCase().trim()
       
+      console.log('[Popup] Checking exclusion status for domain:', domain)
+      
       // 存储当前域名供悬停事件使用
       window.currentDomain = domain
       
       // 从客户端获取排除域名列表
       chrome.runtime.sendMessage({ type: 'getExcludeDomains' }, (response) => {
+        console.log('[Popup] Received excludeDomains:', response)
+        
         const excludeBtn = document.getElementById('excludeCurrentSiteBtn')
         const labelSpan = document.getElementById('labelExcludeCurrentSite')
         
         if (response && Array.isArray(response.excludeDomains)) {
           const isExcluded = response.excludeDomains.some(d => d.toLowerCase().trim() === domain)
           
+          console.log('[Popup] Is domain excluded?', isExcluded)
+          
           // 存储排除状态
           window.isCurrentSiteExcluded = isExcluded
-          
-          const labelSpan = document.getElementById('labelExcludeCurrentSite')
           
           if (isExcluded) {
             if (labelSpan) {
@@ -158,12 +162,13 @@ const setupQuickActionListeners = () => {
   let excludeBtnShowingDomain = false
   
   const showExcludeDomain = () => {
-    if (!window.currentDomain || window.isCurrentSiteExcluded) return
+    if (!window.currentDomain) return
     const labelSpan = document.getElementById('labelExcludeCurrentSite')
     if (labelSpan) {
       labelSpan.classList.add('slide-out')
       excludeBtnTimeout = setTimeout(() => {
-        labelSpan.textContent = window.currentDomain
+        // 如果已添加，显示"移除"；否则显示域名
+        labelSpan.textContent = window.isCurrentSiteExcluded ? (t('labelRemove') || '移除') : window.currentDomain
         labelSpan.classList.remove('slide-out')
         labelSpan.classList.add('prep-left')
         requestAnimationFrame(() => {
@@ -183,10 +188,11 @@ const setupQuickActionListeners = () => {
     const labelSpan = document.getElementById('labelExcludeCurrentSite')
     if (!labelSpan) return
     if (window.isCurrentSiteExcluded) {
-      labelSpan.classList.add('slide-out')
+      // "移除"文字从左边滑出
+      labelSpan.classList.add('slide-out-left')
       excludeBtnTimeout = setTimeout(() => {
         labelSpan.textContent = t('labelAdded') || '已添加'
-        labelSpan.classList.remove('slide-out')
+        labelSpan.classList.remove('slide-out-left')
         labelSpan.classList.add('prep-right')
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
@@ -196,6 +202,7 @@ const setupQuickActionListeners = () => {
         })
       }, 150)
     } else {
+      // 域名从左边滑出
       labelSpan.classList.add('slide-out-left')
       excludeBtnTimeout = setTimeout(() => {
         labelSpan.textContent = t('labelExcludeCurrentSite') || '不接管此网站'
@@ -214,6 +221,10 @@ const setupQuickActionListeners = () => {
   if (excludeBtn) {
     excludeBtn.addEventListener('mouseenter', () => {
       excludeBtnIsHovered = true
+      // 如果已添加，悬停时变为红色
+      if (window.isCurrentSiteExcluded) {
+        excludeBtn.style.backgroundColor = '#F56C6C'
+      }
       if (!excludeBtnShowingDomain) {
         showExcludeDomain()
       }
@@ -221,6 +232,10 @@ const setupQuickActionListeners = () => {
     
     excludeBtn.addEventListener('mouseleave', () => {
       excludeBtnIsHovered = false
+      // 恢复原来的颜色
+      if (window.isCurrentSiteExcluded) {
+        excludeBtn.style.backgroundColor = '#67C23A'
+      }
       if (excludeBtnTimeout) {
         clearTimeout(excludeBtnTimeout)
         excludeBtnTimeout = null
@@ -244,35 +259,45 @@ const setupQuickActionListeners = () => {
           const url = new URL(tab.url)
           const domain = url.hostname
           
+          console.log('[Popup] Toggling domain exclusion:', domain)
+          console.log('[Popup] Current exclusion status:', window.isCurrentSiteExcluded)
+          
           chrome.runtime.sendMessage({ 
             type: 'addExcludeDomain', 
             domain 
           }, (response) => {
+            console.log('[Popup] Response from background:', response)
             const labelSpan = document.getElementById('labelExcludeCurrentSite')
             if (response && response.ok) {
-              console.log('[Popup] Domain added to exclude list:', domain)
-              if (labelSpan) {
-                labelSpan.textContent = t('labelAdded') || '已添加'
+              if (response.added) {
+                console.log('[Popup] Domain added to exclude list:', domain)
+                if (labelSpan) {
+                  labelSpan.textContent = t('labelAdded') || '已添加'
+                }
+                excludeBtn.classList.add('added')
+                excludeBtn.style.backgroundColor = '#67C23A'
+                // 重置悬停状态标志
+                excludeBtnShowingDomain = false
+                setTimeout(() => {
+                  checkCurrentSiteExcluded()
+                }, 500)
+              } else if (response.removed) {
+                console.log('[Popup] Domain removed from exclude list:', domain)
+                // 移除后直接恢复初始状态，不显示"已移除"
+                if (labelSpan) {
+                  labelSpan.textContent = t('labelExcludeCurrentSite') || '不接管此网站'
+                }
+                excludeBtn.classList.remove('added')
+                excludeBtn.style.backgroundColor = ''
+                // 立即更新状态
+                window.isCurrentSiteExcluded = false
+                // 重置悬停状态标志，防止 mouseleave 时触发动画
+                excludeBtnShowingDomain = false
               }
-              excludeBtn.classList.add('added')
-              excludeBtn.style.backgroundColor = '#67C23A'
-              setTimeout(() => {
-                checkCurrentSiteExcluded()
-              }, 500)
-            } else if (response && response.removed) {
-              console.log('[Popup] Domain removed from exclude list:', domain)
-              if (labelSpan) {
-                labelSpan.textContent = t('labelRemoved') || '已移除'
-              }
-              excludeBtn.classList.remove('added')
-              excludeBtn.style.backgroundColor = '#E6A23C'
-              setTimeout(() => {
-                checkCurrentSiteExcluded()
-              }, 500)
             } else {
-              console.error('[Popup] Failed to add domain to exclude list')
+              console.error('[Popup] Failed to toggle domain exclusion, response:', response)
               if (labelSpan) {
-                labelSpan.textContent = t('labelFailed') || '添加失败'
+                labelSpan.textContent = t('labelFailed') || '操作失败'
               }
               excludeBtn.style.backgroundColor = '#F56C6C'
               setTimeout(() => {
@@ -285,7 +310,7 @@ const setupQuickActionListeners = () => {
         console.error('[Popup] Failed to add exclude domain:', e)
         const labelSpan = document.getElementById('labelExcludeCurrentSite')
         if (labelSpan) {
-          labelSpan.textContent = t('labelFailed') || '添加失败'
+          labelSpan.textContent = t('labelFailed') || '操作失败'
         }
         excludeBtn.style.backgroundColor = '#F56C6C'
         setTimeout(() => {

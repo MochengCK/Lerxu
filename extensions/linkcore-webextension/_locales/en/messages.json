@@ -54,5 +54,41 @@
   "contextMenuDownload": {
     "message": "Download with LinkCore",
     "description": "Context menu item text"
+  },
+  "labelExcludeCurrentSite": {
+    "message": "Don't intercept this site",
+    "description": "Label for exclude current site button"
+  },
+  "labelAdded": {
+    "message": "Added",
+    "description": "Domain added to exclusion list"
+  },
+  "labelRemove": {
+    "message": "Remove",
+    "description": "Label for remove domain button"
+  },
+  "labelRemoved": {
+    "message": "Removed",
+    "description": "Domain removed from exclusion list"
+  },
+  "labelFailed": {
+    "message": "Failed",
+    "description": "Operation failed message"
+  },
+  "labelAdd": {
+    "message": "Add",
+    "description": "Label for add button"
+  },
+  "labelSuccess": {
+    "message": "Success",
+    "description": "Operation success message"
+  },
+  "placeholderInputExt": {
+    "message": "Enter file extension",
+    "description": "Input placeholder"
+  },
+  "placeholderExample": {
+    "message": "Example: exe, zip, rar",
+    "description": "Input example placeholder"
   }
 }

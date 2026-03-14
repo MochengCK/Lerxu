@@ -847,6 +847,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === 'addExcludeDomain' && msg.domain) {
     const handleAddExcludeDomain = async () => {
       try {
+        console.log('[Background] Received addExcludeDomain request for:', msg.domain)
+        
         // 先获取当前配置
         const currentConfig = await tryChannel('/linkcore/ext-config', {
           method: 'GET'
@@ -860,11 +862,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         }
         
+        console.log('[Background] Current excludeDomains:', excludeDomains)
+        
         const domain = msg.domain.toLowerCase().trim()
         const existingIndex = excludeDomains.findIndex(d => d.toLowerCase().trim() === domain)
         
+        console.log('[Background] Domain to toggle:', domain)
+        console.log('[Background] Existing index:', existingIndex)
+        
         if (existingIndex !== -1) {
           // 域名已存在，移除它
+          console.log('[Background] Removing domain from list')
           excludeDomains.splice(existingIndex, 1)
           const result = await tryChannel('/linkcore/ext-config', {
             method: 'POST',
@@ -873,12 +881,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }, 3000)
           
           if (result && result.resp && result.resp.ok) {
+            console.log('[Background] Domain removed successfully')
             sendResponse({ ok: true, removed: true })
           } else {
+            console.error('[Background] Failed to remove domain')
             sendResponse({ ok: false })
           }
         } else {
           // 域名不存在，添加它
+          console.log('[Background] Adding domain to list')
           excludeDomains.push(domain)
           const result = await tryChannel('/linkcore/ext-config', {
             method: 'POST',
@@ -887,8 +898,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }, 3000)
           
           if (result && result.resp && result.resp.ok) {
+            console.log('[Background] Domain added successfully')
             sendResponse({ ok: true, added: true })
           } else {
+            console.error('[Background] Failed to add domain')
             sendResponse({ ok: false })
           }
         }

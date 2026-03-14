@@ -392,24 +392,21 @@ export default class Application extends EventEmitter {
                 const payload = body ? JSON.parse(body) : {}
 
                 if (payload.excludeDomains !== undefined) {
-                  const current = this.configManager.getUserConfig('extension-exclude-domains', '')
+                  // 直接使用 POST 请求中的完整列表替换现有配置
+                  // 这样可以支持添加和移除操作
                   const newDomains = Array.isArray(payload.excludeDomains)
                     ? payload.excludeDomains
                     : (payload.excludeDomains || '').split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
 
-                  const existingDomains = current
-                    ? current.split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
-                    : []
-
-                  const allDomains = new Set([...existingDomains, ...newDomains])
                   // 使用逗号分隔保存，符合 ConfigManager 的期望格式
-                  this.configManager.setUserConfig('extension-exclude-domains', Array.from(allDomains).join(','))
+                  this.configManager.setUserConfig('extension-exclude-domains', newDomains.join(','))
 
                   // 通知渲染进程配置已更新
                   this.sendCommandToAll('preference:update-from-extension')
                 }
 
                 if (payload.skipFileExtensions !== undefined) {
+                  // 对于文件扩展名，使用合并逻辑（添加新的，保留现有的）
                   const current = this.configManager.getUserConfig('extension-skip-file-extensions', '')
                   const newExts = Array.isArray(payload.skipFileExtensions)
                     ? payload.skipFileExtensions

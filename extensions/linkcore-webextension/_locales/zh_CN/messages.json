@@ -54,5 +54,41 @@
   "contextMenuDownload": {
     "message": "使用 LinkCore 下载",
     "description": "右键菜单项文本"
+  },
+  "labelExcludeCurrentSite": {
+    "message": "不接管此网站",
+    "description": "排除当前网站按钮标签"
+  },
+  "labelAdded": {
+    "message": "已添加",
+    "description": "域名已添加到排除列表"
+  },
+  "labelRemove": {
+    "message": "移除",
+    "description": "移除域名按钮标签"
+  },
+  "labelRemoved": {
+    "message": "已移除",
+    "description": "域名已从排除列表移除"
+  },
+  "labelFailed": {
+    "message": "操作失败",
+    "description": "操作失败提示"
+  },
+  "labelAdd": {
+    "message": "添加",
+    "description": "添加按钮标签"
+  },
+  "labelSuccess": {
+    "message": "成功",
+    "description": "操作成功提示"
+  },
+  "placeholderInputExt": {
+    "message": "输入文件扩展名",
+    "description": "输入框占位符"
+  },
+  "placeholderExample": {
+    "message": "示例: exe, zip, rar",
+    "description": "输入框示例占位符"
   }
 }
