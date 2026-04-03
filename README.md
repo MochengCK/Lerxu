@@ -226,4 +226,4 @@ If you encounter any problems or have questions:
 
 ## 📄 License
 
-This project is open-sourced under the GNU General Public License v3.0 [(GPL-3.0)](LICENSE)
+This project is open source under the Apache License v2.0
