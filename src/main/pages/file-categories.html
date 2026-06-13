@@ -29,13 +29,13 @@
 
     @media (prefers-color-scheme: dark) {
       body {
-        background: #1a1a1a;
+        background: #343434;
         color: #e0e0e0;
       }
     }
 
     body.dark {
-      background: #1a1a1a;
+      background: #343434;
       color: #e0e0e0;
     }
 
@@ -51,6 +51,7 @@
       align-items: center;
       justify-content: space-between;
       padding: 0 12px;
+      padding-left: 78px;
       background: transparent;
       z-index: 1000;
       -webkit-app-region: drag;
@@ -61,6 +62,16 @@
       /* 仅在开启自定义框架时显示 */
     }
 
+    body.macos .title-bar {
+      justify-content: flex-end;
+      padding-top: 8px;
+      padding-right: 8px;
+    }
+
+    body.macos .title-actions {
+      display: none;
+    }
+
     .title-text {
       font-size: 13px;
       font-weight: 500;
@@ -68,6 +79,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       margin-right: 8px;
+      line-height: 32px;
       color: #303133;
       -webkit-app-region: drag;
     }
@@ -202,7 +214,7 @@
 
     body.dark input[type="text"] {
       border-color: #4a4a4a;
-      background: #1a1a1a;
+      background: #343434;
       color: #e0e0e0;
     }
 
@@ -244,7 +256,7 @@
     }
 
     body.dark button:disabled {
-      background: #4a4a4a;
+      background: #3a3a3a;
     }
 
     button.danger {
@@ -310,11 +322,11 @@
     }
 
     body.dark .button-secondary {
-      background: #606266;
+      background: #3a3a3a;
     }
 
     body.dark .button-secondary:hover {
-      background: #7a7c80;
+      background: #444444;
     }
 
     .empty-tip {
@@ -354,7 +366,7 @@
     }
 
     body.dark .confirm-dialog-content {
-      background: #2a2a2a;
+      background: #3a3a3a;
     }
 
     .confirm-dialog-title {
@@ -404,6 +416,10 @@
         }
         if (appConfig && appConfig['hide-app-menu']) {
           document.body.classList.add('use-custom-frame')
+        }
+        if (process && process.platform === 'darwin') {
+          document.body.classList.add('use-custom-frame')
+          document.body.classList.add('macos')
         }
       } catch (e) { }
     })()

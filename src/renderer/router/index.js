@@ -96,16 +96,6 @@ const preferenceChildren = [
     props: {
       subnav: { current: 'lab' }
     }
-  },
-  {
-    path: 'bittorrent',
-    components: {
-      subnav: () => import('@/components/Subnav/PreferenceSubnav'),
-      form: () => import('@/components/Preference/BitTorrent')
-    },
-    props: {
-      subnav: { current: 'bittorrent' }
-    }
   }
 ]
 

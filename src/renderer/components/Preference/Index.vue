@@ -91,7 +91,6 @@
   import SubnavSwitcher from '@/components/Subnav/SubnavSwitcher'
   import Aside from '@/components/Aside/Index'
   import PreferenceAdvanced from '@/components/Preference/Advanced'
-  import PreferenceBitTorrent from '@/components/Preference/BitTorrent'
 
   export default {
     name: 'mo-content-preference',
@@ -188,8 +187,7 @@
           { key: 'task', title: this.$t('preferences.task-manage'), route: `${base}/task` },
           { key: 'file', title: this.$t('preferences.file-manage'), route: `${base}/file` },
           { key: 'security', title: this.$t('preferences.security'), route: `${base}/security` },
-          { key: 'advanced', title: this.$t('preferences.advanced'), route: `${base}/advanced` },
-          { key: 'bittorrent', title: this.$t('preferences.bittorrent'), route: `${base}/bittorrent` }
+          { key: 'advanced', title: this.$t('preferences.advanced'), route: `${base}/advanced` }
         ]
       },
       title () {
@@ -342,8 +340,7 @@
         }
         const index = { ...this.preferenceSearchIndex }
         const entries = [
-          { key: 'advanced', component: PreferenceAdvanced },
-          { key: 'bittorrent', component: PreferenceBitTorrent }
+          { key: 'advanced', component: PreferenceAdvanced }
         ]
         entries.forEach(entry => {
           const keys = this.extractPreferenceKeysFromComponent(entry.component)

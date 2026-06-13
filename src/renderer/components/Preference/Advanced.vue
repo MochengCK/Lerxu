@@ -556,33 +556,6 @@
           </el-form-item>
         </div>
 
-        <!-- 优先级引擎设置卡片 -->
-        <div class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.priority-engine') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.enablePriorityEngine" @change="handlePriorityEngineChange">
-                {{ $t('preferences.enable-priority-engine') }}
-              </el-checkbox>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="el-form-item__info" style="margin-bottom: 12px;">
-                {{ $t('preferences.priority-engine-tips') }}
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24" style="margin-top: 12px;">
-              <div class="el-form-item__info">
-                <strong>{{ $t('preferences.priority-how-it-works') }}</strong>
-                <ul style="margin: 8px 0 0 16px; padding: 0; list-style: disc;">
-                  <li>{{ $t('preferences.priority-rule-1') }}</li>
-                  <li>{{ $t('preferences.priority-rule-3') }}</li>
-                  <li>{{ $t('preferences.priority-rule-auto-min') }}</li>
-                </ul>
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
         <!-- 视频合并设置卡片 -->
         <div class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.video-merge') }}</h3>
@@ -895,7 +868,6 @@
       autoSyncTrackerTime,
       btTracker,
       dhtListenPort,
-      enablePriorityEngine,
       enableUpnp,
       hideAppMenu,
       lastCheckUpdateTime,
@@ -946,7 +918,6 @@
       autoSyncTrackerTime: autoSyncTrackerTime !== undefined ? autoSyncTrackerTime : (config['auto-sync-tracker-time'] !== undefined ? config['auto-sync-tracker-time'] : '00:00'),
       btTracker: convertCommaToLine(btTracker),
       dhtListenPort,
-      enablePriorityEngine: enablePriorityEngine !== undefined ? enablePriorityEngine : false,
       enableUpnp,
       hideAppMenu,
       lastCheckUpdateTime,
@@ -1287,10 +1258,6 @@
       }
     },
     methods: {
-      handlePriorityEngineChange (val) {
-        this.$electron.ipcRenderer.send('command', 'application:toggle-priority-engine', val)
-        this.autoSaveForm()
-      },
       // GitHub 镜像延迟检测
       async checkGithubMirrorLatency (mirror) {
         // 使用一个小的测试文件来检测延迟

@@ -735,24 +735,6 @@
           </el-form-item>
         </div>
 
-        <!-- BT通知卡片 -->
-        <div class="preference-card" data-category="transfer">
-          <h3 class="card-title">{{ $t('preferences.bt-level-up-notification-label') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <el-switch
-                v-model="form.btLevelUpNotification"
-                :active-text="$t('preferences.bt-level-up-notification-label')"
-                @change="autoSaveForm"
-              >
-              </el-switch>
-              <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.bt-level-up-notification-tips') }}
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
         <!-- 任务并发卡片 -->
         <div class="preference-card" data-category="task">
           <h3 class="card-title">{{ $t('preferences.task-manage') }}</h3>
@@ -1113,7 +1095,6 @@
       btForceEncryption,
       btIpBanList,
       btSaveMetadata,
-      btLevelUpNotification,
       dir,
       downloadingFileSuffix,
       engineMaxConnectionPerServer,
@@ -1207,7 +1188,6 @@
       btForceEncryption,
       btIpBanList: normalizeBtIpBanList(btIpBanList),
       btSaveMetadata,
-      btLevelUpNotification: btLevelUpNotification === undefined ? true : !!btLevelUpNotification,
       continue: config.continue,
       dir,
       downloadingFileSuffix,

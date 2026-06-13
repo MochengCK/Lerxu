@@ -45,7 +45,6 @@ import TouchBarManager from './ui/TouchBarManager'
 import TrayManager from './ui/TrayManager'
 import DockManager from './ui/DockManager'
 import ThemeManager from './ui/ThemeManager'
-import PriorityManager from './core/PriorityManager'
 
 export default class Application extends EventEmitter {
   constructor () {
@@ -118,8 +117,6 @@ export default class Application extends EventEmitter {
     this.initProtocolManager()
 
     this.initUpdaterManager()
-
-    this.initPriorityManager()
 
     this.handleCommands()
 
@@ -1096,7 +1093,11 @@ export default class Application extends EventEmitter {
     const key = 'custom-keymap'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
       logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
-      this.menuManager.setup(this.locale)
+      if (this.menuManager) {
+        this.menuManager.setup(this.locale)
+      } else {
+        logger.warn('[Motrix] menuManager not initialized')
+      }
     })
   }
 
@@ -1134,7 +1135,11 @@ export default class Application extends EventEmitter {
       }
 
       logger.info('[Motrix] setup protocols client:', newValue)
-      this.protocolManager.setup(newValue)
+      if (this.protocolManager) {
+        this.protocolManager.setup(newValue)
+      } else {
+        logger.warn('[Motrix] protocolManager not initialized')
+      }
     })
   }
 
@@ -1239,21 +1244,6 @@ export default class Application extends EventEmitter {
       logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
       if (this.updateManager && typeof this.updateManager.setAutoCheckEnabled === 'function') {
         this.updateManager.setAutoCheckEnabled(!!newValue)
-      }
-    })
-  }
-
-  watchPriorityEngineChange () {
-    const { userConfig } = this.configManager
-    const key = 'enablePriorityEngine'
-    this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
-      if (this.priorityManager) {
-        if (newValue) {
-          this.priorityManager.enable()
-        } else {
-          this.priorityManager.disable()
-        }
       }
     })
   }
@@ -1614,7 +1604,7 @@ export default class Application extends EventEmitter {
       this.emit('ready')
     })
 
-    if (is.macOS()) {
+    if (is.macOS() && this.touchBarManager) {
       this.touchBarManager.setup(page, win)
     }
   }
@@ -2099,20 +2089,6 @@ export default class Application extends EventEmitter {
       proxy
     })
     this.handleUpdaterEvents()
-  }
-
-  initPriorityManager () {
-    this.priorityManager = new PriorityManager({
-      configManager: this.configManager
-    })
-  }
-
-  startPriorityManager () {
-    if (!this.priorityManager) return
-
-    this.priorityManager.init({
-      engine: this.engineClient
-    })
   }
 
   handleUpdaterEvents () {
@@ -2958,22 +2934,15 @@ export default class Application extends EventEmitter {
         return
       }
       logger.info('[Motrix] setup protocols client:', protocols)
-      this.protocolManager.setup(protocols)
+      if (this.protocolManager) {
+        this.protocolManager.setup(protocols)
+      } else {
+        logger.warn('[Motrix] protocolManager not initialized')
+      }
     })
 
     this.on('application:open-external', (url) => {
       this.openExternal(url)
-    })
-
-    this.on('application:toggle-priority-engine', (enabled) => {
-      logger.info('[Motrix] toggle priority engine:', enabled)
-      if (this.priorityManager) {
-        if (enabled) {
-          this.priorityManager.enable()
-        } else {
-          this.priorityManager.disable()
-        }
-      }
     })
 
     this.on('task-progress:control', (payload = {}) => {
@@ -3146,9 +3115,6 @@ export default class Application extends EventEmitter {
       this.adjustMenu()
       this.scheduleCheckTaskPlan(2000)
 
-      // 启动优先级管理器
-      this.startPriorityManager()
-
       // 监听主窗口加载完成事件，确保前端组件已挂载后再发送更新状态
       const mainWindow = this.windowManager.getWindow('index')
       if (mainWindow) {
@@ -3174,7 +3140,6 @@ export default class Application extends EventEmitter {
     this.watchLocaleChange()
     this.watchThemeChange()
     this.watchAutoCheckUpdateChange()
-    this.watchPriorityEngineChange()
 
     this.on('download-status-change', (downloading) => {
       this.trayManager.handleDownloadStatusChange(downloading)
@@ -3196,11 +3161,6 @@ export default class Application extends EventEmitter {
       this.dockManager.openDock(path)
       this._taskPlanHasCompletionSinceEnabled = true
 
-      // 通知优先级管理器任务完成
-      if (this.priorityManager) {
-        this.priorityManager.onTaskComplete(task.gid)
-      }
-
       // 执行安全扫描
       this.performSecurityScan(task, path)
 
@@ -3211,10 +3171,6 @@ export default class Application extends EventEmitter {
     })
 
     this.on('download-start', (event) => {
-      // 通知优先级管理器任务开始
-      if (this.priorityManager) {
-        this.priorityManager.onTaskStart()
-      }
     })
 
     if (this.configManager.userConfig.get('show-progress-bar')) {
@@ -3507,23 +3463,6 @@ export default class Application extends EventEmitter {
         logger.error('[Motrix] write aria2.conf failed:', e.message)
         return { success: false, error: e.message, path: confPath }
       }
-    })
-
-    // 优先级管理相关
-    ipcMain.handle('priority:status', async () => {
-      if (this.priorityManager) {
-        const status = this.priorityManager.getStatus()
-        return { success: true, ...status }
-      }
-      return { success: false, error: 'PriorityManager not initialized' }
-    })
-
-    ipcMain.handle('priority:rebalance', async () => {
-      if (this.priorityManager) {
-        await this.priorityManager.rebalanceResources()
-        return { success: true }
-      }
-      return { success: false, error: 'PriorityManager not initialized' }
     })
 
     // Get progress window size

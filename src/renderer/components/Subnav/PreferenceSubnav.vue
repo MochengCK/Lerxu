@@ -28,7 +28,6 @@
   import '@/components/Icons/preference-task'
   import '@/components/Icons/preference-file'
   import '@/components/Icons/preference-security'
-  import '@/components/Icons/preference-bt'
 
   export default {
     name: 'mo-preference-subnav',
@@ -66,8 +65,7 @@
           { key: 'task', title: this.$t('preferences.task-manage'), icon: 'preference-task' },
           { key: 'file', title: this.$t('preferences.file-manage'), icon: 'preference-file' },
           { key: 'security', title: this.$t('preferences.security'), icon: 'preference-security' },
-          { key: 'advanced', title: this.$t('preferences.advanced'), icon: 'preference-advanced' },
-          { key: 'bittorrent', title: this.$t('preferences.bittorrent'), icon: 'preference-bt' }
+          { key: 'advanced', title: this.$t('preferences.advanced'), icon: 'preference-advanced' }
         ]
       },
       isChecking () {

@@ -545,19 +545,19 @@
             const systemTheme = appState && appState.systemTheme ? appState.systemTheme : APP_THEME.LIGHT
             const finalTheme = themeConfig === APP_THEME.AUTO ? systemTheme : themeConfig
             const isDark = finalTheme === APP_THEME.DARK
-            const bodyBg = isDark ? '#1f1f1f' : '#ffffff'
+            const bodyBg = isDark ? '#343434' : '#ffffff'
             const textColor = isDark ? '#e5e5e5' : '#303133'
             const statusColor = isDark ? '#c0c4cc' : '#606266'
             const metaColor = isDark ? '#b0b0b0' : '#909399'
             const barBg = isDark ? '#3a3a3a' : '#ebeef5'
             const barInner = '#409EFF'
-            const controlsBg = isDark ? '#252525' : '#ffffff'
+            const controlsBg = isDark ? '#3a3a3a' : '#ffffff'
             const controlsBorder = isDark ? '#4a4a4a' : '#dcdfe6'
             const controlsDivider = isDark ? '#555555' : '#e4e7ed'
             const controlsItemColor = isDark ? '#e5e5e5' : '#606266'
-            const controlsItemHoverBg = isDark ? '#333333' : '#f2f6fc'
+            const controlsItemHoverBg = isDark ? '#444444' : '#f2f6fc'
             const titleBtnHoverBg = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'
-            const indicatorBg = isDark ? '#3a3a3a' : '#e8e8e8'
+            const indicatorBg = isDark ? '#4a4a4a' : '#e8e8e8'
 
             if (typeof win.setBackgroundColor === 'function') {
               win.setBackgroundColor(bodyBg)
@@ -603,7 +603,7 @@
             const finalTheme = themeConfig === APP_THEME.AUTO ? systemTheme : themeConfig
             const isDark = finalTheme === APP_THEME.DARK
 
-            const bodyBg = isDark ? '#1a1a1a' : '#ffffff'
+            const bodyBg = isDark ? '#343434' : '#ffffff'
             if (typeof win.setBackgroundColor === 'function') {
               win.setBackgroundColor(bodyBg)
             }
@@ -735,7 +735,7 @@
         }
         this.openProgressWindowForTask(task)
       },
-      buildProgressWindowHtml (useCustomFrame = false) {
+      buildProgressWindowHtml (useCustomFrame = false, isMac = false) {
         const prefState = this.$store && this.$store.state && this.$store.state.preference
         const prefConfig = prefState && prefState.config ? prefState.config : {}
         const themeConfig = prefConfig.theme || APP_THEME.LIGHT
@@ -743,23 +743,24 @@
         const systemTheme = appState && appState.systemTheme ? appState.systemTheme : APP_THEME.LIGHT
         const finalTheme = themeConfig === APP_THEME.AUTO ? systemTheme : themeConfig
         const isDark = finalTheme === APP_THEME.DARK
-        const bodyBg = isDark ? '#1f1f1f' : '#ffffff'
+        const bodyBg = isDark ? '#343434' : '#ffffff'
         const textColor = isDark ? '#e5e5e5' : '#303133'
         const statusColor = isDark ? '#c0c4cc' : '#606266'
         const metaColor = isDark ? '#b0b0b0' : '#909399'
         const barBg = isDark ? '#3a3a3a' : '#ebeef5'
         const barInner = '#409EFF'
-        const controlsBg = isDark ? '#252525' : '#ffffff'
+        const controlsBg = isDark ? '#3a3a3a' : '#ffffff'
         const controlsBorder = isDark ? '#4a4a4a' : '#dcdfe6'
         const controlsDivider = isDark ? '#555555' : '#e4e7ed'
         const controlsItemColor = isDark ? '#e5e5e5' : '#606266'
-        const controlsItemHoverBg = isDark ? '#333333' : '#f2f6fc'
+        const controlsItemHoverBg = isDark ? '#444444' : '#f2f6fc'
         const titleBtnHoverBg = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'
-        const indicatorBg = isDark ? '#3a3a3a' : '#e8e8e8'
-        const titleBarStyle = useCustomFrame
-          ? '.title-bar{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;-webkit-app-region:drag;background-color:VAR_BODY_BG;}'
+        const indicatorBg = isDark ? '#4a4a4a' : '#e8e8e8'
+        const showTitleBar = useCustomFrame || isMac
+        const titleBarStyle = showTitleBar
+          ? `.title-bar{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;padding-left:${isMac ? '78px' : '16px'};-webkit-app-region:drag;background-color:VAR_BODY_BG;}`
           : '.title-bar{display:none;}'
-        const contentStyle = useCustomFrame
+        const contentStyle = showTitleBar
           ? '.content{box-sizing:border-box;padding:0 12px 12px 12px;height:calc(100vh - 26px);overflow-y:auto;}'
           : '.content{box-sizing:border-box;padding:0 12px 12px 12px;height:100vh;overflow-y:auto;}'
         const styles = [
@@ -774,6 +775,12 @@
           '.title-actions{display:flex;gap:4px;-webkit-app-region:no-drag;}',
           '.title-btn{width:18px;height:18px;border-radius:3px;border:none;background:transparent;color:VAR_TEXT_COLOR;cursor:pointer;padding:0;font-size:14px;line-height:18px;}',
           '.title-btn:hover{background-color:VAR_TITLE_BTN_HOVER_BG;}',
+          ...(isMac
+            ? [
+              '.title-bar{justify-content:flex-end !important;padding-top:6px;padding-right:8px;}',
+              '.title-actions{display:none !important;}'
+            ]
+            : []),
           '.tab-nav{display:flex;gap:0;margin-bottom:10px;border-radius:7px;overflow:hidden;border:none;background:VAR_TAB_BG;-webkit-app-region:no-drag;}',
           '.tab-btn{flex:1;padding:6px 12px;margin:0;border:none;border-radius:0;background:VAR_TAB_BG;color:VAR_TAB_COLOR;cursor:pointer;font-size:12px;transition:all .15s ease;appearance:none;-webkit-appearance:none;}',
           '.tab-btn:first-child{border-top-left-radius:6px;border-bottom-left-radius:6px;}',
@@ -1753,6 +1760,7 @@
         const hideAppMenu = !!prefConfig.hideAppMenu
         const isWin = process && process.platform === 'win32'
         const isLinux = process && process.platform === 'linux'
+        const isMac = process && process.platform === 'darwin'
         const useCustomFrame = hideAppMenu && (isWin || isLinux)
 
         // 移除已有的窗口引用
@@ -1788,7 +1796,8 @@
           maximizable: false,
           useContentSize: true,
           frame: !useCustomFrame,
-          backgroundColor: isDark ? '#1f1f1f' : '#ffffff',
+          titleBarStyle: isMac ? 'hiddenInset' : 'default',
+          backgroundColor: isDark ? '#343434' : '#ffffff',
           icon,
           // 确保窗口独立于主窗口，不会继承主窗口的最小化状态
           parent: null,
@@ -1806,7 +1815,7 @@
           this.progressWindows.delete(gid)
           this.progressTaskGids.delete(gid)
         })
-        const html = this.buildProgressWindowHtml(useCustomFrame)
+        const html = this.buildProgressWindowHtml(useCustomFrame, isMac)
         win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
         win.once('ready-to-show', () => {
           if (!this.isAliveWindow(win)) {
@@ -1949,6 +1958,7 @@
         const hideAppMenu = !!prefConfig.hideAppMenu
         const isWin = process && process.platform === 'win32'
         const isLinux = process && process.platform === 'linux'
+        const isMac = process && process.platform === 'darwin'
         const useCustomFrame = hideAppMenu && (isWin || isLinux)
 
         // Remove existing window reference
@@ -1978,7 +1988,8 @@
           maximizable: false,
           useContentSize: true,
           frame: !useCustomFrame,
-          backgroundColor: isDark ? '#1f1f1f' : '#ffffff',
+          titleBarStyle: isMac ? 'hiddenInset' : 'default',
+          backgroundColor: isDark ? '#343434' : '#ffffff',
           icon,
           parent: null,
           modal: false,
@@ -1995,7 +2006,7 @@
           this.completedTaskWindows.delete(gid)
         })
 
-        const html = this.buildCompletedTaskWindowHtml(task, useCustomFrame, isDark)
+        const html = this.buildCompletedTaskWindowHtml(task, useCustomFrame, isMac, isDark)
         win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
 
         win.once('ready-to-show', () => {
@@ -2036,7 +2047,7 @@
       },
 
       // Build HTML for completed task window
-      buildCompletedTaskWindowHtml (task, useCustomFrame = false, isDark = false) {
+      buildCompletedTaskWindowHtml (task, useCustomFrame = false, isMac = false, isDark = false) {
         // Get task name from files or bittorrent info
         let taskName = 'Unknown'
         const files = Array.isArray(task.files) ? task.files : []
@@ -2088,14 +2099,16 @@
         }
 
         const gid = task.gid || ''
-        const bgColor = isDark ? '#1a1a1a' : '#ffffff'
+        const bgColor = isDark ? '#343434' : '#ffffff'
         const textColor = isDark ? '#e0e0e0' : '#333333'
         const secondaryTextColor = isDark ? '#909399' : '#606266'
         const successColor = '#67c23a'
-        const buttonBg = isDark ? '#2a2a2a' : '#f5f7fa'
-        const buttonHoverBg = isDark ? '#3a3a3a' : '#e4e7ed'
+        const buttonBg = isDark ? '#3a3a3a' : '#f5f7fa'
+        const buttonHoverBg = isDark ? '#444444' : '#e4e7ed'
 
-        const titleBarHtml = useCustomFrame
+        const showTitleBar = useCustomFrame || isMac
+
+        const titleBarHtml = showTitleBar
           ? `
           <div class="title-bar">
             <span class="title-text">${this.$t('task.task-completed-title') || '下载完成'}</span>
@@ -2107,7 +2120,7 @@
           `
           : ''
 
-        const titleBarCss = useCustomFrame
+        const titleBarCss = showTitleBar
           ? `
           .title-bar {
             position: fixed;
@@ -2119,6 +2132,7 @@
             align-items: center;
             justify-content: space-between;
             padding: 0 12px;
+            padding-left: ${isMac ? '78px' : '12px'};
             background: ${bgColor};
             -webkit-app-region: drag;
             z-index: 1000;
@@ -2153,10 +2167,24 @@
             background-color: ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'};
             color: ${textColor};
           }
+          ${
+            isMac
+              ? `
+          .title-bar {
+            justify-content: flex-end;
+            padding-top: 4px;
+            padding-right: 8px;
+          }
+          .title-actions {
+            display: none;
+          }
+          `
+              : ''
+          }
         `
           : ''
 
-        const containerPadding = useCustomFrame ? '40px 16px 16px 16px' : '16px'
+        const containerPadding = showTitleBar ? '40px 16px 16px 16px' : '16px'
         const scriptEnd = '</' + 'script>'
 
         return `<!DOCTYPE html>
@@ -2283,11 +2311,11 @@
     // Listen for theme changes from main window
     ipcRenderer.on('theme-changed', (event, theme) => {
       const isDark = theme === 'dark'
-      const bgColor = isDark ? '#1a1a1a' : '#ffffff'
+      const bgColor = isDark ? '#343434' : '#ffffff'
       const textColor = isDark ? '#e0e0e0' : '#333333'
       const secondaryTextColor = isDark ? '#909399' : '#606266'
-      const buttonBg = isDark ? '#2a2a2a' : '#f5f7fa'
-      const buttonHoverBg = isDark ? '#3a3a3a' : '#e4e7ed'
+      const buttonBg = isDark ? '#3a3a3a' : '#f5f7fa'
+      const buttonHoverBg = isDark ? '#444444' : '#e4e7ed'
 
       document.body.style.background = bgColor
       document.body.style.color = textColor

@@ -24,13 +24,13 @@
 
     @media (prefers-color-scheme: dark) {
       body {
-        background: #1a1a1a;
+        background: #343434;
         color: #e0e0e0;
       }
     }
 
     body.dark {
-      background: #1a1a1a;
+      background: #343434;
       color: #e0e0e0;
     }
 
@@ -49,7 +49,7 @@
     }
 
     body.dark .container {
-      background: #1a1a1a;
+      background: #343434;
     }
 
     .form-item {
@@ -221,7 +221,7 @@
 
     body.dark input[type="text"] {
       border-color: #4a4a4a;
-      background: #2a2a2a;
+      background: #3a3a3a;
       color: #e0e0e0;
     }
 
@@ -268,7 +268,7 @@
     }
 
     body.dark .button-secondary {
-      background: #2a2a2a;
+      background: #3a3a3a;
       color: #b0b0b0;
       border-color: #4a4a4a;
     }
@@ -280,7 +280,7 @@
     }
 
     body.dark .button-secondary:hover {
-      background: #3a3a3a;
+      background: #444444;
       border-color: #409EFF;
       color: #409EFF;
     }
@@ -295,6 +295,7 @@
       align-items: center;
       justify-content: space-between;
       padding: 0 16px;
+      padding-left: 78px;
       background: #fff;
       z-index: 1000;
       transition: background 0.3s;
@@ -305,8 +306,18 @@
       -webkit-app-region: drag;
     }
 
+    body.macos .title-bar {
+      justify-content: flex-end;
+      padding-top: 10px;
+      padding-right: 8px;
+    }
+
+    body.macos .title-actions {
+      display: none;
+    }
+
     body.dark .title-bar {
-      background: #1a1a1a;
+      background: #343434;
     }
 
     .title-text {
@@ -316,6 +327,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       margin-right: 8px;
+      line-height: 26px;
       color: #303133;
       transition: color 0.3s;
     }
@@ -380,6 +392,10 @@
         }
         if (appConfig && appConfig['hide-app-menu']) {
           document.body.classList.add('use-custom-frame')
+        }
+        if (process && process.platform === 'darwin') {
+          document.body.classList.add('use-custom-frame')
+          document.body.classList.add('macos')
         }
       } catch (e) { }
     })()

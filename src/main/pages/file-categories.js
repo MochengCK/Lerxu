@@ -94,7 +94,7 @@
             log('Use custom frame:', useCustomFrame)
             if (useCustomFrame) {
               document.body.classList.add('use-custom-frame')
-            } else {
+            } else if (process && process.platform !== 'darwin') {
               document.body.classList.remove('use-custom-frame')
             }
           }
