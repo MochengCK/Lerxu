@@ -109,23 +109,17 @@
         :height="shouldMoveTitleToTitlebar ? '0' : '84'"
       >
         <h4
-          v-if="subnavMode !== 'title' && !shouldMoveTitleToTitlebar"
+          v-if="!shouldMoveTitleToTitlebar"
           class="task-title hidden-xs-only"
         >
           {{ title }}
         </h4>
         <h4
-          v-if="subnavMode === 'floating' && !shouldMoveTitleToTitlebar"
+          v-if="!shouldMoveTitleToTitlebar"
           class="task-title hidden-sm-and-up"
         >
           {{ title }}
         </h4>
-        <mo-subnav-switcher
-          v-if="subnavMode === 'title'"
-          :class="['task-subnav-switch', { 'task-subnav-switch--titlebar': shouldMoveTitleToTitlebar }]"
-          :title="title"
-          :subnavs="subnavs"
-        />
         <div
           :class="['task-category-select', { 'task-category-select--titlebar': shouldMoveTitleToTitlebar }]"
         >
@@ -262,7 +256,6 @@
   import TaskActions from '@/components/Task/TaskActions'
   import TaskList from '@/components/Task/TaskList'
   import Aside from '@/components/Aside/Index'
-  import SubnavSwitcher from '@/components/Subnav/SubnavSwitcher'
   import TaskSubnav from '@/components/Subnav/TaskSubnav'
   import CustomDatePicker from '@/components/Task/DatePicker'
   import '@/components/Icons/menu-task'
@@ -287,7 +280,6 @@
       [TaskActions.name]: TaskActions,
       [TaskList.name]: TaskList,
       [Aside.name]: Aside,
-      [SubnavSwitcher.name]: SubnavSwitcher,
       [TaskSubnav.name]: TaskSubnav,
       [CustomDatePicker.name]: CustomDatePicker
     },
@@ -337,7 +329,6 @@
       }),
       ...mapState('preference', {
         noConfirmBeforeDelete: state => state.config.noConfirmBeforeDeleteTask,
-        subnavMode: state => state.config.subnavMode || 'floating',
         sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating',
         prefTheme: state => state.config.theme,
         dateFilterFrosted: state => state.config.dateFilterFrosted,
@@ -355,8 +346,7 @@
         return this.showWindowActions && !this.isTitlebarCompact
       },
       shouldShowTitleBarText () {
-        // 三栏模式和悬浮模式都在标题栏显示分类名称
-        return this.shouldMoveTitleToTitlebar && this.subnavMode !== 'title'
+        return this.shouldMoveTitleToTitlebar
       },
       isTitlebarCompact () {
         const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
@@ -379,34 +369,22 @@
         return !this.isSmallWindow
       },
       showLeftFloatingNav () {
-        // 悬浮模式下显示左侧小图标导航
-        if (this.isThreeColumn) {
-          return false
-        }
-        if (this.subnavMode === 'title') {
-          return false
-        }
-        return this.subnavMode === 'floating'
+        return !this.isThreeColumn
       },
       showMainAside () {
-        // In three-column mode, the main aside is not shown;
-        // the subnav takes its place as the left sidebar
         return false
       },
       showThreeColumnSubnav () {
-        return this.isThreeColumn && this.subnavMode !== 'title'
+        return this.isThreeColumn
       },
       showSmallScreenNav () {
-        // 右侧小屏幕导航不再需要（已移到左侧）
         return false
       },
       showRightFloatingPanel () {
-        // In three-column mode, the right floating panel (date filter + nav icons)
-        // is completely hidden since the subnav is now on the left
         if (this.isThreeColumn) {
           return false
         }
-        return this.subnavMode === 'floating'
+        return true
       },
       subnavs () {
         return [
@@ -476,7 +454,6 @@
       status: 'onStatusChange',
       title: 'updateTitleBarText',
       showWindowActions: 'updateTitleBarText',
-      subnavMode: 'updateTitleBarText',
       isThreeColumn: 'updateTitleBarText',
       blockCategoryHoverOpen (val) {
         if (val) {
@@ -500,7 +477,6 @@
           isTitlebarCompact: this.isTitlebarCompact,
           hideAppMenu: this.hideAppMenu,
           windowWidth: this.windowWidth,
-          subnavMode: this.subnavMode,
           isThreeColumn: this.isThreeColumn,
           title: this.title,
           text: text
@@ -1210,7 +1186,7 @@
           return
         }
         // 悬浮模式：检测左侧小图标导航
-        if (!this.autoHideAside || this.subnavMode !== 'floating') {
+        if (!this.autoHideAside) {
           if (this.isSubnavProximityHovered) {
             this.isSubnavProximityHovered = false
           }

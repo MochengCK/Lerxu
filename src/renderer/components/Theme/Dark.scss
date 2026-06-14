@@ -223,6 +223,7 @@
     background-color: #373737;
     border-color: #5f5f5f;
     color: #eee;
+    border-radius: 6px;
 
     &:focus {
       outline: none;
@@ -242,15 +243,129 @@
 
   .el-input-group__append,
   .el-input-group__prepend {
-    background-color: #333;
-    border-color: #5f5f5f;
+    background-color: transparent !important;
     color: #e7e7e7;
+    position: relative;
+    border-color: #5f5f5f;
+    border-radius: 6px;
+    transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+
+  .el-input-group__prepend {
+    border-right: none !important;
+
+    &::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 6px;
+      bottom: 6px;
+      width: 1px;
+      background-color: #5f5f5f;
+      transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
+  }
+
+  .el-input-group__append {
+    border-left: none !important;
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 6px;
+      bottom: 6px;
+      width: 1px;
+      background-color: #5f5f5f;
+      transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
+  }
+
+  .el-input-group--prepend .el-input__inner,
+  .el-input-group--append .el-input__inner {
+    transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+
+  .el-input-group--prepend .el-input__inner {
+    border-left: none !important;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+
+  .el-input-group--prepend .el-input-group__prepend {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .el-input-group--append .el-input__inner {
+    border-right: none !important;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .el-input-group--append .el-input-group__append {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+
+  .el-input-group__prepend,
+  .el-input-group__append {
+    background-color: #373737 !important;
+  }
+
+  .el-input-group__prepend .el-button,
+  .el-input-group__append .el-button {
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+
+    &:hover,
+    &:focus,
+    &:active {
+      background-color: transparent !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+    }
+  }
+
+  .el-input-group:hover:not(:has(.el-input__inner:focus)) {
+    .el-input__inner {
+      border-color: #9b9b9b !important;
+    }
+    .el-input-group__prepend,
+    .el-input-group__append {
+      border-color: #9b9b9b !important;
+    }
+    .el-input-group__prepend::after,
+    .el-input-group__append::before {
+      background-color: #9b9b9b !important;
+    }
+  }
+
+  .el-input-group:has(.el-input__inner:focus),
+  .el-input-group:has(.el-input.is-focus),
+  .el-input-group:has(.el-input__inner.is-focus) {
+    .el-input__inner,
+    .el-input-group__prepend,
+    .el-input-group__append {
+      border-color: $--color-primary !important;
+    }
+    .el-input-group__prepend::after,
+    .el-input-group__append::before {
+      background-color: $--color-primary !important;
+    }
   }
 
   .el-input-number__increase,
   .el-input-number__decrease {
-    background-color: #333;
+    background-color: transparent;
     color: #e7e7e7;
+  }
+
+  .el-input-number__increase.is-disabled,
+  .el-input-number__decrease.is-disabled {
+    color: #666 !important;
+    cursor: not-allowed;
   }
 
   .el-input-number__decrease {
@@ -262,12 +377,101 @@
   }
 
   .el-input-number.is-controls-right .el-input-number__increase {
-    border-left-color: #5f5f5f;
+    background-color: transparent;
+    border-left: none;
     border-bottom-color: #5f5f5f;
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 6px;
+      bottom: 0;
+      width: 1px;
+      background-color: #5f5f5f;
+      transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
   }
 
   .el-input-number.is-controls-right .el-input-number__decrease {
-    border-left-color: #5f5f5f;
+    background-color: transparent;
+    border-left: none;
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 6px;
+      width: 1px;
+      background-color: #5f5f5f;
+      transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
+  }
+
+  .el-input-number.is-controls-right .el-input__inner,
+  .el-input-number.is-controls-right + .el-select .el-input__inner {
+    transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+
+  .el-input-number.is-controls-right + .el-select {
+    margin-left: -4px;
+    position: relative;
+
+    .el-input__inner {
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+    }
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      z-index: 1;
+      background-color: #5f5f5f;
+      transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
+  }
+
+  // 输入框悬停时，整体边框跟随变色（聚焦时除外）
+  .el-input-number.is-controls-right:hover:not(:has(.el-input.is-focus)) .el-input__inner,
+  .el-input-number.is-controls-right + .el-select:hover:not(:has(.el-input.is-focus)) .el-input__inner {
+    border-color: #9b9b9b !important;
+  }
+
+  // 输入框悬停/聚焦时，左边分割线高亮
+  .el-input-number.is-controls-right:hover:not(:has(.el-input.is-focus)) {
+    .el-input-number__increase::before,
+    .el-input-number__decrease::before {
+      background-color: #9b9b9b !important;
+    }
+  }
+
+  .el-input-number.is-controls-right .el-input.is-focus {
+    & .el-input__inner {
+      border-color: $--color-primary !important;
+    }
+    & ~ .el-input-number__increase::before,
+    & ~ .el-input-number__decrease::before {
+      background-color: $--color-primary !important;
+    }
+  }
+
+  // KB/MB选择框悬停/聚焦时，选择框左边横杠高亮
+  .el-input-number.is-controls-right + .el-select:hover:not(:has(.el-input.is-focus))::before {
+    background-color: #9b9b9b !important;
+  }
+
+  .el-input-number.is-controls-right + .el-select:has(.el-input.is-focus) {
+    .el-input__inner {
+      border-color: $--color-primary !important;
+    }
+    &::before {
+      background-color: $--color-primary !important;
+    }
   }
 
   .el-form-item__label,
@@ -324,6 +528,12 @@
   .el-select-dropdown {
     background-color: #3d3d3d;
     border-color: #606060;
+    border-radius: 6px;
+    overflow: hidden;
+
+    .popper__arrow {
+      display: none;
+    }
   }
 
   .el-time-panel,
@@ -331,6 +541,8 @@
     background-color: #3d3d3d;
     border-color: #606060;
     color: #eee;
+    border-radius: 6px;
+    overflow: hidden;
   }
 
   .el-time-panel__content::before,
@@ -340,6 +552,8 @@
 
   .el-time-spinner__item {
     color: #e6e6e6;
+    border-radius: 4px;
+    margin: 2px 4px;
 
     &.active:not(.disabled) {
       color: $--color-primary;
@@ -368,21 +582,52 @@
 
   .el-select-dropdown__item {
     color: #eee;
+    margin: 2px 6px;
+    border-radius: 4px;
 
     &.selected {
       color: $--color-primary;
+      font-weight: 500;
     }
 
     &.hover,
     &:hover {
-      background-color: $--color-primary;
-      color: #fff;
+      background-color: #4a4a4a;
+      border-radius: 4px;
+    }
+
+    &.selected:hover {
+      background-color: #4a4a4a !important;
     }
   }
 
   .el-select-dropdown.is-multiple .el-select-dropdown__item.selected {
     background-color: #3d3d3d;
     color: $--color-primary;
+  }
+
+  .el-message {
+    border-radius: 8px !important;
+    overflow: hidden;
+  }
+
+  .el-notification {
+    border-radius: 8px !important;
+    overflow: hidden;
+
+    .el-notification__group {
+      border-radius: 8px !important;
+    }
+  }
+
+  .el-message-box {
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .el-dialog {
+    border-radius: 8px;
+    overflow: hidden;
   }
 
   .el-upload-dragger {

@@ -106,50 +106,8 @@
         </div>
 
         <div class="preference-card" data-category="appearance">
-          <h3 class="card-title">{{ $t('preferences.task-progress-mode') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <el-form-item :label="$t('preferences.task-progress-mode')">
-                <el-select
-                  v-model="form.taskProgressMode"
-                  size="mini"
-                  @change="autoSaveForm"
-                >
-                  <el-option
-                    :label="$t('preferences.task-progress-mode-component')"
-                    value="component"
-                  />
-                  <el-option
-                    :label="$t('preferences.task-progress-mode-background')"
-                    value="background"
-                  />
-                </el-select>
-              </el-form-item>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <div class="preference-card" data-category="appearance">
           <h3 class="card-title">{{ $t('preferences.subnav-mode') }}</h3>
           <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <el-form-item :label="$t('preferences.subnav-mode')">
-                <el-select
-                  v-model="form.subnavMode"
-                  size="mini"
-                  @change="autoSaveForm"
-                >
-                  <el-option
-                    :label="$t('preferences.subnav-mode-floating')"
-                    value="floating"
-                  />
-                  <el-option
-                    :label="$t('preferences.subnav-mode-title')"
-                    value="title"
-                  />
-                </el-select>
-              </el-form-item>
-            </el-col>
             <el-col class="form-item-sub" :span="24">
               <el-form-item :label="$t('preferences.sidebar-layout-mode')">
                 <el-select
@@ -339,7 +297,7 @@
               <el-option
                 v-for="item in locales"
                 :key="item.value"
-                :label="item.label"
+                :label="item.value === 'auto' ? `${item.label} (${systemLocaleName})` : item.label"
                 :value="item.value">
               </el-option>
             </el-select>
@@ -558,7 +516,7 @@
         <div class="preference-card" data-category="transfer">
           <h3 class="card-title">{{ $t('preferences.transfer-settings') }}</h3>
           <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
+            <el-col class="form-item-sub speed-limit-row" :span="24">
               {{ $t('preferences.transfer-speed-upload') }}
               <el-input-number
                 v-model="maxOverallUploadLimitParsed"
@@ -581,7 +539,7 @@
                 </el-option>
               </el-select>
             </el-col>
-            <el-col class="form-item-sub" :span="24">
+            <el-col class="form-item-sub speed-limit-row" :span="24">
               {{ $t('preferences.transfer-speed-download') }}
               <el-input-number
                 v-model="maxOverallDownloadLimitParsed"
@@ -970,7 +928,7 @@
   import HistoryDirectory from '@/components/Preference/HistoryDirectory'
   import SelectDirectory from '@/components/Native/SelectDirectory'
   import ThemeSwitcher from '@/components/Preference/ThemeSwitcher'
-  import { availableLanguages, getLanguage } from '@shared/locales'
+  import { availableLanguages, getLanguage, getSystemLocaleName } from '@shared/locales'
   import { getLocaleManager } from '@/components/Locale'
   import {
     calcFormLabelWidth,
@@ -1092,7 +1050,6 @@
       showProgressBar,
       dateFilterFrosted,
       dateFilterFrostedBlur,
-      taskProgressMode,
       taskNotification,
       taskCompleteNotifyClickAction,
       showTaskCompletedWindow,
@@ -1113,7 +1070,6 @@
       setFileMtimeOnComplete,
       customKeymap,
       taskMultiSelectModifier,
-      subnavMode,
       sidebarLayoutMode,
       autoHideAside,
       autoHideSubnav,
@@ -1188,7 +1144,6 @@
       dateFilterFrostedBlur: (typeof dateFilterFrostedBlur === 'number' && Number.isFinite(dateFilterFrostedBlur))
         ? Math.min(Math.max(dateFilterFrostedBlur, 0), 10)
         : 6,
-      taskProgressMode: taskProgressMode || 'component',
       taskNotification,
       taskCompleteNotifyClickAction: taskCompleteNotifyClickAction || 'open-folder',
       showTaskCompletedWindow: showTaskCompletedWindow === undefined ? true : !!showTaskCompletedWindow,
@@ -1235,7 +1190,6 @@
       },
       customKeymap: customKeymap || {},
       taskMultiSelectModifier: normalizeTaskMultiSelectModifier(taskMultiSelectModifier),
-      subnavMode: subnavMode || 'floating',
       sidebarLayoutMode: sidebarLayoutMode || 'floating',
       autoHideAside: autoHideAside === undefined ? false : !!autoHideAside,
       autoHideSubnav: autoHideSubnav === undefined ? false : !!autoHideSubnav,
@@ -1317,16 +1271,15 @@
       isMac: () => is.macOS(),
       isMas: () => is.mas(),
       isLinux () { return is.linux() },
+      systemLocaleName () {
+        return getSystemLocaleName()
+      },
       activeCategory () {
         return this.category || 'basic'
       },
       title () {
         const subnav = this.subnavs.find(item => item.key === this.activeCategory)
         return subnav ? subnav.title : this.$t('preferences.basic')
-      },
-      subnavMode () {
-        const { config = {} } = this
-        return config.subnavMode || 'floating'
       },
       maxConcurrentDownloads () {
         return ENGINE_MAX_CONCURRENT_DOWNLOADS
@@ -2517,7 +2470,7 @@
   gap: 6px;
   padding: 4px 8px;
   border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  border-radius: 6px;
   background-color: #fff;
   min-height: 32px;
   cursor: text;
@@ -2901,4 +2854,17 @@
    border-color: #3a8ee6;
    color: #fff;
  }
+
+/* 上传/下载限速行：输入框与单位选择框融为一体 */
+:deep(.speed-limit-row .el-input-number.is-controls-right .el-input__inner) {
+  border-right: none;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+:deep(.speed-limit-row .el-select .el-input__inner) {
+  border-left: none;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
 </style>

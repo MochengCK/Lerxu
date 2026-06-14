@@ -156,9 +156,33 @@ iframe {
   }
 }
 
-.el-notification,
-.el-message {
+.el-message,
+.el-notification {
   z-index: 9000 !important;
+}
+
+.el-message {
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+
+.el-notification {
+  border-radius: 8px !important;
+  overflow: hidden;
+
+  .el-notification__group {
+    border-radius: 8px !important;
+  }
+}
+
+.el-message-box {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.el-dialog {
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .tab-title-dialog {
@@ -189,6 +213,52 @@ iframe {
   }
 }
 
+.el-input__inner,
+.el-textarea__inner {
+  border-radius: 6px;
+}
+
+.el-select-dropdown {
+  border-radius: 6px;
+  overflow: hidden;
+
+  .popper__arrow {
+    display: none;
+  }
+}
+
+.el-select-dropdown__item {
+  margin: 2px 6px;
+  border-radius: 4px;
+
+  &.hover,
+  &:hover {
+    border-radius: 4px;
+    background-color: #f5f7fa;
+  }
+
+  &.selected {
+    border-radius: 4px;
+    color: $--color-primary;
+    font-weight: 500;
+
+    &:hover {
+      background-color: #f5f7fa !important;
+    }
+  }
+}
+
+.el-time-panel,
+.el-time-range-picker {
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.el-time-spinner__item {
+  border-radius: 4px;
+  margin: 2px 4px;
+}
+
 .el-input-number.el-input-number--mini {
   &.is-controls-left .el-input__inner {
     padding-left: 34px;
@@ -198,6 +268,219 @@ iframe {
   &.is-controls-right .el-input__inner {
     padding-left: 5px;
     padding-right: 34px;
+  }
+}
+
+.el-input-group__append,
+.el-input-group__prepend {
+  background-color: transparent !important;
+  position: relative;
+  border-color: #dcdfe6;
+  border-radius: 6px;
+  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+.el-input-group__prepend {
+  border-right: none !important;
+
+  &::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 1px;
+    background-color: #dcdfe6;
+    transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+}
+
+.el-input-group__append {
+  border-left: none !important;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 1px;
+    background-color: #dcdfe6;
+    transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+}
+
+.el-input-group--prepend .el-input__inner,
+.el-input-group--append .el-input__inner {
+  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+.el-input-group--prepend .el-input__inner {
+  border-left: none !important;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.el-input-group--prepend .el-input-group__prepend {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.el-input-group--append .el-input__inner {
+  border-right: none !important;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.el-input-group--append .el-input-group__append {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.el-input-group__prepend .el-button,
+.el-input-group__append .el-button {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+
+  &:hover,
+  &:focus,
+  &:active {
+    background-color: transparent !important;
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+}
+
+.el-input-group:hover:not(:has(.el-input__inner:focus)) {
+  .el-input__inner {
+    border-color: $--border-color-hover !important;
+  }
+  .el-input-group__prepend,
+  .el-input-group__append {
+    border-color: $--border-color-hover !important;
+  }
+  .el-input-group__prepend::after,
+  .el-input-group__append::before {
+    background-color: $--border-color-hover !important;
+  }
+}
+
+.el-input-group:has(.el-input__inner:focus),
+.el-input-group:has(.el-input.is-focus),
+.el-input-group:has(.el-input__inner.is-focus) {
+  .el-input__inner,
+  .el-input-group__prepend,
+  .el-input-group__append {
+    border-color: $--color-primary !important;
+  }
+  .el-input-group__prepend::after,
+  .el-input-group__append::before {
+    background-color: $--color-primary !important;
+  }
+}
+
+.el-input-number.is-controls-right .el-input-number__increase,
+.el-input-number.is-controls-right .el-input-number__decrease {
+  background-color: transparent;
+}
+
+.el-input-number.is-controls-right .el-input-number__increase {
+  border-left: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 0;
+    width: 1px;
+    background-color: #dcdfe6;
+    transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+}
+
+.el-input-number.is-controls-right .el-input-number__decrease {
+  border-left: none;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 6px;
+    width: 1px;
+    background-color: #dcdfe6;
+    transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+}
+
+.el-input-number.is-controls-right .el-input__inner,
+.el-input-number.is-controls-right + .el-select .el-input__inner {
+  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+.el-input-number__increase.is-disabled,
+.el-input-number__decrease.is-disabled {
+  color: #c0c4cc !important;
+  cursor: not-allowed;
+}
+
+.el-input-number.is-controls-right + .el-select {
+  margin-left: -4px;
+  position: relative;
+
+  .el-input__inner {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    z-index: 1;
+    background-color: #dcdfe6;
+    transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+}
+
+// 输入框悬停时，整体边框跟随变色（聚焦时除外）
+.el-input-number.is-controls-right:hover:not(:has(.el-input.is-focus)) .el-input__inner,
+.el-input-number.is-controls-right + .el-select:hover:not(:has(.el-input.is-focus)) .el-input__inner {
+  border-color: $--border-color-hover !important;
+}
+
+.el-input-number.is-controls-right:hover:not(:has(.el-input.is-focus)) {
+  .el-input-number__increase::before,
+  .el-input-number__decrease::before {
+    background-color: $--border-color-hover !important;
+  }
+}
+
+.el-input-number.is-controls-right .el-input.is-focus {
+  & .el-input__inner {
+    border-color: $--color-primary !important;
+  }
+  & ~ .el-input-number__increase::before,
+  & ~ .el-input-number__decrease::before {
+    background-color: $--color-primary !important;
+  }
+}
+
+.el-input-number.is-controls-right + .el-select:hover:not(:has(.el-input.is-focus))::before {
+  background-color: $--border-color-hover !important;
+}
+
+.el-input-number.is-controls-right + .el-select:has(.el-input.is-focus) {
+  .el-input__inner {
+    border-color: $--color-primary !important;
+  }
+  &::before {
+    background-color: $--color-primary !important;
   }
 }
 

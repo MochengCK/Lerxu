@@ -141,6 +141,8 @@
 <style lang="scss">
 .el-popover.mo-directory-popper {
   padding: $--popover-padding 0;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .el-empty.mo-directory-empty {
@@ -168,15 +170,16 @@
     align-items: center;
     list-style: none;
     line-height: $--font-line-height-primary;
-    margin: 0;
+    margin: 2px 6px;
+    border-radius: 4px;
     font-size: $--font-size-small;
     color: $--color-text-regular;
     cursor: pointer;
     outline: none;
-    padding: 6px 6px 6px $--popover-padding;
+    padding: 6px 6px 6px calc(#{$--popover-padding} - 6px);
     &:focus, &:hover {
-      background-color: $--background-color-base;
-      color: $--color-primary-light-2;
+      background-color: #f5f7fa;
+      color: $--color-primary;
     }
   }
   .mo-directory-path {
@@ -220,8 +223,8 @@
     &> li {
       color: $--dk-font-color-base;
       &:focus, &:hover {
-        background-color: $--color-primary;
-        color: $--color-white;
+        background-color: #4a4a4a;
+        color: $--color-primary;
       }
     }
   }

@@ -11,7 +11,6 @@
       :key="item.gid"
       :attr="item.gid"
       :class="getItemClass(item)"
-      :style="getItemStyle(item)"
       @click.stop="(e) => handleItemClick(item, e)"
       @contextmenu.stop.prevent="(e) => handleItemContextMenu(item, e)"
     >
@@ -33,7 +32,6 @@
   import { mapState } from 'vuex'
   import { cloneDeep } from 'lodash'
   import {
-    calcProgress,
     checkTaskIsSeeder,
     getFileExtension,
     getFileNameFromFile,
@@ -90,9 +88,6 @@
       ...mapState('preference', {
         preferenceConfig: state => state.config
       }),
-      taskProgressMode () {
-        return this.preferenceConfig?.taskProgressMode || 'component'
-      },
       displayTaskList () {
         const baseList = !this.category
           ? this.taskList
@@ -522,81 +517,10 @@
       },
       getItemClass (item) {
         const isSelected = this.selectedList.includes(item.gid)
-        const completed = Number(item && item.completedLength ? item.completedLength : 0) || 0
-        const total = Number(item && item.totalLength ? item.totalLength : 0) || 0
-        const speed = Number(item && item.downloadSpeed ? item.downloadSpeed : 0) || 0
-        const isIndeterminateProgress = (
-          this.taskProgressMode === 'background' &&
-          item &&
-          item.status === TASK_STATUS.ACTIVE &&
-          !(total > 0) &&
-          speed > 0 &&
-          completed >= 0
-        )
         return {
           'task-item-wrapper': true,
           [`task-item-wrapper--${this.viewMode}`]: true,
-          'task-item-wrapper--background-progress': this.taskProgressMode === 'background',
-          'task-item-wrapper--indeterminate': isIndeterminateProgress,
           selected: isSelected
-        }
-      },
-      getItemStyle (item) {
-        if (this.taskProgressMode !== 'background') {
-          return {}
-        }
-
-        // 使用与TaskProgress组件相同的进度计算逻辑
-        const completed = Number(item.completedLength) || 0
-        const total = Number(item.totalLength) || 0
-        let progress = calcProgress(total, completed)
-
-        // 根据任务状态调整进度
-        const status = item.status
-        if (status === TASK_STATUS.COMPLETE || status === TASK_STATUS.SEEDING) {
-          progress = 100
-        } else if (status === TASK_STATUS.ACTIVE && !(total > 0) && (Number(item.downloadSpeed) || 0) > 0) {
-          progress = 30
-        } else if (!Number.isFinite(progress)) {
-          progress = 0
-        } else if (progress < 0) {
-          progress = 0
-        } else if (progress > 100) {
-          progress = 100
-        }
-
-        // 根据任务状态设置颜色，与colors.json保持一致
-        let progressColor = '#5b5bea' // 默认active颜色
-
-        switch (status) {
-        case TASK_STATUS.COMPLETE:
-          progressColor = '#2ACB42' // 绿色
-          break
-        case TASK_STATUS.SEEDING:
-          progressColor = '#2ACB42' // 绿色，与complete相同
-          break
-        case TASK_STATUS.ACTIVE:
-          progressColor = '#5b5bea' // 蓝紫色
-          break
-        case TASK_STATUS.PAUSED:
-          progressColor = '#737373' // 灰色
-          break
-        case TASK_STATUS.WAITING:
-          progressColor = '#737373' // 灰色
-          break
-        case TASK_STATUS.ERROR:
-          progressColor = '#FF6157' // 红色
-          break
-        case TASK_STATUS.REMOVED:
-          progressColor = '#737373' // 灰色
-          break
-        default:
-          progressColor = '#5b5bea' // 默认active颜色
-        }
-
-        return {
-          '--progress-width': `${progress}%`,
-          '--progress-color': progressColor
         }
       }
     },
@@ -707,80 +631,6 @@
       margin-bottom: 0; // 覆盖列表视图的margin-bottom
       overflow: visible; // 确保TaskItem内的弹窗能显示
     }
-  }
-
-  // 背景进度条模式 - 适用于列表和网格视图
-  &.task-item-wrapper--background-progress {
-    position: relative;
-    border-radius: 6px; // 确保容器有圆角
-    border: 1px solid $--task-item-border-color; // 添加边框
-    overflow: visible; // 改为visible，让弹窗能够显示
-    transition: $--border-transition-base; // 添加边框过渡效果
-
-    &:hover {
-      border-color: $--task-item-hover-border-color; // 悬停边框效果
-      z-index: 10; // 悬停时提升层级，确保弹窗不被遮挡
-    }
-
-    // 进度条背景
-    &::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      height: 100%;
-      background: var(--progress-color, #5b5bea);
-      transition: width 0.3s ease, background-color 0.3s ease;
-      z-index: 0;
-      width: var(--progress-width, 0%);
-      opacity: 0.3; // 降低透明度，让文字更清晰
-      border-radius: 6px; // 直接设置圆角，确保进度条不超出容器
-    }
-
-    &.task-item-wrapper--indeterminate::before {
-      transition: none;
-      animation: mo-task-indeterminate 1.2s ease-in-out infinite;
-    }
-
-    // 确保内容在进度条之上
-    & > .task-item {
-      position: relative;
-      z-index: 1;
-      background: transparent; // 确保TaskItem背景透明，让进度条可见
-      border: none; // 移除TaskItem的边框，由wrapper控制
-    }
-  }
-}
-
-@keyframes mo-task-indeterminate {
-  0% {
-    transform: translateX(-110%);
-  }
-  100% {
-    transform: translateX(410%);
-  }
-}
-
-// 背景进度条模式下的选中状态
-.task-item-wrapper--background-progress.selected {
-  border-color: $--task-item-hover-border-color !important; // 选中时高亮边框
-}
-
-// 暗色主题支持
-.theme-dark {
-  .task-item-wrapper--grid {
-    height: 100px; // 与亮色主题保持一致
-
-    & > .task-item {
-      height: 100%;
-      box-sizing: border-box;
-      margin-bottom: 0; // 覆盖列表视图的margin-bottom
-    }
-  }
-
-  // 暗色主题下的背景进度条模式选中状态
-  .task-item-wrapper--background-progress.selected {
-    border-color: $--dk-task-item-hover-border-color !important; // 暗色主题的选中边框色
   }
 }
 

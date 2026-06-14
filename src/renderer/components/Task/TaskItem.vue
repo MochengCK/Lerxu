@@ -15,16 +15,13 @@
       </el-tooltip>
     </div>
     <mo-task-item-actions mode="LIST" :task="task" />
-    <div class="task-progress" v-if="taskProgressMode === 'component'">
+    <div class="task-progress">
       <mo-task-progress
         :completed="Number(task.completedLength)"
         :total="Number(task.totalLength)"
         :status="taskStatus"
         :speed="Number(task.downloadSpeed)"
       />
-      <mo-task-progress-info :task="task" :view-mode="viewMode" />
-    </div>
-    <div class="task-progress" v-else-if="taskProgressMode === 'background'">
       <mo-task-progress-info :task="task" :view-mode="viewMode" />
     </div>
   </div>
@@ -82,9 +79,6 @@
       ...mapState('task', {
         taskDisplayNames: state => state.taskDisplayNames
       }),
-      taskProgressMode () {
-        return this.preferenceConfig?.taskProgressMode || 'component'
-      },
       showTaskTypeBadge () {
         return this.preferenceConfig?.showTaskTypeBadge !== false
       },
@@ -354,25 +348,7 @@
   -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-task-item, var(--app-ui-frosted-blur, 0px)));
 }
 
-.task-item-wrapper--background-progress .task-item {
-  background: transparent !important;
-  border: none !important;
-
-  &:hover {
-    background: transparent !important;
-  }
-}
-
-.theme-dark .task-item-wrapper--background-progress .task-item {
-  background: transparent !important;
-  border: none !important;
-
-  &:hover {
-    background: transparent !important;
-  }
-}
-
-.selected .task-item {
+.theme-dark.has-app-background-image .task-item {
   border-color: $--task-item-hover-border-color;
 }
 

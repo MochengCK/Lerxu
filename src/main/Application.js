@@ -27,6 +27,7 @@ import {
   reduceTrackerString
 } from '@shared/utils/tracker'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
+import { getLanguage } from '@shared/locales'
 import { showItemInFolder, getEngineList, getAria2ConfPath, getSystemHttpProxy } from './utils'
 import logger from './core/Logger'
 import Context from './core/Context'
@@ -1223,7 +1224,8 @@ export default class Application extends EventEmitter {
           this.menuManager.handleLocaleChange(newValue)
           this.trayManager.handleLocaleChange(newValue)
         })
-      this.sendCommandToAll('application:update-locale', { locale: newValue })
+      const resolvedLocale = getLanguage(newValue)
+      this.sendCommandToAll('application:update-locale', { locale: resolvedLocale })
     })
   }
 
@@ -2081,7 +2083,7 @@ export default class Application extends EventEmitter {
       return
     }
 
-    const enabled = this.configManager.getUserConfig('auto-check-update')
+    const enabled = this.configManager.getUserConfig('auto-check-update', is.macOS())
     const proxy = this.configManager.getSystemConfig('all-proxy')
     const autoCheck = enabled
     this.updateManager = new UpdateManager({
@@ -3408,7 +3410,8 @@ export default class Application extends EventEmitter {
     })
 
     ipcMain.handle('get-app-locale', async () => {
-      return this.configManager.getUserConfig('locale') || this.configManager.getSystemConfig('locale')
+      const raw = this.configManager.getUserConfig('locale') || this.configManager.getSystemConfig('locale')
+      return getLanguage(raw)
     })
 
     ipcMain.handle('get-engine-list', async () => {

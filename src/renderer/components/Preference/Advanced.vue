@@ -133,7 +133,7 @@
           <h3 class="card-title">{{ $t('preferences.github-mirror') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
-              <div style="display: flex; align-items: center; margin-bottom: 8px;">
+              <div class="github-mirror-row" style="display: flex; align-items: center; margin-bottom: 8px;">
                 <div style="flex: 1;">
                   <el-select
                     v-model="form.githubMirrorUrls"
@@ -163,7 +163,7 @@
                     </el-option-group>
                   </el-select>
                 </div>
-                <div style="display:flex; align-items:center; margin-left:4px;">
+                <div class="github-mirror-actions" style="display:flex; align-items:center;">
                   <el-tooltip
                     class="item"
                     effect="dark"
@@ -192,7 +192,6 @@
                     <el-button
                       @click="openGithubMirrorConfigDialog"
                       class="sync-tracker-btn"
-                      style="margin-left:4px"
                     >
                       <mo-icon name="link" width="12" height="12" />
                     </el-button>
@@ -211,10 +210,10 @@
           <h3 class="card-title">{{ $t('preferences.bt-tracker') }}</h3>
           <el-form-item size="mini">
             <div class="form-item-sub bt-tracker">
-              <el-row :gutter="4" style="line-height: 0;">
+              <el-row :gutter="4">
                 <el-col :span="24">
-                  <div style="display:flex; align-items:center;">
-                    <div style="display:flex; align-items:center; margin-right:4px;">
+                  <div class="tracker-row" style="display:flex; align-items:stretch;">
+                    <div class="tracker-left">
                       <el-tooltip
                         class="item"
                         effect="dark"
@@ -229,14 +228,15 @@
                         </el-button>
                       </el-tooltip>
                     </div>
-                    <div class="track-source" style="flex:1; transform: translateY(4px);">
+                    <div class="track-source" style="flex:1;">
                       <el-select
                         class="select-track-source"
                         v-model="form.trackerSource"
                         allow-create
                         filterable
                         multiple
-                        style="width:100%; position: relative; top: 4px;"
+                        collapse-tags
+                        style="width:100%;"
                       >
                         <el-option-group
                           v-for="group in trackerSourceOptions"
@@ -263,7 +263,7 @@
                         </el-option-group>
                       </el-select>
                     </div>
-                    <div class="sync-tracker" style="display:flex; align-items:center; margin-left:4px;">
+                    <div class="tracker-right sync-tracker">
                       <el-tooltip
                         class="item"
                         effect="dark"
@@ -293,7 +293,6 @@
                         <el-button
                           @click="openTrackerSourceConfigDialog"
                           class="sync-tracker-btn"
-                          style="margin-left:4px"
                         >
                           <mo-icon name="link" width="12" height="12" />
                         </el-button>
@@ -1028,10 +1027,6 @@
       },
       engineInfo () {
         return this.storeEngineInfo
-      },
-      subnavMode () {
-        const { config = {} } = this.$store.state.preference
-        return config.subnavMode || 'floating'
       },
       isRenderer: () => is.renderer(),
       activeCategory () {
@@ -2900,16 +2895,12 @@
 }
 .bt-tracker {
   position: relative;
-  .sync-tracker-btn {
-    line-height: 0;
+  .tracker-row {
+    margin-bottom: 12px;
   }
   .track-source {
-    margin-bottom: 16px;
     .select-track-source {
       width: 100%;
-    }
-    .el-select__tags {
-      overflow-x: auto;
     }
   }
 }
@@ -3193,4 +3184,264 @@
     border: none !important;
   }
 }
+
+.github-mirror-row {
+  align-items: stretch !important;
+}
+
+.github-mirror-row .el-select .el-input__inner {
+  border-right: none;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.github-mirror-actions {
+  position: relative;
+  margin-left: 0;
+  display: flex;
+  align-items: center;
+  border: 1px solid #dcdfe6;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  background-color: #fff;
+  box-sizing: border-box;
+  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 1px;
+    background-color: #dcdfe6;
+    z-index: 1;
+    transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+
+  .el-button {
+    height: 100%;
+    padding: 0 7px;
+    position: relative;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0;
+    margin: 0 !important;
+
+    &:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 6px;
+      bottom: 6px;
+      width: 1px;
+      background-color: #dcdfe6;
+      transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
+
+    &:hover,
+    &:focus,
+    &:active {
+      background-color: transparent !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+    }
+  }
+}
+
+.theme-dark .github-mirror-actions .el-button:not(:last-child)::after {
+  background-color: #5f5f5f;
+}
+
+.theme-dark .github-mirror-actions {
+  border-color: #5f5f5f;
+  background-color: #373737;
+
+  &::before {
+    background-color: #5f5f5f;
+  }
+}
+
+// 选择框悬停时，相邻按钮容器边框与分割线高亮（白色/灰色）
+.github-mirror-row:has(.el-select:hover) .github-mirror-actions {
+  border-color: $--border-color-hover;
+
+  &::before {
+    background-color: $--border-color-hover;
+  }
+}
+
+// 选择框聚焦时，相邻按钮容器边框与分割线高亮（紫色）
+.github-mirror-row:has(.el-select .el-input.is-focus) .github-mirror-actions {
+  border-color: $--color-primary;
+
+  &::before {
+    background-color: $--color-primary;
+  }
+}
+
+.bt-tracker .tracker-row:has(.el-select:hover) {
+  .tracker-left,
+  .tracker-right {
+    border-color: $--border-color-hover;
+  }
+  .tracker-left::after,
+  .tracker-right::before {
+    background-color: $--border-color-hover;
+  }
+}
+
+.bt-tracker .tracker-row:has(.el-select .el-input.is-focus) {
+  .tracker-left,
+  .tracker-right {
+    border-color: $--color-primary;
+  }
+  .tracker-left::after,
+  .tracker-right::before {
+    background-color: $--color-primary;
+  }
+}
+
+.bt-tracker .tracker-row {
+  .el-select {
+    .el-input__inner {
+      border-left: none;
+      border-right: none;
+      border-radius: 0;
+      font-size: 12px;
+    }
+    .el-input__suffix {
+      display: none;
+    }
+  }
+}
+
+.tracker-left {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border: 1px solid #dcdfe6;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  background-color: #fff;
+  box-sizing: border-box;
+  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+
+  &::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 1px;
+    background-color: #dcdfe6;
+    transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+
+  .el-button {
+    height: 100%;
+    padding: 2px 5px 0 5px !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0;
+    margin: 0 !important;
+
+    &:hover,
+    &:focus,
+    &:active {
+      background-color: transparent !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+    }
+  }
+}
+
+.tracker-right {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border: 1px solid #dcdfe6;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  background-color: #fff;
+  box-sizing: border-box;
+  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 1px;
+    background-color: #dcdfe6;
+    transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  }
+
+  .el-button {
+    height: 100%;
+    padding: 0 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0;
+    margin: 0 !important;
+
+    &:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      right: 0;
+      top: 6px;
+      bottom: 6px;
+      width: 1px;
+      background-color: #dcdfe6;
+      transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
+
+    &:hover,
+    &:focus,
+    &:active {
+      background-color: transparent !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+    }
+  }
+}
+
+.theme-dark {
+  .tracker-left {
+    border-color: #5f5f5f;
+    background-color: #373737;
+
+    &::after {
+      background-color: #5f5f5f;
+    }
+  }
+
+  .tracker-right {
+    border-color: #5f5f5f;
+    background-color: #373737;
+
+    &::before {
+      background-color: #5f5f5f;
+    }
+
+    .el-button:not(:last-child)::after {
+      background-color: #5f5f5f;
+    }
+  }
+}
+
 </style>

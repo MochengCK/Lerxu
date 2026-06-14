@@ -6,7 +6,31 @@
     style="height: 100vh"
   >
     <el-aside v-if="isStandalone" width="220px" class="subnav preference-subnav-left">
-      <router-view name="subnav" />
+      <div class="preference-subnav-wrapper">
+        <router-view name="subnav" />
+        <div class="preference-subnav-search">
+          <button
+            :class="['floating-bar-search preference-search', { 'is-expanded': isPreferenceSearchOpen, 'is-hovered': isPreferenceSearchHovering, 'is-pressed': isPreferenceSearchPressed }]"
+            @click="focusPreferenceSearch"
+            @mouseenter="handlePreferenceSearchMouseEnter"
+            @mouseleave="handlePreferenceSearchMouseLeave"
+            @mousedown="handlePreferenceSearchMouseDown"
+            @mouseup="handlePreferenceSearchMouseUp"
+          >
+            <input
+              ref="preferenceSearchInput"
+              class="floating-bar-search-input"
+              type="text"
+              :placeholder="$t('preferences.search-settings')"
+              v-model="preferenceSearchValue"
+              @click.stop
+              @focus="handlePreferenceSearchFocus"
+              @blur="handlePreferenceSearchBlur"
+            >
+            <i class="el-icon-search"></i>
+          </button>
+        </div>
+      </div>
     </el-aside>
     <template v-if="isThreeColumn">
       <el-aside v-if="showThreeColumnSubnav" width="220px" class="subnav three-column-subnav">
@@ -23,30 +47,18 @@
         class="panel-header"
         height="84"
       >
-        <h4
-          v-if="subnavMode !== 'title'"
-          class="hidden-xs-only"
-        >
+        <h4 class="hidden-xs-only">
           <span class="subnav-title__text">{{ title }}</span>
         </h4>
-        <h4
-          v-if="subnavMode === 'floating'"
-          class="hidden-sm-and-up"
-        >
+        <h4 class="hidden-sm-and-up">
           <span class="subnav-title__text">{{ title }}</span>
         </h4>
-        <mo-subnav-switcher
-          v-if="subnavMode === 'title'"
-          :title="title"
-          :subnavs="subnavs"
-        />
       </el-header>
       <router-view :key="$route.path" name="form" ref="preferenceForm" />
     </el-container>
 
     <template v-if="showSmallScreenNav">
       <div
-        v-if="subnavMode === 'floating'"
         class="subnav-small-screen subnav-right"
       >
         <ul class="menu small-menu">
@@ -61,41 +73,17 @@
         </ul>
       </div>
     </template>
-    <div v-if="isStandalone" class="preference-bottom-search">
-      <button
-        :class="['floating-bar-search preference-search', { 'is-expanded': isPreferenceSearchOpen, 'is-hovered': isPreferenceSearchHovering, 'is-pressed': isPreferenceSearchPressed }]"
-        @click="focusPreferenceSearch"
-        @mouseenter="handlePreferenceSearchMouseEnter"
-        @mouseleave="handlePreferenceSearchMouseLeave"
-        @mousedown="handlePreferenceSearchMouseDown"
-        @mouseup="handlePreferenceSearchMouseUp"
-      >
-        <input
-          ref="preferenceSearchInput"
-          class="floating-bar-search-input"
-          type="text"
-          :placeholder="$t('preferences.search-settings')"
-          v-model="preferenceSearchValue"
-          @click.stop
-          @focus="handlePreferenceSearchFocus"
-          @blur="handlePreferenceSearchBlur"
-        >
-        <i class="el-icon-search"></i>
-      </button>
-    </div>
   </el-container>
 </template>
 
 <script>
   import { mapState } from 'vuex'
-  import SubnavSwitcher from '@/components/Subnav/SubnavSwitcher'
   import Aside from '@/components/Aside/Index'
   import PreferenceAdvanced from '@/components/Preference/Advanced'
 
   export default {
     name: 'mo-content-preference',
     components: {
-      [SubnavSwitcher.name]: SubnavSwitcher,
       [Aside.name]: Aside
     },
     data () {
@@ -114,7 +102,6 @@
     },
     computed: {
       ...mapState('preference', {
-        subnavMode: state => state.config.subnavMode || 'floating',
         sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating',
         autoHideAside: state => state.config.autoHideAside,
         preferenceSearchKeyword: state => state.searchKeyword
@@ -159,7 +146,7 @@
         if (this.isStandalone) {
           return false
         }
-        return this.isThreeColumn && this.subnavMode !== 'title'
+        return this.isThreeColumn
       },
       showSmallScreenNav () {
         if (this.isStandalone) {
@@ -563,6 +550,89 @@
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.preference-subnav-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.preference-subnav-search {
+  margin-top: auto;
+  padding: 12px 16px 18px;
+  flex-shrink: 0;
+}
+
+.preference-subnav-search .floating-bar-search {
+  width: 100%;
+  height: 36px;
+  border-radius: 18px;
+  border: 1px solid $--border-color-base;
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  cursor: text;
+  outline: none;
+  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1), background-color 0.3s;
+
+  &:hover,
+  &.is-hovered {
+    border-color: $--border-color-hover;
+    background: rgba(0, 0, 0, 0.04);
+  }
+}
+
+.preference-subnav-search .floating-bar-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: $--color-text-regular;
+  font-size: 12px;
+  padding: 0 12px 0 14px;
+  height: 100%;
+
+  &::placeholder {
+    color: $--color-text-placeholder;
+  }
+}
+
+.preference-subnav-search .floating-bar-search i {
+  font-size: 14px;
+  color: $--color-text-secondary;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.theme-dark .preference-subnav-search .floating-bar-search {
+  border-color: rgba(255, 255, 255, 0.1);
+
+  &:hover,
+  &.is-hovered {
+    border-color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+
+.theme-dark .preference-subnav-search .floating-bar-search-input {
+  color: $--dk-font-color-base;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
+}
+
+.theme-dark .preference-subnav-search .floating-bar-search i {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .preference-standalone .subnav {
@@ -581,7 +651,7 @@
 
 .preference-standalone .form-preference {
   padding-top: 42px;
-  padding-bottom: 72px;
+  padding-bottom: 24px;
 }
 
 .preference-standalone ::-webkit-scrollbar-track {
@@ -589,7 +659,7 @@
 }
 
 .form-preference {
-  padding: 12px 16px 64px 16px;
+  padding: 12px 16px 24px 16px;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -662,6 +732,14 @@
   .el-form-item__info {
     line-height: 1.6;
     margin-top: 6px;
+  }
+
+  .el-button {
+    border-radius: 8px;
+  }
+
+  .el-button--mini {
+    border-radius: 6px;
   }
 }
 
@@ -777,111 +855,5 @@
   background-color: $--button-danger-background-color !important;
   border-color: $--button-danger-border-color !important;
   color: $--button-danger-font-color !important;
-}
-
-.preference-bottom-search {
-  position: fixed;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
-  z-index: 1200;
-}
-
-.preference-bottom-search .floating-bar-search {
-  position: relative;
-  top: auto;
-  left: auto;
-  transform: none;
-  transform-origin: center;
-  opacity: 1;
-  pointer-events: auto;
-  width: 220px;
-  height: 40px;
-  border-radius: 24px;
-  border: 1px solid $--speedometer-border-color;
-  background-color: $--task-item-action-verify-background;
-  padding: 0;
-  overflow: hidden;
-  color: $--task-item-action-color;
-  box-sizing: border-box;
-  will-change: transform;
-  transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1), transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s, border-color 0.2s;
-}
-
-.preference-bottom-search .floating-bar-search.is-expanded {
-  width: 220px;
-  transform: none;
-}
-
-.preference-bottom-search .floating-bar-search.is-hovered {
-  transform: translate3d(0, -6px, 0) scale(1.03);
-  border-color: $--speedometer-hover-border-color;
-  background-color: $--floating-bar-item-hover-background;
-}
-
-.preference-bottom-search .floating-bar-search.is-pressed {
-  transform: translate3d(0, -2px, 0) scale(0.985);
-}
-
-.preference-bottom-search .floating-bar-search-input {
-  position: absolute;
-  left: 15px;
-  top: 0;
-  height: 100%;
-  width: 160px;
-  border: none;
-  outline: none;
-  background-color: transparent;
-  color: inherit;
-  font-size: 12px;
-  opacity: 0;
-  transition: opacity 0.3s ease 0.1s;
-}
-
-.preference-bottom-search .floating-bar-search.is-expanded .floating-bar-search-input {
-  opacity: 1;
-}
-
-.preference-bottom-search .floating-bar-search i {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 18px;
-  color: $--floating-bar-item-color;
-  z-index: 10;
-}
-
-.preference-bottom-search .floating-bar-search:hover {
-  border-color: $--speedometer-hover-border-color;
-  background-color: $--floating-bar-item-hover-background;
-}
-
-.theme-light .preference-bottom-search .floating-bar-search {
-  background-color: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.theme-dark .preference-bottom-search .floating-bar-search {
-  background-color: rgba(45, 45, 45, 0.7);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-color: $--dk-task-item-action-border-color;
-  color: $--dk-task-item-action-color;
-}
-
-.theme-dark .preference-bottom-search .floating-bar-search.is-hovered {
-  background-color: $--dk-task-item-action-verify-hover-background;
-  border-color: $--dk-task-item-action-border-color;
-}
-
-.theme-dark .preference-bottom-search .floating-bar-search:hover {
-  background-color: $--dk-task-item-action-verify-hover-background;
-  border-color: $--dk-task-item-action-border-color;
-}
-
-.theme-dark .preference-bottom-search .floating-bar-search i {
-  color: $--dk-task-item-action-color;
 }
 </style>

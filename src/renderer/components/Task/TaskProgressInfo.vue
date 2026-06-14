@@ -466,11 +466,6 @@
   }
 }
 
-// 在背景进度条模式下，底部边距应该与任务名称的上边距一致
-// 但在网格视图下不需要额外的底部边距
-.task-item-wrapper--background-progress .task-progress-info {
-  margin-bottom: 0; // 移除底部边距，避免网格视图下间隔过大
-}
 .task-progress-info-left {
   min-height: 0.875rem;
   text-align: left;
