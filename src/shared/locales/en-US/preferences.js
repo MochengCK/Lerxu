@@ -318,8 +318,6 @@ export default {
   'last-check-update-time': 'Last checked for an update',
   'aria2-text-placeholder': 'Paste or edit raw configuration text',
   'import-from-text': 'Import from text',
-  'copy-as-text': 'Copy as text',
-  'paste-and-import': 'Paste and import',
   'follow-metalink': 'Automatically start downloading files in magnet links and torrents',
   'follow-torrent': 'Automatically download torrent contents after the torrent file finishes',
   'not-saved': 'Preferences not saved',

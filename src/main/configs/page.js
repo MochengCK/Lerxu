@@ -33,9 +33,9 @@ export default {
   index: {
     attrs: {
       title: 'LinkCore Download Manager',
-      width: 1024,
-      height: 768,
-      minWidth: 478,
+      width: 1100,
+      height: 750,
+      minWidth: 480,
       minHeight: 420,
       transparent: is.macOS()
     },
@@ -46,10 +46,10 @@ export default {
   preference: {
     attrs: {
       title: '偏好设置',
-      width: 980,
-      height: 720,
-      minWidth: 720,
-      minHeight: 520,
+      width: 900,
+      height: 650,
+      minWidth: 780,
+      minHeight: 560,
       resizable: true,
       maximizable: true,
       minimizable: true
