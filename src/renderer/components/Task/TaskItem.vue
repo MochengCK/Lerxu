@@ -233,7 +233,7 @@
   padding: 16px 12px;
   background-color: $--task-item-background;
   border: 1px solid $--task-item-border-color;
-  border-radius: 6px;
+  border-radius: 10px;
   margin-bottom: 16px;
   transition: $--border-transition-base;
   box-sizing: border-box;
@@ -251,7 +251,7 @@
   &.task-item--grid {
     margin-bottom: 0;
     border: 1px solid $--task-item-border-color;
-    border-radius: 6px;
+    border-radius: 10px;
     background-color: $--task-item-background;
     height: 104px;
     min-height: 104px;

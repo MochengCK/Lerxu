@@ -3388,7 +3388,7 @@
 
   .el-button {
     height: 100%;
-    padding: 0 5px;
+    padding: 0 8px;
     display: flex;
     align-items: center;
     justify-content: center;

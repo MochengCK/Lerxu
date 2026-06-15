@@ -299,8 +299,9 @@
   flex-direction: column;
   .mo-table-wrapper {
     border: 1px solid #dcdfe6;
-    border-radius: 4px;
+    border-radius: 8px;
     box-sizing: border-box;
+    padding: 0 8px;
   }
 }
 .mo-table-wrapper {
@@ -308,12 +309,12 @@
   overflow: hidden;
   min-height: 200px;
   position: relative;
-  border-radius: 4px;
+  border-radius: 8px;
 }
 .el-table.mo-tracker-table {
   height: 100% !important;
   border: none !important;
-  border-radius: 4px;
+  border-radius: 8px;
   overflow: hidden;
   &::before, &::after {
     display: none !important;

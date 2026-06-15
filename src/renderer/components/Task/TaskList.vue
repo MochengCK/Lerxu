@@ -600,7 +600,7 @@
   &.task-item-wrapper--list {
     // 列表视图样式
     position: relative; // 确保背景进度条能正确定位
-    border-radius: 6px; // 与TaskItem的圆角保持一致
+    border-radius: 10px; // 与TaskItem的圆角保持一致
     height: 104px;
     min-height: 104px;
 
@@ -617,7 +617,7 @@
 
   &.task-item-wrapper--grid {
     // 网格视图样式 - 主要作为进度条背景容器
-    border-radius: 6px; // 与TaskItem的圆角保持一致
+    border-radius: 10px; // 与TaskItem的圆角保持一致
     overflow: visible; // 改为visible，让弹窗能够显示
     position: relative;
     height: 100px; // 固定高度，与列表视图一致

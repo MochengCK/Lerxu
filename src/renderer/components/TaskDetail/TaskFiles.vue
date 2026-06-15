@@ -31,20 +31,21 @@
           v-if="mode === 'DETAIL'"
           :label="`%`"
           align="right"
-          width="50">
+          width="60"
+          :show-overflow-tooltip="false">
           <template slot-scope="scope">{{ calcProgress(scope.row.length, scope.row.completedLength, 1) }}</template>
         </el-table-column>
         <el-table-column
           v-if="mode === 'DETAIL'"
           :label="`✓`"
           align="right"
-          width="85">
+          width="100">
           <template slot-scope="scope">{{ scope.row.completedLength | bytesToSize }}</template>
         </el-table-column>
         <el-table-column
           :label="$t('task.file-size')"
           align="right"
-          width="85">
+          width="100">
           <template slot-scope="scope">{{ scope.row.length | bytesToSize }}</template>
         </el-table-column>
       </el-table>
@@ -214,11 +215,62 @@
 </script>
 
 <style lang="scss">
+.mo-task-files {
+  .mo-table-wrapper {
+    border: 1px solid #dcdfe6;
+    border-radius: 8px;
+  }
+  .el-table {
+    border-radius: 8px;
+    border: none !important;
+    &::before, &::after {
+      display: none !important;
+    }
+    .el-table__header-wrapper {
+      th.el-table__cell {
+        border-bottom: none !important;
+        padding: 8px 0;
+        .cell {
+          padding: 0 10px;
+          font-size: $--font-size-base;
+          line-height: 1.5;
+        }
+      }
+    }
+    .el-table__body-wrapper {
+      overflow: auto !important;
+      tr {
+        position: relative;
+        &:not(:last-child)::after {
+          content: '';
+          position: absolute;
+          left: 8px;
+          right: 8px;
+          bottom: 0;
+          height: 1px;
+          background: #ebeef5;
+        }
+      }
+      td.el-table__cell {
+        border-bottom: none !important;
+        padding: 8px 0;
+        .cell {
+          padding: 0 10px;
+          font-size: $--font-size-base;
+          line-height: 1.5;
+        }
+      }
+    }
+  }
+}
 .file-filters {
-  margin-top: 0.5rem;
+  margin-top: 0.75rem;
   .quick-filters {
     button {
       font-size: 0;
+    }
+    .el-button {
+      border-radius: 8px;
     }
   }
   .files-summary {
@@ -227,6 +279,10 @@
     color: $--color-text-regular;
     line-height: 1.75rem;
   }
+}
+
+.theme-dark .mo-task-files .el-table__body-wrapper tr:not(:last-child)::after {
+  background: #4c4d4f;
 }
 
 .mo-task-files .task-file-extension .cell {

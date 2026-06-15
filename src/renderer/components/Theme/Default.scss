@@ -773,7 +773,7 @@ iframe {
   font-size: 0;
   line-height: 0;
   border: 1px solid $--task-detail-box-border;
-  border-radius: $--border-radius-base;
+  border-radius: 8px;
 
   &>svg {
     display: block;

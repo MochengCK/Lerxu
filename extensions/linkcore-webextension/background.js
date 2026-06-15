@@ -180,6 +180,20 @@ const localeMap = {
   'ru': 'ru'
 }
 
+// 将浏览器 UI 语言映射为扩展内部语言代码
+const getBrowserFallbackLocale = () => {
+  const lang = chrome.i18n.getUILanguage()
+  if (lang.startsWith('zh-CN') || lang.startsWith('zh_CN')) return 'zh_CN'
+  if (lang.startsWith('zh-TW') || lang.startsWith('zh_TW')) return 'zh_TW'
+  if (lang.startsWith('ja')) return 'ja'
+  if (lang.startsWith('ko')) return 'ko'
+  if (lang.startsWith('es')) return 'es'
+  if (lang.startsWith('fr')) return 'fr'
+  if (lang.startsWith('de')) return 'de'
+  if (lang.startsWith('ru')) return 'ru'
+  return 'en'
+}
+
 // 连接状态管理 - 简化版,实时检测
 let lastConnectionCheck = {
   connected: false,
@@ -607,7 +621,9 @@ const syncLocaleFromClient = async (notifyPopup = false) => {
       const data = await result.resp.json()
       console.log('[Background] Received locale data:', data)
       if (data && data.locale) {
-        const browserLocale = localeMap[data.locale] || localeMap['en-US']
+        const browserLocale = data.locale === 'auto'
+          ? getBrowserFallbackLocale()
+          : (localeMap[data.locale] || localeMap['en-US'])
         
         // 检测语言是否变化
         const localeChanged = lastKnownLocale && lastKnownLocale !== data.locale

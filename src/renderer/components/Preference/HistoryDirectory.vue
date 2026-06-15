@@ -179,7 +179,6 @@
     padding: 6px 6px 6px calc(#{$--popover-padding} - 6px);
     &:focus, &:hover {
       background-color: #f5f7fa;
-      color: $--color-primary;
     }
   }
   .mo-directory-path {
@@ -224,7 +223,6 @@
       color: $--dk-font-color-base;
       &:focus, &:hover {
         background-color: #4a4a4a;
-        color: $--color-primary;
       }
     }
   }

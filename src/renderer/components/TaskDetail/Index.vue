@@ -589,6 +589,9 @@
 </script>
 
 <style lang="scss">
+.el-drawer__wrapper:has(.task-detail-drawer) {
+  overflow: visible !important;
+}
 .task-detail-default-transparent {
   .task-detail-drawer,
   .task-detail-drawer .el-drawer__header,
@@ -804,9 +807,14 @@
 
 .task-detail-drawer {
   position: absolute !important;
-  right: 0 !important;
+  right: 8px !important;
+  top: 8px !important;
+  bottom: 8px !important;
   left: auto !important;
   min-width: 478px;
+  height: auto !important;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   .el-drawer__header {
     padding: 3rem 0.75rem 0;
     margin-bottom: 0;
@@ -859,21 +867,21 @@
     z-index: 2;
     flex: 1;
   }
-  .task-detail-nav-bar :deep(.el-radio-group) {
+  .task-detail-nav-bar .el-radio-group {
     display: inline-flex;
   }
-  .task-detail-nav-bar :deep(.el-radio-button) {
+  .task-detail-nav-bar .el-radio-button {
     .el-radio-button__inner {
-      padding: 8px 16px;
-      font-size: 14px;
+      padding: 6px 12px;
+      font-size: 13px;
       font-weight: 500;
     }
   }
-  .task-detail-nav-bar :deep(.el-radio-button:first-child .el-radio-button__inner) {
-    border-radius: 4px 0 0 4px;
+  .task-detail-nav-bar .el-radio-button:first-child .el-radio-button__inner {
+    border-radius: 8px 0 0 8px !important;
   }
-  .task-detail-nav-bar :deep(.el-radio-button:last-child .el-radio-button__inner) {
-    border-radius: 0 4px 4px 0;
+  .task-detail-nav-bar .el-radio-button:last-child .el-radio-button__inner {
+    border-radius: 0 8px 8px 0 !important;
   }
   .task-detail-nav-actions {
     display: flex;
@@ -897,6 +905,9 @@
   }
   .task-detail-peer-search {
     max-width: 240px;
+    :deep(.el-input__inner) {
+      border-radius: 8px;
+    }
   }
 }
 
@@ -940,6 +951,9 @@
   }
   .action-wrapper-right {
     text-align: right;
+  }
+  .el-button {
+    border-radius: 8px;
   }
 }
 

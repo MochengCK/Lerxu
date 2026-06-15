@@ -807,18 +807,18 @@
           '.legend-partial{background:VAR_PIECE_PARTIAL;}',
           '.legend-pending{background:VAR_PIECE_PENDING;}',
           '.conn-summary{display:flex;gap:16px;margin-bottom:10px;padding:8px;background:VAR_BAR_BG;border-radius:0;}',
-          '.conn-summary-item{text-align:center;flex:1;}',
-          '.conn-summary-label{font-size:11px;color:VAR_META_COLOR;margin-bottom:2px;}',
-          '.conn-summary-value{font-size:14px;font-weight:600;}',
+          '.conn-summary-item{text-align:center;flex:1;min-width:0;}',
+          '.conn-summary-label{font-size:11px;color:VAR_META_COLOR;margin-bottom:2px;white-space:nowrap;}',
+          '.conn-summary-value{font-size:14px;font-weight:600;white-space:nowrap;}',
           '.conn-table-wrap{-webkit-app-region:no-drag;max-height:130px;overflow-y:auto;overflow-x:hidden;}',
           '.conn-table{width:100%;border-collapse:collapse;font-size:11px;background:transparent;table-layout:fixed;}',
-          '.conn-table th,.conn-table td{padding:4px 6px;text-align:left;border:none;}',
+          '.conn-table th,.conn-table td{padding:4px 6px;text-align:left;border:none;white-space:nowrap;}',
           '.conn-table th{background:transparent;font-weight:500;position:sticky;top:0;color:VAR_TEXT_COLOR;}',
           '.conn-table td{color:VAR_META_COLOR;background:transparent;}',
           '.conn-table .speed-active{color:#67c23a;font-weight:500;}',
-          '.conn-table td:nth-child(2),.conn-table th:nth-child(2){width:74px;text-align:right;}',
-          '.conn-table td:nth-child(3),.conn-table th:nth-child(3){width:62px;text-align:right;}',
-          '.conn-table td:nth-child(4),.conn-table th:nth-child(4){width:58px;text-align:right;}',
+          '.conn-table td:nth-child(2),.conn-table th:nth-child(2){width:76px;text-align:right;}',
+          '.conn-table td:nth-child(3),.conn-table th:nth-child(3){width:78px;text-align:right;}',
+          '.conn-table td:nth-child(4),.conn-table th:nth-child(4){width:60px;text-align:right;}',
           '.conn-host{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:clip;-webkit-mask-image:linear-gradient(to right,rgba(0,0,0,1) 0%,rgba(0,0,0,1) calc(100% - 18px),rgba(0,0,0,0) 100%);mask-image:linear-gradient(to right,rgba(0,0,0,1) 0%,rgba(0,0,0,1) calc(100% - 18px),rgba(0,0,0,0) 100%);}',
           '.host-tooltip{position:fixed;left:0;top:0;display:none;max-width:420px;white-space:normal;word-break:break-all;padding:6px 8px;border-radius:6px;background:rgba(0,0,0,0.78);color:#fff;font-size:12px;line-height:1.25;pointer-events:none;z-index:3000;box-shadow:0 6px 18px rgba(0,0,0,0.25);}',
           '.conn-empty{text-align:center;padding:20px;color:VAR_META_COLOR;}',
@@ -2677,6 +2677,12 @@
     display: flex;
     align-items: center;
     margin-right: 28px;
+    .el-radio-button:first-child .el-radio-button__inner {
+      border-radius: 8px 0 0 8px !important;
+    }
+    .el-radio-button:last-child .el-radio-button__inner {
+      border-radius: 0 8px 8px 0 !important;
+    }
   }
 
   .el-dialog.task-plan-dialog .el-select {

@@ -61,7 +61,7 @@
       },
       atomRadius: {
         type: Number,
-        default: 2
+        default: 4
       }
     },
     computed: {

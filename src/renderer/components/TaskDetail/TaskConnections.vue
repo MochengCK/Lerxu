@@ -328,7 +328,7 @@
     max-height: 450px;
     overflow-y: auto;
     border: 1px solid #ebeef5;
-    border-radius: 4px;
+    border-radius: 8px;
   }
 
   .mo-connection-table {

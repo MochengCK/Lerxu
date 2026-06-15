@@ -1061,6 +1061,12 @@
 .add-task-type-floating__bar :deep(.el-radio-group) {
   display: inline-flex;
 }
+.add-task-type-floating__bar :deep(.el-radio-button:first-child .el-radio-button__inner) {
+  border-radius: 8px 0 0 8px !important;
+}
+.add-task-type-floating__bar :deep(.el-radio-button:last-child .el-radio-button__inner) {
+  border-radius: 0 8px 8px 0 !important;
+}
 
 .add-task-type-floating__close {
   position: absolute;

@@ -1624,8 +1624,9 @@
   flex-direction: column;
   .mo-table-wrapper {
     border: 1px solid #dcdfe6;
-    border-radius: 4px;
+    border-radius: 8px;
     box-sizing: border-box;
+    padding: 0;
   }
 }
 .mo-table-wrapper {
@@ -1633,12 +1634,12 @@
   overflow: hidden;
   min-height: 200px;
   position: relative;
-  border-radius: 4px;
+  border-radius: 8px;
 }
 .el-table.mo-peer-table {
   height: 100% !important;
   border: none !important;
-  border-radius: 4px;
+  border-radius: 8px;
   overflow: hidden;
   &::before, &::after {
     display: none !important;
@@ -1770,7 +1771,7 @@
 .mo-best-peer {
   background: transparent;
   border: 1px solid #dcdfe6;
-  border-radius: 4px;
+  border-radius: 8px;
   padding: 12px;
   margin-bottom: 12px;
   overflow-x: auto;
@@ -1816,7 +1817,7 @@
   z-index: 9999;
   background: #fff;
   border: 1px solid #ebeef5;
-  border-radius: 4px;
+  border-radius: 8px;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
   padding: 5px 0;
   min-width: 150px;
