@@ -227,6 +227,28 @@ iframe {
   }
 }
 
+/* 重做所有二级选择框的展开收起动画 */
+.el-zoom-in-top-enter-active,
+.el-zoom-in-top-leave-active {
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center top;
+}
+
+.el-zoom-in-top-enter-active {
+  opacity: 1;
+  transform: scaleY(1) translateY(0);
+}
+
+.el-zoom-in-top-leave-active {
+  opacity: 0;
+  transform: scaleY(0.97) translateY(-2px);
+}
+
+.el-zoom-in-top-enter {
+  opacity: 0;
+  transform: scaleY(0.97) translateY(-2px);
+}
+
 .el-select-dropdown__item {
   margin: 2px 6px;
   border-radius: 4px;

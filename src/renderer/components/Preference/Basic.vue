@@ -2468,11 +2468,13 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 0 8px 1px 4px;
   border: 1px solid #dcdfe6;
   border-radius: 6px;
   background-color: #fff;
-  min-height: 32px;
+  min-height: 28px;
+  height: 28px;
+  box-sizing: border-box;
   cursor: text;
   transition: border-color 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
 
@@ -2546,9 +2548,10 @@
   transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
   display: inline-flex !important;
   align-items: center !important;
-  height: 24px !important;
+  height: 20px !important;
   padding: 0 8px !important;
-  line-height: 24px !important;
+  line-height: 20px !important;
+  font-size: 12px !important;
   box-sizing: border-box !important;
 
   &:hover {
@@ -2558,13 +2561,13 @@
   }
 
   :deep(span) {
-    line-height: 24px;
+    line-height: 20px;
     position: relative;
     top: -2px;
   }
 
   :deep(.el-tag__content) {
-    line-height: 24px !important;
+    line-height: 20px !important;
     position: relative;
     top: -2px;
   }

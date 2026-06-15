@@ -291,8 +291,8 @@
 .task-type-badge {
   position: absolute;
   left: 8px;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -306,24 +306,9 @@
   pointer-events: none;
   opacity: 0.3;
   line-height: 1;
-  height: 120px;
-
-  &.task-type-badge--bt {
-    transform: translateY(-55%);
-  }
-
-  &.task-type-badge--http {
-    transform: translateY(-55%);
-  }
-
-  &.task-type-badge--https {
-    transform: translateY(-55%);
-  }
 
   &.task-type-badge--magnet {
     font-size: 88px;
-    height: 88px;
-    transform: translateY(-55%);
 
     &.is-magnet-en {
       font-size: 96px;

@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { access, chmodSync, constants, existsSync, lstatSync, readdirSync } from 'node:fs'
+import { access, chmodSync, constants, copyFileSync, existsSync, lstatSync, readdirSync } from 'node:fs'
 import { app, nativeTheme, shell, session } from 'electron'
 import is from 'electron-is'
 
@@ -100,8 +100,19 @@ export const getAria2BinPath = (platform, arch) => {
 }
 
 export const getAria2ConfPath = (platform, arch) => {
-  const base = getEnginePath(platform, arch)
-  return resolve(base, './aria2.conf')
+  const userConfigPath = resolve(getUserDataPath(), './aria2.conf')
+
+  // 首次运行时，将默认配置从引擎目录复制到用户数据目录
+  if (!existsSync(userConfigPath)) {
+    const defaultConfigPath = resolve(getEnginePath(platform, arch), './aria2.conf')
+    if (existsSync(defaultConfigPath)) {
+      copyFileSync(defaultConfigPath, userConfigPath)
+      // 确保文件可写
+      chmodSync(userConfigPath, 0o644)
+    }
+  }
+
+  return userConfigPath
 }
 
 export const transformConfig = (config) => {

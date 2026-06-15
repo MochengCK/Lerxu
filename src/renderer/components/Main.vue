@@ -213,8 +213,7 @@
         return false
       },
       isSpeedometerShifted () {
-        const { taskPlanVisible, addTaskVisible, hasModalDialogVisible } = this
-        return !!(taskPlanVisible || addTaskVisible || hasModalDialogVisible)
+        return false
       },
       isSmallWindow () {
         const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
@@ -2690,7 +2689,11 @@
   }
 
   .el-dialog.task-plan-dialog .el-dialog__footer {
-    padding: 0;
+    padding: 0 20px 6px;
+  }
+
+  .el-dialog.task-plan-dialog .el-button {
+    border-radius: 8px;
   }
 
   .el-dialog.task-plan-dialog .el-dialog__footer::before {
@@ -2698,10 +2701,9 @@
   }
 
   .mo-task-plan-save {
-    position: fixed;
-    right: 14px;
-    bottom: 24px;
-    z-index: 2147483647;
+    position: relative;
+    top: -10px;
+    text-align: right;
   }
 
   .theme-dark .mo-task-plan.is-planned {

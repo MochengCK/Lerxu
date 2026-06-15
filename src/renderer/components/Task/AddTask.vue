@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     custom-class="tab-title-dialog add-task-dialog"
-    width="67vw"
+    width="50vw"
     :visible="visible"
     :top="dialogTop"
     :show-close="false"
@@ -1058,13 +1058,13 @@
   align-items: center;
 }
 
-.add-task-type-floating__bar :deep(.el-radio-group) {
+.add-task-type-floating__bar .el-radio-group {
   display: inline-flex;
 }
-.add-task-type-floating__bar :deep(.el-radio-button:first-child .el-radio-button__inner) {
+.add-task-type-floating__bar .el-radio-button:first-child .el-radio-button__inner {
   border-radius: 8px 0 0 8px !important;
 }
-.add-task-type-floating__bar :deep(.el-radio-button:last-child .el-radio-button__inner) {
+.add-task-type-floating__bar .el-radio-button:last-child .el-radio-button__inner {
   border-radius: 0 8px 8px 0 !important;
 }
 
@@ -1097,6 +1097,10 @@
 .el-dialog.add-task-dialog {
   max-width: 632px;
   min-width: 380px;
+
+  .el-button {
+    border-radius: 8px;
+  }
 
   .el-dialog__header {
     display: none;
@@ -1167,14 +1171,9 @@
   }
   .el-dialog__footer {
     padding-top: 0;
+    padding-bottom: 10px;
     background-color: transparent;
     border-radius: 0 0 5px 5px;
-    position: fixed;
-    bottom: 0;
-    right: 0;
-    left: 0;
-    z-index: 1000;
-    box-shadow: none;
   }
   .dialog-footer {
     .chk {

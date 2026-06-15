@@ -617,8 +617,7 @@
                   :path="aria2ConfPath"
               />
             </el-input>
-            <el-button type="primary" size="mini" @click="openAria2ConfEditor">{{ $t('preferences.aria2-conf-edit-button') }}</el-button>
-          </el-col>
+            </el-col>
             <el-col class="form-item-sub" :span="24">
               {{ $t('preferences.download-session-path') }}
               <el-input placeholder="" disabled v-model="sessionPath">
@@ -656,14 +655,17 @@
             <el-col class="form-item-sub" :span="24">
               {{ $t('preferences.aria2-log-path') }}
               <el-input placeholder="" disabled v-model="aria2LogPath">
-                <el-button
+                <el-tooltip
                   slot="append"
-                  v-if="isRenderer"
-                  @click="openAria2LogFolder"
-                  style="padding: 0 10px;"
+                  effect="dark"
+                  :content="$t('task.reveal-in-folder')"
+                  placement="top"
+                  :open-delay="500"
                 >
-                  <mo-icon name="folder" width="10" height="10" />
-                </el-button>
+                  <i v-if="isRenderer" @click="openAria2LogFolder" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: pointer;">
+                    <mo-icon name="folder" width="10" height="10" />
+                  </i>
+                </el-tooltip>
               </el-input>
             </el-col>
             <el-col class="form-item-sub" :span="24">
@@ -673,6 +675,7 @@
               <el-button plain type="danger" @click="() => onFactoryResetClick()">
                 {{ $t('preferences.factory-reset') }}
               </el-button>
+              <el-button type="primary" size="mini" @click="openAria2ConfEditor">{{ $t('preferences.aria2-conf-edit-button') }}</el-button>
             </el-col>
           </el-form-item>
         </div>
