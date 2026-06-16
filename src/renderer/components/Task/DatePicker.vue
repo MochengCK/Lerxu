@@ -75,7 +75,6 @@
         default: () => ({})
       },
       triggerRect: {
-        type: Object,
         default: () => ({})
       }
     },

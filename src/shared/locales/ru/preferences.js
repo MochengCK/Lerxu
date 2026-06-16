@@ -217,7 +217,7 @@ export default {
   'subnav-mode-title': 'Использовать переключение заголовком',
   'sidebar-layout-mode': 'Режим боковой панели',
   'sidebar-layout-mode-floating': 'Плавающая боковая панель',
-  'sidebar-layout-mode-three-column': 'Трёхколоночный макет',
+  'sidebar-layout-mode-three-column': 'Фиксированная боковая панель',
   'floating-bar-display-mode': 'Режим отображения нижней панели',
   'floating-bar-display-mode-hover': 'Показать при наведении',
   'floating-bar-display-mode-always': 'Показывать всегда',

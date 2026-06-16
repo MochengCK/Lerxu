@@ -209,7 +209,7 @@ export default {
   'subnav-mode-title': 'Use title switching',
   'sidebar-layout-mode': 'Sidebar layout',
   'sidebar-layout-mode-floating': 'Floating sidebar',
-  'sidebar-layout-mode-three-column': 'Three-column layout',
+  'sidebar-layout-mode-three-column': 'Fixed sidebar',
   'floating-bar-display-mode': 'Bottom Bar Display Mode',
   'floating-bar-display-mode-hover': 'Show on hover',
   'floating-bar-display-mode-always': 'Always show',

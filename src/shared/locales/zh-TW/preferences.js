@@ -217,7 +217,7 @@ export default {
   'subnav-mode-title': '使用標題切換',
   'sidebar-layout-mode': '側邊欄模式',
   'sidebar-layout-mode-floating': '懸浮側邊欄',
-  'sidebar-layout-mode-three-column': '三欄式佈局',
+  'sidebar-layout-mode-three-column': '固定側邊欄',
   'floating-bar-display-mode': '底部按鈕顯示方式',
   'floating-bar-display-mode-hover': '懸停時顯示',
   'floating-bar-display-mode-always': '一直顯示',

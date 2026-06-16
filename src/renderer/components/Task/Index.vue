@@ -146,93 +146,21 @@
             <el-option :label="$t('task.category-documents')" value="documents" />
           </el-select>
         </div>
-        <mo-task-actions :showInTitlebar="shouldMoveActionsToTitlebar" />
+        <mo-task-actions
+          :showInTitlebar="shouldMoveActionsToTitlebar"
+          :dateFilter="taskActionsDateFilter"
+          @date-filter-click="onDateFilterClick"
+          @date-filter-hover="onDateFilterHover"
+          @date-filter-leave="onDateFilterLeave"
+        />
       </el-header>
       <el-main class="panel-content" @contextmenu.native="onTaskPageContextMenu">
         <mo-task-list :category="categoryFilter" :keyword="taskSearchQuery" :collapsed="shouldMoveTitleToTitlebar" />
       </el-main>
     </el-container>
 
-    <div
-      v-if="showRightFloatingPanel"
-      class="right-floating-panel"
-      :class="{ 'is-auto-hide-subnav': autoHideSubnav && !datePickerVisible, 'is-proximity-hovered': isDateFilterProximityHovered }"
-    >
-      <div
-        ref="dateFilterBtn"
-        class="date-filter-standalone date-filter-floating"
-        :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible, 'is-frosted': dateFilterFrosted }"
-        @click.stop="onDateFilterClick"
-        @mouseenter="onDateFilterHover"
-        @mouseleave="onDateFilterLeave"
-        @mousedown.prevent
-        @selectstart.prevent
-        @dragstart.prevent
-      >
-        <span
-          class="date-filter-text"
-          :class="{ visible: datePickerVisible || showDateText || storeFilterDate }"
-          @mousedown.prevent
-          @selectstart.prevent
-          @dragstart.prevent
-        >
-          {{ displayDateText }}
-        </span>
-        <div
-          class="date-filter-icon"
-          @mousedown.prevent
-          @selectstart.prevent
-          @dragstart.prevent
-        >
-          <mo-icon name="date-filter" width="24" height="24" />
-        </div>
-      </div>
-    </div>
     <mo-custom-date-picker
-      v-if="showRightFloatingPanel && datePickerVisible"
-      v-model="selectedDate"
-      :frosted="dateFilterFrosted"
-      :task-counts="taskDateCounts"
-      :trigger-rect="dateFilterBtnRect"
-      @change="onDateChange"
-      @hover="onDateHover"
-      @clear="onDateClear"
-      @close="closeDatePicker"
-    />
-
-    <!-- 三栏式布局下单独的日期筛选按钮（右侧 = 子侧边栏） -->
-    <div
-      v-if="isThreeColumn"
-      ref="dateFilterBtn"
-      class="date-filter-standalone date-filter-standalone--three-column"
-      :class="{ 'has-filter': storeFilterDate, expanded: datePickerVisible || showDateText, active: datePickerVisible, 'is-frosted': dateFilterFrosted, 'is-auto-hide-subnav': autoHideSubnav && !datePickerVisible, 'is-proximity-hovered': isDateFilterProximityHovered, 'is-aside-hovered': autoHideSubnav && (isSubnavHovered || isSubnavProximityHovered) }"
-      @click.stop="onDateFilterClick"
-      @mouseenter="onDateFilterHover"
-      @mouseleave="onDateFilterLeave"
-      @mousedown.prevent
-      @selectstart.prevent
-      @dragstart.prevent
-    >
-      <span
-        class="date-filter-text"
-        :class="{ visible: datePickerVisible || showDateText || storeFilterDate }"
-        @mousedown.prevent
-        @selectstart.prevent
-        @dragstart.prevent
-      >
-        {{ displayDateText }}
-      </span>
-      <div
-        class="date-filter-icon"
-        @mousedown.prevent
-        @selectstart.prevent
-        @dragstart.prevent
-      >
-        <mo-icon name="date-filter" width="24" height="24" />
-      </div>
-    </div>
-    <mo-custom-date-picker
-      v-if="isThreeColumn && datePickerVisible"
+      v-if="datePickerVisible"
       v-model="selectedDate"
       :frosted="dateFilterFrosted"
       :task-counts="taskDateCounts"
@@ -308,7 +236,6 @@
         hoverDate: null, // 悬停的日期
         isSubnavHovered: false,
         isSubnavProximityHovered: false,
-        isDateFilterProximityHovered: false,
         windowWidth: 0
       }
     },
@@ -380,12 +307,6 @@
       showSmallScreenNav () {
         return false
       },
-      showRightFloatingPanel () {
-        if (this.isThreeColumn) {
-          return false
-        }
-        return true
-      },
       subnavs () {
         return [
           {
@@ -445,6 +366,15 @@
           return this.hoverDate
         }
         return this.currentDateText
+      },
+      taskActionsDateFilter () {
+        return {
+          storeFilterDate: this.storeFilterDate,
+          displayDateText: this.displayDateText,
+          active: this.datePickerVisible || this.showDateText,
+          showText: this.showDateText || this.datePickerVisible,
+          dateFilterFrosted: this.dateFilterFrosted
+        }
       },
       blockCategoryHoverOpen () {
         return !!(this.taskDetailVisible || this.addTaskVisible || this.taskPlanVisible)
@@ -708,14 +638,16 @@
       showDatePicker () {
         this.datePickerVisible = true
       },
-      toggleDatePicker () {
+      toggleDatePicker (rect) {
         this.clearTextSelection()
 
         this.datePickerVisible = !this.datePickerVisible
         if (this.datePickerVisible) {
           this.loadTaskDateCounts()
-          // 获取按钮位置
-          if (this.$refs.dateFilterBtn) {
+          // 获取按钮位置 - 优先使用传入的 rect
+          if (rect) {
+            this.dateFilterBtnRect = rect
+          } else if (this.$refs.dateFilterBtn) {
             this.dateFilterBtnRect = this.$refs.dateFilterBtn.getBoundingClientRect()
           }
         }
@@ -734,9 +666,11 @@
         this.datePickerVisible = false
         this.hoverDate = null
       },
-      onDateFilterClick (event) {
-        event.stopPropagation()
-        event.preventDefault()
+      onDateFilterClick ({ event, rect }) {
+        if (event) {
+          event.stopPropagation()
+          event.preventDefault()
+        }
 
         this.clearTextSelection()
 
@@ -748,7 +682,7 @@
           return
         }
         // 否则打开日期选择器
-        this.toggleDatePicker()
+        this.toggleDatePicker(rect)
       },
       async loadTaskDateCounts () {
         const counts = {}
@@ -1222,7 +1156,6 @@
           const lastEvent = this._subnavMouseEvent
           this._subnavMouseEvent = null
           this.updateSubnavProximityHover(lastEvent)
-          this.updateDateFilterProximityHover(lastEvent)
         })
       },
       handleWindowMouseLeave () {
@@ -1237,38 +1170,6 @@
             this.subnavHoverTimer = null
           }
           this.isSubnavHovered = false
-        }
-
-        // 重置日期筛选按钮的接近状态
-        if (this.isDateFilterProximityHovered) {
-          this.isDateFilterProximityHovered = false
-        }
-      },
-      updateDateFilterProximityHover (event) {
-        // 右侧日期筛选按钮的接近检测
-        if (!this.autoHideSubnav || this.datePickerVisible) {
-          if (this.isDateFilterProximityHovered) {
-            this.isDateFilterProximityHovered = false
-          }
-          return
-        }
-        // 悬浮模式和三栏模式都启用
-        if (!event) {
-          return
-        }
-        const width = typeof window !== 'undefined' ? window.innerWidth : 0
-        const height = typeof window !== 'undefined' ? window.innerHeight : 0
-        if (!width || !height) {
-          return
-        }
-        const centerY = height / 2
-        const top = centerY - 80
-        const bottom = centerY + 80
-        const withinY = event.clientY >= top && event.clientY <= bottom
-        const withinX = event.clientX >= width - 100
-        const next = withinX && withinY
-        if (next !== this.isDateFilterProximityHovered) {
-          this.isDateFilterProximityHovered = next
         }
       },
       handleShowTaskInfo (payload) {
@@ -1647,208 +1548,7 @@
   pointer-events: auto;
 }
 
-/* 右侧悬浮面板容器 */
-.right-floating-panel {
-  position: fixed;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 0;
-  z-index: 2000;
-  pointer-events: auto;
-}
-
-.is-add-task-open .right-floating-panel,
-.is-task-plan-open .right-floating-panel {
-  z-index: 1999;
-}
-
-/* 针对子元素的独立滑入滑出逻辑，确保不覆盖原有的 transform */
-
-/* 1. 日期筛选按钮 */
-.right-floating-panel.is-auto-hide-subnav .date-filter-standalone {
-  transform: translateX(120px);
-  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease;
-}
-
-.right-floating-panel.is-auto-hide-subnav:hover .date-filter-standalone,
-.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .date-filter-standalone {
-  transform: translateX(0);
-}
-
-/* 子侧边栏与日期筛选按钮之间的分隔线 - 已移除 */
-
-/* 日期筛选独立按钮样式 - 基础样式 */
-.date-filter-standalone {
-  width: 32px;
-  height: 32px;
-  background-color: var(--speedometer-background);
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  cursor: pointer;
-  overflow: hidden;
-  opacity: 0.5;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
-  pointer-events: auto;
-}
-
-/* 悬浮模式下的日期筛选按钮 */
-.date-filter-standalone.date-filter-floating {
-  position: fixed;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 1000;
-  transition: width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* 悬浮模式自动隐藏 */
-.right-floating-panel.is-auto-hide-subnav .date-filter-standalone.date-filter-floating {
-  transform: translateY(-50%) translateX(calc(100% + 20px));
-}
-
-.right-floating-panel.is-auto-hide-subnav.is-proximity-hovered .date-filter-standalone.date-filter-floating,
-.right-floating-panel.is-auto-hide-subnav .date-filter-standalone.date-filter-floating:hover {
-  transform: translateY(-50%) translateX(0);
-  opacity: 1;
-}
-
-/* 三栏模式下的日期筛选按钮 */
-.date-filter-standalone:not(.date-filter-floating) {
-  position: fixed;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 1000;
-  transition: width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* 三栏模式下的日期筛选按钮样式 */
-.date-filter-standalone.date-filter-standalone--three-column {
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  transition: width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
-}
-
-/* 当左侧主侧边栏悬停显示时，隐藏右侧日期筛选按钮（子侧边栏） */
-.date-filter-standalone.date-filter-standalone--three-column.is-aside-hovered {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%) translateX(60px);
-}
-
-/* 子侧边栏自动隐藏：右侧日期筛选按钮完全隐藏 */
-.date-filter-standalone.date-filter-standalone--three-column.is-auto-hide-subnav {
-  transform: translateY(-50%) translateX(calc(100% + 20px));
-  transition: width 0.3s ease, background-color 0.3s ease, opacity 0.3s ease, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* 鼠标接近右侧边缘时显示 */
-.date-filter-standalone.date-filter-standalone--three-column.is-auto-hide-subnav.is-proximity-hovered,
-.date-filter-standalone.date-filter-standalone--three-column.is-auto-hide-subnav:hover {
-  transform: translateY(-50%) translateX(0);
-  opacity: 1;
-}
-
-.theme-light .date-filter-standalone.is-frosted,
-.theme-dark .date-filter-standalone.is-frosted {
-  background-color: transparent !important;
-  background: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-.theme-light .date-filter-standalone.is-frosted.active,
-.theme-light .date-filter-standalone.is-frosted.has-filter,
-.theme-light .date-filter-standalone.is-frosted:hover:not(.has-filter):not(.active) {
-  background-color: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
-  background: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
-  backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;
-  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;
-}
-
-.theme-dark .date-filter-standalone.is-frosted.active,
-.theme-dark .date-filter-standalone.is-frosted.has-filter,
-.theme-dark .date-filter-standalone.is-frosted:hover:not(.has-filter):not(.active) {
-  background-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
-  background: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9))) !important;
-  backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;
-  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px))) !important;
-}
-
-.date-filter-standalone * {
-  user-select: none !important;
-  -webkit-user-select: none !important;
-  -moz-user-select: none !important;
-  -ms-user-select: none !important;
-  -webkit-touch-callout: none !important;
-}
-
-.date-filter-standalone:hover {
-  opacity: 1;
-}
-
-.date-filter-standalone.expanded {
-  width: 120px;
-}
-
-.date-filter-standalone.active {
-  opacity: 1;
-  background-color: rgba(0, 0, 0, 0.15);
-}
-
-.date-filter-standalone.has-filter {
-  background-color: rgba(0, 0, 0, 0.15);
-  opacity: 1;
-}
-
-.date-filter-standalone:hover:not(.has-filter):not(.active) {
-  background-color: rgba(0, 0, 0, 0.15);
-}
-
-.date-filter-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-}
-
-.date-filter-icon svg {
-  padding: 4px;
-  color: $--icon-color;
-}
-
-.date-filter-text {
-  flex: 1;
-  color: $--icon-color;
-  font-size: 12px;
-  white-space: nowrap;
-  opacity: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding-left: 8px;
-  transition: opacity 0.3s ease;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-}
-
-.date-filter-text.visible {
-  opacity: 1;
-}
-
-.date-filter-picker {
+.date-filter-picker{
   flex: 1;
   margin-left: 4px;
 }

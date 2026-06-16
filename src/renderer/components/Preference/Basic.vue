@@ -150,11 +150,6 @@
               </el-form-item>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-form-item :label="$t('preferences.auto-hide-subnav')">
-                <el-checkbox v-model="form.autoHideSubnav" @change="autoSaveForm" />
-              </el-form-item>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
               <el-form-item :label="$t('preferences.auto-hide-floating-bar')">
                 <el-checkbox v-model="form.autoHideFloatingBar" @change="autoSaveForm" />
               </el-form-item>
@@ -1072,7 +1067,6 @@
       taskMultiSelectModifier,
       sidebarLayoutMode,
       autoHideAside,
-      autoHideSubnav,
       autoHideFloatingBar,
       autoHideTaskPlan,
       autoOpenTaskProgressWindow,
@@ -1192,7 +1186,6 @@
       taskMultiSelectModifier: normalizeTaskMultiSelectModifier(taskMultiSelectModifier),
       sidebarLayoutMode: sidebarLayoutMode || 'floating',
       autoHideAside: autoHideAside === undefined ? false : !!autoHideAside,
-      autoHideSubnav: autoHideSubnav === undefined ? false : !!autoHideSubnav,
       autoHideFloatingBar: autoHideFloatingBar === undefined ? false : !!autoHideFloatingBar,
       autoHideTaskPlan: autoHideTaskPlan === undefined ? false : !!autoHideTaskPlan,
       autoOpenTaskProgressWindow: autoOpenTaskProgressWindow === undefined ? true : !!autoOpenTaskProgressWindow,

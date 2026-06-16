@@ -65,6 +65,35 @@
     color: $--dk-subnav-text-color;
   }
 
+  /* Three-column layout: slightly lighter background for sidebar area in dark theme */
+  &.has-three-column-layout .aside {
+    background-color: rgba(0, 0, 0, 0.22) !important;
+  }
+
+  &.has-three-column-layout .subnav.three-column-subnav {
+    background-color: #373737 !important; /* ~0.05 darker than #343434 */
+  }
+
+  /* Three-column layout: larger border-radius for active/hover subnav items */
+  &.has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li {
+    border-radius: 8px;
+  }
+
+  &.has-three-column-layout .subnav.three-column-subnav .subnav-inner .preference-subnav-ul .nav-slider {
+    border-radius: 8px;
+  }
+
+  /* Three-column layout with background image: slightly lighter background */
+  &.has-app-background-image.has-three-column-layout .aside,
+  &.has-app-background-image.has-three-column-layout .subnav.three-column-subnav {
+    background-color: rgba(0, 0, 0, calc(var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9)) + 0.02)) !important;
+  }
+
+  .subnav {
+    background-color: $--dk-subnav-background;
+    color: $--dk-subnav-text-color;
+  }
+
   .subnav-inner {
     h3 {
       color: $--dk-subnav-title-color;
@@ -970,23 +999,6 @@
       &:hover {
         background-color: $--dk-task-item-action-verify-hover-background;
       }
-    }
-  }
-
-  .mo-task-plan {
-    background-color: $--dk-floating-bar-background;
-    border-color: $--dk-speedometer-border-color;
-
-    &:hover {
-      border-color: $--dk-speedometer-hover-border-color;
-    }
-
-    .mo-task-plan__text {
-      color: $--dk-font-color-base;
-    }
-
-    svg {
-      color: $--dk-floating-bar-item-color;
     }
   }
 

@@ -35,6 +35,41 @@
         <mo-icon name="refresh" width="14" height="14" :spin="refreshing" />
       </i>
     </el-tooltip>
+    <el-tooltip
+      class="item"
+      effect="dark"
+      placement="bottom"
+      :content="$t('app.task-plan')"
+    >
+      <i
+        class="task-action"
+        :class="{ 'is-planned': isTaskPlanPlanned }"
+        @click="onTaskPlanClick"
+      >
+        <mo-icon name="task-plan" width="16" height="16" />
+      </i>
+    </el-tooltip>
+    <el-tooltip
+      class="item"
+      effect="dark"
+      placement="bottom"
+      :content="dateFilter.storeFilterDate || $t('task.date-filter')"
+    >
+      <i
+        ref="dateFilterBtn"
+        class="task-action date-filter-action"
+        :class="{ 'has-filter': dateFilter.storeFilterDate, 'is-active': dateFilter.active }"
+        @click.stop="onDateFilterClick"
+        @mouseenter="onDateFilterEnter"
+        @mouseleave="onDateFilterLeave"
+      >
+        <span
+          class="task-date-filter-text"
+          :class="{ visible: dateFilter.showText || dateFilter.storeFilterDate }"
+        >{{ dateFilter.displayDateText }}</span>
+        <mo-icon name="date-filter" width="16" height="16" />
+      </i>
+    </el-tooltip>
     <div class="view-mode-nav">
       <div
         class="view-mode-nav__highlight"
@@ -81,6 +116,7 @@
   import '@/components/Icons/delete'
   import '@/components/Icons/purge'
   import '@/components/Icons/more'
+  import '@/components/Icons/task-plan'
 
   export default {
     name: 'mo-task-actions',
@@ -94,6 +130,16 @@
       showInTitlebar: {
         type: Boolean,
         default: false
+      },
+      dateFilter: {
+        type: Object,
+        default: () => ({
+          storeFilterDate: null,
+          displayDateText: '',
+          active: false,
+          showText: false,
+          dateFilterFrosted: false
+        })
       }
     },
     data () {
@@ -106,7 +152,13 @@
         currentList: state => state.currentList,
         selectedGidListCount: state => state.selectedGidList.length,
         viewMode: state => state.viewMode
-      })
+      }),
+      ...mapState('preference', {
+        taskPlanActionFromConfig: state => (state.config && state.config.taskPlanAction) || 'none'
+      }),
+      isTaskPlanPlanned () {
+        return this.taskPlanActionFromConfig !== 'none'
+      }
     },
     filters: {
       bytesToSize,
@@ -147,6 +199,35 @@
       },
       onAddClick () {
         this.$store.dispatch('app/showAddTaskDialog', ADD_TASK_TYPE.URI)
+      },
+      onTaskPlanClick () {
+        if (this.isTaskPlanPlanned) {
+          this.$store.dispatch('preference/save', {
+            taskPlanAction: 'none',
+            taskPlanType: 'complete',
+            taskPlanTime: '',
+            taskPlanGids: [],
+            taskPlanOnlyWhenIdle: false
+          })
+          this.$store.commit('app/UPDATE_TASK_PLAN_VISIBLE', false)
+          this.$msg.success(this.$t('app.task-plan-cancelled-message'))
+          return
+        }
+        this.$store.commit('app/UPDATE_TASK_PLAN_VISIBLE', true)
+      },
+      onDateFilterClick (event) {
+        event.stopPropagation()
+        event.preventDefault()
+        const rect = this.$refs.dateFilterBtn
+          ? this.$refs.dateFilterBtn.getBoundingClientRect()
+          : event.target.getBoundingClientRect()
+        this.$emit('date-filter-click', { event, rect })
+      },
+      onDateFilterEnter () {
+        this.$emit('date-filter-hover')
+      },
+      onDateFilterLeave () {
+        this.$emit('date-filter-leave')
       }
     }
   }
@@ -180,6 +261,37 @@
     }
     &.disabled {
       color: $--task-action-disabled-color;
+    }
+    &.is-planned {
+      color: #67c23a;
+    }
+  }
+  .date-filter-action {
+    display: inline-flex;
+    align-items: center;
+    overflow: hidden;
+    white-space: nowrap;
+    position: relative;
+    &.has-filter {
+      color: $--color-primary;
+    }
+    &.is-active {
+      color: $--color-primary;
+    }
+    .task-date-filter-text {
+      font-size: 12px;
+      font-style: normal;
+      margin-right: 2px;
+      position: relative;
+      top: 1px;
+      opacity: 0;
+      max-width: 0;
+      overflow: hidden;
+      transition: opacity 0.3s ease, max-width 0.3s ease;
+      &.visible {
+        opacity: 1;
+        max-width: 80px;
+      }
     }
   }
 }

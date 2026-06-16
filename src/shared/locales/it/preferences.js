@@ -159,7 +159,7 @@ export default {
   'subnav-mode-title': 'Usa cambio tramite titolo',
   'sidebar-layout-mode': 'Modalità barra laterale',
   'sidebar-layout-mode-floating': 'Barra laterale flottante',
-  'sidebar-layout-mode-three-column': 'Layout a tre colonne',
+  'sidebar-layout-mode-three-column': 'Barra laterale fissa',
   'floating-bar-display-mode': 'Modalità di visualizzazione barra inferiore',
   'floating-bar-display-mode-hover': 'Mostra al passaggio del mouse',
   'floating-bar-display-mode-always': 'Mostra sempre',

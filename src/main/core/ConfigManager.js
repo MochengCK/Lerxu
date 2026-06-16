@@ -202,7 +202,7 @@ export default class ConfigManager {
         'extension-exclude-domains': '',
         'extension-min-file-size': 0,
         'extension-shift-toggle-enabled': false,
-        'sidebar-layout-mode': 'floating',
+        'sidebar-layout-mode': 'three-column',
         'task-plan-type': 'complete',
         'task-plan-time': '',
         'task-plan-action': 'none',

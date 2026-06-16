@@ -647,6 +647,50 @@ iframe {
   z-index: -1;
 }
 
+/* Three-column layout: slightly lighter background for sidebar area */
+/* For light theme, aside stays dark (rgba(0,0,0,0.8)), but subnav gets slightly darker gray */
+.theme-light .has-three-column-layout .subnav.three-column-subnav {
+  background-color: #DCDEE2 !important; /* Darker than #F4F5F7, lighter than active #EAECF0 */
+}
+
+/* For dark theme, slightly lighter background for fixed sidebar */
+.theme-dark .has-three-column-layout .aside {
+  background-color: rgba(0, 0, 0, 0.18) !important;
+}
+
+.theme-dark .has-three-column-layout .subnav.three-column-subnav {
+  background-color: rgba(0, 0, 0, 0.18) !important;
+}
+
+/* Three-column layout: larger border-radius for active/hover subnav items */
+.has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li {
+  border-radius: 8px;
+}
+
+.has-three-column-layout .subnav.three-column-subnav .subnav-inner .preference-subnav-ul .nav-slider {
+  border-radius: 8px;
+}
+
+/* Preference standalone: larger border-radius for sidebar active/hover items */
+.preference-standalone .subnav-inner ul li {
+  border-radius: 8px;
+}
+
+.preference-standalone .subnav-inner .preference-subnav-ul .nav-slider {
+  border-radius: 8px;
+}
+
+/* Three-column layout with background image: lighter sidebar background */
+.theme-light.has-app-background-image.has-three-column-layout .aside,
+.theme-light.has-app-background-image.has-three-column-layout .subnav.three-column-subnav {
+  background-color: rgba(0, 0, 0, calc(var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9)) + 0.02)) !important;
+}
+
+.theme-dark.has-app-background-image.has-three-column-layout .aside,
+.theme-dark.has-app-background-image.has-three-column-layout .subnav.three-column-subnav {
+  background-color: rgba(0, 0, 0, calc(var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9)) + 0.02)) !important;
+}
+
 .main {
   background-color: $--main-background;
 }

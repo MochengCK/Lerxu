@@ -9,22 +9,6 @@
       @mouseenter.native="isBottomHovered = true"
       @mouseleave.native="isBottomHovered = false"
     />
-    <el-tooltip effect="dark" :content="$t('app.task-plan')" placement="top" :open-delay="500">
-      <button
-        class="mo-task-plan"
-        :class="{
-          'is-planned': isTaskPlanPlanned,
-          'is-auto-hide-task-plan': autoHideFloatingBar && !isFloatingBarSearchExpanded && !isTaskPlanPlanned,
-          'is-search-open': isFloatingBarSearchOpen,
-          'is-search-expanded': isFloatingBarSearchExpanded,
-          'is-hovered': isBottomHovered
-        }"
-        type="button"
-        @click="onTaskPlanClick"
-      >
-        <mo-icon name="task-plan" width="20" height="20" />
-      </button>
-    </el-tooltip>
     <el-dialog
       :visible.sync="taskPlanVisible"
       width="360px"
@@ -124,7 +108,6 @@
   import AddTask from '@/components/Task/AddTask'
   import TaskDetail from '@/components/TaskDetail/Index'
   import Dragger from '@/components/Dragger/Index'
-  import '@/components/Icons/task-plan'
   import '@/components/Icons/menu-preference'
 
   export default {
@@ -260,6 +243,14 @@
         this.taskPlanTime = ''
         this.taskPlanOnlyWhenIdle = false
       },
+      taskPlanVisible (val) {
+        if (val) {
+          this.taskPlanAction = this.normalizeTaskPlanAction(this.taskPlanActionFromConfig)
+          this.taskPlanType = this.normalizeTaskPlanType(this.taskPlanTypeFromConfig, this.taskPlanActionFromConfig)
+          this.taskPlanTime = this.normalizeTaskPlanTime(this.taskPlanTimeFromConfig)
+          this.taskPlanOnlyWhenIdle = !!this.taskPlanOnlyWhenIdleFromConfig
+        }
+      },
       taskList: {
         deep: true,
         handler (val) {
@@ -315,10 +306,6 @@
       },
       updateBottomProximityHover (event) {
         if (!this.autoHideFloatingBar || !event) {
-          return
-        }
-        const target = event.target
-        if (target && target.closest && target.closest('.mo-task-plan')) {
           return
         }
         const height = typeof window !== 'undefined' ? window.innerHeight : 0
@@ -449,26 +436,6 @@
         }).catch(err => {
           console.log(err)
         })
-      },
-      onTaskPlanClick () {
-        if (this.isTaskPlanPlanned) {
-          this.$store.dispatch('preference/save', {
-            taskPlanAction: 'none',
-            taskPlanType: 'complete',
-            taskPlanTime: '',
-            taskPlanGids: [],
-            taskPlanOnlyWhenIdle: false
-          })
-          this.taskPlanAction = 'none'
-          this.taskPlanVisible = false
-          this.$msg.success(this.$t('app.task-plan-cancelled-message'))
-          return
-        }
-        this.taskPlanAction = this.normalizeTaskPlanAction(this.taskPlanActionFromConfig)
-        this.taskPlanType = this.normalizeTaskPlanType(this.taskPlanTypeFromConfig, this.taskPlanActionFromConfig)
-        this.taskPlanTime = this.normalizeTaskPlanTime(this.taskPlanTimeFromConfig)
-        this.taskPlanOnlyWhenIdle = !!this.taskPlanOnlyWhenIdleFromConfig
-        this.taskPlanVisible = true
       },
       saveTaskPlan () {
         const action = this.normalizeTaskPlanAction(this.taskPlanAction)
@@ -2562,111 +2529,6 @@
   @import '~@/components/Theme/Variables';
   @import '~@/components/Theme/Light/Variables';
 
-  .mo-task-plan {
-    position: fixed;
-    left: 50%;
-    bottom: 24px;
-    transform: translateX(87px);
-    z-index: 220;
-    height: 40px;
-    width: 40px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 100px;
-    border: 1px solid $--speedometer-border-color;
-    background-color: $--floating-bar-background;
-    opacity: 0.5;
-    transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1),
-      border-color 0.2s,
-      background-color 0.2s,
-      transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
-    cursor: pointer;
-    user-select: none;
-    outline: none;
-    overflow: hidden;
-    white-space: nowrap;
-    font-size: 0;
-    line-height: 0;
-
-    &:hover {
-      opacity: 1;
-      border-color: $--speedometer-hover-border-color;
-    }
-
-    svg {
-      display: block;
-      color: $--floating-bar-item-color;
-    }
-
-    &.is-planned {
-      opacity: 1;
-      border-color: #c2e7b0;
-      animation: pulse-green 1.6s ease-out infinite;
-    }
-
-    /* 自动隐藏逻辑 */
-    &.is-auto-hide-task-plan {
-      transform: translateX(87px) translateY(80px);
-      overflow: visible;
-
-      /* 感应区域 */
-      &::before {
-        content: '';
-        position: absolute;
-        top: -100px;
-        left: 0;
-        width: 100%;
-        height: 150px;
-        background: transparent;
-        cursor: default;
-        pointer-events: auto;
-        z-index: 0;
-      }
-
-      &.is-hovered {
-        transform: translateX(121px) translateY(0);
-      }
-
-      &.is-search-open {
-        transform: translateX(121px) translateY(80px);
-        &.is-hovered {
-          transform: translateX(121px) translateY(0);
-        }
-      }
-
-      &.is-search-expanded {
-        transform: translateX(277px) translateY(80px);
-        &.is-hovered {
-          transform: translateX(277px) translateY(0);
-        }
-      }
-    }
-
-    &.is-planned:hover {
-      border-color: #a5d6a7;
-      opacity: 1;
-    }
-
-    &.is-search-open {
-      transform: translateX(121px);
-      transition-delay: 0s;
-    }
-
-    &.is-search-expanded {
-      transform: translateX(277px);
-      transition-delay: 0s;
-    }
-
-    &.is-hovered {
-      transform: translateX(121px);
-    }
-    &.is-hovered.is-search-expanded {
-      transform: translateX(277px);
-    }
-  }
-
   .el-dialog.task-plan-dialog {
     max-width: 360px;
     min-width: 320px;
@@ -2704,36 +2566,6 @@
     position: relative;
     top: -10px;
     text-align: right;
-  }
-
-  .theme-dark .mo-task-plan.is-planned {
-    border-color: #a5d6a7;
-  }
-
-  .theme-light .mo-task-plan:hover,
-  .theme-light .mo-task-plan.is-planned {
-    background-color: rgba(255, 255, 255, 0.7);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-  }
-
-  .theme-dark .mo-task-plan:hover,
-  .theme-dark .mo-task-plan.is-planned {
-    background-color: rgba(45, 45, 45, 0.7);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-  }
-
-  @keyframes pulse-green {
-    0% {
-      box-shadow: 0 0 0 0 rgba(103, 194, 58, 0.4);
-    }
-    70% {
-      box-shadow: 0 0 0 5px rgba(103, 194, 58, 0);
-    }
-    100% {
-      box-shadow: 0 0 0 0 rgba(103, 194, 58, 0);
-    }
   }
 
   /* 小屏幕侧边栏样式 */

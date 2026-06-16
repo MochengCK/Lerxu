@@ -1058,7 +1058,7 @@ chrome.downloads.onCreated.addListener((item) => {
     if (overrideDisabled) {
       return
     }
-    await syncExtConfigFromClient()
+    // 使用已缓存的 extConfig（由定时轮询保持同步），避免每次下载都发起网络请求导致延迟
     const effectiveAutoHijack = !!extConfig.interceptAllDownloads
     if (!effectiveAutoHijack) return
     const url = item && item.url ? item.url : ''

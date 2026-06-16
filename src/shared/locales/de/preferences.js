@@ -194,7 +194,7 @@ export default {
   'show-progress-bar': 'Fortschrittsbalken anzeigen',
   'sidebar-layout-mode': 'Seitenleistenmodus',
   'sidebar-layout-mode-floating': 'Schwebende Seitenleiste',
-  'sidebar-layout-mode-three-column': 'Dreispaltiges Layout',
+  'sidebar-layout-mode-three-column': 'Feste Seitenleiste',
   'subnav-mode': 'Modus für zusätzliche Seitenleiste',
   'subnav-mode-floating': 'Schwebende zusätzliche Seitenleiste verwenden',
   'subnav-mode-title': 'Titelumschaltung verwenden',

@@ -26,3 +26,6 @@ release/*
 *.md
 *.sh
 FluxCore/
+SingletonCookie
+SingletonLock
+SingletonSocket

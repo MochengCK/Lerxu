@@ -209,7 +209,7 @@ export default {
   'subnav-mode-title': '제목 전환 사용',
   'sidebar-layout-mode': '사이드바 모드',
   'sidebar-layout-mode-floating': '플로팅 사이드바',
-  'sidebar-layout-mode-three-column': '3열 레이아웃',
+  'sidebar-layout-mode-three-column': '고정 사이드바',
   'floating-bar-display-mode': '하단 바 표시 모드',
   'floating-bar-display-mode-hover': '호버 시 표시',
   'floating-bar-display-mode-always': '항상 표시',
