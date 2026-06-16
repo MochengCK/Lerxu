@@ -229,12 +229,6 @@
         const { isMac, isRenderer, traySpeedometer, runMode } = this
         return isMac && isRenderer && traySpeedometer && runMode !== APP_RUN_MODE.HIDE_TRAY
       },
-      titleBarTextForWindow () {
-        if (!this.showWindowActions || this.isPreferenceWindow) {
-          return ''
-        }
-        return this.titleBarText || ''
-      },
       clipboardAutoPasteEnabled () {
         if (this.clipboardAutoPaste === undefined) return true
         return !!this.clipboardAutoPaste
@@ -579,9 +573,7 @@
 }
 
 .has-custom-titlebar .app-content {
-  padding-top: 42px;
-  box-sizing: border-box;
-  height: calc(100% - 42px);
+  height: 100%;
 }
 
 .is-preference-window.has-custom-titlebar .app-content {

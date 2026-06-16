@@ -1,5 +1,5 @@
 <template>
-  <div :class="['task-actions', { 'task-actions--titlebar': showInTitlebar }]">
+  <div class="task-actions">
     <el-tooltip
       class="item"
       effect="dark"
@@ -126,10 +126,6 @@
       task: {
         type: Object,
         default: null
-      },
-      showInTitlebar: {
-        type: Boolean,
-        default: false
       },
       dateFilter: {
         type: Object,
@@ -296,36 +292,6 @@
   }
 }
 
-.task-actions.task-actions--titlebar {
-  position: fixed;
-  top: 9px;
-  right: 160px;
-  z-index: 10000;
-  overflow: visible;
-  pointer-events: auto;
-  -webkit-app-region: no-drag;
-  transition: opacity 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
-}
-
-.is-task-detail-open .task-actions.task-actions--titlebar,
-  .is-add-task-open .task-actions.task-actions--titlebar,
-  .is-task-plan-open .task-actions.task-actions--titlebar {
-    z-index: 1999;
-    opacity: 0;
-    pointer-events: none;
-    transition: none;
-  }
-
-.task-actions.task-actions--titlebar::after {
-  content: '';
-  position: absolute;
-  right: -10px;
-  top: 4px;
-  width: 1px;
-  height: 16px;
-  background-color: $--task-action-color;
-  opacity: 0.5;
-}
 .view-mode-nav {
   position: relative;
   display: inline-flex;
@@ -384,9 +350,6 @@
 
 // 暗色主题支持
 .theme-dark {
-  .task-actions.task-actions--titlebar::after {
-    background-color: $--dk-task-action-color;
-  }
   .view-mode-nav {
     background-color: rgba(255, 255, 255, 0.1);
 

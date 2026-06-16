@@ -45,7 +45,6 @@ const state = {
   taskPlanVisible: false,
   progress: 0,
   isCheckingUpdate: false,
-  titleBarText: '',
   isAsideHovered: false
 }
 
@@ -162,9 +161,6 @@ const actions = {
   },
   updateCurrentPage ({ commit }, page) {
     commit('UPDATE_CURRENT_PAGE', page)
-  },
-  updateTitleBarText ({ commit }, text) {
-    commit('UPDATE_TITLE_BAR_TEXT', text)
   },
   updateAsideHovered ({ commit }, hovered) {
     commit('UPDATE_ASIDE_HOVERED', hovered)

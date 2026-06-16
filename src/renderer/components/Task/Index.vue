@@ -105,23 +105,20 @@
     >
       <el-header
         class="panel-header"
-        :class="{ 'is-collapsed': shouldMoveTitleToTitlebar }"
-        :height="shouldMoveTitleToTitlebar ? '0' : '84'"
+        height="84"
       >
         <h4
-          v-if="!shouldMoveTitleToTitlebar"
           class="task-title hidden-xs-only"
         >
           {{ title }}
         </h4>
         <h4
-          v-if="!shouldMoveTitleToTitlebar"
           class="task-title hidden-sm-and-up"
         >
           {{ title }}
         </h4>
         <div
-          :class="['task-category-select', { 'task-category-select--titlebar': shouldMoveTitleToTitlebar }]"
+          class="task-category-select"
         >
           <el-select
             ref="categorySelect"
@@ -147,7 +144,6 @@
           </el-select>
         </div>
         <mo-task-actions
-          :showInTitlebar="shouldMoveActionsToTitlebar"
           :dateFilter="taskActionsDateFilter"
           @date-filter-click="onDateFilterClick"
           @date-filter-hover="onDateFilterHover"
@@ -155,7 +151,7 @@
         />
       </el-header>
       <el-main class="panel-content" @contextmenu.native="onTaskPageContextMenu">
-        <mo-task-list :category="categoryFilter" :keyword="taskSearchQuery" :collapsed="shouldMoveTitleToTitlebar" />
+        <mo-task-list :category="categoryFilter" :keyword="taskSearchQuery" />
       </el-main>
     </el-container>
 
@@ -263,28 +259,6 @@
         autoHideSubnav: state => state.config.autoHideSubnav,
         hideAppMenu: state => state.config.hideAppMenu
       }),
-      showWindowActions () {
-        return (is.windows() || is.linux()) && !!this.hideAppMenu
-      },
-      shouldMoveActionsToTitlebar () {
-        return this.shouldMoveTitleToTitlebar
-      },
-      // 始终保留完整的顶部功能区（标题 + 分类选择器 + 任务操作按钮），
-      // 不再因使用自定义顶部导航栏（hideAppMenu）而折叠或挪入标题栏，
-      // 使其与不使用自定义导航栏时的布局保持一致。窗口控制按钮不受影响。
-      shouldMoveTitleToTitlebar () {
-        return false
-      },
-      shouldShowTitleBarText () {
-        return this.shouldMoveTitleToTitlebar
-      },
-      isTitlebarCompact () {
-        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
-        if (!width) {
-          return false
-        }
-        return width < 780
-      },
       isSmallWindow () {
         const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
         if (!width) {
@@ -385,9 +359,6 @@
     },
     watch: {
       status: 'onStatusChange',
-      title: 'updateTitleBarText',
-      showWindowActions: 'updateTitleBarText',
-      isThreeColumn: 'updateTitleBarText',
       blockCategoryHoverOpen (val) {
         if (val) {
           this.forceCloseCategorySelect()
@@ -401,21 +372,6 @@
       }
     },
     methods: {
-      updateTitleBarText () {
-        const text = this.shouldShowTitleBarText ? this.title : ''
-        console.log('[TitleBar Debug]', {
-          shouldShowTitleBarText: this.shouldShowTitleBarText,
-          shouldMoveTitleToTitlebar: this.shouldMoveTitleToTitlebar,
-          showWindowActions: this.showWindowActions,
-          isTitlebarCompact: this.isTitlebarCompact,
-          hideAppMenu: this.hideAppMenu,
-          windowWidth: this.windowWidth,
-          isThreeColumn: this.isThreeColumn,
-          title: this.title,
-          text: text
-        })
-        this.$store.dispatch('app/updateTitleBarText', text)
-      },
       onTaskPageContextMenu (event) {
         const target = event && event.target
         if (!target || typeof target.closest !== 'function') {
@@ -1061,7 +1017,6 @@
           return
         }
         this.windowWidth = window.innerWidth || 0
-        this.updateTitleBarText()
       },
       onSubnavEnter () {
         if (this.subnavHoverTimer) {
@@ -1215,7 +1170,6 @@
       commands.on('copy-task-link', this.handleCopyTaskLink)
       commands.on('show-task-info', this.handleShowTaskInfo)
       commands.on('task:focus-search', this.handleFocusTaskSearch)
-      this.updateTitleBarText()
     },
     beforeDestroy () {
       if (typeof window !== 'undefined' && this._handleWindowResize) {
@@ -1234,7 +1188,6 @@
         window.cancelAnimationFrame(this._subnavMouseRaf)
         this._subnavMouseRaf = null
       }
-      this.$store.dispatch('app/updateTitleBarText', '')
       this.$store.dispatch('app/updateAsideHovered', false)
     },
     destroyed () {
@@ -1262,15 +1215,6 @@
   transition: all 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
 }
 
-.panel-header.is-collapsed {
-  padding: 0 !important;
-  min-height: 0 !important;
-  overflow: visible;
-  z-index: 6000;
-  border-bottom: none !important;
-  margin: 0 !important;
-}
-
 .task-category-select {
   position: absolute;
   top: 44px;
@@ -1285,89 +1229,12 @@
   -ms-user-select: none;
   transition: all 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
 }
-.task-category-select.task-category-select--titlebar {
-  position: fixed;
-  top: 7px;
-  height: auto;
-  align-items: center;
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-  z-index: 10000;
-  pointer-events: auto;
-  -webkit-app-region: no-drag;
-  transition: opacity 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
-}
-.has-custom-titlebar .task-category-select.task-category-select--titlebar {
-  justify-content: center;
-  padding-left: 0;
-}
-
-.is-task-detail-open .task-category-select.task-category-select--titlebar,
-.is-add-task-open .task-category-select.task-category-select--titlebar,
-.is-task-plan-open .task-category-select.task-category-select--titlebar {
-  z-index: 1999;
-  opacity: 0;
-  pointer-events: none;
-  transition: none;
-}
-.is-task-detail-open .task-category-select.task-category-select--titlebar .el-select,
-.is-add-task-open .task-category-select.task-category-select--titlebar .el-select,
-.is-task-plan-open .task-category-select.task-category-select--titlebar .el-select {
-  pointer-events: none !important;
-}
-
-.is-task-detail-open .task-subnav-switch.task-subnav-switch--titlebar,
-.is-add-task-open .task-subnav-switch.task-subnav-switch--titlebar,
-.is-task-plan-open .task-subnav-switch.task-subnav-switch--titlebar {
-  z-index: 1999;
-}
-
-.task-subnav-switch {
-  display: block;
-  margin: 0;
-  transition: all 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
-}
-
-.task-subnav-switch:not(.task-subnav-switch--titlebar) {
-  margin-left: -6px;
-}
-
-.task-subnav-switch.task-subnav-switch--titlebar {
-  position: fixed;
-  top: 9px;
-  left: 16px;
-  transform: none;
-  z-index: 10000;
-  pointer-events: auto;
-  -webkit-app-region: no-drag;
-  transition: opacity 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
-}
-.has-custom-titlebar .task-subnav-switch.task-subnav-switch--titlebar {
-  left: 16px;
-}
-
-@media only screen and (min-width: 568px) {
-  .task-subnav-switch.task-subnav-switch--titlebar {
-    left: 36px;
-  }
-  .has-custom-titlebar .task-subnav-switch.task-subnav-switch--titlebar {
-    left: 36px;
-  }
-  .has-custom-titlebar .task-category-select.task-category-select--titlebar {
-    padding-left: 0;
-  }
-}
 
 .task-category-select .el-select {
   width: 160px;
   pointer-events: auto;
   opacity: 0.75;
   transition: opacity 0.2s ease;
-}
-
-.task-category-select.task-category-select--titlebar .el-select {
-  -webkit-app-region: no-drag;
 }
 
 .task-category-select .el-select .el-input__inner {

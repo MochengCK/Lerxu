@@ -1,8 +1,5 @@
 <template>
   <div class="title-bar">
-    <div v-if="titleText" class="title-bar-title">
-      <span class="title-bar-title__text">{{ titleText }}</span>
-    </div>
     <div class="title-bar-dragger"></div>
     <ul v-if="showActions" class="window-actions">
       <li @click="handleMinimize">
@@ -29,10 +26,6 @@
     props: {
       showActions: {
         type: Boolean
-      },
-      titleText: {
-        type: String,
-        default: ''
       }
     },
     computed: {

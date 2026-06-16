@@ -1,6 +1,6 @@
 <template>
   <mo-drag-select
-    :class="['task-list', `task-list--${viewMode}`, { 'is-collapsed': collapsed }]"
+    :class="['task-list', `task-list--${viewMode}`]"
     v-if="displayTaskList.length > 0"
     attribute="attr"
     @change="handleDragSelectChange"
@@ -65,10 +65,6 @@
       keyword: {
         type: String,
         default: ''
-      },
-      collapsed: {
-        type: Boolean,
-        default: false
       }
     },
     data () {
@@ -539,10 +535,6 @@
   box-sizing: border-box;
   transition: padding-top 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
 
-  &.is-collapsed {
-    padding-top: 55px;
-  }
-
   // 列表视图（默认）
   &.task-list--list {
     .task-item-wrapper {
@@ -574,22 +566,6 @@
       &:hover {
         z-index: 50;
       }
-    }
-  }
-}
-
-.show-window-actions {
-  .task-list {
-    &.is-collapsed {
-      padding-top: 55px;
-    }
-  }
-}
-
-.has-custom-titlebar {
-  .task-list {
-    &.is-collapsed {
-      padding-top: 12px;
     }
   }
 }
