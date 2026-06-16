@@ -88,8 +88,11 @@
 </script>
 
 <style lang="scss">
+// 自定义标题栏和原生标题栏模式下，subnav 的 margin-top 统一与
+// .panel-header 的 padding-top (44px) 对齐，确保侧边栏首项与功能区标题同行
 .subnav-inner.task-subnav {
-  margin-top: 12px;
+  margin-top: 44px;
+  padding-bottom: 20px;
 }
 
 #app:not(.has-custom-titlebar) .subnav-inner.task-subnav {
