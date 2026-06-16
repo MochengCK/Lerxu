@@ -19,6 +19,17 @@ let extConfig = { ...extConfigDefaults }
 let extConfigTimer = null
 let extConfigSyncedOnce = false
 const AUTO_HIJACK_OVERRIDE_KEY = 'autoHijackTemporarilyDisabled'
+// 回退到浏览器下载的 URL 集合，防止接管循环（取消→重新下载→取消→...）
+// 使用 Map 记录时间戳，定期清理过期条目
+const fallbackBrowserUrls = new Map()
+setInterval(() => {
+  const now = Date.now()
+  for (const [url, ts] of fallbackBrowserUrls) {
+    if (now - ts > 10000) {
+      fallbackBrowserUrls.delete(url)
+    }
+  }
+}, 10000)
 let sessionToken = null
 let tokenVersion = null
 let lastKnownTheme = null
@@ -1047,29 +1058,41 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 chrome.downloads.onCreated.addListener((item) => {
   const handleDownloadCreated = async () => {
     // 只处理正在进行中的下载，忽略历史记录
-    // 历史记录的状态通常是 'complete' 或 'interrupted'
-    // 只有真正的新下载才会是 'in_progress'
     if (item.state !== 'in_progress') {
-      console.log('[LinkCore] Ignoring non-active download (state: ' + item.state + '):', item.url)
       return
     }
-    
+
+    // 检查是否临时禁用了自动接管
     const overrideDisabled = await getAutoHijackOverride()
     if (overrideDisabled) {
       return
     }
-    // 使用已缓存的 extConfig（由定时轮询保持同步），避免每次下载都发起网络请求导致延迟
-    const effectiveAutoHijack = !!extConfig.interceptAllDownloads
-    if (!effectiveAutoHijack) return
+
+    // 使用已缓存的 extConfig（由定时轮询保持同步），避免每次下载都发起网络请求
+    if (!extConfig.interceptAllDownloads) {
+      return
+    }
+
     const url = item && item.url ? item.url : ''
-    if (!url || !/^https?:/i.test(url)) return
-    
-    // 检查是否在排除域名列表中
+    if (!url || !/^https?:/i.test(url)) {
+      return
+    }
+
+    // 如果该 URL 是我们回退到浏览器下载的，跳过接管
+    if (fallbackBrowserUrls.has(url)) {
+      fallbackBrowserUrls.delete(url)
+      return
+    }
+
+    // 接管模式：立即取消浏览器下载，不让浏览器下载任何数据
+    chrome.downloads.cancel(item.id)
+    chrome.downloads.erase({ id: item.id })
+
+    // 检查排除域名
     try {
       const downloadUrl = new URL(url)
       const downloadDomain = downloadUrl.hostname
-      
-      // 检查 referer 域名
+
       let refererDomain = ''
       if (item.referrer) {
         try {
@@ -1077,71 +1100,76 @@ chrome.downloads.onCreated.addListener((item) => {
           refererDomain = refererUrl.hostname
         } catch (e) {}
       }
-      
-      // 获取排除域名列表
+
       const excludeDomains = Array.isArray(extConfig.excludeDomains) ? extConfig.excludeDomains : []
-      
-      // 检查下载域名或 referer 域名是否在排除列表中
       const isDomainExcluded = excludeDomains.some(domain => {
         const normalizedDomain = domain.toLowerCase().trim()
-        return downloadDomain.toLowerCase().includes(normalizedDomain) || 
+        return downloadDomain.toLowerCase().includes(normalizedDomain) ||
                (refererDomain && refererDomain.toLowerCase().includes(normalizedDomain))
       })
-      
+
       if (isDomainExcluded) {
-        console.log('[LinkCore] Domain excluded, skipping download:', downloadDomain)
+        console.log('[LinkCore] Domain excluded, restarting browser download:', downloadDomain)
+        fallbackBrowserUrls.set(url, Date.now())
+        await downloadViaBrowser(url, item.filename)
         return
       }
     } catch (e) {
       console.error('[LinkCore] Error checking excluded domain:', e)
     }
-    
+
+    // 检查排除的文件扩展名
+    let shouldExclude = false
     try {
-      let name = ''
-      if (item && item.filename) {
-        name = item.filename
-      } else {
+      let name = item.filename || ''
+      if (!name) {
         try {
           const u = new URL(url)
           name = u.pathname ? u.pathname.split('/').pop() || '' : ''
-        } catch (e) {
-          name = ''
-        }
+        } catch (e) {}
       }
       const ext = name && name.indexOf('.') !== -1 ? name.split('.').pop().toLowerCase() : ''
       if (ext && Array.isArray(extConfig.skipFileExtensions) && extConfig.skipFileExtensions.includes(ext)) {
-        return
+        shouldExclude = true
       }
-      
-      // 检查文件大小限制（minFileSize 单位为 MB）
-      const minFileSizeMB = Number(extConfig.minFileSize) || 0
-      if (minFileSizeMB > 0) {
-        // 获取文件大小（字节）
-        // totalBytes 是文件总大小，如果未知则为 -1
-        const totalBytes = item.totalBytes || 0
-        const fileSizeMB = totalBytes / (1024 * 1024)
-        
-        // 如果已知文件大小且小于最小限制，跳过拦截
-        if (totalBytes > 0 && fileSizeMB < minFileSizeMB) {
-          console.log('[LinkCore] File size (' + fileSizeMB.toFixed(2) + 'MB) below minimum (' + minFileSizeMB + 'MB), skipping:', url)
-          return
-        }
-        
-        // 如果文件大小未知（totalBytes 为 0 或 -1），继续拦截
-        if (totalBytes <= 0) {
-          console.log('[LinkCore] File size unknown, will intercept anyway:', url)
+
+      // 检查文件大小限制
+      if (!shouldExclude) {
+        const minFileSizeMB = Number(extConfig.minFileSize) || 0
+        if (minFileSizeMB > 0) {
+          const totalBytes = item.totalBytes || 0
+          const fileSizeMB = totalBytes / (1024 * 1024)
+          if (totalBytes > 0 && fileSizeMB < minFileSizeMB) {
+            console.log('[LinkCore] File size below minimum, restarting browser download:', url)
+            shouldExclude = true
+          }
         }
       }
-    } catch (e) {
+    } catch (e) {}
+
+    if (shouldExclude) {
+      fallbackBrowserUrls.set(url, Date.now())
+      await downloadViaBrowser(url, item.filename)
+      return
     }
+
+    // 检查程序是否在运行
+    const clientAvailable = await isClientAvailable()
+    if (!clientAvailable) {
+      console.log('[LinkCore] Client not available, restarting browser download')
+      fallbackBrowserUrls.set(url, Date.now())
+      await downloadViaBrowser(url, item.filename)
+      return
+    }
+
+    // 发送到程序
     try {
-      const ok = await addUri(url, item.referrer)
-      if (ok) {
-        chrome.downloads.cancel(item.id)
-        // 从下载历史中删除记录，避免留下痕迹
-        chrome.downloads.erase({ id: item.id })
-      }
+      await addUri(url, item.referrer, item.filename)
     } catch (e) {
+      // 如果发送失败，回退到浏览器下载
+      console.log('[LinkCore] Failed to send to client, restarting browser download:', e)
+      fallbackBrowserUrls.set(url, Date.now())
+      await downloadViaBrowser(url, item.filename)
     }
   }
   handleDownloadCreated()

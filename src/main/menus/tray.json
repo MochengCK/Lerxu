@@ -9,6 +9,7 @@
   { "id": "task.resume-all-task", "command": "application:resume-all-task" },
   { "type": "separator" },
   { "id": "app.preferences", "command": "application:preferences", "command-before": "application:show?page=index" },
+  { "id": "app.preferences", "command": "application:preferences" },
   { "id": "app.check-for-updates", "command": "application:check-for-updates" },
   { "type": "separator" },
   { "id": "app.quit", "command": "application:quit" }
