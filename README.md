@@ -226,4 +226,4 @@ If you encounter any problems or have questions:
 
 ## 📄 License
 
-This project is open source under the Apache License v2.0
+LinkCore Download Manager is licensed under the [MIT License](LICENSE).

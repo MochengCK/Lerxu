@@ -227,4 +227,4 @@ LinkCore-Download-Manager/
 
 ## 📄 许可证
 
-本项目基于 Apache 许可证 v2.0 [(Apache-2.0)](LICENSE) 开源
+本项目基于 [MIT License](LICENSE) 开源。
