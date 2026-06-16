@@ -269,8 +269,11 @@
       shouldMoveActionsToTitlebar () {
         return this.shouldMoveTitleToTitlebar
       },
+      // 始终保留完整的顶部功能区（标题 + 分类选择器 + 任务操作按钮），
+      // 不再因使用自定义顶部导航栏（hideAppMenu）而折叠或挪入标题栏，
+      // 使其与不使用自定义导航栏时的布局保持一致。窗口控制按钮不受影响。
       shouldMoveTitleToTitlebar () {
-        return this.showWindowActions && !this.isTitlebarCompact
+        return false
       },
       shouldShowTitleBarText () {
         return this.shouldMoveTitleToTitlebar
