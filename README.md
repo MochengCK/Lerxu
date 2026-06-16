@@ -1,7 +1,7 @@
 <div align="center">
   <table width="100%">
     <tr>
-      <td align="right"><a href="./README-CN.md">Chinese</a></td>
+      <td align="right"><a href="./README-CN.md">中文</a></td>
     </tr>
   </table>
 </div>
