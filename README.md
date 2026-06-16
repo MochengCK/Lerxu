@@ -1,7 +1,7 @@
 <div align="center">
   <table width="100%">
     <tr>
-      <td align="right"><a href="./README-CN.md">简体中文</a></td>
+      <td align="right"><a href="./README-CN.md">Chinese</a></td>
     </tr>
   </table>
 </div>
@@ -17,7 +17,7 @@
   <a href="https://github.com/MochengCK/LinkCore-Download-Manager/releases">
     <img src="https://img.shields.io/github/downloads/MochengCK/LinkCore-Download-Manager/total.svg?style=for-the-badge" alt="Total Downloads" />
   </a>
-  <a href="#platforms">
+  <a href="#supported-platforms">
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg?style=for-the-badge" alt="Support Platforms" />
   </a>
   <a href="https://github.com/MochengCK/LinkCore-Download-Manager/blob/master/LICENSE">
@@ -25,123 +25,116 @@
   </a>
 </p>
 
+## Introduction
 
-## 📖 Overview
+LinkCore Download Manager is a clean, elegant, and easy-to-use cross-platform download manager built with modern web technologies. It offers an intuitive out-of-the-box interface, clear task workflows, and minimal necessary settings, making download management simpler. It supports common download protocols and integrates with a browser extension for online video sniffing and downloading, covering everyday usage scenarios.
 
-LinkCore Download Manager is a [simple], [beautiful], and [easy-to-use] cross-platform download manager built with modern web technologies. With an out-of-the-box intuitive interface, clear task flow, and minimal necessary settings, it makes download management simpler. It supports common download protocols and online video downloading via browser extension sniffing, covering everyday usage scenarios.
-***
-At the same time, LinkCore Download Manager also possesses professional-grade downloader capabilities: supporting BitTorrent/Magnet, UPnP/NAT-PMP port mapping, automatic Tracker updates, task priority and batch management, quick switching of download engines, and advanced option presets, satisfying advanced and heavy download scenarios.
+LinkCore Download Manager also provides professional-level download capabilities: BitTorrent/Magnet support, UPnP/NAT-PMP port mapping, automatic Tracker updates, task priority and batch management, quick download engine switching, and advanced option presets to meet advanced and heavy download needs.
 
-## ✨ Key Features
+## Screenshots
 
-### 🚀 Performance & Reliability
-- **High-Speed Download**: Optimized for maximum download performance
-- **Multi-threading Support**: Each task supports up to 128 threads
-- **Concurrent Downloads**: Can manage up to 10 download tasks simultaneously
-- **Stable Connection**: Robust error handling and automatic retry mechanism
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img
+        src="./screenshots/linkcore-screenshot-light.png"
+        alt="Light Mode - Task Management"
+        style="max-width: 100%;"
+      />
+      <p><em>Light Mode</em></p>
+    </td>
+    <td align="center" width="50%">
+      <img
+        src="./screenshots/linkcore-screenshot-task.png"
+        alt="Dark Mode - Task Management"
+        style="max-width: 100%;"
+      />
+      <p><em>Dark Mode</em></p>
+    </td>
+  </tr>
+</table>
 
-### 📁 Protocol Support
+## Core Features
+
+### Performance & Reliability
+- **High-speed Downloads**: Optimized for maximum download performance
+- **Multi-threaded Support**: Up to 128 threads per task
+- **Concurrent Downloads**: Manage up to 10 download tasks simultaneously
+- **Stable Connections**: Robust error handling and automatic retry mechanism
+
+### Protocol Support
 - **HTTP/HTTPS**: Download directly from web servers
 - **FTP/SFTP**: Transfer files from FTP servers
-- **BitTorrent**: Full support for torrent files, with selective downloading
-- **Magnet Links**: Direct download without .torrent files
+- **BitTorrent**: Full torrent file support with selective downloading
+- **Magnet Links**: Direct downloads without .torrent files
 
-### 🎬 Video Download
-- **Online Video Download (Browser Extension)**: Sniff online video resources in your browser and send them to the app to create download tasks (required request headers are included to improve availability)
-- **Unified Task Management**: Video resources are added as regular download tasks, with the same pause/resume/delete experience as other task types
+### Video Download
+- **Online Video Download (Browser Extension)**: Sniff video resources via browser extension, send to the app with one click to create download tasks (includes necessary request headers for improved availability)
+- **Unified Task Management**: Video resources appear as regular download tasks in the task list, supporting the same pause/resume/delete management experience as other tasks
 
-### 🎨 User Experience
-- **Simple Interface**: Modern intuitive design, supporting dark mode
+### User Experience
+- **Clean Interface**: Modern, intuitive design with dark mode support
 - **System Tray Integration**: Quick access and status monitoring
-- **Download Notifications**: Real-time reminders when downloads are completed
+- **Download Notifications**: Real-time alerts when downloads complete
 - **Speed Control**: Set upload and download speed limits
 - **File Management**: Organize downloaded files by category and location
 
-### 🔧 Advanced Features
-- **Tracker Update**: Automatically update Tracker list daily to improve torrent download performance
-- **UPnP/NAT-PMP**: Automatic port mapping to improve connectivity
-- **User-Agent Spoofing**: Customize User-Agent strings to enhance compatibility
-- **Task Scheduling**: Set download time and priority
-- **Batch Download**: Import and export download lists
+### Advanced Features
+- **Tracker Updates**: Daily automatic Tracker list updates for improved torrent performance
+- **UPnP/NAT-PMP**: Automatic port mapping for better connectivity
+- **User-Agent Masquerading**: Custom User-Agent strings for enhanced compatibility
+- **Task Scheduling**: Set download times and priorities
+- **Batch Downloads**: Import and export download lists
 
-### 🧩 Unique Features
-- **File Categorization**: Automatically classify and save according to file type
-- **Custom Categorization**: Users can customize file categorization rules
-- **Task Priority**: Users can set task priority values, affecting download order and resource allocation
-- **Custom Downloading Suffix**: Users can customize the suffix of files being downloaded for easier file management
-- **Set File Modification Date to Completion Time**: Users can choose to set the modification date of completed files to be the same as the completion time for easier file management
-- **Quick Engine Switching**: Users can quickly switch between different download engines to meet different download needs
-- **Advanced Option Presets**: Support for naming, saving, selecting, and deleting presets for "Advanced Options"
-- **Link Input UX Optimization**: Automatically deduplicate duplicate links; automatically wrap and position cursor after pasting or auto-filling
-- **Custom Shortcuts**: Set or reset shortcuts for common commands in the "Preferences → Basic Settings → Shortcuts" card
+### Unique Features
+- **File Categorization**: Auto-sort files by type
+- **Custom Categories**: User-defined file categorization rules
+- **Task Priority**: Set task priority values to influence download order and resource allocation
+- **Custom Download File Extension**: Customize the file extension for in-progress downloads
+- **Set File Modification Date to Completion Time**: Optionally set downloaded file modification dates to match completion time
+- **Quick Engine Switching**: Quickly switch between different download engines
+- **Advanced Option Presets**: Name, save, apply, and delete presets for advanced options
+- **Link Input Optimization**: Auto-deduplicate links; auto-newline and cursor positioning after paste or autofill
+- **Custom Shortcuts**: Set or reset shortcuts for common commands in the "Preferences > Basic > Shortcuts" card
 
-
-## 🖥️ Supported Platforms
+## Supported Platforms
 
 LinkCore Download Manager currently supports the following platforms:
 - **Windows** (7, 8, 10, 11)
 - **macOS** (Intel, x64; Apple Silicon, arm64)
 - **Linux** (x64, arm64)
 
-## 📦 Installation
+## Installation
 
 ### Windows
 
 1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore-Download-Manager/releases) page
-2. Download the latest version of the `LinkCore-Download-Manager-Setup-x.y.z.exe` installer
-3. Run the installer and follow the on-screen prompts to complete the installation
+2. Download the latest `LinkCore-Download-Manager-Setup-x.y.z.exe` installer
+3. Run the installer and follow the on-screen instructions
 
 ### macOS
 
 1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore-Download-Manager/releases) page
 2. Download `*.dmg` (x64/arm64) or `*-mac.zip` / `*-arm64-mac.zip` (x64/arm64)
 3. Using `*.dmg`: Double-click to open, drag the app to `/Applications`
-4. Using `*.zip`: After unzipping, move the app to `/Applications`
-5. If it prompts "unidentified developer" on first run, click "Open Anyway" in "System Settings → Privacy & Security", or "Right-click → Open" on the app icon in Finder
+4. Using `*.zip`: Extract and move the app to `/Applications`
+5. If prompted "cannot verify developer" on first launch, go to "System Settings > Privacy & Security" and click "Open Anyway", or right-click the app icon in Finder and select "Open"
 
 ### Linux
 
-- AppImage (Universally Recommended):
+- AppImage (Recommended):
   1. Download `*.AppImage` (`x64` or `arm64`)
-  2. Grant executable permission: `chmod +x LinkCore-Download-Manager-*.AppImage`
+  2. Grant execute permission: `chmod +x LinkCore-Download-Manager-*.AppImage`
   3. Run: `./LinkCore-Download-Manager-*.AppImage`
 
 - Debian/Ubuntu (`.deb` package):
   1. Download `linkcore-download-manager_*_amd64.deb` or `linkcore-download-manager_*_arm64.deb`
   2. Install: `sudo dpkg -i linkcore-download-manager_*.deb`
-  3. If there are dependency issues: `sudo apt -f install`
+  3. If dependency issues occur: `sudo apt -f install`
 
-- Other distributions: Prefer the AppImage method.
+- Other distributions: Use the AppImage method.
 
-## 🖥️ Screenshots
-
-<table>
-  <tr>
-    <td align="center" width="50%">
-      <img
-        src="./screenshots/linkcore-screenshot-task.png"
-        alt="Dark Mode - Task Management Interface"
-        style="max-width: 100%;"
-      />
-      <p><em>Dark Mode</em></p>
-    </td>
-    <td align="center" width="50%">
-      <img
-        src="./screenshots/屏幕截图 2025-12-15 062122.png"
-        alt="Light Mode - Task Management Interface"
-        style="max-width: 100%;"
-      />
-      <p><em>Light Mode</em></p>
-    </td>
-  </tr>
-</table>
-
-### Engine Version & Connections
-- The program builds in and uses the `FluxCore` download engine by default, while still adapting to other engines (such as `aria2c 1.36.0` / `1.37.0`). The app automatically aligns "Max connections per server" with each engine’s limit for stability and compatibility.
-- Compatibility example: `aria2c 1.37.0` caps "Max connections per server" at `16`, while `aria2c 1.36.0` caps at `64`. After switching engines, the app applies the corresponding policy and keeps existing chunk concurrency settings.
-- Tip: The real concurrency for HTTP/FTP single-source download is `min(split, max-connection-per-server)`; BT or multi-mirror downloads can stack concurrency, having less impact on overall speed.
-
-## 🛠️ Development Guide
+## Development Guide
 
 ### Prerequisites
 
@@ -149,7 +142,7 @@ LinkCore Download Manager currently supports the following platforms:
 - npm or yarn
 - Git
 
-### Setting up the Development Environment
+### Setup
 
 1. Clone the repository:
    ```bash
@@ -160,16 +153,14 @@ LinkCore Download Manager currently supports the following platforms:
 2. Install dependencies:
    ```bash
    npm install
-   # or
-   yarn install
    ```
 
-3. Start development server:
+3. Start the development server:
    ```bash
    npm run dev
    ```
 
-4. Build production version:
+4. Build for production:
    ```bash
    npm run build
    ```
@@ -189,41 +180,41 @@ LinkCore-Download-Manager/
 └── README.md             # Project documentation
 ```
 
-## 🤝 Contributing
+## Contributing
 
-Contributions are welcome! Whether you are fixing bugs, adding new features, or improving documentation, we greatly appreciate your help.
+Contributions are welcome! Whether you're fixing bugs, adding new features, or improving documentation, we appreciate your help.
 
 ### How to Contribute
 
-1. Fork this repository
+1. Fork the repository
 2. Create a new branch (`git checkout -b feature/your-feature`)
-3. Make modifications
-4. Commit changes (`git commit -m 'Add some feature'`)
+3. Make your changes
+4. Commit your changes (`git commit -m 'Add some feature'`)
 5. Push to the branch (`git push origin feature/your-feature`)
 6. Create a Pull Request
 
-### Development Guidelines
+### Guidelines
 
-- Follow existing code styles
+- Follow the existing code style
 - Write clear and concise commit messages
 - Add tests for new features
 - Update documentation as needed
 
-## 🙏 Credits
+## Acknowledgments
 
-- This project is developed based on the open-source project [Motrix](https://github.com/agalwood/Motrix) by agalwood, with significant modifications and functional extensions.
+- This project is based on the agalwood open-source project [Motrix](https://github.com/agalwood/Motrix), with extensive modifications and feature extensions
 - UI Framework: [Vue.js](https://vuejs.org/)
 - Desktop Framework: [Electron](https://www.electronjs.org/)
 - Video Processing: [FFmpeg](https://ffmpeg.org/)
 - Download Engine: [FluxCore](https://github.com/MochengCK/FluxCore)
 
-## 📞 Support
+## Support
 
-If you encounter any problems or have questions:
+If you encounter any issues or have questions:
 
-- [Submit an issue](https://github.com/MochengCK/LinkCore-Download-Manager/issues/new/choose) on GitHub
+- Submit an [issue](https://github.com/MochengCK/LinkCore-Download-Manager/issues/new/choose) on GitHub
 - Join our community for discussion and support
 
-## 📄 License
+## License
 
-LinkCore Download Manager is licensed under the [MIT License](LICENSE).
+This project is open-sourced under the [MIT License](LICENSE).
