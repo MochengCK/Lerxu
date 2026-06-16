@@ -506,6 +506,113 @@ iframe {
   }
 }
 
+/* Checkbox
+-------------------------- */
+.el-checkbox__inner {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background-color: $--color-white;
+  border: 1.5px solid $--border-color-base;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+  &::after {
+    height: 7px;
+    left: 4px;
+    top: 1px;
+    width: 3px;
+    border-width: 2px;
+    transform: rotate(45deg) scaleY(0);
+    transform-origin: center;
+    transition: transform 0.15s cubic-bezier(0.4, 0, 0.6, 1);
+  }
+}
+
+.el-checkbox__input {
+  &:hover .el-checkbox__inner {
+    border-color: $--color-primary;
+  }
+
+  &.is-focus .el-checkbox__inner {
+    border-color: $--color-primary;
+    box-shadow: 0 0 0 2px rgba($--color-primary, 0.15);
+  }
+
+  &.is-checked .el-checkbox__inner {
+    background-color: $--color-primary;
+    border-color: $--color-primary;
+
+    &::after {
+      transform: rotate(45deg) scaleY(1);
+    }
+  }
+
+  &.is-checked.is-focus .el-checkbox__inner {
+    box-shadow: 0 0 0 2px rgba($--color-primary, 0.2);
+  }
+
+  &.is-disabled .el-checkbox__inner {
+    background-color: $--background-color-base;
+    border-color: $--border-color-light;
+    cursor: not-allowed;
+
+    &::after {
+      border-color: $--color-text-placeholder;
+    }
+  }
+
+  &.is-checked.is-disabled .el-checkbox__inner {
+    background-color: $--border-color-extra-light;
+    border-color: $--border-color-base;
+
+    &::after {
+      border-color: $--color-text-placeholder;
+    }
+  }
+}
+
+.el-checkbox__label {
+  font-size: $--font-size-base;
+  padding-left: 10px;
+  transition: color 0.2s;
+}
+
+.el-checkbox {
+  &.is-checked .el-checkbox__label {
+    color: $--checkbox-checked-font-color;
+  }
+}
+
+.el-checkbox.is-bordered {
+  border-radius: 6px;
+  padding: 9px 15px 9px 10px;
+  transition: all 0.2s;
+
+  &.is-checked {
+    border-color: $--color-primary;
+  }
+}
+
+/* Switch
+-------------------------- */
+.el-switch__core {
+  border-radius: 11px;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.el-switch__core::after {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.el-switch__label {
+  transition: color 0.2s;
+}
+
+.el-switch.is-checked .el-switch__label {
+  color: $--color-primary;
+}
+
 .el-drawer__container {
   outline: none;
 }

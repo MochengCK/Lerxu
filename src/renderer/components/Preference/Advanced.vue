@@ -1063,6 +1063,11 @@
             route: `${base}/transfer`
           },
           {
+            key: 'bt',
+            title: this.$t('preferences.bt-settings'),
+            route: `${base}/bt`
+          },
+          {
             key: 'task',
             title: this.$t('preferences.task-manage'),
             route: `${base}/task`
@@ -1073,19 +1078,9 @@
             route: `${base}/file`
           },
           {
-            key: 'security',
-            title: this.$t('preferences.security'),
-            route: `${base}/security`
-          },
-          {
             key: 'advanced',
             title: this.$t('preferences.advanced'),
             route: `${base}/advanced`
-          },
-          {
-            key: 'bittorrent',
-            title: this.$t('preferences.bittorrent'),
-            route: `${base}/bittorrent`
           },
           {
             key: 'lab',

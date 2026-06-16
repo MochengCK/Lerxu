@@ -27,7 +27,7 @@
   import '@/components/Icons/preference-transfer'
   import '@/components/Icons/preference-task'
   import '@/components/Icons/preference-file'
-  import '@/components/Icons/preference-security'
+  import '@/components/Icons/preference-bt'
 
   export default {
     name: 'mo-preference-subnav',
@@ -62,9 +62,9 @@
           { key: 'basic', title: this.$t('preferences.basic'), icon: 'preference-basic' },
           { key: 'appearance', title: this.$t('preferences.appearance'), icon: 'preference-appearance' },
           { key: 'transfer', title: this.$t('preferences.transfer-settings'), icon: 'preference-transfer' },
+          { key: 'bt', title: this.$t('preferences.bt-settings'), icon: 'preference-bt' },
           { key: 'task', title: this.$t('preferences.task-manage'), icon: 'preference-task' },
           { key: 'file', title: this.$t('preferences.file-manage'), icon: 'preference-file' },
-          { key: 'security', title: this.$t('preferences.security'), icon: 'preference-security' },
           { key: 'advanced', title: this.$t('preferences.advanced'), icon: 'preference-advanced' }
         ]
       },

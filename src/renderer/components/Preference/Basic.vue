@@ -9,7 +9,7 @@
       :rules="rules"
     >
         <div class="preference-card" data-category="appearance">
-          <h3 class="card-title">{{ $t('preferences.appearance') }}</h3>
+          <h3 class="card-title">{{ $t('preferences.theme') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <mo-theme-switcher
@@ -44,18 +44,12 @@
                 {{ $t('preferences.show-progress-bar') }}
               </el-checkbox>
             </el-col>
-          </el-form-item>
-        </div>
-
-        <div class="preference-card" data-category="appearance">
-          <h3 class="card-title">{{ $t('preferences.date-filter-frosted') }}</h3>
-          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.dateFilterFrosted" @change="autoSaveForm">
                 {{ $t('preferences.date-filter-frosted') }}
               </el-checkbox>
             </el-col>
-            <el-col v-if="form.dateFilterFrosted" class="form-item-sub" :span="24">
+            <el-col v-if="form.dateFilterFrosted" class="form-item-sub-sub" :span="24">
               <el-form-item class="background-slider-item" :label="$t('preferences.date-filter-frosted-strength')">
                 <el-slider
                   v-model="form.dateFilterFrostedBlur"
@@ -66,18 +60,12 @@
                 />
               </el-form-item>
             </el-col>
-          </el-form-item>
-        </div>
-
-        <div class="preference-card" data-category="appearance">
-          <h3 class="card-title">{{ $t('preferences.task-detail-default-transparent') }}</h3>
-          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.taskDetailDefaultTransparent" @change="autoSaveForm">
                 {{ $t('preferences.task-detail-default-transparent') }}
               </el-checkbox>
             </el-col>
-            <el-col v-if="form.taskDetailDefaultTransparent" class="form-item-sub" :span="24">
+            <el-col v-if="form.taskDetailDefaultTransparent" class="form-item-sub-sub" :span="24">
               <el-form-item class="background-slider-item" :label="$t('preferences.task-detail-frosted-strength')">
                 <el-slider
                   v-model="form.taskDetailFrostedBlur"
@@ -88,12 +76,6 @@
                 />
               </el-form-item>
             </el-col>
-          </el-form-item>
-        </div>
-
-        <div class="preference-card" data-category="appearance">
-          <h3 class="card-title">{{ $t('preferences.show-task-type-badge') }}</h3>
-          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.showTaskTypeBadge" @change="autoSaveForm">
                 {{ $t('preferences.show-task-type-badge') }}
@@ -109,7 +91,7 @@
           <h3 class="card-title">{{ $t('preferences.subnav-mode') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
-              <el-form-item :label="$t('preferences.sidebar-layout-mode')">
+              <div class="sub-row-reverse">
                 <el-select
                   v-model="form.sidebarLayoutMode"
                   size="mini"
@@ -124,10 +106,11 @@
                     value="three-column"
                   />
                 </el-select>
-              </el-form-item>
+                <span class="sub-row-label">{{ $t('preferences.sidebar-layout-mode') }}</span>
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-form-item :label="$t('preferences.floating-bar-display-mode')">
+              <div class="sub-row-reverse">
                 <el-select
                   v-model="form.floatingBarDisplayMode"
                   size="mini"
@@ -142,17 +125,22 @@
                     value="always"
                   />
                 </el-select>
-              </el-form-item>
+                <span class="sub-row-label">{{ $t('preferences.floating-bar-display-mode') }}</span>
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-form-item :label="$t('preferences.auto-hide-aside')">
-                <el-checkbox v-model="form.autoHideAside" @change="autoSaveForm" />
-              </el-form-item>
+              <div class="sub-row-reverse">
+                <el-checkbox v-model="form.autoHideAside" @change="autoSaveForm">
+                  {{ $t('preferences.auto-hide-aside') }}
+                </el-checkbox>
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-form-item :label="$t('preferences.auto-hide-floating-bar')">
-                <el-checkbox v-model="form.autoHideFloatingBar" @change="autoSaveForm" />
-              </el-form-item>
+              <div class="sub-row-reverse">
+                <el-checkbox v-model="form.autoHideFloatingBar" @change="autoSaveForm">
+                  {{ $t('preferences.auto-hide-floating-bar') }}
+                </el-checkbox>
+              </div>
             </el-col>
           </el-form-item>
         </div>
@@ -509,7 +497,7 @@
 
         <!-- 传输设置卡片 -->
         <div class="preference-card" data-category="transfer">
-          <h3 class="card-title">{{ $t('preferences.transfer-settings') }}</h3>
+          <h3 class="card-title">{{ $t('preferences.speed-limit') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub speed-limit-row" :span="24">
               {{ $t('preferences.transfer-speed-upload') }}
@@ -560,8 +548,8 @@
         </div>
 
         <!-- BT设置卡片 -->
-        <div class="preference-card" data-category="transfer">
-          <h3 class="card-title">{{ $t('preferences.bt-settings') }}</h3>
+        <div class="preference-card" data-category="bt">
+          <h3 class="card-title">{{ $t('preferences.bt-options') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.btSaveMetadata" @change="autoSaveForm">
@@ -584,14 +572,13 @@
                 {{ $t('preferences.bt-force-encryption') }}
               </el-checkbox>
             </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- BT IP封禁卡片 -->
-        <div class="preference-card" data-category="transfer">
-          <h3 class="card-title">{{ $t('preferences.bt-ip-ban-list') }}</h3>
-          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
+              <div class="settings-divider" style="margin: 8px 0;"></div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
+                {{ $t('preferences.bt-ip-ban-list') }}
+              </div>
               <el-input
                 type="textarea"
                 :rows="3"
@@ -607,7 +594,7 @@
         </div>
 
         <!-- 做种设置卡片 -->
-        <div class="preference-card" data-category="transfer">
+        <div class="preference-card" data-category="bt">
           <h3 class="card-title">{{ $t('preferences.bt-seeding-settings') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -653,9 +640,9 @@
           </el-form-item>
         </div>
 
-        <!-- 任务并发卡片 -->
+        <!-- 任务行为卡片 -->
         <div class="preference-card" data-category="task">
-          <h3 class="card-title">{{ $t('preferences.task-manage') }}</h3>
+          <h3 class="card-title">{{ $t('preferences.task-behavior') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               {{ $t('preferences.max-concurrent-downloads') }}
@@ -686,13 +673,6 @@
                 {{ $t('preferences.continue') }}
               </el-checkbox>
             </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 任务删除与记录卡片 -->
-        <div class="preference-card" data-category="task">
-          <h3 class="card-title">{{ $t('preferences.auto-purge-record') }}</h3>
-          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.noConfirmBeforeDeleteTask" @change="autoSaveForm">
                 {{ $t('preferences.no-confirm-before-delete-task') }}
@@ -703,19 +683,12 @@
                 {{ $t('preferences.auto-purge-record') }}
               </el-checkbox>
             </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 任务进度与新任务卡片 -->
-        <div class="preference-card" data-category="task">
-          <h3 class="card-title">{{ $t('preferences.new-task-show-downloading') }}</h3>
-          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.autoOpenTaskProgressWindow" @change="autoSaveForm">
                 {{ $t('preferences.auto-open-task-progress-window') }}
               </el-checkbox>
             </el-col>
-            <el-col class="form-item-sub" :span="24" v-if="form.autoOpenTaskProgressWindow">
+            <el-col v-if="form.autoOpenTaskProgressWindow" class="form-item-sub-sub" :span="24">
               <el-radio-group v-model="form.taskProgressWindowMode" @change="autoSaveForm">
                 <el-radio label="first">{{ $t('preferences.task-progress-window-first-only') }}</el-radio>
                 <el-radio label="all">{{ $t('preferences.task-progress-window-all') }}</el-radio>
@@ -726,7 +699,7 @@
                 {{ $t('preferences.new-task-show-downloading') }}
               </el-checkbox>
             </el-col>
-            <el-col class="form-item-sub" :span="24" v-if="form.newTaskShowDownloading">
+            <el-col v-if="form.newTaskShowDownloading" class="form-item-sub-sub" :span="24">
               <el-tooltip
                 effect="dark"
                 :content="$t('preferences.new-task-jump-target')"
@@ -743,13 +716,6 @@
                 </el-radio-group>
               </el-tooltip>
             </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 任务完成与通知卡片 -->
-        <div class="preference-card" data-category="task">
-          <h3 class="card-title">{{ $t('preferences.show-task-completed-window') }}</h3>
-          <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.showTaskCompletedWindow" @change="autoSaveForm">
                 {{ $t('preferences.show-task-completed-window') }}
@@ -760,7 +726,7 @@
                 {{ $t('preferences.task-completed-notify') }}
               </el-checkbox>
             </el-col>
-            <el-col class="form-item-sub" :span="24" v-if="form.taskNotification">
+            <el-col v-if="form.taskNotification" class="form-item-sub-sub" :span="24">
               <el-tooltip
                 effect="dark"
                 :content="$t('preferences.task-complete-notify-click-action-tips')"
@@ -785,7 +751,7 @@
 
         <!-- 文件管理卡片 -->
         <div class="preference-card" data-category="file">
-          <h3 class="card-title">{{ $t('preferences.file-manage') }}</h3>
+          <h3 class="card-title">{{ $t('preferences.file-handling') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <el-input
@@ -803,13 +769,9 @@
                 {{ $t('preferences.set-file-mtime-on-complete') }}
               </el-checkbox>
             </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 文件分类卡片 -->
-        <div class="preference-card" data-category="file">
-          <h3 class="card-title">{{ $t('preferences.auto-categorize-files') }}</h3>
-          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <div class="settings-divider" style="margin: 8px 0;"></div>
+            </el-col>
             <el-col class="form-item-sub" :span="24">
               <el-checkbox v-model="form.autoCategorizeFiles" @change="autoSaveForm">
                 {{ $t('preferences.auto-categorize-files') }}
@@ -830,7 +792,7 @@
         </div>
 
         <!-- 安全卡片 -->
-        <div class="preference-card" data-category="security">
+        <div class="preference-card" data-category="file">
           <h3 class="card-title">{{ $t('preferences.security') }}</h3>
           <div class="card-content">
           <el-form-item size="mini">
@@ -893,7 +855,7 @@
               </div>
             </el-col>
             <el-col class="form-item-sub" :span="24" v-if="form.clipboardAutoPaste">
-              <div style="margin-left: 18px; margin-top: 8px;">
+              <div class="form-item-sub-sub">
                 <el-checkbox v-model="form.clipboardAutoOpenAddTask" @change="autoSaveForm">
                   {{ $t('preferences.clipboard-auto-open-add-task') }}
                 </el-checkbox>
@@ -1402,6 +1364,11 @@
             route: `${base}/transfer`
           },
           {
+            key: 'bt',
+            title: this.$t('preferences.bt-settings'),
+            route: `${base}/bt`
+          },
+          {
             key: 'task',
             title: this.$t('preferences.task-manage'),
             route: `${base}/task`
@@ -1412,19 +1379,9 @@
             route: `${base}/file`
           },
           {
-            key: 'security',
-            title: this.$t('preferences.security'),
-            route: `${base}/security`
-          },
-          {
             key: 'advanced',
             title: this.$t('preferences.advanced'),
             route: `${base}/advanced`
-          },
-          {
-            key: 'bittorrent',
-            title: this.$t('preferences.bittorrent'),
-            route: `${base}/bittorrent`
           },
           {
             key: 'lab',

@@ -66,14 +66,14 @@ const preferenceChildren = [
     }
   },
   {
-    path: 'security',
+    path: 'bt',
     components: {
       subnav: () => import('@/components/Subnav/PreferenceSubnav'),
       form: () => import('@/components/Preference/Basic')
     },
     props: {
-      subnav: { current: 'security' },
-      form: { category: 'security' }
+      subnav: { current: 'bt' },
+      form: { category: 'bt' }
     }
   },
   {

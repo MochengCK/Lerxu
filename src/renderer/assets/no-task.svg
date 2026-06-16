@@ -1,103 +1,118 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="504" height="309" viewBox="0 0 504 309">
   <defs>
-    <radialGradient id="no-task-bg1" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#000" stop-opacity="0.85"/>
-      <stop offset="65%" stop-color="#000" stop-opacity="0.5"/>
-      <stop offset="85%" stop-color="#666" stop-opacity="0.2"/>
-      <stop offset="100%" stop-color="#888" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="no-task-bg2" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#5B5AEA" stop-opacity="0"/>
-      <stop offset="85%" stop-color="#5B5AEA" stop-opacity="0.06"/>
-      <stop offset="100%" stop-color="#5B5AEA" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="folder-grad" x1="50%" x2="50%" y1="0%" y2="100%">
-      <stop offset="0%" stop-color="#7a7a7a"/>
-      <stop offset="100%" stop-color="#5a5a5a"/>
+    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C4C4C4"/>
+      <stop offset="40%" stop-color="#8C8C8C"/>
+      <stop offset="100%" stop-color="#3C3C3C"/>
     </linearGradient>
-    <linearGradient id="folder-front" x1="50%" x2="50%" y1="0%" y2="100%">
-      <stop offset="0%" stop-color="#6a6a6a"/>
-      <stop offset="100%" stop-color="#4a4a4a"/>
+
+    <linearGradient id="highlightGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFF" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#FFF" stop-opacity="0"/>
     </linearGradient>
-    <linearGradient id="arrow-grad" x1="50%" x2="50%" y1="0%" y2="100%">
-      <stop offset="0%" stop-color="#7B7AFF"/>
-      <stop offset="100%" stop-color="#5B5AEA"/>
+
+    <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#AAA" stop-opacity="0.6"/>
+      <stop offset="18%" stop-color="#AAA" stop-opacity="0.08"/>
+      <stop offset="82%" stop-color="#AAA" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#AAA" stop-opacity="0.6"/>
     </linearGradient>
-    <!-- Arrow shadow filter -->
-    <filter id="arrow-shadow" x="-50%" y="-50%" width="200%" height="200%">
-      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#5B5AEA" flood-opacity="0.4"/>
+
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000" flood-opacity="0.15"/>
     </filter>
-    <!-- Folder shadow filter -->
-    <filter id="folder-shadow" x="-20%" y="-20%" width="140%" height="150%">
-      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000" flood-opacity="0.35"/>
+
+    <filter id="lightShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity="0.08"/>
     </filter>
-    <!-- Clip path to hide circle above front folder -->
-    <clipPath id="front-folder-clip">
-      <rect x="145" y="115" width="214" height="105"/>
-    </clipPath>
+
+    <radialGradient id="groundShadow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#000" stop-opacity="0.45"/>
+      <stop offset="35%" stop-color="#000" stop-opacity="0.18"/>
+      <stop offset="65%" stop-color="#000" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#D0D0D0" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#D0D0D0" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="dotGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#D0D0D0" stop-opacity="0.7"/>
+      <stop offset="50%" stop-color="#D0D0D0" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#D0D0D0" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-  
+
   <g fill="none" fill-rule="evenodd">
-    <!-- Background ellipses -->
-    <ellipse cx="252" cy="240" rx="180" ry="50" fill="url(#no-task-bg1)"/>
-    <ellipse cx="252" cy="245" rx="140" ry="35" fill="url(#no-task-bg2)"/>
-    
-    <!-- Folder back -->
-    <g filter="url(#folder-shadow)">
-      <path d="M152 95 L172 75 L220 75 L235 95 L352 95 L352 210 L152 210 Z" 
-            fill="url(#folder-grad)" 
-            stroke="#4a4a4a" 
-            stroke-width="1.5"
-            opacity="0.9"/>
+
+    <!-- 背景点阵 -->
+    <g opacity="0.04">
+      <circle cx="42" cy="42" r="1.5"/><circle cx="90" cy="42" r="1.5"/><circle cx="138" cy="42" r="1.5"/><circle cx="186" cy="42" r="1.5"/><circle cx="234" cy="42" r="1.5"/><circle cx="282" cy="42" r="1.5"/><circle cx="330" cy="42" r="1.5"/><circle cx="378" cy="42" r="1.5"/><circle cx="426" cy="42" r="1.5"/><circle cx="474" cy="42" r="1.5"/>
+      <circle cx="42" cy="90" r="1.5"/><circle cx="90" cy="90" r="1.5"/><circle cx="138" cy="90" r="1.5"/><circle cx="186" cy="90" r="1.5"/><circle cx="234" cy="90" r="1.5"/><circle cx="282" cy="90" r="1.5"/><circle cx="330" cy="90" r="1.5"/><circle cx="378" cy="90" r="1.5"/><circle cx="426" cy="90" r="1.5"/><circle cx="474" cy="90" r="1.5"/>
+      <circle cx="42" cy="138" r="1.5"/><circle cx="90" cy="138" r="1.5"/><circle cx="138" cy="138" r="1.5"/><circle cx="186" cy="138" r="1.5"/><circle cx="234" cy="138" r="1.5"/><circle cx="282" cy="138" r="1.5"/><circle cx="330" cy="138" r="1.5"/><circle cx="378" cy="138" r="1.5"/><circle cx="426" cy="138" r="1.5"/><circle cx="474" cy="138" r="1.5"/>
+      <circle cx="42" cy="186" r="1.5"/><circle cx="90" cy="186" r="1.5"/><circle cx="138" cy="186" r="1.5"/><circle cx="186" cy="186" r="1.5"/><circle cx="234" cy="186" r="1.5"/><circle cx="282" cy="186" r="1.5"/><circle cx="330" cy="186" r="1.5"/><circle cx="378" cy="186" r="1.5"/><circle cx="426" cy="186" r="1.5"/><circle cx="474" cy="186" r="1.5"/>
+      <circle cx="42" cy="234" r="1.5"/><circle cx="90" cy="234" r="1.5"/><circle cx="138" cy="234" r="1.5"/><circle cx="186" cy="234" r="1.5"/><circle cx="234" cy="234" r="1.5"/><circle cx="282" cy="234" r="1.5"/><circle cx="330" cy="234" r="1.5"/><circle cx="378" cy="234" r="1.5"/><circle cx="426" cy="234" r="1.5"/><circle cx="474" cy="234" r="1.5"/>
+      <circle cx="42" cy="282" r="1.5"/><circle cx="90" cy="282" r="1.5"/><circle cx="138" cy="282" r="1.5"/><circle cx="186" cy="282" r="1.5"/><circle cx="234" cy="282" r="1.5"/><circle cx="282" cy="282" r="1.5"/><circle cx="330" cy="282" r="1.5"/><circle cx="378" cy="282" r="1.5"/><circle cx="426" cy="282" r="1.5"/><circle cx="474" cy="282" r="1.5"/>
     </g>
-    
-    <!-- Folder tab -->
-    <path d="M152 95 L172 75 L220 75 L235 95" 
-          fill="#6a6a6a" 
-          stroke="#4a4a4a" 
-          stroke-width="1"/>
-    
-    <!-- Folder front -->
-    <path d="M145 115 L145 220 L359 220 L359 115 L145 115" 
-          fill="url(#folder-front)" 
-          stroke="#4a4a4a" 
-          stroke-width="1.5"
-          rx="3"
-          filter="url(#folder-shadow)"/>
-    
-    <!-- Folder front highlight -->
-    <path d="M150 120 L354 120" 
-          stroke="#8a8a8a" 
-          stroke-width="1" 
-          opacity="0.5"/>
-    
-    <!-- Dashed circle - clipped to only show on front folder -->
-    <circle cx="252" cy="160" r="55" 
-            fill="none" 
-            stroke="#7B7AFF" 
-            stroke-width="2" 
-            stroke-dasharray="8 6"
-            opacity="0.5"
-            clip-path="url(#front-folder-clip)"/>
-    
-    <!-- Download arrow -->
-    <g transform="translate(252 155)">
-      <!-- Arrow stem -->
-      <rect x="-12" y="-35" width="24" height="45" rx="4" fill="url(#arrow-grad)" opacity="0.95"/>
-      <!-- Arrow head -->
-      <path d="M-30 10 L0 40 L30 10 Z" fill="url(#arrow-grad)" opacity="0.95"/>
-      <!-- Arrow shine -->
-      <rect x="-8" y="-30" width="6" height="35" rx="2" fill="#A5A4FF" opacity="0.35"/>
+
+    <!-- 背景圆环 -->
+    <circle cx="252" cy="145" r="112" stroke="#888" stroke-opacity="0.06" stroke-width="1.5" stroke-dasharray="6 10"/>
+    <circle cx="252" cy="145" r="82" stroke="#888" stroke-opacity="0.14" stroke-width="1.5"/>
+
+    <!-- 中心光晕 -->
+    <ellipse cx="252" cy="145" rx="92" ry="92" fill="url(#centerGlow)"/>
+
+    <!-- 进度环 -->
+    <circle cx="252" cy="145" r="72" stroke="url(#ringGradient)" stroke-width="2.5" stroke-dasharray="140 212" stroke-linecap="round" transform="rotate(-90 252 145)"/>
+
+    <!-- 进度环端点 -->
+    <circle cx="252" cy="73" r="8" fill="url(#dotGlow)"/>
+    <circle cx="252" cy="73" r="3.5" fill="#C4C4C4" opacity="0.65"/>
+
+    <!-- 装饰点 -->
+    <circle cx="168" cy="98" r="5" fill="#888" opacity="0.1"/>
+    <circle cx="340" cy="88" r="3.5" fill="#888" opacity="0.08"/>
+    <circle cx="358" cy="180" r="4.5" fill="#888" opacity="0.08"/>
+    <circle cx="160" cy="192" r="3.5" fill="#888" opacity="0.1"/>
+    <circle cx="298" cy="52" r="2.5" fill="#888" opacity="0.06"/>
+    <circle cx="200" cy="62" r="2.5" fill="#888" opacity="0.06"/>
+    <circle cx="132" cy="150" r="2" fill="#888" opacity="0.04"/>
+    <circle cx="378" cy="136" r="2" fill="#888" opacity="0.04"/>
+
+    <!-- 速度线 - 左侧 -->
+    <line x1="192" y1="92" x2="204" y2="104" stroke="#C0C0C0" stroke-opacity="0.12" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="182" y1="112" x2="194" y2="124" stroke="#C0C0C0" stroke-opacity="0.09" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="188" y1="132" x2="198" y2="142" stroke="#C0C0C0" stroke-opacity="0.06" stroke-width="1.5" stroke-linecap="round"/>
+
+    <!-- 速度线 - 右侧 -->
+    <line x1="312" y1="97" x2="300" y2="109" stroke="#C0C0C0" stroke-opacity="0.12" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="322" y1="117" x2="310" y2="129" stroke="#C0C0C0" stroke-opacity="0.09" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="316" y1="137" x2="306" y2="147" stroke="#C0C0C0" stroke-opacity="0.06" stroke-width="1.5" stroke-linecap="round"/>
+
+    <!-- 主体 -->
+    <g filter="url(#shadow)">
+      <path d="M252 72 L252 145" stroke="url(#mainGradient)" stroke-width="11" stroke-linecap="round"/>
+      <path d="M222 118 L252 148 L282 118" stroke="url(#mainGradient)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M185 182 C190 210 205 225 225 225 L279 225 C299 225 314 210 319 182" stroke="url(#mainGradient)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M195 182 L225 182" stroke="url(#mainGradient)" stroke-width="11" stroke-linecap="round"/>
+      <path d="M279 182 L309 182" stroke="url(#mainGradient)" stroke-width="11" stroke-linecap="round"/>
+
+      <path d="M252 76 L252 135" stroke="url(#highlightGradient)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M228 122 L252 146 L276 122" stroke="url(#highlightGradient)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M195 186 C198 208 212 219 228 219 L252 219" stroke="url(#highlightGradient)" stroke-width="4" stroke-linecap="round"/>
     </g>
-    
-    <!-- Decorative dots -->
-    <circle cx="120" cy="180" r="4" fill="#7a7a7a" opacity="0.4"/>
-    <circle cx="384" cy="150" r="3" fill="#7a7a7a" opacity="0.35"/>
-    <circle cx="400" cy="190" r="5" fill="#7a7a7a" opacity="0.3"/>
-    <circle cx="100" cy="140" r="3" fill="#7a7a7a" opacity="0.3"/>
-    
-    <!-- Small floating elements -->
-    <rect x="390" y="120" width="8" height="8" rx="2" fill="#7B7AFF" opacity="0.25" transform="rotate(15 394 124)"/>
-    <rect x="105" y="200" width="6" height="6" rx="1" fill="#7B7AFF" opacity="0.2" transform="rotate(-10 108 203)"/>
+
+    <!-- 浮动粒子 -->
+    <g filter="url(#lightShadow)">
+      <circle cx="246" cy="96" r="3.5" fill="#C4C4C4" opacity="0.4"/>
+      <circle cx="266" cy="132" r="2.8" fill="#C4C4C4" opacity="0.32"/>
+      <circle cx="234" cy="168" r="2.2" fill="#C4C4C4" opacity="0.25"/>
+      <circle cx="260" cy="190" r="1.8" fill="#C4C4C4" opacity="0.16"/>
+      <circle cx="242" cy="146" r="2" fill="#C4C4C4" opacity="0.2"/>
+    </g>
+
+    <ellipse cx="252" cy="248" rx="155" ry="34" fill="url(#groundShadow)"/>
   </g>
 </svg>

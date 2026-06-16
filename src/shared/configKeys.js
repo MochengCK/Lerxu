@@ -89,7 +89,6 @@ const userKeys = [
   'task-view-mode',
   'task-filter-date',
   'task-created-at-map',
-  'bt-level-up-notification',
   'bt-ip-ban-list',
   'show-task-type-badge',
   'peer-group-visibility',

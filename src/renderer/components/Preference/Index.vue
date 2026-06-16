@@ -171,9 +171,9 @@
           { key: 'basic', title: this.$t('preferences.basic'), route: `${base}/basic` },
           { key: 'appearance', title: this.$t('preferences.appearance'), route: `${base}/appearance` },
           { key: 'transfer', title: this.$t('preferences.transfer-settings'), route: `${base}/transfer` },
+          { key: 'bt', title: this.$t('preferences.bt-settings'), route: `${base}/bt` },
           { key: 'task', title: this.$t('preferences.task-manage'), route: `${base}/task` },
           { key: 'file', title: this.$t('preferences.file-manage'), route: `${base}/file` },
-          { key: 'security', title: this.$t('preferences.security'), route: `${base}/security` },
           { key: 'advanced', title: this.$t('preferences.advanced'), route: `${base}/advanced` }
         ]
       },
@@ -367,7 +367,7 @@
           this.preferenceSearchIndex = nextIndex
           return
         }
-        const basicCategories = new Set(['basic', 'appearance', 'transfer', 'task', 'file', 'security'])
+        const basicCategories = new Set(['basic', 'appearance', 'transfer', 'bt', 'task', 'file'])
         if (basicCategories.has(currentCategory)) {
           const categoryTextMap = {}
           Array.from(cards).forEach(card => {
@@ -726,6 +726,58 @@
     line-height: 1.6;
     &:last-of-type {
       margin-bottom: 0;
+    }
+
+    .el-checkbox {
+      .el-checkbox__label {
+        font-size: 13px;
+        color: $--color-text-secondary;
+        transition: color 0.2s;
+      }
+
+      .el-checkbox__input.is-checked + .el-checkbox__label {
+        color: $--color-text-regular;
+      }
+    }
+
+    .sub-row-reverse {
+      display: flex;
+      align-items: center;
+      flex-direction: row-reverse;
+      justify-content: flex-end;
+      gap: 10px;
+
+      .sub-row-label {
+        font-size: 13px;
+        color: $--color-text-secondary;
+      }
+    }
+  }
+
+  .form-item-sub-sub {
+    margin-left: 24px;
+    margin-bottom: 10px;
+    padding-left: 12px;
+    border-left: 2px solid $--border-color-lighter;
+    line-height: 1.6;
+
+    .el-checkbox {
+      .el-checkbox__label {
+        font-size: 13px;
+        color: $--color-text-secondary;
+        transition: color 0.2s;
+      }
+
+      .el-checkbox__input.is-checked + .el-checkbox__label {
+        color: $--color-text-regular;
+      }
+    }
+
+    .el-radio-group {
+      .el-radio__label {
+        font-size: 13px;
+        color: $--color-text-secondary;
+      }
     }
   }
 
