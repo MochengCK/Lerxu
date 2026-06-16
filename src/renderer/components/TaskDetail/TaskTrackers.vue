@@ -334,7 +334,7 @@
     border-bottom: none !important;
   }
   th.el-table__cell {
-    border-bottom: 1px solid #ebeef5 !important;
+    border-bottom: none !important;
     .cell {
       white-space: nowrap !important;
       overflow: hidden !important;

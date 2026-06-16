@@ -1661,7 +1661,7 @@
     border-bottom: none !important;
   }
   th.el-table__cell {
-    border-bottom: 1px solid #ebeef5 !important;
+    border-bottom: none !important;
   }
   .cell {
     padding-left: 10px !important;
