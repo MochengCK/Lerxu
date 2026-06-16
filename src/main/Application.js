@@ -2112,12 +2112,9 @@ export default class Application extends EventEmitter {
 
     this.updateManager.on('download-progress', (event) => {
       const win = this.windowManager.getWindow('index')
-      win.setProgressBar(event.percent / 100)
-      // 向所有窗口发送下载进度事件
-      const windows = this.windowManager.getWindowList() || []
-      windows.forEach(window => {
-        window.webContents.send('download-progress', event)
-      })
+      if (win && !win.isDestroyed()) {
+        win.setProgressBar(event.percent / 100)
+      }
     })
 
     this.updateManager.on('update-not-available', (event) => {
@@ -2143,15 +2140,12 @@ export default class Application extends EventEmitter {
     this.updateManager.on('will-updated', async (event) => {
       this.windowManager.setWillQuit(true)
       await this.stopAllSettled()
-      // 自动安装更新并重启应用
-      if (process.platform === 'linux') {
-        const info = (event && typeof event === 'object') ? event : {}
-        const downloadedFile = info && info.downloadedFile ? `${info.downloadedFile}` : ''
-        const currentAppImage = process.env.APPIMAGE ? `${process.env.APPIMAGE}` : ''
-        const canUseDownloaded = !!(downloadedFile)
-        const canReplaceAppImage = !!(currentAppImage)
+      const info = (event && typeof event === 'object') ? event : {}
+      const downloadedFile = info && info.downloadedFile ? `${info.downloadedFile}` : ''
 
-        if (canUseDownloaded) {
+      if (process.platform === 'linux') {
+        const currentAppImage = process.env.APPIMAGE ? `${process.env.APPIMAGE}` : ''
+        if (downloadedFile) {
           try {
             const fs = require('node:fs')
             const path = require('node:path')
@@ -2159,9 +2153,7 @@ export default class Application extends EventEmitter {
             const { app } = require('electron')
 
             const ensureExecutable = (p) => {
-              try {
-                fs.chmodSync(p, 0o755)
-              } catch (_) {}
+              try { fs.chmodSync(p, 0o755) } catch (_) {}
             }
 
             const spawnDetached = (p) => {
@@ -2175,7 +2167,7 @@ export default class Application extends EventEmitter {
               app.exit(0)
             }
 
-            if (canReplaceAppImage && fs.existsSync(currentAppImage) && fs.existsSync(downloadedFile)) {
+            if (currentAppImage && fs.existsSync(currentAppImage) && fs.existsSync(downloadedFile)) {
               try {
                 fs.accessSync(path.dirname(currentAppImage), fs.constants.W_OK)
                 fs.accessSync(currentAppImage, fs.constants.W_OK)
@@ -2201,14 +2193,13 @@ export default class Application extends EventEmitter {
         }
       }
 
-      this.updateManager.updater.quitAndInstall()
-      if (process.platform === 'linux') {
+      // macOS / Windows: 打开下载的文件
+      if (downloadedFile) {
+        const { shell, app } = require('electron')
+        shell.openPath(downloadedFile)
         setTimeout(() => {
-          try {
-            const { app } = require('electron')
-            app.exit(0)
-          } catch (_) {}
-        }, 8000)
+          app.exit(0)
+        }, 1000)
       }
     })
 
@@ -3765,16 +3756,23 @@ export default class Application extends EventEmitter {
       // 发送更新状态给所有窗口
       if (updateAvailable) {
         // 如果检测到有新版本可用，发送update-available事件
-        // 使用与UpdateManager.js相同的方式发送事件，只传递版本号参数
         const windows = this.windowManager.getWindowList()
         windows.forEach(window => {
-          window.webContents.send('update-available', newVersion, '')
+          try {
+            if (window && !window.isDestroyed() && window.webContents) {
+              window.webContents.send('update-available', newVersion, '')
+            }
+          } catch (_) {}
         })
       } else {
         // 如果没有新版本可用，发送update-not-available事件
         const windows = this.windowManager.getWindowList()
         windows.forEach(window => {
-          window.webContents.send('update-not-available')
+          try {
+            if (window && !window.isDestroyed() && window.webContents) {
+              window.webContents.send('update-not-available')
+            }
+          } catch (_) {}
         })
       }
     } catch (error) {

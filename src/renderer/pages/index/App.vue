@@ -275,6 +275,15 @@
           if (data && data.theme) {
             this.$store.dispatch('preference/updateAppTheme', data.theme)
           }
+          return
+        }
+        if (command === 'application:open-preference-category') {
+          const data = args[0]
+          if (data && data.category) {
+            this.$router.push({ path: `/preference-window/${data.category}` }).catch(err => {
+              console.log(err)
+            })
+          }
         }
       },
       bringMainWindowToFront () {
@@ -474,10 +483,46 @@
         }
       }
       const onUpdateError = () => {}
+      // 下载全局监听（仅在主窗口显示，偏好窗口关闭后追踪下载进度）
+      this._downloadStartNotified = false
+      const onDownloadProgress = (_event, progress) => {
+        const percent = Math.round(progress.percent)
+        this.$store.dispatch('preference/updateDownloadProgress', percent)
+        this.$store.dispatch('preference/updateIsDownloadingUpdate', true)
+
+        // 仅主窗口、进度 > 0 时显示一条持久通知
+        if (!this.isPreferenceWindow && percent > 0 && !this._downloadStartNotified && this.$msg) {
+          this._downloadStartNotified = true
+          this.$msg({
+            message: '正在下载更新...',
+            type: 'info',
+            duration: 0,
+            showClose: true
+          })
+        }
+      }
+      const onDownloaded = () => {
+        this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+        this.$store.dispatch('preference/updateUpdateAvailable', false)
+        this._downloadStartNotified = false
+        if (!this.isPreferenceWindow && this.$msg && typeof this.$msg.success === 'function') {
+          this.$msg.success(this.$t('app.update-downloaded-message') || '更新下载完成，应用程序将自动重启并安装更新')
+        }
+      }
+      const onDownloadError = (_event, errMsg) => {
+        this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+        this._downloadStartNotified = false
+        if (!this.isPreferenceWindow && this.$msg && typeof this.$msg.error === 'function') {
+          this.$msg.error(errMsg || this.$t('app.update-error-message'))
+        }
+      }
       this.$electron.ipcRenderer.on('update-available', onUpdateAvailable)
       this.$electron.ipcRenderer.on('update-not-available', onUpdateNotAvailable)
       this.$electron.ipcRenderer.on('update-error', onUpdateError)
-      this._updateHandlers = { onUpdateAvailable, onUpdateNotAvailable, onUpdateError }
+      this.$electron.ipcRenderer.on('download-progress', onDownloadProgress)
+      this.$electron.ipcRenderer.on('update-downloaded', onDownloaded)
+      this.$electron.ipcRenderer.on('update-error', onDownloadError)
+      this._updateHandlers = { onUpdateAvailable, onUpdateNotAvailable, onUpdateError, onDownloadProgress, onDownloaded, onDownloadError }
     },
     destroyed () {
       if (typeof window !== 'undefined' && this._handleWindowResize) {
@@ -496,6 +541,15 @@
       }
       if (h.onUpdateError) {
         this.$electron.ipcRenderer.removeListener('update-error', h.onUpdateError)
+      }
+      if (h.onDownloadProgress) {
+        this.$electron.ipcRenderer.removeListener('download-progress', h.onDownloadProgress)
+      }
+      if (h.onDownloaded) {
+        this.$electron.ipcRenderer.removeListener('update-downloaded', h.onDownloaded)
+      }
+      if (h.onDownloadError) {
+        this.$electron.ipcRenderer.removeListener('update-error', h.onDownloadError)
       }
     },
     watch: {

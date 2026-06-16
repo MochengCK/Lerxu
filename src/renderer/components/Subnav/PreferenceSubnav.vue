@@ -218,8 +218,9 @@
         this.showMessage('info', this.$t('app.checking-for-updates'))
 
         // 创建临时事件监听器，使用once确保只触发一次
-        const onUpdateError = () => {
-          this.showMessage('error', this.$t('app.update-error-message'))
+        const onUpdateError = (_event, errMsg) => {
+          const msg = errMsg || this.$t('app.update-error-message')
+          this.showMessage('error', msg)
           this.updateCheckingUpdate(false)
         }
 
@@ -256,7 +257,7 @@
           // 显示超时消息
           this.showMessage('error', this.$t('app.update-timeout-message') || '更新检查超时，请稍后重试')
           this.updateCheckingUpdate(false)
-        }, 10000) // 10秒超时
+        }, 30000) // 30秒超时（含镜像回退时间）
 
         // 监听任何更新事件，清除超时
         const clearTimeoutListener = () => {
@@ -303,9 +304,10 @@
         }
 
         // 监听下载错误事件
-        const onDownloadError = () => {
+        const onDownloadError = (_event, errMsg) => {
           this.updateIsDownloadingUpdate(false)
-          this.showMessage('error', '下载更新失败，请检查网络连接后重试')
+          const msg = errMsg ? `下载更新失败：${errMsg}` : '下载更新失败，请检查网络连接后重试'
+          this.showMessage('error', msg)
 
           // 移除事件监听器
           this.$electron.ipcRenderer.removeListener('download-progress', onDownloadProgress)
