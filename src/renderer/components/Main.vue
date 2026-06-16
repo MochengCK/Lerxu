@@ -1,14 +1,17 @@
 <template>
   <el-container id="container">
-    <router-view />
-    <mo-floating-bar
-      :class="{
-        'is-auto-hide-floating-bar': autoHideFloatingBar && !isFloatingBarSearchExpanded && !isBottomHovered,
-        'is-hovered': isBottomHovered
-      }"
-      @mouseenter.native="isBottomHovered = true"
-      @mouseleave.native="isBottomHovered = false"
-    />
+    <div class="content-area">
+      <router-view />
+      <mo-floating-bar
+        :class="{
+          'is-auto-hide-floating-bar': autoHideFloatingBar && !isFloatingBarSearchExpanded && !isBottomHovered,
+          'is-hovered': isBottomHovered,
+          'is-three-column-layout': isThreeColumn
+        }"
+        @mouseenter.native="isBottomHovered = true"
+        @mouseleave.native="isBottomHovered = false"
+      />
+    </div>
     <el-dialog
       :visible.sync="taskPlanVisible"
       width="360px"
@@ -2528,6 +2531,14 @@
 <style lang="scss">
   @import '~@/components/Theme/Variables';
   @import '~@/components/Theme/Light/Variables';
+
+  .content-area {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
 
   .el-dialog.task-plan-dialog {
     max-width: 360px;

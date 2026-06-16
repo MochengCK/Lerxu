@@ -617,6 +617,10 @@ iframe {
 
 /* Three-column subnav: push behavior (keeps content in flow and resizes) */
 /* In three-column mode, the left sidebar is the main sidebar, controlled by autoHideAside */
+.subnav.three-column-subnav {
+  height: 100%;
+  overflow: hidden;
+}
 .subnav.three-column-subnav.is-auto-hide-aside {
   position: relative;
   height: auto;

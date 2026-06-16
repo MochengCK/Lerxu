@@ -91,7 +91,6 @@
         width="220px"
         class="subnav three-column-subnav"
         :class="{ 'is-auto-hide-aside': autoHideAside, 'is-proximity-hovered': isSubnavProximityHovered }"
-        style="background: transparent"
         @mouseenter.native="onSubnavEnter"
         @mouseleave.native="onSubnavLeave"
       >
@@ -171,7 +170,6 @@
 
 <script>
   import { dialog, Menu, getCurrentWindow } from '@electron/remote'
-  import is from 'electron-is'
   import { mapState } from 'vuex'
 
   import api from '@/api'

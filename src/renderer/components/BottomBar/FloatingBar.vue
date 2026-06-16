@@ -406,13 +406,17 @@
   @import '~@/components/Theme/Light/Variables';
 
   .floating-bar {
-    position: fixed;
+    position: absolute;
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 200;
     pointer-events: none;
     transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+
+    &.is-three-column-layout {
+      left: calc(50% + 110px);
+    }
 
     &.is-auto-hide-floating-bar {
       transform: translateX(-50%) translateY(80px);
