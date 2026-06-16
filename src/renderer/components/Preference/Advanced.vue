@@ -980,6 +980,7 @@
         githubMirrorConfigVisible: false,
         githubMirrorInput: '',
         trackerSyncing: false,
+        trackerDropdownVisible: false,
         saveTimeout: null,
         trackerSourceConfigVisible: false,
         trackerSourceInput: '',
@@ -1864,6 +1865,19 @@
       openTrackerSourceConfigDialog () {
         this.trackerSourceInput = ''
         this.trackerSourceConfigVisible = true
+      },
+      onTrackerDropdownVisibleChange (visible) {
+        this.trackerDropdownVisible = visible
+      },
+      toggleTrackerDropdown () {
+        const selectRef = this.$refs.trackerSelectRef
+        if (selectRef) {
+          if (this.trackerDropdownVisible) {
+            selectRef.blur()
+          } else {
+            selectRef.focus()
+          }
+        }
       },
       async addTrackerSourceFromInput () {
         const url = `${this.trackerSourceInput}`.trim()
@@ -3313,9 +3327,6 @@
       border-right: none;
       border-radius: 0;
       font-size: 12px;
-    }
-    .el-input__suffix {
-      display: none;
     }
   }
 }
