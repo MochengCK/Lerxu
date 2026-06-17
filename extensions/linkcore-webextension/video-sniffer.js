@@ -1349,7 +1349,12 @@
         })
         
         if (rangeResponse.ok) {
-          const contentRange = rangeResponse.headers.get('Content-Range')
+          let contentRange = null
+          try {
+            contentRange = rangeResponse.headers.get('Content-Range')
+          } catch (e) {
+            // CORS 限制，无法读取 Content-Range 头
+          }
           if (contentRange) {
             // Content-Range: bytes 0-1023/1234567
             const match = contentRange.match(/bytes \d+-\d+\/(\d+)/)
@@ -1823,7 +1828,12 @@
       fetchPromise.then(response => {
         const contentType = response.headers.get('Content-Type')
         const contentLength = response.headers.get('Content-Length')
-        const contentRange = response.headers.get('Content-Range')
+        let contentRange = null
+        try {
+          contentRange = response.headers.get('Content-Range')
+        } catch (e) {
+          // CORS 限制，无法读取 Content-Range 头
+        }
         const contentEncoding = response.headers.get('Content-Encoding')
         
         let size = 0

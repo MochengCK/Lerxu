@@ -1,6 +1,6 @@
 {
   "name": "linkcore-download-manager",
-  "version": "2.3.7",
+  "version": "2.3.8",
   "description": "LinkCore Download Manager",
   "homepage": "https://github.com/MochengCK/LinkCore-Download-Manager",
   "author": {
@@ -12,7 +12,7 @@
     "name": "Dr_rOot",
     "email": "agalwood.net@gmail.com"
   },
-  "license": "GPL-3.0",
+  "license": "MIT",
   "main": "./dist/electron/main.js",
   "repository": {
     "type": "git",
@@ -54,10 +54,12 @@
     "flag-icons": "7.5.0",
     "i18next": "^22.4.15",
     "ip2region": "2.3.0",
+    "js-yaml": "^4.2.0",
     "lodash": "^4.17.21",
     "node-fetch": "^2.6.1",
     "normalize.css": "^8.0.1",
     "parse-torrent": "^9.1.5",
+    "semver": "^7.8.4",
     "vue": "^2.7.16",
     "vue-electron": "^1.0.6",
     "vue-router": "^3.6.5",
