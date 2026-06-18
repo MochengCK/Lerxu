@@ -99,7 +99,7 @@ export default class Application extends EventEmitter {
     // 在启动引擎前，如果使用系统代理模式，先获取系统代理地址
     await this.initSystemProxyIfNeeded()
 
-    this.startEngine()
+    await this.startEngine()
 
     this.initEngineClient()
 

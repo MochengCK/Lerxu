@@ -1207,6 +1207,28 @@
 </script>
 
 <style lang="scss">
+.main.panel {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.content.panel {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.content.panel .panel-header {
+  flex-shrink: 0;
+}
+
+.content.panel .panel-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 .panel-header {
   position: relative;
   z-index: 100;

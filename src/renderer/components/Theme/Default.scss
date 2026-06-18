@@ -920,6 +920,8 @@ iframe {
     position: relative;
     padding: 0;
     height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 }
 
