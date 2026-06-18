@@ -269,6 +269,8 @@ export default {
   'tracker-status-unknown': 'Unknown',
   'tracker-status-disabled': 'Disabled',
   'tracker-status-pending': 'Pending',
+  'tracker-status-waiting': 'Waiting',
+  'tracker-status-not-working': 'Not Working',
   'tracker-next-immediately': 'Now',
   'task-detail-files': 'Files',
   'task-detail-connections': 'Connections',

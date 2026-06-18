@@ -269,6 +269,8 @@ export default {
   'tracker-status-unknown': '未知',
   'tracker-status-disabled': '已禁用',
   'tracker-status-pending': '等待中',
+  'tracker-status-waiting': '等待中',
+  'tracker-status-not-working': '异常',
   'tracker-next-immediately': '立即',
   'task-detail-files': '文件',
   'task-detail-connections': '连接详情',

@@ -241,7 +241,9 @@
           error: this.$t('task.tracker-status-error'),
           unknown: this.$t('task.tracker-status-unknown'),
           disabled: this.$t('task.tracker-status-disabled'),
-          pending: this.$t('task.tracker-status-pending')
+          pending: this.$t('task.tracker-status-pending'),
+          waiting: this.$t('task.tracker-status-waiting'),
+          'not-working': this.$t('task.tracker-status-not-working')
         }
         return statusMap[status] || status || '-'
       },
