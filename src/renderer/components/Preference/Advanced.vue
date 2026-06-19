@@ -2078,11 +2078,12 @@
                   'p', 'br',
                   'ul', 'ol', 'li',
                   'pre', 'code',
-                  'strong', 'em',
+                  'strong', 'em', 'b', 'i',
                   'a',
                   'img',
                   'table', 'thead', 'tbody', 'tr', 'th', 'td',
-                  'h1', 'h2', 'h3', 'h4', 'h5', 'h6'
+                  'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+                  'blockquote', 'hr'
                 ])
 
                 const isBlockedTag = (tag) => {
@@ -2179,13 +2180,48 @@
                   .replace(/</g, '&lt;')
                   .replace(/>/g, '&gt;')
               }
+
+              // 预处理：处理代码块
+              const codeBlocks = []
+              s = s.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+                const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`
+                codeBlocks.push({ lang, code: code.trim() })
+                return `\n\n${placeholder}\n\n`
+              })
+
+              // 按段落分割
               const blocks = s.split(/\n{2,}/)
               html = blocks.map(block => {
+                // 检查是否是代码块占位符
+                const codeMatch = /^__CODE_BLOCK_(\d+)__$/.exec(block.trim())
+                if (codeMatch) {
+                  const index = parseInt(codeMatch[1])
+                  const codeBlock = codeBlocks[index]
+                  if (codeBlock) {
+                    return `<pre><code>${escapeHtml(codeBlock.code)}</code></pre>`
+                  }
+                }
+
                 const lines = block.split('\n')
                 const trimmedLines = lines.map(l => l.trim()).filter(l => l.length > 0)
                 if (!trimmedLines.length) {
                   return ''
                 }
+
+                // 处理标题
+                const headingMatch = /^(#{1,6})\s+(.+)$/.exec(trimmedLines[0])
+                if (headingMatch && trimmedLines.length === 1) {
+                  const level = headingMatch[1].length
+                  const text = headingMatch[2]
+                  return `<h${level}>${escapeHtml(text)}</h${level}>`
+                }
+
+                // 处理水平线
+                if (/^[-*_]{3,}$/.test(trimmedLines[0]) && trimmedLines.length === 1) {
+                  return '<hr>'
+                }
+
+                // 处理图片
                 if (trimmedLines.length === 1) {
                   const imgMatch = /^!\[([^\]]*)\]\(([^)]+)\)/.exec(trimmedLines[0])
                   if (imgMatch) {
@@ -2199,35 +2235,78 @@
                     return `<p><img src="${escapeAttr(safeSrc)}" alt="${escapeAttr(altRaw)}"></p>`
                   }
                 }
-                const allBullet = trimmedLines.every(l => /^[-*]\s+/.test(l))
+
+                // 处理列表
+                const allBullet = trimmedLines.every(l => /^[-*+]\s+/.test(l))
                 const allNumbered = trimmedLines.every(l => /^\d+\.\s+/.test(l))
                 if (allBullet) {
                   const items = trimmedLines.map(l => {
-                    const text = l.replace(/^[-*]\s+/, '')
-                    return `<li>${escapeHtml(text)}</li>`
+                    const text = l.replace(/^[-*+]\s+/, '')
+                    return `<li>${this.parseInlineMarkdown(text)}</li>`
                   }).join('')
                   return `<ul>${items}</ul>`
                 }
                 if (allNumbered) {
                   const items = trimmedLines.map(l => {
                     const text = l.replace(/^\d+\.\s+/, '')
-                    return `<li>${escapeHtml(text)}</li>`
+                    return `<li>${this.parseInlineMarkdown(text)}</li>`
                   }).join('')
                   return `<ol>${items}</ol>`
                 }
-                const inner = trimmedLines.map(line => escapeHtml(line)).join('<br>')
+
+                // 处理引用
+                if (trimmedLines.every(l => l.startsWith('>'))) {
+                  const content = trimmedLines.map(l => l.replace(/^>\s*/, '')).join('<br>')
+                  return `<blockquote>${this.parseInlineMarkdown(content)}</blockquote>`
+                }
+
+                // 普通段落
+                const inner = trimmedLines.map(line => this.parseInlineMarkdown(line)).join('<br>')
                 return `<p>${inner}</p>`
               }).filter(Boolean).join('')
             }
             if (!looksLikeHtml) {
+              // 处理纯文本中的URL（避免重复处理HTML中的URL）
               html = html.replace(
-                /(https?:\/\/[^\s<]+)/gi,
+                /(?<!href="|src="|<a[^>]*>)(https?:\/\/[^\s<"']+?)(?=<|$|\s)/gi,
                 '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
               )
             }
             html = sanitizeHtml(html)
             return html.trim()
           }
+
+          // 内联 markdown 解析辅助函数
+          this.parseInlineMarkdown = (text) => {
+            const escapeHtml = (t) => {
+              return `${t}`
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+            }
+
+            let result = escapeHtml(text)
+
+            // 处理行内代码 `code`
+            result = result.replace(/`([^`]+)`/g, '<code>$1</code>')
+
+            // 处理粗体 **text** 或 __text__
+            result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            result = result.replace(/__(.+?)__/g, '<strong>$1</strong>')
+
+            // 处理斜体 *text* 或 _text_ (避免与粗体冲突)
+            result = result.replace(/(?<!\*)\*(?!\*)(.+?)\*(?!\*)/g, '<em>$1</em>')
+            result = result.replace(/(?<!_)_(?!_)(.+?)_(?!_)/g, '<em>$1</em>')
+
+            // 处理删除线 ~~text~~
+            result = result.replace(/~~(.+?)~~/g, '<del>$1</del>')
+
+            // 处理链接 [text](url)
+            result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+
+            return result
+          }
+
           const raw = this.releaseNotes
           const html = raw ? buildReleaseNotesHtml(raw) : ''
           const displayContent = html || `<p>${this.$t('app.release-notes-not-found')}</p>`
@@ -3124,6 +3203,28 @@
   display: block;
   margin: 8px 0;
   border-radius: 4px;
+}
+
+.update-preview-html hr {
+  height: 0;
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.update-preview-html del {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.update-preview-html strong,
+.update-preview-html b {
+  font-weight: 600;
+}
+
+.update-preview-html em,
+.update-preview-html i {
+  font-style: italic;
 }
 
 .theme-dark .update-preview-body {
