@@ -15,7 +15,23 @@ const extConfigDefaults = {
   videoSnifferAutoCombine: true
 }
 
+const EXT_CONFIG_STORAGE_KEY = 'extConfig'
+
+// 从 chrome.storage 恢复上次持久化的 extConfig，防止 Service Worker 重启后配置丢失
 let extConfig = { ...extConfigDefaults }
+try {
+  chrome.storage.local.get([EXT_CONFIG_STORAGE_KEY], (res) => {
+    const stored = res && res[EXT_CONFIG_STORAGE_KEY]
+    if (stored && typeof stored === 'object') {
+      extConfig = {
+        ...extConfigDefaults,
+        ...stored
+      }
+      console.log('[Background] Restored extConfig from storage:', extConfig.interceptAllDownloads ? 'intercept ON' : 'intercept OFF')
+    }
+  })
+} catch (e) {}
+
 let extConfigTimer = null
 let extConfigSyncedOnce = false
 const AUTO_HIJACK_OVERRIDE_KEY = 'autoHijackTemporarilyDisabled'
@@ -378,14 +394,15 @@ const syncExtConfigFromClient = async () => {
     }
     extConfig = nextConfig
     
-    // 保存到 chrome.storage 以便 content script 可以读取
+    // 持久化完整 extConfig 到 chrome.storage，防止 Service Worker 重启后配置丢失
     chrome.storage.local.set({
+      [EXT_CONFIG_STORAGE_KEY]: nextConfig,
       videoSnifferEnabled,
       videoSnifferFormats,
       videoSnifferAutoCombine,
       ...(lastKnownTheme ? { uiTheme: lastKnownTheme } : {})
     }, () => {
-      console.log('[Background] Video sniffer config saved to storage:', { videoSnifferEnabled, videoSnifferFormats, videoSnifferAutoCombine })
+      console.log('[Background] extConfig saved to storage')
     })
 
     if (themeChanged) {
@@ -1164,9 +1181,15 @@ chrome.downloads.onCreated.addListener((item) => {
 
     // 发送到程序
     try {
-      await addUri(url, item.referrer, item.filename)
+      const success = await addUri(url, item.referrer, item.filename)
+      if (!success) {
+        // addUri 返回 false 表示发送失败，回退到浏览器下载
+        console.log('[LinkCore] Failed to send to client (addUri returned false), restarting browser download')
+        fallbackBrowserUrls.set(url, Date.now())
+        await downloadViaBrowser(url, item.filename)
+      }
     } catch (e) {
-      // 如果发送失败，回退到浏览器下载
+      // 如果发送异常，回退到浏览器下载
       console.log('[LinkCore] Failed to send to client, restarting browser download:', e)
       fallbackBrowserUrls.set(url, Date.now())
       await downloadViaBrowser(url, item.filename)

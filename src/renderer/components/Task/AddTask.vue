@@ -37,40 +37,47 @@
           </div>
         </el-form-item>
         <div class="parsed-preview" v-if="parsedTasks.length > 0">
-          <div class="parsed-preview__header">{{ $t('task.parsed-tasks') }}</div>
-          <el-table :data="parsedTasks" :border="false" :stripe="true" size="mini" style="width: 100%" height="150">
-            <el-table-column :label="$t('task.task-name')" min-width="240">
-              <template slot-scope="scope">
-                <el-tooltip v-if="!scope.row.editing" :content="$t('task.double-click-to-edit')" placement="top" :open-delay="300">
-                  <span @dblclick="enableNameEdit(scope.$index)">{{ scope.row.name }}</span>
-                </el-tooltip>
-                <el-input
-                  v-else
-                  size="mini"
-                  v-model="scope.row.name"
-                  @blur="disableNameEdit(scope.$index)"
-                  @keyup.enter.native="disableNameEdit(scope.$index)"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column :label="$t('task.file-size')" min-width="120">
-              <template slot-scope="scope">
-                <span>{{ scope.row.sizeText }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="isPriorityEngineEnabled" :label="$t('task.task-priority')" min-width="150">
-              <template slot-scope="scope">
-                <el-input-number
-                  size="mini"
-                  v-model="scope.row.priority"
-                  :min="0"
-                  :max="999"
-                  :step="1"
-                  controls-position="right"
-                />
-              </template>
-            </el-table-column>
-          </el-table>
+          <div class="mo-table-wrapper">
+            <el-table
+              :data="parsedTasks"
+              stripe
+              class="mo-parsed-table"
+              size="mini"
+              :max-height="parsedTableMaxHeight"
+            >
+              <el-table-column :label="$t('task.task-name')" min-width="240">
+                <template slot-scope="scope">
+                  <el-tooltip v-if="!scope.row.editing" :content="$t('task.double-click-to-edit')" placement="top" :open-delay="300">
+                    <span class="mo-parsed-text" @dblclick="enableNameEdit(scope.$index)">{{ scope.row.name }}</span>
+                  </el-tooltip>
+                  <el-input
+                    v-else
+                    size="mini"
+                    v-model="scope.row.name"
+                    @blur="disableNameEdit(scope.$index)"
+                    @keyup.enter.native="disableNameEdit(scope.$index)"
+                  />
+                </template>
+              </el-table-column>
+              <el-table-column :label="$t('task.file-size')" min-width="120" align="right">
+                <template slot-scope="scope">
+                  <span>{{ scope.row.sizeText }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="isPriorityEngineEnabled" :label="$t('task.task-priority')" min-width="150" align="right">
+                <template slot-scope="scope">
+                  <el-input-number
+                    size="mini"
+                    v-model="scope.row.priority"
+                    :min="0"
+                    :max="999"
+                    :step="1"
+                    controls-position="right"
+                  />
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
         </div>
       </template>
       <template v-else-if="type === 'torrent'">
@@ -336,6 +343,15 @@
       dialogTop () {
         const advancedVisible = this.showAdvanced
         return advancedVisible ? '8vh' : '15vh'
+      },
+      parsedTableMaxHeight () {
+        const count = this.parsedTasks.length
+        if (count === 0) return undefined
+        const headerHeight = 40
+        const rowHeight = 32
+        const maxRows = 5
+        const maxHeight = headerHeight + maxRows * rowHeight
+        return Math.min(headerHeight + count * rowHeight, maxHeight)
       }
     },
     mounted () {
@@ -1112,44 +1128,79 @@
   }
 .parsed-preview {
     margin-top: 12px;
-    .parsed-preview__header {
-      font-size: 12px;
-      color: $--color-text-secondary;
-      margin-bottom: 6px;
+    margin-bottom: 16px;
+    .mo-table-wrapper {
+      border: 1px solid #dcdfe6;
+      border-radius: 8px;
+      box-sizing: border-box;
+      padding: 0;
     }
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    padding: 8px;
-    :deep(.el-table) {
-      background: transparent;
-    }
-    :deep(.el-table--border) {
+    .el-table.mo-parsed-table {
       border: none !important;
-    }
-    :deep(.el-table::before),
-    :deep(.el-table--border::after),
-    :deep(.el-table__border-left-patch),
-    :deep(.el-table__border-right-patch) {
-      display: none !important;
-    }
-    :deep(.el-table th),
-    :deep(.el-table td),
-    :deep(.el-table__header-wrapper th),
-    :deep(.el-table__body-wrapper td),
-    :deep(.el-table--border .el-table__cell) {
-      border: none !important;
-    }
-    :deep(.el-table th),
-    :deep(.el-table tr),
-    :deep(.el-table td) {
-      border-color: var(--border-color) !important;
-      background-color: transparent !important;
-      color: var(--text-color-primary);
-    }
-    :deep(.el-table__header-wrapper),
-    :deep(.el-table__body-wrapper) {
-      background: transparent;
+      border-radius: 8px 8px 0 0;
+      overflow: hidden;
+      &::before, &::after {
+        display: none !important;
+      }
+      .el-table--border::after, .el-table--group::after {
+        display: none !important;
+      }
+      th.gutter, colgroup.gutter {
+        display: none !important;
+        width: 0 !important;
+      }
+      .el-table__header colgroup col[name="gutter"] {
+        display: none !important;
+        width: 0 !important;
+      }
+      .el-table__body tr:last-child td {
+        border-bottom: none !important;
+      }
+      th.el-table__cell {
+        border-bottom: none !important;
+        .cell {
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+        }
+      }
+      .cell {
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+      }
+      .mo-parsed-text {
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .el-table__row {
+        height: 32px !important;
+        td {
+          padding: 0 !important;
+          .cell {
+            line-height: 32px !important;
+            height: 32px !important;
+            display: flex;
+            align-items: center;
+            padding-top: 0 !important;
+            padding-bottom: 0 !important;
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+          }
+          &.is-right .cell {
+            justify-content: flex-end;
+            text-align: right;
+          }
+          &.is-center .cell {
+            justify-content: center;
+            text-align: center;
+          }
+        }
+      }
     }
   }
   .task-advanced-options .el-form-item:last-of-type {
@@ -1199,6 +1250,23 @@
     align-items: center;
     gap: 6px;
     flex-wrap: nowrap;
+  }
+}
+
+.theme-dark .add-task-dialog .parsed-preview {
+  .mo-table-wrapper {
+    border-color: #4c4d4f;
+  }
+  .el-table.mo-parsed-table {
+    th.el-table__cell {
+      background-color: transparent !important;
+    }
+    .el-table__header-wrapper {
+      background-color: transparent !important;
+    }
+    thead {
+      background-color: transparent !important;
+    }
   }
 }
 </style>

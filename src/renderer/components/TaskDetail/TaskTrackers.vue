@@ -303,7 +303,7 @@
     border: 1px solid #dcdfe6;
     border-radius: 8px;
     box-sizing: border-box;
-    padding: 0 8px;
+    padding: 0;
   }
 }
 .mo-table-wrapper {

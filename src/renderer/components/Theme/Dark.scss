@@ -189,13 +189,10 @@
   }
 
   .task-item-actions {
-    background-color: $--dk-task-item-action-background;
-    border-color: $--dk-task-item-action-border-color;
+    color: $--dk-task-item-action-color;
 
     &:hover {
-      border-color: $--dk-task-item-action-hover-border-color;
       color: $--dk-task-item-action-hover-color;
-      background-color: $--dk-task-item-action-hover-background;
     }
   }
 
@@ -466,39 +463,73 @@
   }
 
   // 输入框悬停时，整体边框跟随变色（聚焦时除外）
-  .el-input-number.is-controls-right:hover:not(:has(.el-input.is-focus)) .el-input__inner,
-  .el-input-number.is-controls-right + .el-select:hover:not(:has(.el-input.is-focus)) .el-input__inner {
+  .el-input-number.is-controls-right:hover:not(:focus-within) .el-input__inner,
+  .el-input-number.is-controls-right + .el-select:hover:not(:focus-within) .el-input__inner {
     border-color: #9b9b9b !important;
   }
 
   // 输入框悬停/聚焦时，左边分割线高亮
-  .el-input-number.is-controls-right:hover:not(:has(.el-input.is-focus)) {
+  .el-input-number.is-controls-right:hover:not(:focus-within) {
     .el-input-number__increase::before,
     .el-input-number__decrease::before {
       background-color: #9b9b9b !important;
     }
   }
 
-  .el-input-number.is-controls-right .el-input.is-focus {
-    & .el-input__inner {
+  .el-input-number.is-controls-right:focus-within {
+    .el-input__inner {
       border-color: $--color-primary !important;
     }
-    & ~ .el-input-number__increase::before,
-    & ~ .el-input-number__decrease::before {
+    .el-input-number__increase::before,
+    .el-input-number__decrease::before {
       background-color: $--color-primary !important;
     }
   }
 
   // KB/MB选择框悬停/聚焦时，选择框左边横杠高亮
-  .el-input-number.is-controls-right + .el-select:hover:not(:has(.el-input.is-focus))::before {
+  .el-input-number.is-controls-right + .el-select:hover:not(:focus-within)::before {
     background-color: #9b9b9b !important;
   }
 
-  .el-input-number.is-controls-right + .el-select:has(.el-input.is-focus) {
+  .el-input-number.is-controls-right + .el-select:focus-within {
     .el-input__inner {
       border-color: $--color-primary !important;
     }
     &::before {
+      background-color: $--color-primary !important;
+    }
+  }
+
+  // 输入框聚焦/悬停时，联动高亮相邻选择框
+  .el-input-number.is-controls-right:hover:not(:focus-within) + .el-select:not(:hover):not(:focus-within) .el-input__inner {
+    border-color: #9b9b9b !important;
+  }
+  .el-input-number.is-controls-right:hover:not(:focus-within) + .el-select:not(:hover):not(:focus-within)::before {
+    background-color: #9b9b9b !important;
+  }
+  .el-input-number.is-controls-right:focus-within + .el-select:not(:focus-within) .el-input__inner {
+    border-color: $--color-primary !important;
+  }
+  .el-input-number.is-controls-right:focus-within + .el-select:not(:focus-within)::before {
+    background-color: $--color-primary !important;
+  }
+
+  // 选择框聚焦/悬停时，联动高亮相邻输入框
+  .el-input-number.is-controls-right:has(+ .el-select:hover:not(:focus-within)):not(:hover):not(:focus-within) .el-input__inner {
+    border-color: #9b9b9b !important;
+  }
+  .el-input-number.is-controls-right:has(+ .el-select:hover:not(:focus-within)):not(:hover):not(:focus-within) {
+    .el-input-number__increase::before,
+    .el-input-number__decrease::before {
+      background-color: #9b9b9b !important;
+    }
+  }
+  .el-input-number.is-controls-right:has(+ .el-select:focus-within):not(:focus-within) .el-input__inner {
+    border-color: $--color-primary !important;
+  }
+  .el-input-number.is-controls-right:has(+ .el-select:focus-within):not(:focus-within) {
+    .el-input-number__increase::before,
+    .el-input-number__decrease::before {
       background-color: $--color-primary !important;
     }
   }
@@ -970,6 +1001,32 @@
 
   .add-task-dialog .el-dialog__footer {
     background-color: transparent;
+  }
+
+  .parsed-preview .mo-table-wrapper {
+    border-color: #4c4d4f;
+  }
+
+  .parsed-preview .mo-parsed-table {
+    border-color: transparent !important;
+    background-color: transparent;
+    .el-table__row {
+      background-color: transparent;
+    }
+    .el-table__body tr:hover > td {
+      background-color: rgba(255, 255, 255, 0.05) !important;
+    }
+    th.el-table__cell {
+      background-color: #1a1a1a !important;
+      color: #909399 !important;
+      border-bottom: none !important;
+    }
+    .el-table__body-wrapper {
+      background-color: transparent !important;
+    }
+    .el-table--border::after, .el-table--group::after, .el-table::before {
+      display: none !important;
+    }
   }
 
   .torrent-file-list {

@@ -471,37 +471,71 @@ iframe {
 }
 
 // 输入框悬停时，整体边框跟随变色（聚焦时除外）
-.el-input-number.is-controls-right:hover:not(:has(.el-input.is-focus)) .el-input__inner,
-.el-input-number.is-controls-right + .el-select:hover:not(:has(.el-input.is-focus)) .el-input__inner {
+.el-input-number.is-controls-right:hover:not(:focus-within) .el-input__inner,
+.el-input-number.is-controls-right + .el-select:hover:not(:focus-within) .el-input__inner {
   border-color: $--border-color-hover !important;
 }
 
-.el-input-number.is-controls-right:hover:not(:has(.el-input.is-focus)) {
+.el-input-number.is-controls-right:hover:not(:focus-within) {
   .el-input-number__increase::before,
   .el-input-number__decrease::before {
     background-color: $--border-color-hover !important;
   }
 }
 
-.el-input-number.is-controls-right .el-input.is-focus {
-  & .el-input__inner {
+.el-input-number.is-controls-right:focus-within {
+  .el-input__inner {
     border-color: $--color-primary !important;
   }
-  & ~ .el-input-number__increase::before,
-  & ~ .el-input-number__decrease::before {
+  .el-input-number__increase::before,
+  .el-input-number__decrease::before {
     background-color: $--color-primary !important;
   }
 }
 
-.el-input-number.is-controls-right + .el-select:hover:not(:has(.el-input.is-focus))::before {
+.el-input-number.is-controls-right + .el-select:hover:not(:focus-within)::before {
   background-color: $--border-color-hover !important;
 }
 
-.el-input-number.is-controls-right + .el-select:has(.el-input.is-focus) {
+.el-input-number.is-controls-right + .el-select:focus-within {
   .el-input__inner {
     border-color: $--color-primary !important;
   }
   &::before {
+    background-color: $--color-primary !important;
+  }
+}
+
+// 输入框聚焦/悬停时，联动高亮相邻选择框
+.el-input-number.is-controls-right:hover:not(:focus-within) + .el-select:not(:hover):not(:focus-within) .el-input__inner {
+  border-color: $--border-color-hover !important;
+}
+.el-input-number.is-controls-right:hover:not(:focus-within) + .el-select:not(:hover):not(:focus-within)::before {
+  background-color: $--border-color-hover !important;
+}
+.el-input-number.is-controls-right:focus-within + .el-select:not(:focus-within) .el-input__inner {
+  border-color: $--color-primary !important;
+}
+.el-input-number.is-controls-right:focus-within + .el-select:not(:focus-within)::before {
+  background-color: $--color-primary !important;
+}
+
+// 选择框聚焦/悬停时，联动高亮相邻输入框
+.el-input-number.is-controls-right:has(+ .el-select:hover:not(:focus-within)):not(:hover):not(:focus-within) .el-input__inner {
+  border-color: $--border-color-hover !important;
+}
+.el-input-number.is-controls-right:has(+ .el-select:hover:not(:focus-within)):not(:hover):not(:focus-within) {
+  .el-input-number__increase::before,
+  .el-input-number__decrease::before {
+    background-color: $--border-color-hover !important;
+  }
+}
+.el-input-number.is-controls-right:has(+ .el-select:focus-within):not(:focus-within) .el-input__inner {
+  border-color: $--color-primary !important;
+}
+.el-input-number.is-controls-right:has(+ .el-select:focus-within):not(:focus-within) {
+  .el-input-number__increase::before,
+  .el-input-number__decrease::before {
     background-color: $--color-primary !important;
   }
 }

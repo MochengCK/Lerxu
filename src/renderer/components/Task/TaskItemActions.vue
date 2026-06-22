@@ -1020,16 +1020,21 @@
   cursor: default;
   text-align: right;
   direction: rtl;
-  border: 1px solid $--task-item-action-border-color;
   color: $--task-item-action-color;
-  background-color: $--task-item-action-background;
-  border-radius: 14px;
-  transition: $--all-transition;
+  transition: $--all-transition, opacity 0.2s ease;
+  /* 明确删除背景和边框 */
+  background: none !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  opacity: 0.6;
   &:hover {
-    border-color: $--task-item-action-hover-border-color;
     color: $--task-item-action-hover-color;
-    background-color: $--task-item-action-hover-background;
+    opacity: 1;
     width: auto;
+    background: none !important;
+    background-color: transparent !important;
+    border: none !important;
   }
   &> .task-item-action {
     display: inline-block;
@@ -1037,8 +1042,22 @@
     margin: 0 4px;
     font-size: 0;
     cursor: pointer;
+    position: relative;
+
     i {
       display: inline-block;
+    }
+    /* 在每个按钮之间添加分隔横杠 (RTL布局中，需要在左侧添加) */
+    &:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: -4px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 1px;
+      height: 12px;
+      background-color: currentColor;
+      opacity: 0.15;
     }
   }
   &> .task-item-action--verify-trigger {
@@ -1096,30 +1115,44 @@
   cursor: pointer;
 }
 
-.task-verify-dropdown-ref svg {
-  opacity: 0.7;
-  transition: opacity 0.2s ease;
-}
-
-.task-item-actions:hover .task-verify-dropdown-ref svg {
-  opacity: 1;
-}
-
 .task-item-actions--verify {
   direction: ltr;
-  border-color: $--task-item-action-border-color;
-  background-color: $--task-item-action-verify-background;
   position: relative;
   margin-right: -23px;
   z-index: 1;
+  /* 明确删除verify按钮的背景 */
+  background: none !important;
+  background-color: transparent !important;
+  border: none !important;
   &:hover {
-    border-color: $--task-item-action-hover-border-color;
-    background-color: $--task-item-action-verify-hover-background;
+    background: none !important;
+    background-color: transparent !important;
   }
   .task-item-action {
     margin: 0 9px;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+
+    &:hover {
+      opacity: 1;
+    }
+
     .task-verify-dropdown-ref {
       margin-left: -17px;
+    }
+
+    /* verify按钮右侧添加分隔横杠（因为direction是ltr，所以在右侧） */
+    &::after {
+      content: '';
+      position: absolute;
+      right: -4px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 1px;
+      height: 12px;
+      background-color: currentColor;
+      opacity: 0.15;
+      transition: opacity 0.25s ease-out;
     }
   }
 }
@@ -1229,10 +1262,10 @@
 }
 
 .theme-dark {
-  .task-item-actions.task-item-actions--verify {
-    background-color: $--dk-task-item-action-verify-background;
-    &:hover {
-      background-color: $--dk-task-item-action-verify-hover-background;
+  .task-item-actions {
+    /* 暗色主题下的分隔线颜色 */
+    &> .task-item-action:not(:first-child)::before {
+      background-color: rgba(255, 255, 255, 0.15);
     }
   }
   .task-verify-panel {
