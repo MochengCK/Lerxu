@@ -27,9 +27,7 @@
 
 ## Introduction
 
-LinkCore Download Manager is a clean, elegant, and easy-to-use cross-platform download manager built with modern web technologies. It offers an intuitive out-of-the-box interface, clear task workflows, and minimal necessary settings, making download management simpler. It supports common download protocols and integrates with a browser extension for online video sniffing and downloading, covering everyday usage scenarios.
-
-LinkCore Download Manager also provides professional-level download capabilities: BitTorrent/Magnet support, UPnP/NAT-PMP port mapping, automatic Tracker updates, task priority and batch management, quick download engine switching, and advanced option presets to meet advanced and heavy download needs.
+A modern download manager powered by the FluxCore engine, optimized for Windows, macOS, and Linux. Supports HTTP, FTP, BitTorrent, and Magnet links with professional-grade features including UPnP/NAT-PMP port mapping, automatic Tracker updates, task prioritization, batch management, and advanced download presets.
 
 ## Screenshots
 

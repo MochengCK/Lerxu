@@ -27,9 +27,7 @@
 
 ## 项目简介
 
-LinkCore Download Manager 是一款简洁、美观、易用的跨平台下载管理器，采用现代 Web 技术构建。开箱即用的直观界面、清晰的任务流程与少量必要的设置，让下载管理变得更简单；同时支持常见下载协议，并支持配合浏览器扩展进行在线视频资源嗅探并下载，覆盖日常使用场景。
-
-LinkCore Download Manager 也具备专业下载器级的能力：支持 BitTorrent/磁力、UPnP/NAT-PMP 端口映射、Tracker 自动更新、任务优先值与批量管理、快速切换下载引擎、以及高级选项预设等，满足进阶与重度下载场景。
+基于 FluxCore 引擎的现代化下载管理器，针对 Windows、macOS 和 Linux 深度优化。支持 HTTP、FTP、BitTorrent 和磁力链接，提供专业级功能：UPnP/NAT-PMP 端口映射、Tracker 自动更新、任务优先级管理、批量操作和高级下载预设。
 
 ## 界面截图
 
