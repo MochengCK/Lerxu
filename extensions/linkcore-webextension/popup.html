@@ -70,6 +70,47 @@
       padding: 16px;
     }
     
+    .speed-stats {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+    
+    .speed-stats::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 1px;
+      background: var(--border-color);
+      transform: translateX(-50%);
+    }
+    
+    .speed-item {
+      flex: 1;
+      text-align: center;
+    }
+    
+    .speed-label {
+      color: var(--text-secondary);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    
+    .speed-value {
+      font-weight: 600;
+      font-size: 18px;
+      color: var(--text-primary);
+    }
+    
+    .speed-divider {
+      height: 1px;
+      background: var(--border-color);
+      margin: 12px 0 16px 0;
+    }
+    
     .status-card {
       background: var(--panel-color);
       border-radius: 8px;
@@ -102,8 +143,7 @@
     .status-disconnected { color: var(--danger-color); }
     
     .settings-section {
-      border-top: 1px solid var(--border-color);
-      padding-top: 16px;
+      padding-top: 0;
     }
     
     .checkbox-group {
@@ -136,7 +176,7 @@
       justify-content: center;
       height: 36px;
       padding: 0 16px;
-      border: 1px solid var(--border-color);
+      border: none;
       border-radius: 6px;
       background: var(--panel-color);
       color: var(--text-primary);
@@ -177,8 +217,9 @@
     }
     
     .quick-action-btn:hover {
-      border-color: var(--primary-color);
+      border-color: transparent;
       background: var(--panel-color);
+      opacity: 0.8;
     }
     
     .quick-action-btn.added {
@@ -196,7 +237,7 @@
     .input-group {
       display: flex;
       position: relative;
-      border: 1px solid var(--border-color);
+      border: none;
       border-radius: 6px;
       background: var(--card-color);
       transition: border-color 0.2s ease;
@@ -204,7 +245,7 @@
     }
     
     .input-group:focus-within {
-      border-color: var(--primary-color);
+      border-color: transparent;
     }
     
     .skip-file-type-input {
@@ -279,7 +320,6 @@
     }
     
     .footer {
-      border-top: 1px solid var(--border-color);
       padding: 12px 16px;
       text-align: center;
     }
@@ -301,6 +341,19 @@
   </div>
   
   <div class="content">
+    <div class="speed-stats">
+      <div class="speed-item">
+        <div class="speed-label" id="labelDownloadSpeed">下载速度</div>
+        <div class="speed-value" id="downloadSpeed">-</div>
+      </div>
+      <div class="speed-item">
+        <div class="speed-label" id="labelUploadSpeed">上传速度</div>
+        <div class="speed-value" id="uploadSpeed">-</div>
+      </div>
+    </div>
+    
+    <div class="speed-divider"></div>
+    
     <div class="status-card">
       <div class="status-item">
         <span class="status-label" id="labelRpc">RPC 地址</span>
@@ -313,10 +366,6 @@
       <div class="status-item">
         <span class="status-label" id="labelClientVersion">客户端版本</span>
         <span class="status-value" id="clientVersion">-</span>
-      </div>
-      <div class="status-item">
-        <span class="status-label" id="labelGlobalSpeed">总下载速度</span>
-        <span class="status-value" id="globalSpeed">-</span>
       </div>
     </div>
     

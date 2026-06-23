@@ -46,7 +46,8 @@ const initI18n = async () => {
     { id: 'labelRpc', key: 'rpcAddress' },
     { id: 'labelConn', key: 'connectionStatus' },
     { id: 'labelClientVersion', key: 'clientVersion' },
-    { id: 'labelGlobalSpeed', key: 'totalSpeed' }
+    { id: 'labelDownloadSpeed', key: 'downloadSpeed' },
+    { id: 'labelUploadSpeed', key: 'uploadSpeed' }
   ]
   
   elements.forEach(({ id, key }) => {
@@ -529,9 +530,13 @@ const humanSize = (n) => {
 }
 const humanSpeed = (n) => `${humanSize(n)}/s`
 const renderGlobalSpeed = (data) => {
-  const gs = document.getElementById('globalSpeed')
-  if (gs) {
-    gs.textContent = humanSpeed(Number(data.totalSpeed || 0))
+  const ds = document.getElementById('downloadSpeed')
+  const us = document.getElementById('uploadSpeed')
+  if (ds) {
+    ds.textContent = humanSpeed(Number(data.downloadSpeed || 0))
+  }
+  if (us) {
+    us.textContent = humanSpeed(Number(data.uploadSpeed || 0))
   }
 }
 const poll = () => {

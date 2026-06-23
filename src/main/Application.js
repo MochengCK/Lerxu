@@ -531,23 +531,26 @@ export default class Application extends EventEmitter {
         if (url.startsWith('/linkcore/tasks')) {
           (async () => {
             try {
-              const keys = ['gid', 'status', 'totalLength', 'completedLength', 'downloadSpeed', 'files']
+              const keys = ['gid', 'status', 'totalLength', 'completedLength', 'downloadSpeed', 'uploadSpeed', 'files']
               const data = await this.engineClient.call('tellActive', keys) || []
-              let totalSpeed = 0
+              let downloadSpeed = 0
+              let uploadSpeed = 0
               const tasks = data.map(it => {
                 const tl = Number(it.totalLength || 0)
                 const cl = Number(it.completedLength || 0)
                 const ds = Number(it.downloadSpeed || 0)
+                const us = Number(it.uploadSpeed || 0)
                 const percent = tl > 0 ? Math.floor((cl / tl) * 100) : 0
                 const name = it.files && it.files[0] && it.files[0].path ? it.files[0].path.split('/').pop() : ''
-                totalSpeed += ds
+                downloadSpeed += ds
+                uploadSpeed += us
                 return { gid: it.gid, status: it.status, total: tl, completed: cl, speed: ds, percent, name }
               })
               res.writeHead(200, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ totalSpeed, tasks }))
+              res.end(JSON.stringify({ downloadSpeed, uploadSpeed, totalSpeed: downloadSpeed, tasks }))
             } catch (err) {
               res.writeHead(500, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ totalSpeed: 0, tasks: [] }))
+              res.end(JSON.stringify({ downloadSpeed: 0, uploadSpeed: 0, totalSpeed: 0, tasks: [] }))
             }
           })()
           return

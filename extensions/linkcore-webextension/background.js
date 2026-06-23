@@ -772,23 +772,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     tryChannel('/linkcore/tasks', { method: 'GET' }, 1000)
       .then(ok => {
         if (!ok) {
-          sendResponse({ connected: false, totalSpeed: 0, tasks: [] })
+          sendResponse({ connected: false, downloadSpeed: 0, uploadSpeed: 0, totalSpeed: 0, tasks: [] })
         } else {
           ok.resp.json()
             .then(data => {
               sendResponse({ 
                 connected: true, 
+                downloadSpeed: data.downloadSpeed || 0,
+                uploadSpeed: data.uploadSpeed || 0,
                 totalSpeed: data.totalSpeed || 0, 
                 tasks: data.tasks || [] 
               })
             })
             .catch(() => {
-              sendResponse({ connected: false, totalSpeed: 0, tasks: [] })
+              sendResponse({ connected: false, downloadSpeed: 0, uploadSpeed: 0, totalSpeed: 0, tasks: [] })
             })
         }
       })
       .catch(() => {
-        sendResponse({ connected: false, totalSpeed: 0, tasks: [] })
+        sendResponse({ connected: false, downloadSpeed: 0, uploadSpeed: 0, totalSpeed: 0, tasks: [] })
       })
     return true
   }
