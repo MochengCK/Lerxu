@@ -182,7 +182,7 @@
       color: var(--text-primary);
       font-size: 13px;
       cursor: pointer;
-      transition: border-color 0.2s ease, background 0.2s ease;
+      transition: all 0.2s ease;
       overflow: hidden;
       box-sizing: border-box;
     }
@@ -217,17 +217,16 @@
     }
     
     .quick-action-btn:hover {
-      border-color: transparent;
       background: var(--panel-color);
       opacity: 0.8;
     }
     
     .quick-action-btn.added {
-      border-color: transparent;
+      border: none;
     }
     
     .quick-action-btn.added:hover {
-      border-color: transparent;
+      border: none;
     }
     
     .skip-file-type-section {
@@ -239,13 +238,9 @@
       position: relative;
       border: none;
       border-radius: 6px;
-      background: var(--card-color);
-      transition: border-color 0.2s ease;
+      background: var(--panel-color);
+      transition: background 0.2s ease;
       overflow: hidden;
-    }
-    
-    .input-group:focus-within {
-      border-color: transparent;
     }
     
     .skip-file-type-input {
