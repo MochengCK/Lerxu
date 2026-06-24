@@ -1,10 +1,11 @@
 import { EventEmitter } from 'node:events'
-import { createWriteStream, createReadStream, unlinkSync, existsSync } from 'node:fs'
-import { resolve, basename } from 'node:path'
+import { createWriteStream, createReadStream, unlinkSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { resolve, basename, join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { pipeline } from 'node:stream'
 import { promisify } from 'node:util'
+import { exec } from 'node:child_process'
 import { app } from 'electron'
 import axios from 'axios'
 import yaml from 'js-yaml'
@@ -14,6 +15,7 @@ import logger from './Logger'
 import { getI18n } from '../ui/Locale'
 
 const pipe = promisify(pipeline)
+const execAsync = promisify(exec)
 
 // 配置
 const GITHUB_OWNER = 'MochengCK'
@@ -63,19 +65,53 @@ function buildLatestYmlUrls () {
  * 获取发行说明（从 GitHub Releases API 或镜像）
  */
 async function fetchReleaseNotes (version) {
+  const getAxiosConfig = () => {
+    const config = {
+      timeout: 15000,
+      headers: { Accept: 'application/vnd.github.v3+json' },
+      maxRedirects: 5
+    }
+    try {
+      const cfg = global.application?.configManager
+      if (cfg) {
+        const useProxy = cfg.getUserConfig('use-proxy') || cfg.getUserConfig('useProxy')
+        const proxy = cfg.getUserConfig('proxy')
+        if (useProxy && proxy) {
+          if (proxy.mode === 'system') {
+            // 使用系统代理，axios 会自动处理
+          } else if (proxy.mode === 'custom' && proxy.server) {
+            let proxyHost = proxy.server
+            const proxyPort = proxy.port || 80
+            // 移除协议前缀
+            proxyHost = proxyHost.replace(/^https?:\/\//, '')
+            config.proxy = {
+              host: proxyHost,
+              port: proxyPort
+            }
+            if (proxy.username) {
+              config.proxy.auth = {
+                username: proxy.username,
+                password: proxy.password || ''
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return config
+  }
+
   const apiUrls = [
     `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
     `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/v${version}`
   ]
 
+  const axiosConfig = getAxiosConfig()
+
   for (const url of apiUrls) {
     try {
       logger.info(`[Motrix] Fetching release notes: ${url}`)
-      const response = await axios.get(url, {
-        timeout: 10000,
-        headers: { Accept: 'application/vnd.github.v3+json' },
-        maxRedirects: 5
-      })
+      const response = await axios.get(url, axiosConfig)
       if (response.data && response.data.body) {
         logger.info('[Motrix] Release notes fetched successfully')
         return response.data.body
@@ -85,6 +121,7 @@ async function fetchReleaseNotes (version) {
       continue
     }
   }
+
   return `See the full release notes at:\nhttps://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/v${version}`
 }
 
@@ -199,11 +236,15 @@ export default class UpdateManager extends EventEmitter {
     this.isDownloading = false
     this._downloadAborted = false
     this._cancelSource = null
+    this._currentProgress = null
 
     // 存储更新信息
     this._updateInfo = null
     this._downloadUrl = null
     this._downloadSha512 = null
+    this._downloadSize = 0
+    this._downloadedFile = null
+    this._downloadedFileType = null // 'dmg', 'zip', 'exe', 'appimage'
 
     this.autoCheckData = {
       checkEnable: this.options.autoCheck,
@@ -268,7 +309,6 @@ export default class UpdateManager extends EventEmitter {
   async check () {
     if (this.isChecking) return
     this.isChecking = true
-    this.autoCheckData.userCheck = true
     this._notifyWindows('checking-for-update')
     this.emit('checking')
 
@@ -293,22 +333,46 @@ export default class UpdateManager extends EventEmitter {
 
       let asset = null
       if (platform === 'darwin') {
-        // 先筛选 macOS 文件，再优先匹配架构
-        const macFiles = info.files.filter(f => {
+        // macOS 优先选择 DMG 安装包，其次是 ZIP
+        const allMacFiles = info.files.filter(f => {
           const name = (f.url || '').toLowerCase()
           return name.endsWith('.dmg') || name.endsWith('-mac.zip') || name.includes('darwin') || name.includes('mac')
         })
-        // 按架构匹配
-        asset = macFiles.find(f => {
-          const name = (f.url || '').toLowerCase()
-          if (arch === 'arm64') return name.includes('arm64') || name.includes('aarch64')
-          if (arch === 'x64') return name.includes('x64') || name.includes('amd64') || (!name.includes('arm64') && !name.includes('aarch64'))
-          return false
-        })
-        // 架构不匹配则回退到第一个 macOS 文件
-        if (!asset && macFiles.length > 0) {
-          asset = macFiles[0]
-          logger.warn(`[Motrix] No ${arch} mac file found, falling back to ${asset.url}`)
+
+        // 优先找 DMG 文件，按架构匹配
+        const dmgFiles = allMacFiles.filter(f => (f.url || '').toLowerCase().endsWith('.dmg'))
+        const zipFiles = allMacFiles.filter(f => (f.url || '').toLowerCase().endsWith('-mac.zip') || (f.url || '').toLowerCase().endsWith('.zip'))
+
+        // 按架构匹配函数
+        const matchArch = (files, targetArch) => {
+          return files.find(f => {
+            const name = (f.url || '').toLowerCase()
+            if (targetArch === 'arm64') return name.includes('arm64') || name.includes('aarch64')
+            if (targetArch === 'x64') return name.includes('x64') || name.includes('amd64') || (!name.includes('arm64') && !name.includes('aarch64'))
+            return false
+          })
+        }
+
+        // 优先使用 DMG
+        asset = matchArch(dmgFiles, arch)
+        if (!asset && dmgFiles.length > 0) {
+          asset = dmgFiles[0]
+          logger.warn(`[Motrix] No ${arch} DMG found, falling back to first DMG: ${asset.url}`)
+        }
+
+        // 如果没有 DMG，再尝试 ZIP
+        if (!asset) {
+          asset = matchArch(zipFiles, arch)
+          if (!asset && zipFiles.length > 0) {
+            asset = zipFiles[0]
+            logger.warn(`[Motrix] No ${arch} ZIP found, falling back to first ZIP: ${asset.url}`)
+          }
+        }
+
+        // 最后回退到任意 macOS 文件
+        if (!asset && allMacFiles.length > 0) {
+          asset = allMacFiles[0]
+          logger.warn(`[Motrix] No matching mac file found, falling back to: ${asset.url}`)
         }
       } else if (platform === 'win32') {
         asset = info.files.find(f => (f.url || '').toLowerCase().endsWith('.exe'))
@@ -327,9 +391,19 @@ export default class UpdateManager extends EventEmitter {
       const downloadBase = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${info.version}`
       const fullDownloadUrl = filename.startsWith('http') ? filename : `${downloadBase}/${filename}`
 
+      // 检测文件类型
+      const fn = filename.toLowerCase()
+      let fileType = null
+      if (fn.endsWith('.dmg')) fileType = 'dmg'
+      else if (fn.endsWith('.exe')) fileType = 'exe'
+      else if (fn.endsWith('.appimage')) fileType = 'appimage'
+      else if (fn.endsWith('-mac.zip') || fn.endsWith('.zip')) fileType = 'zip'
+
       this._updateInfo = info
       this._downloadUrl = fullDownloadUrl
       this._downloadSha512 = asset.sha512 || info.sha512 || ''
+      this._downloadSize = asset.size || 0
+      this._downloadedFileType = fileType
 
       logger.info(`[Motrix] Update available: ${info.version} (current: ${CURRENT_VERSION}), selected: ${filename}`)
 
@@ -341,7 +415,7 @@ export default class UpdateManager extends EventEmitter {
       this.isChecking = false
       this._notifyWindows('update-available', info.version, releaseNotes)
       this.emit('update-available', info)
-      this._saveCheckResult(true, info.version)
+      this._saveCheckResult(true, info.version, releaseNotes)
     } catch (err) {
       this.isChecking = false
       const errMsg = err?.message || `${err}`
@@ -355,14 +429,27 @@ export default class UpdateManager extends EventEmitter {
 
   async downloadUpdate () {
     if (this.isDownloading) return
+
     if (!this._downloadUrl || !this._updateInfo) {
-      this._notifyWindows('update-error', 'No update info available, please check for updates first')
-      return
+      logger.info('[Motrix] No update info in memory, re-checking for updates before download...')
+      this.autoCheckData.userCheck = true
+      try {
+        await this.check()
+      } catch (err) {
+        this._notifyWindows('update-error', 'Failed to check for updates: ' + err.message)
+        return
+      }
+      if (!this._downloadUrl || !this._updateInfo) {
+        this._notifyWindows('update-error', 'No update info available, please check for updates first')
+        return
+      }
     }
 
     this.isDownloading = true
     this._downloadAborted = false
+    this._currentProgress = { percent: 0, total: this._downloadSize || 0, transferred: 0 }
     this.emit('download-start')
+    this._notifyWindows('download-start')
 
     const urls = buildMirrorUrls(this._downloadUrl)
 
@@ -370,6 +457,7 @@ export default class UpdateManager extends EventEmitter {
       if (this._downloadAborted) {
         this.isDownloading = false
         this.emit('update-cancelled')
+        this._notifyWindows('update-cancelled')
         return
       }
 
@@ -396,7 +484,7 @@ export default class UpdateManager extends EventEmitter {
           cancelToken
         })
 
-        const totalSize = parseInt(headers['content-length'] || '0', 10) || 0
+        const totalSize = parseInt(headers['content-length'] || '0', 10) || this._downloadSize || 0
         let downloadedSize = 0
 
         const writer = createWriteStream(tmpFile)
@@ -404,18 +492,14 @@ export default class UpdateManager extends EventEmitter {
           downloadedSize += chunk.length
           if (!this._downloadAborted) {
             const percent = totalSize > 0 ? Math.round((downloadedSize / totalSize) * 100) : 0
-            this.emit('download-progress', {
+            this._currentProgress = {
               percent,
               bytesPerSecond: 0,
               total: totalSize,
               transferred: downloadedSize
-            })
-            this._notifyWindows('download-progress', {
-              percent,
-              bytesPerSecond: 0,
-              total: totalSize,
-              transferred: downloadedSize
-            })
+            }
+            this.emit('download-progress', this._currentProgress)
+            this._notifyWindows('download-progress', this._currentProgress)
           }
         })
 
@@ -425,7 +509,9 @@ export default class UpdateManager extends EventEmitter {
         if (this._downloadAborted) {
           try { unlinkSync(tmpFile) } catch (_) {}
           this.isDownloading = false
+          this._currentProgress = null
           this.emit('update-cancelled')
+          this._notifyWindows('update-cancelled')
           return
         }
 
@@ -443,19 +529,24 @@ export default class UpdateManager extends EventEmitter {
 
         // 下载成功
         this.isDownloading = false
+        this._currentProgress = null
+        this._downloadedFile = tmpFile
         const data = {
           version: this._updateInfo.version,
-          downloadedFile: tmpFile
+          downloadedFile: tmpFile,
+          fileType: this._downloadedFileType
         }
         this.emit('update-downloaded', data)
         this.emit('will-updated', data)
         this._notifyWindows('update-downloaded', data)
-        logger.info(`[Motrix] Download complete: ${tmpFile}`)
+        logger.info(`[Motrix] Download complete: ${tmpFile}, type: ${this._downloadedFileType}`)
         return
       } catch (err) {
         if (axios.isCancel(err) || this._downloadAborted) {
           this.isDownloading = false
+          this._currentProgress = null
           this.emit('update-cancelled')
+          this._notifyWindows('update-cancelled')
           return
         }
         logger.warn(`[Motrix] Download failed from ${url}: ${err.message}`)
@@ -464,6 +555,7 @@ export default class UpdateManager extends EventEmitter {
 
     // 所有下载尝试都失败
     this.isDownloading = false
+    this._currentProgress = null
     const errMsg = 'All download sources failed, please check your network connection'
     logger.warn(`[Motrix] ${errMsg}`)
     this._notifyWindows('update-error', errMsg)
@@ -481,13 +573,228 @@ export default class UpdateManager extends EventEmitter {
     }
   }
 
+  /**
+   * 退出并安装更新
+   */
+  async quitAndInstall () {
+    if (!this._downloadedFile) {
+      logger.warn('[Motrix] No downloaded file to install')
+      this._notifyWindows('update-error', 'No update file downloaded')
+      return
+    }
+
+    const fileType = this._downloadedFileType
+    const downloadedFile = this._downloadedFile
+
+    logger.info(`[Motrix] Starting install: ${downloadedFile} (${fileType})`)
+
+    try {
+      this._notifyWindows('installing-update')
+      this.emit('installing-update')
+
+      if (process.platform === 'darwin') {
+        if (fileType === 'dmg') {
+          await this._installDmg(downloadedFile)
+        } else if (fileType === 'zip') {
+          await this._installMacZip(downloadedFile)
+        } else {
+          await this._openFile(downloadedFile)
+        }
+      } else if (process.platform === 'win32') {
+        await this._installExe(downloadedFile)
+      } else {
+        await this._openFile(downloadedFile)
+      }
+    } catch (err) {
+      logger.error(`[Motrix] Install failed: ${err.message}`)
+      this._notifyWindows('update-error', `Install failed: ${err.message}`)
+      this.emit('update-error', err)
+    }
+  }
+
+  /**
+   * macOS: 安装 DMG 文件
+   */
+  async _installDmg (dmgPath) {
+    logger.info('[Motrix] Installing DMG...')
+
+    // 挂载 DMG
+    const { stdout: attachOutput } = await execAsync(`hdiutil attach -nobrowse -noautoopen "${dmgPath}"`)
+    logger.info(`[Motrix] hdiutil attach output: ${attachOutput}`)
+
+    // 解析挂载点（通常是 /Volumes/xxx）
+    const mountMatch = attachOutput.match(/\/Volumes\/[^\n]+/)
+    if (!mountMatch) {
+      throw new Error('Could not find mounted volume')
+    }
+    const mountPoint = mountMatch[0].trim()
+    logger.info(`[Motrix] Mount point: ${mountPoint}`)
+
+    try {
+      // 在挂载点中查找 .app 文件
+      const files = readdirSync(mountPoint)
+      const appFile = files.find(f => f.endsWith('.app'))
+      if (!appFile) {
+        throw new Error('No .app file found in DMG')
+      }
+
+      const sourceApp = join(mountPoint, appFile)
+      const targetApp = join('/Applications', appFile)
+
+      logger.info(`[Motrix] Copying ${sourceApp} to ${targetApp}`)
+
+      // 如果目标已存在，先删除（需要权限，会提示用户输入密码）
+      try {
+        // 使用 ditto 复制（保留权限和符号链接）
+        await execAsync(`ditto "${sourceApp}" "${targetApp}"`)
+        logger.info('[Motrix] App copied successfully')
+      } catch (copyErr) {
+        // 如果复制失败（可能是权限问题），使用 osascript 提示认证
+        logger.warn(`[Motrix] Copy failed, trying with privileges: ${copyErr.message}`)
+        const script = `do shell script "ditto \\"${sourceApp}\\" \\"${targetApp}\\"" with administrator privileges`
+        await execAsync(`osascript -e '${script}'`)
+        logger.info('[Motrix] App copied with admin privileges')
+      }
+
+      // 卸载 DMG
+      try {
+        await execAsync(`hdiutil detach "${mountPoint}" -quiet`)
+      } catch (_) {}
+
+      // 打开新版本
+      logger.info('[Motrix] Relaunching new version...')
+      this._relaunchApp(targetApp)
+    } catch (err) {
+      // 确保卸载 DMG
+      try {
+        await execAsync(`hdiutil detach "${mountPoint}" -quiet -force`)
+      } catch (_) {}
+      throw err
+    }
+  }
+
+  /**
+   * macOS: 安装 ZIP 更新包
+   */
+  async _installMacZip (zipPath) {
+    logger.info('[Motrix] Installing ZIP update...')
+    const appPath = app.getAppPath()
+    const appBundlePath = dirname(dirname(dirname(appPath))) // 从 app.asar 向上找 .app 包
+    logger.info(`[Motrix] Current app bundle: ${appBundlePath}`)
+
+    const tmpExtractDir = join(tmpdir(), `motrix-update-${Date.now()}`)
+    mkdirSync(tmpExtractDir, { recursive: true })
+
+    try {
+      // 解压 ZIP
+      await execAsync(`unzip -o -q "${zipPath}" -d "${tmpExtractDir}"`)
+
+      // 查找解压后的 .app 文件
+      const findApp = (dir) => {
+        const entries = readdirSync(dir, { withFileTypes: true })
+        for (const entry of entries) {
+          const fullPath = join(dir, entry.name)
+          if (entry.isDirectory() && entry.name.endsWith('.app')) {
+            return fullPath
+          }
+          if (entry.isDirectory() && !entry.name.startsWith('.')) {
+            const found = findApp(fullPath)
+            if (found) return found
+          }
+        }
+        return null
+      }
+
+      const newAppPath = findApp(tmpExtractDir)
+      if (!newAppPath) {
+        throw new Error('No .app found in ZIP')
+      }
+
+      logger.info(`[Motrix] New app: ${newAppPath}`)
+
+      // 使用 ditto 替换当前应用
+      await execAsync(`ditto "${newAppPath}" "${appBundlePath}"`)
+      logger.info('[Motrix] App replaced successfully')
+
+      this._relaunchApp(appBundlePath)
+    } finally {
+      // 清理临时目录
+      try {
+        rmSync(tmpExtractDir, { recursive: true, force: true })
+      } catch (_) {}
+    }
+  }
+
+  /**
+   * Windows: 安装 EXE 文件
+   */
+  async _installExe (exePath) {
+    logger.info('[Motrix] Installing EXE...')
+    // 使用 spawn 启动安装程序，然后退出
+    const { spawn } = require('node:child_process')
+    spawn(exePath, ['/S', '--force-run'], {
+      detached: true,
+      stdio: 'ignore'
+    }).unref()
+
+    // 延迟退出，确保安装程序启动
+    setTimeout(() => {
+      app.quit()
+    }, 500)
+  }
+
+  /**
+   * 通用：用系统默认程序打开文件
+   */
+  async _openFile (filePath) {
+    const { shell } = require('electron')
+    await shell.openPath(filePath)
+    app.quit()
+  }
+
+  /**
+   * 重新启动应用
+   */
+  _relaunchApp (appPath) {
+    const { spawn } = require('node:child_process')
+    // 使用 open 命令启动新版本
+    spawn('open', [appPath], {
+      detached: true,
+      stdio: 'ignore'
+    }).unref()
+
+    // 退出当前应用
+    setTimeout(() => {
+      app.quit()
+    }, 500)
+  }
+
   // ===== 内部方法 =====
 
-  _saveCheckResult (available, version) {
+  _saveCheckResult (available, version, releaseNotes) {
     if (global.application?.configManager) {
       global.application.configManager.setUserConfig('update-available', available)
       global.application.configManager.setUserConfig('new-version', version || '')
       global.application.configManager.setUserConfig('last-check-update-time', Date.now())
+      if (available && releaseNotes) {
+        global.application.configManager.setUserConfig('release-notes', releaseNotes)
+      } else if (!available) {
+        global.application.configManager.setUserConfig('release-notes', '')
+      }
+    }
+  }
+
+  getStatus () {
+    return {
+      isChecking: this.isChecking,
+      isDownloading: this.isDownloading,
+      updateAvailable: !!this._updateInfo && !this.isDownloading && !this._downloadedFile,
+      updateDownloaded: !!this._downloadedFile,
+      newVersion: this._updateInfo?.version || '',
+      releaseNotes: this._updateInfo?.releaseNotes || '',
+      downloadProgress: this._currentProgress?.percent || 0,
+      downloadTotal: this._currentProgress?.total || this._downloadSize || 0,
+      downloadTransferred: this._currentProgress?.transferred || 0
     }
   }
 

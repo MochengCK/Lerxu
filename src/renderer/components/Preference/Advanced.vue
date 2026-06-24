@@ -19,30 +19,37 @@
               <div
                 class="el-form-item__info"
                 style="margin-top: 8px;"
-                v-if="form.lastCheckUpdateTime !== 0"
+                v-if="lastCheckUpdateTime !== 0 || updateAvailable || isDownloadingUpdate || updateDownloaded"
               >
                 {{ $t('preferences.last-check-update-time') + ': ' +
-                  (form.lastCheckUpdateTime !== 0 ?
-                    new Date(form.lastCheckUpdateTime).toLocaleString() :
+                  (lastCheckUpdateTime !== 0 ?
+                    new Date(lastCheckUpdateTime).toLocaleString() :
                     new Date().toLocaleString())
                 }}
                 <span
                   class="action-link"
                   :class="{
                     'action-link--disabled': isCheckingUpdate,
-                    'update-available': updateAvailable && !isCheckingUpdate
+                    'update-available': (updateAvailable || isDownloadingUpdate || updateDownloaded) && !isCheckingUpdate
                   }"
-                  @click.prevent="isCheckingUpdate ? null : (updateAvailable ? onPreviewUpdateClick() : onCheckUpdateClick())"
+                  @click.prevent="isCheckingUpdate ? null : ((updateAvailable || isDownloadingUpdate || updateDownloaded) ? onPreviewUpdateClick() : onCheckUpdateClick())"
                 >
-                  {{ updateAvailable ? $t('app.preview-update') : $t('app.check-updates-now') }}
+                  {{ (updateAvailable || isDownloadingUpdate || updateDownloaded) ? $t('app.preview-update') : $t('app.check-updates-now') }}
                 </span>
               </div>
               <div
                 class="version-item"
-                :class="{ 'update-available': updateAvailable, 'is-checking': isCheckingUpdate, 'downloading': isDownloadingUpdate }"
-                @click="updateAvailable ? downloadUpdate() : (isCheckingUpdate ? null : onCheckUpdateClick())"
+                :class="{
+                  'update-available': updateAvailable && !updateDownloaded && !isDownloadingUpdate,
+                  'is-checking': isCheckingUpdate,
+                  'downloading': isDownloadingUpdate,
+                  'downloaded': updateDownloaded,
+                  'is-disabled': isDownloadingUpdate
+                }"
+                :style="{ pointerEvents: isDownloadingUpdate ? 'none' : 'auto' }"
+                @click="handleVersionItemClick"
               >
-                <span>{{ getVersionText() }}</span>
+                <span>{{ versionText }}</span>
               </div>
             </el-col>
           </el-form-item>
@@ -1015,11 +1022,36 @@
     },
     computed: {
       ...mapState('app', ['isCheckingUpdate']),
-      ...mapState('preference', ['updateAvailable', 'newVersion', 'isDownloadingUpdate', 'downloadProgress', 'releaseNotes', 'searchKeyword']),
+      ...mapState('preference', ['updateAvailable', 'newVersion', 'isDownloadingUpdate', 'updateDownloaded', 'downloadProgress', 'downloadTotal', 'downloadTransferred', 'releaseNotes', 'lastCheckUpdateTime', 'searchKeyword']),
       ...mapState('app', {
         storeEngineInfo: state => state.engineInfo,
         storeEngineList: state => state.engineList
       }),
+      versionText () {
+        const bytesToSize = (this.$options && this.$options.filters && this.$options.filters.bytesToSize)
+          ? this.$options.filters.bytesToSize
+          : (bytes, decimals = 2) => {
+              if (!bytes || bytes === 0) return '0 B'
+              const k = 1024
+              const sizes = ['B', 'KB', 'MB', 'GB']
+              const i = Math.floor(Math.log(bytes) / Math.log(k))
+              return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i]
+            }
+        if (this.updateDownloaded) {
+          return '立即重启安装'
+        } else if (this.isDownloadingUpdate) {
+          const transferred = bytesToSize(this.downloadTransferred, 2)
+          const total = bytesToSize(this.downloadTotal, 2)
+          if (this.downloadTotal > 0) {
+            return `下载中 ${this.downloadProgress}% (${transferred} / ${total})`
+          }
+          return `下载中 ${this.downloadProgress}%`
+        } else if (this.updateAvailable) {
+          return `下载新版本 ${this.newVersion}`
+        } else {
+          return this.appVersion
+        }
+      },
       configEngineBinary () {
         const { config = {} } = this.$store.state.preference
         return config.engineBinary || config['engine-binary']
@@ -1161,6 +1193,13 @@
       }
     },
     watch: {
+      'form.autoCheckUpdate' (newValue) {
+        // 当关闭自动检查更新时，清除更新状态
+        if (!newValue) {
+          this.$store.dispatch('preference/updateUpdateAvailable', false)
+          this.$store.dispatch('preference/updateNewVersion', '')
+        }
+      },
       searchKeyword: {
         immediate: true,
         handler (val) {
@@ -1247,8 +1286,150 @@
       try {
         const appConfig = await this.$electron.ipcRenderer.invoke('get-app-config')
         this.appVersion = appConfig.version
+
+        // 从主进程获取当前实时更新状态
+        const updateStatus = await this.$electron.ipcRenderer.invoke('get-update-status')
+        const prefState = this.$store.state.preference
+
+        // 同步检查状态
+        if (updateStatus.isChecking) {
+          this.$store.dispatch('app/updateCheckingUpdate', true)
+        } else {
+          this.$store.dispatch('app/updateCheckingUpdate', false)
+        }
+
+        // 同步下载状态
+        this.$store.dispatch('preference/updateIsDownloadingUpdate', updateStatus.isDownloading)
+        this.$store.dispatch('preference/updateUpdateDownloaded', updateStatus.updateDownloaded)
+
+        if (updateStatus.isDownloading) {
+          this.$store.dispatch('preference/updateDownloadProgress', updateStatus.downloadProgress || 0)
+          this.$store.dispatch('preference/updateDownloadSize', {
+            total: updateStatus.downloadTotal || 0,
+            transferred: updateStatus.downloadTransferred || 0
+          })
+          if (updateStatus.newVersion) {
+            this.$store.dispatch('preference/updateNewVersion', updateStatus.newVersion)
+          }
+          if (updateStatus.releaseNotes) {
+            this.$store.dispatch('preference/updateReleaseNotes', updateStatus.releaseNotes)
+          }
+          this.$store.dispatch('preference/updateUpdateAvailable', false)
+        } else if (updateStatus.updateDownloaded) {
+          this.$store.dispatch('preference/updateUpdateAvailable', false)
+          if (updateStatus.newVersion) {
+            this.$store.dispatch('preference/updateNewVersion', updateStatus.newVersion)
+          }
+          if (updateStatus.releaseNotes) {
+            this.$store.dispatch('preference/updateReleaseNotes', updateStatus.releaseNotes)
+          }
+        } else {
+          // 没有正在进行的下载或已完成，从配置恢复
+          const configFromStore = this.$store.state.preference.config
+          if (configFromStore) {
+            const updateAvailable = configFromStore['update-available'] || configFromStore.updateAvailable || false
+            const newVersion = configFromStore['new-version'] || configFromStore.newVersion || ''
+            const lastCheckUpdateTime = configFromStore['last-check-update-time'] || configFromStore.lastCheckUpdateTime || 0
+            const releaseNotes = configFromStore['release-notes'] || configFromStore.releaseNotes || ''
+
+            if (updateAvailable && newVersion) {
+              this.$store.dispatch('preference/updateUpdateAvailable', updateAvailable)
+              this.$store.dispatch('preference/updateNewVersion', newVersion)
+              this.$store.dispatch('preference/updateLastCheckUpdateTime', lastCheckUpdateTime)
+              if (releaseNotes) {
+                this.$store.dispatch('preference/updateReleaseNotes', releaseNotes)
+              }
+            }
+          }
+        }
+
+        // 同步最后检查时间（总是从配置同步，确保预览按钮显示）
+        const configForTime = this.$store.state.preference.config
+        let timeToSet = Date.now() // 默认用当前时间，确保下载中时预览按钮能显示
+        if (configForTime) {
+          const configTime = configForTime['last-check-update-time'] || configForTime.lastCheckUpdateTime || 0
+          if (configTime && configTime > 0) {
+            timeToSet = configTime
+          }
+        }
+        if (timeToSet && (!prefState.lastCheckUpdateTime || timeToSet > prefState.lastCheckUpdateTime)) {
+          this.$store.dispatch('preference/updateLastCheckUpdateTime', timeToSet)
+        }
       } catch (error) {
         console.error('[Motrix] Failed to get app version:', error)
+      }
+
+      // 注册更新事件全局监听器
+      this._updateEventListeners = {
+        onCheckingForUpdate: () => {
+          this.$store.dispatch('app/updateCheckingUpdate', true)
+        },
+        onUpdateAvailable: (event, version, releaseNotes) => {
+          this.$store.dispatch('app/updateCheckingUpdate', false)
+          this.$store.dispatch('preference/updateUpdateAvailable', true)
+          this.$store.dispatch('preference/updateNewVersion', version)
+          this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
+          this.$store.dispatch('preference/updateReleaseNotes', releaseNotes || '')
+        },
+        onUpdateNotAvailable: () => {
+          this.$store.dispatch('app/updateCheckingUpdate', false)
+          this.$store.dispatch('preference/updateUpdateAvailable', false)
+          this.$store.dispatch('preference/updateNewVersion', '')
+          this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
+        },
+        onDownloadStart: () => {
+          this.$store.dispatch('preference/updateIsDownloadingUpdate', true)
+          this.$store.dispatch('preference/updateUpdateDownloaded', false)
+          this.$store.dispatch('preference/updateDownloadProgress', 0)
+          this.$store.dispatch('preference/updateDownloadSize', { total: 0, transferred: 0 })
+        },
+        onDownloadProgress: (event, progress) => {
+          this.$store.dispatch('preference/updateDownloadProgress', Math.round(progress.percent))
+          this.$store.dispatch('preference/updateDownloadSize', {
+            total: progress.total || 0,
+            transferred: progress.transferred || 0
+          })
+        },
+        onUpdateDownloaded: () => {
+          this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+          this.$store.dispatch('preference/updateUpdateDownloaded', true)
+          this.$store.dispatch('preference/updateUpdateAvailable', false)
+          this.showMessage('success', '更新下载完成，点击"立即重启安装"按钮开始安装更新')
+        },
+        onUpdateError: () => {
+          this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+          this.$store.dispatch('preference/updateUpdateDownloaded', false)
+          this.$store.dispatch('app/updateCheckingUpdate', false)
+        },
+        onUpdateCancelled: () => {
+          this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+          this.$store.dispatch('preference/updateUpdateDownloaded', false)
+          this.$store.dispatch('preference/updateDownloadProgress', 0)
+          this.$store.dispatch('preference/updateDownloadSize', { total: 0, transferred: 0 })
+        }
+      }
+
+      this.$electron.ipcRenderer.on('checking-for-update', this._updateEventListeners.onCheckingForUpdate)
+      this.$electron.ipcRenderer.on('update-available', this._updateEventListeners.onUpdateAvailable)
+      this.$electron.ipcRenderer.on('update-not-available', this._updateEventListeners.onUpdateNotAvailable)
+      this.$electron.ipcRenderer.on('download-start', this._updateEventListeners.onDownloadStart)
+      this.$electron.ipcRenderer.on('download-progress', this._updateEventListeners.onDownloadProgress)
+      this.$electron.ipcRenderer.on('update-downloaded', this._updateEventListeners.onUpdateDownloaded)
+      this.$electron.ipcRenderer.on('update-error', this._updateEventListeners.onUpdateError)
+      this.$electron.ipcRenderer.on('update-cancelled', this._updateEventListeners.onUpdateCancelled)
+    },
+    beforeDestroy () {
+      // 清理更新事件监听器
+      if (this._updateEventListeners) {
+        this.$electron.ipcRenderer.removeListener('checking-for-update', this._updateEventListeners.onCheckingForUpdate)
+        this.$electron.ipcRenderer.removeListener('update-available', this._updateEventListeners.onUpdateAvailable)
+        this.$electron.ipcRenderer.removeListener('update-not-available', this._updateEventListeners.onUpdateNotAvailable)
+        this.$electron.ipcRenderer.removeListener('download-start', this._updateEventListeners.onDownloadStart)
+        this.$electron.ipcRenderer.removeListener('download-progress', this._updateEventListeners.onDownloadProgress)
+        this.$electron.ipcRenderer.removeListener('update-downloaded', this._updateEventListeners.onUpdateDownloaded)
+        this.$electron.ipcRenderer.removeListener('update-error', this._updateEventListeners.onUpdateError)
+        this.$electron.ipcRenderer.removeListener('update-cancelled', this._updateEventListeners.onUpdateCancelled)
+        this._updateEventListeners = null
       }
     },
     methods: {
@@ -1661,15 +1842,6 @@
         this.recomputeBtTrackerFromSelected()
         this.$msg.success(this.$t('preferences.origin-removed'))
       },
-      getVersionText () {
-        if (this.isDownloadingUpdate) {
-          return `下载中 ${this.downloadProgress}%`
-        } else if (this.updateAvailable) {
-          return `下载新版本 ${this.newVersion}`
-        } else {
-          return this.appVersion
-        }
-      },
       hasMsgSupport () {
         return typeof this.$msg !== 'undefined' && this.$msg !== null
       },
@@ -1683,33 +1855,64 @@
           }
         }
       },
+      // 版本项点击处理
+      handleVersionItemClick () {
+        if (this.updateDownloaded) {
+          this.installUpdate()
+        } else if (this.isDownloadingUpdate) {
+          // 正在下载，不做任何操作
+        } else if (this.updateAvailable) {
+          this.downloadUpdate()
+        } else if (!this.isCheckingUpdate) {
+          this.onCheckUpdateClick()
+        }
+      },
+      // 安装更新
+      installUpdate () {
+        this.showMessage('info', '正在准备安装更新，应用将自动重启...')
+        this.$electron.ipcRenderer.send('command', 'application:quit-and-install-update')
+      },
       downloadUpdate () {
         if (this.isDownloadingUpdate) return
         this.$store.dispatch('preference/updateIsDownloadingUpdate', true)
+        this.$store.dispatch('preference/updateUpdateDownloaded', false)
         this.$store.dispatch('preference/updateDownloadProgress', 0)
+        this.$store.dispatch('preference/updateDownloadSize', { total: 0, transferred: 0 })
         this.showMessage('info', '开始下载新版本...')
+        const cleanupListeners = () => {
+          this.$electron.ipcRenderer.removeListener('download-progress', onDownloadProgress)
+          this.$electron.ipcRenderer.removeListener('update-downloaded', onDownloaded)
+          this.$electron.ipcRenderer.removeListener('update-error', onDownloadError)
+          this.$electron.ipcRenderer.removeListener('update-cancelled', onDownloadCancelled)
+        }
         const onDownloadProgress = (event, progress) => {
           this.$store.dispatch('preference/updateDownloadProgress', Math.round(progress.percent))
+          this.$store.dispatch('preference/updateDownloadSize', {
+            total: progress.total || 0,
+            transferred: progress.transferred || 0
+          })
         }
         const onDownloaded = () => {
           this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
           this.$store.dispatch('preference/updateUpdateAvailable', false)
           this.showMessage('success', '更新下载完成，应用程序将自动重启并安装更新')
-          this.$electron.ipcRenderer.removeListener('download-progress', onDownloadProgress)
-          this.$electron.ipcRenderer.removeListener('update-downloaded', onDownloaded)
-          this.$electron.ipcRenderer.removeListener('update-error', onDownloadError)
+          cleanupListeners()
         }
         const onDownloadError = (_event, errMsg) => {
           this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
           const msg = errMsg ? `下载更新失败：${errMsg}` : '下载更新失败，请检查网络连接后重试'
           this.showMessage('error', msg)
-          this.$electron.ipcRenderer.removeListener('download-progress', onDownloadProgress)
-          this.$electron.ipcRenderer.removeListener('update-downloaded', onDownloaded)
-          this.$electron.ipcRenderer.removeListener('update-error', onDownloadError)
+          cleanupListeners()
+        }
+        const onDownloadCancelled = () => {
+          this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+          this.showMessage('info', '更新下载已取消')
+          cleanupListeners()
         }
         this.$electron.ipcRenderer.on('download-progress', onDownloadProgress)
         this.$electron.ipcRenderer.on('update-downloaded', onDownloaded)
         this.$electron.ipcRenderer.on('update-error', onDownloadError)
+        this.$electron.ipcRenderer.on('update-cancelled', onDownloadCancelled)
         this.$electron.ipcRenderer.send('command', 'application:download-update')
       },
       recomputeBtTrackerFromSelected () {

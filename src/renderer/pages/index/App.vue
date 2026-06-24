@@ -445,9 +445,10 @@
       }
       const onUpdateAvailable = (event, version, releaseNotes) => {
         const cfg = (this.$store.state.preference && this.$store.state.preference.config) || {}
-        const autoCheckEnabled = !!cfg.autoCheckUpdate
+        const autoCheckEnabled = cfg.autoCheckUpdate !== undefined ? !!cfg.autoCheckUpdate : !!cfg['auto-check-update']
         if (autoCheckEnabled) {
           this.$store.dispatch('preference/updateUpdateAvailable', true)
+          this.$store.dispatch('preference/updateUpdateDownloaded', false)
           this.$store.dispatch('preference/updateNewVersion', version)
           this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
           this.$store.dispatch('preference/updateReleaseNotes', releaseNotes || '')
@@ -475,9 +476,10 @@
       }
       const onUpdateNotAvailable = () => {
         const cfg = (this.$store.state.preference && this.$store.state.preference.config) || {}
-        const autoCheckEnabled = !!cfg.autoCheckUpdate
+        const autoCheckEnabled = cfg.autoCheckUpdate !== undefined ? !!cfg.autoCheckUpdate : !!cfg['auto-check-update']
         if (autoCheckEnabled) {
           this.$store.dispatch('preference/updateUpdateAvailable', false)
+          this.$store.dispatch('preference/updateUpdateDownloaded', false)
           this.$store.dispatch('preference/updateNewVersion', '')
           this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
         }
@@ -485,10 +487,20 @@
       const onUpdateError = () => {}
       // 下载全局监听（仅在主窗口显示，偏好窗口关闭后追踪下载进度）
       this._downloadStartNotified = false
+      const onDownloadStart = () => {
+        this.$store.dispatch('preference/updateIsDownloadingUpdate', true)
+        this.$store.dispatch('preference/updateUpdateDownloaded', false)
+        this.$store.dispatch('preference/updateDownloadProgress', 0)
+        this.$store.dispatch('preference/updateDownloadSize', { total: 0, transferred: 0 })
+      }
       const onDownloadProgress = (_event, progress) => {
         const percent = Math.round(progress.percent)
         this.$store.dispatch('preference/updateDownloadProgress', percent)
         this.$store.dispatch('preference/updateIsDownloadingUpdate', true)
+        this.$store.dispatch('preference/updateDownloadSize', {
+          total: progress.total || 0,
+          transferred: progress.transferred || 0
+        })
 
         // 仅主窗口、进度 > 0 时显示一条持久通知
         if (!this.isPreferenceWindow && percent > 0 && !this._downloadStartNotified && this.$msg) {
@@ -503,26 +515,36 @@
       }
       const onDownloaded = () => {
         this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+        this.$store.dispatch('preference/updateUpdateDownloaded', true)
         this.$store.dispatch('preference/updateUpdateAvailable', false)
         this._downloadStartNotified = false
         if (!this.isPreferenceWindow && this.$msg && typeof this.$msg.success === 'function') {
-          this.$msg.success(this.$t('app.update-downloaded-message') || '更新下载完成，应用程序将自动重启并安装更新')
+          this.$msg.success(this.$t('app.update-downloaded-message') || '更新下载完成，请在偏好设置中点击重启安装')
         }
       }
       const onDownloadError = (_event, errMsg) => {
         this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+        this.$store.dispatch('preference/updateUpdateDownloaded', false)
         this._downloadStartNotified = false
         if (!this.isPreferenceWindow && this.$msg && typeof this.$msg.error === 'function') {
           this.$msg.error(errMsg || this.$t('app.update-error-message'))
         }
       }
+      const onDownloadCancelled = () => {
+        this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+        this.$store.dispatch('preference/updateUpdateDownloaded', false)
+        this.$store.dispatch('preference/updateDownloadProgress', 0)
+        this.$store.dispatch('preference/updateDownloadSize', { total: 0, transferred: 0 })
+        this._downloadStartNotified = false
+      }
       this.$electron.ipcRenderer.on('update-available', onUpdateAvailable)
       this.$electron.ipcRenderer.on('update-not-available', onUpdateNotAvailable)
       this.$electron.ipcRenderer.on('update-error', onUpdateError)
+      this.$electron.ipcRenderer.on('download-start', onDownloadStart)
       this.$electron.ipcRenderer.on('download-progress', onDownloadProgress)
       this.$electron.ipcRenderer.on('update-downloaded', onDownloaded)
-      this.$electron.ipcRenderer.on('update-error', onDownloadError)
-      this._updateHandlers = { onUpdateAvailable, onUpdateNotAvailable, onUpdateError, onDownloadProgress, onDownloaded, onDownloadError }
+      this.$electron.ipcRenderer.on('update-cancelled', onDownloadCancelled)
+      this._updateHandlers = { onUpdateAvailable, onUpdateNotAvailable, onUpdateError, onDownloadStart, onDownloadProgress, onDownloaded, onDownloadError, onDownloadCancelled }
     },
     destroyed () {
       if (typeof window !== 'undefined' && this._handleWindowResize) {
@@ -542,6 +564,9 @@
       if (h.onUpdateError) {
         this.$electron.ipcRenderer.removeListener('update-error', h.onUpdateError)
       }
+      if (h.onDownloadStart) {
+        this.$electron.ipcRenderer.removeListener('download-start', h.onDownloadStart)
+      }
       if (h.onDownloadProgress) {
         this.$electron.ipcRenderer.removeListener('download-progress', h.onDownloadProgress)
       }
@@ -550,6 +575,9 @@
       }
       if (h.onDownloadError) {
         this.$electron.ipcRenderer.removeListener('update-error', h.onDownloadError)
+      }
+      if (h.onDownloadCancelled) {
+        this.$electron.ipcRenderer.removeListener('update-cancelled', h.onDownloadCancelled)
       }
     },
     watch: {

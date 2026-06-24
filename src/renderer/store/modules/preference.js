@@ -17,7 +17,10 @@ const state = {
   newVersion: '',
   lastCheckUpdateTime: 0,
   isDownloadingUpdate: false,
+  updateDownloaded: false,
   downloadProgress: 0,
+  downloadTotal: 0,
+  downloadTransferred: 0,
   releaseNotes: '',
   searchKeyword: ''
 }
@@ -64,8 +67,15 @@ const mutations = {
   UPDATE_IS_DOWNLOADING_UPDATE (state, isDownloadingUpdate) {
     state.isDownloadingUpdate = isDownloadingUpdate
   },
+  UPDATE_UPDATE_DOWNLOADED (state, downloaded) {
+    state.updateDownloaded = downloaded
+  },
   UPDATE_DOWNLOAD_PROGRESS (state, downloadProgress) {
     state.downloadProgress = downloadProgress
+  },
+  UPDATE_DOWNLOAD_SIZE (state, { total, transferred }) {
+    state.downloadTotal = total
+    state.downloadTransferred = transferred
   },
   UPDATE_RELEASE_NOTES (state, releaseNotes) {
     state.releaseNotes = releaseNotes
@@ -184,8 +194,14 @@ const actions = {
   updateIsDownloadingUpdate ({ commit }, isDownloadingUpdate) {
     commit('UPDATE_IS_DOWNLOADING_UPDATE', isDownloadingUpdate)
   },
+  updateUpdateDownloaded ({ commit }, downloaded) {
+    commit('UPDATE_UPDATE_DOWNLOADED', downloaded)
+  },
   updateDownloadProgress ({ commit }, downloadProgress) {
     commit('UPDATE_DOWNLOAD_PROGRESS', downloadProgress)
+  },
+  updateDownloadSize ({ commit }, { total, transferred }) {
+    commit('UPDATE_DOWNLOAD_SIZE', { total, transferred })
   },
   updateReleaseNotes ({ commit }, releaseNotes) {
     commit('UPDATE_RELEASE_NOTES', releaseNotes)

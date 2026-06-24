@@ -72,11 +72,13 @@ export default class Application extends EventEmitter {
     this.challenges = new Map()
     this.sessionTokens = new Map()
     this.tokenVersion = Date.now()
+    this.sessionTokenTTL = 24 * 60 * 60 * 1000 // session token 24小时过期
 
-    // 清理过期的 challenge
+    // 定期清理过期的 challenge 和 session tokens
     setInterval(() => {
       this.cleanupExpiredChallenges()
-    }, 30000) // 每30秒清理一次
+      this.cleanupExpiredSessionTokens()
+    }, 60000) // 每分钟清理一次
 
     this.init()
   }
@@ -191,7 +193,7 @@ export default class Application extends EventEmitter {
 
         if (url.startsWith('/linkcore/handshake')) {
           const challenge = randomBytes(16).toString('hex')
-          const expiresAt = Date.now() + 3000 // 3秒过期
+          const expiresAt = Date.now() + 30000 // 30秒过期，给网络慢的情况留足够时间
           this.challenges.set(challenge, {
             expiresAt,
             createdAt: Date.now()
@@ -200,7 +202,7 @@ export default class Application extends EventEmitter {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({
             challenge,
-            expires: 3000,
+            expires: 30000,
             version
           }))
           return
@@ -2196,7 +2198,75 @@ export default class Application extends EventEmitter {
         }
       }
 
-      // macOS / Windows: 打开下载的文件
+      // macOS: 挂载 DMG 并自动安装
+      if (process.platform === 'darwin' && downloadedFile && downloadedFile.toLowerCase().endsWith('.dmg')) {
+        const { execSync } = require('node:child_process')
+        const { app } = require('electron')
+        const fs = require('node:fs')
+        const path = require('node:path')
+
+        try {
+          // 挂载 DMG
+          logger.info('[Motrix] Mounting DMG:', downloadedFile)
+          const mountOutput = execSync(`hdiutil attach "${downloadedFile}" -nobrowse -noautoopen`, { encoding: 'utf8' })
+          const volumeMatch = mountOutput.match(/\/Volumes\/[^\s]+/)
+
+          if (volumeMatch) {
+            const mountPoint = volumeMatch[0]
+            logger.info('[Motrix] DMG mounted at:', mountPoint)
+
+            try {
+              // 查找 .app 文件
+              const files = fs.readdirSync(mountPoint)
+              const appFile = files.find(f => f.endsWith('.app'))
+
+              if (appFile) {
+                const sourcePath = path.join(mountPoint, appFile)
+                const destPath = '/Applications/' + appFile
+
+                logger.info('[Motrix] Installing app from', sourcePath, 'to', destPath)
+
+                // 如果目标已存在，先删除
+                if (fs.existsSync(destPath)) {
+                  execSync(`rm -rf "${destPath}"`)
+                }
+
+                // 复制新版本
+                execSync(`cp -R "${sourcePath}" /Applications/`)
+
+                // 卸载 DMG
+                execSync(`hdiutil detach "${mountPoint}"`)
+
+                logger.info('[Motrix] Installation complete, restarting...')
+
+                // 启动新版本
+                const { spawn } = require('node:child_process')
+                const child = spawn('open', [destPath], {
+                  detached: true,
+                  stdio: 'ignore'
+                })
+                child.unref()
+
+                // 退出当前应用
+                setTimeout(() => {
+                  app.exit(0)
+                }, 500)
+                return
+              }
+            } catch (err) {
+              logger.error('[Motrix] Installation failed:', err)
+              // 确保卸载 DMG
+              try {
+                execSync(`hdiutil detach "${mountPoint}"`)
+              } catch (_) {}
+            }
+          }
+        } catch (err) {
+          logger.error('[Motrix] DMG mount failed:', err)
+        }
+      }
+
+      // Windows / macOS (ZIP fallback): 打开下载的文件
       if (downloadedFile) {
         const { shell, app } = require('electron')
         shell.openPath(downloadedFile)
@@ -2859,11 +2929,20 @@ export default class Application extends EventEmitter {
     })
 
     this.on('application:check-for-updates', () => {
-      this.updateManager.check()
+      if (this.updateManager) {
+        this.updateManager.autoCheckData.userCheck = true
+        this.updateManager.check()
+      }
     })
 
     this.on('application:download-update', () => {
       this.updateManager.downloadUpdate()
+    })
+
+    this.on('application:quit-and-install-update', () => {
+      if (this.updateManager) {
+        this.updateManager.quitAndInstall()
+      }
     })
 
     this.on('application:change-theme', (theme) => {
@@ -3403,6 +3482,27 @@ export default class Application extends EventEmitter {
       return result
     })
 
+    ipcMain.handle('get-update-status', async () => {
+      try {
+        if (this.updateManager && typeof this.updateManager.getStatus === 'function') {
+          return this.updateManager.getStatus()
+        }
+      } catch (e) {
+        logger.warn('[Motrix] get-update-status failed:', e.message)
+      }
+      return {
+        isChecking: false,
+        isDownloading: false,
+        updateAvailable: false,
+        updateDownloaded: false,
+        newVersion: '',
+        releaseNotes: '',
+        downloadProgress: 0,
+        downloadTotal: 0,
+        downloadTransferred: 0
+      }
+    })
+
     ipcMain.handle('get-app-locale', async () => {
       const raw = this.configManager.getUserConfig('locale') || this.configManager.getSystemConfig('locale')
       return getLanguage(raw)
@@ -3794,6 +3894,20 @@ export default class Application extends EventEmitter {
     }
     if (cleaned > 0) {
       console.log('[Security] Cleaned up expired challenges:', cleaned)
+    }
+  }
+
+  cleanupExpiredSessionTokens () {
+    const now = Date.now()
+    let cleaned = 0
+    for (const [token, data] of this.sessionTokens.entries()) {
+      if (now - data.createdAt > this.sessionTokenTTL) {
+        this.sessionTokens.delete(token)
+        cleaned++
+      }
+    }
+    if (cleaned > 0) {
+      console.log('[Security] Cleaned up expired session tokens:', cleaned)
     }
   }
 }
