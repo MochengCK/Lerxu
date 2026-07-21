@@ -1,6 +1,6 @@
 import api from '@/api'
-import { EMPTY_STRING, TASK_STATUS } from '@shared/constants'
-import { checkTaskIsBT, getFileNameFromFile, getTaskUri, intersection, isGithubUrl, getGithubUrlsWithMirrors } from '@shared/utils'
+import { EMPTY_STRING, TASK_STATUS, AUDIO_SUFFIXES, DOCUMENT_SUFFIXES, IMAGE_SUFFIXES, SUB_SUFFIXES, VIDEO_SUFFIXES } from '@shared/constants'
+import { checkTaskIsBT, getFileNameFromFile, getFileExtension, getTaskUri, intersection, isGithubUrl, getGithubUrlsWithMirrors } from '@shared/utils'
 import taskHistory from '@/api/TaskHistory'
 import fetch from 'node-fetch'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
@@ -174,6 +174,73 @@ function sortTaskList (taskList, field, order) {
   })
 }
 
+// 日期过滤辅助函数（供 fetchList 和侧边栏全量任务列表复用）
+function applyDateFilter (data, filterDate) {
+  if (!filterDate) return data
+  const normalizeTimestamp = (value) => {
+    const raw = parseInt(value)
+    if (!Number.isFinite(raw) || raw <= 0) return 0
+    if (raw < 1000000000000) return raw * 1000
+    return raw
+  }
+  const [year, month, day] = filterDate.split('-').map(Number)
+  return data.filter(task => {
+    const status = `${task.status || ''}`
+    const isInProgress = [TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED].includes(status)
+    const timestamp = isInProgress
+      ? (normalizeTimestamp(task.startTime) ||
+         normalizeTimestamp(task.startedAt) ||
+         normalizeTimestamp(task.createdAt) ||
+         normalizeTimestamp(task.creationTime))
+      : (normalizeTimestamp(task.savedAt) ||
+         normalizeTimestamp(task.completedTime) ||
+         normalizeTimestamp(task.stopTime) ||
+         normalizeTimestamp(task.createdAt) ||
+         normalizeTimestamp(task.creationTime))
+    if (timestamp === 0) return false
+    const taskDate = new Date(timestamp)
+    return taskDate.getFullYear() === year &&
+           (taskDate.getMonth() + 1) === month &&
+           taskDate.getDate() === day
+  })
+}
+
+// 文件类型分类后缀集合（与 TaskList.vue 保持一致）
+const CATEGORY_SUFFIXES = {
+  archives: new Set(['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz']),
+  programs: new Set(['exe', 'msi', 'deb', 'rpm', 'dmg', 'apk', 'app']),
+  videos: new Set([...VIDEO_SUFFIXES, ...SUB_SUFFIXES].map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
+  music: new Set(AUDIO_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
+  images: new Set(IMAGE_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
+  documents: new Set(DOCUMENT_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, '')))
+}
+
+function getTaskFileExtensions (task, downloadingFileSuffix) {
+  const files = (task && task.files) || []
+  const suffix = downloadingFileSuffix || ''
+  const result = []
+  files.forEach((file) => {
+    let name = getFileNameFromFile(file)
+    if (suffix && name && name.endsWith(suffix)) {
+      name = name.slice(0, -suffix.length)
+    }
+    const ext = `${getFileExtension(name)}`.toLowerCase()
+    if (ext) {
+      result.push(ext)
+    }
+  })
+  return result
+}
+
+function taskMatchesCategory (task, category, downloadingFileSuffix) {
+  const suffixes = CATEGORY_SUFFIXES[category]
+  if (!suffixes || suffixes.size === 0) {
+    return false
+  }
+  const exts = getTaskFileExtensions(task, downloadingFileSuffix)
+  return exts.some((ext) => suffixes.has(ext))
+}
+
 const state = {
   currentList: 'all',
   filterDate: null, // 添加日期过滤状态
@@ -185,6 +252,7 @@ const state = {
   currentTaskPeers: [],
   seedingList: [],
   taskList: [],
+  allTaskList: [], // 全部任务（不受 currentList 影响，已按日期过滤），用于侧边栏计数
   selectedGidList: [],
   magnetStatuses: {},
   dataAccessStatuses: {},
@@ -204,6 +272,34 @@ const state = {
 }
 
 const getters = {
+  // 侧边栏任务数：受日期筛选（allTaskList 已在 fetchList 中过滤）和文件类型分类筛选影响
+  filteredTaskCounts (state, getters, rootState) {
+    const downloadingFileSuffix = (rootState.preference && rootState.preference.config && rootState.preference.config.downloadingFileSuffix) || ''
+    const category = state.categoryFilter
+    const list = !category
+      ? state.allTaskList
+      : state.allTaskList.filter((task) => taskMatchesCategory(task, category, downloadingFileSuffix))
+
+    let active = 0
+    let waiting = 0
+    let stopped = 0
+    list.forEach((task) => {
+      const status = `${(task && task.status) || ''}`
+      if (status === TASK_STATUS.ACTIVE) {
+        active++
+      } else if (status === TASK_STATUS.WAITING || status === TASK_STATUS.PAUSED) {
+        waiting++
+      } else if (status === TASK_STATUS.COMPLETE || status === TASK_STATUS.ERROR || status === TASK_STATUS.SEEDING) {
+        stopped++
+      }
+    })
+    return {
+      all: active + waiting + stopped,
+      active,
+      waiting,
+      stopped
+    }
+  }
 }
 
 const mutations = {
@@ -242,7 +338,10 @@ const mutations = {
           }
         })
 
-        newList.push(updatedTask)
+        const oldKeys = Object.keys(oldTask)
+        const updatedKeys = Object.keys(updatedTask)
+        const unchanged = oldKeys.length === updatedKeys.length && updatedKeys.every(k => updatedTask[k] === oldTask[k])
+        newList.push(unchanged ? oldTask : updatedTask)
       } else {
         newList.push(newTask)
       }
@@ -263,6 +362,9 @@ const mutations = {
       const sortedList = sortTaskList(state.taskList, state.sortField, state.sortOrder)
       state.taskList.splice(0, state.taskList.length, ...sortedList)
     }
+  },
+  UPDATE_ALL_TASK_LIST (state, taskList) {
+    state.allTaskList.splice(0, state.allTaskList.length, ...taskList)
   },
   UPDATE_SELECTED_GID_LIST (state, gidList) {
     state.selectedGidList = gidList
@@ -613,13 +715,6 @@ const actions = {
 
     return api.fetchTaskList(params)
       .then((data) => {
-        const normalizeTimestamp = (value) => {
-          const raw = parseInt(value)
-          if (!Number.isFinite(raw) || raw <= 0) return 0
-          if (raw < 1000000000000) return raw * 1000
-          return raw
-        }
-
         try {
           const now = Date.now()
           data.forEach(task => {
@@ -640,33 +735,8 @@ const actions = {
           })
         } catch (e) {}
 
-        // 如果有日期过滤，在前端进一步过滤任务
-        let filteredData = data
-        if (state.filterDate) {
-          // 解析筛选日期 (格式: yyyy-MM-dd)
-          const [year, month, day] = state.filterDate.split('-').map(Number)
-
-          filteredData = data.filter(task => {
-            const status = `${task.status || ''}`
-            const isInProgress = [TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED].includes(status)
-            const timestamp = isInProgress
-              ? (normalizeTimestamp(task.startTime) ||
-                 normalizeTimestamp(task.startedAt) ||
-                 normalizeTimestamp(task.createdAt) ||
-                 normalizeTimestamp(task.creationTime))
-              : (normalizeTimestamp(task.savedAt) ||
-                 normalizeTimestamp(task.completedTime) ||
-                 normalizeTimestamp(task.stopTime) ||
-                 normalizeTimestamp(task.createdAt) ||
-                 normalizeTimestamp(task.creationTime))
-            if (timestamp === 0) return false
-
-            const taskDate = new Date(timestamp)
-            return taskDate.getFullYear() === year &&
-                   (taskDate.getMonth() + 1) === month &&
-                   taskDate.getDate() === day
-          })
-        }
+        // 应用日期过滤
+        const filteredData = applyDateFilter(data, state.filterDate)
 
         commit('UPDATE_TASK_LIST', filteredData)
 
@@ -698,6 +768,18 @@ const actions = {
         } catch (e) {}
 
         commit('PRUNE_TASK_CACHES', { gids, keepGids: [state.currentTaskGid] })
+
+        // 更新全量任务列表（用于侧边栏计数，不受 currentList 影响）
+        if (state.currentList === 'all') {
+          commit('UPDATE_ALL_TASK_LIST', filteredData)
+        } else {
+          api.fetchTaskList({ type: 'all' })
+            .then((allData) => {
+              const allFiltered = applyDateFilter(allData, state.filterDate)
+              commit('UPDATE_ALL_TASK_LIST', allFiltered)
+            })
+            .catch(() => {})
+        }
       })
   },
   updateDataAccessStatus ({ commit }, payload) {
@@ -1147,6 +1229,7 @@ const actions = {
       .finally(() => {
         commit('CLEAR_TASK_CACHES_FOR_GIDS', [gid])
         dispatch('fetchList')
+        dispatch('app/fetchGlobalStat', null, { root: true })
         dispatch('saveSession')
       })
   },
@@ -1390,6 +1473,7 @@ const actions = {
       .finally(() => {
         dispatch('clearTaskCachesForGids', [gid])
         dispatch('fetchList')
+        dispatch('app/fetchGlobalStat', null, { root: true })
       })
   },
   clearTaskCachesForGids ({ commit }, gids) {
@@ -1438,6 +1522,7 @@ const actions = {
       .finally(() => {
         commit('CLEAR_TASK_CACHES_FOR_GIDS', gids)
         dispatch('fetchList')
+        dispatch('app/fetchGlobalStat', null, { root: true })
         dispatch('saveSession')
       })
   },

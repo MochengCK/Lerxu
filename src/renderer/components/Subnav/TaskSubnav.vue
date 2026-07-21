@@ -9,6 +9,7 @@
           <mo-icon name="menu-task" width="20" height="20" />
         </i>
         <span>{{ $t('task.all') }}</span>
+        <span class="subnav-count">{{ taskCounts.all }}</span>
       </li>
       <li
         @click="() => nav('active')"
@@ -18,6 +19,7 @@
           <mo-icon name="task-start" width="20" height="20" />
         </i>
         <span>{{ $t('task.active') }}</span>
+        <span class="subnav-count">{{ taskCounts.active }}</span>
       </li>
       <li
         @click="() => nav('waiting')"
@@ -27,6 +29,7 @@
           <mo-icon name="task-pause" width="20" height="20" />
         </i>
         <span>{{ $t('task.waiting') }}</span>
+        <span class="subnav-count">{{ taskCounts.waiting }}</span>
       </li>
       <li
         @click="() => nav('stopped')"
@@ -36,6 +39,7 @@
           <mo-icon name="task-stop" width="20" height="20" />
         </i>
         <span>{{ $t('task.stopped') }}</span>
+        <span class="subnav-count">{{ taskCounts.stopped }}</span>
       </li>
       <li class="subnav-divider"></li>
       <li
@@ -53,6 +57,7 @@
 </template>
 
 <script>
+  import { mapGetters } from 'vuex'
   import '@/components/Icons/menu-task'
   import '@/components/Icons/task-start'
   import '@/components/Icons/task-pause'
@@ -70,7 +75,10 @@
     computed: {
       title () {
         return this.$t('subnav.task-list')
-      }
+      },
+      ...mapGetters('task', {
+        taskCounts: 'filteredTaskCounts'
+      })
     },
     methods: {
       nav (status = 'active') {
@@ -121,5 +129,27 @@
   &:hover {
     background-color: rgba(255, 255, 255, 0.25) !important;
   }
+}
+
+// 任务分类右侧数量徽标
+.subnav-inner .subnav-count {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 18px;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  color: inherit;
+  opacity: 0.7;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+
+.subnav-inner ul li.active .subnav-count,
+.subnav-inner ul li:hover .subnav-count {
+  opacity: 1;
 }
 </style>

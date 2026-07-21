@@ -24,6 +24,7 @@
           >
             <mo-icon name="menu-task" width="20" height="20" />
           </el-tooltip>
+          <span v-if="taskCounts.all > 0" class="subnav-badge">{{ formatCount(taskCounts.all) }}</span>
         </li>
         <li
           @click="navStatus('active')"
@@ -37,6 +38,7 @@
           >
             <mo-icon name="task-start" width="20" height="20" />
           </el-tooltip>
+          <span v-if="taskCounts.active > 0" class="subnav-badge">{{ formatCount(taskCounts.active) }}</span>
         </li>
         <li
           @click="navStatus('waiting')"
@@ -50,6 +52,7 @@
           >
             <mo-icon name="task-pause" width="20" height="20" />
           </el-tooltip>
+          <span v-if="taskCounts.waiting > 0" class="subnav-badge">{{ formatCount(taskCounts.waiting) }}</span>
         </li>
         <li
           @click="navStatus('stopped')"
@@ -63,6 +66,7 @@
           >
             <mo-icon name="task-stop" width="20" height="20" />
           </el-tooltip>
+          <span v-if="taskCounts.stopped > 0" class="subnav-badge">{{ formatCount(taskCounts.stopped) }}</span>
         </li>
       </ul>
       <!-- 分隔线 -->
@@ -177,7 +181,6 @@
   import { ADD_TASK_TYPE, TASK_STATUS } from '@shared/constants'
   import TaskActions from '@/components/Task/TaskActions'
   import TaskList from '@/components/Task/TaskList'
-  import Aside from '@/components/Aside/Index'
   import TaskSubnav from '@/components/Subnav/TaskSubnav'
   import CustomDatePicker from '@/components/Task/DatePicker'
   import '@/components/Icons/menu-task'
@@ -201,7 +204,6 @@
     components: {
       [TaskActions.name]: TaskActions,
       [TaskList.name]: TaskList,
-      [Aside.name]: Aside,
       [TaskSubnav.name]: TaskSubnav,
       [CustomDatePicker.name]: CustomDatePicker
     },
@@ -273,14 +275,8 @@
       showLeftFloatingNav () {
         return !this.isThreeColumn
       },
-      showMainAside () {
-        return false
-      },
       showThreeColumnSubnav () {
         return this.isThreeColumn
-      },
-      showSmallScreenNav () {
-        return false
       },
       subnavs () {
         return [
@@ -353,6 +349,9 @@
       },
       blockCategoryHoverOpen () {
         return !!(this.taskDetailVisible || this.addTaskVisible || this.taskPlanVisible)
+      },
+      taskCounts () {
+        return this.$store.getters['task/filteredTaskCounts']
       }
     },
     watch: {
@@ -370,6 +369,13 @@
       }
     },
     methods: {
+      formatCount (count) {
+        const n = Number(count) || 0
+        if (n > 999) {
+          return '999+'
+        }
+        return String(n)
+      },
       onTaskPageContextMenu (event) {
         const target = event && event.target
         if (!target || typeof target.closest !== 'function') {
@@ -1305,16 +1311,6 @@
   }
 }
 
-.task-search-bar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 8px;
-}
-
-.task-search-bar .el-input {
-  max-width: 160px;
-}
-
 /* 左侧悬浮任务状态导航 - 悬浮模式使用 */
 .subnav-small-screen.subnav-left {
   position: fixed;
@@ -1375,6 +1371,7 @@
   outline: none;
   border: none;
   box-shadow: none;
+  position: relative;
 }
 
 .subnav-small-screen .menu > li:focus,
@@ -1392,6 +1389,28 @@
 .subnav-small-screen .menu > li.active {
   background-color: rgba(0, 0, 0, 0.25);
   border-radius: 8px;
+}
+
+/* 悬浮侧边栏图标右上角任务数量，使用纯文字显示 */
+.subnav-small-screen .menu > li .subnav-badge {
+  position: absolute;
+  top: -6px;
+  right: -2px;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  color: $--icon-color;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  z-index: 2;
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .subnav-small-screen .menu svg {
@@ -1436,30 +1455,6 @@
   transition: opacity 0.3s ease;
   padding: 8px;
   pointer-events: auto;
-}
-
-.date-filter-picker{
-  flex: 1;
-  margin-left: 4px;
-}
-
-.date-filter-picker .el-input__inner {
-  height: 24px;
-  line-height: 24px;
-  font-size: 12px;
-  padding: 0 8px;
-  background: transparent;
-  border: none;
-  color: $--icon-color;
-}
-
-.date-filter-picker .el-input__prefix,
-.date-filter-picker .el-input__suffix {
-  display: none;
-}
-
-.date-picker-content {
-  padding: 20px 0;
 }
 
 .dialog-footer {

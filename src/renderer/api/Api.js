@@ -463,7 +463,9 @@ export default class Api {
       return tasks
     }
 
-    const historyMap = new Map(historyTasks.map(task => [task.gid, task]))
+    const historyMap = new Map(historyTasks
+      .filter(task => task && task.gid)
+      .map(task => [task.gid, task]))
     const activeStatuses = new Set([TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED])
     const stoppedStatuses = new Set([TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED])
     return tasks.map(task => {
@@ -590,12 +592,11 @@ export default class Api {
 
           const stoppedTasks = result.filter(task => {
             const { status } = task
-            // 排除元数据解析任务 - 这些是临时任务，不应该保存到历史记录
             const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
             if (isMetadataTask) {
               return false
             }
-            return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(status)
+            return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR].includes(status)
           })
           taskHistory.saveStoppedTasks(stoppedTasks)
 
@@ -837,36 +838,48 @@ export default class Api {
     const { gid } = params
     const args = compactUndefined([gid])
 
-    // 先从历史记录中移除任务，确保任务卡片会消失
-    taskHistory.removeTask(gid)
-
     return this.client.call('remove', ...args)
-      .then((result) => {
-        // 删除成功后，也尝试清理aria2的下载结果记录
-        return this.client.call('removeDownloadResult', ...args)
-          .catch(() => {
-            // 忽略清理失败的错误
-          })
-          .then(() => result)
+      .catch((error) => {
+        if (error && error.code === 1) {
+          return gid
+        }
+        throw error
       })
+      .then((result) => this.client.call('removeDownloadResult', ...args)
+        .catch((error) => {
+          if (error && error.code === 1) {
+            return
+          }
+          throw error
+        })
+        .then(() => {
+          taskHistory.removeTask(gid)
+          return result
+        }))
   }
 
   forceRemoveTask (params = {}) {
     const { gid } = params
     const args = compactUndefined([gid])
 
-    // 先从历史记录中移除任务，确保任务卡片会消失
-    taskHistory.removeTask(gid)
-
     return this.client.call('forceRemove', ...args)
-      .then((result) => {
-        // 删除成功后，也尝试清理aria2的下载结果记录
-        return this.client.call('removeDownloadResult', ...args)
-          .catch(() => {
-            // 忽略清理失败的错误
-          })
-          .then(() => result)
+      .catch((error) => {
+        if (error && error.code === 1) {
+          return gid
+        }
+        throw error
       })
+      .then((result) => this.client.call('removeDownloadResult', ...args)
+        .catch((error) => {
+          if (error && error.code === 1) {
+            return
+          }
+          throw error
+        })
+        .then(() => {
+          taskHistory.removeTask(gid)
+          return result
+        }))
   }
 
   saveSession (params = {}) {
@@ -885,14 +898,15 @@ export default class Api {
     const { gid } = params
     const args = compactUndefined([gid])
 
-    // 先从历史记录中移除任务，确保任务卡片会消失
-    taskHistory.removeTask(gid)
-
-    // 然后尝试从Aria2中删除任务记录，如果失败则忽略
     return this.client.call('removeDownloadResult', ...args)
-      .catch((err) => {
-        console.log('[Motrix] removeTaskRecord from aria2 fail:', err)
-        // 忽略Aria2删除失败的错误，因为任务可能已经不在Aria2中了
+      .catch((error) => {
+        if (error && error.code === 1) {
+          return
+        }
+        throw error
+      })
+      .then(() => {
+        taskHistory.removeTask(gid)
       })
   }
 
@@ -920,34 +934,28 @@ export default class Api {
 
   batchRemoveTask (params = {}) {
     const { gids } = params
-
-    if (Array.isArray(gids) && gids.length > 0) {
-      gids.forEach(gid => {
-        if (gid) {
-          taskHistory.removeTask(gid)
-        }
-      })
-    }
+    const list = Array.isArray(gids) ? gids.filter(Boolean) : []
 
     return this.multicall('aria2.remove', params)
-      .then(() => {
-        if (!Array.isArray(gids) || gids.length === 0) {
-          return
+      .catch((error) => {
+        if (error && error.code === 1) {
+          return []
         }
-
-        const calls = gids.map(gid => {
-          if (!gid) {
-            return Promise.resolve()
-          }
-
-          const args = compactUndefined([gid])
-          return this.client.call('removeDownloadResult', ...args)
-            .catch((err) => {
-              console.log('[Motrix] batchRemoveTask removeDownloadResult fail:', err)
-            })
-        })
-
-        return Promise.all(calls)
+        throw error
+      })
+      .then(() => Promise.all(list.map(gid => {
+        const args = compactUndefined([gid])
+        return this.client.call('removeDownloadResult', ...args)
+          .catch((error) => {
+            if (error && error.code === 1) {
+              return
+            }
+            throw error
+          })
+      })))
+      .then((result) => {
+        list.forEach(gid => taskHistory.removeTask(gid))
+        return result
       })
   }
 

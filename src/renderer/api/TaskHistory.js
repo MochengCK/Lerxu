@@ -17,9 +17,8 @@ class TaskHistory {
     const raw = taskHistoryStore.get('tasks', [])
     const list = Array.isArray(raw) ? raw : []
     const cleaned = list.filter(t => {
-      if (!t || !t.gid) return false
+      if (!t || !t.gid || t.deletedAt) return false
       const status = `${t.status || ''}`
-      if (t.deletedAt) return true
       return status !== TASK_STATUS.REMOVED
     })
     // 如果历史记录过多，只保留最新的
@@ -67,7 +66,7 @@ class TaskHistory {
         return false
       }
       const statusKey = `${status || ''}`
-      return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(statusKey)
+      return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR].includes(statusKey)
     })
 
     if (stoppedTasks.length === 0) {
@@ -207,16 +206,9 @@ class TaskHistory {
       return
     }
 
-    const now = Date.now()
-    const currentHistory = this.getAllHistory()
-    const idx = currentHistory.findIndex(task => task.gid === gid)
-    if (idx === -1) {
-      taskHistoryStore.set('tasks', [...currentHistory, { gid, deletedAt: now }])
-      return
-    }
-
-    const next = [...currentHistory]
-    next[idx] = { ...next[idx], deletedAt: now }
+    const raw = taskHistoryStore.get('tasks', [])
+    const currentHistory = Array.isArray(raw) ? raw : []
+    const next = currentHistory.filter(task => task && `${task.gid}` !== `${gid}`)
     taskHistoryStore.set('tasks', next)
   }
 

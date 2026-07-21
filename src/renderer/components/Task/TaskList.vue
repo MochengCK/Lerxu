@@ -17,6 +17,7 @@
       <mo-task-item
         :task="item"
         :view-mode="viewMode"
+        :resize-version="resizeVersion"
       />
     </div>
   </mo-drag-select>
@@ -51,6 +52,15 @@
   import { commands } from '@/components/CommandManager/instance'
   import TaskItem from './TaskItem'
 
+  const CATEGORY_SUFFIXES = {
+    archives: new Set(['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz']),
+    programs: new Set(['exe', 'msi', 'deb', 'rpm', 'dmg', 'apk', 'app']),
+    videos: new Set([...VIDEO_SUFFIXES, ...SUB_SUFFIXES].map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
+    music: new Set(AUDIO_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
+    images: new Set(IMAGE_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
+    documents: new Set(DOCUMENT_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, '')))
+  }
+
   export default {
     name: 'mo-task-list',
     components: {
@@ -72,7 +82,8 @@
       return {
         selectedList,
         isMultiSelectModifierPressed: false,
-        isMultiSelectMode: false
+        isMultiSelectMode: false,
+        resizeVersion: 0
       }
     },
     computed: {
@@ -87,9 +98,7 @@
       displayTaskList () {
         const baseList = !this.category
           ? this.taskList
-          : this.taskList.filter((task) => {
-            return this.taskMatchesCategory(task, this.category)
-          })
+          : this.taskList.filter((task) => this.taskMatchesCategory(task, this.category))
         const q = `${this.keyword || ''}`.trim().toLowerCase()
         if (!q) {
           return baseList
@@ -169,7 +178,7 @@
     },
     mounted () {
       this.handleKeyEvent = (e) => {
-        if (e && e.type === 'keydown' && this.isMultiSelectToggleShortcut && this.isMultiSelectToggleHit(e)) {
+        if (e && e.type === 'keydown' && this.isMultiSelectToggleShortcut && this.isMultiSelectToggleHit(e) && !e.repeat) {
           if (!e.repeat) {
             this.isMultiSelectMode = !this.isMultiSelectMode
           }
@@ -183,11 +192,18 @@
       }
       window.addEventListener('keydown', this.handleKeyEvent)
       window.addEventListener('keyup', this.handleKeyEvent)
+      this.handleResize = () => {
+        this.resizeVersion += 1
+      }
+      window.addEventListener('resize', this.handleResize)
     },
     beforeDestroy () {
       if (this.handleKeyEvent) {
         window.removeEventListener('keydown', this.handleKeyEvent)
         window.removeEventListener('keyup', this.handleKeyEvent)
+      }
+      if (this.handleResize) {
+        window.removeEventListener('resize', this.handleResize)
       }
     },
     methods: {
@@ -230,47 +246,8 @@
           ? this.isMultiSelectMode
           : this.getModifierPressedFromEvent(e)
       },
-      normalizeSuffixes (suffixes = []) {
-        return suffixes
-          .map((s) => `${s}`.toLowerCase())
-          .map((s) => s.startsWith('.') ? s.slice(1) : s)
-      },
       getCategorySuffixes (category) {
-        const archives = [
-          'zip',
-          'rar',
-          '7z',
-          'tar',
-          'gz',
-          'bz2',
-          'xz'
-        ]
-        const programs = [
-          'exe',
-          'msi',
-          'deb',
-          'rpm',
-          'dmg',
-          'apk',
-          'app'
-        ]
-
-        switch (category) {
-        case 'archives':
-          return archives
-        case 'programs':
-          return programs
-        case 'videos':
-          return this.normalizeSuffixes([...VIDEO_SUFFIXES, ...SUB_SUFFIXES])
-        case 'music':
-          return this.normalizeSuffixes(AUDIO_SUFFIXES)
-        case 'images':
-          return this.normalizeSuffixes(IMAGE_SUFFIXES)
-        case 'documents':
-          return this.normalizeSuffixes(DOCUMENT_SUFFIXES)
-        default:
-          return []
-        }
+        return CATEGORY_SUFFIXES[category] || new Set()
       },
       getTaskFileExtensions (task) {
         const files = (task && task.files) || []
@@ -290,11 +267,11 @@
       },
       taskMatchesCategory (task, category) {
         const suffixes = this.getCategorySuffixes(category)
-        if (suffixes.length === 0) {
+        if (suffixes.size === 0) {
           return false
         }
         const exts = this.getTaskFileExtensions(task)
-        return exts.some((ext) => suffixes.includes(ext))
+        return exts.some((ext) => suffixes.has(ext))
       },
       handleDragSelectChange (selectedList) {
         const incoming = Array.isArray(selectedList) ? selectedList : []

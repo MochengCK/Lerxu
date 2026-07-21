@@ -109,7 +109,6 @@
       }
     },
     mounted () {
-      const interval = 100
       this.ticker = setInterval(() => {
         if (!this.isActive) {
           if (this.status === TASK_STATUS.COMPLETE || this.status === TASK_STATUS.SEEDING) {
@@ -142,7 +141,6 @@
         }
         const actual = this.percent
         if (this.lastIndeterminate) {
-          // 从不确定状态切换时，只在实际进度更大时更新
           if (actual > this.displayPercent) {
             this.displayPercent = actual
           }
@@ -176,11 +174,10 @@
         if (!Number.isFinite(next)) {
           next = actual
         }
-        // 确保进度只能前进，不能后退
         if (next >= this.displayPercent) {
           this.displayPercent = next
         }
-      }, interval)
+      }, 250)
     },
     beforeDestroy () {
       if (this.ticker) {

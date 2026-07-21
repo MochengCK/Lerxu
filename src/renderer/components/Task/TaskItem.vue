@@ -52,6 +52,10 @@
       viewMode: {
         type: String,
         default: 'list'
+      },
+      resizeVersion: {
+        type: Number,
+        default: 0
       }
     },
     data () {
@@ -69,6 +73,9 @@
         }
       },
       taskFullName () {
+        this.updateTaskNameTruncation()
+      },
+      resizeVersion () {
         this.updateTaskNameTruncation()
       }
     },
@@ -155,10 +162,6 @@
     },
     mounted () {
       this.updateTaskNameTruncation()
-      window.addEventListener('resize', this.updateTaskNameTruncation)
-    },
-    destroyed () {
-      window.removeEventListener('resize', this.updateTaskNameTruncation)
     },
     methods: {
       getCompletedDisplayName (task) {
