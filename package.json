@@ -42,7 +42,7 @@
     "@electron/remote": "^2.1.2",
     "@motrix/nat-api": "^0.3.4",
     "@panter/vue-i18next": "^0.15.2",
-    "axios": "^1.4.0",
+    "axios": "1.7.4",
     "bittorrent-peerid": "^1.3.6",
     "blob-util": "^2.0.2",
     "chokidar": "^3.5.3",
