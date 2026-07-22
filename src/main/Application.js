@@ -67,6 +67,9 @@ export default class Application extends EventEmitter {
     this._clipboardLastText = ''
     this._clipboardLastTriggerAt = 0
 
+    // 独立任务进度窗口的平均速度采样 (gid -> [{bytes, durationMs}])
+    this._progressSpeedSamples = new Map()
+
     // 安全机制：挑战-响应认证
     this.startupNonce = randomBytes(8).toString('hex')
     this.challenges = new Map()
@@ -3617,12 +3620,14 @@ export default class Application extends EventEmitter {
 
       const task = await this.engineClient.call('tellStatus', gid)
       if (!task || !task.gid) {
+        this._progressSpeedSamples.delete(gid)
         return { success: false, done: true, error: 'task-not-found' }
       }
 
       const status = task.status
       const doneStatuses = [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED]
       if (doneStatuses.includes(status)) {
+        this._progressSpeedSamples.delete(gid)
         return { success: true, done: true }
       }
 
@@ -3640,10 +3645,22 @@ export default class Application extends EventEmitter {
       const sizeText = totalText ? `${this.i18n.t('task.task-file-size')}: ${completedText} / ${totalText}` : `${this.i18n.t('task.task-file-size')}: ${completedText}`
       const speedValue = speed > 0 ? `${bytesToSize(speed, 2)}/s` : `${bytesToSize(0, 2)}/s`
 
+      // 主进程独立维护速度采样，计算平均速度
+      // 这样即使不打开主窗口，独立进度窗口也能显示正确的平均速度
+      const PROGRESS_SPEED_SAMPLE_MAX = 60 // 60 个采样点（约60秒）
       let avgSpeed = 0
-      if (task.averageDownloadSpeed != null) {
-        const v = Number(task.averageDownloadSpeed)
-        avgSpeed = Number.isFinite(v) && v >= 0 ? v : 0
+      if (status === TASK_STATUS.ACTIVE) {
+        const samples = this._progressSpeedSamples.get(gid) || []
+        samples.push({ bytes: speed, durationMs: 1000 })
+        while (samples.length > PROGRESS_SPEED_SAMPLE_MAX) {
+          samples.shift()
+        }
+        this._progressSpeedSamples.set(gid, samples)
+        const totalBytes = samples.reduce((sum, s) => sum + (Number(s.bytes) || 0), 0)
+        const totalDurationMs = samples.reduce((sum, s) => sum + (Number(s.durationMs) || 0), 0)
+        avgSpeed = totalDurationMs > 0 ? Math.round((totalBytes * 1000) / totalDurationMs) : 0
+      } else {
+        this._progressSpeedSamples.delete(gid)
       }
       const avgSpeedValue = avgSpeed > 0 ? `${bytesToSize(avgSpeed, 2)}/s` : `${bytesToSize(0, 2)}/s`
 

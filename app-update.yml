@@ -1,3 +1,4 @@
-provider: github
 owner: MochengCK
 repo: LinkCore-Download-Manager
+provider: github
+updaterCacheDirName: linkcore-download-manager-updater

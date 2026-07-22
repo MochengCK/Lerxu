@@ -770,9 +770,33 @@
           await moveTaskFilesToTrash(task, downloadingFileSuffix, config)
         } catch (err) {
           console.warn('[Motrix] deleteTaskFiles error:', err)
+          const taskName = (task && task.name) ? task.name : (task && task.gid ? task.gid : '')
+          this.$msg.error(`删除文件失败: ${taskName}`)
         }
       },
       async removeTask (task, taskName, isRemoveWithFiles = false) {
+        // 在从aria2移除任务前，获取最新的任务状态以确保文件路径准确
+        let taskForDeletion = task
+        if (isRemoveWithFiles) {
+          try {
+            const fresh = await api.fetchTaskItem({ gid: task.gid })
+            if (fresh && fresh.gid) {
+              taskForDeletion = { ...task, ...fresh }
+            }
+          } catch (e) {
+            console.warn('[Motrix] Failed to fetch fresh task for deletion:', e.message)
+          }
+          // 预获取引擎选项（dir + out），避免任务被 aria2 删除后 getOption 失败导致文件路径无法解析
+          try {
+            const opt = await api.getOption({ gid: task.gid })
+            if (opt) {
+              taskForDeletion = { ...taskForDeletion, _engineOptions: opt }
+            }
+          } catch (e) {
+            console.warn('[Motrix] Failed to pre-fetch getOption for deletion:', e.message)
+          }
+        }
+
         await this.$store.dispatch('task/forcePauseTask', task)
           .finally(async () => {
             // 先从aria2中删除任务，确保任务不会再被保存
@@ -782,11 +806,33 @@
             if (isRemoveWithFiles) {
               // 等待一小段时间确保aria2已经完全移除任务
               await new Promise(resolve => setTimeout(resolve, 500))
-              await this.deleteTaskFiles(task)
+              await this.deleteTaskFiles(taskForDeletion)
             }
           })
       },
       async removeTaskRecord (task, taskName, isRemoveWithFiles = false) {
+        // 在从aria2移除任务前，获取最新的任务状态以确保文件路径准确
+        let taskForDeletion = task
+        if (isRemoveWithFiles) {
+          try {
+            const fresh = await api.fetchTaskItem({ gid: task.gid })
+            if (fresh && fresh.gid) {
+              taskForDeletion = { ...task, ...fresh }
+            }
+          } catch (e) {
+            console.warn('[Motrix] Failed to fetch fresh task for deletion:', e.message)
+          }
+          // 预获取引擎选项（dir + out），避免任务被 aria2 删除后 getOption 失败导致文件路径无法解析
+          try {
+            const opt = await api.getOption({ gid: task.gid })
+            if (opt) {
+              taskForDeletion = { ...taskForDeletion, _engineOptions: opt }
+            }
+          } catch (e) {
+            console.warn('[Motrix] Failed to pre-fetch getOption for deletion:', e.message)
+          }
+        }
+
         await this.$store.dispatch('task/forcePauseTask', task)
           .finally(async () => {
             // 先从aria2中删除任务记录
@@ -796,7 +842,7 @@
             if (isRemoveWithFiles) {
               // 等待一小段时间确保aria2已经完全移除任务
               await new Promise(resolve => setTimeout(resolve, 500))
-              await this.deleteTaskFiles(task)
+              await this.deleteTaskFiles(taskForDeletion)
             }
           })
       },
@@ -828,7 +874,32 @@
           }
         }
       },
-      removeTasks (taskList, isRemoveWithFiles = false) {
+      async removeTasks (taskList, isRemoveWithFiles = false) {
+        // 预获取引擎选项（dir + out），避免任务被 aria2 删除后 getOption 失败导致文件路径无法解析
+        let taskListForDeletion = taskList
+        if (isRemoveWithFiles) {
+          taskListForDeletion = await Promise.all(taskList.map(async (task) => {
+            let enrichedTask = task
+            try {
+              const fresh = await api.fetchTaskItem({ gid: task.gid })
+              if (fresh && fresh.gid) {
+                enrichedTask = { ...task, ...fresh }
+              }
+            } catch (e) {
+              console.warn('[Motrix] batch: failed to fetch fresh task for deletion:', e.message)
+            }
+            try {
+              const opt = await api.getOption({ gid: task.gid })
+              if (opt) {
+                enrichedTask = { ...enrichedTask, _engineOptions: opt }
+              }
+            } catch (e) {
+              console.warn('[Motrix] batch: failed to pre-fetch getOption for deletion:', e.message)
+            }
+            return enrichedTask
+          }))
+        }
+
         const gids = taskList.map((task) => task.gid)
         this.$store.dispatch('task/batchForcePauseTask', gids)
           .finally(async () => {
@@ -839,7 +910,7 @@
             if (isRemoveWithFiles) {
               // 等待一小段时间确保aria2已经完全移除任务
               await new Promise(resolve => setTimeout(resolve, 500))
-              this.batchDeleteTaskFiles(taskList)
+              this.batchDeleteTaskFiles(taskListForDeletion)
             }
           })
       },
@@ -851,6 +922,11 @@
           return delayDeleteTaskFiles(task, index * 200, downloadingFileSuffix, config)
         })
         Promise.allSettled(promises).then(results => {
+          const failures = results.filter(r => r.status === 'rejected')
+          if (failures.length > 0) {
+            console.warn('[Motrix] batch delete task files - failures:', failures)
+            this.$msg.error(`部分文件删除失败（${failures.length}个）`)
+          }
           console.log('[Motrix] batch delete task files: ', results)
         })
       },

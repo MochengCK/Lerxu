@@ -1240,6 +1240,11 @@ const actions = {
     }
 
     return api.forcePauseTask({ gid })
+      .catch((e) => {
+        // 任务可能处于无法暂停的状态（如已完成、正在完成、已被移除等）。
+        // 调用方均为删除流程，暂停失败不应阻塞后续的任务移除操作。
+        console.warn('[Motrix] forcePauseTask failed, continuing with removal:', e && e.message)
+      })
       .finally(() => {
         dispatch('fetchList')
         dispatch('saveSession')
@@ -1513,6 +1518,10 @@ const actions = {
   },
   batchForcePauseTask (_, gids) {
     return api.batchForcePauseTask({ gids })
+      .catch((e) => {
+        // 批量暂停在删除流程中属于尽力而为的步骤，失败不应阻塞后续移除。
+        console.warn('[Motrix] batchForcePauseTask failed, continuing with removal:', e && e.message)
+      })
   },
   batchResumeTask (_, gids) {
     return api.batchResumeTask({ gids })

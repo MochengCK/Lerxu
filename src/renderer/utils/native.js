@@ -38,7 +38,7 @@ export const openItem = async (fullPath) => {
 }
 
 export const getTaskFullPath = (task) => {
-  const { dir, files, bittorrent } = task || {}
+  const { dir, files, bittorrent, name } = task || {}
   let result = resolve(dir || '')
 
   // Magnet link task
@@ -61,11 +61,16 @@ export const getTaskFullPath = (task) => {
   if (path) {
     result = path
   } else {
+    // Resolve filename from task object fields first (files[0] URI, then task.name)
+    // instead of relying on aria2 API queries after task removal.
     if (files && files.length === 1) {
       fileName = getFileNameFromFile(file)
-      if (fileName) {
-        result = resolve(result, fileName)
-      }
+    }
+    if (!fileName && name) {
+      fileName = `${name}`
+    }
+    if (fileName) {
+      result = resolve(result, fileName)
     }
   }
 
@@ -155,29 +160,71 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
   const taskDir = task && task.dir ? resolve(`${task.dir}`) : ''
   let path = getTaskFullPath(task)
 
+  console.log('[Motrix] moveTaskFilesToTrash - task fields:', {
+    gid: task && task.gid,
+    dir: task && task.dir,
+    name: task && task.name,
+    filesPath: task && task.files && task.files[0] ? task.files[0].path : undefined,
+    filesUri: task && task.files && task.files[0] && task.files[0].uris && task.files[0].uris[0] ? task.files[0].uris[0].uri : undefined,
+    bittorrentInfoName: task && task.bittorrent && task.bittorrent.info ? task.bittorrent.info.name : undefined,
+    resolvedPath: path,
+    taskDir,
+    suffix
+  })
+
+  // 当路径无效或等于下载目录时，尝试从预获取的引擎选项或实时 getOption 解析
   if (!path || (taskDir && resolve(path) === taskDir)) {
-    try {
-      const gid = task && task.gid ? `${task.gid}` : ''
-      if (gid) {
-        const opt = await api.getOption({ gid })
-        const dirFromOpt = opt && opt.dir ? resolve(`${opt.dir}`) : taskDir
-        const outFromOpt = opt && opt.out ? `${opt.out}` : ''
-        const nameFallback = task && task.name ? `${task.name}` : ''
-        if (dirFromOpt && outFromOpt) {
-          path = resolve(dirFromOpt, outFromOpt)
-        } else if (dirFromOpt && nameFallback) {
-          path = resolve(dirFromOpt, nameFallback)
-        }
+    // 优先使用预获取的 _engineOptions（在任务被 aria2 删除前获取，避免 getOption 失败）
+    const preOpt = task && task._engineOptions
+    let resolved = false
+
+    if (preOpt) {
+      const dirFromOpt = preOpt.dir ? resolve(`${preOpt.dir}`) : taskDir
+      const outFromOpt = preOpt.out ? `${preOpt.out}` : ''
+      const nameFallback = task && task.name ? `${task.name}` : ''
+      console.log('[Motrix] moveTaskFilesToTrash - pre-fetched getOption fallback:', { dirFromOpt, outFromOpt, nameFallback })
+      if (dirFromOpt && outFromOpt) {
+        path = resolve(dirFromOpt, outFromOpt)
+        resolved = true
+      } else if (dirFromOpt && nameFallback) {
+        path = resolve(dirFromOpt, nameFallback)
+        resolved = true
       }
-    } catch (_) {}
+    }
+
+    // 预获取的选项也无法解析时，尝试实时调用 getOption（任务可能仍存在）
+    if (!resolved) {
+      try {
+        const gid = task && task.gid ? `${task.gid}` : ''
+        if (gid) {
+          const opt = await api.getOption({ gid })
+          const dirFromOpt = opt && opt.dir ? resolve(`${opt.dir}`) : taskDir
+          const outFromOpt = opt && opt.out ? `${opt.out}` : ''
+          const nameFallback = task && task.name ? `${task.name}` : ''
+          console.log('[Motrix] moveTaskFilesToTrash - live getOption fallback:', { dirFromOpt, outFromOpt, nameFallback })
+          if (dirFromOpt && outFromOpt) {
+            path = resolve(dirFromOpt, outFromOpt)
+          } else if (dirFromOpt && nameFallback) {
+            path = resolve(dirFromOpt, nameFallback)
+          }
+        }
+      } catch (e) {
+        console.warn('[Motrix] moveTaskFilesToTrash - getOption fallback failed:', e.message)
+      }
+    }
   }
 
   if (!path || (taskDir && resolve(path) === taskDir)) {
-    console.warn('[Motrix] Invalid file path for task, skip deleting files')
-    return true
+    const err = new Error(`无法解析任务文件路径，跳过文件删除（gid=${task && task.gid}, dir=${taskDir}）`)
+    console.warn('[Motrix] moveTaskFilesToTrash -', err.message)
+    throw err
   }
 
   const candidates = getPathCandidates(path, suffix, config)
+  console.log('[Motrix] moveTaskFilesToTrash - candidates:', candidates.map(p => ({ path: p, exists: existsSync(p) })))
+
+  let deletedCount = 0
+  let lastError = null
 
   for (const p of candidates) {
     // Delete main file
@@ -186,22 +233,31 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
         const target = resolve(p)
         console.log(`[Motrix] ${target} exists, deleting...`)
         await shell.trashItem(target)
+        deletedCount++
       }
     } catch (e) {
       console.warn(`[Motrix] Failed to trash ${p}:`, e)
+      lastError = e
     }
 
     // Delete .aria2 file
-    // Check for .aria2 file corresponding to this candidate
     const aria2Path = `${p}.aria2`
     try {
       if (existsSync(aria2Path)) {
         console.log(`[Motrix] ${aria2Path} exists, deleting...`)
         await shell.trashItem(aria2Path)
+        deletedCount++
       }
     } catch (e) {
       console.warn(`[Motrix] Failed to trash ${aria2Path}:`, e)
+      lastError = e
     }
+  }
+
+  // 如果候选路径中有文件存在但全部删除失败，抛出错误让上层提示用户
+  const anyExists = candidates.some(p => existsSync(p) || existsSync(`${p}.aria2`))
+  if (anyExists && deletedCount === 0 && lastError) {
+    throw new Error(`删除文件失败: ${lastError.message || lastError}`)
   }
 
   return true

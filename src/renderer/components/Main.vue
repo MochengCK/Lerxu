@@ -638,6 +638,8 @@
           await moveTaskFilesToTrash(task, downloadingFileSuffix, config)
         } catch (err) {
           console.warn('[Motrix] deleteTaskFilesFromProgress error:', err)
+          const taskName = (task && task.name) ? task.name : (task && task.gid ? task.gid : '')
+          this.$msg.error(`删除文件失败: ${taskName}`)
         }
       },
       async removeTaskItemFromProgress (task, taskName) {
@@ -658,7 +660,32 @@
         const prefState = this.$store && this.$store.state && this.$store.state.preference
         const prefConfig = prefState && prefState.config ? prefState.config : {}
         const noConfirmBeforeDelete = !!prefConfig.noConfirmBeforeDeleteTask
+
+        // 在从aria2移除任务前，获取最新的任务状态以确保文件路径准确
+        const fetchFreshTaskForDeletion = async (originalTask) => {
+          let taskForDeletion = originalTask
+          try {
+            const fresh = await api.fetchTaskItem({ gid: originalTask.gid })
+            if (fresh && fresh.gid) {
+              taskForDeletion = { ...originalTask, ...fresh }
+            }
+          } catch (e) {
+            console.warn('[Motrix] Failed to fetch fresh task for deletion:', e.message)
+          }
+          // 预获取引擎选项（dir + out），避免任务被 aria2 删除后 getOption 失败导致文件路径无法解析
+          try {
+            const opt = await api.getOption({ gid: originalTask.gid })
+            if (opt) {
+              taskForDeletion = { ...taskForDeletion, _engineOptions: opt }
+            }
+          } catch (e) {
+            console.warn('[Motrix] Failed to pre-fetch getOption for deletion:', e.message)
+          }
+          return taskForDeletion
+        }
+
         if (noConfirmBeforeDelete) {
+          const taskForDeletion = deleteWithFiles ? await fetchFreshTaskForDeletion(task) : task
           await this.$store.dispatch('task/forcePauseTask', task)
             .finally(async () => {
               // 先从aria2中删除任务
@@ -667,7 +694,7 @@
               // 然后再删除文件
               if (deleteWithFiles) {
                 await new Promise(resolve => setTimeout(resolve, 500))
-                await this.deleteTaskFilesFromProgress(task)
+                await this.deleteTaskFilesFromProgress(taskForDeletion)
               }
             })
           return
@@ -684,6 +711,7 @@
           if (response !== 0) {
             return
           }
+          const taskForDeletion = checkboxChecked ? await fetchFreshTaskForDeletion(task) : task
           await this.$store.dispatch('task/forcePauseTask', task)
             .finally(async () => {
               // 先从aria2中删除任务
@@ -692,7 +720,7 @@
               // 然后再删除文件
               if (checkboxChecked) {
                 await new Promise(resolve => setTimeout(resolve, 500))
-                await this.deleteTaskFilesFromProgress(task)
+                await this.deleteTaskFilesFromProgress(taskForDeletion)
               }
             })
         })
@@ -1700,20 +1728,24 @@
         const existingWindow = this.progressWindows.get(gid)
         if (this.isAliveWindow(existingWindow)) {
           // 确保窗口显示、激活并置于最前面
-          if (existingWindow.isMinimized()) {
-            existingWindow.restore()
+          try {
+            if (existingWindow.isMinimized()) {
+              existingWindow.restore()
+            }
+            existingWindow.show()
+            existingWindow.focus()
+            // 短暂置顶以确保窗口在最前面，然后取消置顶
+            existingWindow.setAlwaysOnTop(true)
+            setTimeout(() => {
+              try {
+                if (this.isAliveWindow(existingWindow)) {
+                  existingWindow.setAlwaysOnTop(false)
+                }
+              } catch (e) {}
+            }, 100)
+          } catch (e) {
+            console.warn('[Motrix] Failed to activate existing progress window:', e.message)
           }
-          existingWindow.show()
-          existingWindow.focus()
-          // 短暂置顶以确保窗口在最前面，然后取消置顶
-          existingWindow.setAlwaysOnTop(true)
-          setTimeout(() => {
-            try {
-              if (this.isAliveWindow(existingWindow)) {
-                existingWindow.setAlwaysOnTop(false)
-              }
-            } catch (e) {}
-          }, 100)
           this.updateProgressWindow(task)
           return
         }
@@ -1812,20 +1844,24 @@
             }
           }
           // 确保窗口显示、激活并置于最前面
-          if (win.isMinimized()) {
-            win.restore()
+          try {
+            if (win.isMinimized()) {
+              win.restore()
+            }
+            win.show()
+            win.focus()
+            // 短暂置顶以确保窗口在最前面，然后取消置顶
+            win.setAlwaysOnTop(true)
+            setTimeout(() => {
+              try {
+                if (this.isAliveWindow(win)) {
+                  win.setAlwaysOnTop(false)
+                }
+              } catch (e) {}
+            }, 100)
+          } catch (e) {
+            console.warn('[Motrix] Failed to activate progress window:', e.message)
           }
-          win.show()
-          win.focus()
-          // 短暂置顶以确保窗口在最前面，然后取消置顶
-          win.setAlwaysOnTop(true)
-          setTimeout(() => {
-            try {
-              if (this.isAliveWindow(win)) {
-                win.setAlwaysOnTop(false)
-              }
-            } catch (e) {}
-          }, 100)
           this.updateProgressWindow(task)
         })
       },
@@ -2004,14 +2040,18 @@
           win.show()
           win.focus()
           // Keep on top briefly then allow normal stacking
-          win.setAlwaysOnTop(true)
-          setTimeout(() => {
-            try {
-              if (this.isAliveWindow(win)) {
-                win.setAlwaysOnTop(false)
-              }
-            } catch (e) {}
-          }, 100)
+          try {
+            win.setAlwaysOnTop(true)
+            setTimeout(() => {
+              try {
+                if (this.isAliveWindow(win)) {
+                  win.setAlwaysOnTop(false)
+                }
+              } catch (e) {}
+            }, 100)
+          } catch (e) {
+            console.warn('[Motrix] Failed to set always on top:', e.message)
+          }
         })
       },
 
