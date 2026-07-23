@@ -729,7 +729,7 @@
 
   .el-time-spinner__item {
     color: #e6e6e6;
-    border-radius: 4px;
+    border-radius: 6px;
     margin: 2px 4px;
 
     &.active:not(.disabled) {
@@ -760,7 +760,7 @@
   .el-select-dropdown__item {
     color: #eee;
     margin: 2px 6px;
-    border-radius: 4px;
+    border-radius: 6px;
 
     &.selected {
       color: $--color-primary;
@@ -770,7 +770,7 @@
     &.hover,
     &:hover {
       background-color: #4a4a4a;
-      border-radius: 4px;
+      border-radius: 6px;
     }
 
     &.selected:hover {

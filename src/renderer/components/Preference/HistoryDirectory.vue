@@ -140,13 +140,13 @@
 
 <style lang="scss">
 .el-popover.mo-directory-popper {
-  padding: $--popover-padding 0;
+  padding: 6px 0;
   border-radius: 8px;
   overflow: hidden;
 }
 
 .el-empty.mo-directory-empty {
-  padding: 20px 0;
+  padding: 12px 0;
 }
 
 .mo-directory-divider {
@@ -171,7 +171,7 @@
     list-style: none;
     line-height: $--font-line-height-primary;
     margin: 2px 6px;
-    border-radius: 4px;
+    border-radius: 8px;
     font-size: $--font-size-small;
     color: $--color-text-regular;
     cursor: pointer;

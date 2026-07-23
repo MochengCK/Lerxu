@@ -225,6 +225,14 @@ iframe {
   .popper__arrow {
     display: none;
   }
+
+  .el-scrollbar__bar.is-vertical {
+    width: 2px;
+  }
+
+  .el-scrollbar__bar.is-horizontal {
+    height: 2px;
+  }
 }
 
 /* 重做所有二级选择框的展开收起动画 */
@@ -251,16 +259,16 @@ iframe {
 
 .el-select-dropdown__item {
   margin: 2px 6px;
-  border-radius: 4px;
+  border-radius: 6px;
 
   &.hover,
   &:hover {
-    border-radius: 4px;
+    border-radius: 6px;
     background-color: #f5f7fa;
   }
 
   &.selected {
-    border-radius: 4px;
+    border-radius: 6px;
     color: $--color-primary;
     font-weight: 500;
 
@@ -277,7 +285,7 @@ iframe {
 }
 
 .el-time-spinner__item {
-  border-radius: 4px;
+  border-radius: 6px;
   margin: 2px 4px;
 }
 
