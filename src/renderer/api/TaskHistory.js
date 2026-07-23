@@ -197,6 +197,29 @@ class TaskHistory {
     taskHistoryStore.set('tasks', next)
   }
 
+  consolidateTasks (canonicalGid, memberGids = [], patch = {}, fallbackTask = null) {
+    if (!canonicalGid) {
+      return
+    }
+    const raw = taskHistoryStore.get('tasks', [])
+    const currentHistory = Array.isArray(raw) ? raw : []
+    const members = new Set((memberGids || []).map(gid => `${gid}`))
+    members.add(`${canonicalGid}`)
+    const existing = currentHistory.find(task => task && `${task.gid}` === `${canonicalGid}`)
+    const base = existing || fallbackTask || { gid: canonicalGid }
+    const entry = {
+      ...base,
+      ...patch,
+      gid: canonicalGid,
+      savedAt: base.savedAt != null ? base.savedAt : Date.now()
+    }
+    const next = currentHistory.filter(task => {
+      return task && !members.has(`${task.gid}`)
+    })
+    next.push(entry)
+    taskHistoryStore.set('tasks', next)
+  }
+
   /**
    * 从历史记录中移除任务
    * @param {string} gid - 任务的GID

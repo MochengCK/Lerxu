@@ -516,9 +516,20 @@ export default class Api {
           stoppedStatuses.has(historyStatus) &&
           Number.isFinite(total) && total > 0 &&
           Number.isFinite(completed) && completed >= total
+        const shouldUseMergedHistory = !!historyTask.dashMerged && historyStatus === TASK_STATUS.COMPLETE
         return {
           ...task,
           ...mergedFields,
+          ...(shouldUseMergedHistory
+            ? {
+              ...historyTask,
+              status: TASK_STATUS.COMPLETE,
+              statusHint: '',
+              engineStatus: '',
+              downloadSpeed: '0',
+              uploadSpeed: '0'
+            }
+            : {}),
           ...(shouldCoerceToHistoryStatus ? { status: historyStatus } : {}),
           ...(savedAt ? { savedAt } : {}),
           ...(startedAt ? { startedAt } : {}),
@@ -593,7 +604,7 @@ export default class Api {
           const stoppedTasks = result.filter(task => {
             const { status } = task
             const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
-            if (isMetadataTask) {
+            if (isMetadataTask || looksLikeBilibiliDashPart(task)) {
               return false
             }
             return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR].includes(status)
@@ -653,7 +664,8 @@ export default class Api {
           }
 
           // 保存从Aria2获取到的已停止任务到历史记录
-          taskHistory.saveStoppedTasks(stoppedTasks)
+          const savableStoppedTasks = stoppedTasks.filter(task => !looksLikeBilibiliDashPart(task))
+          taskHistory.saveStoppedTasks(savableStoppedTasks)
 
           stoppedTasks = this._mergeHistoryToTasks(stoppedTasks)
           // 移除已停止状态下的临时磁力任务，避免出现无效重复记录

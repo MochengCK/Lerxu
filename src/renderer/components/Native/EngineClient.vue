@@ -10,6 +10,7 @@
   import {
     getTaskFullPath,
     getTaskActualPath,
+    getPathCandidates,
     showItemInFolder
   } from '@/utils/native'
 
@@ -17,7 +18,7 @@
   import { TASK_STATUS } from '@shared/constants'
   import { spawn, spawnSync } from 'node:child_process'
   import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync } from 'node:fs'
-  import { dirname, basename, resolve, isAbsolute } from 'node:path'
+  import { dirname, basename, extname, resolve, isAbsolute } from 'node:path'
   import {
     autoCategorizeDownloadedFile,
     buildCategorizedPath,
@@ -109,21 +110,21 @@
         }
       },
       renamePreserveTimes (from, to) {
+        let st = null
         try {
-          const st = statSync(from)
+          st = statSync(from)
+        } catch (_) {}
+        try {
           renameSync(from, to)
+        } catch (_) {
+          return false
+        }
+        if (st) {
           try {
             utimesSync(to, st.atime, st.mtime)
-          } catch (e) {}
-          return true
-        } catch (e) {
-          try {
-            renameSync(from, to)
-            return true
-          } catch (_) {
-            return false
-          }
+          } catch (_) {}
         }
+        return existsSync(to) && !existsSync(from)
       },
       /**
        * 修复带有下载后缀的文件名中的序号位置
@@ -466,7 +467,6 @@
         }
       },
       onDownloadComplete (event) {
-        this.$store.dispatch('task/fetchList')
         const [{ gid }] = event
         this.$store.dispatch('task/removeFromSeedingList', gid)
 
@@ -475,7 +475,10 @@
             if (!task) {
               return
             }
-            this.handleDownloadComplete(task, false)
+            return this.handleDownloadComplete(task, false)
+          })
+          .finally(() => {
+            this.$store.dispatch('task/fetchList')
           })
       },
       onBtDownloadComplete (event) {
@@ -535,18 +538,20 @@
             try {
               const gid = task && task.gid ? `${task.gid}` : ''
               if (gid) {
-                let fromHeader = false
+                let fromSupportedSource = false
                 try {
                   const t = (taskHistory.getAllHistory() || []).find(x => x && `${x.gid}` === gid)
-                  fromHeader = !!(t && t.fromBrowserExtension)
+                  fromSupportedSource = !!(t && t.fromBrowserExtension)
                 } catch (_) {}
-                if (!fromHeader) {
+                if (!fromSupportedSource) {
                   const opt = await api.getOption({ gid })
                   const hs = opt && opt.header ? opt.header : []
                   const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
-                  fromHeader = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`))
+                  const referer = opt && opt.referer ? `${opt.referer}` : ''
+                  fromSupportedSource = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`)) ||
+                    this.looksLikeBilibiliSource(referer, headers)
                 }
-                if (fromHeader) {
+                if (fromSupportedSource) {
                   const pair = this.collectExtensionDashParts(finalPath || path, cfg)
                   const suffix = cfg.downloadingFileSuffix || ''
                   const looksLikeStream = this.looksLikeExtensionDashStreamPath(finalPath || path, suffix)
@@ -639,7 +644,10 @@
         }
         this.setFileMtimeOnComplete(task, finalPath)
 
-        const mergeResult = await this.maybeMergeBilibiliDash(finalPath, task)
+        const mergeKey = this.getDashMergeKey(finalPath, cfg)
+        const mergeResult = await this.runDashMergeExclusive(mergeKey, () => {
+          return this.maybeMergeBilibiliDash(finalPath, task)
+        })
         if (mergeResult && mergeResult.mergedPath) {
           this.setFileMtimeOnComplete(task, mergeResult.mergedPath)
           this.autoCategorizeDownloadedFile(task, mergeResult.mergedPath)
@@ -1035,6 +1043,40 @@
 
         return ''
       },
+      getDashMergeKey (filePath, cfg) {
+        try {
+          const path = filePath ? resolve(`${filePath}`) : ''
+          if (!path) return ''
+          const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
+          const raw = basename(path)
+          const normalized = suffix ? this.stripDownloadingSuffixFromFilename(raw, suffix) : raw
+          const stem = this.normalizeDashStemFromFilename(normalized)
+          return stem ? `${dirname(path)}|${stem}` : path
+        } catch (_) {
+          return ''
+        }
+      },
+      runDashMergeExclusive (key, merge) {
+        if (!key) {
+          return Promise.resolve().then(merge)
+        }
+        if (!this._dashMergeJobs) {
+          this._dashMergeJobs = new Map()
+        }
+        const running = this._dashMergeJobs.get(key)
+        if (running) {
+          return running
+        }
+        const job = Promise.resolve()
+          .then(merge)
+          .finally(() => {
+            if (this._dashMergeJobs.get(key) === job) {
+              this._dashMergeJobs.delete(key)
+            }
+          })
+        this._dashMergeJobs.set(key, job)
+        return job
+      },
       runFfmpegMux (ffmpegPath, videoPath, audioPath, outputPath) {
         return new Promise((resolve, reject) => {
           const cmd = ffmpegPath || ''
@@ -1063,6 +1105,64 @@
             reject(new Error(msg))
           })
         })
+      },
+      validateDashMergeOutput (ffmpegPath, outputPath) {
+        if (!outputPath || !existsSync(outputPath)) {
+          return false
+        }
+        try {
+          const result = spawnSync(ffmpegPath, [
+            '-hide_banner',
+            '-i', outputPath,
+            '-map', '0:v:0',
+            '-map', '0:a:0',
+            '-c', 'copy',
+            '-f', 'null',
+            '-'
+          ], { windowsHide: true, timeout: 30000 })
+          return result.status === 0
+        } catch (_) {
+          return false
+        }
+      },
+      async mergeDashToOutput (ffmpegPath, videoPath, audioPath, outputPath) {
+        const tempPath = resolve(dirname(outputPath), `.${basename(outputPath)}.linkcore-merging-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`)
+        try {
+          try {
+            await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, tempPath)
+          } catch (firstError) {
+            try {
+              if (existsSync(tempPath)) unlinkSync(tempPath)
+            } catch (_) {}
+            await this.runFfmpegMux(ffmpegPath, audioPath, videoPath, tempPath)
+          }
+          if (!this.validateDashMergeOutput(ffmpegPath, tempPath)) {
+            throw new Error('Merged DASH output does not contain both video and audio streams')
+          }
+          if (existsSync(outputPath)) {
+            throw new Error(`DASH merge output already exists: ${outputPath}`)
+          }
+          renameSync(tempPath, outputPath)
+          return true
+        } finally {
+          try {
+            if (existsSync(tempPath)) unlinkSync(tempPath)
+          } catch (_) {}
+        }
+      },
+      getDashMergeOutputPath (dir, stem, inputPaths = []) {
+        const basePath = resolve(dir, `${stem}.mp4`)
+        const inputs = new Set((inputPaths || []).filter(Boolean).map(path => resolve(path)))
+        if (!inputs.has(basePath) && !existsSync(basePath)) {
+          return basePath
+        }
+        for (let index = 1; index < 1000; index++) {
+          const candidate = resolve(dir, `${stem} (${index}).mp4`)
+          if (!inputs.has(candidate) && !existsSync(candidate)) {
+            return candidate
+          }
+        }
+        return ''
       },
       async maybeMergeBilibiliDash (finalPath, task = null) {
         const info = this.parseBilibiliDashPart(finalPath)
@@ -1120,19 +1220,13 @@
             const fallbackNotifyPath = finalPath || ''
             return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
           }
-          const outputPath = resolve(dir, `${base}.mp4`)
+          const outputPath = this.getDashMergeOutputPath(dir, base, [videoPath, audioPath])
+          if (!outputPath) {
+            return { isBilibiliPart: true, mergedPath: '' }
+          }
           try {
-            if (existsSync(outputPath)) {
-              return { isBilibiliPart: true, mergedPath: outputPath }
-            }
-          } catch (_) {}
-          try {
-            try {
-              await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, outputPath)
-            } catch (e1) {
-              await this.runFfmpegMux(ffmpegPath, audioPath, videoPath, outputPath)
-            }
-            const finalOutputPath = this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
+            await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath)
+            const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
             console.warn(`[Motrix] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
@@ -1164,12 +1258,10 @@
         }
 
         const outputDir = dirname(videoPath || finalPath || rootDir || dir)
-        const outputPath = resolve(outputDir, `${base}.mp4`)
-        try {
-          if (existsSync(outputPath)) {
-            return { isBilibiliPart: true, mergedPath: outputPath }
-          }
-        } catch (_) {}
+        const outputPath = this.getDashMergeOutputPath(outputDir, base, [videoPath, audioPath])
+        if (!outputPath) {
+          return { isBilibiliPart: true, mergedPath: '' }
+        }
 
         const ffmpegPath = await this.ensureFfmpeg()
         if (!ffmpegPath) {
@@ -1179,12 +1271,8 @@
         }
 
         try {
-          try {
-            await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, outputPath)
-          } catch (e1) {
-            await this.runFfmpegMux(ffmpegPath, audioPath, videoPath, outputPath)
-          }
-          const finalOutputPath = this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
+          await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath)
+          const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
           return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
         } catch (e) {
           console.warn(`[Motrix] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
@@ -1196,31 +1284,37 @@
           const gid = task && task.gid ? `${task.gid}` : ''
           if (!gid) return { isBilibiliPart: false, mergedPath: '' }
 
-          let fromHeader = false
+          let fromSupportedSource = false
           try {
             const t = (taskHistory.getAllHistory() || []).find(x => x && `${x.gid}` === gid)
-            fromHeader = !!(t && t.fromBrowserExtension)
+            fromSupportedSource = !!(t && t.fromBrowserExtension)
           } catch (_) {
-            fromHeader = false
+            fromSupportedSource = false
           }
-          if (!fromHeader) {
+          if (!fromSupportedSource) {
             try {
               const opt = await api.getOption({ gid })
               const hs = opt && opt.header ? opt.header : []
               const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
-              fromHeader = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`))
+              const referer = opt && opt.referer ? `${opt.referer}` : ''
+              fromSupportedSource = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`)) ||
+                this.looksLikeBilibiliSource(referer, headers)
             } catch (_) {
-              fromHeader = false
+              fromSupportedSource = false
             }
           }
-          if (!fromHeader) {
-            return { isBilibiliPart: false, mergedPath: '' }
-          }
-
           const cfg = this.$store.state.preference.config || {}
           const pair = this.collectExtensionDashParts(finalPath, cfg)
           if (!pair || !pair.isPairCandidate) {
             return { isBilibiliPart: false, mergedPath: '' }
+          }
+
+          if (!fromSupportedSource) {
+            const taskUri = getTaskUri(task)
+            const uriLooksBilibili = /^https?:\/\/(?:[^/]+\.)?(?:bilivideo\.com|bilibili\.com)(?=[:/]|$)/i.test(`${taskUri || ''}`)
+            if (!uriLooksBilibili) {
+              return { isBilibiliPart: false, mergedPath: '' }
+            }
           }
 
           try {
@@ -1309,12 +1403,10 @@
             return { isBilibiliPart: true, mergedPath: '' }
           }
 
-          const outputPath = resolve(pair.dir, `${pair.stem}.mp4`)
-          try {
-            if (existsSync(outputPath)) {
-              return { isBilibiliPart: true, mergedPath: outputPath }
-            }
-          } catch (_) {}
+          const outputPath = this.getDashMergeOutputPath(pair.dir, pair.stem, [videoPath, audioPath])
+          if (!outputPath) {
+            return { isBilibiliPart: true, mergedPath: '' }
+          }
 
           const ffmpegPath = await this.ensureFfmpeg()
           if (!ffmpegPath) {
@@ -1324,13 +1416,9 @@
           }
 
           try {
-            try {
-              await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, outputPath)
-            } catch (e1) {
-              await this.runFfmpegMux(ffmpegPath, audioPath, videoPath, outputPath)
-            }
+            await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath)
             const info = { dir: pair.dir, base: pair.stem, type: 'named' }
-            const finalOutputPath = this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
+            const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
             console.warn(`[Motrix] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
@@ -1340,7 +1428,7 @@
           return { isBilibiliPart: false, mergedPath: '' }
         }
       },
-      afterBilibiliMerge (task, info, videoPath, audioPath, outputPath) {
+      async afterBilibiliMerge (task, info, videoPath, audioPath, outputPath) {
         let finalOutputPath = outputPath
         const deletedFiles = new Set()
         const deletedCandidates = new Set()
@@ -1583,10 +1671,8 @@
           if (!gid) {
             return finalOutputPath
           }
-          // 检查是否为元数据任务 - 这些任务不应该保存到历史记录
           const taskName = task && task.name ? `${task.name}` : ''
-          const isMetadataTask = taskName.startsWith('[METADATA]')
-          if (isMetadataTask) {
+          if (taskName.startsWith('[METADATA]')) {
             return finalOutputPath
           }
           let length = 0
@@ -1603,13 +1689,44 @@
           }]
           const patch = {
             ...task,
+            name: basename(finalOutputPath),
             status: TASK_STATUS.COMPLETE,
             dir: dirname(finalOutputPath),
             files,
             totalLength: `${length}`,
-            completedLength: `${length}`
+            completedLength: `${length}`,
+            downloadSpeed: '0',
+            uploadSpeed: '0',
+            statusHint: '',
+            engineStatus: '',
+            dashMerged: true
           }
-          taskHistory.updateTask(gid, patch, task)
+          const cfg = this.$store.state.preference.config || {}
+          const targetBase = info && info.base ? `${info.base}` : ''
+          const targetDir = info && info.dir ? this.deriveBilibiliDashRootDir(`${info.dir}`, cfg) : ''
+          const memberGids = (taskHistory.getAllHistory() || []).filter(item => {
+            try {
+              if (!item || !item.gid) return false
+              if (`${item.gid}` === gid) return true
+              const full = getTaskFullPath(item)
+              if (!full || !targetBase || !targetDir) return false
+              const itemRoot = this.deriveBilibiliDashRootDir(dirname(full), cfg)
+              if (resolve(itemRoot) !== resolve(targetDir)) return false
+              const suffix = cfg.downloadingFileSuffix || ''
+              const raw = basename(full)
+              const normalized = suffix ? this.stripDownloadingSuffixFromFilename(raw, suffix) : raw
+              return this.normalizeDashStemFromFilename(normalized) === targetBase
+            } catch (_) {
+              return false
+            }
+          }).map(item => `${item.gid}`)
+          if (!memberGids.includes(gid)) {
+            memberGids.push(gid)
+          }
+          taskHistory.consolidateTasks(gid, memberGids, patch, task)
+          await Promise.all(memberGids.map(memberGid => {
+            return api.removeDownloadResult({ gid: memberGid }).catch(() => {})
+          }))
         } catch (_) {}
 
         try {
@@ -1889,11 +2006,40 @@
         createCategoryDirectory(categorizedInfo.categorizedDir)
       },
 
+      getUniqueCompletedPath (filePath) {
+        if (!filePath || !existsSync(filePath)) {
+          return filePath
+        }
+        const dir = dirname(filePath)
+        const ext = extname(filePath)
+        const name = basename(filePath, ext)
+        for (let index = 1; index < 1000; index++) {
+          const candidate = resolve(dir, `${name} (${index})${ext}`)
+          if (!existsSync(candidate)) {
+            return candidate
+          }
+        }
+        return ''
+      },
       async removeDownloadingSuffix (task, manualPath = '', preferenceConfig = null) {
         const cfg = preferenceConfig || this.$store.state.preference.config || {}
         const downloadingFileSuffix = cfg.downloadingFileSuffix || ''
 
-        const currentPath = manualPath || getTaskActualPath(task, cfg) || getTaskFullPath(task)
+        const taskPath = getTaskFullPath(task)
+        const candidatePaths = []
+        const appendCandidate = (value) => {
+          const path = value ? resolve(`${value}`) : ''
+          if (path && !candidatePaths.includes(path)) {
+            candidatePaths.push(path)
+          }
+        }
+        appendCandidate(manualPath)
+        getPathCandidates(taskPath, downloadingFileSuffix, cfg).forEach(appendCandidate)
+        appendCandidate(getTaskActualPath(task, cfg))
+
+        const currentPath = candidatePaths.find(path => {
+          return path.endsWith(downloadingFileSuffix) && existsSync(path)
+        }) || candidatePaths.find(path => existsSync(path)) || candidatePaths[0] || ''
         if (!currentPath || !downloadingFileSuffix) {
           return currentPath
         }
@@ -1904,13 +2050,14 @@
           const t = to ? `${to}` : ''
           if (!f || !t || f === t) return true
           for (let i = 0; i < attempts; i++) {
-            if (existsSync(t)) return true
-            if (!existsSync(f)) return false
-            const ok = this.renamePreserveTimes(f, t)
-            if (ok) return true
+            if (!existsSync(f)) return existsSync(t)
+            if (!existsSync(t)) {
+              const ok = this.renamePreserveTimes(f, t)
+              if (ok) return true
+            }
             await sleep(delayMs)
           }
-          return existsSync(t)
+          return !existsSync(f) && existsSync(t)
         }
 
         if (currentPath.endsWith(downloadingFileSuffix)) {
@@ -1925,24 +2072,34 @@
             }
           }
 
-          const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
-          if (existsSync(pathToProcess)) {
+          const desiredPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
+          const originalPath = existsSync(pathToProcess)
+            ? this.getUniqueCompletedPath(desiredPath)
+            : desiredPath
+          if (existsSync(pathToProcess) && originalPath) {
             const ok = await renameWithRetry(pathToProcess, originalPath)
             if (ok && existsSync(originalPath)) {
               console.log(`[Motrix] Removed downloading suffix: ${pathToProcess} -> ${originalPath}`)
               return originalPath
             }
-          } else if (existsSync(originalPath)) {
-            return originalPath
+          } else if (existsSync(desiredPath)) {
+            return desiredPath
           }
-          return existsSync(originalPath) ? originalPath : currentPath
+          return existsSync(desiredPath) ? desiredPath : currentPath
         } else {
-          const suffixedPath = currentPath + downloadingFileSuffix
+          const suffixedPath = candidatePaths.find(path => {
+            return path.endsWith(downloadingFileSuffix) && existsSync(path)
+          }) || `${currentPath}${downloadingFileSuffix}`
           if (existsSync(suffixedPath)) {
-            const ok = await renameWithRetry(suffixedPath, currentPath)
-            if (ok && existsSync(currentPath)) {
-              console.log(`[Motrix] Removed downloading suffix: ${suffixedPath} -> ${currentPath}`)
-              return currentPath
+            const targetPath = this.getUniqueCompletedPath(
+              suffixedPath.slice(0, -downloadingFileSuffix.length)
+            )
+            if (targetPath) {
+              const ok = await renameWithRetry(suffixedPath, targetPath)
+              if (ok && existsSync(targetPath)) {
+                console.log(`[Motrix] Removed downloading suffix: ${suffixedPath} -> ${targetPath}`)
+                return targetPath
+              }
             }
           }
           return existsSync(currentPath) ? currentPath : suffixedPath
@@ -2836,6 +2993,7 @@
       this._resumedCompletedLastRun = 0
       this._resumedCompletedFixedGids = new Set()
       this._bilibiliMergeNotified = new Set()
+      this._dashMergeJobs = new Map()
       this._pollingKickAt = 0
     },
     mounted () {
