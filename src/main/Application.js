@@ -581,12 +581,14 @@ export default class Application extends EventEmitter {
               const allTasks = []
 
               try {
-                const [active, waiting, stopped] = await Promise.all([
+                // 仅检查活动 / 等待中的任务，避免历史已完成任务（文件可能已删除或已合并）
+                // 阻塞新任务的命名，导致 suggestedFilename 被错误地追加 (1)。
+                // stopped 历史不参与命名冲突判断，由 aria2 在文件系统层处理实际重名。
+                const [active, waiting] = await Promise.all([
                   this.engineClient.call('tellActive'),
-                  this.engineClient.call('tellWaiting', 0, 1000),
-                  this.engineClient.call('tellStopped', 0, 10000)
+                  this.engineClient.call('tellWaiting', 0, 1000)
                 ])
-                allTasks.push(...(active || []), ...(waiting || []), ...(stopped || []))
+                allTasks.push(...(active || []), ...(waiting || []))
               } catch (error) {
                 console.error('[Duplicate Check] Error fetching tasks:', error)
               }

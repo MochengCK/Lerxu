@@ -66,6 +66,8 @@ const addTaskSilent = async (type) => {
     await addTaskByType(type)
   } catch (err) {
     Message.error(i18n.t(err.message))
+  } finally {
+    store.dispatch('app/resetAddTaskOptions')
   }
 }
 

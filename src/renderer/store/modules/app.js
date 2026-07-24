@@ -103,6 +103,9 @@ const mutations = {
       ...options
     }
   },
+  RESET_ADD_TASK_OPTIONS (state) {
+    state.addTaskOptions = {}
+  },
   UPDATE_TASK_PLAN_VISIBLE (state, visible) {
     state.taskPlanVisible = visible
   },
@@ -238,6 +241,7 @@ const actions = {
     commit('UPDATE_ADD_TASK_VISIBLE', false)
     commit('UPDATE_ADD_TASK_URL', '')
     commit('UPDATE_ADD_TASK_TORRENTS', [])
+    commit('RESET_ADD_TASK_OPTIONS')
   },
   changeAddTaskType ({ commit }, taskType) {
     commit('UPDATE_ADD_TASK_TYPE', taskType)
@@ -250,6 +254,9 @@ const actions = {
   },
   updateAddTaskOptions ({ commit }, options = {}) {
     commit('UPDATE_ADD_TASK_OPTIONS', options)
+  },
+  resetAddTaskOptions ({ commit }) {
+    commit('RESET_ADD_TASK_OPTIONS')
   },
   updateInterval ({ commit }, millisecond) {
     commit('UPDATE_INTERVAL', millisecond)

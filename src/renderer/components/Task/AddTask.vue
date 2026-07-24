@@ -636,7 +636,6 @@
       },
       handleClose () {
         this.$store.dispatch('app/hideAddTaskDialog')
-        this.$store.dispatch('app/updateAddTaskOptions', {})
       },
       handleClosed () {
         this.dialogOpenInitialized = false

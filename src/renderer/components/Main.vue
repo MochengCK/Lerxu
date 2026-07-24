@@ -131,6 +131,7 @@
         hasModalMaskVisible: false,
         hasModalDialogVisible: false,
         lastTaskStatuses: {},
+        autoOpenedProgressGids: new Set(),
         progressWindows: new Map(), // gid -> window
         progressTaskGids: new Set(),
         completedTaskWindows: new Map(), // gid -> window for completed tasks
@@ -490,6 +491,11 @@
         if (!task) {
           return
         }
+        const autoOpened = this.autoOpenedProgressGids || (this.autoOpenedProgressGids = new Set())
+        if (autoOpened.has(gid)) {
+          return
+        }
+        autoOpened.add(gid)
         this.openProgressWindowForTask(task)
       },
       handleThemeChangeForProgressWindow () {
@@ -2378,19 +2384,30 @@
 
       handleTaskListChange (list) {
         const prev = this.lastTaskStatuses || {}
+        const autoOpened = this.autoOpenedProgressGids || new Set()
+        const doneStatuses = [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED]
+        const currentGids = new Set()
         let candidate = null
+        const newActiveTasks = []
+
         list.forEach(task => {
           const gid = task && task.gid ? `${task.gid}` : ''
           if (!gid) {
             return
           }
+          currentGids.add(gid)
           const prevStatus = prev[gid]
           const currentStatus = task.status
-          if (!candidate && currentStatus === TASK_STATUS.ACTIVE && prevStatus !== TASK_STATUS.ACTIVE) {
-            candidate = task
+          const isNewlyActive = currentStatus === TASK_STATUS.ACTIVE && prevStatus !== TASK_STATUS.ACTIVE && !autoOpened.has(gid)
+          if (isNewlyActive) {
+            newActiveTasks.push(task)
+            if (!candidate) {
+              candidate = task
+            }
           }
         })
-        const nextStatuses = {}
+
+        const nextStatuses = { ...prev }
         list.forEach(task => {
           const gid = task && task.gid ? `${task.gid}` : ''
           if (!gid) {
@@ -2398,33 +2415,45 @@
           }
           nextStatuses[gid] = task.status
         })
+        Object.keys(nextStatuses).forEach(gid => {
+          if (!currentGids.has(gid)) {
+            delete nextStatuses[gid]
+          }
+        })
         this.lastTaskStatuses = nextStatuses
-        if (candidate) {
-          const prefState = this.$store && this.$store.state && this.$store.state.preference
-          const prefConfig = prefState && prefState.config ? prefState.config : {}
-          const autoOpenTaskProgressWindow = prefConfig.autoOpenTaskProgressWindow !== false
-          const taskProgressWindowMode = prefConfig.taskProgressWindowMode || 'first'
-          if (autoOpenTaskProgressWindow) {
-            if (taskProgressWindowMode === 'all') {
-              // 为所有新的活跃任务打开窗口
-              list.forEach(task => {
-                const gid = task && task.gid ? `${task.gid}` : ''
-                if (!gid) return
-                const prevStatus = prev[gid]
-                const currentStatus = task.status
-                if (currentStatus === TASK_STATUS.ACTIVE && prevStatus !== TASK_STATUS.ACTIVE) {
-                  this.openProgressWindowForTask(task)
-                }
-              })
-            } else {
-              // 只为第一个任务打开窗口
+
+        const prefState = this.$store && this.$store.state && this.$store.state.preference
+        const prefConfig = prefState && prefState.config ? prefState.config : {}
+        const autoOpenTaskProgressWindow = prefConfig.autoOpenTaskProgressWindow !== false
+        const taskProgressWindowMode = prefConfig.taskProgressWindowMode || 'first'
+        if (autoOpenTaskProgressWindow && (candidate || newActiveTasks.length > 0)) {
+          if (taskProgressWindowMode === 'all') {
+            newActiveTasks.forEach(task => {
+              const gid = task && task.gid ? `${task.gid}` : ''
+              if (gid) {
+                autoOpened.add(gid)
+                this.openProgressWindowForTask(task)
+              }
+            })
+          } else if (candidate) {
+            const gid = candidate && candidate.gid ? `${candidate.gid}` : ''
+            if (gid) {
+              autoOpened.add(gid)
               this.openProgressWindowForTask(candidate)
             }
           }
         }
 
+        list.forEach(task => {
+          const gid = task && task.gid ? `${task.gid}` : ''
+          if (!gid) return
+          const isSeeding = checkTaskIsSeeder(task)
+          if (doneStatuses.includes(task.status) && !isSeeding) {
+            autoOpened.delete(gid)
+          }
+        })
+
         // Update existing progress windows
-        const doneStatuses = [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED]
         const taskState = this.$store && this.$store.state && this.$store.state.task
         const currentListType = taskState && taskState.currentList ? taskState.currentList : 'all'
         const closeWhenMissingLists = ['all']
@@ -2451,8 +2480,6 @@
 
         // Check for newly completed tasks and show completion window
         // Only show if prevStatus is defined (not initial load) and task just became complete
-        const prefState = this.$store && this.$store.state && this.$store.state.preference
-        const prefConfig = prefState && prefState.config ? prefState.config : {}
         const showTaskCompletedWindow = prefConfig.showTaskCompletedWindow !== false
 
         if (showTaskCompletedWindow) {

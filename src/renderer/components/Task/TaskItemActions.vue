@@ -1057,7 +1057,7 @@
       width: 1px;
       height: 12px;
       background-color: currentColor;
-      opacity: 0.15;
+      opacity: 0.25;
     }
   }
   &> .task-item-action--verify-trigger {
@@ -1151,7 +1151,7 @@
       width: 1px;
       height: 12px;
       background-color: currentColor;
-      opacity: 0.15;
+      opacity: 0.25;
       transition: opacity 0.25s ease-out;
     }
   }

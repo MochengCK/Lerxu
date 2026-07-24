@@ -934,7 +934,7 @@
     width: 100%;
     text-align: center;
     font-size: 0;
-    padding: 0 1.25rem 1.5rem;
+    padding: 0.5rem 1.25rem 1.5rem;
     display: flex;
     align-content: space-between;
     justify-content: space-between;

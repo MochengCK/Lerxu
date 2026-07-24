@@ -248,7 +248,7 @@
   .task-item-actions-wrapper {
     position: absolute;
     top: 16px;
-    right: 12px;
+    right: -4px;
   }
 
   &.task-item--grid {
@@ -285,7 +285,7 @@
 
     .task-item-actions-wrapper {
       top: 16px;
-      right: 12px;
+      right: -4px;
       z-index: 10;
     }
   }
@@ -302,12 +302,12 @@
   padding: 0;
   font-size: 120px;
   font-weight: 700;
-  color: #c0c4cc;
+  color: #a8b8d8;
   text-transform: uppercase;
   letter-spacing: 1.5px;
   user-select: none;
   pointer-events: none;
-  opacity: 0.3;
+  opacity: 0.35;
   line-height: 1;
 
   &.task-type-badge--magnet {

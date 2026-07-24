@@ -80,12 +80,12 @@
         {{ task.numPieces }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-bittorrent-creation-date')}: `" v-if="isBT">
+    <el-form-item :label="`${$t('task.task-bittorrent-creation-date')}: `" v-if="isBT && task.bittorrent">
       <div class="form-static-value">
         {{ task.bittorrent.creationDate | localeDateTimeFormat(locale) }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-bittorrent-comment')}: `" v-if="isBT">
+    <el-form-item :label="`${$t('task.task-bittorrent-comment')}: `" v-if="isBT && task.bittorrent">
       <div class="form-static-value">
         {{ task.bittorrent.comment }}
       </div>

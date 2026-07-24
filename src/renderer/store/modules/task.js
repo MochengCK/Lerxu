@@ -315,9 +315,9 @@ const mutations = {
       const oldTask = oldMap.get(newTask.gid)
       if (oldTask) {
         // Engine-derived transient hint fields must be cleared when absent
-        // in latest payload, otherwise stale paused/checking text may stick.
+        // in latest payload, otherwise stale paused/checking/magnet text may stick.
         const clearedFields = {}
-        ;['statusHint', 'statusRightText'].forEach((k) => {
+        ;['statusHint', 'statusRightText', 'engineStatus'].forEach((k) => {
           if (!Object.prototype.hasOwnProperty.call(newTask, k) && Object.prototype.hasOwnProperty.call(oldTask, k)) {
             clearedFields[k] = undefined
           }

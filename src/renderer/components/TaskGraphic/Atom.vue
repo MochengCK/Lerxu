@@ -82,26 +82,20 @@
 <style lang="scss">
 .graphic-atom {
   shape-rendering: geometricPrecision;
-  outline-offset: -1px;
 }
 .graphic-atom-s0 {
   fill: $--graphic-atom-color-0;
-  outline: 1px solid $--graphic-atom-outline-color;
 }
 .graphic-atom-s1 {
   fill: $--graphic-atom-color-1;
-  outline: 1px solid $--graphic-atom-outline-color;
 }
 .graphic-atom-s2 {
   fill: $--graphic-atom-color-2;
-  outline: 1px solid $--graphic-atom-outline-color;
 }
 .graphic-atom-s3 {
   fill: $--graphic-atom-color-3;
-  outline: 1px solid $--graphic-atom-outline-color;
 }
 .graphic-atom-s4 {
   fill: $--graphic-atom-color-4;
-  outline: 1px solid $--graphic-atom-outline-color;
 }
 </style>

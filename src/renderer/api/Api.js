@@ -33,11 +33,11 @@ const looksLikeBilibiliDashPart = (task) => {
       return false
     }
     const first = files[0] || {}
-    const p = first && first.path ? `${first.path}` : ''
-    if (!p) {
+    const rawPath = first && first.path ? `${first.path}` : ''
+    if (!rawPath) {
       return false
     }
-    const base = basename(p)
+    const base = basename(rawPath)
     const lower = base.toLowerCase()
     const looksLikePart = lower.endsWith('_video.mp4') ||
       lower.endsWith('_audio.m4a') ||
@@ -45,9 +45,18 @@ const looksLikeBilibiliDashPart = (task) => {
     if (!looksLikePart) {
       return false
     }
+    const taskDir = task && task.dir ? `${task.dir}` : ''
+    let absolutePath = rawPath
+    try {
+      if (!isAbsolute(rawPath) && taskDir) {
+        absolutePath = resolve(taskDir, rawPath)
+      }
+    } catch (_) {
+      absolutePath = rawPath
+    }
     let missing = false
     try {
-      missing = !existsSync(p)
+      missing = !existsSync(absolutePath)
     } catch (_) {}
     return missing
   } catch (_) {

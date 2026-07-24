@@ -264,7 +264,8 @@ export const localeDateTimeFormat = (timestamp, locale) => {
     timestamp *= 1000
   }
   const date = new Date(timestamp)
-  return date.toLocaleDateString(locale, {
+  const effectiveLocale = (!locale || locale === 'auto') ? undefined : locale
+  return date.toLocaleDateString(effectiveLocale, {
     year: 'numeric',
     month: 'long',
     day: 'numeric',

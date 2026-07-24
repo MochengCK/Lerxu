@@ -217,11 +217,18 @@
       },
       connectingStatusText () {
         const task = this.task || {}
+        // 已进入下载阶段（有总长度或已下载量）时优先让位给下载进度显示，
+        // 否则磁力任务的 "磁力任务下载中" 会一直遮住进度。
+        const total = Number(task.totalLength)
+        const completed = Number(task.completedLength)
+        if (total > 0 || completed > 0) {
+          return ''
+        }
         const engineStatus = `${task.engineStatus || ''}`.trim()
         const statusHint = `${task.statusHint || ''}`.trim()
+        // "磁力任务下载中" 由右下角 statusRightText 显示，左下角不再重复
         const engineConnectingHints = [
-          'task.status-waiting',
-          'task.status-magnet-downloading'
+          'task.status-waiting'
         ]
         const hintConnectingHints = [
           'task.waiting-download-data',
@@ -237,6 +244,11 @@
       },
       statusRightText () {
         const task = this.task || {}
+        // 磁力任务右下角直接显示速度信息（与普通卡片一致），
+        // 不再展示 "磁力任务下载中" 等引擎透传的状态提示
+        if (isMagnetTask(task)) {
+          return ''
+        }
         const raw = `${task.statusRightText || ''}`.trim()
         if (!raw) {
           return ''
@@ -470,11 +482,10 @@
   min-height: 0.875rem;
   text-align: left;
 
-  // 确保任务大小信息不会折叠
+  // 进度文字仅保证不换行，不进入省略模式：右边 speed-info 列还有空余空间时
+  // 不应在本列固定宽度内提前截断成 "12.3 MB / 45.6 MB …"
   & > div {
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     min-width: 0; // 允许flex收缩但保持内容可见
   }
 

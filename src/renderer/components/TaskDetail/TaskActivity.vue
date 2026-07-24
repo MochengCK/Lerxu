@@ -6,13 +6,31 @@
     :label-width="formLabelWidth"
     v-if="task"
   >
-    <div class="graphic-box" ref="graphicBox">
-      <mo-task-graphic
-        :outerWidth="graphicWidth"
-        :bitfield="task.bitfield"
-        :downloadSpeed="task.downloadSpeed"
-        :pieceLength="task.pieceLength"
-        v-if="graphicWidth > 0"
+    <div class="graphic-wrap" ref="graphicWrap">
+      <div
+        class="graphic-box"
+        ref="graphicBox"
+        :class="{ 'is-dragging': isDragging }"
+        @mousedown="onGraphicMouseDown"
+        @scroll="onGraphicScroll"
+      >
+        <div class="graphic-scroll-inner" ref="graphicInner">
+          <mo-task-graphic
+            :outerWidth="graphicWidth"
+            :bitfield="task.bitfield"
+            :downloadSpeed="task.downloadSpeed"
+            :pieceLength="task.pieceLength"
+            v-if="graphicWidth > 0"
+          />
+        </div>
+      </div>
+      <div
+        class="graphic-fade graphic-fade--top"
+        v-show="showTopFade"
+      />
+      <div
+        class="graphic-fade graphic-fade--bottom"
+        v-show="showBottomFade"
       />
     </div>
     <el-form-item :label="`${$t('task.task-progress-info')}: `">
@@ -150,7 +168,16 @@
         // 记录开始采样时的已下载量，用于计算增量
         initialCompletedLength: 0,
         downloadStartTime: null,
-        downloadEndTime: null
+        downloadEndTime: null,
+        // 拖拽滚动状态
+        isDragging: false,
+        dragStartY: 0,
+        dragStartScrollTop: 0,
+        // 渐变显示状态
+        showTopFade: false,
+        showBottomFade: false,
+        graphicMaxRows: 6,
+        graphicRafId: null
       }
     },
     computed: {
@@ -303,6 +330,16 @@
             this.downloadEndTime = null
           }
         }
+      },
+      graphicWidth: {
+        handler () {
+          this.$nextTick(() => this.updateGraphicFadeState())
+        }
+      },
+      'task.bitfield': {
+        handler () {
+          this.$nextTick(() => this.updateGraphicFadeState())
+        }
       }
     },
     mounted () {
@@ -315,6 +352,16 @@
         this.downloadStartTime = Date.now()
         this.initialCompletedLength = initLength
       }
+      document.addEventListener('mousemove', this.onGraphicMouseMove)
+      document.addEventListener('mouseup', this.onGraphicMouseUp)
+    },
+    beforeDestroy () {
+      document.removeEventListener('mousemove', this.onGraphicMouseMove)
+      document.removeEventListener('mouseup', this.onGraphicMouseUp)
+      if (this.graphicRafId) {
+        cancelAnimationFrame(this.graphicRafId)
+        this.graphicRafId = null
+      }
     },
     methods: {
       updateGraphicWidth () {
@@ -322,6 +369,7 @@
           return
         }
         this.graphicWidth = this.calcInnerWidth(this.$refs.graphicBox)
+        this.$nextTick(() => this.updateGraphicFadeState())
       },
       calcInnerWidth (ele) {
         if (!ele) {
@@ -333,6 +381,66 @@
         const paddingLeft = parseInt(style.paddingLeft, 10)
         const paddingRight = parseInt(style.paddingRight, 10)
         return width - paddingLeft - paddingRight
+      },
+      calcGraphicMaxHeight () {
+        const atomHeight = 10
+        const atomGutter = 3
+        const paddingTop = 8
+        const paddingBottom = 8
+        return this.graphicMaxRows * (atomHeight + atomGutter) - atomGutter + paddingTop + paddingBottom
+      },
+      updateGraphicFadeState () {
+        try {
+          const box = this.$refs.graphicBox
+          if (!box) return
+          const scrollH = box.scrollHeight || 0
+          const clientH = box.clientHeight || 0
+          const hasOverflow = scrollH > clientH + 2
+          if (!hasOverflow) {
+            this.showTopFade = false
+            this.showBottomFade = false
+            return
+          }
+          const scrollTop = box.scrollTop || 0
+          this.showTopFade = scrollTop > 2
+          const atBottom = scrollTop + clientH >= scrollH - 2
+          this.showBottomFade = !atBottom
+        } catch (_) {
+          this.showTopFade = false
+          this.showBottomFade = false
+        }
+      },
+      onGraphicScroll () {
+        if (this.graphicRafId) return
+        this.graphicRafId = requestAnimationFrame(() => {
+          this.graphicRafId = null
+          this.updateGraphicFadeState()
+        })
+      },
+      onGraphicMouseDown (e) {
+        try {
+          const box = this.$refs.graphicBox
+          if (!box) return
+          const scrollH = box.scrollHeight || 0
+          const clientH = box.clientHeight || 0
+          if (scrollH <= clientH + 2) return
+          this.isDragging = true
+          this.dragStartY = e.clientY
+          this.dragStartScrollTop = box.scrollTop || 0
+          e.preventDefault()
+        } catch (_) {}
+      },
+      onGraphicMouseMove (e) {
+        if (!this.isDragging) return
+        try {
+          const box = this.$refs.graphicBox
+          if (!box) return
+          const deltaY = e.clientY - this.dragStartY
+          box.scrollTop = this.dragStartScrollTop - deltaY
+        } catch (_) {}
+      },
+      onGraphicMouseUp () {
+        this.isDragging = false
       },
       resetSpeedSamples () {
         const gid = this.task && this.task.gid ? `${this.task.gid}` : ''
@@ -359,5 +467,111 @@
   margin-left: 0.5rem;
   color: #909399;
   font-size: 0.85em;
+}
+
+.mo-task-activity .graphic-wrap {
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+.mo-task-activity .graphic-box {
+  max-height: 110px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  margin-bottom: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+
+  &.is-dragging {
+    cursor: grabbing;
+  }
+
+  .graphic-scroll-inner {
+    font-size: 0;
+    line-height: 0;
+  }
+
+  & > svg {
+    display: block;
+    margin: 0 auto;
+  }
+}
+
+.mo-task-activity .graphic-box::-webkit-scrollbar {
+  width: 6px;
+}
+
+.mo-task-activity .graphic-box::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mo-task-activity .graphic-box::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+.mo-task-activity .graphic-box::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.theme-dark .mo-task-activity .graphic-box::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.theme-dark .mo-task-activity .graphic-box::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.theme-dark .mo-task-activity .graphic-box {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.mo-task-activity .graphic-fade {
+  position: absolute;
+  left: 0;
+  right: 6px;
+  height: 22px;
+  pointer-events: none;
+  z-index: 2;
+
+  &--top {
+    top: 0;
+  }
+
+  &--bottom {
+    bottom: 0;
+  }
+}
+
+.theme-light .mo-task-activity .graphic-fade--top {
+  background: linear-gradient(to bottom, #ffffff 0%, rgba(255, 255, 255, 0) 100%);
+}
+.theme-light .mo-task-activity .graphic-fade--bottom {
+  background: linear-gradient(to top, #ffffff 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.theme-dark .mo-task-activity .graphic-fade--top {
+  background: linear-gradient(to bottom, #343434 0%, rgba(52, 52, 52, 0) 100%);
+}
+.theme-dark .mo-task-activity .graphic-fade--bottom {
+  background: linear-gradient(to top, #343434 0%, rgba(52, 52, 52, 0) 100%);
+}
+
+.task-detail-default-transparent.theme-light .mo-task-activity .graphic-fade--top {
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 100%);
+}
+.task-detail-default-transparent.theme-light .mo-task-activity .graphic-fade--bottom {
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.task-detail-default-transparent.theme-dark .mo-task-activity .graphic-fade--top {
+  background: linear-gradient(to bottom, rgba(52, 52, 52, 0.85) 0%, rgba(52, 52, 52, 0) 100%);
+}
+.task-detail-default-transparent.theme-dark .mo-task-activity .graphic-fade--bottom {
+  background: linear-gradient(to top, rgba(52, 52, 52, 0.85) 0%, rgba(52, 52, 52, 0) 100%);
 }
 </style>

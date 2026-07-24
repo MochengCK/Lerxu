@@ -16,8 +16,8 @@
 
   import { checkTaskIsBT, getTaskName, getTaskUri, isMagnetTask } from '@shared/utils'
   import { TASK_STATUS } from '@shared/constants'
-  import { spawn, spawnSync } from 'node:child_process'
-  import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync } from 'node:fs'
+  import { spawn, spawnSync, execSync } from 'node:child_process'
+  import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync, copyFileSync } from 'node:fs'
   import { dirname, basename, extname, resolve, isAbsolute } from 'node:path'
   import {
     autoCategorizeDownloadedFile,
@@ -116,8 +116,17 @@
         } catch (_) {}
         try {
           renameSync(from, to)
-        } catch (_) {
-          return false
+        } catch (err) {
+          if (err && err.code === 'EXDEV') {
+            try {
+              copyFileSync(from, to)
+              unlinkSync(from)
+            } catch (_) {
+              return false
+            }
+          } else {
+            return false
+          }
         }
         if (st) {
           try {
@@ -807,6 +816,14 @@
           .replace(/(?:[._-]|\s+|\()?(video\s*stream|audio\s*stream|videostream|audiostream|video|audio|视频流|音频流|视频|音频)\)?$/i, '')
           .trim()
       },
+      // 去掉 stem 末尾的分P序号后缀（如 "标题_1" -> "标题"），
+      // 用于合并产物的最终命名，避免重复下载时产物叫 "标题_1.mp4" 而非 "标题.mp4"。
+      // 配对用的 stem 仍保留序号（在 collectExtensionDashParts 中）。
+      stripDashSequenceSuffix (stem) {
+        const s = stem ? `${stem}` : ''
+        if (!s) return ''
+        return s.replace(/_[0-9]+$/, '').trim()
+      },
       getDashExtFromFilename (filename) {
         const name = filename ? `${filename}` : ''
         const lower = name.toLowerCase()
@@ -845,6 +862,7 @@
           for (const e0 of entries) {
             const e = e0 ? `${e0}` : ''
             if (!e || e.toLowerCase().endsWith('.aria2')) continue
+            if (e.startsWith('.') && e.includes('.linkcore-merging-')) continue
             const pendingBySuffix = !!(downloadingFileSuffix && e.endsWith(downloadingFileSuffix))
             const eNoSuffix = this.stripDownloadingSuffixFromFilename(e, downloadingFileSuffix)
             const ext = this.getDashExtFromFilename(eNoSuffix)
@@ -859,11 +877,14 @@
             } catch (_) {
               size = 0
             }
+            const nameNoExt = eNoSuffix.length > ext.length + 1 ? eNoSuffix.slice(0, eNoSuffix.length - ext.length - 1) : ''
+            const isLikelyPart = !!(nameNoExt && nameNoExt !== s)
             parts.push({
               diskPath,
               ext,
               size,
-              pending: pendingBySuffix || pendingByAria2
+              pending: pendingBySuffix || pendingByAria2,
+              isLikelyPart
             })
           }
 
@@ -1151,14 +1172,55 @@
         }
       },
       getDashMergeOutputPath (dir, stem, inputPaths = []) {
-        const basePath = resolve(dir, `${stem}.mp4`)
         const inputs = new Set((inputPaths || []).filter(Boolean).map(path => resolve(path)))
-        if (!inputs.has(basePath) && !existsSync(basePath)) {
+        for (let i = 0; i < 1000; i++) {
+          const rand = Math.random().toString(36).slice(2, 10)
+          const candidate = resolve(dir, `.linkcore-merging-${rand}.mp4`)
+          if (!inputs.has(candidate) && !existsSync(candidate)) {
+            return candidate
+          }
+        }
+        const fallback = resolve(dir, `.linkcore-merging-${Date.now()}.mp4`)
+        return fallback
+      },
+      forceDeleteFileSync (filePath) {
+        if (!filePath) return false
+        let full = ''
+        try { full = resolve(filePath) } catch (_) { full = `${filePath}` }
+        if (!full) return false
+        for (let attempt = 0; attempt < 10; attempt++) {
+          try {
+            if (existsSync(full)) {
+              unlinkSync(full)
+            }
+            if (!existsSync(full)) return true
+          } catch (_) {
+            try {
+              execSync(`rm -f "${full.replace(/"/g, '\\"')}"`, { stdio: 'ignore' })
+            } catch (_) {}
+          }
+          if (!existsSync(full)) return true
+          if (attempt < 9) {
+            try { const end = Date.now() + 80; while (Date.now() < end); } catch (_) {}
+          }
+        }
+        return !existsSync(full)
+      },
+      generateUniqueFilePath (dir, stem, ext, pathsToIgnore = []) {
+        const pathExists = (candidate) => {
+          try {
+            return existsSync(resolve(candidate))
+          } catch (_) {
+            return true
+          }
+        }
+        const basePath = resolve(dir, `${stem}${ext}`)
+        if (!pathExists(basePath)) {
           return basePath
         }
-        for (let index = 1; index < 1000; index++) {
-          const candidate = resolve(dir, `${stem} (${index}).mp4`)
-          if (!inputs.has(candidate) && !existsSync(candidate)) {
+        for (let index = 1; index < 10000; index++) {
+          const candidate = resolve(dir, `${stem} (${index})${ext}`)
+          if (!pathExists(candidate)) {
             return candidate
           }
         }
@@ -1220,7 +1282,8 @@
             const fallbackNotifyPath = finalPath || ''
             return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
           }
-          const outputPath = this.getDashMergeOutputPath(dir, base, [videoPath, audioPath])
+          const outputBase = this.stripDashSequenceSuffix(base)
+          const outputPath = this.getDashMergeOutputPath(dir, outputBase, [videoPath, audioPath])
           if (!outputPath) {
             return { isBilibiliPart: true, mergedPath: '' }
           }
@@ -1258,7 +1321,8 @@
         }
 
         const outputDir = dirname(videoPath || finalPath || rootDir || dir)
-        const outputPath = this.getDashMergeOutputPath(outputDir, base, [videoPath, audioPath])
+        const outputBase = this.stripDashSequenceSuffix(base)
+        const outputPath = this.getDashMergeOutputPath(outputDir, outputBase, [videoPath, audioPath])
         if (!outputPath) {
           return { isBilibiliPart: true, mergedPath: '' }
         }
@@ -1377,9 +1441,17 @@
             return { isBilibiliPart: true, mergedPath: '' }
           }
 
-          const mp4 = ready.filter(p => p.ext === 'mp4').sort((a, b) => (b.size || 0) - (a.size || 0))
-          const m4a = ready.filter(p => p.ext === 'm4a').sort((a, b) => (b.size || 0) - (a.size || 0))
-          const m4s = ready.filter(p => p.ext === 'm4s').sort((a, b) => (b.size || 0) - (a.size || 0))
+          const sortParts = (arr) => {
+            return [...arr].sort((a, b) => {
+              if (a.isLikelyPart !== b.isLikelyPart) {
+                return a.isLikelyPart ? -1 : 1
+              }
+              return (b.size || 0) - (a.size || 0)
+            })
+          }
+          const mp4 = sortParts(ready.filter(p => p.ext === 'mp4'))
+          const m4a = sortParts(ready.filter(p => p.ext === 'm4a'))
+          const m4s = sortParts(ready.filter(p => p.ext === 'm4s'))
 
           let videoPath = ''
           let audioPath = ''
@@ -1403,7 +1475,8 @@
             return { isBilibiliPart: true, mergedPath: '' }
           }
 
-          const outputPath = this.getDashMergeOutputPath(pair.dir, pair.stem, [videoPath, audioPath])
+          const outputBase = this.stripDashSequenceSuffix(pair.stem)
+          const outputPath = this.getDashMergeOutputPath(pair.dir, outputBase, [videoPath, audioPath])
           if (!outputPath) {
             return { isBilibiliPart: true, mergedPath: '' }
           }
@@ -1467,10 +1540,48 @@
         try {
           const toDelete = new Set()
           const outAbs = outputPath ? resolve(outputPath) : ''
+          const vAbs = videoPath ? resolve(videoPath) : ''
+          const aAbs = audioPath ? resolve(audioPath) : ''
+          const forceUnlink = (p) => {
+            if (!p) return false
+            let full = ''
+            try { full = resolve(p) } catch (_) { full = `${p}` }
+            if (!full) return false
+            if (outAbs && full === outAbs) return false
+            for (let attempt = 0; attempt < 5; attempt++) {
+              try {
+                if (existsSync(full)) {
+                  unlinkSync(full)
+                }
+                if (!existsSync(full)) {
+                  toDelete.delete(full)
+                  toDelete.delete(`${full}.aria2`)
+                  try { addDeletedPath(full) } catch (_) {}
+                  return true
+                }
+              } catch (_) {
+                try {
+                  execSync(`rm -f "${full.replace(/"/g, '\\"')}" "${full.replace(/"/g, '\\"')}.aria2"`, { stdio: 'ignore' })
+                } catch (_) {}
+              }
+              if (attempt < 4) {
+                try {
+                  const end = Date.now() + 80
+                  while (Date.now() < end);
+                } catch (_) {}
+              }
+            }
+            if (!existsSync(full)) {
+              try { addDeletedPath(full) } catch (_) {}
+            }
+            return !existsSync(full)
+          }
           const addCandidate = (p) => {
             if (!p) return
-            const full = resolve(p)
-            if (outAbs && resolve(full) === outAbs) return
+            let full = ''
+            try { full = resolve(p) } catch (_) { full = `${p}` }
+            if (!full) return
+            if (outAbs && full === outAbs) return
             toDelete.add(full)
             toDelete.add(`${full}.aria2`)
           }
@@ -1511,8 +1622,13 @@
                   if (ext) {
                     const stem = this.normalizeDashStemFromFilename(raw)
                     if (stem && stem === base) {
-                      toDelete.add(full)
-                      toDelete.add(`${full}.aria2`)
+                      const nameNoExt = raw.length > ext.length + 1 ? raw.slice(0, raw.length - ext.length - 1) : ''
+                      const isMarkedPart = (nameNoExt && nameNoExt !== stem)
+                      const isKnownInput = (vAbs && full === vAbs) || (aAbs && full === aAbs)
+                      if (isMarkedPart || isKnownInput) {
+                        toDelete.add(full)
+                        toDelete.add(`${full}.aria2`)
+                      }
                     }
                   }
                 }
@@ -1522,23 +1638,47 @@
 
           toDelete.forEach(p => {
             try {
-              if (p && existsSync(p)) {
-                unlinkSync(p)
-                try {
-                  const s = `${p}`
-                  if (!s.toLowerCase().endsWith('.aria2')) {
-                    addDeletedPath(s)
-                  }
-                } catch (_) {}
+              const s = `${p}`
+              if (!s) return
+              if (s.toLowerCase().endsWith('.aria2')) {
+                try { if (existsSync(s)) unlinkSync(s) } catch (_) {
+                  try { execSync(`rm -f "${s.replace(/"/g, '\\"')}"`, { stdio: 'ignore' }) } catch (_) {}
+                }
+                return
+              }
+              const ok = forceUnlink(s)
+              if (ok) {
+                try { addDeletedPath(s) } catch (_) {}
               }
             } catch (_) {}
           })
         } catch (_) {}
 
         try {
-          const outAbs = finalOutputPath ? resolve(finalOutputPath) : ''
+          const outAbs2 = finalOutputPath ? resolve(finalOutputPath) : ''
           const dirFromTask = task && task.dir ? `${task.dir}` : ''
           const baseDir = dirFromTask || (finalOutputPath ? dirname(finalOutputPath) : '')
+          const strongUnlink = (p) => {
+            if (!p) return
+            let full = ''
+            try { full = resolve(p) } catch (_) { full = `${p}` }
+            if (!full) return
+            if (outAbs2 && full === outAbs2) return
+            for (let attempt = 0; attempt < 5; attempt++) {
+              try {
+                if (existsSync(full)) unlinkSync(full)
+                if (!existsSync(full)) {
+                  try { addDeletedPath(full) } catch (_) {}
+                  return
+                }
+              } catch (_) {
+                try { execSync(`rm -f "${full.replace(/"/g, '\\"')}"`, { stdio: 'ignore' }) } catch (_) {}
+              }
+              if (attempt < 4) {
+                try { const end = Date.now() + 80; while (Date.now() < end); } catch (_) {}
+              }
+            }
+          }
           if (task && Array.isArray(task.files)) {
             task.files.forEach(file => {
               try {
@@ -1547,21 +1687,12 @@
                   return
                 }
                 const full = isAbsolute(raw) ? resolve(raw) : resolve(baseDir, raw)
-                if (outAbs && resolve(full) === outAbs) {
+                if (outAbs2 && full === outAbs2) {
                   return
                 }
-                if (existsSync(full)) {
-                  unlinkSync(full)
-                  try {
-                    addDeletedPath(full)
-                  } catch (_) {}
-                }
+                strongUnlink(full)
                 const aria2Path = `${full}.aria2`
-                try {
-                  if (existsSync(aria2Path)) {
-                    unlinkSync(aria2Path)
-                  }
-                } catch (_) {}
+                strongUnlink(aria2Path)
               } catch (_) {}
             })
           }
@@ -1587,76 +1718,168 @@
               }
             }
           } catch (_) {}
-          if (task && task.name) {
+          if (!titleBase && task && task.name) {
             let n = basename(`${task.name}`)
             n = n.replace(/\.[^.]+$/i, '')
-            n = n.replace(/_video$/i, '')
+            n = n.replace(/(?:[._-]|\s+|\()?(?:video\s*stream|audio\s*stream|videostream|audiostream|video|audio|视频流|音频流|视频|音频)\)?$/i, '')
+            n = n.replace(/\s+\(\d+\)$/, '')
+            n = n.replace(/-\d+$/, '')
+            n = n.replace(/_[0-9]+$/i, '')
+            n = n.trim()
             if (n) {
               titleBase = n
             }
           }
+          if (!titleBase && info && info.base) {
+            titleBase = `${info.base}`.replace(/(?:[._-]|\s+|\()?(?:video\s*stream|audio\s*stream|videostream|audiostream|video|audio|视频流|音频流|视频|音频)\)?$/i, '').replace(/_[0-9]+$/i, '').trim()
+          }
           if (dirOut && titleBase) {
-            const candidate = resolve(dirOut, `${titleBase}${targetExt}`)
-            if (targetExt === '.mp4') {
-              if (resolve(candidate) !== resolve(outputPath)) {
-                let renamed = false
-                if (existsSync(candidate)) {
-                  finalOutputPath = candidate
-                  renamed = true
-                } else {
-                  const ok = this.renamePreserveTimes(outputPath, candidate)
-                  if (ok) {
-                    finalOutputPath = candidate
-                    renamed = true
-                  }
-                }
-                if (!renamed) {
-                  finalOutputPath = outputPath
-                }
-              } else {
-                finalOutputPath = candidate
-              }
-            } else {
-              if (existsSync(candidate)) {
-                finalOutputPath = candidate
-              } else {
+            const vAbs = videoPath ? resolve(videoPath) : ''
+            const aAbs = audioPath ? resolve(audioPath) : ''
+            const outAbs3 = outputPath ? resolve(outputPath) : ''
+
+            const isKnownSourcePath = (p) => {
+              if (!p) return false
+              let tp = ''
+              try { tp = resolve(p) } catch (_) { tp = `${p}` }
+              if (vAbs && tp === vAbs) return true
+              if (aAbs && tp === aAbs) return true
+              if (deletedCandidates.has(tp)) return true
+              if (deletedFiles.has(tp)) return true
+              return false
+            }
+
+            const waitMs = (ms) => {
+              try { const end = Date.now() + ms; while (Date.now() < end); } catch (_) {}
+            }
+
+            const aggressiveDelete = (p) => {
+              if (!p) return true
+              let full = ''
+              try { full = resolve(p) } catch (_) { full = `${p}` }
+              if (!full) return true
+              if (!existsSync(full)) return true
+              if (outAbs3 && full === outAbs3) return true
+              let deleted = false
+              for (let attempt = 0; attempt < 15; attempt++) {
                 try {
-                  const ffmpegPath = this.resolveFfmpegPath()
-                  if (ffmpegPath) {
-                    const cmd = ffmpegPath || ''
-                    const args = [
-                      '-y',
-                      '-hide_banner',
-                      '-loglevel', 'error',
-                      '-i', outputPath,
-                      '-c', 'copy',
-                      candidate
-                    ]
-                    const result = spawnSync(cmd, args, { windowsHide: true })
-                    if (result && result.status === 0 && existsSync(candidate)) {
-                      finalOutputPath = candidate
+                  if (existsSync(full)) {
+                    try { unlinkSync(full) } catch (_) {
+                      try { execSync(`rm -f "${full.replace(/"/g, '\\"')}"`, { stdio: 'ignore' }) } catch (_) {}
                     }
                   }
+                  if (!existsSync(full)) {
+                    deleted = true
+                    break
+                  }
                 } catch (_) {}
+                waitMs(100)
+              }
+              if (deleted) {
+                try { addDeletedPath(full) } catch (_) {}
+              }
+              return !existsSync(full)
+            }
+
+            aggressiveDelete(vAbs)
+            aggressiveDelete(aAbs)
+            waitMs(300)
+
+            try {
+              const scanDir = info && info.dir ? `${info.dir}` : dirOut
+              if (scanDir) {
+                let scanEntries = []
+                try { scanEntries = readdirSync(scanDir) || [] } catch (_) { scanEntries = [] }
+                const scanBase = titleBase
+                const scanSuffix = deletedSuffix
+                const m4sBase = info && info.type === 'm4s' && info.base ? `${info.base}` : ''
+                for (const se of scanEntries) {
+                  const sen = se ? `${se}` : ''
+                  if (!sen || (sen.startsWith('.') && sen.includes('.linkcore-merging-'))) continue
+                  const raw = scanSuffix ? this.stripDownloadingSuffixFromFilename(sen, scanSuffix) : sen
+                  const ext = this.getDashExtFromFilename(raw)
+                  if (!ext) continue
+                  const stem = this.normalizeDashStemFromFilename(raw)
+                  if (!stem) continue
+                  let shouldDelete = false
+                  if (stem === scanBase) {
+                    shouldDelete = true
+                  } else if (m4sBase && /\.m4s$/i.test(raw)) {
+                    const plainRaw = this.stripDuplicateNumberBeforeExtension(raw)
+                    if (plainRaw.startsWith(`${m4sBase}-`) || plainRaw === `${m4sBase}.m4s`) {
+                      shouldDelete = true
+                    }
+                  }
+                  if (shouldDelete) {
+                    const fullS = resolve(scanDir, sen)
+                    if (outAbs3 && fullS === outAbs3) continue
+                    const nameNoExtS = raw.length > ext.length + 1 ? raw.slice(0, raw.length - ext.length - 1) : ''
+                    const isMarked = !!(nameNoExtS && nameNoExtS !== stem)
+                    if (isMarked || isKnownSourcePath(fullS) || (m4sBase && /\.m4s$/i.test(raw))) {
+                      aggressiveDelete(fullS)
+                      aggressiveDelete(`${fullS}.aria2`)
+                    }
+                  }
+                }
+              }
+            } catch (_) {}
+
+            waitMs(200)
+
+            const candidate = resolve(dirOut, `${titleBase}${targetExt}`)
+            if (existsSync(candidate) && isKnownSourcePath(candidate)) {
+              aggressiveDelete(candidate)
+            }
+
+            waitMs(100)
+
+            const finalTarget = this.generateUniqueFilePath(dirOut, titleBase, targetExt)
+            if (finalTarget && resolve(finalTarget) !== resolve(outputPath)) {
+              if (targetExt === '.mp4') {
+                if (existsSync(finalTarget) && isKnownSourcePath(finalTarget)) {
+                  aggressiveDelete(finalTarget)
+                  waitMs(100)
+                }
+                const ok = this.renamePreserveTimes(outputPath, finalTarget)
+                if (ok) {
+                  finalOutputPath = finalTarget
+                } else {
+                  aggressiveDelete(finalTarget)
+                  waitMs(100)
+                  const ok2 = this.renamePreserveTimes(outputPath, finalTarget)
+                  if (ok2) {
+                    finalOutputPath = finalTarget
+                  }
+                }
+              } else {
+                if (existsSync(finalTarget)) {
+                  finalOutputPath = finalTarget
+                } else {
+                  try {
+                    const ffmpegPath = this.resolveFfmpegPath()
+                    if (ffmpegPath) {
+                      const result = spawnSync(ffmpegPath, [
+                        '-y',
+                        '-hide_banner',
+                        '-loglevel', 'error',
+                        '-i', outputPath,
+                        '-c', 'copy',
+                        finalTarget
+                      ], { windowsHide: true })
+                      if (result && result.status === 0 && existsSync(finalTarget)) {
+                        finalOutputPath = finalTarget
+                      }
+                    }
+                  } catch (_) {}
+                }
               }
             }
-          }
-          try {
             if (outputPath && finalOutputPath && resolve(outputPath) !== resolve(finalOutputPath)) {
               const orig = resolve(outputPath)
-              try {
-                if (existsSync(orig)) {
-                  unlinkSync(orig)
-                }
-              } catch (_) {}
-              const origAria2 = `${orig}.aria2`
-              try {
-                if (existsSync(origAria2)) {
-                  unlinkSync(origAria2)
-                }
-              } catch (_) {}
+              try { if (existsSync(orig)) unlinkSync(orig) } catch (_) {}
+              try { const a2 = `${orig}.aria2`; if (existsSync(a2)) unlinkSync(a2) } catch (_) {}
             }
-          } catch (_) {}
+          }
         } catch (_) {}
 
         try {
@@ -1703,11 +1926,38 @@
           }
           const cfg = this.$store.state.preference.config || {}
           const targetBase = info && info.base ? `${info.base}` : ''
+          const targetType = info && info.type ? `${info.type}` : ''
           const targetDir = info && info.dir ? this.deriveBilibiliDashRootDir(`${info.dir}`, cfg) : ''
+          const looksLikeDashPartFile = (filename) => {
+            const n = filename ? `${filename}` : ''
+            if (!n) return false
+            const lower = n.toLowerCase()
+            if (lower.endsWith('.m4s')) return true
+            const withoutSuffix = cfg && cfg.downloadingFileSuffix && n.endsWith(cfg.downloadingFileSuffix)
+              ? n.slice(0, -cfg.downloadingFileSuffix.length)
+              : n
+            const base = basename(withoutSuffix)
+            if (/(?:[._-]|\s+|\()?(?:video\s*stream|audio\s*stream|videostream|audiostream|video|audio|视频流|音频流|视频|音频)(?:\))?(?:\.[^.]+)?$/i.test(base)) {
+              return true
+            }
+            return false
+          }
+          const matchesM4sGroup = (normalizedName) => {
+            const n = normalizedName ? `${normalizedName}` : ''
+            if (!n || !targetBase) return false
+            if (!/\.m4s$/i.test(n)) return false
+            const plainName = this.stripDuplicateNumberBeforeExtension(n)
+            return plainName.startsWith(`${targetBase}-`) || plainName === `${targetBase}.m4s`
+          }
           const memberGids = (taskHistory.getAllHistory() || []).filter(item => {
             try {
               if (!item || !item.gid) return false
               if (`${item.gid}` === gid) return true
+              if (item.dashMerged) return false
+              const itemStatus = `${item.status || ''}`
+              if (itemStatus === TASK_STATUS.COMPLETE && !looksLikeDashPartFile(getTaskFullPath(item) || '')) {
+                return false
+              }
               const full = getTaskFullPath(item)
               if (!full || !targetBase || !targetDir) return false
               const itemRoot = this.deriveBilibiliDashRootDir(dirname(full), cfg)
@@ -1715,7 +1965,17 @@
               const suffix = cfg.downloadingFileSuffix || ''
               const raw = basename(full)
               const normalized = suffix ? this.stripDownloadingSuffixFromFilename(raw, suffix) : raw
-              return this.normalizeDashStemFromFilename(normalized) === targetBase
+              let stemMatch = false
+              if (targetType === 'm4s') {
+                stemMatch = matchesM4sGroup(normalized) || this.normalizeDashStemFromFilename(normalized) === targetBase
+              } else {
+                stemMatch = this.normalizeDashStemFromFilename(normalized) === targetBase
+              }
+              if (!stemMatch) return false
+              if (!looksLikeDashPartFile(normalized) && existsSync(full)) {
+                return false
+              }
+              return true
             } catch (_) {
               return false
             }
@@ -1724,9 +1984,17 @@
             memberGids.push(gid)
           }
           taskHistory.consolidateTasks(gid, memberGids, patch, task)
-          await Promise.all(memberGids.map(memberGid => {
-            return api.removeDownloadResult({ gid: memberGid }).catch(() => {})
-          }))
+          for (const memberGid of memberGids) {
+            if (!memberGid || memberGid === gid) continue
+            try { api.removeTask({ gid: memberGid }).catch(() => {}) } catch (_) {}
+            try { api.forceRemoveTask({ gid: memberGid }).catch(() => {}) } catch (_) {}
+            try { api.removeTaskRecord({ gid: memberGid }).catch(() => {}) } catch (_) {}
+            try { api.removeDownloadResult({ gid: memberGid }).catch(() => {}) } catch (_) {}
+            try { taskHistory.removeTask(memberGid) } catch (_) {}
+          }
+          try {
+            this.$store.dispatch('task/clearTaskCachesForGids', memberGids.filter(mg => mg && mg !== gid))
+          } catch (_) {}
         } catch (_) {}
 
         try {
@@ -1749,7 +2017,7 @@
             } catch (_) {
               extensionAggressive = false
             }
-            const matchesExtensionDashStem = (t, targetBase, targetDir, targetRootDir) => {
+            const matchesExtensionDashStem = (t, targetBase, targetDir, targetRootDir, targetType) => {
               try {
                 if (!t || !t.gid) return false
                 if (!targetBase || !targetDir) return false
@@ -1772,6 +2040,12 @@
                 const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
                 const file = this.stripDuplicateNumberBeforeExtension(rawFile)
                 const normalized = suffix ? this.stripDownloadingSuffixFromFilename(file, suffix) : file
+                if (`${targetType || ''}` === 'm4s' && /\.m4s$/i.test(normalized)) {
+                  const plainName = this.stripDuplicateNumberBeforeExtension(normalized)
+                  if (plainName.startsWith(`${targetBase}-`) || plainName === `${targetBase}.m4s`) {
+                    return true
+                  }
+                }
                 const stem = this.normalizeDashStemFromFilename(normalized)
                 return !!(stem && stem === targetBase)
               } catch (_) {
@@ -1819,6 +2093,7 @@
             }
             const targetInfo = info && typeof info === 'object' ? info : null
             const targetBase = targetInfo && targetInfo.base ? `${targetInfo.base}` : ''
+            const targetType = targetInfo && targetInfo.type ? `${targetInfo.type}` : ''
             const targetDir = targetInfo && targetInfo.dir ? `${targetInfo.dir}` : ''
             const targetRootDir = targetDir ? this.deriveBilibiliDashRootDir(targetDir, cfg) : ''
             historyAll.forEach(item => {
@@ -1829,13 +2104,26 @@
                 if (item.gid === gid) {
                   return
                 }
-                if (extensionAggressive && matchesExtensionDashStem(item, targetBase, targetDir, targetRootDir)) {
-                  try {
-                    api.removeDownloadResult({ gid: item.gid }).catch(() => {})
-                  } catch (_) {}
-                  try {
-                    taskHistory.removeTask(item.gid)
-                  } catch (_) {}
+                if (item.dashMerged) {
+                  return
+                }
+                if (extensionAggressive && matchesExtensionDashStem(item, targetBase, targetDir, targetRootDir, targetType)) {
+                  const itemFull = getTaskFullPath(item) || ''
+                  const itemBase = itemFull ? basename(itemFull) : ''
+                  const itemNormalized = cfg.downloadingFileSuffix && itemBase.endsWith(cfg.downloadingFileSuffix)
+                    ? this.stripDownloadingSuffixFromFilename(itemBase, cfg.downloadingFileSuffix)
+                    : itemBase
+                  const isCleanFinal = !!itemNormalized && !!/\.mp4$/i.test(itemNormalized) &&
+                    !/(?:[._-]|\s+|\()?(?:video\s*stream|audio\s*stream|videostream|audiostream|video|audio|视频流|音频流|视频|音频)\)?$/i.test(this.normalizeDashStemFromFilename(itemNormalized) || '') &&
+                    !/\.m4s$/i.test(itemNormalized)
+                  if (!isCleanFinal || !existsSync(itemFull)) {
+                    try {
+                      api.removeDownloadResult({ gid: item.gid }).catch(() => {})
+                    } catch (_) {}
+                    try {
+                      taskHistory.removeTask(item.gid)
+                    } catch (_) {}
+                  }
                   return
                 }
                 if (matchesDeletedFiles(item)) {
@@ -1887,6 +2175,11 @@
               } catch (_) {}
             })
           }
+        } catch (_) {}
+
+        try {
+          this.$store.dispatch('task/fetchList').catch(() => {})
+          this.$store.dispatch('app/fetchGlobalStat').catch(() => {})
         } catch (_) {}
 
         return finalOutputPath
