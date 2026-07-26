@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { accessSync, chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, writeFile, unlink } from 'node:fs'
+import { accessSync, chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, readFile, writeFile, unlink } from 'node:fs'
 import { resolve } from 'node:path'
 import is from 'electron-is'
 
@@ -41,6 +41,11 @@ export default class Engine {
     if (this.instance) {
       return
     }
+
+    // 启动前清理可能存在的孤儿引擎进程。上次退出若异常（如崩溃、
+    // 强制结束主进程），PID 文件会残留且对应进程仍存活，此时若直接
+    // spawn 新进程会导致两个引擎并存，旧进程继续下载、占用端口。
+    await this.killStaleProcess(pidPath)
 
     const originBinPath = this.getEngineBinPath()
     const binPath = this.prepareEngineBinary(originBinPath)
@@ -98,6 +103,60 @@ export default class Engine {
         logger.error('[Motrix] engine stderr===>', data.toString())
       })
     }
+
+    // 注册进程级保底清理。Node.js 的 spawn 默认不会在父进程退出时
+    // 自动杀子进程，子进程会被 init 接管成为孤儿继续运行。
+    // process.on('exit') 是主进程退出的最后机会，同步执行，必须在此
+    // 同步发信号杀掉引擎，否则任何异步路径（will-quit/setImmediate/
+    // setTimeout）都可能在主进程退出前没机会执行。
+    this.registerExitHandlers()
+  }
+
+  // 注册进程级退出处理器，确保任何退出路径下引擎都会被清理：
+  // 1. process.on('exit') — 主进程退出的最后机会，同步执行
+  // 2. process.on('SIGTERM'/'SIGINT') — 外部信号（kill、Ctrl-C、系统关机）
+  // 这些处理器是保底机制，与 Application.quit() 的优雅关闭路径互补。
+  // 如果优雅关闭已经杀掉引擎（this.instance = null），这里不会重复操作。
+  registerExitHandlers () {
+    if (this.exitHandlersRegistered) {
+      return
+    }
+    this.exitHandlersRegistered = true
+
+    // 主进程退出的最后机会。只能同步操作。
+    // 无论之前是否调用过 engine.stop()，只要 this.instance 还在
+    // （说明优雅关闭没完成），就同步发 SIGKILL 强制终止。
+    const onExit = () => {
+      if (this.instance) {
+        const inst = this.instance
+        this.instance = null
+        try {
+          inst.kill('SIGKILL')
+        } catch (_) {}
+      }
+    }
+    process.on('exit', onExit)
+
+    // 外部信号：kill <pid>、Ctrl-C（开发模式）、系统关机/注销。
+    // 这些信号默认不会触发 Electron 的 before-quit/will-quit 事件，
+    // 不注册的话引擎会直接变孤儿。
+    const onSignal = (signal) => {
+      logger.warn(`[Motrix] Received ${signal}, stopping engine before exit`)
+      // 同步发 SIGTERM，给 aria2 保存 session 的机会
+      this.stop(1500).finally(() => {
+        // 信号处理后立即退出（不能阻塞太久，系统关机有超时）
+        process.exit(0)
+      })
+    }
+    process.on('SIGTERM', () => onSignal('SIGTERM'))
+    process.on('SIGINT', () => onSignal('SIGINT'))
+
+    // Electron 主进程未捕获异常时触发，保底杀引擎
+    process.on('uncaughtException', (err) => {
+      logger.error('[Motrix] Uncaught exception:', err && err.message)
+      onExit()
+      process.exit(1)
+    })
   }
 
   prepareEngineBinary (originBinPath) {
@@ -249,12 +308,60 @@ export default class Engine {
     throw err
   }
 
-  stop () {
+  // 停止引擎子进程。先发 SIGTERM 优雅关闭，超时后 SIGKILL 兜底。
+  // 返回 Promise，resolve 时子进程已退出（或 kill 信号已发出且无法等待）。
+  // 调用方应 await 本方法，确保 app.exit() 前子进程已被清理，否则引擎会
+  // 变成孤儿进程继续占用端口、写 session 文件。
+  stop (timeout = 3000) {
     logger.info('[Motrix] engine.stop.instance')
-    if (this.instance) {
-      this.instance.kill()
-      this.instance = null
+    if (!this.instance) {
+      return Promise.resolve()
     }
+    const instance = this.instance
+    // 立即置空，避免重入时重复 kill / 重复注册监听器
+    this.instance = null
+
+    return new Promise((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (settled) {
+          return
+        }
+        settled = true
+        clearTimeout(killTimer)
+        resolve()
+      }
+
+      // 子进程退出时（无论正常还是被信号杀掉）触发 close 事件
+      instance.once('close', (code, signal) => {
+        logger.info('[Motrix] engine process closed during stop:', code, signal)
+        finish()
+      })
+
+      // 先发 SIGTERM 优雅关闭（aria2 会保存 session）
+      try {
+        instance.kill('SIGTERM')
+      } catch (err) {
+        logger.warn('[Motrix] engine SIGTERM failed:', err && err.message)
+        finish()
+        return
+      }
+
+      // 超时后 SIGKILL 强制终止，防止 aria2 卡死（如磁盘 IO 阻塞、
+      // BT 种子校验）导致 SIGTERM 被忽略、进程永不退出
+      const killTimer = setTimeout(() => {
+        if (!settled) {
+          logger.warn(`[Motrix] engine SIGTERM timeout after ${timeout}ms, sending SIGKILL`)
+          try {
+            instance.kill('SIGKILL')
+          } catch (err) {
+            logger.warn('[Motrix] engine SIGKILL failed:', err && err.message)
+            // 即使 SIGKILL 失败也 resolve，避免阻塞退出流程
+            finish()
+          }
+        }
+      }, timeout)
+    })
   }
 
   writePidFile (pidPath, pid) {
@@ -262,6 +369,71 @@ export default class Engine {
       if (err) {
         logger.error(`[Motrix] Write engine process pid failed: ${err}`)
       }
+    })
+  }
+
+  // 读取 PID 文件并清理可能残留的孤儿引擎进程。
+  // 返回 true 表示清理了一个存活进程，false 表示无残留或已退出。
+  killStaleProcess (pidPath) {
+    return new Promise((resolve) => {
+      readFile(pidPath, 'utf8', (err, data) => {
+        if (err) {
+          // 文件不存在或读不出，无孤儿可清理
+          resolve(false)
+          return
+        }
+        const pid = Number(String(data).trim())
+        if (!Number.isFinite(pid) || pid <= 0) {
+          // PID 无效，清理残留的 pid 文件
+          unlink(pidPath, () => resolve(false))
+          return
+        }
+        // 用 signal 0 探活：不发信号，仅检查进程是否存在
+        let alive = false
+        try {
+          process.kill(pid, 0)
+          alive = true
+        } catch (_) {
+          // ESRCH: 进程不存在；EPERM: 无权限（视为不可清理）
+          alive = false
+        }
+        if (!alive) {
+          unlink(pidPath, () => resolve(false))
+          return
+        }
+        logger.warn(`[Motrix] Found stale engine process pid=${pid}, killing it`)
+        // 先 SIGTERM 优雅关闭，1.5s 后 SIGKILL 兜底
+        try {
+          process.kill(pid, 'SIGTERM')
+        } catch (_) {
+          unlink(pidPath, () => resolve(false))
+          return
+        }
+        const killTimer = setTimeout(() => {
+          try {
+            process.kill(pid, 'SIGKILL')
+          } catch (_) {
+            // ignore
+          }
+        }, 1500)
+        // 等待进程退出（轮询探活，最多 2s）
+        const start = Date.now()
+        const poll = () => {
+          try {
+            process.kill(pid, 0)
+            if (Date.now() - start < 2000) {
+              setTimeout(poll, 100)
+            } else {
+              clearTimeout(killTimer)
+              unlink(pidPath, () => resolve(true))
+            }
+          } catch (_) {
+            clearTimeout(killTimer)
+            unlink(pidPath, () => resolve(true))
+          }
+        }
+        poll()
+      })
     })
   }
 

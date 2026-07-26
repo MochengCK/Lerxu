@@ -207,8 +207,13 @@ const actions = {
     commit('UPDATE_RELEASE_NOTES', releaseNotes)
   },
   fetchBtTracker (_, trackerSource = []) {
-    const { proxy = { enable: false }, useGithubMirror, githubMirrorUrls } = state.config
-    console.log('fetchBtTracker', trackerSource, proxy, { useGithubMirror, githubMirrorUrls })
+    const { proxy = { enable: false } } = state.config
+    // 与 task.js 的 addUri 保持一致的 useGithubMirror 推断逻辑：
+    // 若用户显式设置则尊重，否则由镜像列表非空推断。
+    const githubMirrorUrls = state.config.githubMirrorUrls || state.config['github-mirror-urls'] || []
+    const useGithubMirror = state.config.useGithubMirror !== undefined
+      ? !!state.config.useGithubMirror
+      : githubMirrorUrls.length > 0
     return fetchBtTrackerFromSource(trackerSource, proxy, { useGithubMirror, githubMirrorUrls })
   },
   toggleEngineMode () {

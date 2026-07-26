@@ -182,9 +182,13 @@ export default class Launcher extends EventEmitter {
   handleAppWillQuit () {
     app.on('will-quit', () => {
       logger.info('[Motrix] will-quit')
-      if (global.application) {
-        logger.info('[Motrix] will-quit.application.stop')
-        global.application.stop()
+      // will-quit 是同步事件，不能 await。但 engine.stop() 内部会立即
+      // 同步发送 SIGTERM（Promise 仅用于等待 close 事件），所以即使
+      // 不 await 也能保证信号已发出。此处作为 quit() 路径失败的兜底，
+      // 确保用户通过 Cmd+Q / 系统关机等路径退出时引擎也能被清理。
+      if (global.application && global.application.engine) {
+        logger.info('[Motrix] will-quit.engine.stop')
+        global.application.engine.stop()
       }
     })
   }

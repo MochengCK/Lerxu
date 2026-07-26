@@ -54,7 +54,7 @@
           <span class="subnav-title__text">{{ title }}</span>
         </h4>
       </el-header>
-      <router-view :key="$route.path" name="form" ref="preferenceForm" />
+      <router-view name="form" ref="preferenceForm" />
     </el-container>
 
     <template v-if="showSmallScreenNav">

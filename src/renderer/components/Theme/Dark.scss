@@ -999,7 +999,9 @@
     color: rgba(255, 255, 255, 0.6);
   }
 
-  .add-task-dialog .el-dialog__footer {
+  .add-task-dialog .el-dialog__footer,
+  .update-link-dialog .el-dialog__footer,
+  .task-plan-dialog .el-dialog__footer {
     background-color: transparent;
   }
 

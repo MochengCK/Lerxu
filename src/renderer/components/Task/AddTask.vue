@@ -12,31 +12,39 @@
     @closed="handleClosed"
   >
     <el-form ref="taskForm" label-position="left" :model="form" :rules="rules">
-      <template v-if="taskType === 'uri'">
-        <el-form-item>
-          <div class="add-task-primary-input-wrap">
-            <button type="button" class="add-task-type-floating__close" aria-label="Close" @click="handleClose">
-              <i class="el-icon-close"></i>
-            </button>
-            <div class="add-task-type-floating__bar">
+      <el-form-item>
+        <div class="add-task-primary-input-wrap">
+          <button type="button" class="add-task-type-floating__close" aria-label="Close" @click="handleClose">
+            <i class="el-icon-close"></i>
+          </button>
+          <div class="add-task-type-floating__bar">
+            <div class="task-type-slider" role="group">
+              <div class="task-type-slider-indicator" :style="taskTypeIndicatorStyle"></div>
               <el-radio-group :value="taskType" size="mini" @input="handleTaskTypeInput">
                 <el-radio-button label="uri">{{ $t('task.uri-task') }}</el-radio-button>
                 <el-radio-button label="torrent">{{ $t('task.torrent-task') }}</el-radio-button>
               </el-radio-group>
             </div>
+          </div>
+          <div v-show="taskType === 'uri'" class="add-task-content-pane">
             <el-input
               ref="uri"
               type="textarea"
               auto-complete="off"
-              :autosize="{ minRows: 3, maxRows: 5 }"
+              :autosize="{ minRows: 5, maxRows: 8 }"
+
               :placeholder="$t('task.uri-task-tips')"
               @paste.native="handleUriPaste"
               v-model="form.uris"
             >
             </el-input>
           </div>
-        </el-form-item>
-        <div class="parsed-preview" v-if="parsedTasks.length > 0">
+          <div v-show="taskType === 'torrent'" class="add-task-content-pane">
+            <mo-select-torrent ref="selectTorrent" v-on:change="handleTorrentChange" />
+          </div>
+        </div>
+      </el-form-item>
+      <div class="parsed-preview" v-if="taskType === 'uri' && parsedTasks.length > 0">
           <div class="mo-table-wrapper">
             <el-table
               :data="parsedTasks"
@@ -79,23 +87,6 @@
             </el-table>
           </div>
         </div>
-      </template>
-      <template v-else-if="type === 'torrent'">
-        <el-form-item>
-          <div class="add-task-primary-input-wrap">
-            <button type="button" class="add-task-type-floating__close" aria-label="Close" @click="handleClose">
-              <i class="el-icon-close"></i>
-            </button>
-            <div class="add-task-type-floating__bar">
-              <el-radio-group :value="taskType" size="mini" @input="handleTaskTypeInput">
-                <el-radio-button label="uri">{{ $t('task.uri-task') }}</el-radio-button>
-                <el-radio-button label="torrent">{{ $t('task.torrent-task') }}</el-radio-button>
-              </el-radio-group>
-            </div>
-            <mo-select-torrent ref="selectTorrent" v-on:change="handleTorrentChange" />
-          </div>
-        </el-form-item>
-      </template>
       <el-row :gutter="12">
 
         <el-col :span="24" :xs="24">
@@ -233,22 +224,17 @@
       </div>
   </el-form>
       <div slot="footer" class="dialog-footer">
-        <el-row>
-          <el-col :span="12" :xs="12">
-            <el-checkbox class="chk" v-model="showAdvanced">
-            {{$t('task.show-advanced-options')}}
-          </el-checkbox>
-        </el-col>
-        <el-col :span="12" :xs="12" style="text-align: right;">
-          <el-button
-            type="primary"
-            @click="submitForm('taskForm')"
-          >
-            {{$t('app.submit')}}
-          </el-button>
-        </el-col>
-      </el-row>
-    </div>
+        <el-checkbox class="chk" v-model="showAdvanced">
+          {{$t('task.show-advanced-options')}}
+        </el-checkbox>
+        <el-button
+          type="primary"
+          class="dialog-submit-btn"
+          @click="submitForm('taskForm')"
+        >
+          {{$t('app.submit')}}
+        </el-button>
+      </div>
     <el-dialog
       custom-class="save-advanced-preset-dialog"
       width="400px"
@@ -339,6 +325,12 @@
       },
       taskType () {
         return this.type === 'video' ? ADD_TASK_TYPE.URI : this.type
+      },
+      taskTypeIndicatorStyle () {
+        const idx = this.taskType === 'torrent' ? 1 : 0
+        return {
+          transform: `translateX(${idx * 100}%)`
+        }
       },
       dialogTop () {
         const advancedVisible = this.showAdvanced
@@ -1062,6 +1054,26 @@
 .add-task-primary-input-wrap {
   position: relative;
   padding-top: 38px;
+  padding-bottom: 0;
+
+  .add-task-content-pane {
+    min-height: 136px;
+  }
+
+  .el-textarea__inner,
+  .el-upload-dragger {
+    border-radius: 12px !important;
+    background: transparent !important;
+  }
+
+  .el-textarea__inner {
+    padding-left: 12px;
+    min-height: 144px;
+  }
+}
+
+.add-task-dialog .el-form > .el-form-item:first-child {
+  margin-bottom: 0 !important;
 }
 
 .add-task-type-floating__bar {
@@ -1073,14 +1085,69 @@
   align-items: center;
 }
 
-.add-task-type-floating__bar .el-radio-group {
+.task-type-slider {
+  position: relative;
   display: inline-flex;
-}
-.add-task-type-floating__bar .el-radio-button:first-child .el-radio-button__inner {
-  border-radius: 8px 0 0 8px !important;
-}
-.add-task-type-floating__bar .el-radio-button:last-child .el-radio-button__inner {
-  border-radius: 0 8px 8px 0 !important;
+  align-items: center;
+  padding: 2px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.05);
+
+  .task-type-slider-indicator {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: calc(50% - 2px);
+    height: calc(100% - 4px);
+    background: $--color-primary;
+    border-radius: 8px;
+    transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .el-radio-group {
+    display: flex;
+    width: 100%;
+    position: relative;
+    z-index: 1;
+  }
+
+  .el-radio-button {
+    flex: 1;
+    display: flex;
+    .el-radio-button__inner {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex: 1;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 20px;
+        font-size: 13px;
+        font-weight: 500;
+      background: transparent !important;
+      border: none !important;
+      border-radius: 8px;
+      box-shadow: none !important;
+      color: $--color-text-secondary;
+      transition: color 0.32s ease;
+    }
+
+    .el-radio-button__orig-radio:checked + .el-radio-button__inner {
+      color: #fff;
+      background: transparent !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+    }
+
+    &.is-active .el-radio-button__inner {
+      color: #fff;
+      background: transparent !important;
+      box-shadow: none !important;
+    }
+  }
 }
 
 .add-task-type-floating__close {
@@ -1112,6 +1179,7 @@
 .el-dialog.add-task-dialog {
   max-width: 632px;
   min-width: 380px;
+  border-radius: 16px;
 
   .el-button {
     border-radius: 8px;
@@ -1126,10 +1194,10 @@
     background: rgba(0, 0, 0, 0.5);
   }
 .parsed-preview {
-    margin-top: 12px;
+    margin-top: -18px;
     margin-bottom: 16px;
     .mo-table-wrapper {
-      border: 1px solid #dcdfe6;
+      border: 1px solid $--border-color-base;
       border-radius: 8px;
       box-sizing: border-box;
       padding: 0;
@@ -1220,14 +1288,17 @@
     }
   }
   .el-dialog__footer {
-    padding-top: 0;
-    padding-bottom: 10px;
+    padding: 0;
     background-color: transparent;
-    border-radius: 0 0 5px 5px;
+    border-radius: 0;
   }
   .dialog-footer {
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    padding-left: 20px;
     .chk {
-      float: left;
       line-height: 28px;
       &.el-checkbox {
         & .el-checkbox__input {
@@ -1238,6 +1309,14 @@
         }
       }
     }
+  }
+  .dialog-submit-btn {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+    height: 28px;
+    padding: 0 16px;
+    border-radius: 8px !important;
   }
 }
 
@@ -1254,7 +1333,7 @@
 
 .theme-dark .add-task-dialog .parsed-preview {
   .mo-table-wrapper {
-    border-color: #4c4d4f;
+    border-color: #5f5f5f;
   }
   .el-table.mo-parsed-table {
     th.el-table__cell {
@@ -1265,6 +1344,20 @@
     }
     thead {
       background-color: transparent !important;
+    }
+  }
+}
+
+.theme-dark .task-type-slider {
+  background: rgba(255, 255, 255, 0.06);
+
+  .el-radio-button {
+    .el-radio-button__inner {
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    &.is-active .el-radio-button__inner {
+      color: #fff;
     }
   }
 }

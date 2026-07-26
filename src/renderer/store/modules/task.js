@@ -887,12 +887,13 @@ const actions = {
     const config = rootState.preference.config || {}
     const suffix = config.downloadingFileSuffix
 
-    // GitHub 镜像配置
-    // 如果选择了镜像，则自动启用镜像功能
+    // GitHub 镜像配置：尊重用户显式设置的 useGithubMirror 开关，
+    // 若未显式设置则由镜像列表是否非空推断（保持向后兼容）。
+    // 之前直接用 length 推断会忽略用户"配置镜像但暂时禁用"的意图。
     const githubMirrorUrls = config.githubMirrorUrls || config['github-mirror-urls'] || []
-    const useGithubMirror = githubMirrorUrls.length > 0
-
-    console.log('[GitHub Mirror] Config:', { useGithubMirror, githubMirrorUrls })
+    const useGithubMirror = config.useGithubMirror !== undefined
+      ? !!config.useGithubMirror
+      : githubMirrorUrls.length > 0
 
     const normalizedOptions = options ? { ...options } : {}
 
@@ -907,7 +908,6 @@ const actions = {
         // 如果是 GitHub URL 且启用了镜像，返回镜像 URL 数组
         if (isGithubUrl(finalUri)) {
           const mirrorUrls = getGithubUrlsWithMirrors(finalUri, githubMirrorUrls, useGithubMirror)
-          console.log('[GitHub Mirror] Converting URL:', finalUri, '→', mirrorUrls)
           // 如果有多个镜像 URL，标记需要启用多镜像并发
           if (mirrorUrls.length > 1) {
             hasMultipleMirrors = true
@@ -924,27 +924,27 @@ const actions = {
     // 如果检测到有多个镜像，自动启用多镜像并发下载
     if (hasMultipleMirrors && !normalizedOptions['uri-selector']) {
       normalizedOptions['uri-selector'] = 'multimirror'
-      console.log('[GitHub Mirror] Auto-enabled multi-mirror concurrent download')
 
       // 确保有足够的总连接数
       if (!normalizedOptions.split || normalizedOptions.split < 8) {
         normalizedOptions.split = 16
-        console.log('[GitHub Mirror] Set split to 16 for multi-mirror download')
       }
 
-      // 每个服务器的最大连接数应该足够大，以便每个镜像都能建立多个连接
-      // 设置为 split 的一半，这样两个镜像可以平分连接
+      // 每个服务器的最大连接数受用户配置的 engineMaxConnectionPerServer 上限约束，
+      // 避免单任务突破用户全局连接数限制。默认按 split 的一半设置。
+      const userMaxPerServer = Number(config.engineMaxConnectionPerServer) || 0
       const splitValue = normalizedOptions.split || 16
-      const maxPerServer = Math.max(4, Math.floor(splitValue / 2))
+      let maxPerServer = Math.max(4, Math.floor(splitValue / 2))
+      if (userMaxPerServer > 0 && maxPerServer > userMaxPerServer) {
+        maxPerServer = userMaxPerServer
+      }
       if (!normalizedOptions['max-connection-per-server'] || normalizedOptions['max-connection-per-server'] < maxPerServer) {
         normalizedOptions['max-connection-per-server'] = maxPerServer
-        console.log(`[GitHub Mirror] Set max-connection-per-server to ${maxPerServer} for multi-mirror download`)
       }
 
       // 设置最小分段大小为 1MB，确保小文件也能分段
       if (!normalizedOptions['min-split-size']) {
         normalizedOptions['min-split-size'] = '1M'
-        console.log('[GitHub Mirror] Set min-split-size to 1M for multi-mirror download')
       }
     }
 
@@ -1630,18 +1630,18 @@ const actions = {
 
     const sameProxy = `${currentAllProxy || ''}`.trim() === `${desiredAllProxy || ''}`.trim()
 
+    const status = current && current.status ? `${current.status}` : ''
+    const wasActiveOrWaiting = status === TASK_STATUS.ACTIVE || status === TASK_STATUS.WAITING
+
     if (currentUris.includes(newUri) && sameHeaders && sameProxy) {
       dispatch('clearTaskNeedUpdateLink', gid)
-      await dispatch('fetchList').catch(() => {})
-      await dispatch('resumeTask', { gid, status: TASK_STATUS.PAUSED }).catch(() => {})
       await dispatch('fetchList').catch(() => {})
       return
     }
 
     const effectiveDesiredHeaderLines = effectiveHeaderLines
 
-    const status = current && current.status ? `${current.status}` : ''
-    if (status === TASK_STATUS.ACTIVE || status === TASK_STATUS.WAITING) {
+    if (wasActiveOrWaiting) {
       await dispatch('pauseTask', current).catch(() => {})
       await dispatch('fetchList').catch(() => {})
     }
@@ -1777,20 +1777,23 @@ const actions = {
       }
 
       dispatch('clearTaskNeedUpdateLink', gid)
-      await dispatch('fetchList').catch(() => {})
-      await dispatch('resumeTask', { gid: `${nextGid}`, status: TASK_STATUS.PAUSED }).catch(() => {})
-      await dispatch('fetchList').catch(() => {})
 
-      const oldStatus = current && current.status ? `${current.status}` : ''
+      const oldStatus = status
       if ([TASK_STATUS.ERROR, TASK_STATUS.COMPLETE, TASK_STATUS.REMOVED].includes(oldStatus)) {
         await dispatch('removeTaskRecord', { gid, status: oldStatus }).catch(() => {})
+      } else {
+        await dispatch('removeTask', { gid }).catch(() => {})
       }
+
+      await dispatch('fetchList').catch(() => {})
       return
     }
 
     dispatch('clearTaskNeedUpdateLink', gid)
     await dispatch('fetchList').catch(() => {})
-    await dispatch('resumeTask', { gid, status: TASK_STATUS.PAUSED }).catch(() => {})
+    if (wasActiveOrWaiting) {
+      await dispatch('resumeTask', { gid, status: TASK_STATUS.PAUSED }).catch(() => {})
+    }
     await dispatch('fetchList').catch(() => {})
   }
 }

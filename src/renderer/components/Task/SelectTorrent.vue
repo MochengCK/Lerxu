@@ -148,13 +148,20 @@
 <style lang="scss">
 .upload-torrent {
   width: 100%;
+  margin: 0;
+  display: block;
   .el-upload, .el-upload-dragger {
     width: 100%;
+    margin: 0;
+  }
+  .el-upload {
+    display: block;
   }
   .el-upload-dragger {
-    border-radius: 4px;
-    padding: 24px;
+    padding: 16px 24px;
     height: auto;
+    border-radius: 12px;
+    min-height: 0;
   }
   .upload-inbox-icon {
     display: inline-block;

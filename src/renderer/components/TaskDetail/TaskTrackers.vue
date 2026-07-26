@@ -6,28 +6,33 @@
         ref="trackerTable"
         class="mo-tracker-table"
         size="mini"
-        :data="trackerList"
+        :data="groupedTrackers"
         :height="tableHeight"
         row-key="id"
-        @sort-change="handleSortChange"
+        :span-method="handleSpanMethod"
+        :row-class-name="getRowClassName"
+        @row-click="handleRowClick"
       >
         <el-table-column
           :label="$t('task.task-tracker-url')"
           prop="url"
-          min-width="200"
-          sortable="custom">
+          min-width="200">
           <template slot-scope="scope">
-            <el-tooltip :content="scope.row.url" placement="top" :disabled="!isTextOverflow(scope.row.url)">
-              <span class="mo-tracker-text">{{ scope.row.url }}</span>
-            </el-tooltip>
+            <template v-if="scope.row.isGroup">
+              <span class="mo-tracker-group-label">{{ scope.row.groupLabel }}</span>
+            </template>
+            <template v-else>
+              <el-tooltip :content="scope.row.url" placement="top" :disabled="!isTextOverflow(scope.row.url)">
+                <span class="mo-tracker-text">{{ scope.row.url }}</span>
+              </el-tooltip>
+            </template>
           </template>
         </el-table-column>
         <el-table-column
           :label="$t('task.task-tracker-protocol')"
           prop="protocol"
           align="center"
-          width="70"
-          sortable="custom">
+          width="70">
           <template slot-scope="scope">
             {{ scope.row.protocol }}
           </template>
@@ -36,8 +41,7 @@
           :label="$t('task.task-tracker-status')"
           prop="status"
           align="center"
-          width="80"
-          sortable="custom">
+          width="80">
           <template slot-scope="scope">
             {{ getTrackerStatusText(scope.row.status) }}
           </template>
@@ -46,8 +50,7 @@
           :label="$t('task.task-tracker-seeders')"
           prop="seeders"
           align="right"
-          width="80"
-          sortable="custom">
+          width="80">
           <template slot-scope="scope">
             {{ scope.row.seeders }}
           </template>
@@ -56,8 +59,7 @@
           :label="$t('task.task-tracker-leechers')"
           prop="leechers"
           align="right"
-          width="80"
-          sortable="custom">
+          width="80">
           <template slot-scope="scope">
             {{ scope.row.leechers }}
           </template>
@@ -66,8 +68,7 @@
           :label="$t('task.task-tracker-peers')"
           prop="peers"
           align="right"
-          width="80"
-          sortable="custom">
+          width="80">
           <template slot-scope="scope">
             {{ scope.row.peers }}
           </template>
@@ -76,8 +77,7 @@
           :label="$t('task.task-tracker-download-count')"
           prop="downloadCount"
           align="right"
-          width="90"
-          sortable="custom">
+          width="90">
           <template slot-scope="scope">
             {{ scope.row.downloadCount }}
           </template>
@@ -86,8 +86,7 @@
           :label="$t('task.task-tracker-next-announce')"
           prop="nextAnnounceTime"
           align="right"
-          width="100"
-          sortable="custom">
+          width="100">
           <template slot-scope="scope">
             {{ formatNextAnnounceTime(scope.row.nextAnnounceTime) }}
           </template>
@@ -123,9 +122,7 @@
         locale,
         tableHeight: '100%',
         overflowMap: {},
-        trackerStats: [],
-        sortProp: '',
-        sortOrder: ''
+        trackerStats: []
       }
     },
     computed: {
@@ -153,12 +150,12 @@
           return []
         }
 
-        let list = this.trackerStats.map((stat, index) => {
+        return this.trackerStats.map((stat, index) => {
           return {
             id: `tracker-${index}`,
             url: stat.url || '',
             protocol: stat.protocol || 'unknown',
-            status: stat.status || 'pending',
+            status: stat.status || 'waiting',
             peers: stat.peers || 0,
             seeders: stat.seeders || 0,
             leechers: stat.leechers || 0,
@@ -166,12 +163,46 @@
             nextAnnounceTime: stat.nextAnnounceTime || 0
           }
         })
-
-        if (this.sortProp && this.sortOrder) {
-          list = this.sortList(list, this.sortProp, this.sortOrder)
+      },
+      groupedTrackers () {
+        const list = this.trackerList
+        if (list.length === 0) {
+          return []
         }
 
-        return list
+        // 按状态分组：working（已连接）、not-working（连接失败）、waiting（等待中）
+        const groups = {
+          working: [],
+          'not-working': [],
+          waiting: []
+        }
+        list.forEach(t => {
+          const key = groups[t.status] !== undefined ? t.status : 'waiting'
+          groups[key].push(t)
+        })
+
+        const result = []
+        const groupOrder = [
+          { key: 'working', label: this.$t('task.trackers-group-working') },
+          { key: 'not-working', label: this.$t('task.trackers-group-not-working') },
+          { key: 'waiting', label: this.$t('task.trackers-group-waiting') }
+        ]
+
+        groupOrder.forEach(({ key, label }) => {
+          const items = groups[key]
+          if (items.length === 0) return
+          result.push({
+            id: `group-${key}`,
+            isGroup: true,
+            groupLabel: `${label} (${items.length})`,
+            groupKey: key
+          })
+          items.forEach(item => {
+            result.push(item)
+          })
+        })
+
+        return result
       }
     },
     watch: {
@@ -247,31 +278,23 @@
           this.trackerStats = []
         }
       },
-      handleSortChange ({ prop, order }) {
-        this.sortProp = prop
-        this.sortOrder = order
+      handleSpanMethod ({ row, columnIndex }) {
+        // 分组行：合并所有列
+        if (row.isGroup) {
+          if (columnIndex === 0) {
+            return [1, 8]
+          }
+          return [0, 0]
+        }
       },
-      sortList (list, prop, order) {
-        if (!prop || !order) return list
-
-        return [...list].sort((a, b) => {
-          let valueA = a[prop]
-          let valueB = b[prop]
-
-          if (typeof valueA === 'string') {
-            valueA = valueA.toLowerCase()
-            valueB = valueB.toLowerCase()
-            if (order === 'ascending') {
-              return valueA.localeCompare(valueB)
-            }
-            return valueB.localeCompare(valueA)
-          }
-
-          if (order === 'ascending') {
-            return valueA - valueB
-          }
-          return valueB - valueA
-        })
+      getRowClassName ({ row }) {
+        if (row.isGroup) {
+          return 'mo-tracker-group-row'
+        }
+        return ''
+      },
+      handleRowClick (row) {
+        // 分组行点击暂不处理展开/折叠，保持全部展开
       },
       getTrackerStatusText (status) {
         const statusMap = {
@@ -406,6 +429,22 @@
       -webkit-mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
     }
   }
+  .mo-tracker-group-row {
+    background-color: #f5f7fa !important;
+    td {
+      background-color: transparent !important;
+      border-bottom: 1px solid #ebeef5 !important;
+    }
+    .cell {
+      padding-left: 12px !important;
+    }
+    .mo-tracker-group-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #606266;
+      letter-spacing: 0.3px;
+    }
+  }
   .el-table__row {
     height: 32px !important;
     td {
@@ -457,6 +496,15 @@
   }
   .el-table--border::after, .el-table--group::after, .el-table::before {
     display: none !important;
+  }
+  .mo-tracker-group-row {
+    background-color: rgba(255, 255, 255, 0.03) !important;
+    td {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    }
+    .mo-tracker-group-label {
+      color: #c0c4cc;
+    }
   }
 }
 </style>

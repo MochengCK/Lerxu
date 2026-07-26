@@ -566,7 +566,6 @@
             </el-col>
             <el-col class="form-item-sub" :span="24">
               <div class="bt-encryption-row">
-                <span class="bt-encryption-label">{{ $t('preferences.bt-force-encryption') }}</span>
                 <el-radio-group
                   v-model="form.btEncryptionMode"
                   size="mini"
@@ -1498,7 +1497,10 @@
       },
       category: {
         handler () {
-          this.applyFilters(this.searchKeyword)
+          // 切换分类时立即同步过滤，不走 120ms 防抖。
+          // 否则组件重建瞬间所有卡片都可见，appearance 卡片排在前 4 个，
+          // 会闪烁显示外观分类内容，120ms 后才被隐藏。
+          this.filterCards(this.searchKeyword, this.activeCategory)
         },
         immediate: true
       },
@@ -1563,6 +1565,9 @@
     mounted () {
       window.addEventListener('resize', this.updateUiScopeSelectCollapse)
       this.updateUiScopeSelectCollapse()
+      // 立即同步过滤卡片，避免组件首次挂载时所有分类卡片都可见
+      // 导致 appearance 卡片（排在前 4 个）闪烁显示。
+      this.filterCards(this.searchKeyword, this.activeCategory)
       // 使用 ipcRenderer 直接监听从浏览器扩展更新配置的命令
       if (this.$electron && this.$electron.ipcRenderer) {
         this._extensionUpdateHandler = (event, command) => {
@@ -2118,7 +2123,7 @@
       onBtEncryptionModeChange (mode) {
         const modeConfig = {
           none: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'plain' },
-          adaptive: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'plain' },
+          adaptive: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'arc4' },
           force: { 'bt-require-crypto': true, 'bt-min-crypto-level': 'arc4' }
         }
         const cfg = modeConfig[mode] || modeConfig.adaptive
@@ -2362,7 +2367,7 @@
             const mode = data.btEncryptionMode
             const modeConfig = {
               none: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'plain' },
-              adaptive: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'plain' },
+              adaptive: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'arc4' },
               force: { 'bt-require-crypto': true, 'bt-min-crypto-level': 'arc4' }
             }
             const cfg = modeConfig[mode] || modeConfig.adaptive
@@ -2843,11 +2848,6 @@
    align-items: center;
    gap: 16px;
    flex-wrap: wrap;
- }
- .bt-encryption-label {
-   font-size: 13px;
-   color: var(--text-secondary);
-   white-space: nowrap;
  }
 
  /* 视频嗅探设置按钮样式 */

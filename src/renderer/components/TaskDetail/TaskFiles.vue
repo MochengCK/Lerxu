@@ -58,20 +58,23 @@
         :md="8"
         :lg="8"
       >
-        <el-button-group>
-          <el-button @click="toggleVideoSelection()">
-            <mo-icon name="video" width="12" height="12" />
-          </el-button>
-          <el-button @click="toggleAudioSelection()">
-            <mo-icon name="audio" width="12" height="12" />
-          </el-button>
-          <el-button @click="toggleImageSelection()">
-            <mo-icon name="image" width="12" height="12" />
-          </el-button>
-          <el-button @click="toggleDocumentSelection()">
-            <mo-icon name="document" width="12" height="12" />
-          </el-button>
-        </el-button-group>
+        <div class="file-type-slider" role="group">
+          <div
+            class="slider-indicator"
+            :class="{ 'is-hidden': !activeType }"
+            :style="indicatorStyle"
+          ></div>
+          <button
+            v-for="item in fileTypes"
+            :key="item.key"
+            type="button"
+            class="slider-btn"
+            :class="{ active: activeType === item.key }"
+            @click="toggleTypeSelection(item.key)"
+          >
+            <mo-icon :name="item.icon" width="12" height="12" />
+          </button>
+        </div>
       </el-col>
       <el-col
         class="files-summary"
@@ -92,6 +95,7 @@
   import '@/components/Icons/audio'
   import '@/components/Icons/image'
   import '@/components/Icons/document'
+  import '@/components/Icons/select-all'
   import {
     NONE_SELECTED_FILES,
     SELECTED_ALL_FILES
@@ -132,7 +136,15 @@
     },
     data () {
       return {
-        selectedFiles: []
+        selectedFiles: [],
+        activeType: 'all',
+        fileTypes: [
+          { key: 'all', icon: 'select-all' },
+          { key: 'video', icon: 'video', filter: filterVideoFiles },
+          { key: 'audio', icon: 'audio', filter: filterAudioFiles },
+          { key: 'image', icon: 'image', filter: filterImageFiles },
+          { key: 'document', icon: 'document', filter: filterDocumentFiles }
+        ]
       }
     },
     computed: {
@@ -156,6 +168,19 @@
         const indexArr = this.selectedFiles.map((item) => item.idx)
         const result = indexArr.join(',')
         return result
+      },
+      indicatorStyle () {
+        if (!this.activeType) {
+          return { opacity: 0 }
+        }
+        const idx = this.fileTypes.findIndex(t => t.key === this.activeType)
+        if (idx < 0) {
+          return { opacity: 0 }
+        }
+        return {
+          transform: `translateX(${idx * 100}%)`,
+          opacity: 1
+        }
       }
     },
     watch: {
@@ -177,6 +202,7 @@
           return
         }
         this.$refs.torrentTable.clearSelection()
+        this.activeType = 'all'
       },
       toggleSelection (rows) {
         if (isEmpty(rows)) {
@@ -188,20 +214,17 @@
           })
         }
       },
-      toggleVideoSelection () {
-        const filtered = filterVideoFiles(this.files)
-        this.toggleSelection(filtered)
-      },
-      toggleAudioSelection () {
-        const filtered = filterAudioFiles(this.files)
-        this.toggleSelection(filtered)
-      },
-      toggleImageSelection () {
-        const filtered = filterImageFiles(this.files)
-        this.toggleSelection(filtered)
-      },
-      toggleDocumentSelection () {
-        const filtered = filterDocumentFiles(this.files)
+      toggleTypeSelection (type) {
+        this.activeType = type
+        if (type === 'all') {
+          this.toggleSelection(this.files)
+          return
+        }
+        const item = this.fileTypes.find(t => t.key === type)
+        if (!item) {
+          return
+        }
+        const filtered = item.filter(this.files)
         this.toggleSelection(filtered)
       },
       handleRowDbClick (row, column, event) {
@@ -266,11 +289,59 @@
 .file-filters {
   margin-top: 0.75rem;
   .quick-filters {
-    button {
-      font-size: 0;
-    }
-    .el-button {
-      border-radius: 8px;
+    .file-type-slider {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      padding: 3px;
+      background: rgba(0, 0, 0, 0.05);
+      border-radius: 10px;
+
+      .slider-indicator {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: calc(20% - 1.2px);
+        height: calc(100% - 6px);
+        background: $--button-default-background-color;
+        border-radius: 7px;
+        transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+                    opacity 0.2s ease;
+        z-index: 0;
+        pointer-events: none;
+
+        &.is-hidden {
+          opacity: 0;
+        }
+      }
+
+      .slider-btn {
+        position: relative;
+        z-index: 1;
+        flex: 1 0 auto;
+        min-width: 0;
+        height: 24px;
+        padding: 0 8px;
+        background: transparent;
+        border: none;
+        border-radius: 7px;
+        cursor: pointer;
+        outline: none;
+        box-shadow: none;
+        color: $--color-text-secondary;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.2s ease;
+
+        &:hover {
+          color: $--color-text-primary;
+        }
+
+        &.active {
+          color: $--color-primary;
+        }
+      }
     }
   }
   .files-summary {
@@ -278,6 +349,30 @@
     font-size: $--font-size-base;
     color: $--color-text-regular;
     line-height: 1.75rem;
+  }
+}
+
+.theme-dark {
+  .file-filters .quick-filters {
+    .file-type-slider {
+      background: rgba(255, 255, 255, 0.06);
+
+      .slider-indicator {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .slider-btn {
+        color: rgba(255, 255, 255, 0.55);
+
+        &:hover {
+          color: rgba(255, 255, 255, 0.85);
+        }
+
+        &.active {
+          color: $--color-primary;
+        }
+      }
+    }
   }
 }
 

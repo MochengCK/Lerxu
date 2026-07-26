@@ -20,10 +20,13 @@
       :modal="true"
     >
       <div slot="title" class="task-plan-dialog-title">
-        <el-radio-group v-model="taskPlanType" size="mini">
-          <el-radio-button label="complete" :disabled="isTaskPlanCompleteTypeDisabled">{{ $t('app.task-plan-type-complete') }}</el-radio-button>
-          <el-radio-button label="scheduled">{{ $t('app.task-plan-type-scheduled') }}</el-radio-button>
-        </el-radio-group>
+        <div class="task-type-slider" role="group">
+          <div class="task-type-slider-indicator" :style="taskPlanTypeIndicatorStyle"></div>
+          <el-radio-group v-model="taskPlanType" size="mini">
+            <el-radio-button label="complete" :disabled="isTaskPlanCompleteTypeDisabled">{{ $t('app.task-plan-type-complete') }}</el-radio-button>
+            <el-radio-button label="scheduled">{{ $t('app.task-plan-type-scheduled') }}</el-radio-button>
+          </el-radio-group>
+        </div>
       </div>
       <el-form label-position="top">
         <el-form-item>
@@ -54,9 +57,7 @@
         </el-form-item>
       </el-form>
       <div slot="footer" class="dialog-footer">
-        <div class="mo-task-plan-save">
-          <el-button type="primary" :disabled="isTaskPlanSaveDisabled" @click="saveTaskPlan">{{ $t('app.save') }}</el-button>
-        </div>
+        <el-button type="primary" class="dialog-submit-btn" :disabled="isTaskPlanSaveDisabled" @click="saveTaskPlan">{{ $t('app.save') }}</el-button>
       </div>
     </el-dialog>
     <mo-speedometer :class="{ 'is-shifted': isSpeedometerShifted }" />
@@ -198,6 +199,12 @@
           return true
         }
         return false
+      },
+      taskPlanTypeIndicatorStyle () {
+        const idx = this.taskPlanType === 'scheduled' ? 1 : 0
+        return {
+          transform: `translateX(${idx * 100}%)`
+        }
       },
       isSpeedometerShifted () {
         return false
@@ -2610,17 +2617,94 @@
   .el-dialog.task-plan-dialog {
     max-width: 360px;
     min-width: 320px;
+    border-radius: 16px;
   }
 
   .el-dialog.task-plan-dialog .task-plan-dialog-title {
     display: flex;
     align-items: center;
     margin-right: 28px;
-    .el-radio-button:first-child .el-radio-button__inner {
-      border-radius: 8px 0 0 8px !important;
+    margin-top: -8px;
+  }
+
+  .task-plan-dialog .task-type-slider {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    border: none;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.05);
+
+    .task-type-slider-indicator {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: calc(50% - 2px);
+      height: calc(100% - 4px);
+      background: $--color-primary;
+      border-radius: 8px;
+      transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 0;
+      pointer-events: none;
     }
-    .el-radio-button:last-child .el-radio-button__inner {
-      border-radius: 0 8px 8px 0 !important;
+
+    .el-radio-group {
+      display: inline-flex;
+      position: relative;
+      z-index: 1;
+    }
+
+    .el-radio-button {
+      display: flex;
+      .el-radio-button__inner {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 5px 20px;
+        font-size: 13px;
+        font-weight: 500;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 8px;
+        box-shadow: none !important;
+        color: $--color-text-secondary;
+        transition: color 0.32s ease;
+      }
+
+      &.is-disabled .el-radio-button__inner {
+        color: $--color-text-secondary;
+        opacity: 0.4;
+      }
+
+      .el-radio-button__orig-radio:checked + .el-radio-button__inner {
+        color: #fff;
+        background: transparent !important;
+        border-color: transparent !important;
+        box-shadow: none !important;
+      }
+
+      &.is-active .el-radio-button__inner {
+        color: #fff;
+        background: transparent !important;
+        box-shadow: none !important;
+      }
+    }
+  }
+
+  .theme-dark .task-plan-dialog .task-type-slider {
+    background: rgba(255, 255, 255, 0.06);
+
+    .el-radio-button {
+      .el-radio-button__inner {
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      &.is-active .el-radio-button__inner {
+        color: #fff;
+      }
     }
   }
 
@@ -2629,21 +2713,26 @@
   }
 
   .el-dialog.task-plan-dialog .el-dialog__footer {
-    padding: 0 20px 6px;
+    padding: 0;
+    background-color: transparent;
   }
 
-  .el-dialog.task-plan-dialog .el-button {
-    border-radius: 8px;
+  .task-plan-dialog .dialog-footer {
+    position: relative;
+    min-height: 52px;
+  }
+
+  .task-plan-dialog .dialog-submit-btn {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+    height: 28px;
+    padding: 0 16px;
+    border-radius: 8px !important;
   }
 
   .el-dialog.task-plan-dialog .el-dialog__footer::before {
     display: none;
-  }
-
-  .mo-task-plan-save {
-    position: relative;
-    top: -10px;
-    text-align: right;
   }
 
   /* 小屏幕侧边栏样式 */

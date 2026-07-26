@@ -13,10 +13,11 @@
     @opened="handleOpened"
     @closed="handleClosed"
   >
-    <div slot="title" class="task-detail-drawer-title">
-      <div class="task-detail-nav-wrapper">
-        <div class="task-detail-nav-bar">
-          <el-radio-group :value="activeTab" size="mini" @input="handleTabChange">
+    <div class="task-detail-drawer-title">
+        <div class="task-detail-nav-wrapper">
+          <div class="task-detail-nav-bar" role="group">
+          <div class="task-detail-nav-indicator" :style="navIndicatorStyle"></div>
+          <el-radio-group ref="navRadioGroup" :value="activeTab" size="mini" @input="handleTabChange">
             <el-radio-button label="general">
               {{ $t('task.task-detail-general') }}
             </el-radio-button>
@@ -192,7 +193,8 @@
         selectionChangedCount: 0,
         statusHintTruncated: false,
         resizeHandler: null,
-        drawerAnimationDone: false
+        drawerAnimationDone: false,
+        navIndicatorRect: { left: 0, width: 0 }
       }
     },
     computed: {
@@ -222,6 +224,21 @@
       },
       isBT () {
         return checkTaskIsBT(this.task)
+      },
+      navTabs () {
+        const tabs = ['general', 'activity']
+        if (this.isBT) {
+          tabs.push('trackers', 'peers')
+        }
+        tabs.push('files', 'connections')
+        return tabs
+      },
+      navIndicatorStyle () {
+        const { left, width } = this.navIndicatorRect
+        return {
+          transform: `translateX(${left}px)`,
+          width: `${width}px`
+        }
       },
       isSeeder () {
         const task = this.task || {}
@@ -395,8 +412,10 @@
         if (this.activeTab === 'activity' && this.$refs.taskGraphic) {
           this.$refs.taskGraphic.updateGraphicWidth()
         }
+        this.updateNavIndicator()
       }, 250)
       window.addEventListener('resize', this.resizeHandler)
+      this.$nextTick(() => this.updateNavIndicator())
     },
     destroyed () {
       window.removeEventListener('resize', this.resizeHandler)
@@ -411,6 +430,9 @@
       },
       statusHintText () {
         this.updateStatusTruncation()
+      },
+      isBT () {
+        this.$nextTick(() => this.updateNavIndicator())
       }
     },
     methods: {
@@ -434,6 +456,7 @@
           if (this.activeTab === 'activity' && this.$refs.taskGraphic) {
             this.$refs.taskGraphic.updateGraphicWidth()
           }
+          this.$nextTick(() => this.updateNavIndicator())
         }
         if (typeof window !== 'undefined' && window.requestAnimationFrame) {
           window.requestAnimationFrame(() => window.requestAnimationFrame(done))
@@ -510,7 +533,10 @@
         }
       },
       handleTabChange (tabName) {
+        // 先立即更新指示器，避免被后续重型 pane 渲染阻塞
+        const prevTab = this.activeTab
         this.activeTab = tabName
+        this.updateNavIndicator()
         switch (tabName) {
         case 'peers':
           this.$store.dispatch('task/toggleEnabledFetchPeers', true)
@@ -521,7 +547,7 @@
           })
           break
         case 'activity':
-          this.$nextTick(() => {
+          setImmediate(() => {
             if (this.$refs.taskGraphic) {
               this.$refs.taskGraphic.updateGraphicWidth()
             }
@@ -532,6 +558,26 @@
             this.updateFilesListSelection()
           })
           break
+        }
+        if (prevTab === 'peers' && tabName !== 'peers') {
+          this.$store.dispatch('task/toggleEnabledFetchPeers', false)
+        }
+      },
+      updateNavIndicator () {
+        const group = this.$refs.navRadioGroup
+        if (!group) return
+        const groupEl = group.$el
+        if (!groupEl) return
+        const buttons = groupEl.querySelectorAll('.el-radio-button')
+        const idx = this.navTabs.indexOf(this.activeTab)
+        const validIdx = idx < 0 ? 0 : idx
+        const btn = buttons[validIdx]
+        if (!btn) return
+        const groupRect = groupEl.getBoundingClientRect()
+        const btnRect = btn.getBoundingClientRect()
+        this.navIndicatorRect = {
+          left: btnRect.left - groupRect.left,
+          width: btnRect.width
         }
       },
       resetChanged () {
@@ -560,6 +606,7 @@
 
         const { selectedFileList } = this
         this.$refs.detailFileList.toggleSelection(selectedFileList)
+        this.$refs.detailFileList.activeType = 'all'
       },
       handleSelectionChange (val) {
         this.filesSelection = val
@@ -664,7 +711,6 @@
     .form-static-value,
     .summary-label,
     .summary-value,
-    .el-radio-button__inner,
     .el-table,
     .el-table .cell,
     .el-table th,
@@ -726,6 +772,20 @@
   }
 }
 
+.theme-dark .task-detail-drawer .task-detail-nav-bar {
+  background: rgba(255, 255, 255, 0.06) !important;
+
+  .el-radio-button {
+    .el-radio-button__inner {
+      color: rgba(255, 255, 255, 0.55) !important;
+    }
+
+    &.is-active .el-radio-button__inner {
+      color: #fff !important;
+    }
+  }
+}
+
 .theme-light {
   .task-detail-drawer {
     .task-detail-hint,
@@ -752,7 +812,6 @@
     .form-static-value,
     .summary-label,
     .summary-value,
-    .el-radio-button__inner,
     .el-table,
     .el-table .cell,
     .el-table th,
@@ -816,8 +875,12 @@
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   .el-drawer__header {
-    padding: 3rem 0.75rem 0;
-    margin-bottom: 0;
+    padding: 0 !important;
+    margin-bottom: 0 !important;
+  }
+  .el-drawer__header > .el-drawer__title {
+    width: 100%;
+    display: block;
   }
   .el-drawer__body {
     position: relative;
@@ -853,35 +916,72 @@
     align-items: center;
     justify-content: flex-start;
     width: 100%;
+    padding: 1.75rem 1rem 1rem;
+    box-sizing: border-box;
   }
   .task-detail-nav-wrapper {
     display: flex;
     align-items: center;
     width: 100%;
     justify-content: space-between;
+    gap: 12px;
   }
   .task-detail-nav-bar {
-    display: flex;
-    align-items: center;
     position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 2px;
+    border: none;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.05);
     z-index: 2;
-    flex: 1;
+  }
+  .task-detail-nav-bar .task-detail-nav-indicator {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    height: calc(100% - 4px);
+    background: $--color-primary;
+    border-radius: 8px;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 0;
+    pointer-events: none;
   }
   .task-detail-nav-bar .el-radio-group {
     display: inline-flex;
+    position: relative;
+    z-index: 1;
   }
   .task-detail-nav-bar .el-radio-button {
+    display: flex;
     .el-radio-button__inner {
-      padding: 6px 12px;
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 14px;
       font-size: 13px;
       font-weight: 500;
+      background: transparent !important;
+      border: none !important;
+      border-radius: 8px;
+      box-shadow: none !important;
+      color: $--color-text-secondary;
+      transition: color 0.32s ease;
+      white-space: nowrap;
     }
-  }
-  .task-detail-nav-bar .el-radio-button:first-child .el-radio-button__inner {
-    border-radius: 8px 0 0 8px !important;
-  }
-  .task-detail-nav-bar .el-radio-button:last-child .el-radio-button__inner {
-    border-radius: 0 8px 8px 0 !important;
+    .el-radio-button__orig-radio:checked + .el-radio-button__inner {
+      color: #fff;
+      background: transparent !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+    }
+    &.is-active .el-radio-button__inner {
+      color: #fff;
+      background: transparent !important;
+      box-shadow: none !important;
+    }
   }
   .task-detail-nav-actions {
     display: flex;

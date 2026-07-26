@@ -961,10 +961,11 @@ export default class Application extends EventEmitter {
           wait(1200)
         ])
       }
-      logger.info('[Motrix] stopEngine.setImmediate===>')
-      setImmediate(() => {
-        this.engine.stop()
-      })
+      logger.info('[Motrix] stopEngine.engine.stop===>')
+      // 直接 await engine.stop()，确保 app.exit() 前子进程已收到信号。
+      // 原实现用 setImmediate 调度，但 quit() 紧接着调用 app.exit() 同步
+      // 退出主进程，setImmediate 回调永不执行，导致引擎子进程变孤儿。
+      await this.engine.stop()
     } catch (err) {
       logger.warn('[Motrix] shutdown engine fail: ', err.message)
     } finally {

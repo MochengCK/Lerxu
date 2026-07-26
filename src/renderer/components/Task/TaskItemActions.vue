@@ -249,17 +249,13 @@
         {{ updateLinkWarningTip }}
       </div>
       <div slot="footer" class="dialog-footer">
-        <el-row>
-          <el-col :span="12" :xs="12" style="text-align: left;">
-            <el-checkbox class="chk" v-model="showUpdateAdvanced">
-              {{$t('task.show-advanced-options')}}
-            </el-checkbox>
-          </el-col>
-          <el-col :span="12" :xs="12" style="text-align: right;">
-            <el-button @click="updateLinkDialogVisible = false">{{ $t('app.cancel') }}</el-button>
-            <el-button type="primary" :loading="updateLinkSubmitting" @click="onUpdateLinkConfirm">{{ $t('app.submit') }}</el-button>
-          </el-col>
-        </el-row>
+        <el-checkbox class="chk" v-model="showUpdateAdvanced">
+          {{$t('task.show-advanced-options')}}
+        </el-checkbox>
+        <div class="dialog-footer-actions">
+          <el-button @click="updateLinkDialogVisible = false">{{ $t('app.cancel') }}</el-button>
+          <el-button type="primary" class="dialog-submit-btn" :loading="updateLinkSubmitting" @click="onUpdateLinkConfirm">{{ $t('app.submit') }}</el-button>
+        </div>
       </div>
     </el-dialog>
 
@@ -1071,24 +1067,64 @@
   z-index: 100;
 }
 
-.update-link-dialog {
-  position: relative;
+.el-dialog.update-link-dialog {
+  max-width: 680px;
+  min-width: 420px;
+  border-radius: 16px;
+
+  .el-dialog__footer {
+    padding: 0;
+    background-color: transparent;
+  }
+
+  .el-dialog__footer::before {
+    display: none;
+  }
+
+  .dialog-footer {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 52px;
+    padding-left: 20px;
+    padding-right: 20px;
+    .chk {
+      line-height: 28px;
+      &.el-checkbox {
+        & .el-checkbox__input {
+          line-height: 19px;
+        }
+        & .el-checkbox__label {
+          padding-left: 6px;
+        }
+      }
+    }
+    .dialog-footer-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      .el-button {
+        border-radius: 8px;
+        height: 28px;
+        padding: 0 16px;
+      }
+    }
+  }
+
+  .dialog-submit-btn {
+    border-radius: 8px !important;
+  }
+
   .el-dialog__body {
+    padding-top: 20px;
     padding-bottom: 72px;
   }
-  .el-dialog__footer {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: transparent;
-    border-top: none;
-    z-index: 3000;
-  }
+
   .update-link-warning-tip {
     position: absolute;
-    left: 16px;
-    right: 16px;
+    left: 20px;
+    right: 20px;
     bottom: 64px;
     font-size: 12px;
     line-height: 16px;
@@ -1096,6 +1132,7 @@
     text-align: left;
     pointer-events: none;
   }
+
   .help-link {
     font-size: 12px;
     line-height: 14px;
@@ -1103,6 +1140,19 @@
     > a {
       color: #909399;
     }
+  }
+
+  .task-advanced-options .el-form-item:last-of-type {
+    margin-bottom: 0;
+  }
+
+  .preset-actions {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
   }
 }
 

@@ -1398,6 +1398,9 @@
       getPeerEncryption (peer) {
         if (!peer) return '-'
         const encrypted = peer.encrypted
+        // 引擎对无活跃连接的节点（attempting/disconnected/banned）返回 null，
+        // 前端显示空值而非"明文"，避免误导用户这些节点是明文连接。
+        if (encrypted === null || encrypted === undefined) return '-'
         if (encrypted === true || encrypted === 'true' || encrypted === '1' || encrypted === 1) {
           return this.$t('task.peer-encryption-mse')
         }
