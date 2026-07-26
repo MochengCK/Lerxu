@@ -565,12 +565,18 @@
               </el-checkbox>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox
-                v-model="form.btForceEncryption"
-                @change="autoSaveForm"
-              >
-                {{ $t('preferences.bt-force-encryption') }}
-              </el-checkbox>
+              <div class="bt-encryption-row">
+                <span class="bt-encryption-label">{{ $t('preferences.bt-force-encryption') }}</span>
+                <el-radio-group
+                  v-model="form.btEncryptionMode"
+                  size="mini"
+                  @change="onBtEncryptionModeChange"
+                >
+                  <el-radio-button label="none">{{ $t('preferences.bt-encryption-none') }}</el-radio-button>
+                  <el-radio-button label="adaptive">{{ $t('preferences.bt-encryption-adaptive') }}</el-radio-button>
+                  <el-radio-button label="force">{{ $t('preferences.bt-encryption-force') }}</el-radio-button>
+                </el-radio-group>
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
               <div class="settings-divider" style="margin: 8px 0;"></div>
@@ -950,6 +956,16 @@
     return result
   }
 
+  const normalizeBtEncryptionMode = (mode, legacyForceEncryption) => {
+    if (mode === 'none' || mode === 'adaptive' || mode === 'force') {
+      return mode
+    }
+    if (legacyForceEncryption === true || legacyForceEncryption === 'true') {
+      return 'force'
+    }
+    return 'adaptive'
+  }
+
   const BACKGROUND_UI_FROSTED_BLUR_SCOPE_OPTIONS = [
     'date-filter',
     'task-category-select',
@@ -972,7 +988,7 @@
     const {
       autoHideWindow,
       autoPurgeRecord,
-      btForceEncryption,
+      btEncryptionMode,
       btIpBanList,
       btSaveMetadata,
       dir,
@@ -1062,7 +1078,7 @@
       autoHideWindow,
       autoPurgeRecord: autoPurgeRecord || false,
       btAutoDownloadContent,
-      btForceEncryption,
+      btEncryptionMode: normalizeBtEncryptionMode(btEncryptionMode, config.btForceEncryption),
       btIpBanList: normalizeBtIpBanList(btIpBanList),
       btSaveMetadata,
       continue: config.continue,
@@ -1492,11 +1508,9 @@
       },
       form: {
         handler () {
-          // Only save if form has changed from original
-          const hasChanges = !isEmpty(diffConfig(this.formOriginal, this.form))
-          if (hasChanges) {
-            this.autoSaveForm()
-          }
+          // autoSaveForm already debounces and checks diffConfig internally,
+          // so we avoid a redundant synchronous diffConfig pass here.
+          this.autoSaveForm()
         },
         deep: true
       },
@@ -1562,6 +1576,9 @@
     },
     beforeDestroy () {
       window.removeEventListener('resize', this.updateUiScopeSelectCollapse)
+      if (this._filterTimer) {
+        clearTimeout(this._filterTimer)
+      }
       // 移除 ipcRenderer 监听
       if (this.$electron && this.$electron.ipcRenderer && this._extensionUpdateHandler) {
         this.$electron.ipcRenderer.removeListener('command', this._extensionUpdateHandler)
@@ -1619,7 +1636,12 @@
         })
       },
       applyFilters (keyword) {
-        this.filterCards(keyword, this.activeCategory)
+        if (this._filterTimer) {
+          clearTimeout(this._filterTimer)
+        }
+        this._filterTimer = setTimeout(() => {
+          this.filterCards(keyword, this.activeCategory)
+        }, 120)
       },
       filterCards (keyword, category) {
         this.$nextTick(() => {
@@ -2093,6 +2115,17 @@
         this.form.seedTime = enable ? 525600 : 60
         this.autoSaveForm()
       },
+      onBtEncryptionModeChange (mode) {
+        const modeConfig = {
+          none: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'plain' },
+          adaptive: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'plain' },
+          force: { 'bt-require-crypto': true, 'bt-min-crypto-level': 'arc4' }
+        }
+        const cfg = modeConfig[mode] || modeConfig.adaptive
+        this.form.btRequireCrypto = cfg['bt-require-crypto']
+        this.form.btMinCryptoLevel = cfg['bt-min-crypto-level']
+        this.autoSaveForm()
+      },
       handleHistoryDirectorySelected (dir) {
         this.form.dir = dir
         this.autoSaveForm()
@@ -2323,6 +2356,22 @@
             data.followTorrent = btAutoDownloadContent
             data.followMetalink = btAutoDownloadContent
             data.pauseMetadata = !btAutoDownloadContent
+          }
+
+          if ('btEncryptionMode' in data) {
+            const mode = data.btEncryptionMode
+            const modeConfig = {
+              none: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'plain' },
+              adaptive: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'plain' },
+              force: { 'bt-require-crypto': true, 'bt-min-crypto-level': 'arc4' }
+            }
+            const cfg = modeConfig[mode] || modeConfig.adaptive
+            data['bt-require-crypto'] = cfg['bt-require-crypto']
+            data['bt-min-crypto-level'] = cfg['bt-min-crypto-level']
+            delete data.btEncryptionMode
+            delete data.btForceEncryption
+            delete data.btRequireCrypto
+            delete data.btMinCryptoLevel
           }
 
           if (btTracker) {
@@ -2786,6 +2835,19 @@
  .theme-dark .settings-divider {
    background: #4a4a4a;
    box-shadow: 0 1px 2px rgba(255, 255, 255, 0.05);
+ }
+
+ /* BT 加密模式选择行 */
+ .bt-encryption-row {
+   display: flex;
+   align-items: center;
+   gap: 16px;
+   flex-wrap: wrap;
+ }
+ .bt-encryption-label {
+   font-size: 13px;
+   color: var(--text-secondary);
+   white-space: nowrap;
  }
 
  /* 视频嗅探设置按钮样式 */

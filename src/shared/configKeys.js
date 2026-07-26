@@ -109,6 +109,7 @@ const systemKeys = [
   'bt-enable-lpd',
   'bt-exclude-tracker',
   'bt-external-ip',
+  'bt-encryption-mode',
   'bt-force-encryption',
   'bt-hash-check-seed',
   'bt-load-saved-metadata',

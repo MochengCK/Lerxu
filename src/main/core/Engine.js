@@ -456,6 +456,22 @@ export default class Engine {
       delete extraConfig['seed-time']
     }
 
+    if (extraConfig['bt-encryption-mode'] !== undefined) {
+      const mode = extraConfig['bt-encryption-mode']
+      if (mode === 'force') {
+        extraConfig['bt-require-crypto'] = true
+        extraConfig['bt-min-crypto-level'] = 'arc4'
+      } else if (mode === 'none') {
+        extraConfig['bt-require-crypto'] = false
+        extraConfig['bt-min-crypto-level'] = 'plain'
+      } else {
+        extraConfig['bt-require-crypto'] = false
+        extraConfig['bt-min-crypto-level'] = 'plain'
+      }
+      delete extraConfig['bt-encryption-mode']
+      delete extraConfig['bt-force-encryption']
+    }
+
     console.log('extraConfig===>', extraConfig)
 
     const extra = transformConfig(extraConfig)

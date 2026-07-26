@@ -97,7 +97,8 @@
         preferenceSearchToken: 0,
         pendingPreferenceSearchKeyword: '',
         preferenceSearchIndex: {},
-        preferenceSearchStaticIndexReady: false
+        preferenceSearchStaticIndexReady: false,
+        preferenceSearchLastIndexedPath: ''
       }
     },
     computed: {
@@ -193,6 +194,11 @@
     watch: {
       preferenceSearchKeyword (val) {
         this.schedulePreferenceSearch(val)
+      },
+      '$route.path' () {
+        // Invalidate search index cache when the route changes,
+        // so the next search rebuilds the index for the new page.
+        this.preferenceSearchLastIndexedPath = ''
       }
     },
     methods: {
@@ -295,7 +301,13 @@
         }
         this.ensurePreferenceSearchStaticIndex()
         const currentCategory = this.currentPreferenceCategory
-        await this.updatePreferenceSearchIndexFromCurrentForm()
+        // Only rebuild the DOM-based index when the route has changed since
+        // the last scan. Repeated searches on the same page reuse the cache,
+        // avoiding expensive textContent reads and reflow on every keystroke.
+        if (this.preferenceSearchLastIndexedPath !== this.$route.path) {
+          await this.updatePreferenceSearchIndexFromCurrentForm()
+          this.preferenceSearchLastIndexedPath = this.$route.path
+        }
         if (token !== this.preferenceSearchToken) {
           return
         }

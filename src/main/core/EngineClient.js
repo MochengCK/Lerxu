@@ -54,7 +54,27 @@ export default class EngineClient {
 
   async changeGlobalOption (options) {
     logger.info('[Motrix] change engine global option:', options)
-    const args = formatOptionsForEngine(options)
+    const normalizedOptions = { ...options }
+    if (normalizedOptions['bt-encryption-mode'] !== undefined) {
+      const mode = normalizedOptions['bt-encryption-mode']
+      if (mode === 'force') {
+        normalizedOptions['bt-require-crypto'] = true
+        normalizedOptions['bt-min-crypto-level'] = 'arc4'
+      } else if (mode === 'none') {
+        normalizedOptions['bt-require-crypto'] = false
+        normalizedOptions['bt-min-crypto-level'] = 'plain'
+      } else {
+        normalizedOptions['bt-require-crypto'] = false
+        normalizedOptions['bt-min-crypto-level'] = 'plain'
+      }
+      delete normalizedOptions['bt-encryption-mode']
+      delete normalizedOptions['bt-force-encryption']
+    } else if (normalizedOptions['bt-force-encryption'] !== undefined) {
+      const forceEncryption = normalizedOptions['bt-force-encryption'] === true || normalizedOptions['bt-force-encryption'] === 'true'
+      normalizedOptions['bt-require-crypto'] = forceEncryption
+      normalizedOptions['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
+    }
+    const args = formatOptionsForEngine(normalizedOptions)
 
     return this.call('changeGlobalOption', args)
   }

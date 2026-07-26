@@ -333,12 +333,14 @@
       },
       graphicWidth: {
         handler () {
-          this.$nextTick(() => this.updateGraphicFadeState())
+          this.scheduleUpdateGraphicFadeState()
         }
       },
       'task.bitfield': {
         handler () {
-          this.$nextTick(() => this.updateGraphicFadeState())
+          // bitfield changes frequently during BT download; debounce to avoid
+          // forced reflow (scrollHeight/clientHeight/scrollTop reads) on every tick.
+          this.scheduleUpdateGraphicFadeState()
         }
       }
     },
@@ -362,14 +364,29 @@
         cancelAnimationFrame(this.graphicRafId)
         this.graphicRafId = null
       }
+      if (this._fadeStateTimer) {
+        clearTimeout(this._fadeStateTimer)
+      }
     },
     methods: {
+      scheduleUpdateGraphicFadeState () {
+        // Debounce: bitfield changes frequently during BT download, and
+        // updateGraphicFadeState reads scrollHeight/clientHeight/scrollTop
+        // (forced reflow). Collapse repeated calls into one layout read.
+        if (this._fadeStateTimer) {
+          clearTimeout(this._fadeStateTimer)
+        }
+        this._fadeStateTimer = setTimeout(() => {
+          this._fadeStateTimer = null
+          this.updateGraphicFadeState()
+        }, 200)
+      },
       updateGraphicWidth () {
         if (!this.$refs.graphicBox) {
           return
         }
         this.graphicWidth = this.calcInnerWidth(this.$refs.graphicBox)
-        this.$nextTick(() => this.updateGraphicFadeState())
+        this.scheduleUpdateGraphicFadeState()
       },
       calcInnerWidth (ele) {
         if (!ele) {

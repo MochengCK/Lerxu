@@ -147,6 +147,20 @@
           </template>
         </el-table-column>
         <el-table-column
+          :label="$t('task.task-peer-encryption')"
+          prop="encrypted"
+          sortable="custom"
+          width="90">
+          <template slot-scope="scope">
+            <template v-if="scope.row.isGroup">
+              -
+            </template>
+            <template v-else>
+              {{ getPeerEncryption(scope.row) }}
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column
           :label="$t('task.task-peer-source')"
           prop="source"
           sortable="custom"
@@ -287,6 +301,289 @@
     ipSearcher = new IP2Region()
   } catch (e) {
     console.warn('[TaskPeers] Failed to initialize ip2region:', e.message)
+  }
+
+  // Module-level country name -> ISO code map (built once, not per call).
+  const COUNTRY_NAME_TO_CODE = {
+    // 亚洲
+    中国: 'CN',
+    日本: 'JP',
+    韩国: 'KR',
+    印度: 'IN',
+    新加坡: 'SG',
+    泰国: 'TH',
+    马来西亚: 'MY',
+    马拉雅: 'MY',
+    印度尼西亚: 'ID',
+    菲律宾: 'PH',
+    越南: 'VN',
+    香港: 'HK',
+    台湾: 'TW',
+    澳门: 'MO',
+    蒙古: 'MN',
+    朝鲜: 'KP',
+    缅甸: 'MM',
+    老挝: 'LA',
+    柬埔寨: 'KH',
+    文莱: 'BN',
+    东帝汶: 'TL',
+    尼泊尔: 'NP',
+    不丹: 'BT',
+    孟加拉国: 'BD',
+    斯里兰卡: 'LK',
+    马尔代夫: 'MV',
+    巴基斯坦: 'PK',
+    阿富汗: 'AF',
+    哈萨克斯坦: 'KZ',
+    乌兹别克斯坦: 'UZ',
+    土库曼斯坦: 'TM',
+    吉尔吉斯斯坦: 'KG',
+    塔吉克斯坦: 'TJ',
+    // 欧洲
+    英国: 'GB',
+    'United Kingdom': 'GB',
+    UK: 'GB',
+    'Great Britain': 'GB',
+    England: 'GB',
+    Scotland: 'GB',
+    Wales: 'GB',
+    'Northern Ireland': 'GB',
+    法国: 'FR',
+    France: 'FR',
+    德国: 'DE',
+    Germany: 'DE',
+    意大利: 'IT',
+    Italy: 'IT',
+    西班牙: 'ES',
+    Spain: 'ES',
+    荷兰: 'NL',
+    Netherlands: 'NL',
+    'The Netherlands': 'NL',
+    Holland: 'NL',
+    瑞士: 'CH',
+    Switzerland: 'CH',
+    瑞典: 'SE',
+    Sweden: 'SE',
+    波兰: 'PL',
+    Poland: 'PL',
+    比利时: 'BE',
+    Belgium: 'BE',
+    奥地利: 'AT',
+    Austria: 'AT',
+    挪威: 'NO',
+    Norway: 'NO',
+    丹麦: 'DK',
+    Denmark: 'DK',
+    芬兰: 'FI',
+    Finland: 'FI',
+    爱尔兰: 'IE',
+    Ireland: 'IE',
+    'Republic of Ireland': 'IE',
+    葡萄牙: 'PT',
+    Portugal: 'PT',
+    希腊: 'GR',
+    Greece: 'GR',
+    捷克: 'CZ',
+    'Czech Republic': 'CZ',
+    Czechia: 'CZ',
+    匈牙利: 'HU',
+    Hungary: 'HU',
+    罗马尼亚: 'RO',
+    Romania: 'RO',
+    乌克兰: 'UA',
+    Ukraine: 'UA',
+    俄罗斯: 'RU',
+    Russia: 'RU',
+    'Russian Federation': 'RU',
+    白俄罗斯: 'BY',
+    Belarus: 'BY',
+    保加利亚: 'BG',
+    Bulgaria: 'BG',
+    塞尔维亚: 'RS',
+    Serbia: 'RS',
+    克罗地亚: 'HR',
+    Croatia: 'HR',
+    斯洛伐克: 'SK',
+    Slovakia: 'SK',
+    斯洛文尼亚: 'SI',
+    Slovenia: 'SI',
+    立陶宛: 'LT',
+    Lithuania: 'LT',
+    拉脱维亚: 'LV',
+    Latvia: 'LV',
+    爱沙尼亚: 'EE',
+    Estonia: 'EE',
+    冰岛: 'IS',
+    Iceland: 'IS',
+    卢森堡: 'LU',
+    Luxembourg: 'LU',
+    马耳他: 'MT',
+    Malta: 'MT',
+    摩纳哥: 'MC',
+    Monaco: 'MC',
+    列支敦士登: 'LI',
+    Liechtenstein: 'LI',
+    安道尔: 'AD',
+    Andorra: 'AD',
+    圣马力诺: 'SM',
+    'San Marino': 'SM',
+    梵蒂冈: 'VA',
+    'Vatican City': 'VA',
+    Cyprus: 'CY',
+    塞浦路斯: 'CY',
+    Moldova: 'MD',
+    摩尔多瓦: 'MD',
+    欧洲: 'EU',
+    Europe: 'EU',
+    欧盟: 'EU',
+    欧洲联盟: 'EU',
+    'European Union': 'EU',
+    EU: 'EU',
+    // 北美洲
+    美国: 'US',
+    加拿大: 'CA',
+    安大略: 'CA',
+    安大略省: 'CA',
+    Ontario: 'CA',
+    魁北克: 'CA',
+    魁北克省: 'CA',
+    Quebec: 'CA',
+    不列颠哥伦比亚: 'CA',
+    不列颠哥伦比亚省: 'CA',
+    'British Columbia': 'CA',
+    卑诗: 'CA',
+    卑诗省: 'CA',
+    Alberta: 'CA',
+    阿尔伯塔: 'CA',
+    阿尔伯塔省: 'CA',
+    Manitoba: 'CA',
+    马尼托巴: 'CA',
+    马尼托巴省: 'CA',
+    Saskatchewan: 'CA',
+    萨斯喀彻温: 'CA',
+    萨斯喀彻温省: 'CA',
+    'Nova Scotia': 'CA',
+    新斯科舍: 'CA',
+    新斯科舍省: 'CA',
+    'New Brunswick': 'CA',
+    新不伦瑞克: 'CA',
+    新不伦瑞克省: 'CA',
+    'Newfoundland and Labrador': 'CA',
+    纽芬兰与拉布拉多: 'CA',
+    纽芬兰与拉布拉多省: 'CA',
+    'Prince Edward Island': 'CA',
+    爱德华王子岛: 'CA',
+    爱德华王子岛省: 'CA',
+    Yukon: 'CA',
+    育空: 'CA',
+    'Northwest Territories': 'CA',
+    西北地区: 'CA',
+    Nunavut: 'CA',
+    努纳武特: 'CA',
+    墨西哥: 'MX',
+    古巴: 'CU',
+    牙买加: 'JM',
+    海地: 'HT',
+    多米尼加: 'DO',
+    巴拿马: 'PA',
+    哥斯达黎加: 'CR',
+    危地马拉: 'GT',
+    洪都拉斯: 'HN',
+    尼加拉瓜: 'NI',
+    萨尔瓦多: 'SV',
+    伯利兹: 'BZ',
+    // 南美洲
+    巴西: 'BR',
+    阿根廷: 'AR',
+    智利: 'CL',
+    秘鲁: 'PE',
+    哥伦比亚: 'CO',
+    委内瑞拉: 'VE',
+    厄瓜多尔: 'EC',
+    玻利维亚: 'BO',
+    巴拉圭: 'PY',
+    乌拉圭: 'UY',
+    圭亚那: 'GY',
+    苏里南: 'SR',
+    // 大洋洲
+    澳大利亚: 'AU',
+    新西兰: 'NZ',
+    斐济: 'FJ',
+    巴布亚新几内亚: 'PG',
+    所罗门群岛: 'SB',
+    瓦努阿图: 'VU',
+    萨摩亚: 'WS',
+    汤加: 'TO',
+    // 非洲
+    南非: 'ZA',
+    'South Africa': 'ZA',
+    埃及: 'EG',
+    Egypt: 'EG',
+    尼日利亚: 'NG',
+    Nigeria: 'NG',
+    肯尼亚: 'KE',
+    Kenya: 'KE',
+    埃塞俄比亚: 'ET',
+    Ethiopia: 'ET',
+    加纳: 'GH',
+    Ghana: 'GH',
+    坦桑尼亚: 'TZ',
+    Tanzania: 'TZ',
+    乌干达: 'UG',
+    Uganda: 'UG',
+    阿尔及利亚: 'DZ',
+    Algeria: 'DZ',
+    摩洛哥: 'MA',
+    Morocco: 'MA',
+    突尼斯: 'TN',
+    Tunisia: 'TN',
+    利比亚: 'LY',
+    Libya: 'LY',
+    苏丹: 'SD',
+    Sudan: 'SD',
+    索马里: 'SO',
+    Somalia: 'SO',
+    津巴布韦: 'ZW',
+    Zimbabwe: 'ZW',
+    赞比亚: 'ZM',
+    Zambia: 'ZM',
+    莫桑比克: 'MZ',
+    Mozambique: 'MZ',
+    博茨瓦纳: 'BW',
+    Botswana: 'BW',
+    纳米比亚: 'NA',
+    Namibia: 'NA',
+    安哥拉: 'AO',
+    Angola: 'AO',
+    喀麦隆: 'CM',
+    Cameroon: 'CM',
+    塞内加尔: 'SN',
+    Senegal: 'SN',
+    科特迪瓦: 'CI',
+    'Côte d’Ivoire': 'CI',
+    "Côte d'Ivoire": 'CI',
+    "Cote d'Ivoire": 'CI',
+    'Cote d Ivoire': 'CI',
+    'Ivory Coast': 'CI',
+    马达加斯加: 'MG',
+    Madagascar: 'MG',
+    毛里求斯: 'MU',
+    Mauritius: 'MU',
+    // 中东
+    土耳其: 'TR',
+    以色列: 'IL',
+    沙特阿拉伯: 'SA',
+    阿联酋: 'AE',
+    伊朗: 'IR',
+    伊拉克: 'IQ',
+    叙利亚: 'SY',
+    约旦: 'JO',
+    黎巴嫩: 'LB',
+    科威特: 'KW',
+    卡塔尔: 'QA',
+    巴林: 'BH',
+    阿曼: 'OM',
+    也门: 'YE'
   }
 
   export default {
@@ -472,11 +769,6 @@
           p.status = 'disconnected'
         })
 
-        // 调试：打印banned peers的数据
-        if (banned.length > 0) {
-          console.log('[TaskPeers] Banned peers data:', JSON.stringify(banned, null, 2))
-        }
-
         // 应用过滤和搜索 - 优化：减少重复计算
         const q = this.search.trim().toLowerCase()
         const hasSearch = q.length > 0
@@ -648,14 +940,21 @@
     mounted () {
       // 初始加载时检测溢出
       this.$nextTick(() => {
-        this.detectTextOverflow()
+        this.scheduleDetectTextOverflow()
       })
     },
     updated () {
-      // 在DOM更新后检测所有文本元素的溢出状态
-      this.$nextTick(() => {
-        this.detectTextOverflow()
-      })
+      // 防抖：避免每次轮询更新都强制 reflow。仅在 DOM 稳定后检测一次。
+      this.scheduleDetectTextOverflow()
+    },
+    beforeDestroy () {
+      if (this._textOverflowTimer) {
+        clearTimeout(this._textOverflowTimer)
+      }
+      if (this._contextMenuCloseHandler) {
+        document.removeEventListener('click', this._contextMenuCloseHandler)
+        this._contextMenuCloseHandler = null
+      }
     },
     watch: {
       searchText: {
@@ -860,6 +1159,17 @@
         if (fallbackAttempts === 0 && fallbackFails === 0) return ''
         return this.$t('task.peer-status-attempts', { attempts: fallbackAttempts, fails: fallbackFails })
       },
+      scheduleDetectTextOverflow () {
+        // Debounce: collapse repeated updated() calls (e.g. every poll tick)
+        // into a single layout read after the DOM has stabilized.
+        if (this._textOverflowTimer) {
+          clearTimeout(this._textOverflowTimer)
+        }
+        this._textOverflowTimer = setTimeout(() => {
+          this._textOverflowTimer = null
+          this.detectTextOverflow()
+        }, 200)
+      },
       detectTextOverflow () {
         // 检测所有 .mo-peer-text 元素是否溢出
         const textElements = this.$el.querySelectorAll('.mo-peer-text')
@@ -1061,288 +1371,7 @@
       countryNameToCode (countryName) {
         const name = `${countryName || ''}`.trim()
         if (!name) return null
-        const countryMap = {
-          // 亚洲
-          中国: 'CN',
-          日本: 'JP',
-          韩国: 'KR',
-          印度: 'IN',
-          新加坡: 'SG',
-          泰国: 'TH',
-          马来西亚: 'MY',
-          马拉雅: 'MY',
-          印度尼西亚: 'ID',
-          菲律宾: 'PH',
-          越南: 'VN',
-          香港: 'HK',
-          台湾: 'TW',
-          澳门: 'MO',
-          蒙古: 'MN',
-          朝鲜: 'KP',
-          缅甸: 'MM',
-          老挝: 'LA',
-          柬埔寨: 'KH',
-          文莱: 'BN',
-          东帝汶: 'TL',
-          尼泊尔: 'NP',
-          不丹: 'BT',
-          孟加拉国: 'BD',
-          斯里兰卡: 'LK',
-          马尔代夫: 'MV',
-          巴基斯坦: 'PK',
-          阿富汗: 'AF',
-          哈萨克斯坦: 'KZ',
-          乌兹别克斯坦: 'UZ',
-          土库曼斯坦: 'TM',
-          吉尔吉斯斯坦: 'KG',
-          塔吉克斯坦: 'TJ',
-          // 欧洲
-          英国: 'GB',
-          'United Kingdom': 'GB',
-          UK: 'GB',
-          'Great Britain': 'GB',
-          England: 'GB',
-          Scotland: 'GB',
-          Wales: 'GB',
-          'Northern Ireland': 'GB',
-          法国: 'FR',
-          France: 'FR',
-          德国: 'DE',
-          Germany: 'DE',
-          意大利: 'IT',
-          Italy: 'IT',
-          西班牙: 'ES',
-          Spain: 'ES',
-          荷兰: 'NL',
-          Netherlands: 'NL',
-          'The Netherlands': 'NL',
-          Holland: 'NL',
-          瑞士: 'CH',
-          Switzerland: 'CH',
-          瑞典: 'SE',
-          Sweden: 'SE',
-          波兰: 'PL',
-          Poland: 'PL',
-          比利时: 'BE',
-          Belgium: 'BE',
-          奥地利: 'AT',
-          Austria: 'AT',
-          挪威: 'NO',
-          Norway: 'NO',
-          丹麦: 'DK',
-          Denmark: 'DK',
-          芬兰: 'FI',
-          Finland: 'FI',
-          爱尔兰: 'IE',
-          Ireland: 'IE',
-          'Republic of Ireland': 'IE',
-          葡萄牙: 'PT',
-          Portugal: 'PT',
-          希腊: 'GR',
-          Greece: 'GR',
-          捷克: 'CZ',
-          'Czech Republic': 'CZ',
-          Czechia: 'CZ',
-          匈牙利: 'HU',
-          Hungary: 'HU',
-          罗马尼亚: 'RO',
-          Romania: 'RO',
-          乌克兰: 'UA',
-          Ukraine: 'UA',
-          俄罗斯: 'RU',
-          Russia: 'RU',
-          'Russian Federation': 'RU',
-          白俄罗斯: 'BY',
-          Belarus: 'BY',
-          保加利亚: 'BG',
-          Bulgaria: 'BG',
-          塞尔维亚: 'RS',
-          Serbia: 'RS',
-          克罗地亚: 'HR',
-          Croatia: 'HR',
-          斯洛伐克: 'SK',
-          Slovakia: 'SK',
-          斯洛文尼亚: 'SI',
-          Slovenia: 'SI',
-          立陶宛: 'LT',
-          Lithuania: 'LT',
-          拉脱维亚: 'LV',
-          Latvia: 'LV',
-          爱沙尼亚: 'EE',
-          Estonia: 'EE',
-          冰岛: 'IS',
-          Iceland: 'IS',
-          卢森堡: 'LU',
-          Luxembourg: 'LU',
-          马耳他: 'MT',
-          Malta: 'MT',
-          摩纳哥: 'MC',
-          Monaco: 'MC',
-          列支敦士登: 'LI',
-          Liechtenstein: 'LI',
-          安道尔: 'AD',
-          Andorra: 'AD',
-          圣马力诺: 'SM',
-          'San Marino': 'SM',
-          梵蒂冈: 'VA',
-          'Vatican City': 'VA',
-          Cyprus: 'CY',
-          塞浦路斯: 'CY',
-          Moldova: 'MD',
-          摩尔多瓦: 'MD',
-          欧洲: 'EU',
-          Europe: 'EU',
-          欧盟: 'EU',
-          欧洲联盟: 'EU',
-          'European Union': 'EU',
-          EU: 'EU',
-          // 北美洲
-          美国: 'US',
-          加拿大: 'CA',
-          安大略: 'CA',
-          安大略省: 'CA',
-          Ontario: 'CA',
-          魁北克: 'CA',
-          魁北克省: 'CA',
-          Quebec: 'CA',
-          不列颠哥伦比亚: 'CA',
-          不列颠哥伦比亚省: 'CA',
-          'British Columbia': 'CA',
-          卑诗: 'CA',
-          卑诗省: 'CA',
-          Alberta: 'CA',
-          阿尔伯塔: 'CA',
-          阿尔伯塔省: 'CA',
-          Manitoba: 'CA',
-          马尼托巴: 'CA',
-          马尼托巴省: 'CA',
-          Saskatchewan: 'CA',
-          萨斯喀彻温: 'CA',
-          萨斯喀彻温省: 'CA',
-          'Nova Scotia': 'CA',
-          新斯科舍: 'CA',
-          新斯科舍省: 'CA',
-          'New Brunswick': 'CA',
-          新不伦瑞克: 'CA',
-          新不伦瑞克省: 'CA',
-          'Newfoundland and Labrador': 'CA',
-          纽芬兰与拉布拉多: 'CA',
-          纽芬兰与拉布拉多省: 'CA',
-          'Prince Edward Island': 'CA',
-          爱德华王子岛: 'CA',
-          爱德华王子岛省: 'CA',
-          Yukon: 'CA',
-          育空: 'CA',
-          'Northwest Territories': 'CA',
-          西北地区: 'CA',
-          Nunavut: 'CA',
-          努纳武特: 'CA',
-          墨西哥: 'MX',
-          古巴: 'CU',
-          牙买加: 'JM',
-          海地: 'HT',
-          多米尼加: 'DO',
-          巴拿马: 'PA',
-          哥斯达黎加: 'CR',
-          危地马拉: 'GT',
-          洪都拉斯: 'HN',
-          尼加拉瓜: 'NI',
-          萨尔瓦多: 'SV',
-          伯利兹: 'BZ',
-          // 南美洲
-          巴西: 'BR',
-          阿根廷: 'AR',
-          智利: 'CL',
-          秘鲁: 'PE',
-          哥伦比亚: 'CO',
-          委内瑞拉: 'VE',
-          厄瓜多尔: 'EC',
-          玻利维亚: 'BO',
-          巴拉圭: 'PY',
-          乌拉圭: 'UY',
-          圭亚那: 'GY',
-          苏里南: 'SR',
-          // 大洋洲
-          澳大利亚: 'AU',
-          新西兰: 'NZ',
-          斐济: 'FJ',
-          巴布亚新几内亚: 'PG',
-          所罗门群岛: 'SB',
-          瓦努阿图: 'VU',
-          萨摩亚: 'WS',
-          汤加: 'TO',
-          // 非洲
-          南非: 'ZA',
-          'South Africa': 'ZA',
-          埃及: 'EG',
-          Egypt: 'EG',
-          尼日利亚: 'NG',
-          Nigeria: 'NG',
-          肯尼亚: 'KE',
-          Kenya: 'KE',
-          埃塞俄比亚: 'ET',
-          Ethiopia: 'ET',
-          加纳: 'GH',
-          Ghana: 'GH',
-          坦桑尼亚: 'TZ',
-          Tanzania: 'TZ',
-          乌干达: 'UG',
-          Uganda: 'UG',
-          阿尔及利亚: 'DZ',
-          Algeria: 'DZ',
-          摩洛哥: 'MA',
-          Morocco: 'MA',
-          突尼斯: 'TN',
-          Tunisia: 'TN',
-          利比亚: 'LY',
-          Libya: 'LY',
-          苏丹: 'SD',
-          Sudan: 'SD',
-          索马里: 'SO',
-          Somalia: 'SO',
-          津巴布韦: 'ZW',
-          Zimbabwe: 'ZW',
-          赞比亚: 'ZM',
-          Zambia: 'ZM',
-          莫桑比克: 'MZ',
-          Mozambique: 'MZ',
-          博茨瓦纳: 'BW',
-          Botswana: 'BW',
-          纳米比亚: 'NA',
-          Namibia: 'NA',
-          安哥拉: 'AO',
-          Angola: 'AO',
-          喀麦隆: 'CM',
-          Cameroon: 'CM',
-          塞内加尔: 'SN',
-          Senegal: 'SN',
-          科特迪瓦: 'CI',
-          'Côte d’Ivoire': 'CI',
-          "Côte d'Ivoire": 'CI',
-          "Cote d'Ivoire": 'CI',
-          'Cote d Ivoire': 'CI',
-          'Ivory Coast': 'CI',
-          马达加斯加: 'MG',
-          Madagascar: 'MG',
-          毛里求斯: 'MU',
-          Mauritius: 'MU',
-          // 中东
-          土耳其: 'TR',
-          以色列: 'IL',
-          沙特阿拉伯: 'SA',
-          阿联酋: 'AE',
-          伊朗: 'IR',
-          伊拉克: 'IQ',
-          叙利亚: 'SY',
-          约旦: 'JO',
-          黎巴嫩: 'LB',
-          科威特: 'KW',
-          卡塔尔: 'QA',
-          巴林: 'BH',
-          阿曼: 'OM',
-          也门: 'YE'
-        }
-        return countryMap[name] || null
+        return COUNTRY_NAME_TO_CODE[name] || null
       },
       getPeerSource (peer) {
         if (!peer) return '-'
@@ -1365,6 +1394,14 @@
         if (protocol === 'tcp-ext') return this.$t('task.peer-protocol-tcp-ext')
         if (protocol === 'utp-ext') return this.$t('task.peer-protocol-utp-ext')
         return protocol || '-'
+      },
+      getPeerEncryption (peer) {
+        if (!peer) return '-'
+        const encrypted = peer.encrypted
+        if (encrypted === true || encrypted === 'true' || encrypted === '1' || encrypted === 1) {
+          return this.$t('task.peer-encryption-mse')
+        }
+        return this.$t('task.peer-encryption-plaintext')
       },
       getPeerStatus (peer) {
         if (!peer) return '-'
@@ -1391,7 +1428,7 @@
       handleSpanMethod ({ row, column, rowIndex, columnIndex }) {
         if (row.isGroup) {
           if (columnIndex === 0) {
-            return [1, 11]
+            return [1, 12]
           } else {
             return [0, 0]
           }
@@ -1525,8 +1562,6 @@
           return
         }
 
-        console.log('[TaskPeers] Banning peer:', { gid: this.task.gid, ip, duration, isBanned, ipType: typeof ip })
-
         try {
           let durationText = ''
           if (duration === 300) {
@@ -1585,8 +1620,6 @@
           this.$message.error('Invalid IP address')
           return
         }
-
-        console.log('[TaskPeers] Unbanning peer:', { gid: this.task.gid, ip, ipType: typeof ip })
 
         try {
           await this.$confirm(

@@ -175,36 +175,75 @@
       }
     },
     watch: {
-      task: {
-        handler (newTask) {
-          if (newTask && checkTaskIsBT(newTask) && newTask.gid) {
-            this.fetchTrackerStats(newTask.gid)
+      'task.gid': {
+        handler (newGid) {
+          // Re-fetch tracker stats only when the task changes (not every poll).
+          // The previous `task: { deep: true }` watcher fired on every poll
+          // tick (task is replaced ~1s), causing redundant fetchTrackerStats
+          // calls. Tracker list changes infrequently, so gid-keyed refresh is
+          // sufficient; periodic refresh is handled by a separate timer.
+          this._trackerFetchTimer && clearTimeout(this._trackerFetchTimer)
+          if (newGid && this.task && checkTaskIsBT(this.task)) {
+            this.fetchTrackerStats(newGid)
+            this._startTrackerRefreshTimer(newGid)
           } else {
             this.trackerStats = []
           }
         },
-        immediate: true,
-        deep: true
+        immediate: true
+      },
+      'task.status': {
+        handler (newStatus) {
+          // Refresh when task becomes active again (resume from pause).
+          if (newStatus === 'active' && this.task && this.task.gid && checkTaskIsBT(this.task)) {
+            this._trackerFetchTimer && clearTimeout(this._trackerFetchTimer)
+            this.fetchTrackerStats(this.task.gid)
+            this._startTrackerRefreshTimer(this.task.gid)
+          } else if (newStatus !== 'active' && newStatus !== 'waiting') {
+            this._stopTrackerRefreshTimer()
+          }
+        }
       }
     },
     mounted () {
       this.$nextTick(() => {
-        this.detectTextOverflow()
+        this.scheduleDetectTextOverflow()
       })
     },
     updated () {
-      this.$nextTick(() => {
-        this.detectTextOverflow()
-      })
+      // 防抖：避免每次轮询更新都强制 reflow。
+      this.scheduleDetectTextOverflow()
+    },
+    beforeDestroy () {
+      if (this._textOverflowTimer) {
+        clearTimeout(this._textOverflowTimer)
+      }
+      this._stopTrackerRefreshTimer()
     },
     methods: {
+      _startTrackerRefreshTimer (gid) {
+        this._stopTrackerRefreshTimer()
+        // Refresh tracker stats every 10s (trackers change slowly compared
+        // to peer lists; polling every 1s was wasteful).
+        this._trackerRefreshInterval = setInterval(() => {
+          if (gid && this.task && this.task.gid === gid && checkTaskIsBT(this.task)) {
+            this.fetchTrackerStats(gid)
+          } else {
+            this._stopTrackerRefreshTimer()
+          }
+        }, 10000)
+      },
+      _stopTrackerRefreshTimer () {
+        if (this._trackerRefreshInterval) {
+          clearInterval(this._trackerRefreshInterval)
+          this._trackerRefreshInterval = null
+        }
+      },
       async fetchTrackerStats (gid) {
         try {
           const stats = await api.fetchTaskTrackers({ gid })
-          console.log('[TaskTrackers] Fetched tracker stats:', stats)
           this.trackerStats = Array.isArray(stats) ? stats : []
         } catch (error) {
-          console.log('[TaskTrackers] Failed to fetch tracker stats:', error.message)
           this.trackerStats = []
         }
       },
@@ -266,6 +305,16 @@
           return `${minutes}m ${seconds}s`
         }
         return `${seconds}s`
+      },
+      scheduleDetectTextOverflow () {
+        // Debounce: collapse repeated updated() calls into a single layout read.
+        if (this._textOverflowTimer) {
+          clearTimeout(this._textOverflowTimer)
+        }
+        this._textOverflowTimer = setTimeout(() => {
+          this._textOverflowTimer = null
+          this.detectTextOverflow()
+        }, 200)
       },
       detectTextOverflow () {
         const textElements = this.$el.querySelectorAll('.mo-tracker-text')

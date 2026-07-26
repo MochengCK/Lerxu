@@ -1214,11 +1214,9 @@
       },
       form: {
         handler () {
-          // Only save if form has changed from original
-          const hasChanges = !isEmpty(diffConfig(this.formOriginal, this.form))
-          if (hasChanges) {
-            this.autoSaveForm()
-          }
+          // autoSaveForm already debounces and checks diffConfig internally,
+          // so we avoid a redundant synchronous diffConfig pass here.
+          this.autoSaveForm()
         },
         deep: true
       },
@@ -1419,6 +1417,9 @@
       this.$electron.ipcRenderer.on('update-cancelled', this._updateEventListeners.onUpdateCancelled)
     },
     beforeDestroy () {
+      if (this._filterTimer) {
+        clearTimeout(this._filterTimer)
+      }
       // 清理更新事件监听器
       if (this._updateEventListeners) {
         this.$electron.ipcRenderer.removeListener('checking-for-update', this._updateEventListeners.onCheckingForUpdate)
@@ -1742,7 +1743,12 @@
         }
       },
       applyFilters (keyword) {
-        this.filterCards(keyword, this.activeCategory)
+        if (this._filterTimer) {
+          clearTimeout(this._filterTimer)
+        }
+        this._filterTimer = setTimeout(() => {
+          this.filterCards(keyword, this.activeCategory)
+        }, 120)
       },
       filterCards (keyword, category) {
         this.$nextTick(() => {

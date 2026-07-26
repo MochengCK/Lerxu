@@ -266,7 +266,27 @@ export default class Api {
   }
 
   savePreferenceToNativeStore (params = {}) {
-    const { user, system, others } = separateConfig(params)
+    const normalizedParams = { ...params }
+    if (normalizedParams['bt-encryption-mode'] !== undefined) {
+      const mode = normalizedParams['bt-encryption-mode']
+      if (mode === 'force') {
+        normalizedParams['bt-require-crypto'] = true
+        normalizedParams['bt-min-crypto-level'] = 'arc4'
+      } else if (mode === 'none') {
+        normalizedParams['bt-require-crypto'] = false
+        normalizedParams['bt-min-crypto-level'] = 'plain'
+      } else {
+        normalizedParams['bt-require-crypto'] = false
+        normalizedParams['bt-min-crypto-level'] = 'plain'
+      }
+      delete normalizedParams['bt-encryption-mode']
+      delete normalizedParams['bt-force-encryption']
+    } else if (normalizedParams['bt-force-encryption'] !== undefined) {
+      const forceEncryption = normalizedParams['bt-force-encryption'] === true || normalizedParams['bt-force-encryption'] === 'true'
+      normalizedParams['bt-require-crypto'] = forceEncryption
+      normalizedParams['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
+    }
+    const { user, system, others } = separateConfig(normalizedParams)
     const config = {}
 
     if (!isEmpty(user)) {
@@ -292,7 +312,27 @@ export default class Api {
   }
 
   changeGlobalOption (options) {
-    const args = formatOptionsForEngine(options)
+    const normalizedOptions = { ...options }
+    if (normalizedOptions['bt-encryption-mode'] !== undefined) {
+      const mode = normalizedOptions['bt-encryption-mode']
+      if (mode === 'force') {
+        normalizedOptions['bt-require-crypto'] = true
+        normalizedOptions['bt-min-crypto-level'] = 'arc4'
+      } else if (mode === 'none') {
+        normalizedOptions['bt-require-crypto'] = false
+        normalizedOptions['bt-min-crypto-level'] = 'plain'
+      } else {
+        normalizedOptions['bt-require-crypto'] = false
+        normalizedOptions['bt-min-crypto-level'] = 'plain'
+      }
+      delete normalizedOptions['bt-encryption-mode']
+      delete normalizedOptions['bt-force-encryption']
+    } else if (normalizedOptions['bt-force-encryption'] !== undefined) {
+      const forceEncryption = normalizedOptions['bt-force-encryption'] === true || normalizedOptions['bt-force-encryption'] === 'true'
+      normalizedOptions['bt-require-crypto'] = forceEncryption
+      normalizedOptions['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
+    }
+    const args = formatOptionsForEngine(normalizedOptions)
 
     return this.client.call('changeGlobalOption', args)
   }
@@ -336,7 +376,27 @@ export default class Api {
   changeOption (params = {}) {
     const { gid, options = {} } = params
 
-    const engineOptions = formatOptionsForEngine(options)
+    const normalizedOptions = { ...options }
+    if (normalizedOptions['bt-encryption-mode'] !== undefined) {
+      const mode = normalizedOptions['bt-encryption-mode']
+      if (mode === 'force') {
+        normalizedOptions['bt-require-crypto'] = true
+        normalizedOptions['bt-min-crypto-level'] = 'arc4'
+      } else if (mode === 'none') {
+        normalizedOptions['bt-require-crypto'] = false
+        normalizedOptions['bt-min-crypto-level'] = 'plain'
+      } else {
+        normalizedOptions['bt-require-crypto'] = false
+        normalizedOptions['bt-min-crypto-level'] = 'plain'
+      }
+      delete normalizedOptions['bt-encryption-mode']
+      delete normalizedOptions['bt-force-encryption']
+    } else if (normalizedOptions['bt-force-encryption'] !== undefined) {
+      const forceEncryption = normalizedOptions['bt-force-encryption'] === true || normalizedOptions['bt-force-encryption'] === 'true'
+      normalizedOptions['bt-require-crypto'] = forceEncryption
+      normalizedOptions['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
+    }
+    const engineOptions = formatOptionsForEngine(normalizedOptions)
     const args = compactUndefined([gid, engineOptions])
 
     return this.client.call('changeOption', ...args)
@@ -939,7 +999,27 @@ export default class Api {
 
   multicall (method, params = {}) {
     let { gids, options = {} } = params
-    options = formatOptionsForEngine(options)
+    const normalizedOptions = { ...options }
+    if (normalizedOptions['bt-encryption-mode'] !== undefined) {
+      const mode = normalizedOptions['bt-encryption-mode']
+      if (mode === 'force') {
+        normalizedOptions['bt-require-crypto'] = true
+        normalizedOptions['bt-min-crypto-level'] = 'arc4'
+      } else if (mode === 'none') {
+        normalizedOptions['bt-require-crypto'] = false
+        normalizedOptions['bt-min-crypto-level'] = 'plain'
+      } else {
+        normalizedOptions['bt-require-crypto'] = false
+        normalizedOptions['bt-min-crypto-level'] = 'plain'
+      }
+      delete normalizedOptions['bt-encryption-mode']
+      delete normalizedOptions['bt-force-encryption']
+    } else if (normalizedOptions['bt-force-encryption'] !== undefined) {
+      const forceEncryption = normalizedOptions['bt-force-encryption'] === true || normalizedOptions['bt-force-encryption'] === 'true'
+      normalizedOptions['bt-require-crypto'] = forceEncryption
+      normalizedOptions['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
+    }
+    options = formatOptionsForEngine(normalizedOptions)
 
     const data = gids.map((gid, index) => {
       const _options = clone(options)
