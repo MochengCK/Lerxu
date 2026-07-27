@@ -147,10 +147,23 @@ export class JSONRPCClient extends EventEmitter {
     else this._onrequest(message)
   }
 
+  _rejectAllDeferreds (reason) {
+    const ids = Object.keys(this.deferreds)
+    for (const id of ids) {
+      const deferred = this.deferreds[id]
+      if (deferred && typeof deferred.reject === 'function') {
+        deferred.reject(new Error(reason || 'WebSocket closed'))
+      }
+      delete this.deferreds[id]
+    }
+  }
+
   async open () {
     const socket = (this.socket = new WebSocket(this.url('ws')))
 
     socket.onclose = (...args) => {
+      // 断线时立即 reject 所有 pending 请求，防止它们永久挂起
+      this._rejectAllDeferreds('WebSocket connection closed')
       this.emit('close', ...args)
     }
     socket.onmessage = (event) => {

@@ -193,6 +193,9 @@ const shouldAdoptHistoryFiles = (task, historyTask) => {
 export default class Api {
   constructor (options = {}) {
     this.options = options
+    this._reconnectTimer = null
+    this._reconnectAttempts = 0
+    this._isReconnecting = false
 
     this.init()
   }
@@ -202,6 +205,52 @@ export default class Api {
 
     this.client = this.initClient()
     this.client.open()
+
+    // 监听 WebSocket 断线，自动重连。
+    // BT 下载时引擎高负载可能导致 WebSocket 超时断开，
+    // 但 aria2 进程仍在后台运行，重连后即可恢复通信。
+    this.client.on('close', () => {
+      if (this._intentionalClose) {
+        return
+      }
+      this.scheduleReconnect()
+    })
+  }
+
+  scheduleReconnect () {
+    if (this._isReconnecting) {
+      return
+    }
+    this._isReconnecting = true
+
+    // 指数退避：1s, 2s, 4s, 8s, 16s，上限 30s
+    this._reconnectAttempts += 1
+    const delay = Math.min(1000 * Math.pow(2, this._reconnectAttempts - 1), 30000)
+    console.warn(`[Motrix] WebSocket disconnected, attempting reconnect #${this._reconnectAttempts} in ${delay}ms`)
+
+    clearTimeout(this._reconnectTimer)
+    this._reconnectTimer = setTimeout(() => {
+      this._isReconnecting = false
+      this.reconnect()
+    }, delay)
+  }
+
+  async reconnect () {
+    try {
+      // 重新打开 WebSocket
+      await this.client.open()
+
+      // 重连成功，重置计数器
+      this._reconnectAttempts = 0
+      console.log('[Motrix] WebSocket reconnected successfully')
+
+      // 通知外部组件重新绑定引擎事件（onDownloadStart 等），
+      // 因为旧 socket 上的事件监听器已随 socket 销毁而失效
+      this.client.emit('reconnect')
+    } catch (err) {
+      console.error('[Motrix] WebSocket reconnect failed:', err.message)
+      this.scheduleReconnect()
+    }
   }
 
   loadConfigFromLocalStorage () {
@@ -238,6 +287,8 @@ export default class Api {
   }
 
   closeClient () {
+    this._intentionalClose = true
+    clearTimeout(this._reconnectTimer)
     this.client.close()
       .then(() => {
         this.client = null

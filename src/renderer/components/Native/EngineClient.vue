@@ -2714,6 +2714,21 @@
         api.client.removeListener('onDownloadError', this.onDownloadError)
         api.client.removeListener('onBtDownloadComplete', this.onBtDownloadComplete)
       },
+      onEngineReconnect () {
+        // WebSocket 重连成功后，旧 socket 上的事件监听器已失效，
+        // 必须重新绑定引擎推送事件（onDownloadStart 等）。
+        this.unbindEngineEvents()
+        this.bindEngineEvents()
+
+        // 立即刷新一次任务列表和全局统计，
+        // 消除断线期间的 UI 数据空白。
+        this.$store.dispatch('app/fetchGlobalStat')
+        this.$store.dispatch('task/fetchList')
+
+        // 重置轮询间隔，避免在 idle interval 下延迟刷新
+        this.$store.dispatch('app/resetInterval')
+        this.kickPolling()
+      },
       startPolling () {
         this.stopPolling()
         this.timer = setTimeout(() => {
@@ -3282,6 +3297,8 @@
         return
       }
       this.bindEngineEvents()
+      // 监听 WebSocket 重连事件，重连后重新绑定引擎事件并刷新数据
+      api.client.on('reconnect', this.onEngineReconnect)
       this._resumedCompletedFixing = false
       this._resumedCompletedLastRun = 0
       this._resumedCompletedFixedGids = new Set()
@@ -3317,6 +3334,7 @@
       this.$store.dispatch('task/saveSession')
 
       this.unbindEngineEvents()
+      api.client.removeListener('reconnect', this.onEngineReconnect)
 
       this.stopPolling()
 
