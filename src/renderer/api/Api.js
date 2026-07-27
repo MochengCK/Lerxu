@@ -277,9 +277,11 @@ export default class Api {
         normalizedParams['bt-min-crypto-level'] = 'plain'
       } else {
         normalizedParams['bt-require-crypto'] = false
-        normalizedParams['bt-min-crypto-level'] = 'plain'
+        normalizedParams['bt-min-crypto-level'] = 'arc4'
       }
-      delete normalizedParams['bt-encryption-mode']
+      // 保留 bt-encryption-mode 以便持久化到 system.json，
+      // 否则重新打开偏好设置时会因读取不到该值而回退到默认值 adaptive。
+      // 派生的 bt-require-crypto / bt-min-crypto-level 仅用于引擎即时生效。
       delete normalizedParams['bt-force-encryption']
     } else if (normalizedParams['bt-force-encryption'] !== undefined) {
       const forceEncryption = normalizedParams['bt-force-encryption'] === true || normalizedParams['bt-force-encryption'] === 'true'
@@ -323,7 +325,7 @@ export default class Api {
         normalizedOptions['bt-min-crypto-level'] = 'plain'
       } else {
         normalizedOptions['bt-require-crypto'] = false
-        normalizedOptions['bt-min-crypto-level'] = 'plain'
+        normalizedOptions['bt-min-crypto-level'] = 'arc4'
       }
       delete normalizedOptions['bt-encryption-mode']
       delete normalizedOptions['bt-force-encryption']
@@ -387,7 +389,7 @@ export default class Api {
         normalizedOptions['bt-min-crypto-level'] = 'plain'
       } else {
         normalizedOptions['bt-require-crypto'] = false
-        normalizedOptions['bt-min-crypto-level'] = 'plain'
+        normalizedOptions['bt-min-crypto-level'] = 'arc4'
       }
       delete normalizedOptions['bt-encryption-mode']
       delete normalizedOptions['bt-force-encryption']
@@ -1010,7 +1012,7 @@ export default class Api {
         normalizedOptions['bt-min-crypto-level'] = 'plain'
       } else {
         normalizedOptions['bt-require-crypto'] = false
-        normalizedOptions['bt-min-crypto-level'] = 'plain'
+        normalizedOptions['bt-min-crypto-level'] = 'arc4'
       }
       delete normalizedOptions['bt-encryption-mode']
       delete normalizedOptions['bt-force-encryption']

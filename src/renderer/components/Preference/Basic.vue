@@ -2373,7 +2373,8 @@
             const cfg = modeConfig[mode] || modeConfig.adaptive
             data['bt-require-crypto'] = cfg['bt-require-crypto']
             data['bt-min-crypto-level'] = cfg['bt-min-crypto-level']
-            delete data.btEncryptionMode
+            // 保留 btEncryptionMode 以便持久化到 system.json（bt-encryption-mode），
+            // 否则重新打开偏好设置时会因读取不到该值而回退到默认值 adaptive。
             delete data.btForceEncryption
             delete data.btRequireCrypto
             delete data.btMinCryptoLevel

@@ -638,7 +638,7 @@ export default class Engine {
         extraConfig['bt-min-crypto-level'] = 'plain'
       } else {
         extraConfig['bt-require-crypto'] = false
-        extraConfig['bt-min-crypto-level'] = 'plain'
+        extraConfig['bt-min-crypto-level'] = 'arc4'
       }
       delete extraConfig['bt-encryption-mode']
       delete extraConfig['bt-force-encryption']

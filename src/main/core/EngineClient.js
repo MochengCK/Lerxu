@@ -65,7 +65,7 @@ export default class EngineClient {
         normalizedOptions['bt-min-crypto-level'] = 'plain'
       } else {
         normalizedOptions['bt-require-crypto'] = false
-        normalizedOptions['bt-min-crypto-level'] = 'plain'
+        normalizedOptions['bt-min-crypto-level'] = 'arc4'
       }
       delete normalizedOptions['bt-encryption-mode']
       delete normalizedOptions['bt-force-encryption']
