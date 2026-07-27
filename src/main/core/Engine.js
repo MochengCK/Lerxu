@@ -24,6 +24,9 @@ const { platform, arch } = process
 export default class Engine {
   // ChildProcess | null
   static instance = null
+  static restartAttempts = 0
+  static maxRestartAttempts = 5
+  static lastRestartTime = 0
 
   constructor (options = {}) {
     this.options = options
@@ -32,6 +35,7 @@ export default class Engine {
     this.systemConfig = options.systemConfig
     this.userConfig = options.userConfig
     this.configManager = options.configManager // 接收ConfigManager实例
+    this.restartTimer = null
   }
 
   async start () {
@@ -92,6 +96,12 @@ export default class Engine {
       } catch (err) {
         logger.warn(`[Motrix] Unlink engine process pid file failed: ${err}`)
       }
+
+      // 清理实例引用
+      this.instance = null
+
+      // 触发自动重启检查
+      this.checkAndRestartEngine(code, signal)
     })
 
     if (enableEngineLogs) {
@@ -370,6 +380,66 @@ export default class Engine {
         logger.error(`[Motrix] Write engine process pid failed: ${err}`)
       }
     })
+  }
+
+  // 检查并自动重启引擎
+  checkAndRestartEngine (exitCode, signal) {
+    const now = Date.now()
+    const timeSinceLastRestart = now - Engine.lastRestartTime
+
+    // 如果是正常退出或收到SIGTERM，不重启
+    if (signal === 'SIGTERM' || exitCode === 0) {
+      logger.info('[Motrix] Engine exited normally, not restarting')
+      Engine.restartAttempts = 0
+      return
+    }
+
+    // 检查重启条件
+    if (Engine.restartAttempts >= Engine.maxRestartAttempts) {
+      logger.error(`[Motrix] Engine restart attempts (${Engine.restartAttempts}) exceeded maximum (${Engine.maxRestartAttempts})`)
+      return
+    }
+
+    // 如果距离上次重启时间太短，延迟重启
+    if (timeSinceLastRestart < 5000) {
+      const delay = 5000 - timeSinceLastRestart
+      logger.warn(`[Motrix] Engine crash detected, will restart in ${delay}ms (attempt ${Engine.restartAttempts + 1}/${Engine.maxRestartAttempts})`)
+
+      if (this.restartTimer) {
+        clearTimeout(this.restartTimer)
+      }
+
+      this.restartTimer = setTimeout(() => {
+        this.performEngineRestart()
+      }, delay)
+    } else {
+      logger.warn(`[Motrix] Engine crash detected, restarting immediately (attempt ${Engine.restartAttempts + 1}/${Engine.maxRestartAttempts})`)
+      this.performEngineRestart()
+    }
+  }
+
+  performEngineRestart () {
+    Engine.restartAttempts++
+    Engine.lastRestartTime = Date.now()
+
+    try {
+      // 清理可能残留的旧进程
+      this.killStaleProcess(getEnginePidPath()).then(() => {
+        logger.info('[Motrix] Starting automatic engine restart')
+        this.start().catch((error) => {
+          logger.error('[Motrix] Failed to restart engine:', error.message)
+          // 如果重启失败，指数退避延迟下一次尝试
+          const delay = Math.pow(2, Engine.restartAttempts) * 1000
+          if (Engine.restartAttempts < Engine.maxRestartAttempts) {
+            this.restartTimer = setTimeout(() => {
+              this.performEngineRestart()
+            }, Math.min(delay, 30000)) // 最大延迟30秒
+          }
+        })
+      })
+    } catch (error) {
+      logger.error('[Motrix] Error during engine restart:', error.message)
+    }
   }
 
   // 读取 PID 文件并清理可能残留的孤儿引擎进程。

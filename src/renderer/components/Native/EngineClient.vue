@@ -36,7 +36,8 @@
         pollingCount: 0,
         taskSpeedSampleBaseMap: {},
         downloadStartNotifiedGids: new Set(),
-        segmentErrorRetryMap: {}
+        segmentErrorRetryMap: {},
+        engineConnectionStable: true
       }
     },
     computed: {
@@ -359,8 +360,23 @@
 
             const msg = `${errorMessage || ''}`
             const segmentPath = this.extractSegmentFilePath(msg)
-            if (segmentPath && checkTaskIsBT(task)) {
+            const isBt = checkTaskIsBT(task)
+
+            if (segmentPath && isBt) {
               this.tryRepairSegmentFile(task, segmentPath).catch(() => {})
+            }
+
+            // 对BT任务添加额外的错误处理和恢复机制
+            if (isBt) {
+              console.warn('[Motrix] BT task error detected:', {
+                gid,
+                taskName,
+                errorCode,
+                errorMessage,
+                bittorrent: task.bittorrent,
+                filesCount: task.files ? task.files.length : 0
+              })
+              this.handleBtErrorRecovery(task, errorCode, errorMessage)
             }
             const parseHttpStatus = (text) => {
               const m = `${text || ''}`.match(/\b(\d{3})\b/)
@@ -372,7 +388,6 @@
             const isHashMismatch = /hash\s*mismatch|checksum|digest/i.test(msg)
             const isDiskIssue = Number(errorCode) === 16 || /No space left|disk full|Permission denied|permission/i.test(msg)
             const isServerError = httpStatus >= 500 && httpStatus < 600
-            const isBt = !!(task && task.bittorrent && task.bittorrent.info)
 
             const linkUpdateRule = (code) => {
               const c = Number(code) || 0
@@ -2728,6 +2743,9 @@
         // 重置轮询间隔，避免在 idle interval 下延迟刷新
         this.$store.dispatch('app/resetInterval')
         this.kickPolling()
+
+        // 重置连接状态标记
+        this.engineConnectionStable = true
       },
       startPolling () {
         this.stopPolling()
@@ -3176,6 +3194,53 @@
           return this.$t('task.error-reason-disk')
         }
         return this.$t('task.error-reason-generic')
+      },
+
+      // BT任务错误恢复机制
+      async handleBtErrorRecovery (task, errorCode, errorMessage) {
+        const code = Number(errorCode)
+        const msg = `${errorMessage || ''}`
+        const gid = task && task.gid ? `${task.gid}` : ''
+
+        if (!gid) {
+          return
+        }
+
+        // 针对特定错误类型的恢复策略
+        switch (code) {
+        case 1: // 网络错误
+          if (/timeout|timed out/i.test(msg)) {
+            // 连接超时，等待后重试
+            console.log(`[Motrix] BT task ${gid} timeout, will retry in 10 seconds`)
+            setTimeout(() => {
+              api.resumeTask({ gid }).catch(() => {})
+            }, 10000)
+          } else if (/connection refused|refused/i.test(msg)) {
+            // 连接被拒绝，可能是tracker问题，稍后重试
+            console.log(`[Motrix] BT task ${gid} connection refused, will retry in 30 seconds`)
+            setTimeout(() => {
+              api.resumeTask({ gid }).catch(() => {})
+            }, 30000)
+          }
+          break
+
+        case 16: // 文件系统错误
+          if (/No space left|disk full/i.test(msg)) {
+            this.$msg.warning('磁盘空间不足，请清理磁盘空间后重新开始下载')
+          } else if (/Permission denied|permission/i.test(msg)) {
+            this.$msg.warning('文件权限错误，请检查下载目录权限')
+          }
+          break
+
+        default:
+          // 其他错误，短时间后重试
+          if (code > 0) {
+            console.log(`[Motrix] BT task ${gid} error ${code}, will retry in 60 seconds`)
+            setTimeout(() => {
+              api.resumeTask({ gid }).catch(() => {})
+            }, 60000)
+          }
+        }
       },
       stopPolling () {
         clearTimeout(this.timer)

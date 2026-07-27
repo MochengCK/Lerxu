@@ -273,7 +273,23 @@
       async fetchTrackerStats (gid) {
         try {
           const stats = await api.fetchTaskTrackers({ gid })
-          this.trackerStats = Array.isArray(stats) ? stats : []
+          // 引擎返回按状态分类的 Dict: { working: [], not-working: [], waiting: [] }
+          // 兼容旧版返回扁平 List 的格式
+          if (Array.isArray(stats)) {
+            this.trackerStats = stats
+          } else if (stats && typeof stats === 'object') {
+            const merged = []
+            const keys = ['working', 'not-working', 'waiting']
+            keys.forEach(key => {
+              const arr = stats[key]
+              if (Array.isArray(arr)) {
+                merged.push(...arr)
+              }
+            })
+            this.trackerStats = merged
+          } else {
+            this.trackerStats = []
+          }
         } catch (error) {
           this.trackerStats = []
         }
