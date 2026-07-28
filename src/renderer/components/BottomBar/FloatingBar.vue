@@ -412,7 +412,7 @@
     transform: translateX(-50%);
     z-index: 200;
     pointer-events: none;
-    transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+    transition: left 0.35s cubic-bezier(0.22, 1, 0.36, 1), transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 
     &.is-three-column-layout {
       left: calc(50% + 110px);

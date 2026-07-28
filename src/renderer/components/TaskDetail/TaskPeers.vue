@@ -292,16 +292,8 @@
     peerIdParser,
     timeFormat
   } from '@shared/utils'
-  import IP2Region from 'ip2region'
+  import { searchInfoSync } from '@shared/utils/ip2region'
   import 'flag-icons/css/flag-icons.min.css'
-
-  // 初始化 ip2region 查询器
-  let ipSearcher = null
-  try {
-    ipSearcher = new IP2Region()
-  } catch (e) {
-    console.warn('[TaskPeers] Failed to initialize ip2region:', e.message)
-  }
 
   // Module-level country name -> ISO code map (built once, not per call).
   const COUNTRY_NAME_TO_CODE = {
@@ -632,8 +624,7 @@
         lastConnectedMap: {},
         peerOrderMap: {},
         peerOrderSeed: 1,
-        countryCodeCache: {},
-        locationCache: {},
+        ipInfoCache: {},
         contextMenuType: '',
         contextMenuCloseHandler: null
       }
@@ -1196,19 +1187,40 @@
         // 检查特定文本是否溢出
         return this.overflowMap[text] === true
       },
-      getPeerCountryCode (ip) {
+      getPeerInfo (ip) {
         if (!ip) return null
         const key = `${ip}`
-        if (Object.prototype.hasOwnProperty.call(this.countryCodeCache, key)) {
-          return this.countryCodeCache[key]
+        if (Object.prototype.hasOwnProperty.call(this.ipInfoCache, key)) {
+          return this.ipInfoCache[key]
         }
+        let info = null
         if (this.isPrivateIp(ip)) {
-          this.$set(this.countryCodeCache, key, null)
-          return null
+          info = { location: '-', countryCode: 'local' }
+        } else {
+          const result = searchInfoSync(ip)
+          if (result && result.region) {
+            let location = '-'
+            if (result.country) location = result.country
+            else if (result.province) location = result.province
+            else if (result.city) location = result.city
+            let code = result.countryCode || null
+            if (!code) {
+              const candidates = [result.country, result.province, result.city]
+              for (const value of candidates) {
+                code = this.countryNameToCode(value)
+                if (code) break
+              }
+            }
+            info = { location, countryCode: code }
+          }
         }
-        const code = this.getCountryCode(ip)
-        this.$set(this.countryCodeCache, key, code)
-        return code
+        if (!info) info = { location: '-', countryCode: null }
+        this.$set(this.ipInfoCache, key, info)
+        return info
+      },
+      getPeerCountryCode (ip) {
+        const info = this.getPeerInfo(ip)
+        return info ? info.countryCode : null
       },
       getPeerCountryClass (ip) {
         const code = this.getPeerCountryCode(ip)
@@ -1237,14 +1249,8 @@
         return false
       },
       getPeerLocation (ip) {
-        if (!ip) return '-'
-        const key = `${ip}`
-        if (Object.prototype.hasOwnProperty.call(this.locationCache, key)) {
-          return this.locationCache[key]
-        }
-        const location = this.getLocationFromIp(ip)
-        this.$set(this.locationCache, key, location)
-        return location
+        const info = this.getPeerInfo(ip)
+        return info ? info.location : '-'
       },
       getPeerIdPrefix (peer) {
         const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
@@ -1324,49 +1330,12 @@
         this.sortOrder = order || 'descending'
       },
       getLocationFromIp (ip) {
-        if (!ip) return '-'
-        // 使用 ip2region 查询地理位置
-        if (ipSearcher) {
-          try {
-            const result = ipSearcher.search(ip)
-            if (result) {
-              // 返回国家或地区信息
-              const country = result.country || result.nation
-              const province = result.province
-              const city = result.city
-              // 优先显示国家，如果没有则显示省份或城市
-              if (country && country !== '0') return country
-              if (province && province !== '0') return province
-              if (city && city !== '0') return city
-            }
-          } catch (e) {
-            console.warn('[TaskPeers] ip2region search failed:', e.message)
-          }
-        }
-        return '-'
+        const info = this.getPeerInfo(ip)
+        return info ? info.location : '-'
       },
       getCountryCode (ip) {
-        if (!ip) return null
-        if (ipSearcher) {
-          try {
-            const result = ipSearcher.search(ip)
-            if (result) {
-              const country = result.country || result.nation
-              const province = result.province
-              const city = result.city
-              const candidates = [country, province, city]
-                .map(value => `${value || ''}`.trim())
-                .filter(value => value && value !== '0')
-              for (const value of candidates) {
-                const code = this.countryNameToCode(value)
-                if (code) return code
-              }
-            }
-          } catch (e) {
-            console.warn('[TaskPeers] ip2region search failed:', e.message)
-          }
-        }
-        return null
+        const info = this.getPeerInfo(ip)
+        return info ? info.countryCode : null
       },
       countryNameToCode (countryName) {
         const name = `${countryName || ''}`.trim()
@@ -1718,6 +1687,11 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    overflow: hidden;
+    .mo-peer-text {
+      flex: 1;
+      min-width: 0;
+    }
   }
   .mo-peer-flag {
     width: 20px;

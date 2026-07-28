@@ -6,7 +6,7 @@
         :class="{
           'is-auto-hide-floating-bar': autoHideFloatingBar && !isFloatingBarSearchExpanded && !isBottomHovered,
           'is-hovered': isBottomHovered,
-          'is-three-column-layout': isThreeColumn
+          'is-three-column-layout': isThreeColumn && (!autoHideAside || isAsideHovered)
         }"
         @mouseenter.native="isBottomHovered = true"
         @mouseleave.native="isBottomHovered = false"
@@ -148,7 +148,8 @@
         addTaskVisible: state => state.addTaskVisible,
         addTaskType: state => state.addTaskType,
         currentPage: state => state.currentPage,
-        systemTheme: state => state.systemTheme
+        systemTheme: state => state.systemTheme,
+        isAsideHovered: state => state.isAsideHovered
       }),
       taskPlanVisible: {
         get () {

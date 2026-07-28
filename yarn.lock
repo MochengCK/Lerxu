@@ -4954,10 +4954,10 @@ ip-address@^10.1.1:
   resolved "https://registry.npmjs.org/ip-address/-/ip-address-10.2.0.tgz"
   integrity sha512-/+S6j4E9AHvW9SWMSEY9Xfy66O5PWvVEJ08O0y5JGyEKQpojb0K0GKpz/v5HJ/G0vi3D2sjGK78119oXZeE0qA==
 
-ip2region@^2.3.0:
-  version "2.3.0"
-  resolved "https://registry.npmjs.org/ip2region/-/ip2region-2.3.0.tgz"
-  integrity sha512-zV5Xsadzrx9Ej6heoyhbXMsfGWWQ3C6bAIYStrHhw9kzLpGpVNlnAyRBxxPgxA1GNqr1Ti7oUxcWsMWNN3jZBg==
+ip2region.js@^3.1.8:
+  version "3.1.8"
+  resolved "https://registry.npmjs.org/ip2region.js/-/ip2region.js-3.1.8.tgz"
+  integrity sha512-USvUDme5Gyh0qs21Xpjb7QAXN5eRFDe5ZNtPVk3Ns2wYOc5eLIC57zPXZYBbN9kvA2yK0dBpJImArf1ekobSNA==
 
 ipaddr.js@^2.0.1:
   version "2.4.0"

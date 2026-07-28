@@ -21,7 +21,7 @@ const devMode = process.env.NODE_ENV !== 'production'
  * that provide pure *.vue files that need compiling
  * https://simulatedgreg.gitbooks.io/electron-vue/content/en/webpack-configurations.html#white-listing-externals
  */
-let whiteListedModules = ['vue']
+let whiteListedModules = ['vue', 'ip2region.js']
 
 let rendererConfig = {
   entry: {
@@ -254,6 +254,11 @@ if (!devMode) {
         {
           from: path.join(__dirname, '../src/shared/locales'),
           to: path.join(__dirname, '../dist/electron/shared/locales'),
+          globOptions: { ignore: [ '.*' ] }
+        },
+        {
+          from: path.join(__dirname, '../src/shared/data'),
+          to: path.join(__dirname, '../dist/electron/shared/data'),
           globOptions: { ignore: [ '.*' ] }
         }
       ]
