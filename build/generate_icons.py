@@ -162,8 +162,8 @@ def generate_torrent_icon(src: Path):
 
 
 def main():
-    app_src = ROOT / "linkcore.png"
-    bt_src = ROOT / "bt.png"
+    app_src = BUILD_DIR / "sources" / "linkcore.png"
+    bt_src = BUILD_DIR / "sources" / "bt.png"
 
     if not app_src.exists():
         print(f"ERROR: {app_src} not found", file=sys.stderr)

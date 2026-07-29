@@ -1,4 +1,3 @@
-!.gitkeep
 .DS_Store
 .env
 .idea/
@@ -12,20 +11,25 @@ thumbs.db
 .npmrc
 npm-debug.log.*
 
-# Eslint Cache
+# ESLint cache
 .eslintcache*
 
-# electron builder
+# Electron builder
 *.provisionprofile
 build/*.plist
 dist/electron/*
 dist/web/*
 
-# release
+# Release output
 release/*
-*.md
-*.sh
+
+# FluxCore engine source (binaries live in extra/)
 FluxCore/
+
+# Electron singleton runtime files
 SingletonCookie
 SingletonLock
 SingletonSocket
+
+# Temporary files
+temp/
