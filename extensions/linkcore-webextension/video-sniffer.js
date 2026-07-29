@@ -122,9 +122,9 @@
   // 默认配置
   let config = {
     enabled: true,
-    formats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts'],
+    formats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
     autoCombine: true,
-    excludeFormats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp', 'svg', 'ico']
+    excludeFormats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp', 'svg', 'ico', 'css', 'js', 'json', 'xml', 'html', 'htm', 'woff', 'woff2', 'ttf', 'otf', 'pdf', 'txt']
   }
 
   let configLoaded = false
@@ -205,6 +205,129 @@
       'bytednsdoc.com', 'bytedance.com'
     ]
     return domains.some(d => host === d || host.endsWith(`.${d}`))
+  }
+
+  // 已知媒体CDN域名检测（覆盖国内外主流及小众视频平台）
+  const isKnownMediaCdnHost = (hostname) => {
+    const host = `${hostname || ''}`.toLowerCase()
+    if (!host) return false
+
+    // B站和抖音已在专用函数中处理
+    if (isTrustedBiliHost(host)) return true
+    if (isDouyinHost(host)) return true
+
+    const knownDomains = [
+      // 腾讯视频
+      'qq.com', 'gtimg.com', 'qcloud.com', 'myqcloud.com', 'tnow.com',
+      // 优酷/阿里
+      'youku.com', 'alicdn.com', 'tudou.com', 'aliyuncs.com',
+      // 爱奇艺
+      'iqiyi.com', 'iq.com', 'qiyi.com', 'qiyipic.com',
+      // 芒果TV
+      'mgtv.com', 'hunantv.com',
+      // 搜狐视频
+      'sohu.com', 'sohucs.com',
+      // 快手
+      'kuaishou.com', 'yxixy.com', 'gifshow.com', 'ksapisrv.com', 'kwaicdn.com', 'yximgs.com',
+      // 微博
+      'sina.com.cn', 'weibo.com', 'sinavideo.com', 'sinaimg.cn',
+      // 西瓜视频
+      'ixigua.com',
+      // 网易视频
+      '163.com', 'netease.com', '126.net',
+      // 百度
+      'baidu.com', 'bdimg.com', 'bdstatic.com',
+      // YouTube
+      'googlevideo.com', 'ggpht.com', 'ytimg.com',
+      // Vimeo
+      'vimeocdn.com', 'vimeo.com',
+      // Dailymotion
+      'dailymotion.com', 'dmcdn.net',
+      // Twitch
+      'ttvnw.net', 'jtvnw.net',
+      // 通用CDN
+      'cloudflarestream.com', 'cloudfront.net', 'azureedge.net', 'azure-media.net',
+      'akamaized.net', 'akamai.net', 'fastly.net',
+      // 视频服务商
+      'mux.com', 'brightcove.com', 'jwplayer.com', 'jwpcdn.com',
+      'vidyard.com', 'wistia.com', 'kaltura.com', 'panopto.com',
+      // 通用媒体存储
+      'amazonaws.com', 'wasabisys.com', 'backblazeb2.com', 'digitaloceanspaces.com'
+    ]
+
+    if (knownDomains.some(d => host === d || host.endsWith(`.${d}`))) return true
+
+    // 检查媒体相关子域名前缀（如 vod.xxx.com, video-cdn.xxx.net, stream.xxx.org）
+    const mediaSubdomainPrefixes = ['vod', 'video', 'media', 'stream', 'play', 'clip', 'movie', 'live']
+    const parts = host.split('.')
+    if (parts.length >= 3) {
+      for (let i = 0; i < parts.length - 2; i++) {
+        if (mediaSubdomainPrefixes.includes(parts[i])) return true
+      }
+    }
+
+    return false
+  }
+
+  // 通用启发式媒体检测（适用于小众平台，当标准扩展名检测失败时）
+  const detectMediaHeuristic = (url, mimeType) => {
+    try {
+      // 如果MIME类型明确指示媒体内容，直接返回对应扩展名
+      if (mimeType) {
+        const mimeLower = mimeType.toLowerCase().split(';')[0].trim()
+        if (mimeLower.startsWith('video/')) return 'mp4'
+        if (mimeLower.startsWith('audio/')) return 'm4a'
+        if (mimeLower.includes('mpegurl') || mimeLower.includes('m3u8')) return 'm3u8'
+        if (mimeLower.includes('dash+xml') || mimeLower.includes('dash')) return 'mpd'
+        if (mimeLower.includes('mp2t')) return 'ts'
+        if (mimeLower.includes('matroska')) return 'mkv'
+        if (mimeLower.includes('webm')) return 'webm'
+        if (mimeLower.includes('flv')) return 'flv'
+      }
+
+      const urlObj = new URL(url)
+      const pathLower = urlObj.pathname.toLowerCase()
+      const host = urlObj.hostname.toLowerCase()
+      const params = urlObj.searchParams
+      const searchLower = urlObj.search.toLowerCase()
+
+      const isKnownCdn = isKnownMediaCdnHost(host)
+
+      // 媒体相关路径段
+      const mediaPathPatterns = ['/video/', '/media/', '/stream/', '/vod/', '/play/', '/content/', '/clip/', '/movie/', '/audio/', '/sound/', '/music/']
+      const hasMediaPath = mediaPathPatterns.some(p => pathLower.includes(p))
+
+      // 媒体相关查询参数
+      const mediaParamKeys = ['video_id', 'vid', 'media_type', 'content_type', 'video_type', 'mime_type', 'codec', 'bitrate', 'resolution', 'quality', 'audio_only', 'format']
+      const hasMediaParam = mediaParamKeys.some(k => params.has(k))
+
+      // 媒体相关关键词在查询字符串中
+      const mediaKeywords = ['mp4', 'm3u8', 'flv', 'hls', 'dash', 'stream']
+      const hasMediaKeyword = mediaKeywords.some(k => searchLower.includes(k))
+
+      // 判断是否为音频
+      const isAudio = pathLower.includes('/audio/') || pathLower.includes('/sound/') || pathLower.includes('/music/') ||
+        params.get('audio_only') === 'true' || params.get('type') === 'audio' || params.get('media_type') === 'audio'
+
+      // 决策逻辑：需要足够的信号才判定为媒体
+      // 策略1：已知CDN + 媒体路径/参数/关键词
+      if (isKnownCdn && (hasMediaPath || hasMediaParam || hasMediaKeyword)) {
+        return isAudio ? 'm4a' : 'mp4'
+      }
+
+      // 策略2：媒体路径 + 媒体参数（双信号确认）
+      if (hasMediaPath && hasMediaParam) {
+        return isAudio ? 'm4a' : 'mp4'
+      }
+
+      // 策略3：HLS/DASH 清单检测
+      if (pathLower.includes('m3u8') || searchLower.includes('m3u8') || params.get('format') === 'm3u8' || params.get('type') === 'hls') return 'm3u8'
+      if (pathLower.endsWith('.mpd') || params.get('format') === 'dash') return 'mpd'
+
+      return ''
+    } catch (e) {
+      return ''
+    }
   }
 
   const normalizeUrlForDedup = (url) => {
@@ -571,7 +694,13 @@
       lowerUrl.includes('analytics') ||
       lowerUrl.includes('tracking') ||
       lowerUrl.includes('beacon') ||
-      lowerUrl.includes('metric')) {
+      lowerUrl.includes('metric') ||
+      lowerUrl.includes('/thumb') ||
+      lowerUrl.includes('/poster/') ||
+      lowerUrl.includes('/avatar/') ||
+      lowerUrl.includes('/sprite/') ||
+      lowerUrl.includes('/captcha/') ||
+      lowerUrl.includes('/favicon')) {
       return false
     }
 
@@ -618,6 +747,14 @@
       } catch (e) {}
     }
 
+    // 通用启发式媒体检测（适用于小众平台，当标准扩展名检测失败时）
+    if (!ext) {
+      ext = detectMediaHeuristic(url, mimeType)
+      if (ext) {
+        log('Media detected by heuristic:', ext, 'URL:', url.substring(0, 100))
+      }
+    }
+
     if (!ext) {
       // 只在调试模式下输出，并且过滤空 URL
       if (DEBUG && url && url.length > 0) {
@@ -631,13 +768,35 @@
       return false
     }
 
-    const shouldSniff = config.formats.includes(ext)
-    if (!shouldSniff) {
-      log('Format not in list:', ext, 'Available:', config.formats.join(', '), 'URL:', url.substring(0, 100))
-    } else {
+    // 检查扩展名是否在配置的格式列表中
+    if (config.formats.includes(ext)) {
       log('Format matched:', ext, 'URL:', url.substring(0, 100))
+      return true
     }
-    return shouldSniff
+
+    // MIME 类型明确指示媒体内容时，即使不在格式列表中也接受
+    if (mimeType) {
+      const mimeLower = mimeType.toLowerCase().split(';')[0].trim()
+      if (mimeLower.startsWith('video/') || mimeLower.startsWith('audio/') ||
+          mimeLower.includes('mpegurl') || mimeLower.includes('dash+xml') ||
+          mimeLower.includes('mp2t') || mimeLower.includes('matroska') ||
+          mimeLower.includes('webm') || mimeLower.includes('flv')) {
+        log('Accepted by MIME type bypass:', mimeType, 'URL:', url.substring(0, 100))
+        return true
+      }
+    }
+
+    // 已知媒体CDN的启发式检测结果也接受（确保小众平台资源不被遗漏）
+    try {
+      const urlObj = new URL(url)
+      if (isKnownMediaCdnHost(urlObj.hostname)) {
+        log('Accepted by known CDN heuristic:', ext, 'URL:', url.substring(0, 100))
+        return true
+      }
+    } catch (e) {}
+
+    log('Format not in list:', ext, 'Available:', config.formats.join(', '), 'URL:', url.substring(0, 100))
+    return false
   }
 
   // 通用音频检测函数（适用于所有平台）
@@ -845,6 +1004,14 @@
       ext = getExtensionFromUrlParams(url)
     }
 
+    // 如果标准方法都失败了，使用启发式检测（适用于小众平台）
+    if (!ext) {
+      ext = detectMediaHeuristic(url, mimeType)
+      if (ext) {
+        log('Using heuristic extension for parsing:', ext, 'URL:', url.substring(0, 100))
+      }
+    }
+
     const info = {
       url: url,
       ext: ext || 'video',
@@ -858,6 +1025,7 @@
     try {
       const urlObj = new URL(url)
       const pathname = urlObj.pathname
+      const params = urlObj.searchParams
       const parts = pathname.split('/')
       let baseName = parts[parts.length - 1] || 'unknown'
 

@@ -1,8 +1,8 @@
 {
-  "name": "linkcore-download-manager",
+  "name": "linkcore",
   "version": "2.4.6",
-  "description": "LinkCore Download Manager",
-  "homepage": "https://github.com/MochengCK/LinkCore-Download-Manager",
+  "description": "LinkCore",
+  "homepage": "https://github.com/MochengCK/LinkCore",
   "author": {
     "name": "MochengCK",
     "email": "mocheng@example.com"
@@ -16,7 +16,7 @@
   "main": "./dist/electron/main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/MochengCK/LinkCore-Download-Manager.git"
+    "url": "https://github.com/MochengCK/LinkCore.git"
   },
   "scripts": {
     "release": "npm run build -- --publish onTagOrDraft",
@@ -36,7 +36,7 @@
     "postinstall": "electron-builder install-app-deps && npm run lint:fix"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "@electron/remote": "^2.1.3",
@@ -91,7 +91,7 @@
     "css-loader": "^6.11.0",
     "css-minimizer-webpack-plugin": "^5.0.1",
     "del": "^6.1.1",
-    "electron": "^40.10.2",
+    "electron": "^43.2.0",
     "electron-builder": "^25.1.8",
     "electron-devtools-installer": "^3.2.1",
     "eslint": "^7.32.0",

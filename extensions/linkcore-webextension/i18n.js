@@ -1,10 +1,10 @@
 // 多语言翻译数据
 const translations = {
   en: {
-    extensionName: "LinkCore Download Manager",
-    extensionDescription: "Deeply integrated browser extension for LinkCore Download Manager",
+    extensionName: "LinkCore",
+    extensionDescription: "Deeply integrated browser extension for LinkCore",
     actionTitle: "LinkCore",
-    popupTitle: "LinkCore Download Manager",
+    popupTitle: "LinkCore",
     rpcAddress: "RPC Address",
     connectionStatus: "Connection Status",
     clientVersion: "Client Version",
@@ -29,10 +29,10 @@ const translations = {
     placeholderExample: "Example: exe, zip, rar"
   },
   zh_CN: {
-    extensionName: "LinkCore Download Manager",
-    extensionDescription: "LinkCore Download Manager 深度集成浏览器插件",
+    extensionName: "LinkCore",
+    extensionDescription: "LinkCore 深度集成浏览器插件",
     actionTitle: "LinkCore",
-    popupTitle: "LinkCore Download Manager",
+    popupTitle: "LinkCore",
     rpcAddress: "RPC 地址",
     connectionStatus: "连接状态",
     clientVersion: "客户端版本",
@@ -57,10 +57,10 @@ const translations = {
     placeholderExample: "示例: exe, zip, rar"
   },
   zh_TW: {
-    extensionName: "LinkCore Download Manager",
-    extensionDescription: "LinkCore Download Manager 深度整合瀏覽器外掛程式",
+    extensionName: "LinkCore",
+    extensionDescription: "LinkCore 深度整合瀏覽器外掛程式",
     actionTitle: "LinkCore",
-    popupTitle: "LinkCore Download Manager",
+    popupTitle: "LinkCore",
     rpcAddress: "RPC 地址",
     connectionStatus: "連接狀態",
     clientVersion: "客戶端版本",
@@ -75,10 +75,10 @@ const translations = {
     contextMenuDownload: "使用 LinkCore 下載"
   },
   ja: {
-    extensionName: "LinkCore Download Manager",
-    extensionDescription: "LinkCore Download Manager と深く統合されたブラウザー拡張機能",
+    extensionName: "LinkCore",
+    extensionDescription: "LinkCore と深く統合されたブラウザー拡張機能",
     actionTitle: "LinkCore",
-    popupTitle: "LinkCore Download Manager",
+    popupTitle: "LinkCore",
     rpcAddress: "RPC アドレス",
     connectionStatus: "接続状態",
     clientVersion: "クライアントバージョン",
@@ -93,10 +93,10 @@ const translations = {
     contextMenuDownload: "LinkCore でダウンロード"
   },
   ko: {
-    extensionName: "LinkCore Download Manager",
-    extensionDescription: "LinkCore Download Manager와 깊이 통합된 브라우저 확장 프로그램",
+    extensionName: "LinkCore",
+    extensionDescription: "LinkCore와 깊이 통합된 브라우저 확장 프로그램",
     actionTitle: "LinkCore",
-    popupTitle: "LinkCore Download Manager",
+    popupTitle: "LinkCore",
     rpcAddress: "RPC 주소",
     connectionStatus: "연결 상태",
     clientVersion: "클라이언트 버전",
@@ -111,10 +111,10 @@ const translations = {
     contextMenuDownload: "LinkCore로 다운로드"
   },
   es: {
-    extensionName: "LinkCore Download Manager",
-    extensionDescription: "Extensión de navegador profundamente integrada para LinkCore Download Manager",
+    extensionName: "LinkCore",
+    extensionDescription: "Extensión de navegador profundamente integrada para LinkCore",
     actionTitle: "LinkCore",
-    popupTitle: "LinkCore Download Manager",
+    popupTitle: "LinkCore",
     rpcAddress: "Dirección RPC",
     connectionStatus: "Estado de conexión",
     clientVersion: "Versión del cliente",
@@ -129,10 +129,10 @@ const translations = {
     contextMenuDownload: "Descargar con LinkCore"
   },
   fr: {
-    extensionName: "LinkCore Download Manager",
-    extensionDescription: "Extension de navigateur profondément intégrée pour LinkCore Download Manager",
+    extensionName: "LinkCore",
+    extensionDescription: "Extension de navigateur profondément intégrée pour LinkCore",
     actionTitle: "LinkCore",
-    popupTitle: "LinkCore Download Manager",
+    popupTitle: "LinkCore",
     rpcAddress: "Adresse RPC",
     connectionStatus: "État de la connexion",
     clientVersion: "Version du client",
@@ -147,10 +147,10 @@ const translations = {
     contextMenuDownload: "Télécharger avec LinkCore"
   },
   de: {
-    extensionName: "LinkCore Download Manager",
-    extensionDescription: "Tief integrierte Browser-Erweiterung für LinkCore Download Manager",
+    extensionName: "LinkCore",
+    extensionDescription: "Tief integrierte Browser-Erweiterung für LinkCore",
     actionTitle: "LinkCore",
-    popupTitle: "LinkCore Download Manager",
+    popupTitle: "LinkCore",
     rpcAddress: "RPC-Adresse",
     connectionStatus: "Verbindungsstatus",
     clientVersion: "Client-Version",
@@ -165,10 +165,10 @@ const translations = {
     contextMenuDownload: "Mit LinkCore herunterladen"
   },
   ru: {
-    extensionName: "LinkCore Download Manager",
-    extensionDescription: "Глубоко интегрированное расширение браузера для LinkCore Download Manager",
+    extensionName: "LinkCore",
+    extensionDescription: "Глубоко интегрированное расширение браузера для LinkCore",
     actionTitle: "LinkCore",
-    popupTitle: "LinkCore Download Manager",
+    popupTitle: "LinkCore",
     rpcAddress: "Адрес RPC",
     connectionStatus: "Состояние подключения",
     clientVersion: "Версия клиента",

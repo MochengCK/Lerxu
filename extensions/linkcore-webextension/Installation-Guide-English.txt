@@ -37,14 +37,14 @@ During installation, you may see a warning "This extension is not listed in the 
 After installation, the extension provides the following features:
 - One-click download of media files from web pages
 - Support for multiple file formats (video, audio, images, etc.)
-- Seamless integration with LinkCore Download Manager
+- Seamless integration with LinkCore
 - Smart recognition of download links
 
 ## Frequently Asked Questions
 
 ### Q: Extension not working after installation?
 A: Please check the following:
-- Ensure LinkCore Download Manager is running
+- Ensure LinkCore is running
 - Check if browser has been restarted
 - Confirm extension is properly enabled
 
@@ -54,4 +54,4 @@ A: When a new version is available, re-download and install the latest extension
 ### Q: How to uninstall the extension?
 A: Go to `chrome://extensions/` page, find LinkCore extension, and click "Remove" button
 
-Technical Support: https://github.com/MochengCK/LinkCore-Download-Manager/issues
+Technical Support: https://github.com/MochengCK/LinkCore/issues

@@ -171,7 +171,7 @@ export default class TrayManager extends EventEmitter {
     // tray.setPressedImage(inverseIcon)
 
     if (!this.macOS) {
-      tray.setToolTip('LinkCore Download Manager')
+      tray.setToolTip('LinkCore')
     }
   }
 

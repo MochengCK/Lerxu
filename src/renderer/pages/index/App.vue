@@ -57,7 +57,7 @@
   ]
 
   export default {
-    name: 'LinkCoreDownloadManagerApp',
+    name: 'LinkCoreApp',
     components: {
       [DynamicTray.name]: DynamicTray,
       [EngineClient.name]: EngineClient,

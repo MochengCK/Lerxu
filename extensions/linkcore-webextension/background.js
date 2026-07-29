@@ -11,7 +11,7 @@ const extConfigDefaults = {
   minFileSize: 0,
   shiftToggleEnabled: false,
   videoSnifferEnabled: true,
-  videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts'],
+  videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
   videoSnifferAutoCombine: true
 }
 
@@ -447,7 +447,7 @@ const syncExtConfigFromClient = async () => {
     
     // 视频嗅探器配置
     const videoSnifferEnabled = data.videoSnifferEnabled !== undefined ? !!data.videoSnifferEnabled : true
-    const videoSnifferFormats = Array.isArray(data.videoSnifferFormats) ? data.videoSnifferFormats : ['m4s', 'mp4', 'flv', 'webm', 'm3u8', 'ts']
+    const videoSnifferFormats = Array.isArray(data.videoSnifferFormats) ? data.videoSnifferFormats : ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus']
     const videoSnifferAutoCombine = data.videoSnifferAutoCombine !== undefined ? !!data.videoSnifferAutoCombine : true
 
     const normalizeTheme = (v) => {

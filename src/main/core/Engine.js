@@ -687,9 +687,26 @@ export default class Engine {
     }
     extraConfig['max-connection-per-server'] = Math.min(desiredMax, allowedMax)
     const desiredSplit = Number(this.systemConfig.split || 0)
-    const splitBaseline = Math.min(splitMax, allowedMax >= 128 ? 128 : (allowedMax >= 64 ? 64 : 16))
+    // 确保 split 至少为 max-connection-per-server 的 2 倍，让连接在
+    // 整个下载过程中始终有新片段可下载，避免后期速度下降
+    const minSplitForSpeed = Math.max(extraConfig['max-connection-per-server'] * 2, 16)
+    const splitBaseline = Math.min(splitMax, Math.max(minSplitForSpeed, allowedMax >= 128 ? 128 : (allowedMax >= 64 ? 64 : 16)))
     const baseSplit = desiredSplit >= splitBaseline ? desiredSplit : splitBaseline
     extraConfig.split = Math.min(baseSplit, splitMax)
+
+    // === 下载速度保障：确保关键参数不被旧配置覆盖 ===
+    // min-split-size 过大会导致文件分片不足，连接在后期无片可下，速度骤降
+    if (!extraConfig['min-split-size'] || extraConfig['min-split-size'] === '4M' || extraConfig['min-split-size'] === '4m') {
+      extraConfig['min-split-size'] = '1M'
+    }
+    // geom 选择器会让后期片段越来越大，并行度递减，改为 default 保持均匀分片
+    if (!extraConfig['stream-piece-selector'] || extraConfig['stream-piece-selector'] === 'geom') {
+      extraConfig['stream-piece-selector'] = 'default'
+    }
+    // 删除 enable-http-pipelining，该选项会导致部分 HTTPS 服务器 TLS 握手失败
+    delete extraConfig['enable-http-pipelining']
+    // 确保 check-certificate 为 false，避免 HTTPS 证书验证导致下载失败
+    extraConfig['check-certificate'] = false
 
     const keepSeeding = this.userConfig['keep-seeding']
     const seedRatio = this.systemConfig['seed-ratio']

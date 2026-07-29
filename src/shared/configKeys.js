@@ -127,6 +127,7 @@ const systemKeys = [
   'bt-tracker-interval',
   'bt-tracker-timeout',
   'bt-tracker',
+  'check-certificate',
   'check-integrity',
   'checksum',
   'conditional-get',

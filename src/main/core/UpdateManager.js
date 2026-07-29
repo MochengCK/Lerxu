@@ -19,7 +19,7 @@ const execAsync = promisify(exec)
 
 // 配置
 const GITHUB_OWNER = 'MochengCK'
-const GITHUB_REPO = 'LinkCore-Download-Manager'
+const GITHUB_REPO = 'LinkCore'
 const CURRENT_VERSION = app.getVersion()
 
 // GitHub 镜像列表，按优先级排序

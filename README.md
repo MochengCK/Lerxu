@@ -7,21 +7,21 @@
 </div>
 
 <p align="center">
-  <img src="./screenshots/屏幕截图 2025-12-09 052141.png" width="1100" alt="LinkCore Download Manager Logo" />
+  <img src="./screenshots/linkcore-banner.png" width="1100" alt="LinkCore Logo" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/MochengCK/LinkCore-Download-Manager/releases">
-    <img src="https://img.shields.io/github/v/release/MochengCK/LinkCore-Download-Manager.svg?style=for-the-badge" alt="GitHub release" />
+  <a href="https://github.com/MochengCK/LinkCore/releases">
+    <img src="https://img.shields.io/github/v/release/MochengCK/LinkCore.svg?style=for-the-badge" alt="GitHub release" />
   </a>
-  <a href="https://github.com/MochengCK/LinkCore-Download-Manager/releases">
-    <img src="https://img.shields.io/github/downloads/MochengCK/LinkCore-Download-Manager/total.svg?style=for-the-badge" alt="Total Downloads" />
+  <a href="https://github.com/MochengCK/LinkCore/releases">
+    <img src="https://img.shields.io/github/downloads/MochengCK/LinkCore/total.svg?style=for-the-badge" alt="Total Downloads" />
   </a>
   <a href="#supported-platforms">
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg?style=for-the-badge" alt="Support Platforms" />
   </a>
-  <a href="https://github.com/MochengCK/LinkCore-Download-Manager/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/MochengCK/LinkCore-Download-Manager.svg?style=for-the-badge" alt="License" />
+  <a href="https://github.com/MochengCK/LinkCore/blob/master/LICENSE">
+    <img src="https://img.shields.io/github/license/MochengCK/LinkCore.svg?style=for-the-badge" alt="License" />
   </a>
 </p>
 
@@ -97,7 +97,7 @@ A modern download manager powered by the FluxCore engine, optimized for Windows,
 
 ## Supported Platforms
 
-LinkCore Download Manager currently supports the following platforms:
+LinkCore currently supports the following platforms:
 - **Windows** (7, 8, 10, 11)
 - **macOS** (Intel, x64; Apple Silicon, arm64)
 - **Linux** (x64, arm64)
@@ -106,13 +106,13 @@ LinkCore Download Manager currently supports the following platforms:
 
 ### Windows
 
-1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore-Download-Manager/releases) page
-2. Download the latest `LinkCore-Download-Manager-Setup-x.y.z.exe` installer
+1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore/releases) page
+2. Download the latest `LinkCore-Setup-x.y.z.exe` installer
 3. Run the installer and follow the on-screen instructions
 
 ### macOS
 
-1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore-Download-Manager/releases) page
+1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore/releases) page
 2. Download `*.dmg` (x64/arm64) or `*-mac.zip` / `*-arm64-mac.zip` (x64/arm64)
 3. Using `*.dmg`: Double-click to open, drag the app to `/Applications`
 4. Using `*.zip`: Extract and move the app to `/Applications`
@@ -122,12 +122,12 @@ LinkCore Download Manager currently supports the following platforms:
 
 - AppImage (Recommended):
   1. Download `*.AppImage` (`x64` or `arm64`)
-  2. Grant execute permission: `chmod +x LinkCore-Download-Manager-*.AppImage`
-  3. Run: `./LinkCore-Download-Manager-*.AppImage`
+  2. Grant execute permission: `chmod +x LinkCore-*.AppImage`
+  3. Run: `./LinkCore-*.AppImage`
 
 - Debian/Ubuntu (`.deb` package):
-  1. Download `linkcore-download-manager_*_amd64.deb` or `linkcore-download-manager_*_arm64.deb`
-  2. Install: `sudo dpkg -i linkcore-download-manager_*.deb`
+  1. Download `linkcore_*_amd64.deb` or `linkcore_*_arm64.deb`
+  2. Install: `sudo dpkg -i linkcore_*.deb`
   3. If dependency issues occur: `sudo apt -f install`
 
 - Other distributions: Use the AppImage method.
@@ -144,8 +144,8 @@ LinkCore Download Manager currently supports the following platforms:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/MochengCK/LinkCore-Download-Manager.git
-   cd LinkCore-Download-Manager
+   git clone https://github.com/MochengCK/LinkCore.git
+   cd LinkCore
    ```
 
 2. Install dependencies:
@@ -166,7 +166,7 @@ LinkCore Download Manager currently supports the following platforms:
 ### Project Structure
 
 ```
-LinkCore-Download-Manager/
+LinkCore/
 ├── src/                  # Main source code
 │   ├── main/             # Electron main process
 │   ├── renderer/         # Electron renderer process (Vue.js)
@@ -210,7 +210,7 @@ Contributions are welcome! Whether you're fixing bugs, adding new features, or i
 
 If you encounter any issues or have questions:
 
-- Submit an [issue](https://github.com/MochengCK/LinkCore-Download-Manager/issues/new/choose) on GitHub
+- Submit an [issue](https://github.com/MochengCK/LinkCore/issues/new/choose) on GitHub
 - Join our community for discussion and support
 
 ## License

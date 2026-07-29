@@ -7,21 +7,21 @@
 </div>
 
 <p align="center">
-  <img src="./screenshots/屏幕截图 2025-12-09 052141.png" width="1100" alt="LinkCore Download Manager Logo" />
+  <img src="./screenshots/linkcore-banner.png" width="1100" alt="LinkCore Logo" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/MochengCK/LinkCore-Download-Manager/releases">
-    <img src="https://img.shields.io/github/v/release/MochengCK/LinkCore-Download-Manager.svg?style=for-the-badge" alt="GitHub release" />
+  <a href="https://github.com/MochengCK/LinkCore/releases">
+    <img src="https://img.shields.io/github/v/release/MochengCK/LinkCore.svg?style=for-the-badge" alt="GitHub release" />
   </a>
-  <a href="https://github.com/MochengCK/LinkCore-Download-Manager/releases">
-    <img src="https://img.shields.io/github/downloads/MochengCK/LinkCore-Download-Manager/total.svg?style=for-the-badge" alt="Total Downloads" />
+  <a href="https://github.com/MochengCK/LinkCore/releases">
+    <img src="https://img.shields.io/github/downloads/MochengCK/LinkCore/total.svg?style=for-the-badge" alt="Total Downloads" />
   </a>
   <a href="#支持平台">
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg?style=for-the-badge" alt="Support Platforms" />
   </a>
-  <a href="https://github.com/MochengCK/LinkCore-Download-Manager/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/MochengCK/LinkCore-Download-Manager.svg?style=for-the-badge" alt="License" />
+  <a href="https://github.com/MochengCK/LinkCore/blob/master/LICENSE">
+    <img src="https://img.shields.io/github/license/MochengCK/LinkCore.svg?style=for-the-badge" alt="License" />
   </a>
 </p>
 
@@ -109,7 +109,7 @@
 
 ## 支持平台
 
-LinkCore Download Manager 目前支持以下平台：
+LinkCore 目前支持以下平台：
 
 - **Windows** (7, 8, 10, 11)
 - **macOS**（Intel，x64；Apple Silicon，arm64）
@@ -119,13 +119,13 @@ LinkCore Download Manager 目前支持以下平台：
 
 ### Windows
 
-1. 访问 [GitHub Releases](https://github.com/MochengCK/LinkCore-Download-Manager/releases) 页面
-2. 下载最新版本的 `LinkCore-Download-Manager-Setup-x.y.z.exe` 安装程序
+1. 访问 [GitHub Releases](https://github.com/MochengCK/LinkCore/releases) 页面
+2. 下载最新版本的 `LinkCore-Setup-x.y.z.exe` 安装程序
 3. 运行安装程序并按照屏幕提示完成安装
 
 ### macOS
 
-1. 访问 [GitHub Releases](https://github.com/MochengCK/LinkCore-Download-Manager/releases) 页面
+1. 访问 [GitHub Releases](https://github.com/MochengCK/LinkCore/releases) 页面
 2. 下载 `*.dmg`（x64/arm64）或 `*-mac.zip` / `*-arm64-mac.zip`（x64/arm64）
 3. 使用 `*.dmg`：双击打开，将应用拖拽到 `/Applications`
 4. 使用 `*.zip`：解压后将应用移动到 `/Applications`
@@ -135,12 +135,12 @@ LinkCore Download Manager 目前支持以下平台：
 
 - AppImage（通用推荐）：
   1. 下载 `*.AppImage`（`x64` 或 `arm64`）
-  2. 赋予可执行权限：`chmod +x LinkCore-Download-Manager-*.AppImage`
-  3. 运行：`./LinkCore-Download-Manager-*.AppImage`
+  2. 赋予可执行权限：`chmod +x LinkCore-*.AppImage`
+  3. 运行：`./LinkCore-*.AppImage`
 
 - Debian/Ubuntu（`.deb` 包）：
-  1. 下载 `linkcore-download-manager_*_amd64.deb` 或 `linkcore-download-manager_*_arm64.deb`
-  2. 安装：`sudo dpkg -i linkcore-download-manager_*.deb`
+  1. 下载 `linkcore_*_amd64.deb` 或 `linkcore_*_arm64.deb`
+  2. 安装：`sudo dpkg -i linkcore_*.deb`
   3. 如有依赖问题：`sudo apt -f install`
 
 - 其他发行版：优先使用 AppImage 方式。
@@ -157,8 +157,8 @@ LinkCore Download Manager 目前支持以下平台：
 
 1. 克隆仓库：
    ```bash
-   git clone https://github.com/MochengCK/LinkCore-Download-Manager.git
-   cd LinkCore-Download-Manager
+   git clone https://github.com/MochengCK/LinkCore.git
+   cd LinkCore
    ```
 
 2. 安装依赖：
@@ -179,7 +179,7 @@ LinkCore Download Manager 目前支持以下平台：
 ### 项目结构
 
 ```
-LinkCore-Download-Manager/
+LinkCore/
 ├── src/                  # 主要源代码
 │   ├── main/             # Electron 主进程
 │   ├── renderer/         # Electron 渲染进程（Vue.js）
@@ -223,7 +223,7 @@ LinkCore-Download-Manager/
 
 如果您遇到任何问题或有疑问：
 
-- 在 GitHub 上 [提交 issue](https://github.com/MochengCK/LinkCore-Download-Manager/issues/new/choose)
+- 在 GitHub 上 [提交 issue](https://github.com/MochengCK/LinkCore/issues/new/choose)
 - 加入我们的社区进行讨论和获取支持
 
 ## 许可证

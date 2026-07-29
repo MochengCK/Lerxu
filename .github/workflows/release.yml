@@ -110,9 +110,9 @@ jobs:
             echo "❌ electron-builder failed with exit code $EXIT_CODE"
             echo ""
             echo "Checking if app.asar was created..."
-            if [ -f "release/mac/LinkCore Download Manager.app/Contents/Resources/app.asar" ]; then
+            if [ -f "release/mac/LinkCore.app/Contents/Resources/app.asar" ]; then
               echo "app.asar exists, checking contents..."
-              npx asar list "release/mac/LinkCore Download Manager.app/Contents/Resources/app.asar" | head -50
+              npx asar list "release/mac/LinkCore.app/Contents/Resources/app.asar" | head -50
             elif [ -f "release/win-unpacked/resources/app.asar" ]; then
               echo "app.asar exists (Windows), checking contents..."
               npx asar list "release/win-unpacked/resources/app.asar" | head -50

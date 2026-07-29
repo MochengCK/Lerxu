@@ -60,7 +60,7 @@ export default class Application extends EventEmitter {
     this._taskPlanScheduledNotBeforeTime = null
     this._videoSnifferConfig = {
       enabled: true,
-      formats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts'],
+      formats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
       autoCombine: true
     }
     this._clipboardWatchTimer = null
@@ -379,7 +379,7 @@ export default class Application extends EventEmitter {
                 skipFileExtensions: [],
                 excludeDomains: [],
                 videoSnifferEnabled: false,
-                videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts'],
+                videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
                 videoSnifferAutoCombine: true,
                 theme: APP_THEME.AUTO,
                 effectiveTheme: APP_THEME.LIGHT
@@ -846,7 +846,7 @@ export default class Application extends EventEmitter {
       if (savedEnabled !== undefined || savedFormats !== undefined || savedAutoCombine !== undefined) {
         this._videoSnifferConfig = {
           enabled: savedEnabled !== undefined ? savedEnabled : true,
-          formats: Array.isArray(savedFormats) ? savedFormats : ['m4s', 'mp4', 'flv', 'm3u8', 'ts'],
+          formats: Array.isArray(savedFormats) ? savedFormats : ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
           autoCombine: savedAutoCombine !== undefined ? savedAutoCombine : true
         }
         logger.log('[Motrix] Video sniffer config loaded from disk:', this._videoSnifferConfig)
@@ -3086,17 +3086,17 @@ export default class Application extends EventEmitter {
     })
 
     this.on('help:official-website', () => {
-      const url = 'https://github.com/MochengCK/LinkCore-Download-Manager'
+      const url = 'https://github.com/MochengCK/LinkCore'
       this.openExternal(url)
     })
 
     this.on('help:release-notes', () => {
-      const url = 'https://github.com/MochengCK/LinkCore-Download-Manager/releases'
+      const url = 'https://github.com/MochengCK/LinkCore/releases'
       this.openExternal(url)
     })
 
     this.on('help:report-problem', () => {
-      const url = 'https://github.com/MochengCK/LinkCore-Download-Manager/issues'
+      const url = 'https://github.com/MochengCK/LinkCore/issues'
       this.openExternal(url)
     })
   }

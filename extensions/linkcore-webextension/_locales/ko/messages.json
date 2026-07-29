@@ -1,18 +1,18 @@
 {
   "extensionName": {
-    "message": "LinkCore Download Manager",
+    "message": "LinkCore",
     "description": "확장 프로그램 이름"
   },
   "extensionDescription": {
-    "message": "LinkCore Download Manager와 깊이 통합된 브라우저 확장 프로그램",
+    "message": "LinkCore와 깊이 통합된 브라우저 확장 프로그램",
     "description": "확장 프로그램 설명"
   },
   "actionTitle": {
-    "message": "LinkCore Download Manager",
+    "message": "LinkCore",
     "description": "브라우저 작업 제목"
   },
   "popupTitle": {
-    "message": "LinkCore Download Manager",
+    "message": "LinkCore",
     "description": "팝업 제목"
   },
   "rpcAddress": {

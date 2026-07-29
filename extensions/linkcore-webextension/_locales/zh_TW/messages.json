@@ -1,18 +1,18 @@
 {
   "extensionName": {
-    "message": "LinkCore Download Manager",
+    "message": "LinkCore",
     "description": "擴展名稱"
   },
   "extensionDescription": {
-    "message": "LinkCore Download Manager 深度整合瀏覽器外掛程式",
+    "message": "LinkCore 深度整合瀏覽器外掛程式",
     "description": "擴展描述"
   },
   "actionTitle": {
-    "message": "LinkCore Download Manager",
+    "message": "LinkCore",
     "description": "瀏覽器操作標題"
   },
   "popupTitle": {
-    "message": "LinkCore Download Manager",
+    "message": "LinkCore",
     "description": "彈窗標題"
   },
   "rpcAddress": {

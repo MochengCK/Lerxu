@@ -10,14 +10,14 @@
   let config = {
     enabled: true,
     autoCombine: true,
-    formats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts']
+    formats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus']
   }
 
   let useCustomFrame = false
   let locale = 'en-US'
   let translations = {}
 
-  const defaultFormats = ['m4s', 'mp4', 'flv', 'm3u8', 'ts']
+  const defaultFormats = ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus']
 
   async function loadTranslations (locale) {
     try {
@@ -235,7 +235,7 @@
     const saveBtn = document.getElementById('saveBtn')
 
     if (pageTitle) {
-      pageTitle.textContent = `${t('video-sniffer-settings-title')} - LinkCore Download Manager`
+      pageTitle.textContent = `${t('video-sniffer-settings-title')} - LinkCore`
     }
 
     if (titleText) {
@@ -316,8 +316,7 @@
           modal: true,
           webPreferences: {
             nodeIntegration: true,
-            contextIsolation: false,
-            enableRemoteModule: true
+            contextIsolation: false
           }
         })
 

@@ -94,7 +94,7 @@
     const c = config || {}
     return {
       videoSnifferEnabled: c['video-sniffer-enabled'] !== undefined ? c['video-sniffer-enabled'] : true,
-      videoSnifferFormats: c['video-sniffer-formats'] || ['m4s', 'mp4', 'flv', 'webm', 'm3u8', 'ts'],
+      videoSnifferFormats: c['video-sniffer-formats'] || ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
       videoSnifferAutoCombine: c['video-sniffer-auto-combine'] !== undefined ? c['video-sniffer-auto-combine'] : true
     }
   }

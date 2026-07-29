@@ -2,7 +2,7 @@
   <el-row class="copyright">
     <el-col :span="6" class="copyright-left">
       <a target="_blank" rel="noopener noreferrer" href="https://motrix.app/">
-        &copy;{{ year }} LinkCore Download Manager
+        &copy;{{ year }} LinkCore
       </a>
     </el-col>
     <el-col :span="18" class="copyright-right">

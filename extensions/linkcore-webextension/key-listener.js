@@ -494,14 +494,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       dropdown.style.display = 'none'
     }
     
-    // 隐藏按钮（但如果按钮已锁定可见则保持显示）
-    if (!buttonPinned) {
-      try {
-        collectUniversalButtonWrappers().forEach(w => {
-          try { w.style.display = 'none' } catch (e) {}
-        })
-      } catch (e) {}
-    }
+    // 资源被清除后强制隐藏按钮（无视拖拽/固定状态）
+    try {
+      collectUniversalButtonWrappers().forEach(w => {
+        try { w.style.display = 'none' } catch (e) {}
+      })
+    } catch (e) {}
 
     removePerVideoButtons()
     
@@ -1788,9 +1786,16 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       if (dropdown) dropdown.style.display = 'none'
     })
 
-    const downloadIcon = document.createElement('span')
-    downloadIcon.textContent = '⭳'
-    downloadIcon.style.fontSize = '14px'
+    const downloadIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    downloadIcon.setAttribute('viewBox', '0 0 24 24')
+    downloadIcon.setAttribute('width', '14')
+    downloadIcon.setAttribute('height', '14')
+    downloadIcon.style.fill = 'currentColor'
+    downloadIcon.style.flexShrink = '0'
+
+    const downloadIconPath = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    downloadIconPath.setAttribute('d', 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z')
+    downloadIcon.appendChild(downloadIconPath)
 
     const downloadText = document.createElement('span')
     downloadText.textContent = getLocalizedText('downloadAll')
@@ -2616,20 +2621,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       updateMainButtonResourceCount()
     } else {
       log('Hiding button - config loaded:', configLoaded, 'sniffer enabled:', snifferEnabled, 'has resources:', hasResources, 'button closed:', isButtonClosed)
-      // 如果嗅探器被禁用或没有资源，隐藏按钮（除非被拖拽过）
-      if (wrapper && !hasBeenDragged && !positionLocked && !isButtonClosed && !buttonPinned) {
+      // 无资源、嗅探器禁用、或用户关闭时，强制隐藏按钮（无视拖拽/锁定/固定状态）
+      if (wrapper) {
         wrapper.style.display = 'none'
-        log('Hiding button - sniffer disabled or no resources and not dragged/locked/closed')
-      } else if (wrapper && !snifferEnabled && configLoaded) {
-        // 如果嗅探器被禁用，强制隐藏按钮（即使被拖拽过）
-        wrapper.style.display = 'none'
-        log('Hiding button - sniffer disabled by user')
-      } else if (wrapper && isButtonClosed) {
-        // 如果按钮被用户关闭，强制隐藏
-        wrapper.style.display = 'none'
-        log('Hiding button - closed by user')
-      } else {
-        log('Keeping button visible - dragged:', hasBeenDragged, 'locked:', positionLocked, 'closed:', isButtonClosed, 'sniffer enabled:', snifferEnabled)
+        log('Hiding button - no resources or sniffer disabled or closed')
       }
     }
   }
@@ -2662,11 +2657,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         wrapper.style.visibility = 'visible'
         log('Button stability check: restored hidden button with resources and sniffer enabled')
       }
-    } else if (wrapper && (!videoSnifferConfig.enabled && videoSnifferConfig.loaded) || isButtonClosed) {
-      // 如果嗅探器被禁用或按钮被用户关闭，强制隐藏按钮
+    } else if (wrapper) {
+      // 无资源、嗅探器禁用、或用户关闭时，强制隐藏按钮（无视拖拽/锁定/固定状态）
       if (wrapper.style.display !== 'none') {
         wrapper.style.display = 'none'
-        log('Button stability check: hidden button due to sniffer disabled or user closed')
+        log('Button stability check: hidden button due to no resources/disabled/closed')
       }
     }
   }
@@ -2691,21 +2686,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   const startHideTimeout = () => {
     clearHideTimeout()
-    // 增加隐藏延迟到10秒，给用户更多时间操作
+    // 隐藏延迟，给用户时间操作
     hideButtonTimeout = setTimeout(() => {
       const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
       const isButtonClosed = isButtonClosedByUser()
       
-      // 只有在没有资源、没有被拖拽、没有被悬停、没有被用户关闭且嗅探器启用时才隐藏
-      if (wrapper && !isButtonHovered && !hasBeenDragged && !isButtonClosed && !buttonPinned && (!sniffedResources || sniffedResources.total === 0 || !videoSnifferConfig.enabled)) {
+      // 无资源或嗅探器禁用时强制隐藏（无视拖拽/固定状态，但尊重悬停和用户关闭状态）
+      if (wrapper && !isButtonHovered && !isButtonClosed && (!sniffedResources || sniffedResources.total === 0 || !videoSnifferConfig.enabled)) {
         wrapper.style.display = 'none'
         positionLocked = false
         hoveredVideoContainer = null
-        log('Button hidden after 10s timeout')
+        log('Button hidden - no resources or sniffer disabled')
       } else {
-        log('Button not hidden - hovered:', isButtonHovered, 'dragged:', hasBeenDragged, 'closed:', isButtonClosed, 'resources:', sniffedResources?.total || 0, 'sniffer enabled:', videoSnifferConfig.enabled)
+        log('Button not hidden - hovered:', isButtonHovered, 'closed:', isButtonClosed, 'resources:', sniffedResources?.total || 0, 'sniffer enabled:', videoSnifferConfig.enabled)
       }
-    }, 10000) // 增加到10秒
+    }, 10000)
   }
 
   const ensureBilibiliButton = () => {

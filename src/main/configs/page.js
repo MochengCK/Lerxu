@@ -32,7 +32,7 @@ const getPreferenceUrl = () => {
 export default {
   index: {
     attrs: {
-      title: 'LinkCore Download Manager',
+      title: 'LinkCore',
       width: 1100,
       height: 750,
       minWidth: 480,

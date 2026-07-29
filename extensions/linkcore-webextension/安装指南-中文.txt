@@ -47,4 +47,4 @@ A: 当有新版本时，请重新下载并安装最新版本的扩展文件夹
 ### Q: 如何卸载扩展？
 A: 在`chrome://extensions/`页面找到LinkCore扩展，点击"移除"按钮
 
-如有问题请访问：https://github.com/MochengCK/LinkCore-Download-Manager/issues
+如有问题请访问：https://github.com/MochengCK/LinkCore/issues

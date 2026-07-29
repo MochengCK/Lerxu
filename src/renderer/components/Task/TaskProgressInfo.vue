@@ -253,6 +253,15 @@
         if (total > 0 || completed > 0) {
           return ''
         }
+        // 当任务已经是 active 状态时，不显示 waiting 相关的提示。
+        // 这修复了扩展传入任务时卡片卡在"等待可用连接"的问题：
+        // 任务从 waiting→active 的过渡期中，旧的 statusHint/engineStatus
+        // 可能尚未被清除，而 totalLength 还是 0，导致错误显示等待提示。
+        // active 状态的零速提示由 dataAccessHintText 负责（有 10 秒缓冲）。
+        const taskStatus = `${task.status || ''}`
+        if (taskStatus === TASK_STATUS.ACTIVE) {
+          return ''
+        }
         const engineStatus = `${task.engineStatus || ''}`.trim()
         const statusHint = `${task.statusHint || ''}`.trim()
         // "磁力任务下载中" 由右下角 statusRightText 显示，左下角不再重复

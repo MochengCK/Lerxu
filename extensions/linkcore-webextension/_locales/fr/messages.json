@@ -1,18 +1,18 @@
 {
   "extensionName": {
-    "message": "LinkCore Download Manager",
+    "message": "LinkCore",
     "description": "Nom de l'extension"
   },
   "extensionDescription": {
-    "message": "Extension de navigateur profondément intégrée pour LinkCore Download Manager",
+    "message": "Extension de navigateur profondément intégrée pour LinkCore",
     "description": "Description de l'extension"
   },
   "actionTitle": {
-    "message": "LinkCore Download Manager",
+    "message": "LinkCore",
     "description": "Titre de l'action du navigateur"
   },
   "popupTitle": {
-    "message": "LinkCore Download Manager",
+    "message": "LinkCore",
     "description": "Titre de la popup"
   },
   "rpcAddress": {

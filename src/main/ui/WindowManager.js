@@ -107,7 +107,6 @@ export default class WindowManager extends EventEmitter {
       ...defaultBrowserOptions,
       ...pageOptions.attrs,
       webPreferences: {
-        enableRemoteModule: true,
         contextIsolation: false,
         backgroundThrottling: true,
         spellcheck: false,

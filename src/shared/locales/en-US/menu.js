@@ -1,5 +1,5 @@
 export default {
-  'app': 'LinkCore Download Manager',
+  'app': 'LinkCore',
   'file': 'File',
   'task': 'Task',
   'edit': 'Edit',

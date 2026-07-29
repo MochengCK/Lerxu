@@ -54,4 +54,4 @@ A: 새 버전이 사용 가능해지면 최신 확장 프로그램 폴더를 다
 ### Q: 확장 프로그램을 제거하려면 어떻게 하나요?
 A: `chrome://extensions/` 페이지로 이동하여 LinkCore 확장 프로그램을 찾은 후 "제거" 버튼 클릭
 
-기술 지원：https://github.com/MochengCK/LinkCore-Download-Manager/issues
+기술 지원：https://github.com/MochengCK/LinkCore/issues

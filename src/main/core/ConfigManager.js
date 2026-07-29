@@ -85,8 +85,19 @@ export default class ConfigManager {
         'bt-max-open-files': 200,
         'bt-metadata-only': false,
         'reuse-uri': true,
-        'min-split-size': '4M',
+        'min-split-size': '1M',
         'continue': true,
+        'check-certificate': false,
+        'enable-http-keep-alive': true,
+        'http-accept-gzip': true,
+        'connect-timeout': 10,
+        'timeout': 30,
+        'lowest-speed-limit': '20K',
+        'stream-piece-selector': 'default',
+        'max-tries': 0,
+        'retry-wait': 2,
+        'max-file-not-found': 10,
+        'uri-selector': 'adaptive',
         'dht-file-path': getDhtPath(IP_VERSION.V4),
         'dht-file-path6': getDhtPath(IP_VERSION.V6),
         'dht-listen-port': 26701,
@@ -269,6 +280,43 @@ export default class ConfigManager {
     const userAgent = this.getUserConfig('userAgent')
     if (userAgent) {
       this.setSystemConfig('user-agent', userAgent)
+    }
+
+    // === 下载速度优化迁移 ===
+    // 将旧的 min-split-size 从 4M 迁移到 1M，确保文件能被分成更多片段，
+    // 让所有连接始终保持活跃，避免下载后期速度下降
+    const currentMinSplitSize = this.systemConfig.get('min-split-size')
+    if (!currentMinSplitSize || currentMinSplitSize === '4M' || currentMinSplitSize === '4m') {
+      this.setSystemConfig('min-split-size', '1M')
+    }
+
+    // 将 stream-piece-selector 从 geom 迁移到 default，
+    // geom 会导致后期片段越来越大，并行度降低，速度逐渐下降
+    const currentSelector = this.systemConfig.get('stream-piece-selector')
+    if (!currentSelector || currentSelector === 'geom') {
+      this.setSystemConfig('stream-piece-selector', 'default')
+    }
+
+    // 将 retry-wait 从 10 迁移到 2，减少连接失败后的等待时间
+    const currentRetryWait = this.systemConfig.get('retry-wait')
+    if (currentRetryWait === undefined || Number(currentRetryWait) >= 10) {
+      this.setSystemConfig('retry-wait', 2)
+    }
+
+    // 将 timeout 从 10 迁移到 30，避免大文件传输时连接被过早断开
+    const currentTimeout = this.systemConfig.get('timeout')
+    if (currentTimeout === undefined || Number(currentTimeout) === 10) {
+      this.setSystemConfig('timeout', 30)
+    }
+
+    // 删除 enable-http-pipelining，该选项会导致部分 HTTPS 服务器 TLS 握手失败
+    if (this.systemConfig.get('enable-http-pipelining') !== undefined) {
+      this.systemConfig.delete('enable-http-pipelining')
+    }
+
+    // 确保 check-certificate 为 false，避免因证书验证导致 HTTPS 下载失败
+    if (this.systemConfig.get('check-certificate') !== false) {
+      this.setSystemConfig('check-certificate', false)
     }
   }
 
