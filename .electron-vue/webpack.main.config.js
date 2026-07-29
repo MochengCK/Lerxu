@@ -14,9 +14,10 @@ let mainConfig = {
   entry: {
     main: path.join(__dirname, '../src/main/index.js')
   },
-  externals: [
-    ...Object.keys(dependencies || {})
-  ],
+  externals: Object.fromEntries([
+    ...Object.keys(dependencies || {}).map(d => [d, `commonjs2 ${d}`]),
+    ['electron', 'commonjs2 electron']
+  ]),
   module: {
     rules: [
       {

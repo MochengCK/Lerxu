@@ -775,6 +775,23 @@
         }
       },
       async removeTask (task, taskName, isRemoveWithFiles = false) {
+        // MERGING 状态的任务可能已不在 aria2 中，跳过 aria2 操作，直接清理本地状态
+        const isMerging = task && task.status === TASK_STATUS.MERGING
+        if (isMerging) {
+          // 清理合并重试定时器
+          this._clearMergeRetryTimer(task.gid)
+          // 从合并列表中移除
+          await this.$store.dispatch('task/removeFromMergingList', task.gid)
+          // 尝试从 aria2 删除（可能失败，忽略错误）
+          try { await this.$store.dispatch('task/removeTask', task) } catch (e) {}
+          // 删除文件
+          if (isRemoveWithFiles) {
+            await this.deleteTaskFiles(task)
+          }
+          await this.$store.dispatch('task/fetchList')
+          this.$msg.success(this.$t('task.delete-task-success', { taskName }))
+          return
+        }
         // 在从aria2移除任务前，获取最新的任务状态以确保文件路径准确
         let taskForDeletion = task
         if (isRemoveWithFiles) {
@@ -811,6 +828,19 @@
           })
       },
       async removeTaskRecord (task, taskName, isRemoveWithFiles = false) {
+        // MERGING 状态的任务可能已不在 aria2 中，跳过 aria2 操作，直接清理本地状态
+        const isMerging = task && task.status === TASK_STATUS.MERGING
+        if (isMerging) {
+          this._clearMergeRetryTimer(task.gid)
+          await this.$store.dispatch('task/removeFromMergingList', task.gid)
+          try { await this.$store.dispatch('task/removeTaskRecord', task) } catch (e) {}
+          if (isRemoveWithFiles) {
+            await this.deleteTaskFiles(task)
+          }
+          await this.$store.dispatch('task/fetchList')
+          this.$msg.success(this.$t('task.remove-record-success', { taskName }))
+          return
+        }
         // 在从aria2移除任务前，获取最新的任务状态以确保文件路径准确
         let taskForDeletion = task
         if (isRemoveWithFiles) {
@@ -846,6 +876,18 @@
             }
           })
       },
+      _clearMergeRetryTimer (gid) {
+        try {
+          const engineClient = this.$children.find(c => c._mergeRetryTimers)
+          if (engineClient && engineClient._mergeRetryTimers) {
+            const timer = engineClient._mergeRetryTimers.get(gid)
+            if (timer) {
+              clearTimeout(timer)
+              engineClient._mergeRetryTimers.delete(gid)
+            }
+          }
+        } catch (e) {}
+      },
       async removeTaskItem (task, taskName) {
         try {
           await this.$store.dispatch('task/removeTask', task)
@@ -875,6 +917,29 @@
         }
       },
       async removeTasks (taskList, isRemoveWithFiles = false) {
+        // 分离 MERGING 状态的任务和普通任务
+        const mergingTasks = taskList.filter(t => t && t.status === TASK_STATUS.MERGING)
+        const normalTasks = taskList.filter(t => t && t.status !== TASK_STATUS.MERGING)
+
+        // 处理 MERGING 状态的任务
+        if (mergingTasks.length > 0) {
+          for (const task of mergingTasks) {
+            this._clearMergeRetryTimer(task.gid)
+            await this.$store.dispatch('task/removeFromMergingList', task.gid)
+            try { await this.$store.dispatch('task/removeTask', task) } catch (e) {}
+            if (isRemoveWithFiles) {
+              await this.deleteTaskFiles(task)
+            }
+          }
+        }
+
+        // 处理普通任务
+        taskList = normalTasks
+        if (taskList.length === 0) {
+          await this.$store.dispatch('task/fetchList')
+          return
+        }
+
         // 预获取引擎选项（dir + out），避免任务被 aria2 删除后 getOption 失败导致文件路径无法解析
         let taskListForDeletion = taskList
         if (isRemoveWithFiles) {

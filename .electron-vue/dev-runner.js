@@ -93,7 +93,9 @@ function startMain () {
 }
 
 function startElectron () {
-  electronProcess = spawn(electron, ['--inspect=5858', '--user-data-dir=/tmp/linkcore-dev-userdata', '--no-sandbox', path.join(__dirname, '../dist/electron/main.js')])
+  const devEnv = { ...process.env }
+  delete devEnv.ELECTRON_RUN_AS_NODE
+  electronProcess = spawn(electron, ['--inspect=5858', path.join(__dirname, '../dist/electron/main.js')], { env: devEnv })
 
   electronProcess.stdout.on('data', data => {
     electronLog(data, 'blue')

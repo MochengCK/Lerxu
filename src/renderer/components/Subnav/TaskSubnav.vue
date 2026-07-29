@@ -1,6 +1,6 @@
 <template>
   <nav class="subnav-inner task-subnav">
-    <ul>
+    <ul class="task-nav-list">
       <li
         @click="() => nav('all')"
         :class="[ current === 'all' ? 'active' : '' ]"
@@ -41,7 +41,8 @@
         <span>{{ $t('task.stopped') }}</span>
         <span class="subnav-count">{{ taskCounts.stopped }}</span>
       </li>
-      <li class="subnav-divider"></li>
+    </ul>
+    <ul class="preference-nav-list">
       <li
         class="preference-item"
         @click="openPreference"
@@ -52,7 +53,6 @@
         <span>{{ $t('subnav.preferences') }}</span>
       </li>
     </ul>
-
   </nav>
 </template>
 
@@ -101,6 +101,18 @@
 .subnav-inner.task-subnav {
   margin-top: 44px;
   padding-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 44px);
+
+  .task-nav-list {
+    flex: 1;
+  }
+}
+
+// auto-hide-aside 模式下，侧边栏高度为 auto，不强制占满
+.subnav.three-column-subnav.is-auto-hide-aside .subnav-inner.task-subnav {
+  height: auto;
 }
 
 #app:not(.has-custom-titlebar) .subnav-inner.task-subnav {
@@ -134,7 +146,7 @@
 // 任务分类右侧数量徽标
 .subnav-inner .subnav-count {
   position: absolute;
-  right: 10px;
+  right: 3px;
   top: 50%;
   transform: translateY(-50%);
   min-width: 18px;

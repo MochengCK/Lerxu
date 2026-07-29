@@ -194,6 +194,19 @@
     return domains.some(d => host === d || host.endsWith(`.${d}`))
   }
 
+  // 抖音/字节跳动域名识别
+  const isDouyinHost = (hostname) => {
+    const host = `${hostname || ''}`.toLowerCase()
+    if (!host) return false
+    const domains = [
+      'douyinvod.com', 'bytecdntp.com', 'bytecdn.cn',
+      'ixigua.com', 'douyin.com', 'douyincdn.com',
+      'amemv.com', 'snssdk.com', 'bytegoofetch.com',
+      'bytednsdoc.com', 'bytedance.com'
+    ]
+    return domains.some(d => host === d || host.endsWith(`.${d}`))
+  }
+
   const normalizeUrlForDedup = (url) => {
     try {
       if (!url) return ''
@@ -224,7 +237,7 @@
           video.setAttribute('data-linkcore-video-context-id', id)
         } catch (e) {}
         if (!videoContextState.has(id)) {
-          videoContextState.set(id, { lastActiveAt: 0, lastSrc: '' })
+          videoContextState.set(id, { lastActiveAt: 0, lastSrc: '', isPlaying: false })
         }
 
         const mark = () => {
@@ -237,12 +250,23 @@
             video.setAttribute('data-linkcore-video-last-active', `${st.lastActiveAt}`)
           } catch (e) {}
         }
+        const markPlaying = () => {
+          const st = videoContextState.get(id)
+          if (st) st.isPlaying = true
+          mark()
+        }
+        const markPaused = () => {
+          const st = videoContextState.get(id)
+          if (st) st.isPlaying = false
+        }
         try {
-          video.addEventListener('play', mark, true)
-          video.addEventListener('playing', mark, true)
+          video.addEventListener('play', markPlaying, true)
+          video.addEventListener('playing', markPlaying, true)
           video.addEventListener('loadedmetadata', mark, true)
           video.addEventListener('loadeddata', mark, true)
-          video.addEventListener('emptied', mark, true)
+          video.addEventListener('emptied', markPaused, true)
+          video.addEventListener('pause', markPaused, true)
+          video.addEventListener('ended', markPaused, true)
         } catch (e) {}
       }
       return id
@@ -269,6 +293,21 @@
       }
 
       const now = Date.now()
+
+      // 优先选择正在播放的视频元素，避免将预加载（暂停）视频的资源分配给当前视频
+      let bestPlayingId = null
+      let bestPlayingAt = 0
+      for (const [id, st] of videoContextState.entries()) {
+        if (!st || !st.isPlaying) continue
+        const at = Number(st.lastActiveAt || 0)
+        if (at > bestPlayingAt) {
+          bestPlayingAt = at
+          bestPlayingId = id
+        }
+      }
+      if (bestPlayingId && bestPlayingAt && now - bestPlayingAt < 8000) return bestPlayingId
+
+      // 回退：最近活跃的视频（包括预加载的）
       let bestId = null
       let bestAt = 0
       for (const [id, st] of videoContextState.entries()) {
@@ -557,6 +596,29 @@
     }
 
     if (!ext) {
+      // 抖音域名检测：抖音URL通常没有标准扩展名，通过URL参数和路径推断媒体类型
+      try {
+        const urlObj = new URL(url)
+        if (isDouyinHost(urlObj.hostname)) {
+          const paramMime = urlObj.searchParams.get('mime_type') || urlObj.searchParams.get('content_type') || ''
+          const paramType = urlObj.searchParams.get('video_type') || urlObj.searchParams.get('type') || ''
+          const paramAudioOnly = urlObj.searchParams.get('audio_only') || ''
+          const pathLower = urlObj.pathname.toLowerCase()
+          const hasVideoPath = pathLower.includes('/video/') || pathLower.includes('/tos/') || pathLower.includes('/obj/')
+          const hasAudioPath = pathLower.includes('/audio/') || pathLower.includes('/sound/')
+
+          if (paramMime.toLowerCase().includes('audio') || paramAudioOnly === 'true' || hasAudioPath) {
+            ext = 'm4a'
+            log('Douyin audio detected by URL params/path')
+          } else if (paramMime.toLowerCase().includes('video') || paramType || hasVideoPath) {
+            ext = 'mp4'
+            log('Douyin video detected by URL params/path')
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (!ext) {
       // 只在调试模式下输出，并且过滤空 URL
       if (DEBUG && url && url.length > 0) {
         log('No extension found for:', url.substring(0, 100), 'MIME:', mimeType || 'none')
@@ -693,6 +755,22 @@
       // URL解析失败，忽略
     }
     
+    // 7. 抖音特定音频检测
+    try {
+      const urlObj = new URL(url)
+      if (isDouyinHost(urlObj.hostname)) {
+        const params = new URLSearchParams(urlObj.search)
+        // 抖音音频流通常有明确的参数标识
+        if (params.get('audio_only') === 'true') { log('Douyin audio: audio_only=true'); return true }
+        if (params.get('type') === 'audio') { log('Douyin audio: type=audio'); return true }
+        if (params.get('media_type') === 'audio') { log('Douyin audio: media_type=audio'); return true }
+        if (params.get('stream_type') === 'audio') { log('Douyin audio: stream_type=audio'); return true }
+        // 抖音音频路径标识
+        const path = urlObj.pathname.toLowerCase()
+        if (path.includes('/audio/') || path.includes('/sound/')) { log('Douyin audio: path keyword'); return true }
+      }
+    } catch (e) {}
+
     log('Not detected as audio')
     return false
   }
@@ -910,6 +988,17 @@
           }
         }
 
+        // 为视频M4S流追加编码标识（H.264/H.265/AV1）
+        if (info.type === 'video' && info.quality && !info.quality.includes('Audio')) {
+          if (isBiliH264M4S(url)) {
+            if (!info.quality.includes('H.26') && !info.quality.includes('AV1') && !info.quality.includes('Dolby') && !info.quality.includes('HDR')) {
+              info.quality = `${info.quality} H.264`
+            }
+          } else {
+            // 非H.264的已有标识（AV1/HDR/Dolby等），不重复添加
+          }
+        }
+
         // 尝试从URL参数获取大小
         if (params.has('len')) {
           info.size = parseInt(params.get('len')) || 0
@@ -931,6 +1020,40 @@
           info.type = 'audio'
           info.quality = getLocalizedQuality('Audio', currentLocale)
         }
+
+        // 抖音质量推断：从URL参数中提取分辨率/质量信息
+        try {
+          const urlObj = new URL(url)
+          if (isDouyinHost(urlObj.hostname)) {
+            const ratio = urlObj.searchParams.get('ratio') || ''
+            const qualityParam = urlObj.searchParams.get('quality') || ''
+            const resolution = urlObj.searchParams.get('resolution') || ''
+            const bitrate = urlObj.searchParams.get('bitrate') || ''
+            const vcodec = urlObj.searchParams.get('vcodec') || ''
+
+            if (ratio) {
+              info.quality = ratio.toUpperCase()
+              log('Douyin quality from ratio:', info.quality)
+            } else if (qualityParam) {
+              info.quality = qualityParam.toUpperCase()
+              log('Douyin quality from quality param:', info.quality)
+            } else if (resolution) {
+              info.quality = resolution.toUpperCase()
+              log('Douyin quality from resolution:', info.quality)
+            }
+            // 如果URL参数中有vcodec信息，可以进一步标识视频编码
+            if (vcodec && !isAudio) {
+              const codec = vcodec.toLowerCase()
+              if (codec.includes('h265') || codec.includes('hevc')) {
+                info.quality = `${info.quality} H.265`
+              } else if (codec.includes('h264') || codec.includes('avc')) {
+                info.quality = `${info.quality} H.264`
+              } else if (codec.includes('av1')) {
+                info.quality = `${info.quality} AV1`
+              }
+            }
+          }
+        } catch (e) {}
       }
 
       // 如果传入了有效的大小，使用传入的大小（优先级最高）
@@ -950,11 +1073,46 @@
     return info
   }
 
+  // 检查B站M4S URL是否为H.264编码（优先使用H.264，兼容性最好）
+  const isBiliH264M4S = (url) => {
+    try {
+      // 提取质量编号
+      const match = url.match(/-(\d+)\.m4s/) || url.match(/-(\d+)-/) || url.match(/\/(\d+)\//)
+      if (!match) return true // 无法确定，假设是H.264
+      const code = parseInt(match[1])
+      if (isNaN(code)) return true
+
+      // H.265/HDR/Dolby Vision 编码
+      if ([30125, 30126, 30127, 125, 126, 127].includes(code)) return false
+      // AV1 编码 (30400-30499, 400-403)
+      if ((code >= 30400 && code <= 30499) || (code >= 400 && code <= 403)) return false
+      // HDR 编码 (100xxx系列 100050-100054)
+      if (code >= 100050 && code <= 100054) return false
+      // Dolby/HDR10+
+      if ([30335, 30350].includes(code)) return false
+      // 8K+ 系列 (30251, 30250) 可能不是H.264
+      if ([30251, 30250].includes(code)) return false
+
+      return true // 其余编号默认为H.264
+    } catch (e) {
+      return true
+    }
+  }
+
   // 合并M4S格式的音视频流
   function combineM4SStreams() {
     const combined = []
-    const videoStreams = sniffedResources.video.filter(r => r.ext === 'm4s')
+    let videoStreams = sniffedResources.video.filter(r => r.ext === 'm4s')
     const audioStreams = sniffedResources.audio.filter(r => r.ext === 'm4s')
+
+    // 优先处理H.264编码的视频流，确保合并结果使用兼容性最好的编码
+    videoStreams.sort((a, b) => {
+      const aH264 = isBiliH264M4S(a.url || '')
+      const bH264 = isBiliH264M4S(b.url || '')
+      if (aH264 && !bH264) return -1
+      if (!aH264 && bH264) return 1
+      return 0
+    })
 
     log('Combining M4S streams - Video:', videoStreams.length, 'Audio:', audioStreams.length)
 
@@ -1169,6 +1327,123 @@
       log(`Combined ${index + 1}:`, item.quality, 'Size:', item.size)
     })
     
+    return combined
+  }
+
+  // 合并非M4S格式的音视频流（通用平台，如抖音等）
+  function combineGenericStreams() {
+    const combined = []
+    const videoStreams = sniffedResources.video.filter(r => r && r.ext !== 'm4s')
+    const audioStreams = sniffedResources.audio.filter(r => r && r.ext !== 'm4s')
+
+    log('Combining generic streams - Video:', videoStreams.length, 'Audio:', audioStreams.length)
+
+    if (videoStreams.length === 0 || audioStreams.length === 0) {
+      return combined
+    }
+
+    const usedVideoUrls = new Set()
+    const usedAudioUrls = new Set()
+
+    videoStreams.forEach(video => {
+      const normalizedVideoUrl = normalizeUrlForDedup(video.url)
+      if (usedVideoUrls.has(normalizedVideoUrl)) return
+
+      // 查找匹配的音频流
+      const matchedAudio = audioStreams.find(audio => {
+        const normalizedAudioUrl = normalizeUrlForDedup(audio.url)
+        if (usedAudioUrls.has(normalizedAudioUrl)) return false
+
+        // 策略1: 视频上下文匹配
+        if (video.videoContextId && audio.videoContextId) {
+          if (video.videoContextId === audio.videoContextId) return true
+          return false
+        }
+
+        // 策略2: 时间戳匹配（10秒内）
+        const timeDiff = Math.abs(video.timestamp - audio.timestamp)
+        if (timeDiff < 10000) {
+          log('Generic audio matched by timestamp (within 10s):', timeDiff + 'ms')
+          return true
+        }
+
+        // 策略3: URL相似性匹配（同一主机）
+        try {
+          const videoUrlObj = new URL(video.url)
+          const audioUrlObj = new URL(audio.url)
+          if (videoUrlObj.hostname === audioUrlObj.hostname) {
+            log('Generic audio matched by same hostname:', videoUrlObj.hostname)
+            return true
+          }
+        } catch (e) {}
+
+        // 策略4: 抖音URL路径相似性匹配和视频ID匹配
+        try {
+          const videoUrlObj = new URL(video.url)
+          const audioUrlObj = new URL(audio.url)
+          if (isDouyinHost(videoUrlObj.hostname) || isDouyinHost(audioUrlObj.hostname)) {
+            // 提取URL路径中较长的段（通常是视频ID的一部分）
+            const videoPathParts = videoUrlObj.pathname.split('/').filter(p => p.length > 10)
+            const audioPathParts = audioUrlObj.pathname.split('/').filter(p => p.length > 10)
+            const commonParts = videoPathParts.filter(p => audioPathParts.includes(p))
+            if (commonParts.length > 0) {
+              log('Douyin audio matched by path segments:', commonParts.length)
+              return true
+            }
+            // 检查URL参数中是否有相同的视频ID
+            const videoId = videoUrlObj.searchParams.get('video_id') || videoUrlObj.searchParams.get('vid') || videoUrlObj.searchParams.get('item_id') || ''
+            const audioId = audioUrlObj.searchParams.get('video_id') || audioUrlObj.searchParams.get('vid') || audioUrlObj.searchParams.get('item_id') || ''
+            if (videoId && audioId && videoId === audioId) {
+              log('Douyin audio matched by video ID:', videoId)
+              return true
+            }
+          }
+        } catch (e) {}
+
+        // 策略5: 如果只有一个音频流，直接匹配
+        if (audioStreams.length === 1) {
+          log('Only one generic audio stream available, using it')
+          return true
+        }
+
+        return false
+      })
+
+      if (matchedAudio) {
+        const quality = video.quality || ''
+        const ext = video.ext || 'mp4'
+        let totalSize = 0
+        if (video.size > 0 && matchedAudio.size > 0) {
+          totalSize = video.size + matchedAudio.size
+        } else if (video.size > 0) {
+          totalSize = video.size
+        } else if (matchedAudio.size > 0) {
+          totalSize = matchedAudio.size
+        }
+
+        const combinedItem = {
+          quality: quality,
+          videoUrl: video.url,
+          audioUrl: matchedAudio.url,
+          name: `${quality || ext.toUpperCase()} 完整视频`,
+          timestamp: video.timestamp,
+          size: totalSize,
+          videoSize: video.size || 0,
+          audioSize: matchedAudio.size || 0,
+          videoContextId: video.videoContextId || matchedAudio.videoContextId || null
+        }
+
+        combined.push(combinedItem)
+        usedVideoUrls.add(normalizedVideoUrl)
+        usedAudioUrls.add(normalizeUrlForDedup(matchedAudio.url))
+
+        log('✓ Created generic combined stream:', quality || ext, 'Video size:', video.size, 'Audio size:', matchedAudio.size, 'Total:', totalSize)
+      } else {
+        log('✗ No matching generic audio found for video:', quality || ext, video.url.substring(0, 100))
+      }
+    })
+
+    log('✓ Generic combined streams created:', combined.length, 'from', videoStreams.length, 'video and', audioStreams.length, 'audio streams')
     return combined
   }
 
@@ -1671,9 +1946,10 @@
 
     // 确保autoCombine配置已加载且启用
     if (config.autoCombine && configLoaded) {
-      const combined = combineM4SStreams()
-      sniffedResources.combined = combined
-      log('Auto-combine enabled, created', combined.length, 'combined streams')
+      const m4sCombined = combineM4SStreams()
+      const genericCombined = combineGenericStreams()
+      sniffedResources.combined = [...m4sCombined, ...genericCombined]
+      log('Auto-combine enabled, created', sniffedResources.combined.length, 'combined streams (M4S:', m4sCombined.length, 'Generic:', genericCombined.length, ')')
     } else {
       sniffedResources.combined = []
       if (!configLoaded) {

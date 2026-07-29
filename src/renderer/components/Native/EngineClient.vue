@@ -668,10 +668,40 @@
         }
         this.setFileMtimeOnComplete(task, finalPath)
 
+        // 如果需要合并（Bilibili DASH 分段视频），先设置 MERGING 状态
+        const mergeGid = task && task.gid ? `${task.gid}` : ''
         const mergeKey = this.getDashMergeKey(finalPath, cfg)
+        if (isBilibiliPart && mergeGid) {
+          this.$store.dispatch('task/addToMergingList', { gid: mergeGid, mergeKey })
+          this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.MERGING })
+        }
+
+        // 合并开始前，清除所有相关任务的等待配对状态
+        if (isBilibiliPart && mergeKey) {
+          this.$store.dispatch('task/clearMergeProgressByMergeKey', mergeKey)
+        }
+
         const mergeResult = await this.runDashMergeExclusive(mergeKey, () => {
           return this.maybeMergeBilibiliDash(finalPath, task)
         })
+
+        // 等待配对文件时，设置等待提示并启动重试机制
+        if (mergeResult && mergeResult.waitingForPair && mergeGid) {
+          this.$store.dispatch('task/setMergeProgress', {
+            gid: mergeGid,
+            progress: { waitingForPair: true }
+          })
+          // 启动重试：每隔3秒重新扫描配对文件，最多重试20次（60秒）
+          this._scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, 0, 20)
+        }
+
+        // 合并完成后，通过 mergeKey 清理所有相关任务并恢复 COMPLETE 状态
+        if (isBilibiliPart && mergeGid && !(mergeResult && mergeResult.waitingForPair)) {
+          this.$store.dispatch('task/removeAllMergingByMergeKey', mergeKey)
+          this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.COMPLETE })
+          this.$store.dispatch('task/fetchList')
+        }
+
         if (mergeResult && mergeResult.mergedPath) {
           this.setFileMtimeOnComplete(task, mergeResult.mergedPath)
           this.autoCategorizeDownloadedFile(task, mergeResult.mergedPath)
@@ -1092,6 +1122,68 @@
           return ''
         }
       },
+      _scheduleMergeRetry (mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt, maxAttempts) {
+        if (!this._mergeRetryTimers) {
+          this._mergeRetryTimers = new Map()
+        }
+        // 清除已有的重试定时器
+        const existingTimer = this._mergeRetryTimers.get(mergeGid)
+        if (existingTimer) {
+          clearTimeout(existingTimer)
+        }
+        // 检查任务是否还在合并列表中（可能已被用户删除或已合并完成）
+        const { mergingList } = this.$store.state.task
+        if (!mergingList.includes(mergeGid)) {
+          return
+        }
+        const timer = setTimeout(async () => {
+          this._mergeRetryTimers.delete(mergeGid)
+          if (attempt >= maxAttempts) {
+            // 超过最大重试次数，放弃等待，标记为完成
+            console.warn(`[Motrix] Merge retry exhausted for ${mergeGid} after ${maxAttempts} attempts`)
+            this.$store.dispatch('task/removeFromMergingList', mergeGid)
+            this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.COMPLETE })
+            this.$store.dispatch('task/fetchList')
+            return
+          }
+          // 重新扫描配对文件
+          try {
+            const retryResult = await this.runDashMergeExclusive(mergeKey, () => {
+              return this.maybeMergeBilibiliDash(finalPath, task)
+            })
+            if (retryResult && retryResult.mergedPath) {
+              // 合并成功
+              this.$store.dispatch('task/removeAllMergingByMergeKey', mergeKey)
+              this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.COMPLETE })
+              this.$store.dispatch('task/fetchList')
+              this.setFileMtimeOnComplete(task, retryResult.mergedPath)
+              this.autoCategorizeDownloadedFile(task, retryResult.mergedPath)
+              try {
+                const base = basename(retryResult.mergedPath || '')
+                const suffix = cfg.downloadingFileSuffix || ''
+                const name = suffix && base.endsWith(suffix) ? base.slice(0, -suffix.length) : base
+                if (name) {
+                  this.$store.dispatch('task/setTaskDisplayName', { gid: mergeGid, name })
+                }
+              } catch (_) {}
+              this.showTaskCompleteNotify(task, isBT, retryResult.mergedPath)
+              this.$electron.ipcRenderer.send('event', 'task-download-complete', task, retryResult.mergedPath)
+            } else if (retryResult && retryResult.waitingForPair) {
+              // 仍然等待配对，继续重试
+              this._scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
+            } else {
+              // 合并失败（非等待配对），清理并标记完成
+              this.$store.dispatch('task/removeAllMergingByMergeKey', mergeKey)
+              this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.COMPLETE })
+              this.$store.dispatch('task/fetchList')
+            }
+          } catch (e) {
+            console.warn(`[Motrix] Merge retry ${attempt + 1} failed:`, e)
+            this._scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
+          }
+        }, 3000)
+        this._mergeRetryTimers.set(mergeGid, timer)
+      },
       runDashMergeExclusive (key, merge) {
         if (!key) {
           return Promise.resolve().then(merge)
@@ -1113,13 +1205,18 @@
         this._dashMergeJobs.set(key, job)
         return job
       },
-      runFfmpegMux (ffmpegPath, videoPath, audioPath, outputPath) {
+      runFfmpegMux (ffmpegPath, videoPath, audioPath, outputPath, progressGid = '') {
         return new Promise((resolve, reject) => {
           const cmd = ffmpegPath || ''
           const args = [
             '-y',
             '-hide_banner',
-            '-loglevel', 'error',
+            '-loglevel', 'error'
+          ]
+          if (progressGid) {
+            args.push('-progress', 'pipe:1')
+          }
+          args.push(
             '-i', videoPath,
             '-i', audioPath,
             '-map', '0:v:0',
@@ -1127,9 +1224,37 @@
             '-c', 'copy',
             '-shortest',
             outputPath
-          ]
+          )
           const child = spawn(cmd, args, { windowsHide: true })
           let stderr = ''
+          let progressBuffer = ''
+          let totalInputSize = 0
+          if (progressGid) {
+            try {
+              const vStat = statSync(videoPath)
+              const aStat = statSync(audioPath)
+              totalInputSize = (vStat.size || 0) + (aStat.size || 0)
+            } catch (_) {}
+            child.stdout.on('data', (d) => {
+              progressBuffer += d.toString('utf8')
+              const lines = progressBuffer.split('\n')
+              progressBuffer = lines.pop() || ''
+              const kv = {}
+              for (const line of lines) {
+                const m = line.match(/^(\w+)=(.*)$/)
+                if (m) kv[m[1]] = m[2]
+              }
+              if (kv.progress === 'continue' || kv.progress === 'end') {
+                const totalSize = parseInt(kv.total_size || '0', 10)
+                const speed = parseFloat(kv.speed || '0')
+                const percent = totalInputSize > 0 ? Math.min(100, Math.round(totalSize / totalInputSize * 100)) : 0
+                this.$store.dispatch('task/setMergeProgress', {
+                  gid: progressGid,
+                  progress: { percent, totalSize, speed }
+                })
+              }
+            })
+          }
           child.stderr.on('data', (d) => { stderr += d.toString('utf8') })
           child.on('error', (err) => reject(err))
           child.on('close', (code) => {
@@ -1142,12 +1267,19 @@
           })
         })
       },
-      validateDashMergeOutput (ffmpegPath, outputPath) {
+      async validateDashMergeOutput (ffmpegPath, outputPath) {
         if (!outputPath || !existsSync(outputPath)) {
           return false
         }
-        try {
-          const result = spawnSync(ffmpegPath, [
+        return new Promise((resolve) => {
+          let settled = false
+          const done = (result) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            resolve(result)
+          }
+          const child = spawn(ffmpegPath, [
             '-hide_banner',
             '-i', outputPath,
             '-map', '0:v:0',
@@ -1155,24 +1287,27 @@
             '-c', 'copy',
             '-f', 'null',
             '-'
-          ], { windowsHide: true, timeout: 30000 })
-          return result.status === 0
-        } catch (_) {
-          return false
-        }
+          ], { windowsHide: true })
+          const timer = setTimeout(() => {
+            try { child.kill('SIGKILL') } catch (_) {}
+            done(false)
+          }, 30000)
+          child.on('error', () => done(false))
+          child.on('close', (code) => done(code === 0))
+        })
       },
-      async mergeDashToOutput (ffmpegPath, videoPath, audioPath, outputPath) {
+      async mergeDashToOutput (ffmpegPath, videoPath, audioPath, outputPath, progressGid = '') {
         const tempPath = resolve(dirname(outputPath), `.${basename(outputPath)}.linkcore-merging-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`)
         try {
           try {
-            await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, tempPath)
+            await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, tempPath, progressGid)
           } catch (firstError) {
             try {
               if (existsSync(tempPath)) unlinkSync(tempPath)
             } catch (_) {}
-            await this.runFfmpegMux(ffmpegPath, audioPath, videoPath, tempPath)
+            await this.runFfmpegMux(ffmpegPath, audioPath, videoPath, tempPath, progressGid)
           }
-          if (!this.validateDashMergeOutput(ffmpegPath, tempPath)) {
+          if (!await this.validateDashMergeOutput(ffmpegPath, tempPath)) {
             throw new Error('Merged DASH output does not contain both video and audio streams')
           }
           if (existsSync(outputPath)) {
@@ -1287,7 +1422,7 @@
               const fallbackNotifyPath = finalPath || ''
               return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
             }
-            return { isBilibiliPart: true, mergedPath: '' }
+            return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
           const videoPath = readyParts[0].path
           const audioPath = readyParts[1].path
@@ -1303,7 +1438,7 @@
             return { isBilibiliPart: true, mergedPath: '' }
           }
           try {
-            await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath)
+            await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
             const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
@@ -1332,7 +1467,7 @@
             const fallbackNotifyPath = finalPath || ''
             return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
           }
-          return { isBilibiliPart: true, mergedPath: '' }
+          return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
         }
 
         const outputDir = dirname(videoPath || finalPath || rootDir || dir)
@@ -1350,7 +1485,7 @@
         }
 
         try {
-          await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath)
+          await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
           const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
           return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
         } catch (e) {
@@ -1453,7 +1588,7 @@
               const fallbackNotifyPath = finalPath || ''
               return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
             }
-            return { isBilibiliPart: true, mergedPath: '' }
+            return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
 
           const sortParts = (arr) => {
@@ -1504,7 +1639,7 @@
           }
 
           try {
-            await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath)
+            await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
             const info = { dir: pair.dir, base: pair.stem, type: 'named' }
             const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
@@ -1557,7 +1692,7 @@
           const outAbs = outputPath ? resolve(outputPath) : ''
           const vAbs = videoPath ? resolve(videoPath) : ''
           const aAbs = audioPath ? resolve(audioPath) : ''
-          const forceUnlink = (p) => {
+          const forceUnlink = async (p) => {
             if (!p) return false
             let full = ''
             try { full = resolve(p) } catch (_) { full = `${p}` }
@@ -1565,25 +1700,20 @@
             if (outAbs && full === outAbs) return false
             for (let attempt = 0; attempt < 5; attempt++) {
               try {
-                if (existsSync(full)) {
-                  unlinkSync(full)
-                }
-                if (!existsSync(full)) {
-                  toDelete.delete(full)
-                  toDelete.delete(`${full}.aria2`)
-                  try { addDeletedPath(full) } catch (_) {}
-                  return true
-                }
+                unlinkSync(full)
               } catch (_) {
                 try {
                   execSync(`rm -f "${full.replace(/"/g, '\\"')}" "${full.replace(/"/g, '\\"')}.aria2"`, { stdio: 'ignore' })
                 } catch (_) {}
               }
+              if (!existsSync(full)) {
+                toDelete.delete(full)
+                toDelete.delete(`${full}.aria2`)
+                try { addDeletedPath(full) } catch (_) {}
+                return true
+              }
               if (attempt < 4) {
-                try {
-                  const end = Date.now() + 80
-                  while (Date.now() < end);
-                } catch (_) {}
+                await new Promise(resolve => setTimeout(resolve, 50))
               }
             }
             if (!existsSync(full)) {
@@ -1651,29 +1781,29 @@
             }
           } catch (_) {}
 
-          toDelete.forEach(p => {
+          for (const p of toDelete) {
             try {
               const s = `${p}`
-              if (!s) return
+              if (!s) continue
               if (s.toLowerCase().endsWith('.aria2')) {
-                try { if (existsSync(s)) unlinkSync(s) } catch (_) {
+                try { unlinkSync(s) } catch (_) {
                   try { execSync(`rm -f "${s.replace(/"/g, '\\"')}"`, { stdio: 'ignore' }) } catch (_) {}
                 }
-                return
+                continue
               }
-              const ok = forceUnlink(s)
+              const ok = await forceUnlink(s)
               if (ok) {
                 try { addDeletedPath(s) } catch (_) {}
               }
             } catch (_) {}
-          })
+          }
         } catch (_) {}
 
         try {
           const outAbs2 = finalOutputPath ? resolve(finalOutputPath) : ''
           const dirFromTask = task && task.dir ? `${task.dir}` : ''
           const baseDir = dirFromTask || (finalOutputPath ? dirname(finalOutputPath) : '')
-          const strongUnlink = (p) => {
+          const strongUnlink = async (p) => {
             if (!p) return
             let full = ''
             try { full = resolve(p) } catch (_) { full = `${p}` }
@@ -1681,35 +1811,35 @@
             if (outAbs2 && full === outAbs2) return
             for (let attempt = 0; attempt < 5; attempt++) {
               try {
-                if (existsSync(full)) unlinkSync(full)
-                if (!existsSync(full)) {
-                  try { addDeletedPath(full) } catch (_) {}
-                  return
-                }
+                unlinkSync(full)
               } catch (_) {
                 try { execSync(`rm -f "${full.replace(/"/g, '\\"')}"`, { stdio: 'ignore' }) } catch (_) {}
               }
+              if (!existsSync(full)) {
+                try { addDeletedPath(full) } catch (_) {}
+                return
+              }
               if (attempt < 4) {
-                try { const end = Date.now() + 80; while (Date.now() < end); } catch (_) {}
+                await new Promise(resolve => setTimeout(resolve, 50))
               }
             }
           }
           if (task && Array.isArray(task.files)) {
-            task.files.forEach(file => {
+            for (const file of task.files) {
               try {
                 const raw = file && file.path ? `${file.path}` : ''
                 if (!raw) {
-                  return
+                  continue
                 }
                 const full = isAbsolute(raw) ? resolve(raw) : resolve(baseDir, raw)
                 if (outAbs2 && full === outAbs2) {
-                  return
+                  continue
                 }
-                strongUnlink(full)
+                await strongUnlink(full)
                 const aria2Path = `${full}.aria2`
-                strongUnlink(aria2Path)
+                await strongUnlink(aria2Path)
               } catch (_) {}
-            })
+            }
           }
         } catch (_) {}
 
@@ -1764,11 +1894,9 @@
               return false
             }
 
-            const waitMs = (ms) => {
-              try { const end = Date.now() + ms; while (Date.now() < end); } catch (_) {}
-            }
+            const waitMs = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
-            const aggressiveDelete = (p) => {
+            const aggressiveDelete = async (p) => {
               if (!p) return true
               let full = ''
               try { full = resolve(p) } catch (_) { full = `${p}` }
@@ -1778,17 +1906,15 @@
               let deleted = false
               for (let attempt = 0; attempt < 15; attempt++) {
                 try {
-                  if (existsSync(full)) {
-                    try { unlinkSync(full) } catch (_) {
-                      try { execSync(`rm -f "${full.replace(/"/g, '\\"')}"`, { stdio: 'ignore' }) } catch (_) {}
-                    }
+                  try { unlinkSync(full) } catch (_) {
+                    try { execSync(`rm -f "${full.replace(/"/g, '\\"')}"`, { stdio: 'ignore' }) } catch (_) {}
                   }
                   if (!existsSync(full)) {
                     deleted = true
                     break
                   }
                 } catch (_) {}
-                waitMs(100)
+                await waitMs(100)
               }
               if (deleted) {
                 try { addDeletedPath(full) } catch (_) {}
@@ -1796,9 +1922,9 @@
               return !existsSync(full)
             }
 
-            aggressiveDelete(vAbs)
-            aggressiveDelete(aAbs)
-            waitMs(300)
+            await aggressiveDelete(vAbs)
+            await aggressiveDelete(aAbs)
+            await waitMs(300)
 
             try {
               const scanDir = info && info.dir ? `${info.dir}` : dirOut
@@ -1831,36 +1957,36 @@
                     const nameNoExtS = raw.length > ext.length + 1 ? raw.slice(0, raw.length - ext.length - 1) : ''
                     const isMarked = !!(nameNoExtS && nameNoExtS !== stem)
                     if (isMarked || isKnownSourcePath(fullS) || (m4sBase && /\.m4s$/i.test(raw))) {
-                      aggressiveDelete(fullS)
-                      aggressiveDelete(`${fullS}.aria2`)
+                      await aggressiveDelete(fullS)
+                      await aggressiveDelete(`${fullS}.aria2`)
                     }
                   }
                 }
               }
             } catch (_) {}
 
-            waitMs(200)
+            await waitMs(200)
 
             const candidate = resolve(dirOut, `${titleBase}${targetExt}`)
             if (existsSync(candidate) && isKnownSourcePath(candidate)) {
-              aggressiveDelete(candidate)
+              await aggressiveDelete(candidate)
             }
 
-            waitMs(100)
+            await waitMs(100)
 
             const finalTarget = this.generateUniqueFilePath(dirOut, titleBase, targetExt)
             if (finalTarget && resolve(finalTarget) !== resolve(outputPath)) {
               if (targetExt === '.mp4') {
                 if (existsSync(finalTarget) && isKnownSourcePath(finalTarget)) {
-                  aggressiveDelete(finalTarget)
-                  waitMs(100)
+                  await aggressiveDelete(finalTarget)
+                  await waitMs(100)
                 }
                 const ok = this.renamePreserveTimes(outputPath, finalTarget)
                 if (ok) {
                   finalOutputPath = finalTarget
                 } else {
-                  aggressiveDelete(finalTarget)
-                  waitMs(100)
+                  await aggressiveDelete(finalTarget)
+                  await waitMs(100)
                   const ok2 = this.renamePreserveTimes(outputPath, finalTarget)
                   if (ok2) {
                     finalOutputPath = finalTarget
@@ -1873,15 +1999,25 @@
                   try {
                     const ffmpegPath = this.resolveFfmpegPath()
                     if (ffmpegPath) {
-                      const result = spawnSync(ffmpegPath, [
-                        '-y',
-                        '-hide_banner',
-                        '-loglevel', 'error',
-                        '-i', outputPath,
-                        '-c', 'copy',
-                        finalTarget
-                      ], { windowsHide: true })
-                      if (result && result.status === 0 && existsSync(finalTarget)) {
+                      const remuxOk = await new Promise((resolve) => {
+                        const child = spawn(ffmpegPath, [
+                          '-y',
+                          '-hide_banner',
+                          '-loglevel', 'error',
+                          '-i', outputPath,
+                          '-c', 'copy',
+                          finalTarget
+                        ], { windowsHide: true })
+                        let settled = false
+                        const done = (r) => { if (!settled) { settled = true; resolve(r) } }
+                        const timer = setTimeout(() => {
+                          try { child.kill('SIGKILL') } catch (_) {}
+                          done(false)
+                        }, 60000)
+                        child.on('error', () => { clearTimeout(timer); done(false) })
+                        child.on('close', (code) => { clearTimeout(timer); done(code === 0) })
+                      })
+                      if (remuxOk && existsSync(finalTarget)) {
                         finalOutputPath = finalTarget
                       }
                     }

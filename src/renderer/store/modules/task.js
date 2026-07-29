@@ -251,6 +251,9 @@ const state = {
   currentTaskFiles: [],
   currentTaskPeers: [],
   seedingList: [],
+  mergingList: [],
+  mergeProgresses: {},
+  mergeKeys: {},
   taskList: [],
   allTaskList: [], // 全部任务（不受 currentList 影响，已按日期过滤），用于侧边栏计数
   selectedGidList: [],
@@ -289,7 +292,7 @@ const getters = {
         active++
       } else if (status === TASK_STATUS.WAITING || status === TASK_STATUS.PAUSED) {
         waiting++
-      } else if (status === TASK_STATUS.COMPLETE || status === TASK_STATUS.ERROR || status === TASK_STATUS.SEEDING) {
+      } else if (status === TASK_STATUS.COMPLETE || status === TASK_STATUS.ERROR || status === TASK_STATUS.SEEDING || status === TASK_STATUS.MERGING) {
         stopped++
       }
     })
@@ -305,6 +308,37 @@ const getters = {
 const mutations = {
   UPDATE_SEEDING_LIST (state, seedingList) {
     state.seedingList = seedingList
+  },
+  UPDATE_MERGING_LIST (state, mergingList) {
+    state.mergingList = mergingList
+  },
+  SET_TASK_STATUS (state, { gid, status }) {
+    const task = state.taskList.find(t => t.gid === gid)
+    if (task) {
+      task.status = status
+    }
+    const allTask = state.allTaskList.find(t => t.gid === gid)
+    if (allTask) {
+      allTask.status = status
+    }
+  },
+  SET_MERGE_PROGRESS (state, { gid, progress }) {
+    state.mergeProgresses = { ...state.mergeProgresses, [gid]: progress }
+  },
+  CLEAR_MERGE_PROGRESS (state, gid) {
+    const next = { ...state.mergeProgresses }
+    delete next[gid]
+    state.mergeProgresses = next
+  },
+  SET_MERGE_KEY (state, { gid, key }) {
+    state.mergeKeys = { ...state.mergeKeys, [gid]: key }
+  },
+  DELETE_MERGE_KEYS_BY_KEY (state, key) {
+    const next = {}
+    for (const [gid, k] of Object.entries(state.mergeKeys)) {
+      if (k !== key) next[gid] = k
+    }
+    state.mergeKeys = next
   },
   UPDATE_TASK_LIST (state, taskList) {
     const oldList = state.taskList
@@ -338,6 +372,11 @@ const mutations = {
           }
         })
 
+        // 如果任务正在合并中，保持 merging 状态，不被 aria2 的 complete 状态覆盖
+        if (state.mergingList.includes(newTask.gid) && updatedTask.status === TASK_STATUS.COMPLETE) {
+          updatedTask.status = TASK_STATUS.MERGING
+        }
+
         const oldKeys = Object.keys(oldTask)
         const updatedKeys = Object.keys(updatedTask)
         const unchanged = oldKeys.length === updatedKeys.length && updatedKeys.every(k => updatedTask[k] === oldTask[k])
@@ -346,6 +385,19 @@ const mutations = {
         newList.push(newTask)
       }
     })
+
+    // 保留 mergingList 中的任务，即使它们不在新列表中（可能已从 aria2 删除但合并仍在进行）
+    if (state.mergingList.length > 0) {
+      const newGids = new Set(newList.map(t => t.gid))
+      state.mergingList.forEach(gid => {
+        if (!newGids.has(gid)) {
+          const oldTask = oldMap.get(gid)
+          if (oldTask) {
+            newList.push({ ...oldTask, status: TASK_STATUS.MERGING })
+          }
+        }
+      })
+    }
 
     // 直接替换整个数组，确保 Vue 能检测到变化
     // 使用 splice 方法清空并重新填充数组，这样可以保持数组引用不变
@@ -1400,6 +1452,61 @@ const actions = {
 
     const list = [...seedingList.slice(0, idx), ...seedingList.slice(idx + 1)]
     commit('UPDATE_SEEDING_LIST', list)
+  },
+  addToMergingList ({ state, commit }, { gid, mergeKey = '' }) {
+    const { mergingList } = state
+    if (mergingList.includes(gid)) {
+      if (mergeKey) commit('SET_MERGE_KEY', { gid, key: mergeKey })
+      return
+    }
+
+    const list = [
+      ...mergingList,
+      gid
+    ]
+    commit('UPDATE_MERGING_LIST', list)
+    if (mergeKey) commit('SET_MERGE_KEY', { gid, key: mergeKey })
+  },
+  removeFromMergingList ({ state, commit }, gid) {
+    const { mergingList } = state
+    const idx = mergingList.indexOf(gid)
+    if (idx === -1) {
+      return
+    }
+
+    const list = [...mergingList.slice(0, idx), ...mergingList.slice(idx + 1)]
+    commit('UPDATE_MERGING_LIST', list)
+  },
+  setTaskStatus ({ commit }, payload) {
+    commit('SET_TASK_STATUS', payload)
+  },
+  setMergeProgress ({ commit }, payload) {
+    commit('SET_MERGE_PROGRESS', payload)
+  },
+  removeAllMergingByMergeKey ({ state, commit }, key) {
+    if (!key) return
+    const gidsToRemove = []
+    for (const [gid, k] of Object.entries(state.mergeKeys || {})) {
+      if (k === key) gidsToRemove.push(gid)
+    }
+    if (gidsToRemove.length === 0) return
+    const list = state.mergingList.filter(gid => !gidsToRemove.includes(gid))
+    commit('UPDATE_MERGING_LIST', list)
+    commit('DELETE_MERGE_KEYS_BY_KEY', key)
+    gidsToRemove.forEach(gid => {
+      commit('CLEAR_MERGE_PROGRESS', gid)
+    })
+  },
+  clearMergeProgress ({ commit }, gid) {
+    commit('CLEAR_MERGE_PROGRESS', gid)
+  },
+  clearMergeProgressByMergeKey ({ state, commit }, key) {
+    if (!key) return
+    for (const [gid, k] of Object.entries(state.mergeKeys || {})) {
+      if (k === key) {
+        commit('CLEAR_MERGE_PROGRESS', gid)
+      }
+    }
   },
   stopSeeding ({ dispatch, rootState }, { gid }) {
     const config = (rootState.preference && rootState.preference.config) || {}

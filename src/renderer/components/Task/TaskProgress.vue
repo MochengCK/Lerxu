@@ -77,7 +77,7 @@
         immediate: true
       },
       status (val) {
-        if (val === TASK_STATUS.COMPLETE || val === TASK_STATUS.SEEDING) {
+        if (val === TASK_STATUS.COMPLETE || val === TASK_STATUS.SEEDING || val === TASK_STATUS.MERGING) {
           this.displayPercent = 100
         } else {
           this.displayPercent = this.percent
@@ -90,7 +90,7 @@
       },
       percent () {
         const raw = calcProgress(this.total, this.completed)
-        if (this.status === TASK_STATUS.COMPLETE || this.status === TASK_STATUS.SEEDING) {
+        if (this.status === TASK_STATUS.COMPLETE || this.status === TASK_STATUS.SEEDING || this.status === TASK_STATUS.MERGING) {
           return 100
         }
         if (!Number.isFinite(raw)) {
@@ -111,7 +111,7 @@
     mounted () {
       this.ticker = setInterval(() => {
         if (!this.isActive) {
-          if (this.status === TASK_STATUS.COMPLETE || this.status === TASK_STATUS.SEEDING) {
+          if (this.status === TASK_STATUS.COMPLETE || this.status === TASK_STATUS.SEEDING || this.status === TASK_STATUS.MERGING) {
             this.displayPercent = 100
           } else {
             this.displayPercent = this.percent

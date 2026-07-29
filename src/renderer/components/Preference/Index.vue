@@ -666,7 +666,7 @@
   padding-bottom: 24px;
 }
 
-.preference-standalone ::-webkit-scrollbar-track {
+.preference-standalone .panel-content::-webkit-scrollbar-track {
   margin-top: 46px;
 }
 

@@ -2,7 +2,7 @@
   <div
     id="app"
     :style="appRootStyle"
-    :class="{ 'has-custom-titlebar': showWindowActions, 'show-window-actions': showWindowActions, 'is-preference-window': isPreferenceWindow, 'is-task-detail-open': taskDetailVisible, 'is-add-task-open': addTaskVisible, 'is-task-plan-open': taskPlanVisible, 'has-three-column-layout': isThreeColumn, 'is-aside-auto-hide': isAsideAutoHide, 'is-aside-hovered': isAsideHovered }"
+    :class="{ 'has-custom-titlebar': showWindowActions, 'show-window-actions': showWindowActions, 'is-preference-window': isPreferenceWindow, 'is-task-detail-open': taskDetailVisible, 'is-add-task-open': addTaskVisible, 'is-task-plan-open': taskPlanVisible, 'has-three-column-layout': isThreeColumn, 'is-aside-auto-hide': isAsideAutoHide, 'is-aside-hovered': isAsideHovered, 'is-mac': isMac }"
   >
     <div
       v-if="shouldUseBackgroundImage"

@@ -806,27 +806,94 @@ iframe {
   background-color: #DCDEE2 !important; /* Darker than #F4F5F7, lighter than active #EAECF0 */
 }
 
-/* For dark theme, slightly lighter background for fixed sidebar */
+/* For dark theme, darker background for fixed sidebar */
 .theme-dark .has-three-column-layout .aside {
-  background-color: rgba(0, 0, 0, 0.18) !important;
+  background-color: rgba(0, 0, 0, 0.35) !important;
 }
 
 .theme-dark .has-three-column-layout .subnav.three-column-subnav {
-  background-color: rgba(0, 0, 0, 0.18) !important;
+  background-color: #252525 !important;
 }
 
 /* Three-column layout: larger border-radius for active/hover subnav items */
 .has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li {
   border-radius: 8px;
+  padding-left: 12px;
+  padding-right: 8px;
+}
+
+/* Three-column layout: reduce sidebar horizontal padding */
+.has-three-column-layout .subnav.three-column-subnav .subnav-inner {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* Three-column layout: smaller icons */
+.has-three-column-layout .subnav.three-column-subnav .subnav-inner .subnav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  height: 14px;
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+/* Three-column layout: hover background for sidebar items (not active) */
+.has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li:hover:not(.active) {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+/* Three-column layout: active background for sidebar items (light theme) */
+.has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li.active {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+/* Three-column layout: move task count to the right edge */
+.has-three-column-layout .subnav.three-column-subnav .subnav-inner .subnav-count {
+  right: 3px !important;
 }
 
 .has-three-column-layout .subnav.three-column-subnav .subnav-inner .preference-subnav-ul .nav-slider {
   border-radius: 8px;
 }
 
-/* Preference standalone: larger border-radius for sidebar active/hover items */
+/* Preference standalone: match three-column layout styles */
 .preference-standalone .subnav-inner ul li {
   border-radius: 8px;
+  padding-left: 12px;
+  padding-right: 8px;
+}
+
+.preference-standalone .subnav-inner {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.preference-standalone .subnav-inner .subnav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  height: 14px;
+  svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.preference-standalone .subnav-inner ul li:hover:not(.active) {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.preference-standalone .subnav-inner ul li.active {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.preference-standalone .subnav-inner .subnav-count {
+  right: 3px !important;
 }
 
 .preference-standalone .subnav-inner .preference-subnav-ul .nav-slider {
@@ -834,13 +901,13 @@ iframe {
 }
 
 /* Three-column layout with background image: lighter sidebar background */
-.theme-light.has-app-background-image.has-three-column-layout .aside,
-.theme-light.has-app-background-image.has-three-column-layout .subnav.three-column-subnav {
+.theme-light.has-app-background-image .has-three-column-layout .aside,
+.theme-light.has-app-background-image .has-three-column-layout .subnav.three-column-subnav {
   background-color: rgba(0, 0, 0, calc(var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9)) + 0.02)) !important;
 }
 
-.theme-dark.has-app-background-image.has-three-column-layout .aside,
-.theme-dark.has-app-background-image.has-three-column-layout .subnav.three-column-subnav {
+.theme-dark.has-app-background-image .has-three-column-layout .aside,
+.theme-dark.has-app-background-image .has-three-column-layout .subnav.three-column-subnav {
   background-color: rgba(0, 0, 0, calc(var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9)) + 0.02)) !important;
 }
 
@@ -905,19 +972,11 @@ iframe {
       position: relative;
 
       .nav-slider {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        background-color: $--subnav-active-background;
-        border-radius: 6px;
-        transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-        z-index: 0;
-        will-change: transform;
+        display: none;
       }
 
       li.active {
-        background-color: transparent !important;
+        background-color: $--subnav-active-background;
       }
     }
   }

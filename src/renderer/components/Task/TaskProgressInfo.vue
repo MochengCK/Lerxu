@@ -78,6 +78,10 @@
           <span>{{ nearCompleteHintText }}</span>
         </div>
       </div>
+      <div class="task-completion-time" v-else-if="isMerging">
+        <span v-if="mergeProgressText">{{ mergeProgressText }}</span>
+        <span v-else>{{ $t('task.merging') }}</span>
+      </div>
       <div class="task-completion-time" v-else-if="isCompleted">
         <span>{{ $t('task.completed-at') }} {{ completionTime }}</span>
       </div>
@@ -143,7 +147,8 @@
         magnetStatuses: state => state.magnetStatuses,
         dataAccessStatuses: state => state.dataAccessStatuses,
         taskPriorities: state => state.taskPriorities,
-        taskLinkUpdateHints: state => state.taskLinkUpdateHints || {}
+        taskLinkUpdateHints: state => state.taskLinkUpdateHints || {},
+        mergeProgresses: state => state.mergeProgresses
       }),
       ...mapState('preference', {
         preferenceConfig: state => state.config
@@ -197,6 +202,30 @@
         }
         // 如果是已下载完成的BT任务（不论是 COMPLETE 还是 PAUSED），或者状态是 COMPLETE/ERROR/REMOVED，视为已完成（显示完成时间）
         return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(task.status) || (task.status === TASK_STATUS.PAUSED && isSeeding)
+      },
+      isMerging () {
+        const task = this.task || {}
+        return task.status === TASK_STATUS.MERGING
+      },
+      mergeProgress () {
+        const gid = this.task && this.task.gid ? `${this.task.gid}` : ''
+        if (!gid) return null
+        return this.mergeProgresses && this.mergeProgresses[gid] ? this.mergeProgresses[gid] : null
+      },
+      mergeProgressText () {
+        const p = this.mergeProgress
+        if (!p) return ''
+        if (p.waitingForPair) {
+          return this.$t('task.merging-waiting-pair')
+        }
+        const parts = [this.$t('task.merging')]
+        if (p.totalSize > 0) {
+          parts.push(bytesToSize(p.totalSize))
+        }
+        if (p.speed > 0) {
+          parts.push(`${p.speed}x`)
+        }
+        return parts.join(' · ')
       },
       isBT () {
         return this.task ? checkTaskIsBT(this.task) : false

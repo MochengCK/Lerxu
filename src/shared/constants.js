@@ -26,7 +26,8 @@ export const TASK_STATUS = {
   ERROR: 'error',
   COMPLETE: 'complete',
   REMOVED: 'removed',
-  SEEDING: 'seeding'
+  SEEDING: 'seeding',
+  MERGING: 'merging'
 }
 
 export const LOG_LEVELS = [

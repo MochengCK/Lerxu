@@ -67,7 +67,7 @@
       'task.status': {
         immediate: true,
         handler (val) {
-          if (val === TASK_STATUS.COMPLETE) {
+          if (val === TASK_STATUS.COMPLETE || val === TASK_STATUS.MERGING) {
             this.ensureFixedDisplayName()
           }
         }
@@ -118,7 +118,7 @@
       },
       taskFullName () {
         const { task } = this
-        if (task && task.status === TASK_STATUS.COMPLETE) {
+        if (task && (task.status === TASK_STATUS.COMPLETE || task.status === TASK_STATUS.MERGING)) {
           const gid = task && task.gid ? `${task.gid}` : ''
           const cached = gid && this.taskDisplayNames ? this.taskDisplayNames[gid] : ''
           if (cached) {
@@ -134,7 +134,7 @@
       },
       taskName () {
         const { task } = this
-        if (task && task.status === TASK_STATUS.COMPLETE) {
+        if (task && (task.status === TASK_STATUS.COMPLETE || task.status === TASK_STATUS.MERGING)) {
           const gid = task && task.gid ? `${task.gid}` : ''
           const cached = gid && this.taskDisplayNames ? this.taskDisplayNames[gid] : ''
           if (cached) {
@@ -201,9 +201,12 @@
       },
       onDbClick () {
         const { status } = this.task
-        const { COMPLETE, WAITING, PAUSED, ACTIVE } = TASK_STATUS
+        const { COMPLETE, WAITING, PAUSED, ACTIVE, MERGING } = TASK_STATUS
         if (status === COMPLETE) {
           this.openTask()
+          return
+        }
+        if (status === MERGING) {
           return
         }
         if ([WAITING, PAUSED, ACTIVE].includes(status)) {

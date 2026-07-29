@@ -242,8 +242,9 @@
                         allow-create
                         filterable
                         multiple
-                        collapse-tags
+                        :collapse-tags="collapseTagsTrackerSource"
                         style="width:100%;"
+                        @change="updateTrackerSelectCollapse"
                       >
                         <el-option-group
                           v-for="group in trackerSourceOptions"
@@ -310,7 +311,7 @@
               </el-row>
               <el-input
                 type="textarea"
-                rows="3"
+                :autosize="{ minRows: 3, maxRows: 10 }"
                 auto-complete="off"
                 :placeholder="`${$t('preferences.bt-tracker-input-tips')}`"
                 v-model="form.btTracker">
@@ -1415,10 +1416,25 @@
       this.$electron.ipcRenderer.on('update-downloaded', this._updateEventListeners.onUpdateDownloaded)
       this.$electron.ipcRenderer.on('update-error', this._updateEventListeners.onUpdateError)
       this.$electron.ipcRenderer.on('update-cancelled', this._updateEventListeners.onUpdateCancelled)
+
+      // 监听窗口大小变化，更新 tracker 选择框的 collapse-tags 状态
+      this._handleAdvancedWindowResize = () => {
+        this.updateTrackerSelectCollapse()
+      }
+      window.addEventListener('resize', this._handleAdvancedWindowResize)
+      // 延迟调用，确保 DOM 已渲染完成
+      setTimeout(() => {
+        this.updateTrackerSelectCollapse()
+      }, 200)
     },
     beforeDestroy () {
       if (this._filterTimer) {
         clearTimeout(this._filterTimer)
+      }
+      // 移除窗口 resize 监听
+      if (this._handleAdvancedWindowResize) {
+        window.removeEventListener('resize', this._handleAdvancedWindowResize)
+        this._handleAdvancedWindowResize = null
       }
       // 清理更新事件监听器
       if (this._updateEventListeners) {
@@ -1434,6 +1450,48 @@
       }
     },
     methods: {
+      measureTextWidth (text, font) {
+        try {
+          const canvas = this.textMeasureCanvas || (this.textMeasureCanvas = document.createElement('canvas'))
+          const ctx = canvas.getContext('2d')
+          if (!ctx) return `${text || ''}`.length * 10
+          ctx.font = font || '12px sans-serif'
+          return ctx.measureText(`${text || ''}`).width
+        } catch (_) {
+          return `${text || ''}`.length * 10
+        }
+      },
+      computeTrackerSelectCollapse () {
+        const el = this.$el
+        if (!el) return false
+        const v = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
+        if (v.length <= 1) return false
+        const selectEl = el.querySelector('.select-track-source')
+        if (!selectEl) return false
+        const inputInner = selectEl.querySelector('.el-input__inner') || selectEl.querySelector('.el-input')
+        if (!inputInner) return false
+        const rect = inputInner.getBoundingClientRect()
+        const width = rect && rect.width ? rect.width : 0
+        if (!width) return false
+        const available = Math.max(width - 72, 120)
+        const allOptions = []
+        ;(this.trackerSourceOptions || []).forEach(g => {
+          ;(g.options || []).forEach(opt => allOptions.push(opt))
+        })
+        const map = new Map(allOptions.map(o => [o.value, o.label]))
+        const font = window.getComputedStyle(inputInner).font
+        let total = 0
+        v.forEach(val => {
+          const label = map.get(val) || `${val}`
+          total += this.measureTextWidth(label, font) + 46
+        })
+        return total > available
+      },
+      updateTrackerSelectCollapse () {
+        this.$nextTick(() => {
+          this.collapseTagsTrackerSource = this.computeTrackerSelectCollapse()
+        })
+      },
       // GitHub 镜像延迟检测
       async checkGithubMirrorLatency (mirror) {
         // 使用一个小的测试文件来检测延迟
@@ -2042,6 +2100,7 @@
         })
         this.trackerSourceOptions = base
         this.sanitizeSelectedSources()
+        this.updateTrackerSelectCollapse()
       },
       deriveTrackerLabel (u) {
         const m = /([^/]+\.txt)(?:\?.*)?$/i.exec(`${u}`)
@@ -3204,6 +3263,10 @@
     .select-track-source {
       width: 100%;
     }
+  }
+  .el-textarea__inner {
+    resize: vertical;
+    overflow-y: auto;
   }
 }
 .ua-group {

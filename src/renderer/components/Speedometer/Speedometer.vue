@@ -47,7 +47,7 @@
     font-size: 12px;
     position: fixed;
     right: 14px;
-    bottom: 24px;
+    bottom: 14px;
     z-index: 210;
     display: inline-block;
     box-sizing: border-box;
@@ -145,7 +145,7 @@
   }
 
   .mo-speedometer.is-shifted {
-    bottom: 78px;
+    bottom: 68px;
   }
 
   .theme-light .mo-speedometer:hover,

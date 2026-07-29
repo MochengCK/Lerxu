@@ -296,7 +296,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       if (!hasAnySniffedResources(scoped) && checkAndRestoreResources()) {
         scoped = getUniversalScopedResources().resources
       }
-      const resources = hasAnySniffedResources(scoped) ? scoped : sniffedResources
+      // 短视频信息流站点：使用 scoped 结果，不回退到全部资源，保持按钮数字与下拉框一致
+      let resources
+      if (isShortVideoFeedHost()) {
+        resources = scoped
+      } else {
+        resources = hasAnySniffedResources(scoped) ? scoped : sniffedResources
+      }
 
       const hasM4s = Array.isArray(resources.m4s) && resources.m4s.length > 0
 
@@ -488,12 +494,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       dropdown.style.display = 'none'
     }
     
-    // 隐藏按钮
-    try {
-      collectUniversalButtonWrappers().forEach(w => {
-        try { w.style.display = 'none' } catch (e) {}
-      })
-    } catch (e) {}
+    // 隐藏按钮（但如果按钮已锁定可见则保持显示）
+    if (!buttonPinned) {
+      try {
+        collectUniversalButtonWrappers().forEach(w => {
+          try { w.style.display = 'none' } catch (e) {}
+        })
+      } catch (e) {}
+    }
 
     removePerVideoButtons()
     
@@ -606,6 +614,113 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return s.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').slice(0, 180)
   }
 
+  // 从页面DOM提取视频标题（优先于网页标题，用于区分不同视频资源）
+  const getVideoTitle = () => {
+    try {
+      const titleSelectors = [
+        // 抖音特定选择器
+        '[data-e2e="video-desc"]',
+        '[data-e2e="video-desc-h5"]',
+        '[data-e2e="feed-active-video"] [data-e2e="video-desc"]',
+        '[data-e2e="video_title"]',
+        '[data-e2e="desc"]',
+        '[data-e2e="feed-active-video"] [data-e2e="desc"]',
+        '.video-info-detail .title',
+        '.video-info .title',
+        '.author-card .title',
+        '.video-side-card .desc',
+        '.slide-item.active [data-e2e="video-desc"]',
+        'p[data-e2e="video-desc"]',
+        'div[data-e2e="video-desc"]',
+        // B站特定选择器
+        'h1.video-title',
+        '.video-title',
+        '[data-e2e="video-title"]',
+        '#viewbox_report .title',
+        '.bpx-player-top-left-title',
+        'h1.title',
+        '.video-title-h1',
+        '.video-info-title'
+      ]
+
+      // 策略1：找到当前可见/活跃的视频元素，从其容器内查找标题
+      // 解决抖音等信息流中多个视频标题同时存在于DOM、querySelector取到错误视频标题的问题
+      try {
+        const videos = Array.from(document.querySelectorAll('video'))
+        const visible = videos.filter(v => isElementVisibleInViewport(v))
+        const candidates = visible.length > 0 ? visible : (videos.length === 1 ? videos : [])
+
+        if (candidates.length > 0) {
+          // 选择最近活跃的视频元素
+          let activeVideo = candidates[0]
+          let bestAt = -1
+          candidates.forEach(v => {
+            const at = getVideoLastActiveAt(v)
+            if (at > bestAt) {
+              bestAt = at
+              activeVideo = v
+            }
+          })
+
+          // 从活跃视频元素向上遍历祖先容器，在容器内查找标题
+          let container = activeVideo.parentElement
+          for (let depth = 0; depth < 8 && container; depth++) {
+            for (const selector of titleSelectors) {
+              const el = container.querySelector(selector)
+              if (el && el.textContent && el.textContent.trim().length > 2) {
+                return el.textContent.trim()
+              }
+            }
+            container = container.parentElement
+          }
+        }
+      } catch (e) {}
+
+      // 策略2：全局查找标题（回退）
+      for (const selector of titleSelectors) {
+        const el = document.querySelector(selector)
+        if (el && el.textContent && el.textContent.trim().length > 2) {
+          return el.textContent.trim()
+        }
+      }
+
+      // 策略3：通用 - video 元素的 title 或 aria-label
+      const videoEls = document.querySelectorAll('video')
+      for (const video of videoEls) {
+        const title = video.getAttribute('title') || video.getAttribute('aria-label') || ''
+        if (title.trim().length > 2) return title.trim()
+      }
+
+      // 策略4：通用 - og:title meta 标签
+      const ogTitle = document.querySelector('meta[property="og:title"]')
+      if (ogTitle) {
+        const content = ogTitle.getAttribute('content') || ''
+        if (content.trim().length > 2) return content.trim()
+      }
+
+      // 策略5：通用 - 页面 h1
+      const h1 = document.querySelector('h1')
+      if (h1 && h1.textContent && h1.textContent.trim().length > 2) {
+        return h1.textContent.trim()
+      }
+    } catch (e) {}
+
+    // 最终回退到 document.title
+    return document.title || ''
+  }
+
+  // 清理标题，移除常见后缀（在线播放、视频网站名等）
+  const cleanVideoTitle = (rawTitle) => {
+    if (!rawTitle) return ''
+    return rawTitle
+      .replace(/\s*[-_│|]\s*在线播放.*$/i, '')
+      .replace(/\s*[-_│|]\s*在线观看.*$/i, '')
+      .replace(/\s*[-_│|]\s*樱花动漫.*$/i, '')
+      .replace(/\s*[-_│|]\s*\w+视频.*$/i, '')
+      .replace(/[<>:"/\\|?*]/g, '_')
+      .trim()
+  }
+
   let perVideoModeActive = false
 
   const getVideoContextIdFromElement = (video) => {
@@ -683,6 +798,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     } catch (e) {
       return false
     }
+  }
+
+  // 检查URL host是否为抖音/字节跳动CDN域名
+  const isDouyinCdnHost = (host) => {
+    const h = `${host || ''}`.toLowerCase()
+    if (!h) return false
+    const domains = [
+      'douyinvod.com', 'bytecdntp.com', 'bytecdn.cn',
+      'ixigua.com', 'douyincdn.com', 'amemv.com',
+      'snssdk.com', 'bytegoofetch.com', 'bytednsdoc.com'
+    ]
+    return domains.some(d => h === d || h.endsWith(`.${d}`))
   }
 
   const collectUniversalButtonWrappers = () => {
@@ -802,16 +929,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       const pick = (list) => {
         if (!list || list.length === 0) return ''
+        // 优先选择正在播放的视频元素，避免选中预加载（暂停）的下一个视频
+        const playing = list.filter(v => {
+          try { return !v.paused && !v.ended } catch (e) { return false }
+        })
+        const candidates = playing.length > 0 ? playing : list
         let best = null
         let bestAt = -1
-        list.forEach(v => {
+        candidates.forEach(v => {
           const at = getVideoLastActiveAt(v)
           if (at > bestAt) {
             bestAt = at
             best = v
           }
         })
-        const chosen = best || list[0]
+        const chosen = best || candidates[0]
         return getVideoContextIdFromElement(chosen) || ''
       }
 
@@ -842,6 +974,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       if (hasAnySniffedResources(scoped)) {
         return { resources: scoped, contextId, scoped: true }
       }
+
+      // contextId 过滤为空时回退到全部资源（抖音 blob URL 导致 contextId 分配不可靠）
       return { resources: sniffedResources, contextId, scoped: false }
     } catch (e) {
       return { resources: sniffedResources, contextId: '', scoped: false }
@@ -929,7 +1063,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const downloadForVideoContext = (contextId, video, index) => {
     try {
       const referer = window.location.href || ''
-      const base = safeFilenamePart(document.title || 'video')
+      const base = safeFilenamePart(getVideoTitle() || 'video')
       const seq = typeof index === 'number' ? index + 1 : 1
       const activeAt = getVideoLastActiveAt(video) || Date.now()
       const preferredHost = getHostFromUrl((video && (video.currentSrc || video.src)) ? (video.currentSrc || video.src) : '')
@@ -937,8 +1071,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const combinedPool = filterContextResources(sniffedResources.combined || [], contextId, activeAt, preferredHost)
       const bestCombined = pickNearest(combinedPool, activeAt) || pickBestCombined(combinedPool)
       if (bestCombined && bestCombined.videoUrl && bestCombined.audioUrl) {
-        const videoFilename = base ? `${base}_${seq}_video.m4s` : ''
-        const audioFilename = base ? `${base}_${seq}_audio.m4s` : ''
+        const videoFilename = base ? `${base}_${seq}_video.mp4` : ''
+        const audioFilename = base ? `${base}_${seq}_audio.m4a` : ''
         sendResourceToClient(bestCombined.videoUrl, referer, videoFilename)
         setTimeout(() => sendResourceToClient(bestCombined.audioUrl, referer, audioFilename), 100)
         return true
@@ -1866,7 +2000,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     let sizeInfo = ''
     try {
       // 尝试从页面标题获取
-      const pageTitle = document.title || window.top.document.title || ''
+      const pageTitle = getVideoTitle()
       const ext = 'DASH'
 
       // 格式化大小信息（总是显示，即使是未知大小）
@@ -1983,7 +2117,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       let videoFilename = ''
       let audioFilename = ''
       try {
-        const pageTitle = document.title || window.top.document.title || ''
+        const pageTitle = getVideoTitle()
 
         if (pageTitle) {
           let cleanTitle = pageTitle
@@ -1996,9 +2130,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
           if (cleanTitle) {
             // 视频流文件名
-            videoFilename = `${cleanTitle}_${getLocalizedText('videoStream').replace(':', '')}.m4s`
+            videoFilename = `${cleanTitle}_${getLocalizedText('videoStream').replace(':', '')}.mp4`
             // 音频流文件名
-            audioFilename = `${cleanTitle}_${getLocalizedText('audioStream').replace(':', '')}.m4s`
+            audioFilename = `${cleanTitle}_${getLocalizedText('audioStream').replace(':', '')}.m4a`
           }
         }
       } catch (e) {
@@ -2045,7 +2179,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     let sizeInfo = ''
     try {
       // 尝试从页面标题获取
-      const pageTitle = document.title || window.top.document.title || ''
+      const pageTitle = getVideoTitle()
       const ext = resource.ext ? resource.ext.toUpperCase() : 'VIDEO'
 
       // 格式化大小信息（总是显示，即使是未知大小）
@@ -2141,7 +2275,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       // 生成建议的文件名
       let filename = ''
       try {
-        const pageTitle = document.title || window.top.document.title || ''
+        const pageTitle = getVideoTitle()
         const ext = resource.ext || 'video'
 
         if (pageTitle) {
@@ -2176,7 +2310,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const downloadSingleResource = (resource, referer, index) => {
     let filename = ''
     try {
-      const pageTitle = document.title || window.top.document.title || ''
+      const pageTitle = getVideoTitle()
       const ext = resource.ext || 'video'
 
       if (pageTitle) {
@@ -2208,7 +2342,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     let videoFilename = ''
     let audioFilename = ''
     try {
-      const pageTitle = document.title || window.top.document.title || ''
+      const pageTitle = getVideoTitle()
 
       if (pageTitle) {
         let cleanTitle = pageTitle
@@ -2220,8 +2354,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           .trim()
 
         if (cleanTitle) {
-          videoFilename = `${cleanTitle}_${getLocalizedText('videoStream').replace(':', '')}.m4s`
-          audioFilename = `${cleanTitle}_${getLocalizedText('audioStream').replace(':', '')}.m4s`
+          videoFilename = `${cleanTitle}_${getLocalizedText('videoStream').replace(':', '')}.mp4`
+          audioFilename = `${cleanTitle}_${getLocalizedText('audioStream').replace(':', '')}.m4a`
         }
       }
     } catch (e) {
@@ -2483,7 +2617,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     } else {
       log('Hiding button - config loaded:', configLoaded, 'sniffer enabled:', snifferEnabled, 'has resources:', hasResources, 'button closed:', isButtonClosed)
       // 如果嗅探器被禁用或没有资源，隐藏按钮（除非被拖拽过）
-      if (wrapper && !hasBeenDragged && !positionLocked && !isButtonClosed) {
+      if (wrapper && !hasBeenDragged && !positionLocked && !isButtonClosed && !buttonPinned) {
         wrapper.style.display = 'none'
         log('Hiding button - sniffer disabled or no resources and not dragged/locked/closed')
       } else if (wrapper && !snifferEnabled && configLoaded) {
@@ -2507,6 +2641,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   let positionLocked = false // 标记位置是否已锁定（只有悬停新视频才会解锁）
   let hideButtonTimeout = null // 按钮隐藏倒计时
   let buttonStabilityTimer = null // 按钮稳定性定时器
+  let buttonPinned = false // 按钮是否已锁定可见（用户悬停过视频后锁定，直到悬停下个视频或关闭按钮）
 
   // 按钮稳定性检查 - 确保有资源且嗅探器启用时按钮始终可见
   const ensureButtonStability = () => {
@@ -2562,7 +2697,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const isButtonClosed = isButtonClosedByUser()
       
       // 只有在没有资源、没有被拖拽、没有被悬停、没有被用户关闭且嗅探器启用时才隐藏
-      if (wrapper && !isButtonHovered && !hasBeenDragged && !isButtonClosed && (!sniffedResources || sniffedResources.total === 0 || !videoSnifferConfig.enabled)) {
+      if (wrapper && !isButtonHovered && !hasBeenDragged && !isButtonClosed && !buttonPinned && (!sniffedResources || sniffedResources.total === 0 || !videoSnifferConfig.enabled)) {
         wrapper.style.display = 'none'
         positionLocked = false
         hoveredVideoContainer = null
@@ -2904,6 +3039,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     closeBtn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
+      
+      // 解除按钮锁定状态
+      buttonPinned = false
       
       // 隐藏整个按钮组
       wrapper.style.display = 'none'
@@ -3309,6 +3447,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 锁定位置，防止被其他逻辑重置
     positionLocked = true
+    // 锁定按钮可见状态：用户悬停过视频后，按钮一直保持显示
+    buttonPinned = true
 
     log('Updated button position to hovered container, top:', newTop, 'right:', newRight)
   }
@@ -3487,10 +3627,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }
       } else if (!hasBeenDragged) {
         // 只有在没有资源且未被拖拽时才隐藏
-        if (wrapper) wrapper.style.display = 'none'
+        // 不立即隐藏，使用宽限期让用户有时间点击按钮
+        startHideTimeout()
         positionLocked = false
         hoveredVideoContainer = null
-        log('Container removed from DOM and no resources, hiding button')
+        log('Container removed from DOM and no resources, scheduled hide')
       }
     }
   }, true) // 使用 capture 捕获滚动事件
@@ -3530,12 +3671,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
               hoveredVideoContainer = null
               log('Container disconnected but keeping button visible due to resources')
             }
-          } else if (!hasBeenDragged || isButtonClosed) {
-            // 只有在没有资源、未被拖拽或被用户关闭时才隐藏
-            positionLocked = false
-            hoveredVideoContainer = null
-            if (wrapper) wrapper.style.display = 'none'
-            log('Container disconnected and no resources or user closed, hidden')
+      } else if (!hasBeenDragged || isButtonClosed) {
+        // 只有在没有资源、未被拖拽或被用户关闭时才隐藏
+        positionLocked = false
+        hoveredVideoContainer = null
+        // 不立即隐藏，使用宽限期让用户有时间点击按钮
+        startHideTimeout()
+        log('Container disconnected and no resources or user closed, scheduled hide')
           }
         }
       }
@@ -3625,5 +3767,673 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 初始添加一次
   setTimeout(addVideoHoverListeners, 500)
+
+  // ===== B站合集检测与下载合集按钮 =====
+
+  // 检测B站合集，返回合集容器、订阅按钮和视频列表项
+  const detectBilibiliCollection = () => {
+    try {
+      // 合集容器选择器（多种版本兼容）
+      const containerSelectors = [
+        '.video-pod',
+        '[class*="video-pod"]',
+        '.video-sections',
+        '[class*="video-sections"]',
+        '#multi_page .cur-list',
+        '.multi-page .cur-list'
+      ]
+
+      for (const sel of containerSelectors) {
+        const container = document.querySelector(sel)
+        if (!container) continue
+
+      // 查找"订阅合集"按钮
+      const subscribeBtnSelectors = [
+        '.subscribe-btn',
+        '[class*="subscribe-btn"]',
+        '[class*="blue-btn"]',
+        '[class*="follow-btn"]',
+        '[class*="subscribe"]',
+        'button[class*="blue"]'
+      ]
+
+        let subscribeBtn = null
+        for (const btnSel of subscribeBtnSelectors) {
+          subscribeBtn = container.querySelector(btnSel)
+          if (subscribeBtn) break
+        }
+
+      // 查找合集视频列表项
+      const itemSelectors = [
+        '.pod-item',
+        '.video-pod__item',
+        '[class*="pod-item"]',
+        '.video-section-item',
+        '[class*="section-item"]',
+        '[class*="video-list-item"]',
+        '[class*="episode-item"]'
+      ]
+
+        let videoItems = []
+        for (const itemSel of itemSelectors) {
+          videoItems = container.querySelectorAll(itemSel)
+          if (videoItems.length > 0) break
+        }
+
+      // 查找合集标题
+      let collectionTitle = ''
+      const titleSelectors = [
+        '.video-pod__header .title.jumpable',
+        '.video-pod .title.jumpable',
+        '.video-pod__header .title',
+        '.section-title-text',
+        '[class*="section-title"]',
+        '[class*="collection-title"]',
+        '[class*="list-title"]'
+      ]
+        for (const titleSel of titleSelectors) {
+          const titleEl = container.querySelector(titleSel)
+          if (titleEl && titleEl.textContent && titleEl.textContent.trim()) {
+            collectionTitle = titleEl.textContent.trim()
+            break
+          }
+        }
+
+        if (subscribeBtn || videoItems.length > 0) {
+          return { container, subscribeBtn, videoItems, collectionTitle, exists: true }
+        }
+      }
+    } catch (e) {}
+    return { exists: false }
+  }
+
+  // 从合集视频列表项中提取视频信息
+  const extractCollectionVideos = (videoItems) => {
+    const videos = []
+    const seen = new Set()
+    try {
+      videoItems.forEach(item => {
+        try {
+          let bvKey = ''
+          let title = ''
+          let duration = ''
+
+          // 从 data-key 属性提取 BV 号
+          bvKey = item.getAttribute('data-key') || ''
+
+          // 提取标题
+          const titleEl = item.querySelector('.title-txt') || item.querySelector('[title]')
+          if (titleEl) {
+            title = titleEl.getAttribute('title') || titleEl.textContent || ''
+          }
+          title = title.trim()
+
+          // 提取时长
+          const durationEl = item.querySelector('.duration') || item.querySelector('[class*="duration"]')
+          if (durationEl) {
+            duration = durationEl.textContent.trim()
+          }
+
+          // 构建 URL
+          let url = ''
+          if (bvKey && bvKey.startsWith('BV') && !seen.has(bvKey)) {
+            seen.add(bvKey)
+            url = `https://www.bilibili.com/video/${bvKey}`
+          } else {
+            // 回退：从 <a> 标签提取
+            const link = item.querySelector('a[href*="/video/"], a[href*="/ep"]') || item.querySelector('a[href]')
+            if (link) {
+              const href = link.href || link.getAttribute('href') || ''
+              if (href) {
+                if (!href.startsWith('http')) {
+                  url = new URL(href, window.location.origin).href
+                } else {
+                  url = href
+                }
+                if (!seen.has(url)) {
+                  seen.add(url)
+                } else {
+                  return
+                }
+              }
+            }
+          }
+
+          if (url) {
+            videos.push({ url, title: title || bvKey || '未知视频', duration, bv: bvKey })
+          }
+        } catch (e) {}
+      })
+    } catch (e) {}
+    return videos
+  }
+
+  // 通过B站API获取视频流URL
+  const fetchBiliVideoStream = async (bv) => {
+    try {
+      // 1. 获取 cid
+      const viewResp = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bv}`, {
+        credentials: 'include'
+      })
+      const viewData = await viewResp.json()
+      if (!viewData || viewData.code !== 0 || !viewData.data || !viewData.data.cid) {
+        log('Failed to get cid for', bv, viewData)
+        return null
+      }
+      const cid = viewData.data.cid
+      const title = viewData.data.title || bv
+
+      // 2. 获取播放地址（DASH格式）
+      const playResp = await fetch(
+        `https://api.bilibili.com/x/player/playurl?bvid=${bv}&cid=${cid}&qn=80&fnval=16&fnver=0&fourk=1`,
+        { credentials: 'include' }
+      )
+      const playData = await playResp.json()
+      if (!playData || playData.code !== 0 || !playData.data) {
+        log('Failed to get playurl for', bv, playData)
+        return null
+      }
+
+      const streamData = playData.data
+      const result = { title, videoUrl: '', audioUrl: '' }
+
+      // DASH格式：从dash.video和dash.audio中选取最佳流
+      if (streamData.dash && (streamData.dash.video || streamData.dash.audio)) {
+        const videos = streamData.dash.video || []
+        const audios = streamData.dash.audio || []
+
+        // 优先选择H.264的视频流
+        const h264Videos = videos.filter(v => {
+          const code = v.codecs || ''
+          return code.toLowerCase().includes('avc') || code.toLowerCase().includes('h264')
+        })
+        const bestVideo = (h264Videos.length > 0 ? h264Videos : videos)[0]
+        if (bestVideo) {
+          result.videoUrl = bestVideo.baseUrl || bestVideo.base_url || ''
+          result.videoQuality = bestVideo.id ? `${bestVideo.id}` : ''
+        }
+
+        const bestAudio = audios[0]
+        if (bestAudio) {
+          result.audioUrl = bestAudio.baseUrl || bestAudio.base_url || ''
+        }
+      } else if (streamData.durl && streamData.durl.length > 0) {
+        // 旧版MP4格式
+        result.videoUrl = streamData.durl[0].url || ''
+      }
+
+      return result
+    } catch (e) {
+      log('fetchBiliVideoStream error for', bv, e)
+      return null
+    }
+  }
+
+  // 检测合集中当前正在播放的视频BV号
+  const detectCurrentPlayingBv = () => {
+    try {
+      const containerSelectors = ['.video-pod', '[class*="video-pod"]']
+      for (const sel of containerSelectors) {
+        const container = document.querySelector(sel)
+        if (!container) continue
+        const items = container.querySelectorAll('.pod-item, [class*="pod-item"]')
+        for (const item of items) {
+          // 检查 playing-gif 是否可见
+          const gif = item.querySelector('.playing-gif')
+          if (gif) {
+            const display = window.getComputedStyle(gif).display
+            if (display !== 'none') {
+              return item.getAttribute('data-key') || ''
+            }
+          }
+          // 检查 item 是否有 playing/active 类
+          const cls = item.className || ''
+          if (/playing|active/i.test(cls)) {
+            return item.getAttribute('data-key') || ''
+          }
+        }
+      }
+    } catch (e) {}
+    return ''
+  }
+
+  // 显示合集下载悬浮面板
+  const showCollectionDownloadDialog = (videos, collectionTitle) => {
+    // 移除已存在的面板
+    const existing = document.getElementById('linkcore-collection-panel')
+    if (existing) existing.remove()
+
+    // 获取下载合集按钮的位置
+    const downloadBtnEl = document.getElementById('linkcore-collection-download-btn')
+    let btnRect = { bottom: 0, left: 0, width: 0 }
+    if (downloadBtnEl) {
+      btnRect = downloadBtnEl.getBoundingClientRect()
+    }
+
+    // 检测当前正在播放的视频
+    const currentBv = detectCurrentPlayingBv()
+
+    // 创建悬浮面板（精简：无标题栏、无底部栏、无分割线）
+    const panel = document.createElement('div')
+    panel.id = 'linkcore-collection-panel'
+    const pStyle = panel.style
+    pStyle.position = 'absolute'
+    pStyle.backgroundColor = '#fff'
+    pStyle.borderRadius = '8px'
+    pStyle.boxShadow = '0 2px 12px rgba(0,0,0,0.12)'
+    pStyle.border = '1px solid #e8e8e8'
+    pStyle.width = '300px'
+    pStyle.maxWidth = '90vw'
+    pStyle.maxHeight = '360px'
+    pStyle.display = 'flex'
+    pStyle.flexDirection = 'column'
+    pStyle.overflow = 'hidden'
+    pStyle.zIndex = '1000'
+    // 定位在按钮下方，右对齐于按钮（向左延伸，不遮挡按钮）
+    const scrollX = window.scrollX || window.pageXOffset || 0
+    const scrollY = window.scrollY || window.pageYOffset || 0
+    const panelWidth = 300
+    pStyle.top = `${btnRect.bottom + scrollY + 4}px`
+    pStyle.left = `${Math.max(10, btnRect.right + scrollX - panelWidth)}px`
+
+    // 滚动条样式
+    const scrollStyle = document.createElement('style')
+    scrollStyle.textContent = `
+      #linkcore-collection-panel .col-list::-webkit-scrollbar { width: 4px; }
+      #linkcore-collection-panel .col-list::-webkit-scrollbar-track { background: transparent; }
+      #linkcore-collection-panel .col-list::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 2px; }
+    `
+    panel.appendChild(scrollStyle)
+
+    // 下载按钮（悬浮在顶部，无标题栏）
+    const downloadBtn = document.createElement('div')
+    downloadBtn.textContent = '下载选中'
+    downloadBtn.style.cssText = 'margin:8px 8px 0;padding:6px 0;border:none;border-radius:6px;background:#00a1d6;color:#fff;cursor:pointer;font-size:12px;font-weight:500;text-align:center;flex-shrink:0;'
+    downloadBtn.addEventListener('mouseenter', () => { downloadBtn.style.backgroundColor = '#00b5e0' })
+    downloadBtn.addEventListener('mouseleave', () => { downloadBtn.style.backgroundColor = '#00a1d6' })
+    panel.appendChild(downloadBtn)
+
+    // 工具栏（无分割线）
+    const toolbar = document.createElement('div')
+    toolbar.style.cssText = 'padding:6px 10px;display:flex;align-items:center;gap:8px;flex-shrink:0;'
+
+    const selectAllCheckbox = document.createElement('input')
+    selectAllCheckbox.type = 'checkbox'
+    selectAllCheckbox.checked = true
+    selectAllCheckbox.style.cursor = 'pointer'
+
+    const selectAllLabel = document.createElement('span')
+    selectAllLabel.textContent = '全选'
+    selectAllLabel.style.cssText = 'font-size:11px;color:#666;cursor:pointer;'
+
+    const countSpan = document.createElement('span')
+    countSpan.style.cssText = 'font-size:10px;color:#aaa;margin-left:auto;'
+    countSpan.textContent = `共${videos.length}个`
+
+    toolbar.appendChild(selectAllCheckbox)
+    toolbar.appendChild(selectAllLabel)
+    toolbar.appendChild(countSpan)
+    panel.appendChild(toolbar)
+
+    // 视频列表
+    const listContainer = document.createElement('div')
+    listContainer.className = 'col-list'
+    listContainer.style.cssText = 'flex:1;overflow-y:auto;padding:2px 0;'
+
+    const itemCheckboxes = []
+    videos.forEach((video, index) => {
+      const isPlaying = currentBv && video.bv === currentBv
+      const item = document.createElement('div')
+      item.style.cssText = `display:flex;align-items:center;padding:4px 10px;cursor:pointer;${isPlaying ? 'background:#e3f2fd;' : ''}`
+      item.addEventListener('mouseenter', () => { if (!isPlaying) item.style.backgroundColor = '#f7f7f7' })
+      item.addEventListener('mouseleave', () => { if (!isPlaying) item.style.backgroundColor = '' })
+
+      const checkbox = document.createElement('input')
+      checkbox.type = 'checkbox'
+      checkbox.checked = true
+      checkbox.style.cssText = 'margin-right:8px;cursor:pointer;flex-shrink:0;'
+      itemCheckboxes.push(checkbox)
+
+      const titleSpan = document.createElement('span')
+      titleSpan.textContent = video.title
+      titleSpan.style.cssText = 'flex:1;min-width:0;font-size:11px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'
+
+      const rightSpan = document.createElement('span')
+      rightSpan.style.cssText = 'flex-shrink:0;margin-left:8px;display:flex;align-items:center;gap:4px;'
+
+      if (isPlaying) {
+        const playingTag = document.createElement('span')
+        playingTag.textContent = '▶'
+        playingTag.style.cssText = 'font-size:9px;color:#00a1d6;'
+        rightSpan.appendChild(playingTag)
+      }
+
+      if (video.duration) {
+        const durationSpan = document.createElement('span')
+        durationSpan.textContent = video.duration
+        durationSpan.style.cssText = 'font-size:10px;color:#aaa;'
+        rightSpan.appendChild(durationSpan)
+      }
+
+      item.appendChild(checkbox)
+      item.appendChild(titleSpan)
+      item.appendChild(rightSpan)
+      listContainer.appendChild(item)
+
+      item.addEventListener('click', (e) => {
+        if (e.target !== checkbox) {
+          checkbox.checked = !checkbox.checked
+          updateSelectAllState()
+        }
+      })
+      checkbox.addEventListener('change', updateSelectAllState)
+    })
+
+    panel.appendChild(listContainer)
+    document.body.appendChild(panel)
+
+    // 调整面板位置确保在视口内
+    requestAnimationFrame(() => {
+      const pRect = panel.getBoundingClientRect()
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      const sx = window.scrollX || window.pageXOffset || 0
+      const sy = window.scrollY || window.pageYOffset || 0
+      if (pRect.right > vw - 10) {
+        panel.style.left = `${Math.max(10 + sx, vw + sx - pRect.width - 10)}px`
+      }
+      if (pRect.bottom > vh - 10) {
+        panel.style.top = `${Math.max(10 + sy, btnRect.top + sy - pRect.height - 4)}px`
+      }
+    })
+
+    // 全选逻辑
+    function updateSelectAllState() {
+      const checkedCount = itemCheckboxes.filter(cb => cb.checked).length
+      selectAllCheckbox.checked = checkedCount === itemCheckboxes.length
+      downloadBtn.textContent = `下载选中 (${checkedCount})`
+      downloadBtn.style.opacity = checkedCount === 0 ? '0.5' : '1'
+    }
+    updateSelectAllState()
+
+    selectAllCheckbox.addEventListener('change', () => {
+      itemCheckboxes.forEach(cb => { cb.checked = selectAllCheckbox.checked })
+      updateSelectAllState()
+    })
+    selectAllLabel.addEventListener('click', () => {
+      selectAllCheckbox.checked = !selectAllCheckbox.checked
+      selectAllCheckbox.dispatchEvent(new Event('change'))
+    })
+
+    // 关闭面板
+    const closePanel = () => {
+      panel.remove()
+      document.removeEventListener('click', outsideClickHandler, true)
+    }
+
+    // 点击面板外部关闭
+    const outsideClickHandler = (e) => {
+      if (!panel.contains(e.target) && e.target !== downloadBtnEl) {
+        closePanel()
+      }
+    }
+    setTimeout(() => {
+      document.addEventListener('click', outsideClickHandler, true)
+    }, 100)
+
+    // 下载选中按钮
+    downloadBtn.addEventListener('click', async () => {
+      const selectedIndices = itemCheckboxes
+        .map((cb, i) => cb.checked ? i : -1)
+        .filter(i => i >= 0)
+      if (selectedIndices.length === 0) return
+
+      closePanel()
+
+      const btnTextEl = document.querySelector('#linkcore-collection-download-btn span')
+      const oldText = btnTextEl ? btnTextEl.textContent : ''
+
+      const referer = window.location.href || ''
+      const headers = []
+      try {
+        const origin = window.location.origin
+        if (origin) headers.push(`Origin: ${origin}`)
+      } catch (e) {}
+      try {
+        const ua = navigator.userAgent
+        if (ua) headers.push(`User-Agent: ${ua}`)
+      } catch (e) {}
+      headers.push(`Referer: ${referer}`)
+      headers.push('Accept: */*')
+
+      let successCount = 0
+      let failCount = 0
+
+      for (let i = 0; i < selectedIndices.length; i++) {
+        const video = videos[selectedIndices[i]]
+        if (btnTextEl) {
+          btnTextEl.textContent = `获取中 ${i + 1}/${selectedIndices.length}`
+        }
+
+        // 通过B站API获取视频流URL
+        const stream = await fetchBiliVideoStream(video.bv || video.url.match(/BV\w+/)?.[0] || '')
+
+        if (stream && stream.videoUrl) {
+          if (btnTextEl) {
+            btnTextEl.textContent = `下载中 ${i + 1}/${selectedIndices.length}`
+          }
+
+          // 发送视频流
+          chrome.runtime.sendMessage({
+            type: 'addUriFromContent',
+            url: stream.videoUrl,
+            referer,
+            headers,
+            suggestedFilename: `${stream.title}_video.mp4`
+          }, () => {})
+
+          // 发送音频流（如果有）
+          if (stream.audioUrl) {
+            await new Promise(r => setTimeout(r, 100))
+            chrome.runtime.sendMessage({
+              type: 'addUriFromContent',
+              url: stream.audioUrl,
+              referer,
+              headers,
+              suggestedFilename: `${stream.title}_audio.m4a`
+            }, () => {})
+          }
+
+          successCount++
+        } else {
+          failCount++
+          log('Failed to get stream for', video.bv || video.title)
+        }
+
+        if (i < selectedIndices.length - 1) {
+          await new Promise(r => setTimeout(r, 300))
+        }
+      }
+
+      if (btnTextEl) {
+        const msg = failCount > 0 ? `已发送 ${successCount} 失败 ${failCount}` : `已发送 ${successCount} 个`
+        btnTextEl.textContent = msg
+        setTimeout(() => { btnTextEl.textContent = oldText }, 4000)
+      }
+    })
+  }
+
+  // 创建或更新下载合集按钮
+  const ensureCollectionDownloadButton = () => {
+    try {
+      const { subscribeBtn, videoItems, collectionTitle, exists } = detectBilibiliCollection()
+
+      const existingBtn = document.getElementById('linkcore-collection-download-btn')
+
+      if (!exists || !subscribeBtn) {
+        // 没有合集，移除已存在的按钮
+        if (existingBtn) {
+          existingBtn.remove()
+          log('Collection download button removed (no collection found)')
+        }
+        return
+      }
+
+      // 如果已经存在且未变化，不重复创建
+      if (existingBtn && existingBtn.getAttribute('data-collection-title') === collectionTitle) {
+        return
+      }
+
+      // 如果已存在但合集变了，先移除
+      if (existingBtn) {
+        existingBtn.remove()
+      }
+
+      // 创建全新的下载按钮（独立元素，不插入Vue管理的DOM，避免干扰B站渲染）
+      const downloadBtn = document.createElement('div')
+      downloadBtn.id = 'linkcore-collection-download-btn'
+      downloadBtn.setAttribute('data-collection-title', collectionTitle || '')
+      downloadBtn.setAttribute('data-linkcore-btn', 'collection-download')
+
+      // 创建按钮内容
+      const btnText = document.createElement('span')
+      btnText.textContent = '下载合集'
+      btnText.style.cssText = 'pointer-events:none;'
+      downloadBtn.appendChild(btnText)
+
+      // 从订阅按钮复制视觉样式（只复制外观）
+      try {
+        const computed = window.getComputedStyle(subscribeBtn)
+        const visualStyles = [
+          'border', 'border-radius',
+          'background', 'background-color', 'color', 'font-size', 'font-weight',
+          'font-family', 'box-sizing',
+          'white-space', 'user-select',
+          'box-shadow', 'transition'
+        ]
+        visualStyles.forEach(prop => {
+          const val = computed.getPropertyValue(prop)
+          if (val) downloadBtn.style.setProperty(prop, val)
+        })
+      } catch (e) {}
+
+      // 独立定位，追加到document.body，不触碰Vue管理的DOM
+      downloadBtn.style.position = 'absolute'
+      downloadBtn.style.zIndex = '100'
+      downloadBtn.style.cursor = 'pointer'
+      downloadBtn.style.display = 'flex'
+      downloadBtn.style.alignItems = 'center'
+      downloadBtn.style.justifyContent = 'center'
+      // 减少高度和宽度
+      downloadBtn.style.padding = '2px 8px'
+      downloadBtn.style.minWidth = '0'
+      document.body.appendChild(downloadBtn)
+
+      // 使用 absolute 定位（跟随页面滚动，不干扰 Vue DOM）
+      if (subscribeBtn && subscribeBtn.isConnected) {
+        const rect = subscribeBtn.getBoundingClientRect()
+        const scrollX = window.scrollX || window.pageXOffset || 0
+        const scrollY = window.scrollY || window.pageYOffset || 0
+        const btnWidth = downloadBtn.offsetWidth || 50
+        downloadBtn.style.top = `${rect.top + scrollY}px`
+        downloadBtn.style.left = `${Math.max(0, rect.left + scrollX - btnWidth - 4)}px`
+        downloadBtn.style.height = `${rect.height - 6}px`
+      }
+
+      log('Collection download button created (fixed), collection:', collectionTitle)
+
+      // 点击事件：弹出/关闭合集下载弹窗（切换）
+      downloadBtn.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+
+        // 如果面板已存在，关闭它（切换关闭）
+        const existingPanel = document.getElementById('linkcore-collection-panel')
+        if (existingPanel) {
+          existingPanel.remove()
+          return
+        }
+
+        try {
+          // 重新检测合集（确保最新）
+          const { videoItems: items, collectionTitle: title } = detectBilibiliCollection()
+          const videos = extractCollectionVideos(items)
+
+          if (videos.length === 0) {
+            log('No videos found in collection')
+            const oldText = btnText.textContent
+            btnText.textContent = '未找到视频'
+            downloadBtn.style.opacity = '0.6'
+            setTimeout(() => {
+              btnText.textContent = oldText
+              downloadBtn.style.opacity = ''
+            }, 2000)
+            return
+          }
+
+          log(`Found ${videos.length} videos in collection, showing dialog`)
+
+          // 弹出下载弹窗
+          showCollectionDownloadDialog(videos, title)
+
+        } catch (err) {
+          log('Collection download error:', err)
+          btnText.textContent = '打开失败'
+          downloadBtn.style.opacity = ''
+          setTimeout(() => {
+            btnText.textContent = '下载合集'
+          }, 2000)
+        }
+      })
+
+    } catch (e) {
+      log('ensureCollectionDownloadButton error:', e)
+    }
+  }
+
+  // 定期检测B站合集（B站是SPA，需要持续检测）
+  let collectionCheckTimer = null
+  const startCollectionCheck = () => {
+    if (collectionCheckTimer) clearInterval(collectionCheckTimer)
+    // 每3秒检查一次
+    collectionCheckTimer = setInterval(() => {
+      try {
+        const host = (window.location.hostname || '').toLowerCase()
+        if (host.includes('bilibili.com') || host.includes('b23.tv')) {
+          ensureCollectionDownloadButton()
+        }
+      } catch (e) {}
+    }, 3000)
+    // 首次立即检测
+    setTimeout(() => {
+      try {
+        const host = (window.location.hostname || '').toLowerCase()
+        if (host.includes('bilibili.com') || host.includes('b23.tv')) {
+          ensureCollectionDownloadButton()
+        }
+      } catch (e) {}
+    }, 1000)
+  }
+
+  // 启动合集检测
+  startCollectionCheck()
+
+  // 监听URL变化（B站SPA导航）
+  let lastCollectionUrl = ''
+  setInterval(() => {
+    try {
+      const href = window.location.href || ''
+      if (href !== lastCollectionUrl) {
+        lastCollectionUrl = href
+        // URL变化后延迟检测合集
+        setTimeout(() => {
+          const host = (window.location.hostname || '').toLowerCase()
+          if (host.includes('bilibili.com')) {
+            ensureCollectionDownloadButton()
+          }
+        }, 1500)
+      }
+    } catch (e) {}
+  }, 1000)
 }
 })()

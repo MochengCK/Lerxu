@@ -65,28 +65,59 @@
     color: $--dk-subnav-text-color;
   }
 
-  /* Three-column layout: slightly lighter background for sidebar area in dark theme */
-  &.has-three-column-layout .aside {
-    background-color: rgba(0, 0, 0, 0.22) !important;
+  /* Three-column layout: darker background for sidebar area in dark theme */
+  .has-three-column-layout .aside {
+    background-color: rgba(0, 0, 0, 0.35) !important;
   }
 
-  &.has-three-column-layout .subnav.three-column-subnav {
-    background-color: #373737 !important; /* ~0.05 darker than #343434 */
+  .has-three-column-layout .subnav.three-column-subnav {
+    background-color: #252525 !important;
   }
 
   /* Three-column layout: larger border-radius for active/hover subnav items */
-  &.has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li {
+  .has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li {
     border-radius: 8px;
   }
 
-  &.has-three-column-layout .subnav.three-column-subnav .subnav-inner .preference-subnav-ul .nav-slider {
+  /* Three-column layout: smaller icons */
+  .has-three-column-layout .subnav.three-column-subnav .subnav-inner .subnav-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    height: 14px;
+    svg {
+      width: 14px;
+      height: 14px;
+    }
+  }
+
+  /* Three-column layout: subtle hover background for sidebar items (not active) */
+  .has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li:hover:not(.active) {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  /* Three-column layout: active background for sidebar items */
+  .has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li.active {
+    background-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .has-three-column-layout .subnav.three-column-subnav .subnav-inner .preference-subnav-ul .nav-slider {
     border-radius: 8px;
   }
 
   /* Three-column layout with background image: slightly lighter background */
-  &.has-app-background-image.has-three-column-layout .aside,
-  &.has-app-background-image.has-three-column-layout .subnav.three-column-subnav {
+  .has-app-background-image .has-three-column-layout .aside,
+  .has-app-background-image .has-three-column-layout .subnav.three-column-subnav {
     background-color: rgba(0, 0, 0, calc(var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9)) + 0.02)) !important;
+  }
+
+  /* Preference standalone: match three-column dark theme styles */
+  .preference-standalone .subnav-inner ul li:hover:not(.active) {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+  .preference-standalone .subnav-inner ul li.active {
+    background-color: rgba(255, 255, 255, 0.12);
   }
 
   .subnav {
@@ -125,7 +156,7 @@
 
     .preference-subnav-ul {
       .nav-slider {
-        background-color: $--dk-subnav-active-background;
+        display: none;
       }
     }
   }
