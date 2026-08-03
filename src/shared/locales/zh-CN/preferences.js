@@ -351,7 +351,7 @@ export default {
   'extension-copy-rpc': '复制 RPC 地址',
   'extension-tips': '安装并启用浏览器扩展后，可自动接管浏览器下载'
   ,
-  'extension-channel': '扩展通道地址（应用 HTTP）',
+  'extension-channel': '扩展通道地址（WebSocket）',
   'extension-copy-channel': '复制通道地址',
   'extension-intercept-all-downloads': '拦截浏览器的所有下载',
   'extension-silent-download': '无需弹出添加任务窗口，直接开始下载',

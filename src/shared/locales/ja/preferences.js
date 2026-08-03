@@ -317,7 +317,7 @@ export default {
   'extension-rpc': '拡張機能で使用されるRPC URL',
   'extension-copy-rpc': 'RPC URLをコピー',
   'extension-tips': 'ブラウザ拡張機能をインストールして有効にすると、ダウンロードを自動的に引き継ぎます',
-  'extension-channel': '拡張機能チャネルURL（アプリHTTP）',
+  'extension-channel': '拡張機能チャネルURL（WebSocket）',
   'extension-copy-channel': 'チャネルURLをコピー',
   'extension-intercept-all-downloads': 'ブラウザのすべてのダウンロードをインターセプトする',
   'extension-silent-download': 'タスク追加ダイアログを表示せずに直接ダウンロードを開始する',

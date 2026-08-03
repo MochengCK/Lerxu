@@ -343,7 +343,7 @@ export default {
   'extension-rpc': '目前擴充功能使用的 RPC 位址',
   'extension-copy-rpc': '複製 RPC 位址',
   'extension-tips': '安裝並啟用瀏覽器擴充功能後，可自動接管瀏覽器下載',
-  'extension-channel': '擴充通道位址（應用程式 HTTP）',
+  'extension-channel': '擴充通道位址（WebSocket）',
   'extension-copy-channel': '複製通道位址',
   'extension-intercept-all-downloads': '攔截瀏覽器中的所有下載',
   'extension-silent-download': '不彈出新增任務視窗，直接開始下載',

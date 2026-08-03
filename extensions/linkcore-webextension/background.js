@@ -156,19 +156,18 @@ const restoreSessionFromStorage = () => {
 const fetchHandshake = async () => {
   try {
     const hosts = ['127.0.0.1', 'localhost']
-    for (const h of hosts) {
-      try {
-        const url = `http://${h}:${CHANNEL_PORT}/linkcore/handshake`
-        const resp = await fetchWithTimeout(url, { method: 'GET' }, 3000)
-        if (resp && resp.ok) {
-          const data = await resp.json().catch(() => null)
-          if (data && data.challenge) {
-            console.log('[Background] Challenge acquired:', data.challenge)
-            return data
-          }
+    // 并行探测两个 host,任一成功即返回,避免串行等待放大接管延迟
+    const results = await Promise.allSettled(hosts.map(h => {
+      const url = `http://${h}:${CHANNEL_PORT}/linkcore/handshake`
+      return fetchWithTimeout(url, { method: 'GET' }, 1500)
+    }))
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value && r.value.ok) {
+        const data = await r.value.json().catch(() => null)
+        if (data && data.challenge) {
+          console.log('[Background] Challenge acquired:', data.challenge)
+          return data
         }
-      } catch (e) {
-        // 继续尝试下一个host
       }
     }
   } catch (e) {
@@ -196,38 +195,33 @@ const authorizeWithChallenge = async (challenge) => {
 
     // 直接使用 fetchWithTimeout，避免 tryChannel 的循环
     const hosts = ['127.0.0.1', 'localhost']
-    for (const h of hosts) {
-      try {
-        const url = `http://${h}:${CHANNEL_PORT}/linkcore/authorize`
-        const resp = await fetchWithTimeout(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            challenge,
-            signature,
-            extensionId,
-            timestamp
-          })
-        }, 2000)
-
-        if (resp && resp.ok) {
-          const data = await resp.json().catch(() => null)
-          if (data && data.token) {
-            sessionToken = data.token
-            tokenVersion = data.tokenVersion
-            saveSessionToStorage()
-            console.log('[Background] Session token acquired:', sessionToken.substring(0, 20) + '...', 'version:', tokenVersion)
-            return data
-          }
-        } else if (resp && resp.status === 401) {
-          console.log('[Background] Authorization failed: 401 Unauthorized')
-        } else if (resp) {
-          console.log('[Background] Authorization failed: status', resp.status)
+    // 并行提交签名:两个 host 同时探测,任一成功即返回。
+    // 应用侧 challenge 一次性使用,竞态失败方会收到 401,由 allSettled 忽略
+    const results = await Promise.allSettled(hosts.map(h => {
+      const url = `http://${h}:${CHANNEL_PORT}/linkcore/authorize`
+      return fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          challenge,
+          signature,
+          extensionId,
+          timestamp
+        })
+      }, 1500)
+    }))
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value && r.value.ok) {
+        const data = await r.value.json().catch(() => null)
+        if (data && data.token) {
+          sessionToken = data.token
+          tokenVersion = data.tokenVersion
+          saveSessionToStorage()
+          console.log('[Background] Session token acquired:', sessionToken.substring(0, 20) + '...', 'version:', tokenVersion)
+          return data
         }
-      } catch (e) {
-        console.log('[Background] Authorization error:', e.message)
       }
     }
 
@@ -295,6 +289,227 @@ const fetchWithTimeout = (url, options = {}, timeout = 2000) => {
 }
 
 const CHANNEL_PORT = 16900
+
+// === WebSocket 通道(主通道) ===
+// 相比 HTTP + token 通道:
+//   - 长连接复用,无重复 HTTP 握手与每次请求的 token 认证开销(接管更快)
+//   - 认证在连接层完成(challenge + 签名),消息不再携带 token,暴露面更小
+//   - 服务器校验 Origin 仅允许扩展来源,本机其他进程/网页无法伪造请求
+//   - MV3 中活动 WebSocket 使 Service Worker 保持存活,接管链路不被回收
+const WS_PATH = '/ws'
+let wsSocket = null
+let wsAuthenticated = false
+let wsConnecting = false
+let wsReconnectDelay = 1000
+let wsReconnectTimer = null
+let wsSeq = 0
+const wsPending = new Map()
+
+// 通过 WebSocket 发送请求并等待响应(id 关联)
+const wsRequest = (type, params, timeout = 5000) => {
+  return new Promise((resolve, reject) => {
+    if (!wsSocket || wsSocket.readyState !== WebSocket.OPEN || !wsAuthenticated) {
+      reject(new Error('ws not ready'))
+      return
+    }
+    const id = ++wsSeq
+    const timer = setTimeout(() => {
+      wsPending.delete(id)
+      reject(new Error('ws timeout'))
+    }, timeout)
+    wsPending.set(id, { resolve, reject, timer })
+    try {
+      wsSocket.send(JSON.stringify({ id, type, params }))
+    } catch (e) {
+      clearTimeout(timer)
+      wsPending.delete(id)
+      reject(e)
+    }
+  })
+}
+
+// 连接层认证:对服务器下发的 challenge 签名后回传
+const handleWsChallenge = async (challenge) => {
+  try {
+    const extensionId = chrome.runtime.id
+    const timestamp = Date.now()
+    const signatureString = `${challenge}${extensionId}${timestamp}`
+    const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(signatureString))
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    const signature = hashArray.map(byte => byte.toString(16).padStart(2, '0')).join('')
+    if (wsSocket && wsSocket.readyState === WebSocket.OPEN) {
+      wsSocket.send(JSON.stringify({ type: 'authorize', challenge, signature, extensionId, timestamp }))
+    }
+  } catch (e) {
+    try { wsSocket.close() } catch (_) {}
+  }
+}
+
+const handleWsDisconnect = () => {
+  wsConnecting = false
+  wsAuthenticated = false
+  wsSocket = null
+  // 拒绝所有在途请求,调用方会回退 HTTP 或浏览器下载
+  for (const [, p] of wsPending) {
+    clearTimeout(p.timer)
+    p.reject(new Error('ws closed'))
+  }
+  wsPending.clear()
+  if (lastConnectionCheck.connected) {
+    notifyConnectionChange(false)
+  }
+  lastConnectionCheck.connected = false
+  lastConnectionCheck.lastCheckTime = Date.now()
+  // 指数退避重连
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer)
+  }
+  wsReconnectTimer = setTimeout(() => {
+    wsConnect()
+    wsReconnectDelay = Math.min(wsReconnectDelay * 2, 8000)
+  }, wsReconnectDelay)
+}
+
+const wsConnect = () => {
+  if (wsConnecting || (wsSocket && (wsSocket.readyState === WebSocket.OPEN || wsSocket.readyState === WebSocket.CONNECTING))) {
+    return
+  }
+  wsConnecting = true
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${CHANNEL_PORT}${WS_PATH}`)
+    wsSocket = ws
+    wsAuthenticated = false
+
+    ws.onmessage = (ev) => {
+      let msg
+      try {
+        msg = JSON.parse(ev.data)
+      } catch (e) {
+        return
+      }
+      if (msg.type === 'challenge') {
+        handleWsChallenge(msg.challenge)
+      } else if (msg.type === 'authorized') {
+        wsAuthenticated = true
+        wsConnecting = false
+        wsReconnectDelay = 1000
+        if (!lastConnectionCheck.connected) {
+          notifyConnectionChange(true)
+        }
+        lastConnectionCheck.connected = true
+        lastConnectionCheck.lastCheckTime = Date.now()
+        console.log('[Background] WebSocket channel authenticated')
+        // 连接就绪后立即同步一次配置
+        syncExtConfigFromClient().catch(() => {})
+      } else if (msg.type === 'error') {
+        console.log('[Background] WebSocket server error:', msg.error)
+      } else if (msg.id !== undefined) {
+        const pending = wsPending.get(msg.id)
+        if (pending) {
+          clearTimeout(pending.timer)
+          wsPending.delete(msg.id)
+          if (msg.error) {
+            pending.reject(new Error(msg.error))
+          } else {
+            pending.resolve(msg.result)
+          }
+        }
+      }
+    }
+
+    ws.onclose = () => {
+      handleWsDisconnect()
+    }
+
+    ws.onerror = () => {
+      // onclose 会随之触发,统一在 handleWsDisconnect 处理
+    }
+  } catch (e) {
+    wsConnecting = false
+  }
+}
+
+// HTTP 兜底通道:按 type 映射回原 /linkcore/* 端点
+const httpChannelRequest = async (type, params, timeout) => {
+  try {
+    switch (type) {
+      case 'add': {
+        const reqOptions = {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params)
+        }
+        let ok = await tryChannel('/linkcore/add', reqOptions, timeout)
+        if (!ok) {
+          await new Promise(r => setTimeout(r, 150))
+          ok = await tryChannel('/linkcore/add', reqOptions, timeout + 500)
+        }
+        if (!ok) return { ok: false }
+        const data = await ok.resp.json().catch(() => ({}))
+        return { ok: !!(data && data.ok), data }
+      }
+      case 'ext-config-get': {
+        const ok = await tryChannel('/linkcore/ext-config', { method: 'GET' }, timeout)
+        if (!ok || !ok.resp || !ok.resp.ok) return { ok: false }
+        const data = await ok.resp.json().catch(() => null)
+        return { ok: !!data, data }
+      }
+      case 'ext-config-set': {
+        const ok = await tryChannel('/linkcore/ext-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params || {})
+        }, timeout)
+        return { ok: !!(ok && ok.resp && ok.resp.ok) }
+      }
+      case 'locale': {
+        const ok = await tryChannel('/linkcore/locale', { method: 'GET' }, timeout)
+        if (!ok || !ok.resp || !ok.resp.ok) return { ok: false }
+        const data = await ok.resp.json().catch(() => null)
+        return { ok: !!data, data }
+      }
+      case 'tasks': {
+        const ok = await tryChannel('/linkcore/tasks', { method: 'GET' }, timeout)
+        if (!ok || !ok.resp || !ok.resp.ok) return { ok: false, data: { tasks: [] } }
+        const data = await ok.resp.json().catch(() => null)
+        return { ok: !!data, data: data || { tasks: [] } }
+      }
+      case 'version': {
+        const ok = await tryChannel('/linkcore/version', { method: 'GET' }, timeout)
+        if (!ok || !ok.resp || !ok.resp.ok) return { ok: false }
+        const data = await ok.resp.json().catch(() => null)
+        return { ok: !!data, data }
+      }
+      case 'health': {
+        const ok = await tryChannel('/linkcore/health', { method: 'GET' }, timeout)
+        return { ok: !!(ok && ok.resp && ok.resp.ok) }
+      }
+      default:
+        return { ok: false }
+    }
+  } catch (e) {
+    return { ok: false }
+  }
+}
+
+// 统一通道入口:优先 WebSocket 长连接(认证已在连接层完成),
+// 失败时回退 HTTP(兼容旧版应用/WS 异常场景)。
+// 返回 { ok: 业务是否成功, data } —— 与 httpChannelRequest 保持统一语义
+const channelRequest = async (type, params, httpTimeout = 1500) => {
+  if (wsSocket && wsSocket.readyState === WebSocket.OPEN && wsAuthenticated) {
+    try {
+      const data = await wsRequest(type, params)
+      // add 的业务结果在 data.ok 中(invalid url 等失败场景),提取为统一 ok
+      if (type === 'add') {
+        return { ok: !!(data && data.ok), data }
+      }
+      return { ok: true, data }
+    } catch (e) {
+      // WS 请求失败,回退 HTTP
+    }
+  }
+  return httpChannelRequest(type, params, httpTimeout)
+}
 
 // 语言代码映射:客户端语言 -> 浏览器语言
 const localeMap = {
@@ -493,14 +708,11 @@ const ensureSessionToken = async () => {
 
 const syncExtConfigFromClient = async () => {
   try {
-    const result = await tryChannel('/linkcore/ext-config', { method: 'GET' }, 1000)
-    if (!result || !result.resp || !result.resp.ok) {
+    const result = await channelRequest('ext-config-get')
+    if (!result || !result.ok || !result.data) {
       return
     }
-    const data = await result.resp.json().catch(() => null)
-    if (!data) {
-      return
-    }
+    const data = result.data
     const interceptAllDownloads = !!data.interceptAllDownloads
     const silentDownload = !!data.silentDownload
     const shiftToggleEnabled = !!data.shiftToggleEnabled
@@ -616,8 +828,8 @@ const isClientAvailable = async () => {
     return !!lastConnectionCheck.connected
   }
   try {
-    const result = await tryChannel('/linkcore/health', { method: 'GET' }, 800)
-    return !!(result && result.resp && result.resp.ok)
+    const result = await channelRequest('health', undefined, 800)
+    return !!(result && result.ok)
   } catch (e) {
     return false
   }
@@ -685,32 +897,16 @@ const mergeHeaderLines = (baseLines, extraLines) => {
 
 const addUri = async (url, referer, suggestedFilename, extraHeaders) => {
   try {
-    // 并行获取 headers 和确保 token 有效，减少总等待时间
-    const [baseHeaders] = await Promise.all([
-      getHeadersForUrl(url, referer),
-      ensureSessionToken()
-    ])
+    const baseHeaders = await getHeadersForUrl(url, referer)
     const headers = mergeHeaderLines(baseHeaders, extraHeaders)
     const payload = { url, referer, headers }
     // 如果有建议的文件名，添加到请求中
     if (suggestedFilename) {
       payload.suggestedFilename = suggestedFilename
     }
-    const reqOptions = {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    }
-    // 首次尝试，使用较短超时
-    let ok = await tryChannel('/linkcore/add', reqOptions, 2000)
-    if (!ok) {
-      // 首次失败，短暂等待后重试一次（可能是瞬时网络抖动）
-      await new Promise(r => setTimeout(r, 200))
-      ok = await tryChannel('/linkcore/add', reqOptions, 3000)
-    }
-    if (!ok) return false
-    const data = await ok.resp.json().catch(() => ({}))
-    return !!(data && data.ok)
+    // WS 主通道认证在连接层完成,无需 token 校验;HTTP 兜底由 tryChannel 内部处理
+    const result = await channelRequest('add', payload)
+    return !!(result && result.ok)
   } catch (e) {
     return false
   }
@@ -755,10 +951,8 @@ const initializeBackground = async () => {
   // 预探测一次,提升首用体验
   probeRpc()
   
-  // 尝试认证（如果有恢复的token会直接使用，无效时会自动重新认证）
-  ensureSessionToken().catch((e) => {
-    console.log('[Background] Initial authentication failed, will retry on demand:', e)
-  })
+  // 建立 WebSocket 长连接(连接层认证,重连由 wsConnect 内部退避处理)
+  wsConnect()
   
   // 同步客户端语言
   syncLocaleFromClient()
@@ -827,9 +1021,9 @@ let lastKnownLocale = null
 const syncLocaleFromClient = async (notifyPopup = false) => {
   try {
     console.log('[Background] Syncing locale from client...')
-    const result = await tryChannel('/linkcore/locale', { method: 'GET' }, 2000)
-    if (result && result.resp && result.resp.ok) {
-      const data = await result.resp.json()
+    const result = await channelRequest('locale', undefined, 2000)
+    if (result && result.ok && result.data) {
+      const data = result.data
       console.log('[Background] Received locale data:', data)
       if (data && data.locale) {
         const browserLocale = data.locale === 'auto'
@@ -952,24 +1146,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   
   if (msg && msg.type === 'tasks') {
-    tryChannel('/linkcore/tasks', { method: 'GET' }, 1000)
-      .then(ok => {
-        if (!ok) {
+    channelRequest('tasks')
+      .then((result) => {
+        if (!result || !result.ok || !result.data) {
           sendResponse({ connected: false, downloadSpeed: 0, uploadSpeed: 0, totalSpeed: 0, tasks: [] })
         } else {
-          ok.resp.json()
-            .then(data => {
-              sendResponse({ 
-                connected: true, 
-                downloadSpeed: data.downloadSpeed || 0,
-                uploadSpeed: data.uploadSpeed || 0,
-                totalSpeed: data.totalSpeed || 0, 
-                tasks: data.tasks || [] 
-              })
-            })
-            .catch(() => {
-              sendResponse({ connected: false, downloadSpeed: 0, uploadSpeed: 0, totalSpeed: 0, tasks: [] })
-            })
+          const data = result.data
+          sendResponse({
+            connected: true,
+            downloadSpeed: data.downloadSpeed || 0,
+            uploadSpeed: data.uploadSpeed || 0,
+            totalSpeed: data.totalSpeed || 0,
+            tasks: data.tasks || []
+          })
         }
       })
       .catch(() => {
@@ -979,9 +1168,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   
   if (msg && msg.type === 'connection') {
-    tryChannel('/linkcore/health', { method: 'GET' }, 1000)
+    channelRequest('health')
       .then(result => {
-        sendResponse({ connected: !!(result && result.resp && result.resp.ok) })
+        sendResponse({ connected: !!(result && result.ok) })
       })
       .catch(() => {
         sendResponse({ connected: false })
@@ -990,17 +1179,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   
   if (msg && msg.type === 'version') {
-    tryChannel('/linkcore/version', { method: 'GET' }, 1000)
-      .then(ok => {
-        if (ok && ok.resp && ok.resp.ok) {
-          ok.resp.json()
-            .then(data => {
-              const version = data && data.version ? data.version : ''
-              sendResponse({ connected: true, version })
-            })
-            .catch(() => {
-              sendResponse({ connected: false, version: '' })
-            })
+    channelRequest('version')
+      .then((result) => {
+        if (result && result.ok && result.data) {
+          const version = result.data.version || ''
+          sendResponse({ connected: true, version })
         } else {
           sendResponse({ connected: false, version: '' })
         }
@@ -1082,16 +1265,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         console.log('[Background] Received addExcludeDomain request for:', msg.domain)
         
         // 先获取当前配置
-        const currentConfig = await tryChannel('/linkcore/ext-config', {
-          method: 'GET'
-        }, 3000)
+        const currentConfig = await channelRequest('ext-config-get', undefined, 3000)
         
         let excludeDomains = []
-        if (currentConfig && currentConfig.resp) {
-          const data = await currentConfig.resp.json()
-          if (Array.isArray(data.excludeDomains)) {
-            excludeDomains = data.excludeDomains
-          }
+        if (currentConfig && currentConfig.ok && currentConfig.data && Array.isArray(currentConfig.data.excludeDomains)) {
+          excludeDomains = currentConfig.data.excludeDomains
         }
         
         console.log('[Background] Current excludeDomains:', excludeDomains)
@@ -1106,13 +1284,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 域名已存在，移除它
           console.log('[Background] Removing domain from list')
           excludeDomains.splice(existingIndex, 1)
-          const result = await tryChannel('/linkcore/ext-config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ excludeDomains })
-          }, 3000)
+          const result = await channelRequest('ext-config-set', { excludeDomains }, 3000)
           
-          if (result && result.resp && result.resp.ok) {
+          if (result && result.ok) {
             console.log('[Background] Domain removed successfully')
             sendResponse({ ok: true, removed: true })
           } else {
@@ -1123,13 +1297,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 域名不存在，添加它
           console.log('[Background] Adding domain to list')
           excludeDomains.push(domain)
-          const result = await tryChannel('/linkcore/ext-config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ excludeDomains })
-          }, 3000)
+          const result = await channelRequest('ext-config-set', { excludeDomains }, 3000)
           
-          if (result && result.resp && result.resp.ok) {
+          if (result && result.ok) {
             console.log('[Background] Domain added successfully')
             sendResponse({ ok: true, added: true })
           } else {
@@ -1149,13 +1319,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === 'getExcludeDomains') {
     const handleGetExcludeDomains = async () => {
       try {
-        const result = await tryChannel('/linkcore/ext-config', {
-          method: 'GET'
-        }, 3000)
+        const result = await channelRequest('ext-config-get', undefined, 3000)
         
-        if (result && result.resp) {
-          const data = await result.resp.json()
-          sendResponse({ excludeDomains: data.excludeDomains || [] })
+        if (result && result.ok && result.data) {
+          sendResponse({ excludeDomains: result.data.excludeDomains || [] })
         } else {
           sendResponse({ excludeDomains: [] })
         }
@@ -1171,13 +1338,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === 'addSkipFileType' && msg.fileType) {
     const handleAddSkipFileType = async () => {
       try {
-        const result = await tryChannel('/linkcore/ext-config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ skipFileExtensions: [msg.fileType] })
-        }, 3000)
+        const result = await channelRequest('ext-config-set', { skipFileExtensions: [msg.fileType] }, 3000)
         
-        if (result && result.resp && result.resp.ok) {
+        if (result && result.ok) {
           sendResponse({ ok: true })
         } else {
           sendResponse({ ok: false })
@@ -1198,16 +1361,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         console.log('[Background] Adding skip file types:', msg.fileTypes)
         
         // 先获取当前配置
-        const currentConfig = await tryChannel('/linkcore/ext-config', {
-          method: 'GET'
-        }, 5000)
+        const currentConfig = await channelRequest('ext-config-get', undefined, 3000)
         
         let skipFileExtensions = []
-        if (currentConfig && currentConfig.resp) {
-          const data = await currentConfig.resp.json()
-          console.log('[Background] Current config data:', data)
-          if (Array.isArray(data.skipFileExtensions)) {
-            skipFileExtensions = data.skipFileExtensions
+        if (currentConfig && currentConfig.ok && currentConfig.data) {
+          console.log('[Background] Current config data:', currentConfig.data)
+          if (Array.isArray(currentConfig.data.skipFileExtensions)) {
+            skipFileExtensions = currentConfig.data.skipFileExtensions
           }
         }
         
@@ -1217,15 +1377,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         
         console.log('[Background] Sending skipFileExtensions:', uniqueExtensions)
         
-        const result = await tryChannel('/linkcore/ext-config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ skipFileExtensions: uniqueExtensions })
-        }, 5000)
+        const result = await channelRequest('ext-config-set', { skipFileExtensions: uniqueExtensions }, 3000)
         
         console.log('[Background] POST result:', result)
         
-        if (result && result.resp && result.resp.ok) {
+        if (result && result.ok) {
           response = { ok: true, added: msg.fileTypes.length }
         } else {
           console.error('[Background] POST failed, result:', result)
@@ -1346,6 +1502,31 @@ const recoverActiveBrowserDownloads = () => {
   } catch (e) {}
 }
 
+// 同步快速决策(由 decideTakeover 的缓存共享保证副作用只执行一次):
+// 命中这些场景时无需等待异步配置即可确定接管/放行,把决策延迟从
+// "storage 恢复 + 规则遍历"压缩到同步判读,是接管"快"的关键:
+//   - 主动回退给浏览器的下载 → 放行(防止 取消→重下→取消 循环)
+//   - 临时禁用接管(快捷键) → 放行
+//   - webRequest 预检测已知的 attachment 下载 → 立即接管
+//     这是最常见的下载形态(服务器 Content-Disposition 触发),
+//     onHeadersReceived 已在响应头到达时记录 URL,这里直接命中,
+//     不必等待 extConfigReady,浏览器下载项一创建就立刻取消
+const quickTakeoverDecision = (item) => {
+  if (!item || typeof item.id !== 'number') return 'skip'
+  const url = item.url || ''
+  if (!url || !/^https?:/i.test(url)) return 'skip'
+  if (fallbackBrowserUrls.has(url)) {
+    fallbackBrowserUrls.delete(url)
+    return 'skip'
+  }
+  if (cachedAutoHijackDisabled) return 'skip'
+  if (pendingDownloadUrls.has(url)) {
+    pendingDownloadUrls.delete(url)
+    return 'intercept'
+  }
+  return null
+}
+
 // 判断一个下载项是否应该被接管(所有排除规则集中在此,onCreated 与
 // onDeterminingFilename 通过 takeoverDecisions 共享同一份决策,不会重复判断)
 const decideTakeover = (item) => {
@@ -1355,6 +1536,17 @@ const decideTakeover = (item) => {
   const existing = takeoverDecisions.get(item.id)
   if (existing) {
     return existing
+  }
+
+  // 同步快速路径:可立即确定的场景不进入异步决策
+  const quick = quickTakeoverDecision(item)
+  if (quick) {
+    const quickDecision = Promise.resolve(quick)
+    takeoverDecisions.set(item.id, quickDecision)
+    quickDecision.finally(() => {
+      setTimeout(() => takeoverDecisions.delete(item.id), 30000)
+    })
+    return quickDecision
   }
 
   const decision = (async () => {
@@ -1432,7 +1624,22 @@ const decideTakeover = (item) => {
   return decision
 }
 
-// 执行接管:取消浏览器下载(等待取消完成)→ 从历史擦除 → 转交 LinkCore → 失败回退浏览器
+// 保活:MV3 Service Worker 空闲 30s 即被终止,接管链路跨多个异步回调
+// (cancel/erase/addUri 的 fetch),期间 SW 若被回收则 addUri 永远无法送达,
+// 任务既不在浏览器也不在应用,表现为"接管后任务消失"。每次 await 后调用
+// chrome.runtime API 可重置 SW 空闲计时器,保证整条链路执行完成。
+const keepSwAlive = () => {
+  try { chrome.runtime.getPlatformInfo() } catch (e) {}
+}
+
+// 执行接管:先取消浏览器下载(确认取消成功才转交应用),成功后擦除记录。
+// 原实现串行 cancel→erase→addUri 且取消失败也照常 addUri,导致:
+//   1) 小文件在决策期间已完成,取消失败却仍向应用发任务 → 浏览器与应用重复下载
+//   2) promise 形式的 cancel reject 即使 catch 也会打印 Unchecked runtime.lastError
+// 现实现:
+//   - cancel 用 callback 形式显式检查 lastError(消除 Unchecked 警告,拿到取消结果)
+//   - 取消失败(下载已完成) → 放弃接管并恢复气泡,浏览器保留文件,避免重复下载
+//   - 取消成功 → addUri 转交应用;成功则 erase 清理记录,失败则回退浏览器下载
 const executeTakeover = async (item) => {
   if (handledDownloadIds.has(item.id)) {
     return
@@ -1441,17 +1648,42 @@ const executeTakeover = async (item) => {
 
   const url = item.url || ''
   try {
-    // 必须 await:进行中的下载 erase 不生效,只有取消完成后才能彻底移除,
-    // 否则浏览器下载列表会残留"已取消"条目
-    await chrome.downloads.cancel(item.id)
-  } catch (e) {}
-  try {
-    await chrome.downloads.erase({ id: item.id })
-  } catch (e) {}
+    keepSwAlive()
+    // 取消浏览器下载,确认取消成功才继续接管
+    const cancelOk = await new Promise((resolve) => {
+      chrome.downloads.cancel(item.id, () => {
+        resolve(!chrome.runtime.lastError)
+      })
+    })
+    keepSwAlive()
+    if (!cancelOk) {
+      // 取消失败:下载可能已完成(小文件/高速网络),浏览器已持有文件。
+      // 放弃接管避免应用重复下载;恢复气泡让用户看到浏览器侧的真实进度
+      console.log('[Background] Takeover skipped: download already finished, id:', item.id, 'url:', url)
+      if (extConfig.interceptAllDownloads && typeof item.id === 'number') {
+        activeBrowserDownloads.add(item.id)
+        setDownloadUiEnabled(true)
+      }
+      return
+    }
+    console.log('[Background] Takeover canceled browser download, id:', item.id, 'url:', url)
 
-  try {
-    const success = await addUri(url, item.referrer, item.filename)
-    if (!success) {
+    const addResult = await addUri(url, item.referrer, item.filename)
+    keepSwAlive()
+    if (addResult) {
+      console.log('[Background] Takeover success, task sent to client:', url)
+      // 接管成功:取消完成后彻底移除浏览器下载记录
+      await new Promise((resolve) => {
+        chrome.downloads.erase({ id: item.id }, () => {
+          // 下载可能已被自动清除,读取 lastError 防止 Unchecked 警告
+          void chrome.runtime.lastError
+          resolve()
+        })
+      })
+      keepSwAlive()
+    } else {
+      // 发送失败,回退浏览器下载(标记防循环)
+      console.log('[Background] Takeover failed to reach client, falling back to browser download:', url)
       fallbackBrowserUrls.set(url, Date.now())
       await downloadViaBrowser(url, item.filename)
     }
@@ -1479,17 +1711,30 @@ chrome.downloads.onCreated.addListener((item) => {
 //   - 不留 .crdownload 残留文件
 //   - 避免用户开启"下载前询问保存位置"时弹窗一闪而过
 // 规则:决定接管 → 取消(不可再调 suggest);决定放行 → 必须调 suggest() 走默认文件名
+// 注意:listener 返回 true 后浏览器会等待 suggest() 被调用,因此无论接管还是
+// 放行都必须最终调用 suggest(),否则下载流程会挂起等待。
+// 接管分支的下载已被 cancel,suggest 会报 Download must be in progress,
+// try/catch 捕获不了 API 层的 runtime.lastError,必须显式读取以清除标记
+// (否则控制台打印 Unchecked runtime.lastError 噪音)
 try {
   chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+    const finishSuggest = () => {
+      try {
+        suggest()
+      } catch (e) {}
+      // 读取 lastError 清除错误标记,结果无害
+      void chrome.runtime.lastError
+    }
     decideTakeover(item).then((decision) => {
       applyUiForDecision(item, decision)
       if (decision === 'intercept') {
         executeTakeover(item)
-      } else {
-        try { suggest() } catch (e) {}
       }
+      // 接管分支的下载已被 cancel,suggest 无效但无害;
+      // 不放行时缺省调用会导致浏览器等待文件名,下载挂起
+      finishSuggest()
     }).catch(() => {
-      try { suggest() } catch (e) {}
+      finishSuggest()
     })
     return true
   })

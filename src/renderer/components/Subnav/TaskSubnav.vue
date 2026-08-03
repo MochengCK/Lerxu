@@ -185,7 +185,7 @@
   padding-bottom: 16px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   height: calc(100% - 44px);
 
   .subnav-scroll-area {
@@ -193,14 +193,14 @@
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
   }
 
   .subnav-bottom {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
   }
 
   .subnav-section {
@@ -453,6 +453,15 @@
 .theme-dark .subnav-inner.task-subnav {
   .subnav-section-label {
     color: var(--lc-text-placeholder, #666);
+  }
+
+  // 深色模式下 .theme-dark ... .subnav-section-label (0,4,0) 会压过
+  // 基础 hover 规则 (0,3,0)，导致"类型"标签悬停没有高亮。
+  // 这里以更高优先级补上 hover 状态，与浅色模式行为一致。
+  .subnav-section-toggle {
+    &:hover {
+      color: var(--lc-text-regular, #666);
+    }
   }
 }
 </style>

@@ -5,6 +5,7 @@ import { extname, basename } from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
 import { app, clipboard, shell, dialog, ipcMain } from 'electron'
 import { createServer } from 'node:http'
+import WS from 'ws'
 import is from 'electron-is'
 import { isEmpty, isEqual } from 'lodash'
 
@@ -183,6 +184,319 @@ export default class Application extends EventEmitter {
     }
   }
 
+  // ===== 浏览器扩展通信:公共处理逻辑(HTTP 与 WebSocket 共用) =====
+
+  // 验证扩展授权签名(挑战码 + extensionId + timestamp → SHA-256)
+  // 供 HTTP /linkcore/authorize 与 WebSocket 连接认证共用
+  _verifyExtensionAuthorize (payload) {
+    const { challenge, signature, extensionId, timestamp } = payload
+
+    const challengeData = this.challenges.get(challenge)
+    if (!challengeData) {
+      return { ok: false, error: 'Invalid challenge' }
+    }
+
+    if (Date.now() > challengeData.expiresAt) {
+      this.challenges.delete(challenge)
+      return { ok: false, error: 'Challenge expired' }
+    }
+
+    if (!extensionId || typeof extensionId !== 'string' || extensionId.length < 10) {
+      console.log('[Security] Invalid extension ID:', extensionId)
+      return { ok: false, error: 'Invalid extension ID' }
+    }
+
+    if (!signature || typeof signature !== 'string') {
+      return { ok: false, error: 'Invalid signature' }
+    }
+
+    if (!timestamp || typeof timestamp !== 'number') {
+      return { ok: false, error: 'Invalid timestamp' }
+    }
+
+    if (Math.abs(Date.now() - timestamp) > 60000) {
+      return { ok: false, error: 'Timestamp expired' }
+    }
+
+    const signatureString = `${challenge}${extensionId}${timestamp}`
+    const expectedSignature = createHash('sha256').update(signatureString).digest('hex')
+
+    if (signature !== expectedSignature) {
+      console.log('[Security] Signature mismatch:', {
+        expected: expectedSignature,
+        received: signature
+      })
+      return { ok: false, error: 'Signature mismatch' }
+    }
+
+    return { ok: true }
+  }
+
+  // 读取扩展配置(与 /linkcore/ext-config GET 一致)
+  _getExtensionConfig () {
+    const interceptAllDownloads = !!this.configManager.getUserConfig('extension-intercept-all-downloads', false)
+    const silentDownload = !!this.configManager.getUserConfig('extension-silent-download', false)
+    const shiftToggleEnabled = !!this.configManager.getUserConfig('extension-shift-toggle-enabled', false)
+    const minFileSize = Number(this.configManager.getUserConfig('extension-min-file-size', 0)) || 0
+    const skipRaw = this.configManager.getUserConfig('extension-skip-file-extensions', '')
+    let skipFileExtensions = []
+    if (typeof skipRaw === 'string') {
+      const normalizeSkipExt = (x) => removeExtensionDot(`${x}`.trim().toLowerCase())
+      skipFileExtensions = skipRaw.split(/[,;\n]/).map(normalizeSkipExt).filter(Boolean)
+    } else if (Array.isArray(skipRaw)) {
+      const normalizeSkipExt = (x) => removeExtensionDot(`${x}`.trim().toLowerCase())
+      skipFileExtensions = skipRaw.map(normalizeSkipExt).filter(Boolean)
+    }
+
+    const excludeDomainsRaw = this.configManager.getUserConfig('extension-exclude-domains', '')
+    let excludeDomains = []
+    if (typeof excludeDomainsRaw === 'string') {
+      excludeDomains = excludeDomainsRaw.split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
+    } else if (Array.isArray(excludeDomainsRaw)) {
+      excludeDomains = excludeDomainsRaw.map(x => `${x}`.trim()).filter(Boolean)
+    }
+
+    const theme = this.configManager.getUserConfig('theme', APP_THEME.AUTO)
+    const systemTheme = this.themeManager ? this.themeManager.getSystemTheme() : null
+    const effectiveTheme = theme === APP_THEME.AUTO ? (systemTheme || APP_THEME.LIGHT) : theme
+
+    return {
+      interceptAllDownloads,
+      silentDownload,
+      shiftToggleEnabled,
+      minFileSize,
+      skipFileExtensions,
+      excludeDomains,
+      videoSnifferEnabled: this._videoSnifferConfig.enabled,
+      videoSnifferFormats: this._videoSnifferConfig.formats,
+      videoSnifferAutoCombine: this._videoSnifferConfig.autoCombine,
+      theme,
+      effectiveTheme
+    }
+  }
+
+  // 更新扩展配置(与 /linkcore/ext-config POST 一致)
+  _setExtensionConfig (payload) {
+    if (payload.excludeDomains !== undefined) {
+      // 直接使用完整列表替换现有配置,支持添加和移除操作
+      const newDomains = Array.isArray(payload.excludeDomains)
+        ? payload.excludeDomains
+        : (payload.excludeDomains || '').split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
+
+      this.configManager.setUserConfig('extension-exclude-domains', newDomains.join(','))
+      this.sendCommandToAll('preference:update-from-extension')
+    }
+
+    if (payload.skipFileExtensions !== undefined) {
+      // 文件扩展名使用合并逻辑(添加新的,保留现有的)
+      const current = this.configManager.getUserConfig('extension-skip-file-extensions', '')
+      const newExts = Array.isArray(payload.skipFileExtensions)
+        ? payload.skipFileExtensions
+        : (payload.skipFileExtensions || '').split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
+
+      const existingExts = current
+        ? current.split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
+        : []
+
+      const normalizeDot = (x) => {
+        let s = `${x}`.trim()
+        while (s.startsWith('.')) {
+          s = s.substring(1)
+        }
+        return s.toLowerCase()
+      }
+
+      const allExts = new Set([...existingExts.map(normalizeDot), ...newExts.map(normalizeDot)])
+      this.configManager.setUserConfig('extension-skip-file-extensions', Array.from(allExts).join(','))
+      this.sendCommandToAll('preference:update-from-extension')
+    }
+  }
+
+  // 添加下载任务(与 /linkcore/add POST 一致),返回 { ok, dialog } 或 { ok: false, error }
+  async _handleExtensionAdd (payload) {
+    const { url, referer, headers, suggestedFilename } = payload
+    const downloadUrl = `${url || ''}`.trim()
+    if (!downloadUrl || !/^https?:/i.test(downloadUrl)) {
+      return { ok: false, error: 'invalid url' }
+    }
+
+    const historyTasks = []
+    const allTasks = []
+
+    try {
+      // 仅检查活动 / 等待中的任务,避免历史已完成任务(文件可能已删除或已合并)
+      // 阻塞新任务的命名,导致 suggestedFilename 被错误地追加 (1)。
+      // stopped 历史不参与命名冲突判断,由 aria2 在文件系统层处理实际重名。
+      const [active, waiting] = await Promise.all([
+        this.engineClient.call('tellActive'),
+        this.engineClient.call('tellWaiting', 0, 1000)
+      ])
+      allTasks.push(...(active || []), ...(waiting || []))
+    } catch (error) {
+      console.error('[Duplicate Check] Error fetching tasks:', error)
+    }
+
+    allTasks.push(...historyTasks)
+
+    const existingNames = new Set()
+    allTasks.forEach(task => {
+      const taskName = task.bittorrent?.info?.name ||
+                       (task.files?.[0]?.path ? task.files[0].path.split(/[\\/]/).pop() : '')
+      if (taskName) {
+        existingNames.add(taskName)
+      }
+    })
+
+    let finalOut = suggestedFilename
+    if (finalOut && existingNames.has(finalOut)) {
+      const lastDotIndex = finalOut.lastIndexOf('.')
+      let nameWithoutExt = finalOut
+      let ext = ''
+
+      if (lastDotIndex > 0) {
+        nameWithoutExt = finalOut.substring(0, lastDotIndex)
+        ext = finalOut.substring(lastDotIndex)
+      }
+
+      let counter = 1
+      while (existingNames.has(finalOut)) {
+        finalOut = `${nameWithoutExt} (${counter})${ext}`
+        counter++
+      }
+      existingNames.add(finalOut)
+    }
+
+    const headerList = []
+    if (Array.isArray(headers)) {
+      headers.forEach((h) => {
+        if (!h) return
+        if (typeof h === 'string') {
+          headerList.push(h)
+        } else if (h && typeof h === 'object') {
+          const name = h.name || h.key || h.header
+          const value = h.value
+          if (name && typeof value !== 'undefined') {
+            headerList.push(`${name}: ${value}`)
+          }
+        }
+      })
+    } else if (headers && typeof headers === 'object') {
+      Object.keys(headers).forEach((k) => {
+        const v = headers[k]
+        if (typeof v !== 'undefined') {
+          headerList.push(`${k}: ${v}`)
+        }
+      })
+    } else if (typeof headers === 'string' && headers.trim()) {
+      headerList.push(headers)
+    }
+
+    let finalHeaders = headerList
+    if (!finalHeaders.length) {
+      finalHeaders = ['X-LinkCore-Source: BrowserExtension']
+    } else if (!finalHeaders.some(h => typeof h === 'string' && /^x-linkcore-source\s*:/i.test(h.trim()))) {
+      finalHeaders = [...finalHeaders, 'X-LinkCore-Source: BrowserExtension']
+    }
+
+    const options = { header: finalHeaders }
+
+    const hasRefererInHeaders = finalHeaders.some(h =>
+      typeof h === 'string' && /^referer\s*:/i.test(h.trim())
+    )
+
+    if (referer) {
+      options.referer = referer
+    } else if (!hasRefererInHeaders) {
+      const inferredReferer = inferRefererFromUrl(downloadUrl)
+      if (inferredReferer) {
+        options.referer = inferredReferer
+      }
+    }
+
+    const silentDownload = !!this.configManager.getUserConfig('extension-silent-download', false)
+
+    const headerMap = {}
+    finalHeaders.forEach((h) => {
+      if (typeof h !== 'string') {
+        return
+      }
+      const idx = h.indexOf(':')
+      if (idx <= 0) {
+        return
+      }
+      const name = h.slice(0, idx).trim().toLowerCase()
+      const value = h.slice(idx + 1).trim()
+      if (!name) {
+        return
+      }
+      if (!headerMap[name]) {
+        headerMap[name] = value
+      }
+    })
+
+    const userAgent = headerMap['user-agent']
+    const cookie = headerMap.cookie
+    const authorization = headerMap.authorization
+    const taskPayload = {
+      type: ADD_TASK_TYPE.URI,
+      uri: downloadUrl,
+      fromBrowserExtension: true
+    }
+    if (finalOut) {
+      taskPayload.suggestedFilename = finalOut
+    }
+    if (options.referer) {
+      taskPayload.referer = options.referer
+    }
+    if (userAgent) {
+      taskPayload.userAgent = userAgent
+    }
+    if (cookie) {
+      taskPayload.cookie = cookie
+    }
+    if (authorization) {
+      taskPayload.authorization = authorization
+    }
+
+    if (!silentDownload) {
+      try {
+        if (this.windowManager && typeof this.windowManager.bringToFront === 'function') {
+          this.windowManager.bringToFront('index')
+        } else {
+          this.show()
+        }
+      } catch (_) {
+        this.show()
+      }
+      global.application.sendCommandToAll('application:new-task', taskPayload)
+      return { ok: true, dialog: true }
+    }
+
+    taskPayload.silent = true
+    global.application.sendCommandToAll('application:new-task', taskPayload)
+    return { ok: true, dialog: false }
+  }
+
+  // 活动任务列表(与 /linkcore/tasks GET 一致)
+  async _getExtensionTasks () {
+    const keys = ['gid', 'status', 'totalLength', 'completedLength', 'downloadSpeed', 'uploadSpeed', 'files']
+    const data = await this.engineClient.call('tellActive', keys) || []
+    let downloadSpeed = 0
+    let uploadSpeed = 0
+    const tasks = data.map(it => {
+      const tl = Number(it.totalLength || 0)
+      const cl = Number(it.completedLength || 0)
+      const ds = Number(it.downloadSpeed || 0)
+      const us = Number(it.uploadSpeed || 0)
+      const percent = tl > 0 ? Math.floor((cl / tl) * 100) : 0
+      const name = it.files && it.files[0] && it.files[0].path ? it.files[0].path.split('/').pop() : ''
+      downloadSpeed += ds
+      uploadSpeed += us
+      return { gid: it.gid, status: it.status, total: tl, completed: cl, speed: ds, percent, name }
+    })
+    return { downloadSpeed, uploadSpeed, totalSpeed: downloadSpeed, tasks }
+  }
+
   initAppHttpServer () {
     try {
       // 保存所有活跃的连接，方便关闭时强制断开
@@ -234,71 +548,14 @@ export default class Application extends EventEmitter {
           req.on('end', async () => {
             try {
               const payload = JSON.parse(body)
-              const { challenge, signature, extensionId } = payload
-
-              // 验证 challenge
-              const challengeData = this.challenges.get(challenge)
-              if (!challengeData) {
+              const verifyResult = this._verifyExtensionAuthorize(payload)
+              if (!verifyResult.ok) {
                 res.writeHead(401, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ error: 'Invalid challenge' }))
+                res.end(JSON.stringify({ error: verifyResult.error }))
                 return
               }
 
-              // 验证 challenge 是否过期
-              if (Date.now() > challengeData.expiresAt) {
-                this.challenges.delete(challenge)
-                res.writeHead(401, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ error: 'Challenge expired' }))
-                return
-              }
-
-              // 验证 extensionId 格式
-              if (!extensionId || typeof extensionId !== 'string' || extensionId.length < 10) {
-                console.log('[Security] Invalid extension ID:', extensionId)
-                res.writeHead(401, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ error: 'Invalid extension ID' }))
-                return
-              }
-
-              // 验证签名
-              // 签名应该包含：challenge + extensionId + timestamp
-              // 由于浏览器扩展无法访问应用程序的 startupNonce，这里我们使用 challenge + extensionId + timestamp
-              if (!signature || typeof signature !== 'string') {
-                res.writeHead(401, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ error: 'Invalid signature' }))
-                return
-              }
-
-              // 验证时间戳（防止重放攻击）
-              const timestamp = payload.timestamp
-              if (!timestamp || typeof timestamp !== 'number') {
-                res.writeHead(401, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ error: 'Invalid timestamp' }))
-                return
-              }
-
-              // 时间戳必须在 60 秒内
-              const now = Date.now()
-              if (Math.abs(now - timestamp) > 60000) {
-                res.writeHead(401, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ error: 'Timestamp expired' }))
-                return
-              }
-
-              // 计算预期的签名
-              const signatureString = `${challenge}${extensionId}${timestamp}`
-              const expectedSignature = createHash('sha256').update(signatureString).digest('hex')
-
-              // 验证签名是否匹配
-              if (signature !== expectedSignature) {
-                console.log('[Security] Signature mismatch:', {
-                  expected: expectedSignature,
-                  received: signature
-                })
-                res.writeHead(401, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ error: 'Signature mismatch' }))
-                return
-              }
+              const { challenge, extensionId } = payload
 
               // 生成 session token
               const sessionToken = randomBytes(32).toString('hex')
@@ -335,49 +592,9 @@ export default class Application extends EventEmitter {
         if (url.startsWith('/linkcore/ext-config')) {
           if (req.method === 'GET') {
             try {
-              const interceptAllDownloads = !!this.configManager.getUserConfig('extension-intercept-all-downloads', false)
-              const silentDownload = !!this.configManager.getUserConfig('extension-silent-download', false)
-              const shiftToggleEnabled = !!this.configManager.getUserConfig('extension-shift-toggle-enabled', false)
-              const minFileSize = Number(this.configManager.getUserConfig('extension-min-file-size', 0)) || 0
-              const skipRaw = this.configManager.getUserConfig('extension-skip-file-extensions', '')
-              let skipFileExtensions = []
-              if (typeof skipRaw === 'string') {
-                const normalizeSkipExt = (x) => removeExtensionDot(`${x}`.trim().toLowerCase())
-                skipFileExtensions = skipRaw.split(/[,;\n]/).map(normalizeSkipExt).filter(Boolean)
-              } else if (Array.isArray(skipRaw)) {
-                const normalizeSkipExt = (x) => removeExtensionDot(`${x}`.trim().toLowerCase())
-                skipFileExtensions = skipRaw.map(normalizeSkipExt).filter(Boolean)
-              }
-
-              const excludeDomainsRaw = this.configManager.getUserConfig('extension-exclude-domains', '')
-              let excludeDomains = []
-              if (typeof excludeDomainsRaw === 'string') {
-                excludeDomains = excludeDomainsRaw.split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
-              } else if (Array.isArray(excludeDomainsRaw)) {
-                excludeDomains = excludeDomainsRaw.map(x => `${x}`.trim()).filter(Boolean)
-              }
-
-              const videoSnifferEnabled = this._videoSnifferConfig.enabled
-              const videoSnifferFormats = this._videoSnifferConfig.formats
-              const videoSnifferAutoCombine = this._videoSnifferConfig.autoCombine
-              const theme = this.configManager.getUserConfig('theme', APP_THEME.AUTO)
-              const systemTheme = this.themeManager ? this.themeManager.getSystemTheme() : null
-              const effectiveTheme = theme === APP_THEME.AUTO ? (systemTheme || APP_THEME.LIGHT) : theme
-
+              const data = this._getExtensionConfig()
               res.writeHead(200, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({
-                interceptAllDownloads,
-                silentDownload,
-                shiftToggleEnabled,
-                minFileSize,
-                skipFileExtensions,
-                excludeDomains,
-                videoSnifferEnabled,
-                videoSnifferFormats,
-                videoSnifferAutoCombine,
-                theme,
-                effectiveTheme
-              }))
+              res.end(JSON.stringify(data))
             } catch (err) {
               res.writeHead(500, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({
@@ -402,48 +619,7 @@ export default class Application extends EventEmitter {
             req.on('end', async () => {
               try {
                 const payload = body ? JSON.parse(body) : {}
-
-                if (payload.excludeDomains !== undefined) {
-                  // 直接使用 POST 请求中的完整列表替换现有配置
-                  // 这样可以支持添加和移除操作
-                  const newDomains = Array.isArray(payload.excludeDomains)
-                    ? payload.excludeDomains
-                    : (payload.excludeDomains || '').split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
-
-                  // 使用逗号分隔保存，符合 ConfigManager 的期望格式
-                  this.configManager.setUserConfig('extension-exclude-domains', newDomains.join(','))
-
-                  // 通知渲染进程配置已更新
-                  this.sendCommandToAll('preference:update-from-extension')
-                }
-
-                if (payload.skipFileExtensions !== undefined) {
-                  // 对于文件扩展名，使用合并逻辑（添加新的，保留现有的）
-                  const current = this.configManager.getUserConfig('extension-skip-file-extensions', '')
-                  const newExts = Array.isArray(payload.skipFileExtensions)
-                    ? payload.skipFileExtensions
-                    : (payload.skipFileExtensions || '').split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
-
-                  const existingExts = current
-                    ? current.split(/[,;\n]/).map(x => `${x}`.trim()).filter(Boolean)
-                    : []
-
-                  const removeExtensionDot = (x) => {
-                    let s = `${x}`.trim()
-                    while (s.startsWith('.')) {
-                      s = s.substring(1)
-                    }
-                    return s.toLowerCase()
-                  }
-
-                  const allExts = new Set([...existingExts.map(removeExtensionDot), ...newExts.map(removeExtensionDot)])
-                  // 使用逗号分隔保存，符合 ConfigManager 的期望格式
-                  this.configManager.setUserConfig('extension-skip-file-extensions', Array.from(allExts).join(','))
-
-                  // 通知渲染进程配置已更新
-                  this.sendCommandToAll('preference:update-from-extension')
-                }
-
+                this._setExtensionConfig(payload)
                 res.writeHead(200, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({ ok: true }))
               } catch (err) {
@@ -545,23 +721,9 @@ export default class Application extends EventEmitter {
         if (url.startsWith('/linkcore/tasks')) {
           (async () => {
             try {
-              const keys = ['gid', 'status', 'totalLength', 'completedLength', 'downloadSpeed', 'uploadSpeed', 'files']
-              const data = await this.engineClient.call('tellActive', keys) || []
-              let downloadSpeed = 0
-              let uploadSpeed = 0
-              const tasks = data.map(it => {
-                const tl = Number(it.totalLength || 0)
-                const cl = Number(it.completedLength || 0)
-                const ds = Number(it.downloadSpeed || 0)
-                const us = Number(it.uploadSpeed || 0)
-                const percent = tl > 0 ? Math.floor((cl / tl) * 100) : 0
-                const name = it.files && it.files[0] && it.files[0].path ? it.files[0].path.split('/').pop() : ''
-                downloadSpeed += ds
-                uploadSpeed += us
-                return { gid: it.gid, status: it.status, total: tl, completed: cl, speed: ds, percent, name }
-              })
+              const data = await this._getExtensionTasks()
               res.writeHead(200, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ downloadSpeed, uploadSpeed, totalSpeed: downloadSpeed, tasks }))
+              res.end(JSON.stringify(data))
             } catch (err) {
               res.writeHead(500, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({ downloadSpeed: 0, uploadSpeed: 0, totalSpeed: 0, tasks: [] }))
@@ -578,172 +740,14 @@ export default class Application extends EventEmitter {
           req.on('end', async () => {
             try {
               const payload = body ? JSON.parse(body) : {}
-              const { url, referer, headers, suggestedFilename } = payload
-              const downloadUrl = `${url || ''}`.trim()
-              if (!downloadUrl || !/^https?:/i.test(downloadUrl)) {
-                res.writeHead(400, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ ok: false, error: 'invalid url' }))
-                return
-              }
-
-              const historyTasks = []
-              const allTasks = []
-
-              try {
-                // 仅检查活动 / 等待中的任务，避免历史已完成任务（文件可能已删除或已合并）
-                // 阻塞新任务的命名，导致 suggestedFilename 被错误地追加 (1)。
-                // stopped 历史不参与命名冲突判断，由 aria2 在文件系统层处理实际重名。
-                const [active, waiting] = await Promise.all([
-                  this.engineClient.call('tellActive'),
-                  this.engineClient.call('tellWaiting', 0, 1000)
-                ])
-                allTasks.push(...(active || []), ...(waiting || []))
-              } catch (error) {
-                console.error('[Duplicate Check] Error fetching tasks:', error)
-              }
-
-              allTasks.push(...historyTasks)
-
-              const existingNames = new Set()
-              allTasks.forEach(task => {
-                const taskName = task.bittorrent?.info?.name ||
-                                 (task.files?.[0]?.path ? task.files[0].path.split(/[\\/]/).pop() : '')
-                if (taskName) {
-                  existingNames.add(taskName)
-                }
-              })
-
-              let finalOut = suggestedFilename
-              if (finalOut && existingNames.has(finalOut)) {
-                const lastDotIndex = finalOut.lastIndexOf('.')
-                let nameWithoutExt = finalOut
-                let ext = ''
-
-                if (lastDotIndex > 0) {
-                  nameWithoutExt = finalOut.substring(0, lastDotIndex)
-                  ext = finalOut.substring(lastDotIndex)
-                }
-
-                let counter = 1
-                while (existingNames.has(finalOut)) {
-                  finalOut = `${nameWithoutExt} (${counter})${ext}`
-                  counter++
-                }
-                existingNames.add(finalOut)
-              }
-
-              const headerList = []
-              if (Array.isArray(headers)) {
-                headers.forEach((h) => {
-                  if (!h) return
-                  if (typeof h === 'string') {
-                    headerList.push(h)
-                  } else if (h && typeof h === 'object') {
-                    const name = h.name || h.key || h.header
-                    const value = h.value
-                    if (name && typeof value !== 'undefined') {
-                      headerList.push(`${name}: ${value}`)
-                    }
-                  }
-                })
-              } else if (headers && typeof headers === 'object') {
-                Object.keys(headers).forEach((k) => {
-                  const v = headers[k]
-                  if (typeof v !== 'undefined') {
-                    headerList.push(`${k}: ${v}`)
-                  }
-                })
-              } else if (typeof headers === 'string' && headers.trim()) {
-                headerList.push(headers)
-              }
-
-              let finalHeaders = headerList
-              if (!finalHeaders.length) {
-                finalHeaders = ['X-LinkCore-Source: BrowserExtension']
-              } else if (!finalHeaders.some(h => typeof h === 'string' && /^x-linkcore-source\s*:/i.test(h.trim()))) {
-                finalHeaders = [...finalHeaders, 'X-LinkCore-Source: BrowserExtension']
-              }
-
-              const options = { header: finalHeaders }
-
-              const hasRefererInHeaders = finalHeaders.some(h =>
-                typeof h === 'string' && /^referer\s*:/i.test(h.trim())
-              )
-
-              if (referer) {
-                options.referer = referer
-              } else if (!hasRefererInHeaders) {
-                const inferredReferer = inferRefererFromUrl(downloadUrl)
-                if (inferredReferer) {
-                  options.referer = inferredReferer
-                }
-              }
-
-              const silentDownload = !!this.configManager.getUserConfig('extension-silent-download', false)
-
-              const headerMap = {}
-              finalHeaders.forEach((h) => {
-                if (typeof h !== 'string') {
-                  return
-                }
-                const idx = h.indexOf(':')
-                if (idx <= 0) {
-                  return
-                }
-                const name = h.slice(0, idx).trim().toLowerCase()
-                const value = h.slice(idx + 1).trim()
-                if (!name) {
-                  return
-                }
-                if (!headerMap[name]) {
-                  headerMap[name] = value
-                }
-              })
-
-              const userAgent = headerMap['user-agent']
-              const cookie = headerMap.cookie
-              const authorization = headerMap.authorization
-              const taskPayload = {
-                type: ADD_TASK_TYPE.URI,
-                uri: downloadUrl,
-                fromBrowserExtension: true
-              }
-              if (finalOut) {
-                taskPayload.suggestedFilename = finalOut
-              }
-              if (options.referer) {
-                taskPayload.referer = options.referer
-              }
-              if (userAgent) {
-                taskPayload.userAgent = userAgent
-              }
-              if (cookie) {
-                taskPayload.cookie = cookie
-              }
-              if (authorization) {
-                taskPayload.authorization = authorization
-              }
-
-              if (!silentDownload) {
-                try {
-                  if (this.windowManager && typeof this.windowManager.bringToFront === 'function') {
-                    this.windowManager.bringToFront('index')
-                  } else {
-                    this.show()
-                  }
-                } catch (_) {
-                  this.show()
-                }
-                global.application.sendCommandToAll('application:new-task', taskPayload)
+              const result = await this._handleExtensionAdd(payload)
+              if (result.ok) {
                 res.writeHead(200, { 'Content-Type': 'application/json' })
-                res.end(JSON.stringify({ ok: true, dialog: true }))
-                return
+                res.end(JSON.stringify({ ok: true, dialog: result.dialog }))
+              } else {
+                res.writeHead(400, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify(result))
               }
-
-              taskPayload.silent = true
-              global.application.sendCommandToAll('application:new-task', taskPayload)
-              res.writeHead(200, { 'Content-Type': 'application/json' })
-              res.end(JSON.stringify({ ok: true, dialog: false }))
             } catch (err) {
               res.writeHead(500, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({ ok: false }))
@@ -782,8 +786,127 @@ export default class Application extends EventEmitter {
         logger.info(`[LinkCore] App HTTP server listening at http://127.0.0.1:${APP_HTTP_PORT}/`)
       })
       this.httpServer = server
+
+      // WebSocket 通道(浏览器扩展主通道),挂在同一 HTTP server 上
+      this._initExtensionWebSocket(server)
     } catch (e) {
       logger.warn('[LinkCore] Failed to start app HTTP server:', e && e.message ? e.message : e)
+    }
+  }
+
+  // ===== 浏览器扩展 WebSocket 通道 =====
+  // 相比 HTTP + token 通道:
+  //   - 长连接复用,无重复 HTTP 握手与每次请求的 token 认证开销(接管更快)
+  //   - 认证在连接层完成(challenge + 签名),消息不再携带 token,暴露面更小
+  //   - Origin 校验(chrome-extension://)拒绝本机其他进程/网页伪造请求
+  //   - MV3 中活动 WebSocket 使扩展 Service Worker 保持存活,接管链路不被回收
+  _initExtensionWebSocket (server) {
+    try {
+      const { WebSocketServer } = WS
+      const wss = new WebSocketServer({ server, path: '/ws' })
+      this.wsServer = wss
+
+      wss.on('connection', (ws, req) => {
+        // 来源校验:只允许浏览器扩展连接(Chrome: chrome-extension://, Firefox: moz-extension://)
+        const origin = req.headers.origin || ''
+        if (!origin.startsWith('chrome-extension://') && !origin.startsWith('moz-extension://')) {
+          logger.warn('[LinkCore] WebSocket rejected, forbidden origin:', origin || '(none)')
+          ws.close(1008, 'Forbidden origin')
+          return
+        }
+
+        ws.isAuthenticated = false
+
+        // 连接建立即发送挑战码,客户端签名后回传完成连接级认证
+        const challenge = randomBytes(16).toString('hex')
+        const expiresAt = Date.now() + 30000
+        this.challenges.set(challenge, { expiresAt, createdAt: Date.now() })
+        ws.send(JSON.stringify({ type: 'challenge', challenge, expires: 30000 }))
+
+        // 30s 未认证关闭连接,防止未授权连接长期占用
+        ws.authTimer = setTimeout(() => {
+          if (!ws.isAuthenticated) {
+            ws.close(1008, 'Auth timeout')
+          }
+        }, 30000)
+
+        ws.on('message', async (raw) => {
+          let msg
+          try {
+            msg = JSON.parse(raw.toString())
+          } catch (e) {
+            return
+          }
+
+          // 连接级认证
+          if (!ws.isAuthenticated) {
+            if (msg.type === 'authorize') {
+              const verifyResult = this._verifyExtensionAuthorize(msg)
+              if (!verifyResult.ok) {
+                logger.warn('[LinkCore] WebSocket authorization failed:', verifyResult.error)
+                ws.close(1008, verifyResult.error)
+                return
+              }
+              this.challenges.delete(msg.challenge)
+              ws.isAuthenticated = true
+              clearTimeout(ws.authTimer)
+              console.log('[LinkCore] WebSocket extension authorized')
+              ws.send(JSON.stringify({ type: 'authorized' }))
+            }
+            return
+          }
+
+          // 认证后的请求处理
+          try {
+            const result = await this._handleWsRequest(msg)
+            if (result !== undefined) {
+              ws.send(JSON.stringify({ id: msg.id, result }))
+            }
+          } catch (err) {
+            ws.send(JSON.stringify({ id: msg.id, error: err && err.message ? err.message : 'internal error' }))
+          }
+        })
+
+        ws.on('close', () => {
+          clearTimeout(ws.authTimer)
+        })
+      })
+
+      wss.on('error', (err) => {
+        logger.error('[LinkCore] WebSocket server error:', err && err.message ? err.message : err)
+      })
+
+      logger.info(`[LinkCore] WebSocket server ready at ws://127.0.0.1:${APP_HTTP_PORT}/ws`)
+    } catch (e) {
+      logger.warn('[LinkCore] Failed to start WebSocket server:', e && e.message ? e.message : e)
+    }
+  }
+
+  // WebSocket 请求分发(仅认证后的连接会到达这里)
+  async _handleWsRequest (msg) {
+    const { type, params } = msg
+    switch (type) {
+    case 'add': {
+      const result = await this._handleExtensionAdd(params || {})
+      return { ok: result.ok, dialog: result.dialog, error: result.error }
+    }
+    case 'ext-config-get':
+      return this._getExtensionConfig()
+    case 'ext-config-set':
+      this._setExtensionConfig(params || {})
+      return { ok: true }
+    case 'locale':
+      return { locale: this.configManager.getLocale() }
+    case 'version':
+      return { version: app.getVersion() }
+    case 'tasks':
+      return this._getExtensionTasks()
+    case 'health':
+      return { ok: true }
+    case 'ping':
+      return { pong: true }
+    default:
+      return undefined
     }
   }
 
@@ -3780,7 +3903,11 @@ export default class Application extends EventEmitter {
       const numPieces = Number(task.numPieces || 0)
       if (bitfield && numPieces > 0) {
         const pieces = []
-        for (let i = 0; i < bitfield.length; i++) {
+        // bitfield 按字节补零，最后一个 nibble 可能只包含填充位，
+        // 只取真实分片对应的 nibble 数量 ceil(numPieces / 4)，避免
+        // 已完成任务末尾多渲染一个"未下载"的假分片。
+        const nibbleCount = Math.min(Math.ceil(numPieces / 4), bitfield.length)
+        for (let i = 0; i < nibbleCount; i++) {
           const hex = parseInt(bitfield[i], 16)
           // 与 TaskGraphic buildAtom 一致: Math.floor(hex / 4) → 0..3
           pieces.push(Math.floor(hex / 4))

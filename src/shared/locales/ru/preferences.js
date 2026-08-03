@@ -343,7 +343,7 @@ export default {
   'extension-rpc': 'RPC URL, используемый расширением',
   'extension-copy-rpc': 'Копировать RPC URL',
   'extension-tips': 'Установите и включите расширение браузера для автоматического перехвата загрузок',
-  'extension-channel': 'Extension channel URL (App HTTP)',
+  'extension-channel': 'Extension channel URL (WebSocket)',
   'extension-copy-channel': 'Copy channel URL',
   'extension-intercept-all-downloads': 'Перехватывать все загрузки браузера',
   'extension-silent-download': 'Начинать загрузку сразу, не показывая окно добавления задачи',

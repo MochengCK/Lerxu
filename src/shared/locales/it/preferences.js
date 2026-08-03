@@ -282,7 +282,7 @@ export default {
   'downloading-file-suffix': 'Suffix aggiunto durante il download del file',
   'downloading-file-suffix-tips': 'Aggiungi questo suffix ai file durante il download, verrà rimosso automaticamente dopo il completamento',
   'downloading-file-suffix-format-warning': 'Il suffisso di download deve iniziare con ".", verrà aggiunto automaticamente',
-  'extension-channel': 'URL canale estensione (HTTP dell\'app)',
+  'extension-channel': 'URL canale estensione (WebSocket)',
   'extension-copy-channel': 'Copia URL canale',
   
   'user-agent-aria2': 'Aria2',

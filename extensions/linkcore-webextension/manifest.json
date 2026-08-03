@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extensionName__",
-  "version": "1.4.9",
+  "version": "1.6.0",
   "description": "__MSG_extensionDescription__",
   "default_locale": "en",
   "permissions": [
@@ -17,7 +17,11 @@
     "http://127.0.0.1/*",
     "http://127.0.0.1:16900/*",
     "http://localhost/*",
-    "http://localhost:16900/*"
+    "http://localhost:16900/*",
+    "ws://127.0.0.1/*",
+    "ws://127.0.0.1:16900/*",
+    "ws://localhost/*",
+    "ws://localhost:16900/*"
   ],
   "background": {
     "service_worker": "background.js"

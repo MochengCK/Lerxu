@@ -338,7 +338,7 @@ export default {
   'extension-rpc': '확장 프로그램에서 사용하는 RPC URL',
   'extension-copy-rpc': 'RPC URL 복사',
   'extension-tips': '브라우저 확장 프로그램을 설치하고 활성화하면 다운로드를 자동으로 가로챕니다',
-  'extension-channel': '확장 프로그램 채널 URL (앱 HTTP)',
+  'extension-channel': '확장 프로그램 채널 URL (WebSocket)',
   'extension-copy-channel': '채널 URL 복사',
   'extension-intercept-all-downloads': '브라우저의 모든 다운로드 가로채기',
   'extension-silent-download': '작업 추가 창을 표시하지 않고 바로 다운로드 시작',

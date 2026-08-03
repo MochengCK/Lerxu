@@ -682,6 +682,12 @@
           '.controls{position:fixed;top:170px;left:12px;right:12px;display:flex;justify-content:flex-end;gap:8px;padding:8px 0;background-color:VAR_BODY_BG;pointer-events:none;z-index:1000;}',
           '.controls-left{display:flex;pointer-events:auto;}',
           '.controls-left .controls-btn{position:relative;}',
+          // connToggle 与 pinBtn 视觉上组成一个药丸按钮组（pinBtn 以负 margin 叠在
+          // connToggle 下方）。若只给 connToggle 自身加 hover，悬停到 pinBtn 露出的
+          // 右半部分时不会高亮，出现"只有一边高亮"。改为对 .controls-left 整组 hover：
+          // 任意一侧悬停时两侧同时高亮，保持整体一致。
+          '.controls-left:hover .controls-btn{background-color:VAR_CONTROLS_ITEM_HOVER_BG;}',
+          '.controls-left:hover #pinBtn{background-color:VAR_CONTROLS_ITEM_HOVER_BG;}',
           '.pieces-toggle-group{display:none;background-color:VAR_CONTROLS_BG;border-radius:18px;box-shadow:0 2px 8px rgba(0,0,0,0.15);border:1px solid VAR_CONTROLS_BORDER;overflow:hidden;position:relative;pointer-events:auto;-webkit-app-region:no-drag;}',
           '.pieces-toggle-indicator{position:absolute;height:32px;top:2px;left:0;width:0;background-color:VAR_PRIMARY_COLOR;border-radius:16px;transition:transform 0.25s cubic-bezier(0.4,0,0.2,1),width 0.25s ease;z-index:0;}',
           '.pieces-toggle-tab{border:none;box-shadow:none;margin:0;background-color:transparent;height:36px;padding:0 12px 0 8px;font-size:12px;color:VAR_CONTROLS_ITEM_COLOR;cursor:pointer;position:relative;z-index:1;transition:color 0.2s ease;white-space:nowrap;}',
@@ -1109,7 +1115,7 @@
           '  const primaryColor = payload.primaryColor || "#1a7fe0";',
           '  const pieceColors = payload.pieceColors || ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#39d353"];',
           '  if (styleEl) {',
-          '    styleEl.textContent = ".title-btn:hover{background-color:" + titleBtnHoverBg + ";}.controls-btn{color:" + controlsItemColor + "!important;background-color:" + controlsBg + "!important;}.controls-btn:hover:not(:disabled){background-color:" + controlsItemHoverBg + "!important;}.pause-resume-group .controls-btn{background-color:transparent!important;}.pause-resume-group .controls-btn:hover:not(:disabled){background-color:transparent!important;color:" + primaryColor + "!important;}.pieces-toggle-tab{color:" + controlsItemColor + "!important;}.pieces-toggle-group .pieces-toggle-tab{background-color:transparent!important;}.pieces-toggle-tab:hover:not(.active){color:" + primaryColor + "!important;}.pieces-toggle-indicator{background-color:" + primaryColor + "!important;}#pinBtn:hover{background-color:" + controlsItemHoverBg + "!important;}#connToggle:hover:not(:disabled) ~ #pinBtn{background-color:" + controlsItemHoverBg + "!important;}.controls-btn.active .icon-pin-svg{color:" + primaryColor + "!important;}.piece.s0{background-color:" + pieceColors[0] + "!important;}.piece.s1{background-color:" + pieceColors[1] + "!important;}.piece.s2{background-color:" + pieceColors[2] + "!important;}.piece.s3{background-color:" + pieceColors[3] + "!important;}.piece.s4{background-color:" + pieceColors[4] + "!important;}";',
+          '    styleEl.textContent = ".title-btn:hover{background-color:" + titleBtnHoverBg + ";}.controls-btn{color:" + controlsItemColor + "!important;background-color:" + controlsBg + "!important;}.controls-btn:hover:not(:disabled){background-color:" + controlsItemHoverBg + "!important;}.pause-resume-group .controls-btn{background-color:transparent!important;}.pause-resume-group .controls-btn:hover:not(:disabled){background-color:transparent!important;color:" + primaryColor + "!important;}.pieces-toggle-tab{color:" + controlsItemColor + "!important;}.pieces-toggle-group .pieces-toggle-tab{background-color:transparent!important;}.pieces-toggle-tab:hover:not(.active){color:" + primaryColor + "!important;}.pieces-toggle-indicator{background-color:" + primaryColor + "!important;}.controls-left:hover .controls-btn{background-color:" + controlsItemHoverBg + "!important;}.controls-left:hover #pinBtn{background-color:" + controlsItemHoverBg + "!important;}.controls-btn.active .icon-pin-svg{color:" + primaryColor + "!important;}.piece.s0{background-color:" + pieceColors[0] + "!important;}.piece.s1{background-color:" + pieceColors[1] + "!important;}.piece.s2{background-color:" + pieceColors[2] + "!important;}.piece.s3{background-color:" + pieceColors[3] + "!important;}.piece.s4{background-color:" + pieceColors[4] + "!important;}";',
           '  }',
           '  const indicatorBg = payload.indicatorBg || "#e8e8e8";',
           '  if (pauseResumeIndicator) {',
@@ -1480,7 +1486,11 @@
         const numPieces = Number(t.numPieces || 0)
         if (bitfield && numPieces > 0) {
           const pieces = []
-          for (let i = 0; i < bitfield.length; i++) {
+          // bitfield 按字节补零，最后一个 nibble 可能只包含填充位，
+          // 只取真实分片对应的 nibble 数量 ceil(numPieces / 4)，避免
+          // 已完成任务末尾多渲染一个"未下载"的假分片。
+          const nibbleCount = Math.min(Math.ceil(numPieces / 4), bitfield.length)
+          for (let i = 0; i < nibbleCount; i++) {
             const hex = parseInt(bitfield[i], 16)
             // 与 TaskGraphic buildAtom 一致: Math.floor(hex / 4) → 0..3
             // hex 0-3 → s0, 4-7 → s1, 8-11 → s2, 12-15 → s3

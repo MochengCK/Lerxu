@@ -342,7 +342,7 @@ export default {
   'extension-rpc': 'URL RPC usada pela extensão',
   'extension-copy-rpc': 'Copiar URL RPC',
   'extension-tips': 'Instale e ative a extensão do navegador para interceptar downloads automaticamente',
-  'extension-channel': 'URL do canal da extensão (HTTP do app)',
+  'extension-channel': 'URL do canal da extensão (WebSocket)',
   'extension-copy-channel': 'Copiar URL do canal',
   'extension-intercept-all-downloads': 'Interceptar todos os downloads do navegador',
   'extension-silent-download': 'Iniciar o download diretamente sem mostrar a janela de nova tarefa',

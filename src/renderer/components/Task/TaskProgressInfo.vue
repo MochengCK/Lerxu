@@ -292,7 +292,15 @@
         const taskStatus = `${task.status || ''}`
         if (taskStatus === TASK_STATUS.ACTIVE) {
           const statusHint = `${task.statusHint || ''}`.trim()
-          if (hintConnectingHints.includes(statusHint)) {
+          // 浏览器扩展传入的任务在连接建立阶段可能被引擎标记为
+          // "等待可用连接"（task.waiting-download-data），此时下载实际
+          // 已在进行。若在卡片上展示该提示，任务会一直卡在"等待连接"
+          // 状态（流式下载 totalLength 为 0 时尤其明显）。active 状态
+          // 仅保留有明确进展意义的提示（获取元数据/搜索源）。
+          if (
+            hintConnectingHints.includes(statusHint) &&
+            statusHint !== 'task.waiting-download-data'
+          ) {
             return this.$t(statusHint)
           }
           return ''

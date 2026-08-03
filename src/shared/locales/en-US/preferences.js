@@ -351,7 +351,7 @@ export default {
   'extension-copy-rpc': 'Copy RPC URL',
   'extension-tips': 'Install and enable the browser extension to intercept downloads automatically'
   ,
-  'extension-channel': 'Extension channel URL (App HTTP)',
+  'extension-channel': 'Extension channel URL (WebSocket)',
   'extension-copy-channel': 'Copy channel URL',
   'extension-intercept-all-downloads': 'Intercept all browser downloads',
   'extension-silent-download': 'Start download directly without showing add task dialog',

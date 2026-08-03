@@ -1914,7 +1914,7 @@
         }
       },
       appChannelUrl () {
-        return `http://127.0.0.1:${APP_HTTP_PORT}`
+        return `ws://127.0.0.1:${APP_HTTP_PORT}/ws`
       },
       ...mapState('preference', {
         config: state => state.config,

@@ -35,6 +35,10 @@
         type: String,
         default: ''
       },
+      numPieces: {
+        type: Number,
+        default: 0
+      },
       downloadSpeed: {
         type: Number,
         default: 0
@@ -66,6 +70,14 @@
     },
     computed: {
       len () {
+        // bitfield 按字节补零，每个十六进制字符（nibble）对应 4 个分片。
+        // 当 numPieces 不是 4 的倍数时，最后一个 nibble 可能只包含填充位
+        // （值为 0），直接按 bitfield.length 渲染会多出一个"未下载"的假分片，
+        // 即使任务已全部下载完成。按真实分片数 ceil(numPieces / 4) 截断。
+        const total = Number(this.numPieces)
+        if (total > 0) {
+          return Math.min(Math.ceil(total / 4), this.bitfield.length)
+        }
         return this.bitfield.length
       },
       atomWG () {

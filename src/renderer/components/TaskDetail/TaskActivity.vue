@@ -18,6 +18,7 @@
           <mo-task-graphic
             :outerWidth="graphicWidth"
             :bitfield="task.bitfield"
+            :numPieces="Number(task.numPieces)"
             :downloadSpeed="Number(task.downloadSpeed)"
             :pieceLength="Number(task.pieceLength)"
             v-if="graphicWidth > 0"
