@@ -157,7 +157,7 @@ export LD_LIBRARY_PATH="$DIR/resources/engine/lib:$DIR/resources/lib:\${LD_LIBRA
   if (fs.existsSync(engineDir)) {
     const files = fs.readdirSync(engineDir)
     files.forEach((file) => {
-      if (file.startsWith('aria2c') || file.startsWith('fluxcore')) {
+      if (file.startsWith('aria2c') || file.startsWith('xfercore')) {
         const target = join(engineDir, file)
         try {
           fs.chmodSync(target, 0o755)

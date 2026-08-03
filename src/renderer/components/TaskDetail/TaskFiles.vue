@@ -1,10 +1,9 @@
 <template>
-  <div class="mo-task-files" v-if="files">
+  <div :class="['mo-task-files', { 'is-detail-mode': mode === 'DETAIL' }]" v-if="files">
     <div class="mo-table-wrapper">
       <el-table
-        stripe
         ref="torrentTable"
-        :height="height"
+        :height="computedTableHeight"
         :data="files"
         tooltip-effect="dark"
         style="width: 100%"
@@ -50,14 +49,8 @@
         </el-table-column>
       </el-table>
     </div>
-    <el-row class="file-filters" :gutter="12">
-      <el-col
-        class="quick-filters"
-        :xs="24"
-        :sm="8"
-        :md="8"
-        :lg="8"
-      >
+    <div class="file-filters">
+      <div class="quick-filters">
         <div class="file-type-slider" role="group">
           <div
             class="slider-indicator"
@@ -72,20 +65,22 @@
             :class="{ active: activeType === item.key }"
             @click="toggleTypeSelection(item.key)"
           >
-            <mo-icon :name="item.icon" width="12" height="12" />
+            <mo-icon :name="item.icon" width="14" height="14" />
           </button>
         </div>
-      </el-col>
-      <el-col
-        class="files-summary"
-        :xs="24"
-        :sm="16"
-        :md="16"
-        :lg="16"
-      >
+        <button
+          v-if="showConfirm && mode === 'DETAIL'"
+          type="button"
+          class="slider-confirm-btn"
+          @click="confirmSelection"
+        >
+          {{ $t('app.save') }}
+        </button>
+      </div>
+      <div class="files-summary">
         {{ $t('task.selected-files-sum', { selectedFilesCount, selectedFilesTotalSize }) }}
-      </el-col>
-    </el-row>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -121,11 +116,15 @@
         type: String,
         default: 'ADD',
         validator: function (value) {
-          return ['ADD', 'DETAIL'].indexOf(value) !== -1
+          return ['ADD', 'DETAIL'].includes(value)
         }
       },
       height: {
         type: [Number, String]
+      },
+      tableHeight: {
+        type: [Number, String],
+        default: '100%'
       },
       files: {
         type: Array,
@@ -138,6 +137,8 @@
       return {
         selectedFiles: [],
         activeType: 'all',
+        showConfirm: false,
+        initialSelectedFileIndex: null,
         fileTypes: [
           { key: 'all', icon: 'select-all' },
           { key: 'video', icon: 'video', filter: filterVideoFiles },
@@ -148,6 +149,12 @@
       }
     },
     computed: {
+      computedTableHeight () {
+        if (this.height !== undefined && this.height !== null) {
+          return this.height
+        }
+        return this.mode === 'DETAIL' ? this.tableHeight : undefined
+      },
       selectedFilesCount () {
         return this.selectedFiles.length
       },
@@ -184,9 +191,21 @@
       }
     },
     watch: {
-      selectedFileIndex () {
-        const { selectedFileIndex } = this
-        this.$emit('selection-change', selectedFileIndex)
+      selectedFileIndex (val) {
+        if (this.initialSelectedFileIndex === null) {
+          this.initialSelectedFileIndex = val
+          this.showConfirm = false
+        } else {
+          this.showConfirm = val !== this.initialSelectedFileIndex
+        }
+        this.$emit('selection-change', val)
+      },
+      files: {
+        immediate: true,
+        handler () {
+          this.initialSelectedFileIndex = null
+          this.showConfirm = false
+        }
       }
     },
     methods: {
@@ -203,6 +222,10 @@
         }
         this.$refs.torrentTable.clearSelection()
         this.activeType = 'all'
+        this.$nextTick(() => {
+          this.initialSelectedFileIndex = this.selectedFileIndex
+          this.showConfirm = false
+        })
       },
       toggleSelection (rows) {
         if (isEmpty(rows)) {
@@ -218,14 +241,22 @@
         this.activeType = type
         if (type === 'all') {
           this.toggleSelection(this.files)
-          return
+        } else {
+          const item = this.fileTypes.find(t => t.key === type)
+          if (!item) {
+            return
+          }
+          const filtered = item.filter(this.files)
+          this.toggleSelection(filtered)
         }
-        const item = this.fileTypes.find(t => t.key === type)
-        if (!item) {
-          return
-        }
-        const filtered = item.filter(this.files)
-        this.toggleSelection(filtered)
+      },
+      confirmSelection () {
+        this.initialSelectedFileIndex = this.selectedFileIndex
+        this.showConfirm = false
+        this.$emit('confirm-selection')
+      },
+      hideConfirm () {
+        this.showConfirm = false
       },
       handleRowDbClick (row, column, event) {
         this.$refs.torrentTable.toggleRowSelection(row)
@@ -238,10 +269,25 @@
 </script>
 
 <style lang="scss">
+@import '~@/components/Theme/Variables';
+@import '~@/components/Theme/Light/Variables';
+
 .mo-task-files {
   .mo-table-wrapper {
-    border: 1px solid #dcdfe6;
+    border: 1px solid var(--lc-border-base);
     border-radius: 8px;
+  }
+
+  &.is-detail-mode {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+
+    .mo-table-wrapper {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
   }
   .el-table {
     border-radius: 8px;
@@ -249,19 +295,24 @@
     &::before, &::after {
       display: none !important;
     }
+    th.gutter, colgroup col[name="gutter"] {
+      display: none !important;
+      width: 0 !important;
+    }
     .el-table__header-wrapper {
       th.el-table__cell {
         border-bottom: none !important;
-        padding: 8px 0;
+        padding: 4px 0;
         .cell {
           padding: 0 10px;
-          font-size: $--font-size-base;
+          font-size: 12px;
           line-height: 1.5;
         }
       }
     }
     .el-table__body-wrapper {
-      overflow: auto !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
       tr {
         position: relative;
         &:not(:last-child)::after {
@@ -271,7 +322,7 @@
           right: 8px;
           bottom: 0;
           height: 1px;
-          background: #ebeef5;
+          background: var(--lc-border-light);
         }
       }
       td.el-table__cell {
@@ -287,24 +338,37 @@
   }
 }
 .file-filters {
-  margin-top: 0.75rem;
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0;
   .quick-filters {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+
     .file-type-slider {
       position: relative;
+      z-index: 2;
       display: inline-flex;
       align-items: center;
-      padding: 3px;
-      background: rgba(0, 0, 0, 0.05);
-      border-radius: 10px;
+      padding: 2px;
+      background: transparent !important;
+      border: 1px solid var(--lc-border-base) !important;
+      border-radius: 8px;
+      overflow: hidden;
+      box-sizing: border-box;
 
       .slider-indicator {
         position: absolute;
-        top: 3px;
-        left: 3px;
-        width: calc(20% - 1.2px);
-        height: calc(100% - 6px);
-        background: $--button-default-background-color;
-        border-radius: 7px;
+        top: 2px;
+        left: 2px;
+        width: calc(20% - 0.8px);
+        height: calc(100% - 4px);
+        background: rgba(0, 0, 0, 0.08);
+        border-radius: 6px;
         transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1),
                     opacity 0.2s ease;
         z-index: 0;
@@ -320,14 +384,14 @@
         z-index: 1;
         flex: 1 0 auto;
         min-width: 0;
-        height: 24px;
-        padding: 0 8px;
-        background: transparent;
-        border: none;
-        border-radius: 7px;
+        height: 26px;
+        padding: 0 7px;
+        background: transparent !important;
+        border: none !important;
+        border-radius: 6px;
         cursor: pointer;
-        outline: none;
-        box-shadow: none;
+        outline: none !important;
+        box-shadow: none !important;
         color: $--color-text-secondary;
         display: inline-flex;
         align-items: center;
@@ -343,22 +407,60 @@
         }
       }
     }
+
+    .slider-confirm-btn {
+      position: relative;
+      z-index: 1;
+      flex: 0 0 auto;
+      height: 30px;
+      padding: 0 12px;
+      margin-left: 6px;
+      background: transparent !important;
+      border: 1px solid var(--lc-border-base) !important;
+      border-radius: 8px;
+      cursor: pointer;
+      outline: none !important;
+      box-shadow: none !important;
+      color: #000000;
+      font-size: 12px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      box-sizing: border-box;
+      transition: background 0.2s ease, color 0.2s ease;
+
+      &:hover {
+        background: rgba(0, 0, 0, 0.05) !important;
+        color: #000000;
+      }
+    }
   }
   .files-summary {
-    text-align: right;
-    font-size: $--font-size-base;
+    display: inline-flex;
+    align-items: center;
+    height: 30px;
+    font-size: 12px;
     color: $--color-text-regular;
-    line-height: 1.75rem;
+    padding: 0 12px;
+    background: transparent !important;
+    border: 1px solid var(--lc-border-base) !important;
+    border-radius: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    box-sizing: border-box;
   }
 }
 
 .theme-dark {
   .file-filters .quick-filters {
     .file-type-slider {
-      background: rgba(255, 255, 255, 0.06);
+      background: transparent !important;
+      border-color: var(--lc-border-base) !important;
 
       .slider-indicator {
-        background: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.12);
       }
 
       .slider-btn {
@@ -373,11 +475,97 @@
         }
       }
     }
+
+    .slider-confirm-btn {
+      background: transparent !important;
+      border-color: var(--lc-border-base) !important;
+      color: #ffffff;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.08) !important;
+        color: #ffffff;
+      }
+    }
+  }
+  .file-filters .files-summary {
+    background: transparent !important;
+    border-color: var(--lc-border-base) !important;
+    color: rgba(255, 255, 255, 0.75);
   }
 }
 
 .theme-dark .mo-task-files .el-table__body-wrapper tr:not(:last-child)::after {
-  background: #4c4d4f;
+  background: var(--lc-border-base);
+}
+
+.theme-dark .mo-task-files .mo-table-wrapper {
+  border-color: var(--lc-border-base) !important;
+  background-color: var(--lc-task-item-bg) !important;
+}
+
+.theme-dark .mo-task-files .el-table {
+  background-color: transparent !important;
+  color: var(--lc-text-regular) !important;
+
+  .el-table__inner-wrapper {
+    background-color: transparent !important;
+  }
+
+  .el-table__header-wrapper,
+  .el-table__body-wrapper,
+  .el-table__footer-wrapper {
+    background-color: transparent !important;
+  }
+
+  .el-table__header,
+  .el-table__body,
+  .el-table__footer {
+    background-color: transparent !important;
+  }
+
+  .el-table__row {
+    background-color: transparent !important;
+  }
+
+  thead th,
+  thead th.el-table__cell,
+  thead th.is-leaf,
+  thead th.el-table__cell.is-leaf,
+  th.el-table__cell {
+    background-color: transparent !important;
+    color: var(--lc-text-secondary) !important;
+    border-bottom: none !important;
+  }
+
+  // 悬停高亮：强制覆盖 Element UI 默认白色背景
+  .el-table__body tr:hover > td,
+  .el-table__body tr:hover > td.el-table__cell,
+  .el-table--enable-row-hover .el-table__body tr:hover > td {
+    background-color: var(--lc-table-hover-bg) !important;
+  }
+
+  td.el-table__cell {
+    background-color: transparent !important;
+    color: var(--lc-text-regular) !important;
+    border-bottom: none;
+  }
+
+  .el-table__empty-block {
+    background-color: transparent !important;
+  }
+
+  .el-table__empty-text {
+    color: var(--lc-text-placeholder) !important;
+  }
+
+  .el-checkbox__inner {
+    background-color: var(--lc-bg-input) !important;
+    border-color: var(--lc-border-base) !important;
+  }
+
+  &::before, &::after {
+    display: none !important;
+  }
 }
 
 .mo-task-files .task-file-extension .cell {

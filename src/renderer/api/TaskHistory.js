@@ -6,28 +6,44 @@ const taskHistoryStore = new Store({
   name: 'taskHistory',
   cwd: process.env.NODE_ENV === 'development' ? './dev-config' : undefined,
   defaults: {
-    tasks: []
+    tasks: [],
+    deletedGids: []
   }
 })
 
 const MAX_HISTORY_ITEMS = 100// 最大历史记录数量
 
 class TaskHistory {
+  /**
+   * 已删除任务的 gid 黑名单（持久化）。
+   * 删除任务时记入，防止 aria2 在下一次 tellStopped 上报时任务复活。
+   */
+  getDeletedGids () {
+    const raw = taskHistoryStore.get('deletedGids', [])
+    return Array.isArray(raw) ? raw : []
+  }
+
+  _deletedGidSet () {
+    return new Set(this.getDeletedGids().map(gid => `${gid}`))
+  }
+
   getAllHistory () {
     const raw = taskHistoryStore.get('tasks', [])
     const list = Array.isArray(raw) ? raw : []
+    const deleted = this._deletedGidSet()
     const cleaned = list.filter(t => {
       if (!t || !t.gid || t.deletedAt) return false
+      if (deleted.has(`${t.gid}`)) return false
       const status = `${t.status || ''}`
       return status !== TASK_STATUS.REMOVED
     })
     // 如果历史记录过多，只保留最新的
     if (cleaned.length > MAX_HISTORY_ITEMS) {
-      // 按 savedAt 或 createdAt 排序，保留最新的
+      // 按 savedAt（无则 createdAt）排序，新的在前，保留最新的
       cleaned.sort((a, b) => {
-        const tsA = parseInt(b.savedAt) || parseInt(b.createdAt) || 0
-        const tsB = parseInt(a.savedAt) || parseInt(a.createdAt) || 0
-        return tsA - tsB
+        const tsA = parseInt(a.savedAt) || parseInt(a.createdAt) || 0
+        const tsB = parseInt(b.savedAt) || parseInt(b.createdAt) || 0
+        return tsB - tsA
       })
       const limited = cleaned.slice(0, MAX_HISTORY_ITEMS)
       try {
@@ -74,9 +90,14 @@ class TaskHistory {
     }
 
     const currentHistory = this.getAllHistory()
+    const deleted = this._deletedGidSet()
     const updatedHistory = [...currentHistory]
     stoppedTasks.forEach(task => {
       if (!task || !task.gid) {
+        return
+      }
+      // 用户已删除的任务不再重新写入历史记录（防止删除后复活）
+      if (deleted.has(`${task.gid}`)) {
         return
       }
       const idx = updatedHistory.findIndex(t => t && t.gid === task.gid)
@@ -113,6 +134,10 @@ class TaskHistory {
 
   updateTask (gid, patch = {}, fallbackTask = null) {
     if (!gid) {
+      return
+    }
+    // 已删除的任务不再接收状态更新（防止复活）
+    if (this._deletedGidSet().has(`${gid}`)) {
       return
     }
 
@@ -201,6 +226,10 @@ class TaskHistory {
     if (!canonicalGid) {
       return
     }
+    // 已删除的任务不再合并（防止复活）
+    if (this._deletedGidSet().has(`${canonicalGid}`)) {
+      return
+    }
     const raw = taskHistoryStore.get('tasks', [])
     const currentHistory = Array.isArray(raw) ? raw : []
     const members = new Set((memberGids || []).map(gid => `${gid}`))
@@ -221,7 +250,8 @@ class TaskHistory {
   }
 
   /**
-   * 从历史记录中移除任务
+   * 从历史记录中移除任务，并记入删除黑名单。
+   * 黑名单用于阻止 aria2 在后续轮询（tellStopped）中重新上报该任务。
    * @param {string} gid - 任务的GID
    */
   removeTask (gid) {
@@ -233,6 +263,10 @@ class TaskHistory {
     const currentHistory = Array.isArray(raw) ? raw : []
     const next = currentHistory.filter(task => task && `${task.gid}` !== `${gid}`)
     taskHistoryStore.set('tasks', next)
+
+    const deleted = this._deletedGidSet()
+    deleted.add(`${gid}`)
+    taskHistoryStore.set('deletedGids', Array.from(deleted))
   }
 
   /**
@@ -240,6 +274,7 @@ class TaskHistory {
    */
   clearHistory () {
     taskHistoryStore.set('tasks', [])
+    taskHistoryStore.set('deletedGids', [])
   }
 }
 

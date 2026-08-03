@@ -3,7 +3,7 @@ import { app } from 'electron'
 import is from 'electron-is'
 
 import ExceptionHandler from './core/ExceptionHandler'
-import logger from './core/Logger'
+import logger from './core/LogManager'
 import Application from './Application'
 import {
   splitArgv,
@@ -57,7 +57,7 @@ export default class Launcher extends EventEmitter {
       this.handleAppLaunchArgv(process.argv)
     }
 
-    logger.info('[Motrix] openedAtLogin:', this.openedAtLogin)
+    logger.info('[LinkCore] openedAtLogin:', this.openedAtLogin)
 
     this.handleAppEvents()
   }
@@ -88,7 +88,7 @@ export default class Launcher extends EventEmitter {
       return
     }
     app.on('open-url', (event, url) => {
-      logger.info(`[Motrix] open-url: ${url}`)
+      logger.info(`[LinkCore] open-url: ${url}`)
       event.preventDefault()
       this.url = url
       this.sendUrlToApplication()
@@ -105,7 +105,7 @@ export default class Launcher extends EventEmitter {
       return
     }
     app.on('open-file', (event, path) => {
-      logger.info(`[Motrix] open-file: ${path}`)
+      logger.info(`[LinkCore] open-file: ${path}`)
       event.preventDefault()
       this.file = path
       this.sendFileToApplication()
@@ -118,12 +118,12 @@ export default class Launcher extends EventEmitter {
    * @param {array} argv
    */
   handleAppLaunchArgv (argv) {
-    logger.info('[Motrix] handleAppLaunchArgv:', argv)
+    logger.info('[LinkCore] handleAppLaunchArgv:', argv)
 
     // args: array, extra: map
     const { args, extra } = splitArgv(argv)
-    logger.info('[Motrix] split argv args:', args)
-    logger.info('[Motrix] split argv extra:', extra)
+    logger.info('[LinkCore] split argv args:', args)
+    logger.info('[LinkCore] split argv extra:', extra)
     if (extra['--opened-at-login'] === '1') {
       this.openedAtLogin = true
     }
@@ -173,23 +173,33 @@ export default class Launcher extends EventEmitter {
 
     app.on('activate', () => {
       if (global.application) {
-        logger.info('[Motrix] activate')
-        global.application.showPage('index')
+        logger.info('[LinkCore] activate')
+        // init 失败后 windowManager 可能未初始化，尝试重新 init
+        if (!global.application.windowManager) {
+          global.application.retryStart('index')
+        } else {
+          global.application.showPage('index')
+        }
       }
     })
   }
 
   handleAppWillQuit () {
-    app.on('will-quit', () => {
-      logger.info('[Motrix] will-quit')
-      // will-quit 是同步事件，不能 await。但 engine.stop() 内部会立即
-      // 同步发送 SIGTERM（Promise 仅用于等待 close 事件），所以即使
-      // 不 await 也能保证信号已发出。此处作为 quit() 路径失败的兜底，
-      // 确保用户通过 Cmd+Q / 系统关机等路径退出时引擎也能被清理。
-      if (global.application && global.application.engine) {
-        logger.info('[Motrix] will-quit.engine.stop')
-        global.application.engine.stop()
+    app.on('will-quit', (event) => {
+      logger.info('[LinkCore] will-quit')
+      // 如果 Application.quit() 已经处理了引擎关闭（engine.instance 为 null），
+      // 则直接退出，不重复操作。
+      if (!global.application || !global.application.engine || !global.application.engine.instance) {
+        return
       }
+
+      // will-quit 可以为异步：preventDefault 后在 stopEngine 完成再 exit。
+      // 这样引擎能收到 SIGTERM、保存 session，不会变成孤儿进程。
+      event.preventDefault()
+      logger.info('[LinkCore] will-quit.engine.stop (async)')
+      global.application.stopEngine().finally(() => {
+        app.exit(0)
+      })
     })
   }
 }

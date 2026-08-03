@@ -19,7 +19,7 @@
     "**/node_modules/node-fetch/**/*",
     "**/node_modules/ws/**/*"
   ],
-  "compression": "normal",
+  "compression": "maximum",
   "directories": {
     "output": "release"
   },
@@ -30,10 +30,7 @@
     }
   ],
   "files": [
-    {
-      "from": "dist/electron",
-      "to": "dist/electron"
-    },
+    "dist/electron/**/*",
     "package.json",
     "extensions/**/*",
     "app-update.yml",
@@ -47,15 +44,25 @@
     "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
     "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
     "!**/{npm-debug.log,.yarn-integrity,.yarn-metadata.json}",
+    "!XferCore/**/*",
+    "!.workbuddy/**/*",
+    "!Python/**/*",
+    "!src/**/*",
+    "!doc/**/*",
+    "!test/**/*",
+    "!.electron-vue/**/*",
+    "!screenshots/**/*",
+    "!scripts/**/*",
+    "!build/**/*",
+    "!.github/**/*",
+    "!release/**/*",
+    "!static/**/*",
     "!ffmpeg-8.0.1-essentials_build",
     "!ffmpeg-8.0.1-essentials_build/**/*",
     "!ffmpeg-release-amd64-static.tar.xz",
     "!ffmpeg-*-static",
     "!ffmpeg-*-static/**/*",
-    "!screenshots/**/*",
-    "!scripts/**/*",
-    "!build/**/*",
-    "!.github/**/*",
+    "!jsconfig.json",
     "!*.md",
     "!*.yml",
     "!*.yaml"
@@ -78,6 +85,12 @@
       "name": "Thunder Protocol",
       "schemes": [
         "thunder"
+      ]
+    },
+    {
+      "name": "ED2K Protocol",
+      "schemes": [
+        "ed2k"
       ]
     }
   ],
@@ -177,7 +190,8 @@
     "icon": "./static",
     "mimeTypes": [
       "application/x-bittorrent",
-      "x-scheme-handler/magnet"
+      "x-scheme-handler/magnet",
+      "x-scheme-handler/ed2k"
     ],
     "target": [
       {

@@ -90,6 +90,41 @@
         {{ task.bittorrent.comment }}
       </div>
     </el-form-item>
+
+    <el-divider v-if="isEd2k">
+      <i class="el-icon-connection"></i>
+      {{ $t('task.task-ed2k-info') }}
+    </el-divider>
+
+    <el-form-item :label="`${$t('task.task-ed2k-file-hash')}: `" v-if="isEd2k">
+      <div class="form-static-value">
+        {{ ed2kFileHash }}
+        <el-tooltip
+          effect="dark"
+          :content="$t('task.copy-link')"
+          placement="top"
+          :open-delay="500"
+        >
+          <i class="copy-link" @click="handleCopyClick">
+            <mo-icon
+              name="link"
+              width="12"
+              height="12"
+            />
+          </i>
+        </el-tooltip>
+      </div>
+    </el-form-item>
+    <el-form-item :label="`${$t('task.task-piece-length')}: `" v-if="isEd2k">
+      <div class="form-static-value">
+        {{ task.pieceLength | bytesToSize }}
+      </div>
+    </el-form-item>
+    <el-form-item :label="`${$t('task.task-num-pieces')}: `" v-if="isEd2k">
+      <div class="form-static-value">
+        {{ task.numPieces }}
+      </div>
+    </el-form-item>
   </el-form>
 </template>
 
@@ -104,6 +139,8 @@
     checkTaskIsSeeder,
     getTaskName,
     getTaskUri,
+    isEd2kTask,
+    getEd2kFileHash,
     localeDateTimeFormat
   } from '@shared/utils'
   import { APP_THEME, TASK_STATUS } from '@shared/constants'
@@ -201,6 +238,12 @@
       isBT () {
         return checkTaskIsBT(this.task)
       },
+      isEd2k () {
+        return isEd2kTask(this.task)
+      },
+      ed2kFileHash () {
+        return getEd2kFileHash(this.task)
+      },
       taskPriority () {
         const gid = this.task && this.task.gid
         const map = this.$store.state.task.taskPriorities || {}
@@ -215,7 +258,12 @@
         return completedStatuses.includes(this.task.status)
       },
       completionTime () {
-        const timestamp = this.task.savedAt || Date.now()
+        // aria2 的 savedAt 是秒级时间戳，历史记录中则是毫秒级，
+        // 需要归一化为毫秒后再构造 Date，否则会渲染成 1970 年
+        let timestamp = this.task.savedAt || Date.now()
+        if (timestamp < 1000000000000) {
+          timestamp *= 1000
+        }
         return new Date(timestamp).toLocaleString()
       }
     },

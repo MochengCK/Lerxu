@@ -47,7 +47,7 @@
     TASK_STATUS
   } from '@shared/constants'
 
-  import DragSelect from '@/components/DragSelect/Index'
+  import DragSelect from '@/components/DragSelect/DragSelect'
   import { getTaskActualPath } from '@/utils/native'
   import { commands } from '@/components/CommandManager/instance'
   import TaskItem from './TaskItem'
@@ -59,6 +59,22 @@
     music: new Set(AUDIO_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
     images: new Set(IMAGE_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
     documents: new Set(DOCUMENT_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, '')))
+  }
+
+  // 将用户配置的修饰键写法归一化为统一 token 列表
+  const normalizeKeystrokeTokens = (str) => {
+    return `${str || ''}`
+      .trim()
+      .toLowerCase()
+      .split(/[-+]/g)
+      .map(s => `${s || ''}`.trim())
+      .filter(Boolean)
+      .map(t => {
+        if (t === 'control') return 'ctrl'
+        if (t === 'command' || t === 'meta') return 'cmd'
+        if (t === 'commandorcontrol' || t === 'cmdorctrl') return 'cmdctrl'
+        return t
+      })
   }
 
   export default {
@@ -119,18 +135,7 @@
         return (v ? `${v}`.toLowerCase() : 'ctrl').trim()
       },
       multiSelectKeystroke () {
-        const raw = `${this.multiSelectModifier || ''}`.trim().toLowerCase()
-        const tokens = raw
-          .split(/[-+]/g)
-          .map(s => `${s || ''}`.trim())
-          .filter(Boolean)
-          .map(t => {
-            if (t === 'control') return 'ctrl'
-            if (t === 'command') return 'cmd'
-            if (t === 'meta') return 'cmd'
-            if (t === 'commandorcontrol' || t === 'cmdorctrl') return 'cmdctrl'
-            return t
-          })
+        const tokens = normalizeKeystrokeTokens(this.multiSelectModifier)
 
         const modifiers = []
         let key = ''
@@ -146,18 +151,7 @@
         return normalized || 'ctrl'
       },
       multiSelectModifiers () {
-        const raw = `${this.multiSelectKeystroke || ''}`.trim().toLowerCase()
-        const tokens = raw
-          .split(/[-+]/g)
-          .map(s => `${s || ''}`.trim())
-          .filter(Boolean)
-          .map(t => {
-            if (t === 'control') return 'ctrl'
-            if (t === 'command') return 'cmd'
-            if (t === 'meta') return 'cmd'
-            if (t === 'commandorcontrol' || t === 'cmdorctrl') return 'cmdctrl'
-            return t
-          })
+        const tokens = normalizeKeystrokeTokens(this.multiSelectKeystroke)
 
         const allowed = new Set(['cmdctrl', 'ctrl', 'cmd', 'shift', 'alt'])
         const uniq = []
@@ -169,10 +163,9 @@
         return uniq.length > 0 ? uniq : ['ctrl']
       },
       isMultiSelectToggleShortcut () {
-        const raw = `${this.multiSelectKeystroke || ''}`.trim().toLowerCase()
-        if (!raw) return false
-        const tokens = raw.split(/[-+]/g).map(s => `${s || ''}`.trim()).filter(Boolean)
-        const allowed = new Set(['cmdctrl', 'ctrl', 'cmd', 'shift', 'alt', 'meta'])
+        const tokens = normalizeKeystrokeTokens(this.multiSelectKeystroke)
+        if (tokens.length === 0) return false
+        const allowed = new Set(['cmdctrl', 'ctrl', 'cmd', 'shift', 'alt'])
         return tokens.some(t => !allowed.has(t))
       }
     },
@@ -507,7 +500,7 @@
 
 <style lang="scss">
 .task-list {
-  padding: 24px 16px 64px 16px;
+  padding: 8px 6px 64px 6px;
   min-height: 100%;
   box-sizing: border-box;
   transition: padding-top 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
@@ -530,14 +523,14 @@
   &.task-list--grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-    grid-auto-rows: 104px;
+    grid-auto-rows: 96px;
     row-gap: 8px; // 行间距与列表视图的margin-bottom保持完全一致
     column-gap: 16px; // 列间距（左右间隔）
 
     .task-item-wrapper {
       margin-bottom: 0;
       z-index: 1; // 确保网格项有合适的层级
-      height: 104px;
+      height: 96px;
 
       // 当有弹窗时提升层级
       &:hover {
@@ -553,16 +546,16 @@
   &.task-item-wrapper--list {
     // 列表视图样式
     position: relative; // 确保背景进度条能正确定位
-    border-radius: 10px; // 与TaskItem的圆角保持一致
-    height: 104px;
-    min-height: 104px;
+    border-radius: 8px; // 与TaskItem的圆角保持一致
+    height: 96px;
+    min-height: 96px;
 
     // 内容层
     & > .task-item {
       position: relative;
       z-index: 1;
-      height: 104px;
-      min-height: 104px;
+      height: 96px;
+      min-height: 96px;
       margin-bottom: 0; // 移除margin，由wrapper控制间距
       box-sizing: border-box; // 确保padding包含在高度内
     }
@@ -570,16 +563,16 @@
 
   &.task-item-wrapper--grid {
     // 网格视图样式 - 主要作为进度条背景容器
-    border-radius: 10px; // 与TaskItem的圆角保持一致
+    border-radius: 8px; // 与TaskItem的圆角保持一致
     overflow: visible; // 改为visible，让弹窗能够显示
     position: relative;
-    height: 100px; // 固定高度，与列表视图一致
+    height: 88px;
 
     // 内容层 - TaskItem会处理自己的样式
     & > .task-item {
       position: relative;
       z-index: 1;
-      height: 100px; // 明确设置高度，不使用100%
+      height: 92px; // 明确设置高度，不使用100%
       box-sizing: border-box;
       margin-bottom: 0; // 覆盖列表视图的margin-bottom
       overflow: visible; // 确保TaskItem内的弹窗能显示

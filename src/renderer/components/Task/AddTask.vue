@@ -2,7 +2,7 @@
   <el-dialog
     custom-class="tab-title-dialog add-task-dialog"
     width="50vw"
-    :visible="visible"
+    :visible.sync="dialogVisible"
     :top="dialogTop"
     :show-close="false"
     :before-close="beforeClose"
@@ -18,20 +18,19 @@
             <i class="el-icon-close"></i>
           </button>
           <div class="add-task-type-floating__bar">
-            <div class="task-type-slider" role="group">
-              <div class="task-type-slider-indicator" :style="taskTypeIndicatorStyle"></div>
-              <el-radio-group :value="taskType" size="mini" @input="handleTaskTypeInput">
-                <el-radio-button label="uri">{{ $t('task.uri-task') }}</el-radio-button>
-                <el-radio-button label="torrent">{{ $t('task.torrent-task') }}</el-radio-button>
-              </el-radio-group>
-            </div>
+            <mo-segmented-slider
+              class="task-type-slider"
+              :value="taskType"
+              :options="taskTypeOptions"
+              @change="handleTaskTypeInput"
+            />
           </div>
           <div v-show="taskType === 'uri'" class="add-task-content-pane">
             <el-input
               ref="uri"
               type="textarea"
               auto-complete="off"
-              :autosize="{ minRows: 5, maxRows: 8 }"
+              :autosize="{ minRows: 5, maxRows: 5 }"
 
               :placeholder="$t('task.uri-task-tips')"
               @paste.native="handleUriPaste"
@@ -48,7 +47,6 @@
           <div class="mo-table-wrapper">
             <el-table
               :data="parsedTasks"
-              stripe
               class="mo-parsed-table"
               size="mini"
               :max-height="parsedTableMaxHeight"
@@ -264,6 +262,7 @@
   import HistoryDirectory from '@/components/Preference/HistoryDirectory'
   import SelectDirectory from '@/components/Native/SelectDirectory'
   import SelectTorrent from '@/components/Task/SelectTorrent'
+  import SegmentedSlider from '@/components/SegmentedSlider/SegmentedSlider'
   import {
     initTaskForm,
     buildUriPayload,
@@ -278,7 +277,8 @@
     components: {
       [HistoryDirectory.name]: HistoryDirectory,
       [SelectDirectory.name]: SelectDirectory,
-      [SelectTorrent.name]: SelectTorrent
+      [SelectTorrent.name]: SelectTorrent,
+      [SegmentedSlider.name]: SegmentedSlider
     },
     props: {
       visible: {
@@ -305,7 +305,8 @@
         savePresetName: '',
         clipboardTimer: null,
         lastClipboardText: '',
-        dialogOpenInitialized: false
+        dialogOpenInitialized: false,
+        dialogVisible: false
       }
     },
     computed: {
@@ -326,11 +327,11 @@
       taskType () {
         return this.type === 'video' ? ADD_TASK_TYPE.URI : this.type
       },
-      taskTypeIndicatorStyle () {
-        const idx = this.taskType === 'torrent' ? 1 : 0
-        return {
-          transform: `translateX(${idx * 100}%)`
-        }
+      taskTypeOptions () {
+        return [
+          { value: 'uri', label: this.$t('task.uri-task') },
+          { value: 'torrent', label: this.$t('task.torrent-task') }
+        ]
       },
       dialogTop () {
         const advancedVisible = this.showAdvanced
@@ -347,6 +348,7 @@
       }
     },
     mounted () {
+      this.dialogVisible = this.visible
       if (this.visible && !this.dialogOpenInitialized) {
         this.handleOpen()
         this.$nextTick(() => {
@@ -356,17 +358,27 @@
     },
     watch: {
       taskType (current, previous) {
+        // 切换任务类型时清除解析预览，防止种子文件列表显示在链接任务的解析框中
+        if (current !== previous) {
+          this.parsedTasks = []
+        }
+
         if (this.visible && this.isUriLikeType(previous)) {
           return
         }
 
         if (this.isUriLikeType(current)) {
+          // 切换到链接任务时，如果已有 URL 则重新构建预览
+          if (this.form.uris) {
+            this.updateUriPreview(this.form.uris)
+          }
           setTimeout(() => {
             this.$refs.uri && this.$refs.uri.focus()
           }, 50)
         }
       },
       visible (current) {
+        this.dialogVisible = current
         const cfg = this.config || {}
         const clipboardAutoPasteEnabled = cfg.clipboardAutoPaste === undefined ? true : !!cfg.clipboardAutoPaste
         if (current === true) {
@@ -390,6 +402,14 @@
           this.updateUriPreview(val)
         }
       }
+    },
+    beforeDestroy () {
+      this.stopClipboardWatch()
+      if (this._closeTimer) {
+        clearTimeout(this._closeTimer)
+        this._closeTimer = null
+      }
+      document.removeEventListener('keydown', this.handleHotkey)
     },
     methods: {
       isUriLikeType (type) {
@@ -593,14 +613,23 @@
           this.clipboardTimer = null
         }
       },
-      beforeClose () {
+      beforeClose (done) {
         if (isEmpty(this.form.uris) && isEmpty(this.form.torrent)) {
-          this.handleClose()
+          done()
+          // 确保在动画结束后dispatch，即使@closed事件未触发
+          if (this._closeTimer) clearTimeout(this._closeTimer)
+          this._closeTimer = setTimeout(() => {
+            this._closeTimer = null
+            if (!this.dialogVisible) {
+              this.handleClosed()
+            }
+          }, 200)
         }
       },
       handleOpen () {
         this.dialogOpenInitialized = true
         this.form = initTaskForm(this.$store.state)
+        this.parsedTasks = []
         this.selectedAdvancedPresetId = ''
         this.onAdvancedPresetChange('')
         this.loadAdvancedPresets()
@@ -627,11 +656,24 @@
         this.detectThunderResource(this.form.uris)
       },
       handleClose () {
-        this.$store.dispatch('app/hideAddTaskDialog')
+        this.dialogVisible = false
+        // 确保在动画结束后dispatch，即使@closed事件未触发
+        if (this._closeTimer) clearTimeout(this._closeTimer)
+        this._closeTimer = setTimeout(() => {
+          this._closeTimer = null
+          if (!this.dialogVisible) {
+            this.handleClosed()
+          }
+        }, 200)
       },
       handleClosed () {
+        if (this._closeTimer) {
+          clearTimeout(this._closeTimer)
+          this._closeTimer = null
+        }
         this.dialogOpenInitialized = false
         this.reset()
+        this.$store.dispatch('app/hideAddTaskDialog')
       },
       handleHotkey (event) {
         if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
@@ -647,10 +689,13 @@
         this.$store.dispatch('app/changeAddTaskType', type)
       },
       handleUriPaste (event) {
+        // 从剪贴板直接获取粘贴的文本，避免依赖 v-model 更新时机
+        const pastedText = (event.clipboardData || window.clipboardData).getData('text') || ''
+        if (pastedText) {
+          this.detectThunderResource(pastedText)
+          this.updateUriPreview(pastedText)
+        }
         setImmediate(() => {
-          const uris = this.$refs.uri.value
-          this.detectThunderResource(uris)
-          this.updateUriPreview(uris)
           this.keepTrailingNewline = true
           this.ensureTrailingNewlineAndCaret()
         })
@@ -822,19 +867,33 @@
           }
 
           try {
-            const url = decodeURI(u)
-            const lastSlash = url.lastIndexOf('/')
-            let name = lastSlash >= 0 ? url.substring(lastSlash + 1) : url
-            if (name) {
-              const qIdx = name.indexOf('?')
-              const hIdx = name.indexOf('#')
-              const cutIdx = [qIdx, hIdx].filter(i => i >= 0).sort((a, b) => a - b)[0]
-              if (typeof cutIdx === 'number') {
-                name = name.substring(0, cutIdx)
+            let name = ''
+            // ED2K 链接: ed2k://|file|filename|size|hash|/
+            if (u.toLowerCase().startsWith('ed2k://|file|')) {
+              const parts = u.split('|')
+              // parts[0] = 'ed2k://'
+              // parts[1] = 'file'
+              // parts[2] = filename
+              // parts[3] = size
+              // parts[4] = hash
+              if (parts.length >= 3) {
+                name = decodeURIComponent(parts[2])
+              }
+            } else {
+              const url = decodeURI(u)
+              const lastSlash = url.lastIndexOf('/')
+              name = lastSlash >= 0 ? url.substring(lastSlash + 1) : url
+              if (name) {
+                const qIdx = name.indexOf('?')
+                const hIdx = name.indexOf('#')
+                const cutIdx = [qIdx, hIdx].filter(i => i >= 0).sort((a, b) => a - b)[0]
+                if (typeof cutIdx === 'number') {
+                  name = name.substring(0, cutIdx)
+                }
               }
             }
             // 使用建议的文件名（如果存在）并确保唯一
-            const finalName = suggestedName || name
+            const finalName = suggestedName || name || u
             const uniqueName = this.generateUniqueTaskName(finalName)
             return {
               name: uniqueName,
@@ -906,6 +965,16 @@
         }
         const updates = await Promise.all(lines.map(async (u, idx) => {
           if (!/^https?:/i.test(u) || u.startsWith('magnet:')) {
+            // ED2K 链接: 从链接本身解析文件大小
+            if (u.toLowerCase().startsWith('ed2k://|file|')) {
+              const parts = u.split('|')
+              if (parts.length >= 4) {
+                const size = parseInt(parts[3], 10)
+                if (!isNaN(size) && size > 0) {
+                  return { idx, sizeText: this.bytesToSize(size), dispName: null }
+                }
+              }
+            }
             return { idx, sizeText: '-', dispName: null }
           }
           const headers = buildHeaders()
@@ -984,7 +1053,7 @@
         } else if (type === 'metalink') {
         // @TODO addMetalink
         } else {
-          console.error('[Motrix] Add task fail', form)
+          console.error('[LinkCore] Add task fail', form)
         }
       },
       async submitForm (formName) {
@@ -1031,7 +1100,7 @@
           }
           await this.addTask(this.taskType, this.form)
 
-          this.$store.dispatch('app/hideAddTaskDialog')
+          this.handleClose()
           if (this.form.newTaskShowDownloading) {
             const config = this.config || {}
             const jumpTarget = this.form.newTaskJumpTarget || config.newTaskJumpTarget || 'downloading'
@@ -1057,7 +1126,16 @@
   padding-bottom: 0;
 
   .add-task-content-pane {
-    min-height: 136px;
+    min-height: 120px;
+
+    /* 种子模式下文件表格底部与分片数选择框之间保持间距 */
+    .selective-torrent {
+      .mo-task-files {
+        .file-filters {
+          margin-bottom: 12px;
+        }
+      }
+    }
   }
 
   .el-textarea__inner,
@@ -1068,7 +1146,7 @@
 
   .el-textarea__inner {
     padding-left: 12px;
-    min-height: 144px;
+    min-height: 120px;
   }
 }
 
@@ -1085,69 +1163,9 @@
   align-items: center;
 }
 
-.task-type-slider {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  border: none;
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.05);
-
-  .task-type-slider-indicator {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: calc(50% - 2px);
-    height: calc(100% - 4px);
-    background: $--color-primary;
-    border-radius: 8px;
-    transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
-    z-index: 0;
-    pointer-events: none;
-  }
-
-  .el-radio-group {
-    display: flex;
-    width: 100%;
-    position: relative;
-    z-index: 1;
-  }
-
-  .el-radio-button {
-    flex: 1;
-    display: flex;
-    .el-radio-button__inner {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      flex: 1;
-      align-items: center;
-      justify-content: center;
-      padding: 5px 20px;
-        font-size: 13px;
-        font-weight: 500;
-      background: transparent !important;
-      border: none !important;
-      border-radius: 8px;
-      box-shadow: none !important;
-      color: $--color-text-secondary;
-      transition: color 0.32s ease;
-    }
-
-    .el-radio-button__orig-radio:checked + .el-radio-button__inner {
-      color: #fff;
-      background: transparent !important;
-      border-color: transparent !important;
-      box-shadow: none !important;
-    }
-
-    &.is-active .el-radio-button__inner {
-      color: #fff;
-      background: transparent !important;
-      box-shadow: none !important;
-    }
-  }
+/* 新建任务分类切换滑块：项内边距加大 */
+.task-type-slider .lc-segmented__item {
+  padding: 0 20px;
 }
 
 .add-task-type-floating__close {
@@ -1194,10 +1212,10 @@
     background: rgba(0, 0, 0, 0.5);
   }
 .parsed-preview {
-    margin-top: -18px;
+    margin-top: 0;
     margin-bottom: 16px;
     .mo-table-wrapper {
-      border: 1px solid $--border-color-base;
+      border: 1px solid var(--lc-border-base);
       border-radius: 8px;
       box-sizing: border-box;
       padding: 0;
@@ -1224,6 +1242,7 @@
         border-bottom: none !important;
       }
       th.el-table__cell {
+        background-color: transparent !important;
         border-bottom: none !important;
         .cell {
           white-space: nowrap !important;
@@ -1333,32 +1352,64 @@
 
 .theme-dark .add-task-dialog .parsed-preview {
   .mo-table-wrapper {
-    border-color: #5f5f5f;
+    border-color: var(--lc-border-base) !important;
+    background-color: var(--lc-task-item-bg) !important;
   }
   .el-table.mo-parsed-table {
+    background-color: transparent !important;
+    color: var(--lc-text-regular) !important;
+    .el-table__inner-wrapper {
+      background-color: transparent !important;
+    }
+    .el-table__header-wrapper,
+    .el-table__body-wrapper,
+    .el-table__footer-wrapper {
+      background-color: transparent !important;
+    }
+    .el-table__header,
+    .el-table__body,
+    .el-table__footer {
+      background-color: transparent !important;
+    }
+    .el-table__row {
+      background-color: transparent !important;
+    }
     th.el-table__cell {
       background-color: transparent !important;
+      color: var(--lc-text-secondary) !important;
+      border-bottom: none !important;
     }
-    .el-table__header-wrapper {
+    // 悬停高亮：强制覆盖 Element UI 默认白色背景
+    .el-table__body tr:hover > td,
+    .el-table__body tr:hover > td.el-table__cell,
+    .el-table--enable-row-hover .el-table__body tr:hover > td {
+      background-color: var(--lc-table-hover-bg) !important;
+    }
+    td.el-table__cell {
+      background-color: transparent !important;
+      color: var(--lc-text-regular) !important;
+      border-bottom: 1px solid var(--lc-border-base) !important;
+    }
+    .el-table__empty-block {
       background-color: transparent !important;
     }
-    thead {
-      background-color: transparent !important;
+    .el-table__empty-text {
+      color: var(--lc-text-placeholder) !important;
+    }
+    .el-checkbox__inner {
+      background-color: var(--lc-bg-input) !important;
+      border-color: var(--lc-border-base) !important;
     }
   }
 }
 
-.theme-dark .task-type-slider {
-  background: rgba(255, 255, 255, 0.06);
-
-  .el-radio-button {
-    .el-radio-button__inner {
-      color: rgba(255, 255, 255, 0.55);
-    }
-
-    &.is-active .el-radio-button__inner {
-      color: #fff;
-    }
+.theme-dark .add-task-dialog .mo-task-files {
+  .mo-table-wrapper {
+    border-color: var(--lc-border-base);
+  }
+  .el-table th.gutter {
+    display: none !important;
+    border-bottom: none !important;
   }
 }
 </style>

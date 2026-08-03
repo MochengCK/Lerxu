@@ -74,12 +74,12 @@ export const createCategoryDirectory = (categorizedDir) => {
   try {
     if (!existsSync(categorizedDir)) {
       mkdirSync(categorizedDir, { recursive: true })
-      console.log(`[Motrix] Created category directory: ${categorizedDir}`)
+      console.log(`[LinkCore] Created category directory: ${categorizedDir}`)
       return true
     }
     return false
   } catch (error) {
-    console.warn(`[Motrix] Failed to create category directory: ${error.message}`)
+    console.warn(`[LinkCore] Failed to create category directory: ${error.message}`)
     return false
   }
 }
@@ -103,17 +103,17 @@ export const moveFileToCategory = (originalPath, categorizedPath) => {
           utimesSync(categorizedPath, at, mt)
         }
       } catch (_) {}
-      console.log(`[Motrix] Moved file to category: ${originalPath} -> ${categorizedPath}`)
+      console.log(`[LinkCore] Moved file to category: ${originalPath} -> ${categorizedPath}`)
       return true
     } else if (existsSync(categorizedPath)) {
-      console.log(`[Motrix] File already exists in category: ${categorizedPath}`)
+      console.log(`[LinkCore] File already exists in category: ${categorizedPath}`)
       return false
     } else {
-      console.warn(`[Motrix] Original file not found: ${originalPath}`)
+      console.warn(`[LinkCore] Original file not found: ${originalPath}`)
       return false
     }
   } catch (error) {
-    console.warn(`[Motrix] Failed to move file to category: ${error.message}`)
+    console.warn(`[LinkCore] Failed to move file to category: ${error.message}`)
     return false
   }
 }
@@ -127,7 +127,7 @@ export const autoCategorizeDownloadedFile = (filePath, baseDir, categories = DEF
 
   // 如果文件已经在分类文件夹中，不需要移动
   if (dirname(filePath) === dirname(categorizedInfo.categorizedPath)) {
-    console.log(`[Motrix] File already in category folder: ${filePath}`)
+    console.log(`[LinkCore] File already in category folder: ${filePath}`)
     return false
   }
 

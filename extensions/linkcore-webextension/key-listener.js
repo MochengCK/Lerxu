@@ -1072,7 +1072,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         const videoFilename = base ? `${base}_${seq}_video.mp4` : ''
         const audioFilename = base ? `${base}_${seq}_audio.m4a` : ''
         sendResourceToClient(bestCombined.videoUrl, referer, videoFilename)
-        setTimeout(() => sendResourceToClient(bestCombined.audioUrl, referer, audioFilename), 100)
+        sendResourceToClient(bestCombined.audioUrl, referer, audioFilename)
         return true
       }
 
@@ -1171,7 +1171,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       exStyle.right = '0'
       exStyle.height = '32px'
       exStyle.width = '32px'
-      exStyle.background = '#409eff'
+      exStyle.background = '#1a7fe0'
       exStyle.borderRadius = '16px'
       exStyle.boxShadow = '0 2px 8px rgba(0,0,0,0.25)'
       exStyle.overflow = 'hidden'
@@ -1734,14 +1734,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     dStyle.transition = 'background-color 0.2s ease, color 0.2s ease'
     dStyle.fontSize = '12px'
     dStyle.color = '#ffffff'
-    dStyle.backgroundColor = '#00a1d6'
+    dStyle.backgroundColor = '#1a7fe0'
     dStyle.borderRadius = '12px'
 
     downloadAllBtn.addEventListener('mouseenter', () => {
-      downloadAllBtn.style.backgroundColor = '#00b5f0'
+      downloadAllBtn.style.backgroundColor = '#4a9eff'
     })
     downloadAllBtn.addEventListener('mouseleave', () => {
-      downloadAllBtn.style.backgroundColor = '#00a1d6'
+      downloadAllBtn.style.backgroundColor = '#1a7fe0'
     })
 
     downloadAllBtn.addEventListener('click', () => {
@@ -1863,7 +1863,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       combinedTitle.style.fontSize = '12px'
       combinedTitle.style.fontWeight = 'bold'
       combinedTitle.style.padding = '10px 12px 5px'
-      combinedTitle.style.color = '#00a1d6'
+      combinedTitle.style.color = '#1a7fe0'
       combinedTitle.style.backgroundColor = '#f5f5f5'
       combinedSection.appendChild(combinedTitle)
 
@@ -2058,7 +2058,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const quality = document.createElement('span')
       quality.textContent = resource.quality
       quality.style.fontSize = '11px'
-      quality.style.color = '#00a1d6'
+      quality.style.color = '#1a7fe0'
       quality.style.fontWeight = 'bold'
       quality.style.padding = '2px 6px'
       quality.style.backgroundColor = '#e6f7ff'
@@ -2145,9 +2145,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       // 同时下载视频和音频
       sendResourceToClient(resource.videoUrl, referer, videoFilename)
-      setTimeout(() => {
-        sendResourceToClient(resource.audioUrl, referer, audioFilename)
-      }, 100)
+      sendResourceToClient(resource.audioUrl, referer, audioFilename)
       const dropdown = document.getElementById('linkcore-resource-dropdown')
       if (dropdown) dropdown.style.display = 'none'
     })
@@ -2237,7 +2235,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const quality = document.createElement('span')
       quality.textContent = resource.quality
       quality.style.fontSize = '11px'
-      quality.style.color = '#00a1d6'
+      quality.style.color = '#1a7fe0'
       quality.style.fontWeight = 'bold'
       quality.style.padding = '2px 6px'
       quality.style.backgroundColor = '#e6f7ff'
@@ -2367,9 +2365,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     sendResourceToClient(resource.videoUrl, referer, videoFilename)
-    setTimeout(() => {
-      sendResourceToClient(resource.audioUrl, referer, audioFilename)
-    }, 100)
+    sendResourceToClient(resource.audioUrl, referer, audioFilename)
     const dropdown = document.getElementById('linkcore-resource-dropdown')
     if (dropdown) dropdown.style.display = 'none'
   }
@@ -2958,7 +2954,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const style = btn.style
     style.position = 'relative'
     style.padding = '4px 40px 4px 12px'
-    style.background = '#00a1d6'
+    style.background = '#1a7fe0'
     style.color = '#ffffff'
     style.border = 'none'
     style.borderRadius = '16px'
@@ -4043,9 +4039,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     // 下载按钮（悬浮在顶部，无标题栏）
     const downloadBtn = document.createElement('div')
     downloadBtn.textContent = '下载选中'
-    downloadBtn.style.cssText = 'margin:8px 8px 0;padding:6px 0;border:none;border-radius:6px;background:#00a1d6;color:#fff;cursor:pointer;font-size:12px;font-weight:500;text-align:center;flex-shrink:0;'
+    downloadBtn.style.cssText = 'margin:8px 8px 0;padding:6px 0;border:none;border-radius:6px;background:#1a7fe0;color:#fff;cursor:pointer;font-size:12px;font-weight:500;text-align:center;flex-shrink:0;'
     downloadBtn.addEventListener('mouseenter', () => { downloadBtn.style.backgroundColor = '#00b5e0' })
-    downloadBtn.addEventListener('mouseleave', () => { downloadBtn.style.backgroundColor = '#00a1d6' })
+    downloadBtn.addEventListener('mouseleave', () => { downloadBtn.style.backgroundColor = '#1a7fe0' })
     panel.appendChild(downloadBtn)
 
     // 工具栏（无分割线）
@@ -4099,7 +4095,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       if (isPlaying) {
         const playingTag = document.createElement('span')
         playingTag.textContent = '▶'
-        playingTag.style.cssText = 'font-size:9px;color:#00a1d6;'
+        playingTag.style.cssText = 'font-size:9px;color:#1a7fe0;'
         rightSpan.appendChild(playingTag)
       }
 

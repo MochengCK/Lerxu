@@ -1,5 +1,3 @@
-'use strict'
-
 export class JSONRPCError extends Error {
   constructor ({ message, code, data }) {
     super(message)

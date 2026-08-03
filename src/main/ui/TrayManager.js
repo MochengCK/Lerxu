@@ -5,7 +5,7 @@ import is from 'electron-is'
 
 import { APP_RUN_MODE, APP_THEME } from '@shared/constants'
 import { getInverseTheme } from '@shared/utils'
-import logger from '../core/Logger'
+import logger from '../core/LogManager'
 import { getI18n } from './Locale'
 import {
   translateTemplate,
@@ -380,7 +380,7 @@ export default class TrayManager extends EventEmitter {
   }
 
   destroy () {
-    logger.info('[Motrix] TrayManager.destroy')
+    logger.info('[LinkCore] TrayManager.destroy')
     if (tray) {
       this.unbindEvents()
     }

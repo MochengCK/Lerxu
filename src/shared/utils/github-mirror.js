@@ -42,18 +42,18 @@ export function convertToMirrorUrl (url, mirrorUrl) {
       if (urlObj.pathname.includes('/releases/download/')) {
         return `https://${cleanMirrorUrl}/${url}`
       }
-      // 对于其他 GitHub 链接
-      return url.replace('https://github.com', `https://${cleanMirrorUrl}/https://github.com`)
+      // 基于解析结果重建镜像 URL，兼容 http:// 前缀的输入
+      return `https://${cleanMirrorUrl}/https://github.com${urlObj.pathname}${urlObj.search}${urlObj.hash}`
     }
 
     // GitHub Raw 内容 URL
     if (hostname === 'raw.githubusercontent.com') {
-      return url.replace('https://raw.githubusercontent.com', `https://${cleanMirrorUrl}/https://raw.githubusercontent.com`)
+      return `https://${cleanMirrorUrl}/https://raw.githubusercontent.com${urlObj.pathname}${urlObj.search}${urlObj.hash}`
     }
 
     // GitHub Pages URL (github.io)
     if (hostname.endsWith('.github.io')) {
-      return url.replace(/^https:\/\/([^/]+\.github\.io)/, `https://${cleanMirrorUrl}/https://$1`)
+      return `https://${cleanMirrorUrl}/https://${hostname}${urlObj.pathname}${urlObj.search}${urlObj.hash}`
     }
 
     return url

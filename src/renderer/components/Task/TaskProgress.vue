@@ -1,16 +1,10 @@
 <template>
   <el-progress
-    v-if="isActive"
     :percentage="displayPercent"
     :show-text="false"
-    status="success"
-    :color="color">
-  </el-progress>
-  <el-progress
-    v-else
-    :percentage="displayPercent"
-    :show-text="false"
-    :color="color">
+    :status="isActive ? 'success' : undefined"
+    :color="color"
+    :class="{ 'is-pending-selection': pendingSelection }">
   </el-progress>
 </template>
 
@@ -45,6 +39,10 @@
       speed: {
         type: Number,
         default: 0
+      },
+      pendingSelection: {
+        type: Boolean,
+        default: false
       }
     },
     watch: {
@@ -82,6 +80,14 @@
         } else {
           this.displayPercent = this.percent
         }
+      },
+      // 活跃状态切换时启停平滑动画定时器，避免非活跃任务常驻定时器
+      isActive (val) {
+        if (val) {
+          this.startTicker()
+        } else {
+          this.stopTicker()
+        }
       }
     },
     computed: {
@@ -105,11 +111,33 @@
         return raw
       },
       color () {
+        if (this.pendingSelection) {
+          return '#f0ad4e'
+        }
         return colors[this.status]
       }
     },
     mounted () {
-      this.ticker = setInterval(() => {
+      // 仅活跃任务需要 250ms 平滑进度动画；非活跃任务由 percent
+      // watch 直接同步，避免每个任务项都常驻一个定时器
+      if (this.isActive) {
+        this.startTicker()
+      }
+    },
+    methods: {
+      startTicker () {
+        if (this.ticker) {
+          return
+        }
+        this.ticker = setInterval(() => this.animateProgress(), 250)
+      },
+      stopTicker () {
+        if (this.ticker) {
+          clearInterval(this.ticker)
+          this.ticker = null
+        }
+      },
+      animateProgress () {
         if (!this.isActive) {
           if (this.status === TASK_STATUS.COMPLETE || this.status === TASK_STATUS.SEEDING || this.status === TASK_STATUS.MERGING) {
             this.displayPercent = 100
@@ -177,13 +205,10 @@
         if (next >= this.displayPercent) {
           this.displayPercent = next
         }
-      }, 250)
+      }
     },
     beforeDestroy () {
-      if (this.ticker) {
-        clearInterval(this.ticker)
-        this.ticker = null
-      }
+      this.stopTicker()
     }
   }
 </script>

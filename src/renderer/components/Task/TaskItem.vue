@@ -21,6 +21,7 @@
         :total="Number(task.totalLength)"
         :status="taskStatus"
         :speed="Number(task.downloadSpeed)"
+        :pending-selection="isPendingFileSelection"
       />
       <mo-task-progress-info :task="task" :view-mode="viewMode" />
     </div>
@@ -30,7 +31,7 @@
 <script>
   import { mapState } from 'vuex'
   import { basename } from 'node:path'
-  import { checkTaskIsSeeder, getTaskName, ellipsis } from '@shared/utils'
+  import { checkTaskIsSeeder, getTaskName, ellipsis, isEd2kTask } from '@shared/utils'
   import { TASK_STATUS } from '@shared/constants'
   import { openItem, getTaskActualPath } from '@/utils/native'
   import { commands } from '@/components/CommandManager/instance'
@@ -84,7 +85,8 @@
         preferenceConfig: state => state.config
       }),
       ...mapState('task', {
-        taskDisplayNames: state => state.taskDisplayNames
+        taskDisplayNames: state => state.taskDisplayNames,
+        pendingFileSelection: state => state.pendingFileSelection || {}
       }),
       showTaskTypeBadge () {
         return this.preferenceConfig?.showTaskTypeBadge !== false
@@ -93,6 +95,9 @@
         const type = this.task && this.task.taskType ? `${this.task.taskType}`.toLowerCase() : ''
         const hasInfoHash = !!(this.task && this.task.infoHash)
         const hasBittorrent = !!(this.task && this.task.bittorrent)
+        if (type === 'ed2k' || isEd2kTask(this.task)) {
+          return 'ed2k'
+        }
         if (['bt', 'magnet', 'http', 'https', 'ftp'].includes(type)) {
           if (type === 'http' && (hasBittorrent || hasInfoHash)) {
             const btInfo = hasBittorrent && this.task.bittorrent && this.task.bittorrent.info
@@ -112,7 +117,8 @@
           magnet: this.$t('task.task-type-magnet') || 'Magnet',
           http: 'HTTP',
           https: 'HTTPS',
-          ftp: 'FTP'
+          ftp: 'FTP',
+          ed2k: 'ED2K'
         }
         return typeMap[this.taskType] || 'HTTP'
       },
@@ -157,8 +163,12 @@
         } else {
           return task.status
         }
+      },
+      isPendingFileSelection () {
+        const gid = this.task && this.task.gid ? `${this.task.gid}` : ''
+        if (!gid) return false
+        return !!(this.pendingFileSelection && this.pendingFileSelection[gid])
       }
-
     },
     mounted () {
       this.updateTaskNameTruncation()
@@ -235,11 +245,11 @@
 <style lang="scss">
 .task-item {
   position: relative;
-  min-height: 104px;
-  padding: 16px 12px;
+  min-height: 96px;
+  padding: 12px 12px;
   background-color: $--task-item-background;
   border: 1px solid $--task-item-border-color;
-  border-radius: 10px;
+  border-radius: 8px;
   margin-bottom: 16px;
   transition: $--border-transition-base;
   box-sizing: border-box;
@@ -250,18 +260,18 @@
 
   .task-item-actions-wrapper {
     position: absolute;
-    top: 16px;
+    top: 12px;
     right: -4px;
   }
 
   &.task-item--grid {
     margin-bottom: 0;
     border: 1px solid $--task-item-border-color;
-    border-radius: 10px;
+    border-radius: 8px;
     background-color: $--task-item-background;
-    height: 104px;
-    min-height: 104px;
-    padding: 16px 12px;
+    height: 96px;
+    min-height: 96px;
+    padding: 12px 12px;
     overflow: visible;
     transition: $--border-transition-base;
     box-sizing: border-box;
@@ -272,7 +282,7 @@
 
     .task-name {
       margin-right: 170px;
-      margin-bottom: 1.25rem;
+      margin-bottom: 0.75rem;
 
       .task-name__text {
         font-size: 14px;
@@ -287,7 +297,7 @@
     }
 
     .task-item-actions-wrapper {
-      top: 16px;
+      top: 12px;
       right: -4px;
       z-index: 10;
     }
@@ -320,6 +330,10 @@
       font-size: 96px;
     }
   }
+
+  &.task-type-badge--ed2k {
+    font-size: 96px;
+  }
 }
 
 .theme-dark .task-type-badge {
@@ -327,14 +341,9 @@
   opacity: 0.3;
 }
 
-.theme-light.has-app-background-image .task-item {
-  background-color: rgba(255, 255, 255, var(--app-ui-opacity-task-item, var(--app-ui-opacity, 0.9)));
-  backdrop-filter: blur(var(--app-ui-frosted-blur-task-item, var(--app-ui-frosted-blur, 0px)));
-  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-task-item, var(--app-ui-frosted-blur, 0px)));
-}
-
+.theme-light.has-app-background-image .task-item,
 .theme-dark.has-app-background-image .task-item {
-  background-color: rgba(45, 45, 45, var(--app-ui-opacity-task-item, var(--app-ui-opacity, 0.9)));
+  background-color: transparent;
   backdrop-filter: blur(var(--app-ui-frosted-blur-task-item, var(--app-ui-frosted-blur, 0px)));
   -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-task-item, var(--app-ui-frosted-blur, 0px)));
 }
@@ -345,7 +354,7 @@
 
 .task-name {
   color: #505753;
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.75rem;
   margin-right: 170px;
   margin-left: 0;
   min-height: 26px;

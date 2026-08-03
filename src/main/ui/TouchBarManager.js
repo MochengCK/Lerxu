@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { TouchBar, nativeImage } from 'electron'
 
 import { handleCommand } from '../utils/menu'
-import logger from '../core/Logger'
+import logger from '../core/LogManager'
 
 const { TouchBarButton, TouchBarLabel, TouchBarSpacer, TouchBarGroup } = TouchBar
 

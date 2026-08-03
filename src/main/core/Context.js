@@ -1,4 +1,4 @@
-import logger from './Logger'
+import logger from './LogManager'
 import {
   getEnginePath,
   getAria2BinPath,
@@ -16,8 +16,16 @@ export default class Context {
   }
 
   getLogPath () {
-    const { path } = logger.transports.file.getFile()
-    return path
+    try {
+      const file = logger.transports && logger.transports.file
+      if (file && typeof file.getFile === 'function') {
+        const { path } = file.getFile()
+        return path
+      }
+    } catch (e) {
+      // ignore
+    }
+    return ''
   }
 
   init () {
@@ -34,7 +42,7 @@ export default class Context {
       'aria2-log-dir': getAria2LogDir()
     }
 
-    logger.info('[Motrix] Context.init===>', this.context)
+    logger.info('[LinkCore] Context.init===>', this.context)
   }
 
   get (key) {

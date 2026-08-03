@@ -18,8 +18,8 @@
           <mo-task-graphic
             :outerWidth="graphicWidth"
             :bitfield="task.bitfield"
-            :downloadSpeed="task.downloadSpeed"
-            :pieceLength="task.pieceLength"
+            :downloadSpeed="Number(task.downloadSpeed)"
+            :pieceLength="Number(task.pieceLength)"
             v-if="graphicWidth > 0"
           />
         </div>
@@ -125,7 +125,7 @@
     timeRemaining
   } from '@shared/utils'
   import { TASK_STATUS } from '@shared/constants'
-  import TaskGraphic from '@/components/TaskGraphic/Index'
+  import TaskGraphic from '@/components/TaskGraphic/TaskGraphic'
   import TaskProgress from '@/components/Task/TaskProgress'
 
   export default {
@@ -564,31 +564,17 @@
   }
 }
 
-.theme-light .mo-task-activity .graphic-fade--top {
-  background: linear-gradient(to bottom, #ffffff 0%, rgba(255, 255, 255, 0) 100%);
+.mo-task-activity .graphic-fade--top {
+  background: linear-gradient(to bottom, rgba(var(--lc-bg-panel-rgb), 1) 0%, rgba(var(--lc-bg-panel-rgb), 0) 100%);
 }
-.theme-light .mo-task-activity .graphic-fade--bottom {
-  background: linear-gradient(to top, #ffffff 0%, rgba(255, 255, 255, 0) 100%);
-}
-
-.theme-dark .mo-task-activity .graphic-fade--top {
-  background: linear-gradient(to bottom, #343434 0%, rgba(52, 52, 52, 0) 100%);
-}
-.theme-dark .mo-task-activity .graphic-fade--bottom {
-  background: linear-gradient(to top, #343434 0%, rgba(52, 52, 52, 0) 100%);
+.mo-task-activity .graphic-fade--bottom {
+  background: linear-gradient(to top, rgba(var(--lc-bg-panel-rgb), 1) 0%, rgba(var(--lc-bg-panel-rgb), 0) 100%);
 }
 
-.task-detail-default-transparent.theme-light .mo-task-activity .graphic-fade--top {
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 100%);
+.task-detail-default-transparent .mo-task-activity .graphic-fade--top {
+  background: linear-gradient(to bottom, rgba(var(--lc-bg-panel-rgb), 0.8) 0%, rgba(var(--lc-bg-panel-rgb), 0) 100%);
 }
-.task-detail-default-transparent.theme-light .mo-task-activity .graphic-fade--bottom {
-  background: linear-gradient(to top, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 100%);
-}
-
-.task-detail-default-transparent.theme-dark .mo-task-activity .graphic-fade--top {
-  background: linear-gradient(to bottom, rgba(52, 52, 52, 0.85) 0%, rgba(52, 52, 52, 0) 100%);
-}
-.task-detail-default-transparent.theme-dark .mo-task-activity .graphic-fade--bottom {
-  background: linear-gradient(to top, rgba(52, 52, 52, 0.85) 0%, rgba(52, 52, 52, 0) 100%);
+.task-detail-default-transparent .mo-task-activity .graphic-fade--bottom {
+  background: linear-gradient(to top, rgba(var(--lc-bg-panel-rgb), 0.8) 0%, rgba(var(--lc-bg-panel-rgb), 0) 100%);
 }
 </style>

@@ -8,7 +8,6 @@
     tabindex="0"
     ref="picker"
   >
-    <div class="picker-arrow"></div>
     <div class="picker-header">
       <el-tooltip effect="dark" :content="$t('task.prev-month')" placement="top" :open-delay="500" popper-class="date-picker-tooltip">
         <button class="nav-btn" @click="prevMonth">
@@ -166,9 +165,9 @@
           right: `${window.innerWidth - this.triggerRect.right + 8}px`
         }
         if (this.positionTop) {
-          style.bottom = `${window.innerHeight - this.triggerRect.top + 10}px`
+          style.bottom = `${window.innerHeight - this.triggerRect.top + 6}px`
         } else {
-          style.top = `${this.triggerRect.bottom + 10}px`
+          style.top = `${this.triggerRect.bottom + 6}px`
         }
         return style
       }
@@ -270,13 +269,18 @@
 .custom-date-picker {
   position: fixed;
   background-color: #fff;
-  border-radius: 8px;
+  border-radius: var(--lc-radius-dropdown);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
   padding: 12px;
   width: 280px;
   user-select: none;
   z-index: 9999;
   outline: none;
+  transform-origin: right top;
+}
+
+.custom-date-picker.position-top {
+  transform-origin: right bottom;
 }
 
 .theme-light.has-app-background-image .custom-date-picker {
@@ -292,17 +296,17 @@
 }
 
 .theme-dark .custom-date-picker {
-  background-color: #2d2d2d;
+  background-color: var(--lc-bg-dropdown, #2e333b);
 }
 
 .theme-dark.has-app-background-image .custom-date-picker {
-  background-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
+  background-color: var(--lc-bg-dropdown, #2e333b);
   backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
   -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
 }
 
 .theme-dark .custom-date-picker.is-frosted {
-  background-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
+  background-color: var(--lc-bg-dropdown, #2e333b);
   backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
   -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
 }
@@ -315,66 +319,6 @@
 
 .theme-dark .custom-date-picker .weekdays span {
   color: #c0c4cc;
-}
-
-/* 箭头 - 默认指向上方（选择框在按钮下方时） */
-.custom-date-picker .picker-arrow {
-  position: absolute;
-  top: -8px;
-  right: 12px;
-  width: 0;
-  height: 0;
-  border-left: 8px solid transparent;
-  border-right: 8px solid transparent;
-  border-bottom: 8px solid #fff;
-}
-
-.theme-light.has-app-background-image .custom-date-picker .picker-arrow {
-  border-bottom-color: rgba(255, 255, 255, var(--app-ui-opacity, 0.9));
-}
-
-.theme-light .custom-date-picker.is-frosted .picker-arrow {
-  border-bottom-color: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
-}
-
-.theme-dark .custom-date-picker .picker-arrow {
-  border-bottom-color: #2d2d2d;
-}
-
-.theme-dark.has-app-background-image .custom-date-picker .picker-arrow {
-  border-bottom-color: rgba(45, 45, 45, var(--app-ui-opacity, 0.9));
-}
-
-.theme-dark .custom-date-picker.is-frosted .picker-arrow {
-  border-bottom-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
-}
-
-/* 选择框在按钮上方时，箭头指向下方 */
-.custom-date-picker.position-top .picker-arrow {
-  top: auto;
-  bottom: -8px;
-  border-bottom: none;
-  border-top: 8px solid #fff;
-}
-
-.theme-light.has-app-background-image .custom-date-picker.position-top .picker-arrow {
-  border-top-color: rgba(255, 255, 255, var(--app-ui-opacity, 0.9));
-}
-
-.theme-light .custom-date-picker.is-frosted.position-top .picker-arrow {
-  border-top-color: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
-}
-
-.theme-dark .custom-date-picker.position-top .picker-arrow {
-  border-top-color: #2d2d2d;
-}
-
-.theme-dark.has-app-background-image .custom-date-picker.position-top .picker-arrow {
-  border-top-color: rgba(45, 45, 45, var(--app-ui-opacity, 0.9));
-}
-
-.theme-dark .custom-date-picker.is-frosted.position-top .picker-arrow {
-  border-top-color: rgba(45, 45, 45, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
 }
 
 .custom-date-picker .picker-header {
@@ -460,12 +404,12 @@
 }
 
 .custom-date-picker .day-cell.today .day-number {
-  color: #409EFF;
+  color: #1a7fe0;
   font-weight: 600;
 }
 
 .custom-date-picker .day-cell.selected {
-  background-color: #409EFF;
+  background-color: #1a7fe0;
 }
 
 .custom-date-picker .day-cell.selected .day-number {
@@ -492,7 +436,7 @@
   font-size: 9px;
   line-height: 14px;
   text-align: center;
-  color: #409EFF;
+  color: #1a7fe0;
   background-color: transparent;
 }
 
@@ -517,7 +461,7 @@
 }
 
 .custom-date-picker .today-btn {
-  color: #409EFF;
+  color: #1a7fe0;
 }
 
 .custom-date-picker .today-btn:hover {
@@ -542,16 +486,8 @@
 
 /* 暗色主题 */
 .theme-dark .custom-date-picker {
-  background-color: #3a3a3a;
+  background-color: var(--lc-bg-dropdown, #2e333b);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-}
-
-.theme-dark .custom-date-picker .picker-arrow {
-  border-bottom-color: #3a3a3a;
-}
-
-.theme-dark .custom-date-picker.position-top .picker-arrow {
-  border-top-color: #3a3a3a;
 }
 
 .theme-dark .custom-date-picker .nav-btn {

@@ -23,7 +23,7 @@ import {
 } from '@shared/constants'
 import { LINKCORE_BT_UA, LINKCORE_PEER_ID_PREFIX, CHROME_UA } from '@shared/ua'
 import { separateConfig, getEngineConnectionPolicy } from '@shared/utils'
-import { reduceTrackerString } from '@shared/utils/tracker'
+import { deduplicateTrackerString, reduceTrackerString } from '@shared/utils/tracker'
 
 const getDefaultTrackerSources = () => {
   const sources = []
@@ -57,7 +57,7 @@ export default class ConfigManager {
    *
    */
   initSystemConfig () {
-    const defaultEngineBinary = engineBinMap[process.platform] || 'fluxcore'
+    const defaultEngineBinary = engineBinMap[process.platform] || 'xfercore'
     const enginePolicy = getEngineConnectionPolicy(defaultEngineBinary)
     const defaultConn = Number(enginePolicy && enginePolicy.defaultMax) || getMaxConnectionPerServer()
     this.systemConfig = new Store({
@@ -72,30 +72,32 @@ export default class ConfigManager {
         'bt-encryption-mode': 'adaptive',
         'bt-force-encryption': false,
         'bt-load-saved-metadata': true,
-        'bt-max-peers': 0,
+        'bt-max-peers': 128,
+        'bt-request-timeout': 30,
         'bt-min-crypto-level': 'arc4',
         'bt-require-crypto': false,
         'bt-save-metadata': true,
         'bt-tracker': EMPTY_STRING,
-        'bt-tracker-connect-timeout': 30,
-        'bt-tracker-timeout': 30,
+        'bt-tracker-connect-timeout': 10,
+        'bt-tracker-timeout': 10,
         'bt-enable-lpd': true,
         'enable-peer-exchange': true,
         'bt-stop-timeout': 300,
         'bt-max-open-files': 200,
         'bt-metadata-only': false,
         'reuse-uri': true,
-        'min-split-size': '1M',
+        'min-split-size': '4M',
+        'disk-cache': '128M',
         'continue': true,
         'check-certificate': false,
         'enable-http-keep-alive': true,
         'http-accept-gzip': true,
-        'connect-timeout': 10,
-        'timeout': 30,
-        'lowest-speed-limit': '20K',
+        'connect-timeout': 20,
+        'timeout': 60,
+        'lowest-speed-limit': '1K',
         'stream-piece-selector': 'default',
         'max-tries': 0,
-        'retry-wait': 2,
+        'retry-wait': 5,
         'max-file-not-found': 10,
         'uri-selector': 'adaptive',
         'dht-file-path': getDhtPath(IP_VERSION.V4),
@@ -130,7 +132,7 @@ export default class ConfigManager {
   }
 
   initUserConfig () {
-    const defaultEngineBinary = engineBinMap[process.platform] || 'fluxcore'
+    const defaultEngineBinary = engineBinMap[process.platform] || 'xfercore'
     const enginePolicy = getEngineConnectionPolicy(defaultEngineBinary)
     this.userConfig = new Store({
       name: 'user',
@@ -173,7 +175,7 @@ export default class ConfigManager {
         'new-task-jump-target': 'downloading',
         'no-confirm-before-delete-task': false,
         'open-at-login': false,
-        'protocols': { 'magnet': true, 'thunder': false },
+        'protocols': { 'magnet': true, 'thunder': false, 'ed2k': true },
         'proxy': {
           'mode': PROXY_MODE.SYSTEM,
           'server': EMPTY_STRING,
@@ -220,7 +222,6 @@ export default class ConfigManager {
         'extension-exclude-domains': '',
         'extension-min-file-size': 0,
         'extension-shift-toggle-enabled': false,
-        'sidebar-layout-mode': 'three-column',
         'task-plan-type': 'complete',
         'task-plan-time': '',
         'task-plan-action': 'none',
@@ -230,7 +231,23 @@ export default class ConfigManager {
         'security-scan-tool': 'system',
         'custom-security-scan-path': '',
         'task-view-mode': 'list',
-        'show-task-type-badge': true
+        'show-task-type-badge': true,
+        'ed2k-enabled': true,
+        'ed2k-listen-port': 4662,
+        'ed2k-max-connections': 200,
+        'ed2k-connection-timeout': 30,
+        'ed2k-max-sources-per-file': 100,
+        'ed2k-default-servers': '',
+        'ed2k-server-source-enabled': true,
+        'ed2k-source-exchange-enabled': true,
+        'ed2k-source-exchange-interval': 300,
+        'ed2k-kad-enabled': false,
+        'ed2k-kad-bootstrap-nodes': '',
+        'ed2k-server-source': [],
+        'ed2k-auto-sync-server': false,
+        'ed2k-auto-sync-server-interval': 24,
+        'ed2k-auto-sync-server-time': '00:00',
+        'ed2k-last-sync-server-time': 0
       }
       /* eslint-enable quote-props */
     })
@@ -272,8 +289,11 @@ export default class ConfigManager {
       this.setSystemConfig('bt-enable-lpd', true)
     }
 
-    // Fix spawn ENAMETOOLONG on Windows
-    const tracker = reduceTrackerString(this.systemConfig.get('bt-tracker'))
+    // Deduplicate tracker URLs then enforce length limit.
+    // This runs at every startup so the engine never receives duplicate
+    // trackers from the global bt-tracker config.
+    let tracker = deduplicateTrackerString(this.systemConfig.get('bt-tracker'))
+    tracker = reduceTrackerString(tracker)
     this.setSystemConfig('bt-tracker', tracker)
 
     // 同步用户设置的 User-Agent 到系统配置
@@ -283,11 +303,22 @@ export default class ConfigManager {
     }
 
     // === 下载速度优化迁移 ===
-    // 将旧的 min-split-size 从 4M 迁移到 1M，确保文件能被分成更多片段，
-    // 让所有连接始终保持活跃，避免下载后期速度下降
+    // min-split-size 过小（1M）会导致高带宽下每个分片的 HTTP Range
+    // 请求往返开销占比过高，连接利用率下降，表现为"几秒后速度下降"。
+    // 4M 是分片数与请求开销之间的平衡点（分片过大会使中小文件分片数
+    // 不足、连接用不满）。低于 1M 的过小值同样拉低利用率，统一提升到 4M。
     const currentMinSplitSize = this.systemConfig.get('min-split-size')
-    if (!currentMinSplitSize || currentMinSplitSize === '4M' || currentMinSplitSize === '4m') {
-      this.setSystemConfig('min-split-size', '1M')
+    if (!currentMinSplitSize || currentMinSplitSize === '1M' || currentMinSplitSize === '1m') {
+      this.setSystemConfig('min-split-size', '4M')
+    }
+
+    // disk-cache 提供多连接并发写入的缓冲，默认未设置（aria2 默认 16M）。
+    // 16M 缓冲在高速下载时会被写满，aria2 必须等待落盘才能继续接收，
+    // 造成周期性速度抖动。缺失时设置 128M（与内置 aria2.conf 模板一致）；
+    // 用户显式配置的值保持尊重。
+    const currentDiskCache = this.systemConfig.get('disk-cache')
+    if (currentDiskCache === undefined) {
+      this.setSystemConfig('disk-cache', '128M')
     }
 
     // 将 stream-piece-selector 从 geom 迁移到 default，
@@ -297,16 +328,54 @@ export default class ConfigManager {
       this.setSystemConfig('stream-piece-selector', 'default')
     }
 
-    // 将 retry-wait 从 10 迁移到 2，减少连接失败后的等待时间
+    // 将 retry-wait 迁移到 5，给 CDN 限流场景更多恢复时间
     const currentRetryWait = this.systemConfig.get('retry-wait')
-    if (currentRetryWait === undefined || Number(currentRetryWait) >= 10) {
-      this.setSystemConfig('retry-wait', 2)
+    if (currentRetryWait === undefined || Number(currentRetryWait) < 5) {
+      this.setSystemConfig('retry-wait', 5)
     }
 
-    // 将 timeout 从 10 迁移到 30，避免大文件传输时连接被过早断开
+    // 将 timeout 迁移到 60，避免大文件传输时连接被过早断开
     const currentTimeout = this.systemConfig.get('timeout')
-    if (currentTimeout === undefined || Number(currentTimeout) === 10) {
-      this.setSystemConfig('timeout', 30)
+    if (currentTimeout === undefined || Number(currentTimeout) < 60) {
+      this.setSystemConfig('timeout', 60)
+    }
+
+    // 将 connect-timeout 迁移到 20，给慢速 DNS 解析更多时间
+    const currentConnectTimeout = this.systemConfig.get('connect-timeout')
+    if (currentConnectTimeout === undefined || Number(currentConnectTimeout) < 20) {
+      this.setSystemConfig('connect-timeout', 20)
+    }
+
+    // 将 lowest-speed-limit 迁移到 1K，容忍慢速 CDN 连接（如 dl.hdslb.com）
+    const currentLowestSpeed = this.systemConfig.get('lowest-speed-limit')
+    if (currentLowestSpeed === undefined || currentLowestSpeed === '10K' || currentLowestSpeed === '10k') {
+      this.setSystemConfig('lowest-speed-limit', '1K')
+    }
+
+    // 将 bt-tracker 超时从旧默认 30s 迁移到 10s（与内置 aria2.conf 一致），
+    // 失效 tracker 更快放弃，加快 announce 周期和节点发现
+    const currentBtTrackerConnTimeout = this.systemConfig.get('bt-tracker-connect-timeout')
+    if (currentBtTrackerConnTimeout === undefined || Number(currentBtTrackerConnTimeout) === 30) {
+      this.setSystemConfig('bt-tracker-connect-timeout', 10)
+    }
+    const currentBtTrackerTimeout = this.systemConfig.get('bt-tracker-timeout')
+    if (currentBtTrackerTimeout === undefined || Number(currentBtTrackerTimeout) === 30) {
+      this.setSystemConfig('bt-tracker-timeout', 10)
+    }
+
+    // 将 bt-max-peers 从旧默认 0（无限制）迁移到 128（与内置 aria2.conf 一致）。
+    // 无限制会并发连接过多 peer，每个 peer 占用一个 socket 与命令对象，
+    // 在大种子场景下反而拖慢下载并占用资源。
+    const currentBtMaxPeers = this.systemConfig.get('bt-max-peers')
+    if (currentBtMaxPeers === 0) {
+      this.setSystemConfig('bt-max-peers', 128)
+    }
+
+    // bt-request-timeout 缺失时默认 30s（aria2 默认 60s）。
+    // 卡死 peer 的请求槽位更快超时释放并重发，提升 BT 下载容错速度。
+    const currentBtRequestTimeout = this.systemConfig.get('bt-request-timeout')
+    if (currentBtRequestTimeout === undefined) {
+      this.setSystemConfig('bt-request-timeout', 30)
     }
 
     // 删除 enable-http-pipelining，该选项会导致部分 HTTPS 服务器 TLS 握手失败

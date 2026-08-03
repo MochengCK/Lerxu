@@ -31,13 +31,15 @@
       return {
         magnetZeroMap: {},
         magnetAlertedSet: new Set(),
+        magnetResolvedSet: new Set(),
         dataAccessZeroMap: {},
         dataAccessLastCompletedMap: {},
         pollingCount: 0,
         taskSpeedSampleBaseMap: {},
         downloadStartNotifiedGids: new Set(),
         segmentErrorRetryMap: {},
-        engineConnectionStable: true
+        engineConnectionStable: true,
+        pendingFileSelectionSynced: false
       }
     },
     computed: {
@@ -51,7 +53,6 @@
         progress: state => state.progress
       }),
       ...mapState('task', {
-        messages: state => state.messages,
         seedingList: state => state.seedingList,
         taskDetailVisible: state => state.taskDetailVisible,
         enabledFetchPeers: state => state.enabledFetchPeers,
@@ -351,7 +352,7 @@
             }
             const taskName = getTaskName(task)
             const { errorCode, errorMessage } = task
-            console.error(`[Motrix] download error gid: ${gid}, #${errorCode}, ${errorMessage}`)
+            console.error(`[LinkCore] download error gid: ${gid}, #${errorCode}, ${errorMessage}`)
             const reason = this.resolveErrorReason(errorCode, errorMessage)
             const message = reason
               ? this.$t('task.download-error-with-reason', { taskName, reason })
@@ -368,7 +369,7 @@
 
             // 对BT任务添加额外的错误处理和恢复机制
             if (isBt) {
-              console.warn('[Motrix] BT task error detected:', {
+              console.warn('[LinkCore] BT task error detected:', {
                 gid,
                 taskName,
                 errorCode,
@@ -430,7 +431,7 @@
       },
       extractSegmentFilePath (text = '') {
         const raw = `${text || ''}`
-        const match = raw.match(/segment file\s+(.+?\.aria2)\b/i)
+        const match = raw.match(/segment file\s+(.+?\.xfer)\b/i)
         if (!match) {
           return ''
         }
@@ -454,7 +455,7 @@
             try {
               unlinkSync(segmentPath)
             } catch (e) {
-              console.warn('[Motrix] Failed to remove segment file:', segmentPath, e)
+              console.warn('[LinkCore] Failed to remove segment file:', segmentPath, e)
             }
           }
 
@@ -486,7 +487,7 @@
           this.$msg.warning('检测到任务续传文件损坏，已尝试自动重建任务')
           return true
         } catch (e) {
-          console.warn('[Motrix] Auto repair segment file failed:', e)
+          console.warn('[LinkCore] Auto repair segment file failed:', e)
           return false
         }
       },
@@ -598,7 +599,7 @@
             const isMetadataTask = taskName.startsWith('[METADATA]')
             if (isMetadataTask) {
               // 元数据任务完成后不保存到历史记录
-              console.log('[Motrix] Metadata task completed, skipping history save:', gid, taskName)
+              console.log('[LinkCore] Metadata task completed, skipping history save:', gid, taskName)
             } else {
               const files = Array.isArray(task && task.files) ? task.files : []
               const baseFile = files.length > 0 ? files[0] : null
@@ -898,15 +899,15 @@
           const aria2Set = new Set()
           entries.forEach((e) => {
             const n = e ? `${e}` : ''
-            if (n.toLowerCase().endsWith('.aria2')) {
-              aria2Set.add(n.slice(0, -'.aria2'.length))
+            if (n.toLowerCase().endsWith('.xfer')) {
+              aria2Set.add(n.slice(0, -'.xfer'.length))
             }
           })
 
           const parts = []
           for (const e0 of entries) {
             const e = e0 ? `${e0}` : ''
-            if (!e || e.toLowerCase().endsWith('.aria2')) continue
+            if (!e || e.toLowerCase().endsWith('.xfer')) continue
             if (e.startsWith('.') && e.includes('.linkcore-merging-')) continue
             const pendingBySuffix = !!(downloadingFileSuffix && e.endsWith(downloadingFileSuffix))
             const eNoSuffix = this.stripDownloadingSuffixFromFilename(e, downloadingFileSuffix)
@@ -1140,7 +1141,7 @@
           this._mergeRetryTimers.delete(mergeGid)
           if (attempt >= maxAttempts) {
             // 超过最大重试次数，放弃等待，标记为完成
-            console.warn(`[Motrix] Merge retry exhausted for ${mergeGid} after ${maxAttempts} attempts`)
+            console.warn(`[LinkCore] Merge retry exhausted for ${mergeGid} after ${maxAttempts} attempts`)
             this.$store.dispatch('task/removeFromMergingList', mergeGid)
             this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.COMPLETE })
             this.$store.dispatch('task/fetchList')
@@ -1178,7 +1179,7 @@
               this.$store.dispatch('task/fetchList')
             }
           } catch (e) {
-            console.warn(`[Motrix] Merge retry ${attempt + 1} failed:`, e)
+            console.warn(`[LinkCore] Merge retry ${attempt + 1} failed:`, e)
             this._scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
           }
         }, 3000)
@@ -1408,7 +1409,7 @@
               const exists = existsSync(full)
               let ariaExists = false
               try {
-                ariaExists = existsSync(`${full}.aria2`)
+                ariaExists = existsSync(`${full}.xfer`)
               } catch (_) {}
               ready = exists && !ariaExists
             } catch (_) {}
@@ -1442,7 +1443,7 @@
             const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
-            console.warn(`[Motrix] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+            console.warn(`[LinkCore] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
             return { isBilibiliPart: true, mergedPath: '' }
           }
         }
@@ -1489,7 +1490,7 @@
           const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
           return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
         } catch (e) {
-          console.warn(`[Motrix] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+          console.warn(`[LinkCore] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
           return { isBilibiliPart: true, mergedPath: '' }
         }
       },
@@ -1541,9 +1542,9 @@
                 }
 
                 const withoutSuffix = diskPath.slice(0, -downloadingFileSuffix.length)
-                const aria2A = `${diskPath}.aria2`
-                const aria2B = `${withoutSuffix}.aria2`
-                if (existsSync(aria2A) || existsSync(aria2B)) {
+                const xferA = `${diskPath}.xfer`
+                const xferB = `${withoutSuffix}.xfer`
+                if (existsSync(xferA) || existsSync(xferB)) {
                   continue
                 }
 
@@ -1644,7 +1645,7 @@
             const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
-            console.warn(`[Motrix] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+            console.warn(`[LinkCore] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
             return { isBilibiliPart: true, mergedPath: '' }
           }
         } catch (_) {
@@ -1703,7 +1704,7 @@
                 unlinkSync(full)
               } catch (_) {
                 try {
-                  execSync(`rm -f "${full.replace(/"/g, '\\"')}" "${full.replace(/"/g, '\\"')}.aria2"`, { stdio: 'ignore' })
+                  execSync(`rm -f "${full.replace(/"/g, '\\"')}" "${full.replace(/"/g, '\\"')}.xfer"`, { stdio: 'ignore' })
                 } catch (_) {}
               }
               if (!existsSync(full)) {
@@ -1785,7 +1786,7 @@
             try {
               const s = `${p}`
               if (!s) continue
-              if (s.toLowerCase().endsWith('.aria2')) {
+              if (s.toLowerCase().endsWith('.xfer')) {
                 try { unlinkSync(s) } catch (_) {
                   try { execSync(`rm -f "${s.replace(/"/g, '\\"')}"`, { stdio: 'ignore' }) } catch (_) {}
                 }
@@ -1836,8 +1837,8 @@
                   continue
                 }
                 await strongUnlink(full)
-                const aria2Path = `${full}.aria2`
-                await strongUnlink(aria2Path)
+                const xferPath = `${full}.xfer`
+                await strongUnlink(xferPath)
               } catch (_) {}
             }
           }
@@ -1958,7 +1959,7 @@
                     const isMarked = !!(nameNoExtS && nameNoExtS !== stem)
                     if (isMarked || isKnownSourcePath(fullS) || (m4sBase && /\.m4s$/i.test(raw))) {
                       await aggressiveDelete(fullS)
-                      await aggressiveDelete(`${fullS}.aria2`)
+                      await aggressiveDelete(`${fullS}.xfer`)
                     }
                   }
                 }
@@ -2028,7 +2029,7 @@
             if (outputPath && finalOutputPath && resolve(outputPath) !== resolve(finalOutputPath)) {
               const orig = resolve(outputPath)
               try { if (existsSync(orig)) unlinkSync(orig) } catch (_) {}
-              try { const a2 = `${orig}.aria2`; if (existsSync(a2)) unlinkSync(a2) } catch (_) {}
+              try { const xf = `${orig}.xfer`; if (existsSync(xf)) unlinkSync(xf) } catch (_) {}
             }
           }
         } catch (_) {}
@@ -2386,9 +2387,9 @@
         if (!existsSync(targetDir)) {
           try {
             mkdirSync(targetDir, { recursive: true })
-            console.log(`[Motrix] Created target directory: ${targetDir}`)
+            console.log(`[LinkCore] Created target directory: ${targetDir}`)
           } catch (error) {
-            console.warn(`[Motrix] Failed to create target directory: ${error.message}`)
+            console.warn(`[LinkCore] Failed to create target directory: ${error.message}`)
           }
         }
       },
@@ -2511,7 +2512,7 @@
           if (fixedPath !== currentPath && existsSync(currentPath)) {
             const okFix = await renameWithRetry(currentPath, fixedPath)
             if (okFix) {
-              console.log(`[Motrix] Fixed file name structure: ${currentPath} -> ${fixedPath}`)
+              console.log(`[LinkCore] Fixed file name structure: ${currentPath} -> ${fixedPath}`)
               pathToProcess = fixedPath
             }
           }
@@ -2523,7 +2524,7 @@
           if (existsSync(pathToProcess) && originalPath) {
             const ok = await renameWithRetry(pathToProcess, originalPath)
             if (ok && existsSync(originalPath)) {
-              console.log(`[Motrix] Removed downloading suffix: ${pathToProcess} -> ${originalPath}`)
+              console.log(`[LinkCore] Removed downloading suffix: ${pathToProcess} -> ${originalPath}`)
               return originalPath
             }
           } else if (existsSync(desiredPath)) {
@@ -2541,7 +2542,7 @@
             if (targetPath) {
               const ok = await renameWithRetry(suffixedPath, targetPath)
               if (ok && existsSync(targetPath)) {
-                console.log(`[Motrix] Removed downloading suffix: ${suffixedPath} -> ${targetPath}`)
+                console.log(`[LinkCore] Removed downloading suffix: ${suffixedPath} -> ${targetPath}`)
                 return targetPath
               }
             }
@@ -2553,18 +2554,18 @@
         const cfg = this.$store.state.preference.config || {}
         const autoCategorizeEnabled = cfg.autoCategorizeFiles
 
-        console.log('[Motrix] Auto categorize check - enabled:', autoCategorizeEnabled)
+        console.log('[LinkCore] Auto categorize check - enabled:', autoCategorizeEnabled)
 
         if (!autoCategorizeEnabled) {
-          console.log('[Motrix] Auto categorize files is disabled')
+          console.log('[LinkCore] Auto categorize files is disabled')
           return
         }
 
         const categories = cfg.fileCategories
-        console.log('[Motrix] Auto categorize categories:', categories)
+        console.log('[LinkCore] Auto categorize categories:', categories)
 
         if (!categories || Object.keys(categories).length === 0) {
-          console.log('[Motrix] No file categories configured, skip auto categorize')
+          console.log('[LinkCore] No file categories configured, skip auto categorize')
           return
         }
 
@@ -2630,23 +2631,23 @@
                   if (fixedPath !== filePath) {
                     const renameOk = this.renamePreserveTimes(filePath, fixedPath)
                     if (renameOk) {
-                      console.log(`[Motrix] Fixed BT file name structure: ${filePath} -> ${fixedPath}`)
+                      console.log(`[LinkCore] Fixed BT file name structure: ${filePath} -> ${fixedPath}`)
                       pathToProcess = fixedPath
                     } else {
-                      console.warn(`[Motrix] Failed to fix BT file name structure: ${filePath} -> ${fixedPath}`)
+                      console.warn(`[LinkCore] Failed to fix BT file name structure: ${filePath} -> ${fixedPath}`)
                     }
                   }
 
                   const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
                   const ok = this.renamePreserveTimes(pathToProcess, originalPath)
                   if (ok) {
-                    console.log(`[Motrix] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
+                    console.log(`[LinkCore] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
                     filePath = originalPath
                   }
                 }
               }
             } catch (error) {
-              console.warn(`[Motrix] Failed to normalize downloading suffix before categorize: ${error.message}`)
+              console.warn(`[LinkCore] Failed to normalize downloading suffix before categorize: ${error.message}`)
             }
 
             if (!existsSync(filePath)) {
@@ -2663,10 +2664,10 @@
 
               const result = autoCategorizeDownloadedFile(filePath, baseDir, categories)
               if (result) {
-                console.log(`[Motrix] File categorized successfully: ${filePath}`)
+                console.log(`[LinkCore] File categorized successfully: ${filePath}`)
               }
             } catch (error) {
-              console.error(`[Motrix] Error during auto categorization: ${error.message}`)
+              console.error(`[LinkCore] Error during auto categorization: ${error.message}`)
             }
           })
 
@@ -2689,17 +2690,17 @@
                 if (fixedPath !== filePath) {
                   const renameOk = this.renamePreserveTimes(filePath, fixedPath)
                   if (renameOk) {
-                    console.log(`[Motrix] Fixed file name structure before categorize: ${filePath} -> ${fixedPath}`)
+                    console.log(`[LinkCore] Fixed file name structure before categorize: ${filePath} -> ${fixedPath}`)
                     pathToProcess = fixedPath
                   } else {
-                    console.warn(`[Motrix] Failed to fix file name structure before categorize: ${filePath} -> ${fixedPath}`)
+                    console.warn(`[LinkCore] Failed to fix file name structure before categorize: ${filePath} -> ${fixedPath}`)
                   }
                 }
 
                 const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
                 const ok = this.renamePreserveTimes(pathToProcess, originalPath)
                 if (ok) {
-                  console.log(`[Motrix] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
+                  console.log(`[LinkCore] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
                   filePath = originalPath
                 }
               } else {
@@ -2712,7 +2713,7 @@
                   if (fixedSuffixedPath !== suffixedPath && existsSync(suffixedPath)) {
                     const renameOk = this.renamePreserveTimes(suffixedPath, fixedSuffixedPath)
                     if (renameOk) {
-                      console.log(`[Motrix] Fixed suffixed file name structure: ${suffixedPath} -> ${fixedSuffixedPath}`)
+                      console.log(`[LinkCore] Fixed suffixed file name structure: ${suffixedPath} -> ${fixedSuffixedPath}`)
                       pathToProcess = fixedSuffixedPath
                     }
                   }
@@ -2720,19 +2721,19 @@
                   const targetPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
                   const ok = this.renamePreserveTimes(pathToProcess, targetPath)
                   if (ok) {
-                    console.log(`[Motrix] Restored downloading suffix before categorize: ${pathToProcess} -> ${targetPath}`)
+                    console.log(`[LinkCore] Restored downloading suffix before categorize: ${pathToProcess} -> ${targetPath}`)
                     filePath = targetPath
                   }
                 }
               }
             }
           } catch (error) {
-            console.warn(`[Motrix] Failed to normalize downloading suffix before categorize: ${error.message}`)
+            console.warn(`[LinkCore] Failed to normalize downloading suffix before categorize: ${error.message}`)
           }
         }
 
         if (!existsSync(filePath)) {
-          console.warn(`[Motrix] File not found for categorization: ${filePath}`)
+          console.warn(`[LinkCore] File not found for categorization: ${filePath}`)
           return
         }
 
@@ -2741,18 +2742,18 @@
           const dirName = basename(baseDir)
 
           if (categoryNames.includes(dirName)) {
-            console.log(`[Motrix] File already in category directory: ${filePath}`)
+            console.log(`[LinkCore] File already in category directory: ${filePath}`)
             return
           }
 
           const result = autoCategorizeDownloadedFile(filePath, baseDir, categories)
           if (result) {
-            console.log(`[Motrix] File categorized successfully: ${filePath}`)
+            console.log(`[LinkCore] File categorized successfully: ${filePath}`)
           } else {
-            console.warn('[Motrix] File categorization failed or file already in category')
+            console.warn('[LinkCore] File categorization failed or file already in category')
           }
         } catch (error) {
-          console.error(`[Motrix] Error during auto categorization: ${error.message}`)
+          console.error(`[LinkCore] Error during auto categorization: ${error.message}`)
         }
       },
       setFileMtimeOnComplete (task, manualPath = null) {
@@ -2769,7 +2770,7 @@
           const now = new Date()
           utimesSync(filePath, now, now)
         } catch (error) {
-          console.warn(`[Motrix] Failed to set file mtime on complete: ${error.message}`)
+          console.warn(`[LinkCore] Failed to set file mtime on complete: ${error.message}`)
         }
       },
       showTaskCompleteNotify (task, isBT, path) {
@@ -2886,7 +2887,13 @@
       startPolling () {
         this.stopPolling()
         this.timer = setTimeout(() => {
-          this.polling()
+          try {
+            this.polling()
+          } catch (err) {
+            // 单次轮询的同步异常不能中断轮询循环，
+            // 否则任务列表会永久停止刷新（startPolling 不再被调用）
+            console.error('[LinkCore] polling error, loop continues:', err)
+          }
           this.startPolling()
         }, this.interval)
       },
@@ -2898,7 +2905,11 @@
         this._pollingKickAt = now
         this.stopPolling()
         this.timer = setTimeout(() => {
-          this.polling()
+          try {
+            this.polling()
+          } catch (err) {
+            console.error('[LinkCore] polling error, loop continues:', err)
+          }
           this.startPolling()
         }, 0)
       },
@@ -2928,6 +2939,16 @@
           this.checkMagnetAlerts()
           this.checkDataAccessStatus()
           this.fixResumedCompletedSuffixTasks().catch(() => {})
+          // 首次轮询后校验待选择文件状态，移除已不存在的任务条目
+          if (!this.pendingFileSelectionSynced) {
+            this.pendingFileSelectionSynced = true
+            const list = this.$store.state.task.taskList || []
+            this.$store.dispatch('task/syncPendingFileSelection', list)
+            // 重新扫描任务列表，检测因引擎重启而丢失状态的待选文件 BT 任务
+            this.scanForPendingBtTasks()
+          }
+        }).catch(() => {
+          // 引擎断线时 fetchList 会 reject，静默忽略
         })
 
         if (this.taskDetailVisible && this.currentTaskGid) {
@@ -2963,7 +2984,7 @@
           if (existsSync(suffixedPath) && !existsSync(finalPath)) {
             const ok = this.renamePreserveTimes(suffixedPath, finalPath)
             if (ok) {
-              console.log(`[Motrix] Restored suffix near completion: ${suffixedPath} -> ${finalPath}`)
+              console.log(`[LinkCore] Restored suffix near completion: ${suffixedPath} -> ${finalPath}`)
             }
           }
         } catch (_) {}
@@ -3010,20 +3031,20 @@
                     try {
                       require('fs').unlinkSync(finalPath)
                     } catch (e) {
-                      console.warn(`[Motrix] Failed to remove empty file: ${finalPath}`, e)
+                      console.warn(`[LinkCore] Failed to remove empty file: ${finalPath}`, e)
                     }
                   }
 
                   const ok = this.renamePreserveTimes(suffixedPath, finalPath)
                   if (ok) {
-                    console.log(`[Motrix] Restored suffix on startup: ${suffixedPath} -> ${finalPath}`)
+                    console.log(`[LinkCore] Restored suffix on startup: ${suffixedPath} -> ${finalPath}`)
                   } else {
-                    console.warn(`[Motrix] Failed to restore suffix on startup: ${suffixedPath} -> ${finalPath}`)
+                    console.warn(`[LinkCore] Failed to restore suffix on startup: ${suffixedPath} -> ${finalPath}`)
                   }
                 }
               }
             } catch (err) {
-              console.warn(`[Motrix] restoreSuffixFilesForActiveTasks error for task ${task.gid}:`, err)
+              console.warn(`[LinkCore] restoreSuffixFilesForActiveTasks error for task ${task.gid}:`, err)
             }
           })
         })
@@ -3136,6 +3157,8 @@
       },
       checkMagnetAlerts () {
         const list = this.$store.state.task.taskList || []
+        const currentGids = new Set(list.map(t => t && t.gid ? `${t.gid}` : ''))
+
         list.forEach(task => {
           const gid = task.gid
           const zero = Number(task.downloadSpeed) === 0
@@ -3174,13 +3197,116 @@
           } else {
             this.magnetZeroMap[gid] = 0
             if (!magnetPending) {
+              const wasMagnet = !!(this.$store.state.task.magnetStatuses || {})[gid]
               this.$store.dispatch('task/clearMagnetStatus', gid)
               if (this.magnetAlertedSet.has(gid)) {
                 this.magnetAlertedSet.delete(gid)
               }
+              if (wasMagnet) {
+                this.handleMagnetResolved(task)
+              }
             }
           }
         })
+
+        // 检测已从任务列表中消失的磁力任务（元数据下载完成后原任务变为已完成被移除）
+        // 这种情况下 checkMagnetAlerts 的主循环无法检测到磁力→非磁力的转变，
+        // 需要在此补充检测，确保 handleMagnetResolved 被调用以设置 pendingFileSelection
+        Object.keys(this.magnetZeroMap).forEach(gid => {
+          if (!gid || currentGids.has(gid)) return
+          const count = this.magnetZeroMap[gid] || 0
+          if (count <= 0) return
+          // 任务已不在列表中但曾被追踪为磁力任务，触发 resolved 处理
+          this.magnetZeroMap[gid] = 0
+          if (!this.magnetResolvedSet.has(gid)) {
+            this.handleMagnetResolved({ gid })
+          }
+        })
+      },
+      handleMagnetResolved (task) {
+        const gid = task && task.gid ? `${task.gid}` : ''
+        if (!gid) return
+        if (this.magnetResolvedSet.has(gid)) {
+          return
+        }
+        this.magnetResolvedSet.add(gid)
+        // 用户此前已确认过文件选择的任务（confirmedFileSelection），
+        // 应用重启后引擎重新解析元数据时不应再回到"待选择文件"状态，
+        // 直接恢复下载即可（select-file 选项已随会话保存）。
+        const confirmed = this.$store.state.task.confirmedFileSelection || {}
+        api.fetchTaskItem({ gid }).then((detail) => {
+          const followedBy = detail && detail.followedBy ? detail.followedBy : []
+          if (followedBy.length) {
+            followedBy.forEach(newGid => {
+              api.fetchTaskItem({ gid: newGid }).then((newTask) => {
+                const files = Array.isArray(newTask && newTask.files) ? newTask.files : []
+                if (files.length > 1) {
+                  if (confirmed[gid] || confirmed[newGid]) {
+                    api.resumeTask({ gid: newGid }).catch(() => {})
+                  } else {
+                    this.$store.dispatch('task/setPendingFileSelection', newGid)
+                    this.notifyPendingFileSelection(newTask || detail)
+                  }
+                } else {
+                  api.resumeTask({ gid: newGid }).catch(() => {})
+                }
+              }).catch(() => {})
+            })
+          } else {
+            // 引擎可能未使用 followedBy 机制（原地转换磁力任务），
+            // 检查任务本身是否已变为多文件 BT 任务
+            const files = Array.isArray(detail && detail.files) ? detail.files : []
+            const bt = detail && detail.bittorrent ? detail.bittorrent : null
+            if (bt && bt.info && files.length > 1 && detail.status === TASK_STATUS.PAUSED) {
+              if (confirmed[gid]) {
+                api.resumeTask({ gid }).catch(() => {})
+              } else {
+                this.$store.dispatch('task/setPendingFileSelection', gid)
+                this.notifyPendingFileSelection(detail)
+              }
+            } else if (files.length <= 1 && detail.status === TASK_STATUS.PAUSED) {
+              api.resumeTask({ gid }).catch(() => {})
+            }
+          }
+        }).catch(() => {
+          // 原始磁力任务可能已从引擎中移除，扫描任务列表查找新出现的暂停 BT 任务
+          this.scanForPendingBtTasks()
+        })
+      },
+      scanForPendingBtTasks () {
+        const list = this.$store.state.task.taskList || []
+        const pending = this.$store.state.task.pendingFileSelection || {}
+        const confirmed = this.$store.state.task.confirmedFileSelection || {}
+        list.forEach(task => {
+          const taskGid = task && task.gid ? `${task.gid}` : ''
+          if (!taskGid || pending[taskGid] || confirmed[taskGid]) return
+          if (task.status !== TASK_STATUS.PAUSED) return
+          const bt = task.bittorrent
+          if (!bt || !bt.info) return
+          const files = Array.isArray(task.files) ? task.files : []
+          if (files.length <= 1) return
+          // 仅标记尚未开始下载的任务（completedLength 为 0），
+          // 避免将已选择文件、正在下载但被引擎暂停的任务误标记为待选择文件
+          const completed = Number(task.completedLength || 0)
+          if (completed > 0) return
+          this.$store.dispatch('task/setPendingFileSelection', taskGid)
+          this.notifyPendingFileSelection(task)
+        })
+      },
+      notifyPendingFileSelection (task) {
+        const message = this.$t('task.pending-file-selection-message', {
+          taskName: getTaskName(task)
+        })
+        this.$msg.info(message)
+
+        const notifyTitle = this.$t('task.pending-file-selection-notify')
+        /* eslint-disable no-new */
+        const notify = new Notification(notifyTitle, {
+          body: getTaskName(task)
+        })
+        notify.onclick = () => {
+          this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
+        }
       },
       checkDataAccessStatus () {
         const list = this.$store.state.task.taskList || []
@@ -3257,6 +3383,14 @@
           Array.from(this.magnetAlertedSet).forEach(gid => {
             if (!gidSet.has(`${gid}`)) {
               this.magnetAlertedSet.delete(gid)
+            }
+          })
+        }
+
+        if (this.magnetResolvedSet && this.magnetResolvedSet.size > 0) {
+          Array.from(this.magnetResolvedSet).forEach(gid => {
+            if (!gidSet.has(`${gid}`)) {
+              this.magnetResolvedSet.delete(gid)
             }
           })
         }
@@ -3342,21 +3476,34 @@
           return
         }
 
+        // 按 gid 跟踪重试定时器：同一任务多次报错时替换旧定时器，
+        // 组件销毁时统一清理，避免对已删除任务触发无效恢复
+        const scheduleRetry = (delay) => {
+          if (!this._btRetryTimers) {
+            this._btRetryTimers = new Map()
+          }
+          const existing = this._btRetryTimers.get(gid)
+          if (existing) {
+            clearTimeout(existing)
+          }
+          const timer = setTimeout(() => {
+            this._btRetryTimers.delete(gid)
+            api.resumeTask({ gid }).catch(() => {})
+          }, delay)
+          this._btRetryTimers.set(gid, timer)
+        }
+
         // 针对特定错误类型的恢复策略
         switch (code) {
         case 1: // 网络错误
           if (/timeout|timed out/i.test(msg)) {
             // 连接超时，等待后重试
-            console.log(`[Motrix] BT task ${gid} timeout, will retry in 10 seconds`)
-            setTimeout(() => {
-              api.resumeTask({ gid }).catch(() => {})
-            }, 10000)
+            console.log(`[LinkCore] BT task ${gid} timeout, will retry in 10 seconds`)
+            scheduleRetry(10000)
           } else if (/connection refused|refused/i.test(msg)) {
             // 连接被拒绝，可能是tracker问题，稍后重试
-            console.log(`[Motrix] BT task ${gid} connection refused, will retry in 30 seconds`)
-            setTimeout(() => {
-              api.resumeTask({ gid }).catch(() => {})
-            }, 30000)
+            console.log(`[LinkCore] BT task ${gid} connection refused, will retry in 30 seconds`)
+            scheduleRetry(30000)
           }
           break
 
@@ -3371,10 +3518,8 @@
         default:
           // 其他错误，短时间后重试
           if (code > 0) {
-            console.log(`[Motrix] BT task ${gid} error ${code}, will retry in 60 seconds`)
-            setTimeout(() => {
-              api.resumeTask({ gid }).catch(() => {})
-            }, 60000)
+            console.log(`[LinkCore] BT task ${gid} error ${code}, will retry in 60 seconds`)
+            scheduleRetry(60000)
           }
         }
       },
@@ -3497,6 +3642,8 @@
       if (this.isPreferenceWindow()) {
         return
       }
+      // 加载持久化的待选择文件状态，确保应用重启后能恢复
+      this.$store.dispatch('task/loadPendingFileSelection')
       this.bindEngineEvents()
       // 监听 WebSocket 重连事件，重连后重新绑定引擎事件并刷新数据
       api.client.on('reconnect', this.onEngineReconnect)
@@ -3511,8 +3658,14 @@
       if (this.isPreferenceWindow()) {
         return
       }
-      setTimeout(() => {
-        this.$store.dispatch('app/fetchEngineInfo')
+      // 保存定时器句柄，防止组件在 100ms 内被销毁后轮询"复活"
+      this._bootTimer = setTimeout(() => {
+        this._bootTimer = null
+        // 引擎启动早期可能尚未就绪（主进程 RPC 走 HTTP 兜底），
+        // 获取失败不应产生未捕获的 Promise 异常，静默降级即可
+        this.$store.dispatch('app/fetchEngineInfo').catch((err) => {
+          console.warn('[LinkCore] fetch engine info failed:', err && err.message ? err.message : err)
+        })
         this.$store.dispatch('app/fetchEngineOptions')
 
         this.startPolling()
@@ -3531,6 +3684,17 @@
     destroyed () {
       if (this.isPreferenceWindow()) {
         return
+      }
+      if (this._bootTimer) {
+        clearTimeout(this._bootTimer)
+        this._bootTimer = null
+      }
+      // 清理 BT 错误恢复的重试定时器
+      if (this._btRetryTimers && this._btRetryTimers.size > 0) {
+        this._btRetryTimers.forEach((timer) => {
+          clearTimeout(timer)
+        })
+        this._btRetryTimers.clear()
       }
       this.$store.dispatch('task/saveSession')
 

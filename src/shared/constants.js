@@ -51,13 +51,27 @@ export const ENGINE_CONNECTION_FALLBACK = {
   splitMax: 16
 }
 export const ENGINE_CONNECTION_POLICY = {
-  fluxcore: { defaultMax: 32, max: 128, splitMax: 128 },
+  xfercore: { defaultMax: 32, max: 128, splitMax: 128 },
   'aria2-1.36.0': { defaultMax: 64, max: 64, splitMax: 64 },
   'aria2-1.37.0': { defaultMax: 16, max: 16, splitMax: 16 }
 }
 
 // Local app HTTP endpoint for browser extension
 export const APP_HTTP_PORT = 16900
+
+export const BUILTIN_ED2K_SERVERS = [
+  // 来源: emule-security.org + shortypower.org (2026-07-31)
+  // 按活跃用户数排序,定期根据上述站点更新
+  '176.123.5.89:4725', // eMule Sunrise (~49K users, 20M files)
+  '45.82.80.155:5687', // eMule Security (~46K users, 25M files)
+  '91.208.162.87:4232', // Sharing-Devils No.4 (~7.8K users, 3.6M files)
+  '37.15.61.236:4232', // Mazinga Server (~6.4K users, 1.4M files)
+  '85.121.5.137:4232', // Sharing-Devils No.2 (~5.6K users, 2.7M files)
+  '213.252.245.239:43333', // Astra-3 (~3.3K users, 1.6M files)
+  '185.25.48.89:18357', // Akteon Server (~2.4K users, 1.2M files)
+  '213.252.245.239:33333', // Astra-5 (~2.2K users, 1.3M files)
+  '185.237.185.226:31031' // Gaal Server (~262 users, 164K files)
+]
 
 export const UNKNOWN_PEERID = '%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00%00'
 export const UNKNOWN_PEERID_NAME = 'task.peer-client-unknown'
@@ -70,6 +84,9 @@ export const ONE_DAY = ONE_HOUR * 24
 
 // 12 Hours
 export const AUTO_SYNC_TRACKER_INTERVAL = ONE_HOUR * 12
+
+// 24 Hours
+export const AUTO_SYNC_ED2K_SERVER_INTERVAL = ONE_HOUR * 24
 
 // One Week
 export const AUTO_CHECK_UPDATE_INTERVAL = ONE_DAY * 7
@@ -186,6 +203,20 @@ export const TRACKER_SOURCE_OPTIONS = [
   }
 ]
 
+// ED2K server subscription preset sources
+// These provide server.met binary format, auto-parsed on fetch
+export const ED2K_SERVER_SOURCE_OPTIONS = [
+  {
+    label: 'emule-security.org',
+    options: [
+      {
+        value: 'http://upd.emule-security.org/server.met',
+        label: 'server.met'
+      }
+    ]
+  }
+]
+
 export const PROXY_SCOPES = {
   DOWNLOAD: 'download',
   UPDATE_APP: 'update-app',
@@ -229,7 +260,7 @@ export const TRAY_CANVAS_CONFIG = {
   TEXT_FONT_SIZE: 8
 }
 
-export const COMMON_RESOURCE_TAGS = ['http://', 'https://', 'ftp://', 'magnet:']
+export const COMMON_RESOURCE_TAGS = ['http://', 'https://', 'ftp://', 'magnet:', 'ed2k://']
 export const THUNDER_RESOURCE_TAGS = ['thunder://']
 
 export const RESOURCE_TAGS = [
@@ -313,6 +344,11 @@ export const SUB_SUFFIXES = [
   '.sub'
 ]
 
+export const ED2K_DEFAULT_LISTEN_PORT = 4662
+export const ED2K_DEFAULT_MAX_CONNECTIONS = 200
+export const ED2K_DEFAULT_CONNECTION_TIMEOUT = 30
+export const ED2K_DEFAULT_MAX_SOURCES_PER_FILE = 100
+
 export const DOCUMENT_SUFFIXES = [
   '.azw3',
   '.csv',
@@ -327,6 +363,6 @@ export const DOCUMENT_SUFFIXES = [
   '.ppt',
   '.pptx',
   '.txt',
-  '.xsl',
-  '.xslx'
+  '.xls',
+  '.xlsx'
 ]

@@ -8,7 +8,7 @@
       :model="form"
       :rules="rules"
     >
-        <div class="preference-card" data-category="appearance">
+        <div v-if="activeCategory === 'appearance'" class="preference-card" data-category="appearance">
           <h3 class="card-title">{{ $t('preferences.theme') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -21,7 +21,7 @@
           </el-form-item>
         </div>
 
-        <div class="preference-card" data-category="appearance">
+        <div v-if="activeCategory === 'appearance'" class="preference-card" data-category="appearance">
           <h3 class="card-title">{{ $t('preferences.ui') }}</h3>
           <el-form-item size="mini">
             <el-col v-if="showHideAppMenuOption" class="form-item-sub" :span="16">
@@ -87,73 +87,18 @@
           </el-form-item>
         </div>
 
-        <div class="preference-card" data-category="appearance">
-          <h3 class="card-title">{{ $t('preferences.subnav-mode') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="sub-row-reverse">
-                <el-select
-                  v-model="form.sidebarLayoutMode"
-                  size="mini"
-                  @change="autoSaveForm"
-                >
-                  <el-option
-                    :label="$t('preferences.sidebar-layout-mode-floating')"
-                    value="floating"
-                  />
-                  <el-option
-                    :label="$t('preferences.sidebar-layout-mode-three-column')"
-                    value="three-column"
-                  />
-                </el-select>
-                <span class="sub-row-label">{{ $t('preferences.sidebar-layout-mode') }}</span>
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="sub-row-reverse">
-                <el-select
-                  v-model="form.floatingBarDisplayMode"
-                  size="mini"
-                  @change="autoSaveForm"
-                >
-                  <el-option
-                    :label="$t('preferences.floating-bar-display-mode-hover')"
-                    value="hover"
-                  />
-                  <el-option
-                    :label="$t('preferences.floating-bar-display-mode-always')"
-                    value="always"
-                  />
-                </el-select>
-                <span class="sub-row-label">{{ $t('preferences.floating-bar-display-mode') }}</span>
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="sub-row-reverse">
-                <el-checkbox v-model="form.autoHideAside" @change="autoSaveForm">
-                  {{ $t('preferences.auto-hide-aside') }}
-                </el-checkbox>
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="sub-row-reverse">
-                <el-checkbox v-model="form.autoHideFloatingBar" @change="autoSaveForm">
-                  {{ $t('preferences.auto-hide-floating-bar') }}
-                </el-checkbox>
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
         <!-- 背景设置卡片 -->
-        <div class="preference-card" data-category="appearance">
+        <div v-if="activeCategory === 'appearance'" class="preference-card" data-category="appearance">
           <span style="display: none;">外观</span>
           <div class="card-title background-type-nav">
             <div class="background-type-nav__left">
-              <el-radio-group v-model="form.backgroundType" size="mini" @change="autoSaveForm">
-                <el-radio-button label="color">{{ $t('preferences.background-type-color') }}</el-radio-button>
-                <el-radio-button label="image">{{ $t('preferences.background-type-image') }}</el-radio-button>
-              </el-radio-group>
+              <mo-segmented-slider
+                ref="backgroundTypeSegmented"
+                :value="form.backgroundType"
+                :options="backgroundTypeOptions"
+                size="mini"
+                @change="onBackgroundTypeChange"
+              />
             </div>
             <div class="background-type-nav__right">
               <el-button type="primary" size="mini" @click.stop="selectBackgroundImage">
@@ -250,7 +195,7 @@
         </div>
 
         <!-- 运行模式卡片 (仅Mac) -->
-        <div v-if="isMac" class="preference-card" data-category="basic">
+        <div v-if="isMac && activeCategory === 'basic'" class="preference-card" data-category="basic">
           <h3 class="card-title">{{ $t('preferences.run-mode') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -267,7 +212,7 @@
         </div>
 
         <!-- 语言设置卡片 -->
-        <div class="preference-card" data-category="basic">
+        <div v-if="activeCategory === 'basic'" class="preference-card" data-category="basic">
           <h3 class="card-title">{{ $t('preferences.language') }}</h3>
           <div class="language-container">
             <!-- 语言选择框 -->
@@ -298,7 +243,7 @@
         </div>
 
         <!-- 快捷键卡片 -->
-        <div class="preference-card" data-category="basic">
+        <div v-if="activeCategory === 'basic'" class="preference-card" data-category="basic">
           <h3 class="card-title">{{ $t('preferences.shortcuts') }}</h3>
           <el-form-item size="mini">
             <el-row :gutter="8" style="margin-bottom: 8px;">
@@ -324,7 +269,7 @@
         </div>
 
         <!-- 启动设置卡片 -->
-        <div class="preference-card" data-category="basic">
+        <div v-if="activeCategory === 'basic'" class="preference-card" data-category="basic">
           <h3 class="card-title">{{ $t('preferences.startup') }}</h3>
           <el-form-item size="mini">
             <el-col
@@ -350,7 +295,7 @@
         </div>
 
         <!-- 扩展卡片 -->
-        <div class="preference-card" data-category="basic">
+        <div v-if="activeCategory === 'basic'" class="preference-card" data-category="basic">
           <h3 class="card-title">{{ $t('preferences.browser-extensions') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -475,7 +420,7 @@
         </div>
 
         <!-- 下载目录卡片 -->
-        <div class="preference-card" data-category="transfer">
+        <div v-if="activeCategory === 'transfer'" class="preference-card" data-category="transfer">
           <h3 class="card-title">{{ $t('preferences.default-dir') }}</h3>
           <el-form-item size="mini">
             <el-input placeholder="" v-model="form.dir" :readonly="isMas">
@@ -496,7 +441,7 @@
         </div>
 
         <!-- 传输设置卡片 -->
-        <div class="preference-card" data-category="transfer">
+        <div v-if="activeCategory === 'transfer'" class="preference-card" data-category="transfer">
           <h3 class="card-title">{{ $t('preferences.speed-limit') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub speed-limit-row" :span="24">
@@ -548,7 +493,7 @@
         </div>
 
         <!-- BT设置卡片 -->
-        <div class="preference-card" data-category="bt">
+        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
           <h3 class="card-title">{{ $t('preferences.bt-options') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -566,15 +511,13 @@
             </el-col>
             <el-col class="form-item-sub" :span="24">
               <div class="bt-encryption-row">
-                <el-radio-group
-                  v-model="form.btEncryptionMode"
+                <mo-segmented-slider
+                  ref="btEncryptionSegmented"
+                  :value="form.btEncryptionMode"
+                  :options="btEncryptionOptions"
                   size="mini"
                   @change="onBtEncryptionModeChange"
-                >
-                  <el-radio-button label="none">{{ $t('preferences.bt-encryption-none') }}</el-radio-button>
-                  <el-radio-button label="adaptive">{{ $t('preferences.bt-encryption-adaptive') }}</el-radio-button>
-                  <el-radio-button label="force">{{ $t('preferences.bt-encryption-force') }}</el-radio-button>
-                </el-radio-group>
+                />
               </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
@@ -599,7 +542,7 @@
         </div>
 
         <!-- 做种设置卡片 -->
-        <div class="preference-card" data-category="bt">
+        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
           <h3 class="card-title">{{ $t('preferences.bt-seeding-settings') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -645,8 +588,427 @@
           </el-form-item>
         </div>
 
+        <!-- BT Tracker设置卡片 -->
+        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
+          <h3 class="card-title">{{ $t('preferences.bt-tracker') }}</h3>
+          <el-form-item size="mini">
+            <div class="form-item-sub bt-tracker">
+              <el-row :gutter="4">
+                <el-col :span="24">
+                  <div class="tracker-row" style="display:flex; align-items:stretch;">
+                    <div class="tracker-left">
+                      <el-tooltip
+                        class="item"
+                        effect="dark"
+                        :content="isAllTrackerSourcesSelected ? $t('preferences.deselect-all-tracker-sources') : $t('preferences.select-all-tracker-sources')"
+                        placement="bottom"
+                      >
+                        <el-button
+                          size="mini"
+                          @click="toggleAllTrackerSources"
+                          class="sync-tracker-btn"
+                        >
+                          <mo-icon :name="isAllTrackerSourcesSelected ? 'deselect-all' : 'select-all'" width="12" height="12" />
+                        </el-button>
+                      </el-tooltip>
+                    </div>
+                    <div class="track-source" style="flex:1;">
+                      <el-select
+                        ref="trackerSelectRef"
+                        class="select-track-source"
+                        v-model="form.trackerSource"
+                        allow-create
+                        filterable
+                        multiple
+                        collapse-tags
+                        popper-class="tracker-source-popper"
+                        style="width:100%;"
+                        @change="onTrackerSourceChange"
+                      >
+                        <el-option-group
+                          v-for="group in trackerSourceOptions"
+                          :key="group.label"
+                          :label="group.label"
+                        >
+                          <el-option
+                            v-for="item in group.options"
+                            :key="item.value"
+                            :label="item.label"
+                            :value="item.value"
+                          >
+                            <span style="float: left">{{ item.label }}</span>
+                            <span style="float: right; margin-right: 24px; color: var(--lc-color-primary);" v-if="item.cdn">
+                              CDN
+                            </span>
+                          </el-option>
+                        </el-option-group>
+                      </el-select>
+                    </div>
+                    <div class="tracker-right sync-tracker">
+                      <el-tooltip
+                        class="item"
+                        effect="dark"
+                        :content="$t('preferences.sync-tracker-tips')"
+                        placement="bottom"
+                      >
+                        <el-button
+                          size="mini"
+                          @click="syncTrackerFromSource"
+                          class="sync-tracker-btn"
+                        >
+                          <mo-icon
+                            name="refresh"
+                            width="12"
+                            height="12"
+                            :spin="true"
+                            v-if="trackerSyncing"
+                          />
+                          <mo-icon name="sync" width="12" height="12" v-else />
+                        </el-button>
+                      </el-tooltip>
+                      <div class="tracker-source-popup-wrapper">
+                        <el-tooltip
+                          class="item"
+                          effect="dark"
+                          :content="$t('preferences.add-source')"
+                          placement="bottom"
+                          :disabled="trackerSourceConfigVisible"
+                        >
+                          <el-button
+                            size="mini"
+                            @click="openTrackerSourceConfigDialog"
+                            class="sync-tracker-btn"
+                          >
+                            <mo-icon name="link" width="12" height="12" />
+                          </el-button>
+                        </el-tooltip>
+                        <transition name="popup-scale">
+                        <div
+                          class="tracker-source-popup"
+                          v-if="trackerSourceConfigVisible"
+                          @click.stop
+                        >
+                          <div class="tracker-source-popup__header">
+                            <span>{{ $t('preferences.add-source') }}</span>
+                          </div>
+                          <div class="tracker-source-popup__body">
+                            <el-input
+                              v-model="trackerSourceInput"
+                              :placeholder="$t('preferences.tracker-source-input-placeholder')"
+                              clearable
+                              size="small"
+                              @keydown.enter.native="addTrackerSourceFromInput"
+                            >
+                            </el-input>
+                          </div>
+                          <div class="tracker-source-popup__footer">
+                            <el-button size="mini" type="primary" @click="addTrackerSourceFromInput">{{ $t('app.submit') }}</el-button>
+                          </div>
+                        </div>
+                      </transition>
+                      </div>
+                    </div>
+                  </div>
+                </el-col>
+              </el-row>
+              <el-input
+                type="textarea"
+                :autosize="{ minRows: 3, maxRows: 10 }"
+                auto-complete="off"
+                :placeholder="`${$t('preferences.bt-tracker-input-tips')}`"
+                v-model="form.btTracker">
+              </el-input>
+              <div class="el-form-item__info tracker-origins-info" style="margin-top: 8px;">
+                <template v-if="!(originListForDisplay && originListForDisplay.length)">
+                  {{ $t('preferences.bt-tracker-tips') }}
+                </template>
+                <template v-else>
+                  {{ $t('preferences.added-origins') }}
+                  <span v-for="o in originListForDisplay" :key="o" style="margin-right: 12px;">
+                    <el-tooltip class="item" effect="dark" :content="$t('preferences.long-press-to-delete')" placement="top">
+                      <a
+                        href="javascript:;"
+                        @mousedown="(e) => onOriginMouseDown(o, e)"
+                        @mouseup="() => onOriginMouseUp(o)"
+                        @mouseleave="() => onOriginMouseLeave(o)"
+                        @click.prevent="() => onOriginClick(o)"
+                      >
+                        {{ deriveOriginLabel(o) }}
+                        <mo-icon name="link" width="12" height="12" />
+                      </a>
+                    </el-tooltip>
+                  </span>
+                </template>
+              </div>
+            </div>
+            <div class="form-item-sub">
+              <el-checkbox v-model="form.autoSyncTracker">
+                {{ $t('preferences.auto-sync-tracker') }}
+              </el-checkbox>
+            </div>
+            <div class="form-item-sub" v-if="form.autoSyncTracker" style="margin-top: 12px;">
+              <div class="sync-time-setting" style="display: flex; align-items: center; margin-bottom: 12px;">
+                <el-time-picker
+                  v-model="form.autoSyncTrackerTime"
+                  placeholder="选择时间"
+                  format="HH:mm"
+                  value-format="HH:mm"
+                  size="mini"
+                  style="width: 100%;"
+                  @change="autoSaveForm"
+                />
+              </div>
+            </div>
+          </el-form-item>
+          <div class="form-item-sub" style="margin-top: 16px; text-align: center;" v-if="form.lastSyncTrackerTime > 0">
+            <div class="el-form-item__info">
+              {{ $t('preferences.last-sync-tracker-time') }}: {{ new Date(form.lastSyncTrackerTime).toLocaleString() }}
+            </div>
+          </div>
+        </div>
+
+        <!-- ED2K设置卡片 -->
+        <div v-if="activeCategory === 'ed2k'" class="preference-card" data-category="ed2k">
+          <h3 class="card-title">{{ $t('preferences.ed2k-options') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              {{ $t('preferences.ed2k-listen-port') }}
+              <el-input-number
+                v-model="form.ed2kListenPort"
+                @change="autoSaveForm"
+                controls-position="right"
+                :min="1024"
+                :max="65535"
+                :step="1"
+                :label="$t('preferences.ed2k-listen-port')">
+              </el-input-number>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              {{ $t('preferences.ed2k-max-connections') }}
+              <el-input-number
+                v-model="form.ed2kMaxConnections"
+                @change="autoSaveForm"
+                controls-position="right"
+                :min="1"
+                :max="1000"
+                :step="1"
+                :label="$t('preferences.ed2k-max-connections')">
+              </el-input-number>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              {{ $t('preferences.ed2k-connection-timeout') }}
+              <el-input-number
+                v-model="form.ed2kConnectionTimeout"
+                @change="autoSaveForm"
+                controls-position="right"
+                :min="5"
+                :max="300"
+                :step="5"
+                :label="$t('preferences.ed2k-connection-timeout')">
+              </el-input-number>
+              <span style="margin-left: 8px;">{{ $t('preferences.ed2k-seconds') }}</span>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              {{ $t('preferences.ed2k-max-sources') }}
+              <el-input-number
+                v-model="form.ed2kMaxSourcesPerFile"
+                @change="autoSaveForm"
+                controls-position="right"
+                :min="1"
+                :max="500"
+                :step="1"
+                :label="$t('preferences.ed2k-max-sources')">
+              </el-input-number>
+            </el-col>
+          </el-form-item>
+        </div>
+
+        <div v-if="activeCategory === 'ed2k'" class="preference-card" data-category="ed2k">
+          <h3 class="card-title">{{ $t('preferences.ed2k-source-discovery') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <div class="el-form-item__info" style="margin-bottom: 8px;">
+                {{ $t('preferences.ed2k-source-discovery-tips') }}
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.ed2kServerSourceEnabled" @change="autoSaveForm">
+                {{ $t('preferences.ed2k-server-source') }}
+              </el-checkbox>
+              <div class="el-form-item__info" style="margin-left: 24px;">
+                {{ $t('preferences.ed2k-server-source-tips') }}
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.ed2kSourceExchangeEnabled" @change="autoSaveForm">
+                {{ $t('preferences.ed2k-source-exchange') }}
+              </el-checkbox>
+              <div class="el-form-item__info" style="margin-left: 24px;">
+                {{ $t('preferences.ed2k-source-exchange-tips') }}
+              </div>
+              <div v-if="form.ed2kSourceExchangeEnabled" style="margin-left: 24px; margin-top: 4px;">
+                {{ $t('preferences.ed2k-source-exchange-interval') }}
+                <el-input-number
+                  v-model="form.ed2kSourceExchangeInterval"
+                  @change="autoSaveForm"
+                  controls-position="right"
+                  :min="30"
+                  :max="3600"
+                  :step="30"
+                  size="mini"
+                  :label="$t('preferences.ed2k-source-exchange-interval')">
+                </el-input-number>
+                <span style="margin-left: 4px;">{{ $t('preferences.ed2k-seconds') }}</span>
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.ed2kKadEnabled" @change="autoSaveForm">
+                {{ $t('preferences.ed2k-kad') }}
+              </el-checkbox>
+              <div class="el-form-item__info" style="margin-left: 24px;">
+                {{ $t('preferences.ed2k-kad-tips') }}
+              </div>
+              <div v-if="form.ed2kKadEnabled" style="margin-left: 24px; margin-top: 8px;">
+                <div style="margin-bottom: 4px;">
+                  {{ $t('preferences.ed2k-kad-bootstrap-nodes') }}
+                </div>
+                <el-input
+                  v-model="form.ed2kKadBootstrapNodes"
+                  size="mini"
+                  :placeholder="$t('preferences.ed2k-kad-bootstrap-nodes-placeholder')"
+                  @change="autoSaveForm">
+                </el-input>
+                <div class="el-form-item__info" style="margin-top: 4px;">
+                  {{ $t('preferences.ed2k-kad-bootstrap-nodes-tips') }}
+                </div>
+              </div>
+            </el-col>
+          </el-form-item>
+        </div>
+
+        <div v-if="activeCategory === 'ed2k'" class="preference-card" data-category="ed2k">
+          <h3 class="card-title">{{ $t('preferences.ed2k-server-subscription') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <div class="el-form-item__info" style="margin-bottom: 8px;">
+                {{ $t('preferences.ed2k-server-subscription-tips') }}
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="extension-tag-input" @click="focusEd2kSubscriptionInput">
+                <transition-group name="tag-fade" tag="div" class="tags-container">
+                  <el-tag
+                    v-for="url in form.ed2kServerSource"
+                    :key="url"
+                    closable
+                    size="small"
+                    @close="removeEd2kSubscription(url)"
+                    class="extension-tag">
+                    {{ url }}
+                  </el-tag>
+                </transition-group>
+                <input
+                  ref="ed2kSubscriptionInput"
+                  v-model="ed2kSubscriptionInput"
+                  type="text"
+                  class="extension-input"
+                  :placeholder="form.ed2kServerSource.length === 0 ? $t('preferences.ed2k-server-source-placeholder') : ''"
+                  @keydown.enter="addEd2kSubscription"
+                  @keydown.delete="handleEd2kSubscriptionDeleteKey"
+                  @blur="addEd2kSubscription"
+                />
+              </div>
+              <div v-if="ed2kPresetSubscriptions.length > 0" class="ed2k-preset-sources">
+                <span class="ed2k-preset-label">{{ $t('preferences.ed2k-preset-sources') }}:</span>
+                <el-button
+                  v-for="item in ed2kPresetSubscriptions"
+                  :key="item.value"
+                  size="mini"
+                  type="text"
+                  class="ed2k-preset-btn"
+                  @click="addPresetSubscription(item.value)"
+                >
+                  + {{ item.label }}
+                </el-button>
+              </div>
+              <div style="margin-top: 8px;">
+                <el-button
+                  size="mini"
+                  icon="el-icon-refresh"
+                  :loading="ed2kSyncing"
+                  :disabled="form.ed2kServerSource.length === 0"
+                  @click="syncEd2kServersFromSource"
+                >
+                  {{ $t('preferences.ed2k-sync-now') }}
+                </el-button>
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-checkbox v-model="form.ed2kAutoSyncServer" @change="autoSaveForm">
+                {{ $t('preferences.ed2k-auto-sync-server') }}
+              </el-checkbox>
+            </el-col>
+            <el-col v-if="form.ed2kAutoSyncServer" class="form-item-sub-sub" :span="24">
+              <div class="sub-row-reverse">
+                <el-time-picker
+                  v-model="form.ed2kAutoSyncServerTime"
+                  size="mini"
+                  format="HH:mm"
+                  value-format="HH:mm"
+                  :placeholder="$t('preferences.ed2k-auto-sync-server-time')"
+                  style="width: 120px;"
+                  @change="autoSaveForm"
+                />
+                <el-input-number
+                  v-model="form.ed2kAutoSyncServerInterval"
+                  size="mini"
+                  :min="1"
+                  :max="168"
+                  :step="1"
+                  :label="$t('preferences.ed2k-auto-sync-server-interval')"
+                  style="width: 110px; margin-right: 8px;"
+                  @change="autoSaveForm"
+                />
+                <span class="sub-row-label">{{ $t('preferences.ed2k-auto-sync-server-interval') }}</span>
+              </div>
+              <div v-if="form.ed2kLastSyncServerTime > 0" class="el-form-item__info" style="margin-top: 4px;">
+                {{ $t('preferences.ed2k-last-sync-server-time') }}: {{ formatSyncTime(form.ed2kLastSyncServerTime) }}
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              {{ $t('preferences.ed2k-default-servers') }}
+              <div class="extension-tag-input" @click="focusEd2kServerInput">
+                <transition-group name="tag-fade" tag="div" class="tags-container">
+                  <el-tag
+                    v-for="server in ed2kServerTags"
+                    :key="server"
+                    closable
+                    size="small"
+                    @close="removeEd2kServer(server)"
+                    class="extension-tag">
+                    {{ server }}
+                  </el-tag>
+                </transition-group>
+                <input
+                  ref="ed2kServerInput"
+                  v-model="ed2kServerInput"
+                  type="text"
+                  class="extension-input"
+                  :placeholder="ed2kServerTags.length === 0 ? $t('preferences.ed2k-default-servers-placeholder') : ''"
+                  @keydown.enter="addEd2kServer"
+                  @keydown.delete="handleEd2kServerDeleteKey"
+                  @blur="addEd2kServer"
+                />
+              </div>
+              <div class="el-form-item__info" style="margin-top: 8px;">
+                {{ $t('preferences.ed2k-default-servers-tips') }}
+              </div>
+            </el-col>
+          </el-form-item>
+        </div>
+
         <!-- 任务行为卡片 -->
-        <div class="preference-card" data-category="task">
+        <div v-if="activeCategory === 'task'" class="preference-card" data-category="task">
           <h3 class="card-title">{{ $t('preferences.task-behavior') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -755,7 +1117,7 @@
         </div>
 
         <!-- 文件管理卡片 -->
-        <div class="preference-card" data-category="file">
+        <div v-if="activeCategory === 'file'" class="preference-card" data-category="file">
           <h3 class="card-title">{{ $t('preferences.file-handling') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -797,7 +1159,7 @@
         </div>
 
         <!-- 安全卡片 -->
-        <div class="preference-card" data-category="file">
+        <div v-if="activeCategory === 'file'" class="preference-card" data-category="file">
           <h3 class="card-title">{{ $t('preferences.security') }}</h3>
           <div class="card-content">
           <el-form-item size="mini">
@@ -847,7 +1209,7 @@
         </div>
 
         <!-- 剪贴板卡片 -->
-        <div class="preference-card" data-category="task">
+        <div v-if="activeCategory === 'task'" class="preference-card" data-category="task">
           <h3 class="card-title">{{ $t('preferences.clipboard-settings') }}</h3>
           <div class="card-content">
           <el-form-item size="mini">
@@ -890,6 +1252,7 @@
   import HistoryDirectory from '@/components/Preference/HistoryDirectory'
   import SelectDirectory from '@/components/Native/SelectDirectory'
   import ThemeSwitcher from '@/components/Preference/ThemeSwitcher'
+  import SegmentedSlider from '@/components/SegmentedSlider/SegmentedSlider'
   import { availableLanguages, getLanguage, getSystemLocaleName } from '@shared/locales'
   import { getLocaleManager } from '@/components/Locale'
   import {
@@ -904,11 +1267,18 @@
   import {
     APP_HTTP_PORT,
     APP_RUN_MODE,
+    BUILTIN_ED2K_SERVERS,
+    ED2K_SERVER_SOURCE_OPTIONS,
     EMPTY_STRING,
-    ENGINE_MAX_CONCURRENT_DOWNLOADS
+    ENGINE_MAX_CONCURRENT_DOWNLOADS,
+    TRACKER_SOURCE_OPTIONS
   } from '@shared/constants'
   import { reduceTrackerString } from '@shared/utils/tracker'
+  import axios from 'axios'
   import keymap from '@shared/keymap'
+  import '@/components/Icons/sync'
+  import '@/components/Icons/select-all'
+  import '@/components/Icons/deselect-all'
 
   const normalizeTaskMultiSelectModifier = (value) => {
     const raw = `${value || ''}`.trim().toLowerCase()
@@ -1042,19 +1412,40 @@
       setFileMtimeOnComplete,
       customKeymap,
       taskMultiSelectModifier,
-      sidebarLayoutMode,
       autoHideAside,
-      autoHideFloatingBar,
       autoHideTaskPlan,
       autoOpenTaskProgressWindow,
       taskProgressWindowMode,
       clipboardAutoPaste,
       clipboardAutoOpenAddTask,
-      floatingBarDisplayMode,
       enableSecurityScan,
       securityScanTool,
       customSecurityScanPath,
-      showTaskTypeBadge
+      showTaskTypeBadge,
+      ed2kListenPort,
+      ed2kMaxConnections,
+      ed2kConnectionTimeout,
+      ed2kMaxSourcesPerFile,
+      ed2kDefaultServers,
+      ed2kServerSourceEnabled,
+      ed2kSourceExchangeEnabled,
+      ed2kSourceExchangeInterval,
+      ed2kKadEnabled,
+      ed2kKadBootstrapNodes,
+      ed2kServerSource,
+      ed2kAutoSyncServer,
+      ed2kAutoSyncServerInterval,
+      ed2kAutoSyncServerTime,
+      ed2kLastSyncServerTime,
+      autoSyncTracker,
+      autoSyncTrackerInterval,
+      autoSyncTrackerTime,
+      lastSyncTrackerTime,
+      trackerSource,
+      trackerSourceDiscovered,
+      trackerSourceOrigins,
+      trackerSourceMap,
+      btTracker
     } = config
 
     let normalizedEngineMax = engineMaxConnectionPerServer
@@ -1161,19 +1552,40 @@
       },
       customKeymap: customKeymap || {},
       taskMultiSelectModifier: normalizeTaskMultiSelectModifier(taskMultiSelectModifier),
-      sidebarLayoutMode: sidebarLayoutMode || 'floating',
       autoHideAside: autoHideAside === undefined ? false : !!autoHideAside,
-      autoHideFloatingBar: autoHideFloatingBar === undefined ? false : !!autoHideFloatingBar,
       autoHideTaskPlan: autoHideTaskPlan === undefined ? false : !!autoHideTaskPlan,
       autoOpenTaskProgressWindow: autoOpenTaskProgressWindow === undefined ? true : !!autoOpenTaskProgressWindow,
       taskProgressWindowMode: taskProgressWindowMode || 'first',
       clipboardAutoPaste: clipboardAutoPaste === undefined ? true : !!clipboardAutoPaste,
       clipboardAutoOpenAddTask: clipboardAutoOpenAddTask === undefined ? false : !!clipboardAutoOpenAddTask,
-      floatingBarDisplayMode: floatingBarDisplayMode || 'hover',
       enableSecurityScan: enableSecurityScan || false,
       securityScanTool: securityScanTool || 'system',
       customSecurityScanPath: customSecurityScanPath || '',
-      showTaskTypeBadge: showTaskTypeBadge === undefined ? true : !!showTaskTypeBadge
+      showTaskTypeBadge: showTaskTypeBadge === undefined ? true : !!showTaskTypeBadge,
+      ed2kListenPort: ed2kListenPort || 4662,
+      ed2kMaxConnections: ed2kMaxConnections || 200,
+      ed2kConnectionTimeout: ed2kConnectionTimeout || 30,
+      ed2kMaxSourcesPerFile: ed2kMaxSourcesPerFile || 100,
+      ed2kDefaultServers: ed2kDefaultServers || '',
+      ed2kServerSourceEnabled: ed2kServerSourceEnabled === undefined ? true : !!ed2kServerSourceEnabled,
+      ed2kSourceExchangeEnabled: ed2kSourceExchangeEnabled === undefined ? true : !!ed2kSourceExchangeEnabled,
+      ed2kSourceExchangeInterval: ed2kSourceExchangeInterval || 300,
+      ed2kKadEnabled: ed2kKadEnabled === undefined ? false : !!ed2kKadEnabled,
+      ed2kKadBootstrapNodes: ed2kKadBootstrapNodes || '',
+      ed2kServerSource: Array.isArray(ed2kServerSource) ? ed2kServerSource : [],
+      ed2kAutoSyncServer: ed2kAutoSyncServer === undefined ? false : !!ed2kAutoSyncServer,
+      ed2kAutoSyncServerInterval: ed2kAutoSyncServerInterval || 24,
+      ed2kAutoSyncServerTime: ed2kAutoSyncServerTime || '00:00',
+      ed2kLastSyncServerTime: ed2kLastSyncServerTime || 0,
+      autoSyncTracker,
+      autoSyncTrackerInterval: autoSyncTrackerInterval || config['auto-sync-tracker-interval'] || 12,
+      autoSyncTrackerTime: autoSyncTrackerTime !== undefined ? autoSyncTrackerTime : (config['auto-sync-tracker-time'] !== undefined ? config['auto-sync-tracker-time'] : '00:00'),
+      btTracker: convertCommaToLine(btTracker),
+      lastSyncTrackerTime,
+      trackerSource,
+      trackerSourceDiscovered: Array.isArray(trackerSourceDiscovered) ? [...trackerSourceDiscovered] : (config['tracker-source-discovered'] || []),
+      trackerSourceOrigins: Array.isArray(trackerSourceOrigins) ? [...trackerSourceOrigins] : (config['tracker-source-origins'] || []),
+      trackerSourceMap: typeof trackerSourceMap === 'object' && trackerSourceMap ? { ...trackerSourceMap } : (config['tracker-source-map'] || {})
     }
     return result
   }
@@ -1183,7 +1595,8 @@
     components: {
       [HistoryDirectory.name]: HistoryDirectory,
       [SelectDirectory.name]: SelectDirectory,
-      [ThemeSwitcher.name]: ThemeSwitcher
+      [ThemeSwitcher.name]: ThemeSwitcher,
+      [SegmentedSlider.name]: SegmentedSlider
     },
     props: {
       category: {
@@ -1211,12 +1624,6 @@
       if (!('btIpBanList' in formOriginal)) {
         this.$set(formOriginal, 'btIpBanList', [])
       }
-      if (!('sidebarLayoutMode' in form)) {
-        this.$set(form, 'sidebarLayoutMode', 'floating')
-      }
-      if (!('sidebarLayoutMode' in formOriginal)) {
-        this.$set(formOriginal, 'sidebarLayoutMode', 'floating')
-      }
 
       return {
         form,
@@ -1233,7 +1640,16 @@
         collapseTagsBackgroundUiFrostedBlurScope: false,
         textMeasureCanvas: null,
         extensionInput: '',
-        domainInput: ''
+        domainInput: '',
+        ed2kServersText: '',
+        ed2kServerInput: '',
+        ed2kSubscriptionInput: '',
+        ed2kUpdatingForm: false,
+        ed2kSyncing: false,
+        trackerSourceOptions: [],
+        trackerSyncing: false,
+        trackerSourceConfigVisible: false,
+        trackerSourceInput: ''
       }
     },
     computed: {
@@ -1241,6 +1657,19 @@
       isMac: () => is.macOS(),
       isMas: () => is.mas(),
       isLinux () { return is.linux() },
+      btEncryptionOptions () {
+        return [
+          { value: 'none', label: this.$t('preferences.bt-encryption-none') },
+          { value: 'adaptive', label: this.$t('preferences.bt-encryption-adaptive') },
+          { value: 'force', label: this.$t('preferences.bt-encryption-force') }
+        ]
+      },
+      backgroundTypeOptions () {
+        return [
+          { value: 'color', label: this.$t('preferences.background-type-color') },
+          { value: 'image', label: this.$t('preferences.background-type-image') }
+        ]
+      },
       systemLocaleName () {
         return getSystemLocaleName()
       },
@@ -1273,6 +1702,28 @@
           .split(/[\n,]+/)
           .map(domain => domain.trim())
           .filter(domain => domain.length > 0)
+      },
+      ed2kServerTags () {
+        const value = this.ed2kServersText || ''
+        if (!value.trim()) return BUILTIN_ED2K_SERVERS
+
+        // 支持换行符和逗号分隔
+        return value
+          .split(/[\n,]+/)
+          .map(s => s.trim())
+          .filter(s => s.length > 0)
+      },
+      ed2kPresetSubscriptions () {
+        const current = Array.isArray(this.form.ed2kServerSource) ? this.form.ed2kServerSource : []
+        const result = []
+        ED2K_SERVER_SOURCE_OPTIONS.forEach(group => {
+          group.options.forEach(opt => {
+            if (!current.includes(opt.value)) {
+              result.push({ value: opt.value, label: group.label })
+            }
+          })
+        })
+        return result
       },
       maxOverallDownloadLimitParsed: {
         get () {
@@ -1486,6 +1937,39 @@
         })
 
         return categories
+      },
+      originListForDisplay () {
+        const builtin = (TRACKER_SOURCE_OPTIONS || [])
+          .map(g => g && g.label ? g.label : '')
+          .filter(Boolean)
+          .filter(l => l.includes('/'))
+          .map(l => `https://github.com/${l}`)
+        const saved = Array.isArray(this.form.trackerSourceOrigins) ? this.form.trackerSourceOrigins : []
+        const normalizedSaved = saved.map(o => this.normalizeOriginUrl(o))
+        return Array.from(new Set([...builtin.map(this.normalizeOriginUrl), ...normalizedSaved]))
+      },
+      isAllTrackerSourcesSelected () {
+        // 获取所有可用的源
+        const allSources = []
+        ;(this.trackerSourceOptions || []).forEach(group => {
+          ;(group.options || []).forEach(opt => {
+            if (opt.value && !allSources.includes(opt.value)) {
+              allSources.push(opt.value)
+            }
+          })
+        })
+
+        // 如果没有可用源，返回false
+        if (allSources.length === 0) {
+          return false
+        }
+
+        // 获取当前选中的源
+        const selectedSources = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
+
+        // 检查是否所有源都被选中
+        return allSources.length === selectedSources.length &&
+          allSources.every(source => selectedSources.includes(source))
       }
     },
     watch: {
@@ -1507,6 +1991,15 @@
       'form.extensionExcludeDomains' (newVal) {
         // 当配置变化时，更新表单显示
         // 这个 watcher 确保从浏览器扩展添加的域名能实时显示在界面上
+      },
+      'form.ed2kDefaultServers' (val) {
+        if (this.ed2kUpdatingForm) return
+        if (val) {
+          this.ed2kServersText = val
+        } else {
+          // 没有用户自定义服务器时，使用内置服务器列表
+          this.ed2kServersText = BUILTIN_ED2K_SERVERS.join('\n')
+        }
       },
       form: {
         handler () {
@@ -1560,15 +2053,26 @@
           this.updateUiScopeSelectCollapse()
         },
         deep: true
+      },
+      trackerSourceConfigVisible (visible) {
+        if (!visible) {
+          document.removeEventListener('mousedown', this.handleTrackerSourceOutsideClick)
+        }
       }
     },
     mounted () {
+      this.rebuildTrackerSourceOptions()
       window.addEventListener('resize', this.updateUiScopeSelectCollapse)
       this.updateUiScopeSelectCollapse()
       // 立即同步过滤卡片，避免组件首次挂载时所有分类卡片都可见
       // 导致 appearance 卡片（排在前 4 个）闪烁显示。
       this.filterCards(this.searchKeyword, this.activeCategory)
       // 使用 ipcRenderer 直接监听从浏览器扩展更新配置的命令
+      if (this.form.ed2kDefaultServers) {
+        this.ed2kServersText = this.form.ed2kDefaultServers
+      } else {
+        this.ed2kServersText = BUILTIN_ED2K_SERVERS.join('\n')
+      }
       if (this.$electron && this.$electron.ipcRenderer) {
         this._extensionUpdateHandler = (event, command) => {
           if (command === 'preference:update-from-extension') {
@@ -1580,6 +2084,7 @@
       }
     },
     beforeDestroy () {
+      document.removeEventListener('mousedown', this.handleTrackerSourceOutsideClick)
       window.removeEventListener('resize', this.updateUiScopeSelectCollapse)
       if (this._filterTimer) {
         clearTimeout(this._filterTimer)
@@ -1599,6 +2104,12 @@
           return ctx.measureText(`${text || ''}`).width
         } catch (_) {
           return `${text || ''}`.length * 10
+        }
+      },
+      onBackgroundTypeChange (value) {
+        if (this.form.backgroundType !== value) {
+          this.form.backgroundType = value
+          this.autoSaveForm()
         }
       },
       computeScopeSelectCollapse (selectRef, values, options) {
@@ -1653,16 +2164,8 @@
           if (!this.$el) return
           const cards = this.$el.querySelectorAll('.preference-card, .preference-bottom-actions')
           const k = (keyword || '').toLowerCase()
-          const activeCategory = category || ''
           let visibleCount = 0
           cards.forEach(card => {
-            const rawCategory = `${card.dataset.category || ''}`.trim()
-            const categories = rawCategory ? rawCategory.split(/\s+/) : []
-            const categoryMatch = !activeCategory || categories.includes(activeCategory)
-            if (!categoryMatch) {
-              card.style.display = 'none'
-              return
-            }
             if (!k) {
               card.style.display = ''
               visibleCount++
@@ -1676,7 +2179,7 @@
               card.style.display = 'none'
             }
           })
-          this.hasNoResults = visibleCount === 0 && (k !== '' || activeCategory)
+          this.hasNoResults = visibleCount === 0 && k !== ''
         })
       },
       getShortcutCommands () {
@@ -1932,7 +2435,7 @@
           if (!isEmpty(diffConfig(this.formOriginal, this.form))) {
             this.submitForm('basicForm')
           }
-        }, 100)
+        }, 300)
       },
       validateDownloadingFileSuffix () {
         const suffix = this.form.downloadingFileSuffix
@@ -2127,6 +2630,7 @@
           force: { 'bt-require-crypto': true, 'bt-min-crypto-level': 'arc4' }
         }
         const cfg = modeConfig[mode] || modeConfig.adaptive
+        this.form.btEncryptionMode = mode
         this.form.btRequireCrypto = cfg['bt-require-crypto']
         this.form.btMinCryptoLevel = cfg['bt-min-crypto-level']
         this.autoSaveForm()
@@ -2249,6 +2753,159 @@
           this.removeDomain(lastDomain)
         }
       },
+      addEd2kServer () {
+        const input = this.ed2kServerInput.trim()
+        if (!input) return
+
+        // 分割输入（支持逗号、分号、空格等分隔符）
+        const newServers = input
+          .split(/[,，;；\s]+/)
+          .map(s => s.trim())
+          .filter(s => s.length > 0)
+
+        if (newServers.length === 0) {
+          this.ed2kServerInput = ''
+          return
+        }
+
+        // 确保每个服务器都有端口，没有则添加默认端口 4661
+        const normalizedServers = newServers.map(s => {
+          if (!s.includes(':')) {
+            return `${s}:4661`
+          }
+          return s
+        })
+
+        // 获取现有服务器列表
+        const existingServers = this.ed2kServerTags
+
+        // 合并并去重
+        const allServers = [...existingServers, ...normalizedServers]
+        const uniqueServers = Array.from(new Set(allServers))
+        const serverStr = uniqueServers.join('\n')
+
+        // 更新显示
+        this.ed2kServersText = serverStr
+
+        // 同步到表单，以便 autoSaveForm 能检测到变更
+        this.ed2kUpdatingForm = true
+        this.form.ed2kDefaultServers = convertLineToComma(serverStr)
+        this.ed2kUpdatingForm = false
+
+        // 清空输入框
+        this.ed2kServerInput = ''
+
+        // 保存
+        this.autoSaveForm()
+      },
+      removeEd2kServer (server) {
+        // 从列表中移除指定服务器
+        const servers = this.ed2kServerTags.filter(s => s !== server)
+        const serverStr = servers.join('\n')
+
+        // 更新显示
+        this.ed2kServersText = serverStr
+
+        // 同步到表单，以便 autoSaveForm 能检测到变更
+        this.ed2kUpdatingForm = true
+        this.form.ed2kDefaultServers = convertLineToComma(serverStr)
+        this.ed2kUpdatingForm = false
+
+        // 保存
+        this.autoSaveForm()
+      },
+      focusEd2kServerInput () {
+        // 点击容器时聚焦到输入框
+        this.$nextTick(() => {
+          if (this.$refs.ed2kServerInput) {
+            this.$refs.ed2kServerInput.focus()
+          }
+        })
+      },
+      handleEd2kServerDeleteKey (event) {
+        // 当输入框为空且按下删除键时，删除最后一个标签
+        if (this.ed2kServerInput === '' && this.ed2kServerTags.length > 0) {
+          event.preventDefault()
+          const lastServer = this.ed2kServerTags[this.ed2kServerTags.length - 1]
+          this.removeEd2kServer(lastServer)
+        }
+      },
+      addEd2kSubscription () {
+        const input = this.ed2kSubscriptionInput.trim()
+        if (!input) return
+
+        const current = Array.isArray(this.form.ed2kServerSource) ? this.form.ed2kServerSource : []
+        if (!current.includes(input)) {
+          this.form.ed2kServerSource = [...current, input]
+          this.autoSaveForm()
+        }
+        this.ed2kSubscriptionInput = ''
+      },
+      addPresetSubscription (url) {
+        const current = Array.isArray(this.form.ed2kServerSource) ? this.form.ed2kServerSource : []
+        if (!current.includes(url)) {
+          this.form.ed2kServerSource = [...current, url]
+          this.autoSaveForm()
+        }
+      },
+      removeEd2kSubscription (url) {
+        const current = Array.isArray(this.form.ed2kServerSource) ? this.form.ed2kServerSource : []
+        this.form.ed2kServerSource = current.filter(s => s !== url)
+        this.autoSaveForm()
+      },
+      focusEd2kSubscriptionInput () {
+        this.$nextTick(() => {
+          if (this.$refs.ed2kSubscriptionInput) {
+            this.$refs.ed2kSubscriptionInput.focus()
+          }
+        })
+      },
+      handleEd2kSubscriptionDeleteKey (event) {
+        const current = Array.isArray(this.form.ed2kServerSource) ? this.form.ed2kServerSource : []
+        if (this.ed2kSubscriptionInput === '' && current.length > 0) {
+          event.preventDefault()
+          const last = current[current.length - 1]
+          this.removeEd2kSubscription(last)
+        }
+      },
+      async syncEd2kServersFromSource () {
+        const source = this.form.ed2kServerSource
+        if (!source || source.length === 0) {
+          return
+        }
+
+        this.ed2kSyncing = true
+        try {
+          const servers = await this.$store.dispatch('preference/fetchEd2kServers', source)
+          if (servers && servers.length > 0) {
+            // Merge with builtin servers and dedupe
+            const merged = [...new Set([...servers, ...BUILTIN_ED2K_SERVERS])]
+            const serverStr = merged.join(',')
+
+            this.ed2kUpdatingForm = true
+            this.form.ed2kDefaultServers = serverStr
+            this.form.ed2kLastSyncServerTime = Date.now()
+            this.ed2kUpdatingForm = false
+
+            this.ed2kServersText = convertCommaToLine(serverStr)
+            this.autoSaveForm()
+            this.$msg.success(this.$t('preferences.ed2k-sync-success'))
+          } else {
+            this.$msg.warning(this.$t('preferences.ed2k-sync-empty'))
+          }
+        } catch (error) {
+          console.error('[ED2K] sync servers failed:', error)
+          this.$msg.error(this.$t('preferences.ed2k-sync-fail'))
+        } finally {
+          this.ed2kSyncing = false
+        }
+      },
+      formatSyncTime (timestamp) {
+        if (!timestamp) return ''
+        const d = new Date(timestamp)
+        const pad = (n) => String(n).padStart(2, '0')
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+      },
       handleNativeDirectorySelected (dir) {
         this.form.dir = dir
         this.$store.dispatch('preference/recordHistoryDirectory', dir)
@@ -2334,12 +2991,12 @@
       submitForm (formName) {
         const form = this.$refs[formName]
         if (!form) {
-          console.error('[Motrix] form ref not found:', formName)
+          console.error('[LinkCore] form ref not found:', formName)
           return false
         }
         form.validate((valid) => {
           if (!valid) {
-            console.error('[Motrix] preference form valid:', valid)
+            console.error('[LinkCore] preference form valid:', valid)
             return false
           }
 
@@ -2394,17 +3051,26 @@
             data.extensionExcludeDomains = convertLineToComma(extensionExcludeDomains)
           }
 
+          // 如果服务器列表与内置列表不同，则保存用户自定义列表
+          const currentServers = this.ed2kServerTags
+          const builtinStr = BUILTIN_ED2K_SERVERS.join(',')
+          const currentStr = currentServers.join(',')
+          if (currentStr !== builtinStr) {
+            data.ed2kDefaultServers = convertLineToComma(this.ed2kServersText)
+          } else {
+            // 与内置列表一致，清空配置以使用内置默认值
+            data.ed2kDefaultServers = ''
+          }
+
           if (rpcListenPort === EMPTY_STRING) {
             data.rpcListenPort = this.rpcDefaultPort
           }
 
-          console.log('[Motrix] preference changed data:', data)
+          console.log('[LinkCore] preference changed data:', data)
 
           this.$store.dispatch('preference/save', data)
             .then(() => {
               this.$store.dispatch('app/fetchEngineOptions')
-              // 不立即调用 syncFormConfig，避免覆盖正在编辑的数据
-              // this.syncFormConfig()
               // 只更新 formOriginal，保持 form 不变
               this.formOriginal = cloneDeep(this.form)
               // Don't show success message for auto-save to avoid constant notifications
@@ -2427,6 +3093,630 @@
             }
           }
         })
+      },
+
+      // ---- Tracker Methods ----
+      extractTrackerLines (text) {
+        const raw = `${text}`
+        const tokens = raw.split(/\r?\n|,/)
+        return tokens.map(t => `${t}`.trim()).filter(Boolean).filter(t => /^(udp|http|https):\/\//i.test(t))
+      },
+      getBuiltinOrigins () {
+        return (TRACKER_SOURCE_OPTIONS || [])
+          .map(g => g && g.label ? g.label : '')
+          .filter(Boolean)
+          .filter(l => l.includes('/'))
+          .map(l => `https://github.com/${l}`)
+      },
+      onOriginMouseDown (o, e) {
+        if (!e || e.button !== 0) return
+        if (!this.originHoldTimers) this.originHoldTimers = {}
+        this.originHoldActivated = false
+        const tid = setTimeout(() => {
+          this.originHoldActivated = true
+          this.deleteOrigin(o)
+        }, 800)
+        this.originHoldTimers[o] = tid
+      },
+      onOriginMouseUp (o) {
+        this.cancelOriginHold(o)
+      },
+      onOriginMouseLeave (o) {
+        this.cancelOriginHold(o)
+      },
+      cancelOriginHold (o) {
+        if (this.originHoldTimers && this.originHoldTimers[o]) {
+          clearTimeout(this.originHoldTimers[o])
+          delete this.originHoldTimers[o]
+        }
+      },
+      onOriginClick (o) {
+        if (this.originHoldActivated) return
+        try {
+          window.open(o, '_blank')
+        } catch (_) {}
+      },
+      deleteOrigin (o) {
+        const builtin = this.getBuiltinOrigins()
+        if (builtin.includes(o)) {
+          this.$msg.warning('内置来源不可删除')
+          return
+        }
+        const origins = Array.isArray(this.form.trackerSourceOrigins) ? [...this.form.trackerSourceOrigins] : []
+        const idx = origins.indexOf(o)
+        if (idx >= 0) origins.splice(idx, 1)
+        this.form.trackerSourceOrigins = origins
+        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
+        const map = typeof this.form.trackerSourceMap === 'object' && this.form.trackerSourceMap ? { ...this.form.trackerSourceMap } : {}
+        const filtered = discovered.filter(u => {
+          const origin = map[u] || this.deriveOriginSite(u)
+          return origin !== o
+        })
+        this.form.trackerSourceDiscovered = filtered
+        Object.keys(map).forEach(k => { if (map[k] === o) delete map[k] })
+        this.form.trackerSourceMap = map
+        const selected = Array.isArray(this.form.trackerSource) ? [...this.form.trackerSource] : []
+        const selectedFiltered = selected.filter(u => {
+          const origin = map[u] || this.deriveOriginSite(u)
+          return origin !== o
+        })
+        this.form.trackerSource = selectedFiltered
+        this.rebuildTrackerSourceOptions()
+        this.sanitizeSelectedSources()
+        this.autoSaveForm()
+        this.recomputeBtTrackerFromSelected()
+        this.$msg.success(this.$t('preferences.origin-removed'))
+      },
+      recomputeBtTrackerFromSelected () {
+        const selected = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
+        if (!selected.length) {
+          this.form.btTracker = ''
+          this.form.lastSyncTrackerTime = Date.now()
+          return
+        }
+        this.trackerSyncing = true
+        this.$store.dispatch('preference/fetchBtTracker', selected)
+          .then((data) => {
+            const texts = Array.isArray(data) ? data : []
+            const lines = []
+            texts.forEach(t => {
+              const ls = this.extractTrackerLines(t)
+              if (ls && ls.length) lines.push(...ls)
+            })
+            const uniq = Array.from(new Set(lines))
+            const tracker = uniq.join('\n')
+            this.form.lastSyncTrackerTime = Date.now()
+            this.form.btTracker = tracker
+            this.trackerSyncing = false
+          })
+          .catch((_) => {
+            this.trackerSyncing = false
+          })
+      },
+      sanitizeSelectedSources () {
+        const allowed = new Set()
+        ;(this.trackerSourceOptions || []).forEach(group => {
+          ;(group.options || []).forEach(opt => allowed.add(opt.value))
+        })
+        const current = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
+        const filtered = current.filter(v => allowed.has(v))
+        if (filtered.length !== current.length) {
+          this.form.trackerSource = filtered
+        }
+      },
+      applyTrackerResult (lines, usedUrls = [], originSite = '') {
+        const uniq = Array.from(new Set(lines))
+        this.form.btTracker = uniq.join('\n')
+        this.form.lastSyncTrackerTime = Date.now()
+        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
+        usedUrls.forEach(u => { if (!discovered.includes(u)) discovered.push(u) })
+        this.form.trackerSourceDiscovered = discovered
+        const origins = Array.isArray(this.form.trackerSourceOrigins) ? [...this.form.trackerSourceOrigins] : []
+        const normalizedOrigin = originSite ? this.normalizeOriginUrl(originSite) : ''
+        if (normalizedOrigin && !origins.map(o => this.normalizeOriginUrl(o)).includes(normalizedOrigin)) origins.push(normalizedOrigin)
+        this.form.trackerSourceOrigins = origins
+        const map = typeof this.form.trackerSourceMap === 'object' && this.form.trackerSourceMap ? { ...this.form.trackerSourceMap } : {}
+        usedUrls.forEach(u => { if (originSite) map[u] = originSite })
+        this.form.trackerSourceMap = map
+        this.rebuildTrackerSourceOptions()
+        this.autoSaveForm()
+        this.$msg.success(this.$t('preferences.extract-success', { count: uniq.length }))
+      },
+      applySourceDiscovery (usedUrls = [], originSite = '') {
+        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
+        usedUrls.forEach(u => { if (!discovered.includes(u)) discovered.push(u) })
+        this.form.trackerSourceDiscovered = discovered
+        const origins = Array.isArray(this.form.trackerSourceOrigins) ? [...this.form.trackerSourceOrigins] : []
+        const normalizedOrigin = originSite ? this.normalizeOriginUrl(originSite) : ''
+        if (normalizedOrigin && !origins.map(o => this.normalizeOriginUrl(o)).includes(normalizedOrigin)) origins.push(normalizedOrigin)
+        this.form.trackerSourceOrigins = origins
+        const map = typeof this.form.trackerSourceMap === 'object' && this.form.trackerSourceMap ? { ...this.form.trackerSourceMap } : {}
+        usedUrls.forEach(u => { if (originSite) map[u] = originSite })
+        this.form.trackerSourceMap = map
+        this.rebuildTrackerSourceOptions()
+        this.sanitizeSelectedSources()
+        this.autoSaveForm()
+        this.$msg.success(this.$t('preferences.added-origin-files-success', { count: usedUrls.length }))
+      },
+      rebuildTrackerSourceOptions () {
+        const base = JSON.parse(JSON.stringify(TRACKER_SOURCE_OPTIONS))
+        const srcs = Array.isArray(this.form.trackerSourceDiscovered) ? this.form.trackerSourceDiscovered : []
+        const groups = {}
+        srcs.forEach(u => {
+          const groupLabel = this.deriveTrackerGroup(u) || this.deriveTrackerGroupByHost(u)
+          const opt = { value: u, label: this.deriveTrackerLabel(u), cdn: false }
+          if (!groupLabel) return
+          if (!groups[groupLabel]) groups[groupLabel] = []
+          groups[groupLabel].push(opt)
+        })
+        Object.keys(groups).forEach(label => {
+          const idx = base.findIndex(i => i.label === label)
+          if (idx >= 0) {
+            const exist = base[idx].options || []
+            const merged = [...exist]
+            groups[label].forEach(opt => {
+              if (!merged.find(o => o.value === opt.value)) merged.push(opt)
+            })
+            base[idx].options = merged
+          } else {
+            base.push({ label, options: groups[label] })
+          }
+        })
+        this.trackerSourceOptions = base
+        this.sanitizeSelectedSources()
+      },
+      deriveTrackerLabel (u) {
+        const m = /([^/]+\.txt)(?:\?.*)?$/i.exec(`${u}`)
+        if (m) return m[1]
+        return u
+      },
+      deriveTrackerGroup (u) {
+        const s = `${u}`
+        const m1 = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//i.exec(s)
+        if (m1) return `${m1[1]}/${m1[2]}`
+        const m2 = /^https:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/]+)\//i.exec(s)
+        if (m2) return `${m2[1]}/${m2[2]}`
+        const m3 = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\//i.exec(s)
+        if (m3) return `${m3[1]}/${m3[2]}`
+        if (/down\.adysec\.com/i.test(s)) return 'adysec/tracker'
+        return ''
+      },
+      deriveTrackerGroupByHost (u) {
+        try {
+          const { host } = new URL(u)
+          return host
+        } catch (_) {
+          return ''
+        }
+      },
+      openTrackerSourceConfigDialog () {
+        if (this.trackerSourceConfigVisible) {
+          this.closeTrackerSourcePopup()
+          return
+        }
+        this.trackerSourceInput = ''
+        this.trackerSourceConfigVisible = true
+        this.$nextTick(() => {
+          this.adjustTrackerPopupPosition()
+          document.addEventListener('mousedown', this.handleTrackerSourceOutsideClick)
+        })
+      },
+      adjustTrackerPopupPosition () {
+        const popup = this.$el.querySelector('.tracker-source-popup')
+        const wrapper = this.$el.querySelector('.tracker-source-popup-wrapper')
+        if (!popup || !wrapper) return
+        const popupRect = popup.getBoundingClientRect()
+        const viewportW = window.innerWidth
+        const viewportH = window.innerHeight
+        popup.style.left = ''
+        popup.style.right = ''
+        popup.style.top = ''
+        popup.style.bottom = ''
+        // 默认从按钮位置（顶部）放大缩小
+        popup.style.transformOrigin = 'top right'
+        if (popupRect.right > viewportW - 8) {
+          popup.style.right = '0'
+        }
+        if (popupRect.left < 8) {
+          popup.style.left = '0'
+          popup.style.right = ''
+          // 左侧对齐时锚点跟随
+          popup.style.transformOrigin = 'top left'
+        }
+        if (popupRect.bottom > viewportH - 8) {
+          popup.style.top = 'auto'
+          popup.style.bottom = '100%'
+          popup.style.marginBottom = '6px'
+          popup.style.marginTop = '0'
+          // 翻转到按钮上方时，从按钮位置（弹窗底部）放大缩小
+          if (popup.style.right === '0') {
+            popup.style.transformOrigin = 'bottom right'
+          } else if (popup.style.left === '0') {
+            popup.style.transformOrigin = 'bottom left'
+          } else {
+            popup.style.transformOrigin = 'bottom right'
+          }
+        }
+      },
+      handleTrackerSourceOutsideClick (e) {
+        const popup = this.$el.querySelector('.tracker-source-popup-wrapper')
+        if (popup && !popup.contains(e.target)) {
+          this.closeTrackerSourcePopup()
+        }
+      },
+      closeTrackerSourcePopup () {
+        const popup = this.$el.querySelector('.tracker-source-popup')
+        if (popup) {
+          popup.style.left = ''
+          popup.style.right = ''
+          popup.style.top = ''
+          popup.style.bottom = ''
+          popup.style.marginTop = ''
+          popup.style.marginBottom = ''
+          popup.style.transformOrigin = ''
+        }
+        this.trackerSourceConfigVisible = false
+        document.removeEventListener('mousedown', this.handleTrackerSourceOutsideClick)
+      },
+      onTrackerDropdownVisibleChange (visible) {
+        this.trackerDropdownVisible = visible
+      },
+      onTrackerSourceChange () {
+        this.autoSaveForm()
+        this.recomputeBtTrackerFromSelected()
+      },
+      toggleTrackerDropdown () {
+        const selectRef = this.$refs.trackerSelectRef
+        if (selectRef) {
+          if (this.trackerDropdownVisible) {
+            selectRef.blur()
+          } else {
+            selectRef.focus()
+          }
+        }
+      },
+      async addTrackerSourceFromInput () {
+        const url = `${this.trackerSourceInput}`.trim()
+        if (!url) return
+        await this.configureTrackerFromGithubWithUrl(url)
+        this.trackerSourceInput = ''
+        this.closeTrackerSourcePopup()
+      },
+      removeDiscoveredSource (u) {
+        const list = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
+        const idx = list.indexOf(u)
+        if (idx >= 0) {
+          list.splice(idx, 1)
+          this.form.trackerSourceDiscovered = list
+          this.rebuildTrackerSourceOptions()
+          this.autoSaveForm()
+        }
+      },
+      resetTrackerSelectBoxSources () {
+        this.form.trackerSource = []
+        this.form.trackerSourceDiscovered = []
+        this.form.trackerSourceMap = {}
+        this.rebuildTrackerSourceOptions()
+        this.sanitizeSelectedSources()
+        this.autoSaveForm()
+        this.$msg.success(this.$t('preferences.reset-select-sources-success'))
+      },
+      toggleAllTrackerSources () {
+        // 判断当前是否全选
+        if (this.isAllTrackerSourcesSelected) {
+          // 如果已全选，则取消全选
+          this.form.trackerSource = []
+          this.$msg.success(this.$t('preferences.deselect-all-tracker-sources-success'))
+
+          // 清除输入框里的Tracker服务器内容
+          this.recomputeBtTrackerFromSelected()
+        } else {
+          // 否则全选
+          const allSources = []
+          ;(this.trackerSourceOptions || []).forEach(group => {
+            ;(group.options || []).forEach(opt => {
+              if (opt.value && !allSources.includes(opt.value)) {
+                allSources.push(opt.value)
+              }
+            })
+          })
+
+          this.form.trackerSource = allSources
+          this.$msg.success(this.$t('preferences.select-all-tracker-sources-success', { count: allSources.length }))
+
+          // 自动同步Tracker
+          this.recomputeBtTrackerFromSelected()
+        }
+
+        // 自动保存配置
+        this.autoSaveForm()
+      },
+      syncTrackerFromSource () {
+        this.trackerSyncing = true
+        const { trackerSource } = this.form
+        this.$store.dispatch('preference/fetchBtTracker', trackerSource)
+          .then((data) => {
+            const texts = Array.isArray(data) ? data : []
+            const lines = []
+            texts.forEach(t => {
+              const ls = this.extractTrackerLines(t)
+              if (ls && ls.length) lines.push(...ls)
+            })
+            const uniq = Array.from(new Set(lines))
+            const tracker = uniq.join('\n')
+            this.form.lastSyncTrackerTime = Date.now()
+            this.form.btTracker = tracker
+            this.trackerSyncing = false
+            if (!uniq.length) {
+              this.$msg.warning(this.$t('preferences.sync-none'))
+            } else {
+              this.$msg.success(this.$t('preferences.sync-success', { count: uniq.length }))
+            }
+          })
+          .catch((_) => {
+            this.trackerSyncing = false
+            this.$msg.error(this.$t('preferences.sync-failed'))
+          })
+      },
+      async configureTrackerFromGithub () {
+        try {
+          const r = await this.$prompt(
+            this.$t('preferences.configure-tracker-prompt-message'),
+            this.$t('preferences.configure-tracker-prompt-title'),
+            {
+              confirmButtonText: this.$t('preferences.extract'),
+              cancelButtonText: this.$t('app.cancel'),
+              inputPlaceholder: this.$t('preferences.tracker-source-input-placeholder')
+            }
+          )
+          const url = `${r.value}`.trim()
+          if (!url) return
+          await this.configureTrackerFromGithubWithUrl(url)
+        } catch (e) {
+          if (e && e === 'cancel') return
+          this.$msg.error(this.$t('preferences.extract-failed'))
+        }
+      },
+      async configureTrackerFromGithubWithUrl (url) {
+        try {
+          const origin = this.deriveOriginSite(url)
+          if (origin && this.isOriginDuplicated(origin)) {
+            this.$msg.warning(this.$t('preferences.origin-exists'))
+            return
+          }
+          if (this.isGithubRepoUrl(url)) {
+            const result = await this.resolveGithubRepo(url)
+            const lines = result.trackers || []
+            if (!lines.length) {
+              this.$msg.error(this.$t('preferences.extract-empty-repo'))
+              return
+            }
+            this.applySourceDiscovery(result.usedUrls || [], origin)
+            return
+          }
+          const raw = this.toRawUrl(url)
+          if (this.isSourceDuplicated(raw)) {
+            this.$msg.warning(this.$t('preferences.source-exists'))
+            return
+          }
+          const resp = await axios.get(raw, { responseType: 'text' })
+          const text = `${resp && resp.data ? resp.data : ''}`
+          const trackers = this.extractTrackerLines(text)
+          if (!trackers.length) {
+            this.$msg.error(this.$t('preferences.extract-empty-link'))
+            return
+          }
+          this.applySourceDiscovery([raw], this.deriveOriginSite(url))
+        } catch (e) {
+          this.$msg.error(this.$t('preferences.extract-failed'))
+        }
+      },
+      isOriginDuplicated (origin) {
+        const n = this.normalizeOriginUrl(origin)
+        const builtin = this.getBuiltinOrigins().map(o => this.normalizeOriginUrl(o))
+        const saved = (Array.isArray(this.form.trackerSourceOrigins) ? this.form.trackerSourceOrigins : []).map(o => this.normalizeOriginUrl(o))
+        return builtin.includes(n) || saved.includes(n)
+      },
+      isSourceDuplicated (rawUrl) {
+        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? this.form.trackerSourceDiscovered : []
+        if (discovered.includes(rawUrl)) return true
+        const allOptionValues = []
+        ;(this.trackerSourceOptions || []).forEach(g => {
+          ;(g.options || []).forEach(opt => allOptionValues.push(opt.value))
+        })
+        return allOptionValues.includes(rawUrl)
+      },
+      deriveOriginSite (url) {
+        const s = `${url}`
+        const repo = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(s)
+        if (repo) return this.normalizeOriginUrl(`https://github.com/${repo[1]}/${repo[2]}`)
+        let m = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//i.exec(s)
+        if (m) return this.normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
+        m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\//i.exec(s)
+        if (m) return this.normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
+        m = /^https:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/]+)\//i.exec(s)
+        if (m) return this.normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
+        try {
+          const u = new URL(s)
+          return this.normalizeOriginUrl(`${u.protocol}//${u.host}`)
+        } catch (_) {
+          return this.normalizeOriginUrl(s)
+        }
+      },
+      normalizeOriginUrl (url) {
+        try {
+          const s = `${url}`.trim()
+          const repo = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(s)
+          if (repo) {
+            const owner = repo[1]
+            const name = repo[2]
+            return `https://github.com/${owner}/${name}`
+          }
+          const u = new URL(s)
+          const protocol = u.protocol.toLowerCase()
+          const host = u.host.toLowerCase()
+          return `${protocol}//${host}`
+        } catch (_) {
+          return url.replace(/\/+$/, '')
+        }
+      },
+      deriveOriginLabel (url) {
+        const s = `${url}`
+        const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(s)
+        if (m) return `${m[1]}/${m[2]}`
+        try {
+          const u = new URL(s)
+          return u.host
+        } catch (_) {
+          return s
+        }
+      },
+      isGithubRepoUrl (url) {
+        return /^https:\/\/github\.com\/[^/]+\/[^/]+\/?$/i.test(`${url}`)
+      },
+      async resolveGithubRepo (url) {
+        const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(`${url}`)
+        if (!m) return { trackers: [], usedUrls: [] }
+        const owner = m[1]
+        const repo = m[2]
+        const branches = ['main', 'master']
+        const files = [
+          'trackers_best.txt',
+          'trackers_all.txt',
+          'trackers_best_http.txt',
+          'trackers_best_https.txt',
+          'trackers_best_udp.txt',
+          'trackers_best_wss.txt',
+          'best.txt'
+        ]
+        const readmeCandidates = branches.map(b => `https://raw.githubusercontent.com/${owner}/${repo}/${b}/README.md`)
+        const fileCandidates = []
+        branches.forEach(b => {
+          files.forEach(f => fileCandidates.push(`https://raw.githubusercontent.com/${owner}/${repo}/${b}/${f}`))
+        })
+        const used = []
+        let lines = []
+        for (let i = 0; i < readmeCandidates.length; i++) {
+          const u = readmeCandidates[i]
+          try {
+            const r = await axios.get(u, { responseType: 'text' })
+            const text = `${r && r.data ? r.data : ''}`
+            const linkUrls = this.extractTxtLinksFromReadme(text)
+            const rawUrls = linkUrls.map(this.toRawUrl)
+            const rawSet = Array.from(new Set(rawUrls))
+            const fetched = await this.fetchTrackersFromUrls(rawSet)
+            if (fetched.lines && fetched.lines.length) {
+              const preferred = this.preferCanonicalSources(fetched.usedUrls)
+              used.push(...preferred)
+              lines = fetched.lines
+              break
+            }
+          } catch (_) {}
+        }
+        if (!lines.length) {
+          const fetched = await this.fetchTrackersFromUrls(fileCandidates)
+          if (fetched.lines && fetched.lines.length) {
+            const preferred = this.preferCanonicalSources(fetched.usedUrls)
+            used.push(...preferred)
+            lines = fetched.lines
+          }
+        }
+        if (!lines.length && owner.toLowerCase() === 'adysec' && repo.toLowerCase() === 'tracker') {
+          try {
+            const r = await axios.get('https://down.adysec.com/trackers_best.txt', { responseType: 'text' })
+            const text = `${r && r.data ? r.data : ''}`
+            const fetched = this.extractTrackerLines(text)
+            if (fetched.length) {
+              used.push('https://down.adysec.com/trackers_best.txt')
+              lines = fetched
+            }
+          } catch (_) {}
+        }
+        return { trackers: lines, usedUrls: used }
+      },
+      extractTxtLinksFromReadme (text) {
+        const raw = `${text}`
+        const urls = []
+        const regex = /(https?:\/\/[^\s)]+?trackers[^\s)]*?\.txt|https?:\/\/[^\s)]+?best\.txt)/ig
+        let m
+        while ((m = regex.exec(raw)) !== null) {
+          urls.push(m[1])
+        }
+        const blobRegex = /https?:\/\/github\.com\/[^\s)]+?\.txt/ig
+        let mb
+        while ((mb = blobRegex.exec(raw)) !== null) {
+          urls.push(mb[0])
+        }
+        return Array.from(new Set(urls))
+      },
+      async fetchTrackersFromUrls (urls) {
+        const allLines = []
+        const usedUrls = []
+        for (let i = 0; i < urls.length; i++) {
+          const u = urls[i]
+          try {
+            const r = await axios.get(u, { responseType: 'text' })
+            const text = `${r && r.data ? r.data : ''}`
+            const lines = this.extractTrackerLines(text)
+            if (lines.length) {
+              usedUrls.push(u)
+              allLines.push(...lines)
+            }
+          } catch (_) {}
+        }
+        return { lines: Array.from(new Set(allLines)), usedUrls: Array.from(new Set(usedUrls)) }
+      },
+      toRawUrl (url) {
+        const u = `${url}`
+        if (/^https:\/\/raw\.githubusercontent\.com\//i.test(u)) return u
+        if (/^https:\/\/github\.com\//i.test(u)) {
+          return u.replace('https://github.com/', 'https://raw.githubusercontent.com/').replace('/blob/', '/')
+        }
+        const m = /^https:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/@]+)(?:@([^/]+))?\/(.+)$/i.exec(u)
+        if (m) {
+          const owner = m[1]
+          const repo = m[2]
+          const branch = m[3] || 'main'
+          const path = m[4]
+          return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`
+        }
+        return u
+      },
+      preferCanonicalSources (urls) {
+        const items = (urls || []).map(u => ({ url: u, label: this.deriveTrackerLabel(u), rank: this.getSourceRank(u) }))
+        const byLabel = {}
+        items.forEach(it => {
+          if (!byLabel[it.label]) byLabel[it.label] = []
+          byLabel[it.label].push(it)
+        })
+        const result = []
+        Object.keys(byLabel).forEach(label => {
+          const arr = byLabel[label]
+          arr.sort((a, b) => a.rank - b.rank)
+          result.push(arr[0].url)
+        })
+        return Array.from(new Set(result))
+      },
+      getSourceRank (u) {
+        try {
+          const url = new URL(u)
+          const host = url.host
+          let base = 100
+          if (/raw\.githubusercontent\.com$/i.test(host)) base = 1
+          else if (/github\.com$/i.test(host)) base = 2
+          else if (/cdn\.jsdelivr\.net$/i.test(host)) base = 3
+          else if (/down\.adysec\.com$/i.test(host)) base = 4
+          // 优先 main 分支
+          let branchRank = 0
+          const m = /^https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/([^/]+)\//i.exec(u)
+          if (m) {
+            const br = m[1].toLowerCase()
+            branchRank = br === 'main' ? 0 : (br === 'master' ? 1 : 2)
+          }
+          return base * 10 + branchRank
+        } catch (_) {
+          return 999
+        }
       },
 
       // 复制目录
@@ -2473,22 +3763,23 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 0 8px 1px 4px;
-  border: 1px solid #dcdfe6;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid var(--lc-border-base);
   border-radius: 6px;
-  background-color: #fff;
+  background-color: var(--lc-bg-input);
   min-height: 28px;
-  height: 28px;
+  max-height: 120px;
+  overflow-y: auto;
   box-sizing: border-box;
   cursor: text;
   transition: border-color 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
 
   &:hover {
-    border-color: #c0c4cc;
+    border-color: var(--lc-border-hover);
   }
 
   &:focus-within {
-    border-color: #5b5bfa;
+    border-color: var(--lc-color-primary);
   }
 }
 
@@ -2531,25 +3822,12 @@
   }
 }
 
-.theme-dark .extension-tag-input {
-  background-color: #373737;
-  border-color: #5f5f5f;
-
-  &:hover {
-    border-color: #6f6f6f;
-  }
-
-  &:focus-within {
-    border-color: #5b5bfa;
-  }
-}
-
 .extension-tag {
   margin: 0 !important;
   flex-shrink: 0;
-  background-color: transparent !important;
-  border-color: #c0c4cc !important;
-  color: #606266 !important;
+  background-color: var(--lc-tag-info-bg) !important;
+  border-color: var(--lc-tag-info-border) !important;
+  color: var(--lc-tag-info-text) !important;
   transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
   display: inline-flex !important;
   align-items: center !important;
@@ -2560,9 +3838,9 @@
   box-sizing: border-box !important;
 
   &:hover {
-    background-color: #f5f7fa !important;
-    border-color: #909399 !important;
-    color: #303133 !important;
+    background-color: var(--lc-bg-hover) !important;
+    border-color: var(--lc-border-hover) !important;
+    color: var(--lc-text-primary) !important;
   }
 
   :deep(span) {
@@ -2578,7 +3856,7 @@
   }
 
   :deep(.el-icon-close) {
-    color: #909399 !important;
+    color: var(--lc-text-secondary) !important;
     transition: color 0.2s;
     margin-left: 4px !important;
     margin-right: 0 !important;
@@ -2598,33 +3876,13 @@
     transform: translateY(0) !important;
 
     &:hover {
-      background-color: #e4e7ed !important;
-      color: #606266 !important;
+      background-color: var(--lc-bg-active) !important;
+      color: var(--lc-text-primary) !important;
     }
 
     &::before {
       display: inline-block;
       vertical-align: middle;
-    }
-  }
-}
-
-.theme-dark .extension-tag {
-  border-color: #606266 !important;
-  color: #e5e5e5 !important;
-
-  &:hover {
-    background-color: #2a2a2a !important;
-    border-color: #909399 !important;
-    color: #ffffff !important;
-  }
-
-  :deep(.el-icon-close) {
-    color: #8c8c8c;
-
-    &:hover {
-      background-color: #3a3a3a;
-      color: #e5e5e5;
     }
   }
 }
@@ -2636,30 +3894,42 @@
   outline: none;
   background: transparent;
   font-size: 14px;
-  color: #606266;
+  color: var(--lc-text-regular);
   padding: 2px 4px;
   line-height: 1.5;
 
   &::placeholder {
-    color: #c0c4cc;
+    color: var(--lc-text-placeholder);
   }
 
   &::selection {
-    background-color: rgba(91, 91, 250, 0.3);
+    background-color: var(--lc-color-primary-lighter);
     color: inherit;
   }
 }
 
-.theme-dark .extension-input {
-  color: #e5e5e5;
+.ed2k-preset-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
 
-  &::placeholder {
-    color: #8c8c8c;
-  }
+.ed2k-preset-label {
+  font-size: 12px;
+  color: var(--lc-text-secondary);
+  margin-right: 2px;
+}
 
-  &::selection {
-    background-color: rgba(91, 91, 250, 0.4);
-    color: inherit;
+.ed2k-preset-btn {
+  padding: 2px 6px !important;
+  font-size: 12px !important;
+  color: var(--lc-color-primary) !important;
+
+  &:hover {
+    color: var(--lc-color-primary) !important;
+    text-decoration: underline;
   }
 }
 
@@ -2866,10 +4136,70 @@
  }
 
  .video-detection-settings-btn:active {
-   background: #3a8ee6;
-   border-color: #3a8ee6;
-   color: #fff;
- }
+  background: #3a8ee6;
+  border-color: #3a8ee6;
+  color: #fff;
+}
+
+/* Local popup for adding tracker source (appears below the button) */
+.tracker-source-popup-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.tracker-source-popup {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 14px;
+  width: 280px;
+  background: var(--lc-bg-dropdown, #fff);
+  border: none;
+  border-radius: var(--lc-radius-dropdown);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 999;
+  overflow: hidden;
+  transform-origin: top right;
+}
+
+.tracker-source-popup__header {
+  padding: 10px 14px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lc-text-primary, #333);
+}
+
+.tracker-source-popup__body {
+  padding: 10px 14px;
+}
+
+:deep(.tracker-source-popup__body .el-input__inner) {
+  padding-left: 8px;
+  padding-right: 8px;
+  background-color: transparent !important;
+}
+
+.tracker-source-popup__footer {
+  display: flex;
+  justify-content: center;
+  padding: 4px 8px 12px;
+}
+
+:deep(.tracker-source-popup__footer .el-button--primary) {
+  border-radius: 8px;
+  padding: 6px 20px;
+  background-color: var(--lc-color-primary) !important;
+  border-color: var(--lc-color-primary) !important;
+  color: #fff !important;
+
+  &:hover,
+  &:focus {
+    background-color: var(--lc-color-primary) !important;
+    border-color: var(--lc-color-primary) !important;
+    color: #fff !important;
+    opacity: 0.85;
+  }
+}
 
 /* 上传/下载限速行：输入框与单位选择框融为一体 */
 :deep(.speed-limit-row .el-input-number.is-controls-right .el-input__inner) {

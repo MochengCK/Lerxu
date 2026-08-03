@@ -9,7 +9,7 @@
         :rules="rules"
       >
         <!-- 自动更新设置卡片 -->
-        <div class="preference-card" data-category="advanced">
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.auto-update') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -56,7 +56,7 @@
         </div>
 
         <!-- 代理设置卡片 -->
-        <div class="preference-card" data-category="advanced">
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.proxy') }}</h3>
           <el-form-item size="mini">
             <el-radio-group
@@ -136,7 +136,7 @@
         </div>
 
         <!-- GitHub 镜像设置卡片 -->
-        <div class="preference-card" data-category="advanced">
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.github-mirror') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -190,19 +190,46 @@
                       />
                     </el-button>
                   </el-tooltip>
-                  <el-tooltip
-                    class="item"
-                    effect="dark"
-                    :content="$t('preferences.add-mirror')"
-                    placement="bottom"
-                  >
-                    <el-button
-                      @click="openGithubMirrorConfigDialog"
-                      class="sync-tracker-btn"
+                  <div class="github-mirror-popup-wrapper">
+                    <el-tooltip
+                      class="item"
+                      effect="dark"
+                      :content="$t('preferences.add-mirror')"
+                      placement="bottom"
+                      :disabled="githubMirrorConfigVisible"
                     >
-                      <mo-icon name="link" width="12" height="12" />
-                    </el-button>
-                  </el-tooltip>
+                      <el-button
+                        @click="openGithubMirrorConfigDialog"
+                        class="sync-tracker-btn"
+                      >
+                        <mo-icon name="link" width="12" height="12" />
+                      </el-button>
+                    </el-tooltip>
+                    <transition name="popup-scale">
+                      <div
+                        class="github-mirror-popup"
+                        v-if="githubMirrorConfigVisible"
+                        @click.stop
+                      >
+                        <div class="github-mirror-popup__header">
+                          <span>{{ $t('preferences.add-mirror') }}</span>
+                        </div>
+                        <div class="github-mirror-popup__body">
+                          <el-input
+                            v-model="githubMirrorInput"
+                            :placeholder="$t('preferences.github-mirror-input-placeholder')"
+                            clearable
+                            size="small"
+                            @keydown.enter.native="addGithubMirrorFromInput"
+                          >
+                          </el-input>
+                        </div>
+                        <div class="github-mirror-popup__footer">
+                          <el-button size="mini" type="primary" @click="addGithubMirrorFromInput">{{ $t('app.submit') }}</el-button>
+                        </div>
+                      </div>
+                    </transition>
+                  </div>
                 </div>
               </div>
               <div class="el-form-item__info" style="margin-top: 8px;">
@@ -212,162 +239,8 @@
           </el-form-item>
         </div>
 
-        <!-- BT Tracker设置卡片 -->
-        <div class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.bt-tracker') }}</h3>
-          <el-form-item size="mini">
-            <div class="form-item-sub bt-tracker">
-              <el-row :gutter="4">
-                <el-col :span="24">
-                  <div class="tracker-row" style="display:flex; align-items:stretch;">
-                    <div class="tracker-left">
-                      <el-tooltip
-                        class="item"
-                        effect="dark"
-                        :content="isAllTrackerSourcesSelected ? $t('preferences.deselect-all-tracker-sources') : $t('preferences.select-all-tracker-sources')"
-                        placement="bottom"
-                      >
-                        <el-button
-                          @click="toggleAllTrackerSources"
-                          class="sync-tracker-btn"
-                        >
-                          <mo-icon :name="isAllTrackerSourcesSelected ? 'deselect-all' : 'select-all'" width="12" height="12" />
-                        </el-button>
-                      </el-tooltip>
-                    </div>
-                    <div class="track-source" style="flex:1;">
-                      <el-select
-                        class="select-track-source"
-                        v-model="form.trackerSource"
-                        allow-create
-                        filterable
-                        multiple
-                        :collapse-tags="collapseTagsTrackerSource"
-                        style="width:100%;"
-                        @change="updateTrackerSelectCollapse"
-                      >
-                        <el-option-group
-                          v-for="group in trackerSourceOptions"
-                          :key="group.label"
-                          :label="group.label"
-                        >
-                          <el-option
-                            v-for="item in group.options"
-                            :key="item.value"
-                            :label="item.label"
-                            :value="item.value"
-                          >
-                            <span style="float: left">{{ item.label }}</span>
-                            <span style="float: right; margin-right: 24px">
-                              <el-tag
-                                type="success"
-                                size="mini"
-                                v-if="item.cdn"
-                              >
-                                CDN
-                              </el-tag>
-                            </span>
-                          </el-option>
-                        </el-option-group>
-                      </el-select>
-                    </div>
-                    <div class="tracker-right sync-tracker">
-                      <el-tooltip
-                        class="item"
-                        effect="dark"
-                        :content="$t('preferences.sync-tracker-tips')"
-                        placement="bottom"
-                      >
-                        <el-button
-                          @click="syncTrackerFromSource"
-                          class="sync-tracker-btn"
-                        >
-                          <mo-icon
-                            name="refresh"
-                            width="12"
-                            height="12"
-                            :spin="true"
-                            v-if="trackerSyncing"
-                          />
-                          <mo-icon name="sync" width="12" height="12" v-else />
-                        </el-button>
-                      </el-tooltip>
-                      <el-tooltip
-                        class="item"
-                        effect="dark"
-                        :content="$t('preferences.add-source')"
-                        placement="bottom"
-                      >
-                        <el-button
-                          @click="openTrackerSourceConfigDialog"
-                          class="sync-tracker-btn"
-                        >
-                          <mo-icon name="link" width="12" height="12" />
-                        </el-button>
-                      </el-tooltip>
-                    </div>
-                  </div>
-                </el-col>
-              </el-row>
-              <el-input
-                type="textarea"
-                :autosize="{ minRows: 3, maxRows: 10 }"
-                auto-complete="off"
-                :placeholder="`${$t('preferences.bt-tracker-input-tips')}`"
-                v-model="form.btTracker">
-              </el-input>
-              <div class="el-form-item__info" style="margin-top: 8px;">
-                <template v-if="!(originListForDisplay && originListForDisplay.length)">
-                  {{ $t('preferences.bt-tracker-tips') }}
-                </template>
-                <template v-else>
-                  {{ $t('preferences.added-origins') }}
-                  <span v-for="o in originListForDisplay" :key="o" style="margin-right: 12px;">
-                    <el-tooltip class="item" effect="dark" :content="$t('preferences.long-press-to-delete')" placement="top">
-                      <a
-                        href="javascript:;"
-                        @mousedown="(e) => onOriginMouseDown(o, e)"
-                        @mouseup="() => onOriginMouseUp(o)"
-                        @mouseleave="() => onOriginMouseLeave(o)"
-                        @click.prevent="() => onOriginClick(o)"
-                      >
-                        {{ deriveOriginLabel(o) }}
-                        <mo-icon name="link" width="12" height="12" />
-                      </a>
-                    </el-tooltip>
-                  </span>
-                </template>
-              </div>
-            </div>
-            <div class="form-item-sub">
-              <el-checkbox v-model="form.autoSyncTracker">
-                {{ $t('preferences.auto-sync-tracker') }}
-              </el-checkbox>
-            </div>
-            <div class="form-item-sub" v-if="form.autoSyncTracker" style="margin-top: 12px;">
-              <div class="sync-time-setting" style="display: flex; align-items: center; margin-bottom: 12px;">
-                <el-time-picker
-                  v-model="form.autoSyncTrackerTime"
-                  placeholder="选择时间"
-                  format="HH:mm"
-                  value-format="HH:mm"
-                  size="mini"
-                  style="width: 100%;"
-                  @change="autoSaveForm"
-                />
-              </div>
-
-            </div>
-          </el-form-item>
-          <div class="form-item-sub" style="margin-top: 16px; text-align: center;" v-if="form.lastSyncTrackerTime > 0">
-            <div class="el-form-item__info">
-              {{ $t('preferences.last-sync-tracker-time') }}: {{ new Date(form.lastSyncTrackerTime).toLocaleString() }}
-            </div>
-          </div>
-        </div>
-
         <!-- RPC设置卡片 -->
-        <div class="preference-card" data-category="advanced">
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.rpc') }}</h3>
           <el-form-item size="mini">
             <el-row style="margin-bottom: 8px;">
@@ -422,7 +295,7 @@
         </div>
 
         <!-- 端口设置卡片 -->
-        <div class="preference-card" data-category="advanced">
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.port') }}</h3>
           <el-form-item size="mini">
             <el-row style="margin-bottom: 8px;">
@@ -483,7 +356,7 @@
         </div>
 
         <!-- 下载协议设置卡片 -->
-        <div class="preference-card" data-category="advanced">
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.download-protocol') }}</h3>
           <el-form-item size="mini">
             {{ $t('preferences.protocols-default-client') }}
@@ -503,11 +376,19 @@
                 >
               </el-switch>
             </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <el-switch
+                v-model="form.protocols.ed2k"
+                :active-text="$t('preferences.protocols-ed2k')"
+                @change="(val) => onProtocolsChange('ed2k', val)"
+                >
+              </el-switch>
+            </el-col>
           </el-form-item>
         </div>
 
         <!-- 引擎信息卡片 -->
-        <div class="preference-card" data-category="advanced">
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.engine') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -515,23 +396,14 @@
                 <el-col :span="24">
                   <strong>{{ $t('preferences.engine-select') }}:</strong>
                   <el-select
-                    v-model="form.engineBinary"
-                    :placeholder="$t('preferences.engine-select-placeholder')"
+                    v-model="activeEngineBinary"
+                    disabled
                     style="width: 100%; margin-top: 8px;"
-                    @change="onEngineBinaryChange"
                   >
                     <el-option
-                      v-for="engine in storeEngineList.engines"
-                      :key="engine.name"
-                      :label="engine.name + (engine.isDefault ? ' (Default)' : '')"
-                      :value="engine.name"
-                    >
-                      <span style="float: left">{{ engine.name }}</span>
-                      <span style="float: right; color: #8492a6; font-size: 13px">
-                        {{ formatFileSize(engine.size) }}
-                        {{ engine.isDefault ? '(Default)' : '' }}
-                      </span>
-                    </el-option>
+                      :label="activeEngineBinary || '--'"
+                      :value="activeEngineBinary || ''"
+                    />
                   </el-select>
                 </el-col>
               </el-row>
@@ -564,7 +436,7 @@
         </div>
 
         <!-- 视频合并设置卡片 -->
-        <div class="preference-card" data-category="advanced">
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.video-merge') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -589,7 +461,7 @@
         </div>
 
         <!-- 用户代理设置卡片 -->
-        <div class="preference-card" data-category="advanced">
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.user-agent') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -601,19 +473,20 @@
                 placeholder="User-Agent"
                 v-model="form.userAgent">
               </el-input>
-              <el-button-group class="ua-group">
-                <el-button @click="() => changeUA('linkcore')">{{ $t('preferences.user-agent-linkcore') }}</el-button>
-                <el-button @click="() => changeUA('aria2')">{{ $t('preferences.user-agent-aria2') }}</el-button>
-                <el-button @click="() => changeUA('transmission')">{{ $t('preferences.user-agent-transmission') }}</el-button>
-                <el-button @click="() => changeUA('chrome')">{{ $t('preferences.user-agent-chrome') }}</el-button>
-                <el-button @click="() => changeUA('du')">{{ $t('preferences.user-agent-du') }}</el-button>
-              </el-button-group>
+              <mo-segmented-slider
+                ref="uaSegmented"
+                class="ua-segmented"
+                :value="activeUAValue"
+                :options="uaOptions"
+                size="mini"
+                @change="changeUA"
+              />
             </el-col>
           </el-form-item>
         </div>
 
         <!-- 开发者选项卡片 -->
-        <div class="preference-card" data-category="advanced">
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.developer') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
@@ -683,8 +556,7 @@
               <el-button plain type="danger" @click="() => onFactoryResetClick()">
                 {{ $t('preferences.factory-reset') }}
               </el-button>
-              <el-button type="primary" size="mini" @click="openAria2ConfEditor">{{ $t('preferences.aria2-conf-edit-button') }}</el-button>
-            </el-col>
+              </el-col>
           </el-form-item>
         </div>
       </el-form>
@@ -695,125 +567,6 @@
         </div>
       </div>
 
-    <el-dialog
-      custom-class="tab-title-dialog aria2conf-editor-dialog"
-      width="900px"
-      :visible.sync="aria2ConfEditorVisible"
-      :show-close="true"
-      :append-to-body="true"
-    >
-      <div slot="title" class="aria2conf-toolbar">
-        <el-row :gutter="8" style="margin-bottom:8px">
-          <el-col :span="12">
-            <el-input :value="aria2ConfPath" disabled>
-              <mo-show-in-folder slot="append" v-if="isRenderer" :path="aria2ConfPath" />
-            </el-input>
-          </el-col>
-          <el-col :span="12">
-            <el-input v-model="aria2ConfSearch" :placeholder="$t('preferences.aria2-conf-search-placeholder')" clearable />
-          </el-col>
-        </el-row>
-        <el-row :gutter="8">
-          <el-col :span="12">
-            <el-select v-model="aria2ConfQuickKey" filterable clearable :placeholder="$t('preferences.aria2-conf-quick-key-placeholder')" style="width:100%">
-              <el-option v-for="k in aria2ConfCommonKeys" :key="k" :label="k" :value="k" />
-            </el-select>
-          </el-col>
-          <el-col :span="12">
-            <el-button type="primary" size="mini" @click="addConfKey">{{ $t('preferences.aria2-conf-add-key') }}</el-button>
-            <el-button size="mini" @click="addConfItem">{{ $t('preferences.aria2-conf-add-item') }}</el-button>
-            <el-button size="mini" @click="copyAria2ConfText">{{ $t('preferences.copy-as-text') }}</el-button>
-            <el-button size="mini" @click="pasteFromClipboard">{{ $t('preferences.paste-and-import') }}</el-button>
-          </el-col>
-        </el-row>
-        <el-row :gutter="8" style="margin-bottom:8px">
-          <el-col :span="24">
-            <el-input type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" v-model="aria2ConfRawText" :placeholder="$t('preferences.aria2-text-placeholder')" />
-            <div style="margin-top:8px">
-          <el-button type="primary" size="mini" @click="importFromText">{{ $t('preferences.import-from-text') }}</el-button>
-            </div>
-          </el-col>
-        </el-row>
-      </div>
-      <el-row :gutter="8">
-        <el-col :span="24">
-          <el-table :data="aria2ConfFilteredItems" :border="false" :stripe="true" size="mini" style="width: 100%">
-            <el-table-column :label="$t('preferences.aria2-conf-table-key')" width="300">
-              <template slot-scope="scope">
-                <el-input v-model="scope.row.key" size="mini" />
-              </template>
-            </el-table-column>
-            <el-table-column :label="$t('preferences.aria2-conf-table-value')">
-              <template slot-scope="scope">
-                <el-input v-model="scope.row.value" size="mini" />
-              </template>
-            </el-table-column>
-            <el-table-column :label="$t('preferences.aria2-conf-table-action')" width="120">
-              <template slot-scope="scope">
-                <el-button type="danger" size="mini" @click="removeConfItem(scope.row)">{{ $t('preferences.aria2-conf-delete') }}</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-col>
-      </el-row>
-      <div slot="footer" class="dialog-footer">
-        <el-button type="primary" @click="saveAria2Conf">{{ $t('preferences.aria2-conf-save') }}</el-button>
-      </div>
-    </el-dialog>
-
-    <el-dialog
-      custom-class="tracker-source-dialog"
-      width="640px"
-      :visible.sync="trackerSourceConfigVisible"
-      :show-close="false"
-      :append-to-body="true"
-    >
-      <div style="display:flex; align-items:center; justify-content:center; padding:8px;">
-        <el-input
-          v-model="trackerSourceInput"
-          :placeholder="$t('preferences.tracker-source-input-placeholder')"
-          clearable
-          style="max-width:480px;"
-        >
-          <template slot="prepend">
-            <button type="button" class="tracker-source-close-btn" @click="trackerSourceConfigVisible = false">
-              <i class="el-icon-close"></i>
-            </button>
-          </template>
-        </el-input>
-      </div>
-      <div slot="footer" class="tracker-source-dialog__footer">
-        <el-button @click="trackerSourceConfigVisible = false">{{ $t('app.cancel') }}</el-button>
-        <el-button type="primary" @click="addTrackerSourceFromInput">{{ $t('app.submit') }}</el-button>
-      </div>
-    </el-dialog>
-
-    <el-dialog
-      custom-class="tracker-source-dialog"
-      width="640px"
-      :visible.sync="githubMirrorConfigVisible"
-      :show-close="false"
-      :append-to-body="true"
-    >
-      <div style="display:flex; align-items:center; justify-content:center; padding:8px;">
-        <el-input
-          v-model="githubMirrorInput"
-          :placeholder="$t('preferences.github-mirror-input-placeholder')"
-          clearable
-          style="max-width:480px;"
-        >
-          <template slot="prepend">
-            <button type="button" class="tracker-source-close-btn" @click="githubMirrorConfigVisible = false">
-              <i class="el-icon-close"></i>
-            </button>
-          </template>
-        </el-input>
-      </div>
-      <div slot="footer" class="tracker-source-dialog__footer">
-        <el-button @click="githubMirrorConfigVisible = false">{{ $t('app.cancel') }}</el-button>
-        <el-button type="primary" @click="addGithubMirrorFromInput">{{ $t('app.submit') }}</el-button>
-      </div>
-    </el-dialog>
     <div
       v-if="updatePreviewVisible"
       class="update-preview-mask"
@@ -835,18 +588,17 @@
 <script>
   import is from 'electron-is'
   import { dialog } from '@electron/remote'
-  import { mapState, mapActions } from 'vuex'
+  import { mapState } from 'vuex'
   import { cloneDeep, isEmpty } from 'lodash'
   import randomize from 'randomatic'
-  import axios from 'axios'
   import ShowInFolder from '@/components/Native/ShowInFolder'
+  import SegmentedSlider from '@/components/SegmentedSlider/SegmentedSlider'
   import userAgentMap from '@shared/ua'
   import {
     EMPTY_STRING,
     ENGINE_RPC_PORT,
     ENGINE_MAX_CONNECTION_PER_SERVER,
     LOG_LEVELS,
-    TRACKER_SOURCE_OPTIONS,
     PROXY_SCOPE_OPTIONS
   } from '@shared/constants'
   import {
@@ -854,7 +606,6 @@
     calcFormLabelWidth,
     changedConfig,
     checkIsNeedRestart,
-    convertCommaToLine,
     convertLineToComma,
     diffConfig,
     generateRandomInt,
@@ -862,10 +613,7 @@
   } from '@shared/utils'
   import { reduceTrackerString } from '@shared/utils/tracker'
   import '@/components/Icons/dice'
-  import '@/components/Icons/sync'
   import '@/components/Icons/refresh'
-  import '@/components/Icons/select-all'
-  import '@/components/Icons/deselect-all'
   import '@/components/Icons/folder'
   import { getLanguage } from '@shared/locales'
   import { getLocaleManager } from '@/components/Locale'
@@ -873,15 +621,10 @@
   const initForm = (config) => {
     const {
       autoCheckUpdate,
-      autoSyncTracker,
-      autoSyncTrackerInterval,
-      autoSyncTrackerTime,
-      btTracker,
       dhtListenPort,
       enableUpnp,
       hideAppMenu,
       lastCheckUpdateTime,
-      lastSyncTrackerTime,
       listenPort,
       logLevel,
       protocols,
@@ -889,10 +632,6 @@
       rpcListenPort,
       rpcSecret,
       scheduler,
-      trackerSource,
-      trackerSourceDiscovered,
-      trackerSourceOrigins,
-      trackerSourceMap,
       useProxy,
       userAgent,
       engineBinary,
@@ -923,15 +662,10 @@
     const clonedScheduler = { ...defaultScheduler, ...(scheduler || {}) }
     const result = {
       autoCheckUpdate,
-      autoSyncTracker,
-      autoSyncTrackerInterval: autoSyncTrackerInterval || config['auto-sync-tracker-interval'] || 12,
-      autoSyncTrackerTime: autoSyncTrackerTime !== undefined ? autoSyncTrackerTime : (config['auto-sync-tracker-time'] !== undefined ? config['auto-sync-tracker-time'] : '00:00'),
-      btTracker: convertCommaToLine(btTracker),
       dhtListenPort,
       enableUpnp,
       hideAppMenu,
       lastCheckUpdateTime,
-      lastSyncTrackerTime,
       listenPort,
       logLevel,
       proxy: clonedProxy,
@@ -939,10 +673,6 @@
       rpcListenPort,
       rpcSecret,
       scheduler: clonedScheduler,
-      trackerSource,
-      trackerSourceDiscovered: Array.isArray(trackerSourceDiscovered) ? [...trackerSourceDiscovered] : (config['tracker-source-discovered'] || []),
-      trackerSourceOrigins: Array.isArray(trackerSourceOrigins) ? [...trackerSourceOrigins] : (config['tracker-source-origins'] || []),
-      trackerSourceMap: typeof trackerSourceMap === 'object' && trackerSourceMap ? { ...trackerSourceMap } : (config['tracker-source-map'] || {}),
       useProxy,
       userAgent,
       engineBinary: parsedEngineBinary,
@@ -956,7 +686,8 @@
   export default {
     name: 'mo-preference-advanced',
     components: {
-      [ShowInFolder.name]: ShowInFolder
+      [ShowInFolder.name]: ShowInFolder,
+      [SegmentedSlider.name]: SegmentedSlider
     },
     props: {
       category: {
@@ -978,7 +709,6 @@
         hideRpcSecret: true,
         proxyScopeOptions: PROXY_SCOPE_OPTIONS,
         rules: {},
-        trackerSourceOptions: [],
         builtinGithubMirrors: [
           { value: 'ghproxy.net', label: 'ghproxy.net', latency: null, checking: false }
         ],
@@ -987,30 +717,7 @@
         previousGithubMirrorUrls: [], // 保存上一次选择的镜像列表
         githubMirrorConfigVisible: false,
         githubMirrorInput: '',
-        trackerSyncing: false,
-        trackerDropdownVisible: false,
         saveTimeout: null,
-        trackerSourceConfigVisible: false,
-        trackerSourceInput: '',
-        // 添加标志，用于跟踪引擎配置是否已初始化
-        engineConfigInitialized: false,
-        aria2ConfEditorVisible: false,
-        aria2ConfOriginalLines: [],
-        aria2ConfItems: [],
-        aria2ConfLoading: false,
-        aria2ConfSearch: '',
-        aria2ConfQuickKey: '',
-        aria2ConfCommonKeys: [
-          'max-concurrent-downloads',
-          'max-connection-per-server',
-          'max-overall-download-limit',
-          'max-overall-upload-limit',
-          'rpc-listen-port',
-          'rpc-secret',
-          'user-agent',
-          'dir'
-        ],
-        aria2ConfRawText: '',
         appVersion: '',
         updatePreviewVisible: false,
         updatePreviewContent: '',
@@ -1018,15 +725,20 @@
         ffmpegStatus: {
           installed: false,
           path: ''
-        }
+        },
+        uaOptions: [
+          { value: 'aria2', label: 'Aria2' },
+          { value: 'transmission', label: 'Transmission' },
+          { value: 'chrome', label: 'Chrome' },
+          { value: 'du', label: 'du' }
+        ]
       }
     },
     computed: {
       ...mapState('app', ['isCheckingUpdate']),
       ...mapState('preference', ['updateAvailable', 'newVersion', 'isDownloadingUpdate', 'updateDownloaded', 'downloadProgress', 'downloadTotal', 'downloadTransferred', 'releaseNotes', 'lastCheckUpdateTime', 'searchKeyword']),
       ...mapState('app', {
-        storeEngineInfo: state => state.engineInfo,
-        storeEngineList: state => state.engineList
+        storeEngineInfo: state => state.engineInfo
       }),
       versionText () {
         const bytesToSize = (this.$options && this.$options.filters && this.$options.filters.bytesToSize)
@@ -1057,10 +769,11 @@
         const { config = {} } = this.$store.state.preference
         return config.engineBinary || config['engine-binary']
       },
-      engineList () {
-        // 从store中获取引擎列表，并转换为选择器需要的格式
-        const { engines = [] } = this.storeEngineList
-        return engines.map(engine => engine.name)
+      activeEngineBinary () {
+        // Show the actually running engine path (from engine info) instead of
+        // the configured value, which may differ when the engine was auto-detected
+        // or fell back to a different binary.
+        return this.storeEngineInfo.binPath || this.configEngineBinary || ''
       },
       engineInfo () {
         return this.storeEngineInfo
@@ -1136,48 +849,6 @@
         aria2LogPath: state => state.config.aria2LogPath,
         aria2LogDir: state => state.config.aria2LogDir
       }),
-      aria2ConfFilteredItems () {
-        const q = `${this.aria2ConfSearch}`.toLowerCase()
-        if (!q) return this.aria2ConfItems
-        return this.aria2ConfItems.filter(i => {
-          const k = `${i.key}`.toLowerCase()
-          const v = `${i.value}`.toLowerCase()
-          return k.includes(q) || v.includes(q)
-        })
-      },
-      originListForDisplay () {
-        const builtin = (TRACKER_SOURCE_OPTIONS || [])
-          .map(g => g && g.label ? g.label : '')
-          .filter(Boolean)
-          .filter(l => l.includes('/'))
-          .map(l => `https://github.com/${l}`)
-        const saved = Array.isArray(this.form.trackerSourceOrigins) ? this.form.trackerSourceOrigins : []
-        const normalizedSaved = saved.map(o => this.normalizeOriginUrl(o))
-        return Array.from(new Set([...builtin.map(this.normalizeOriginUrl), ...normalizedSaved]))
-      },
-      isAllTrackerSourcesSelected () {
-        // 获取所有可用的源
-        const allSources = []
-        ;(this.trackerSourceOptions || []).forEach(group => {
-          ;(group.options || []).forEach(opt => {
-            if (opt.value && !allSources.includes(opt.value)) {
-              allSources.push(opt.value)
-            }
-          })
-        })
-
-        // 如果没有可用源，返回false
-        if (allSources.length === 0) {
-          return false
-        }
-
-        // 获取当前选中的源
-        const selectedSources = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
-
-        // 检查是否所有源都被选中
-        return allSources.length === selectedSources.length &&
-               allSources.every(source => selectedSources.includes(source))
-      },
       // 速度单位选项
       schedulerSpeedUnits () {
         return [
@@ -1191,6 +862,12 @@
           { label: 'MB', value: 'M' },
           { label: 'GB', value: 'G' }
         ]
+      },
+      activeUAValue () {
+        const map = userAgentMap
+        const current = this.form && this.form.userAgent
+        const hit = this.uaOptions.find(opt => map[opt.value] === current)
+        return hit ? hit.value : ''
       }
     },
     watch: {
@@ -1199,6 +876,11 @@
         if (!newValue) {
           this.$store.dispatch('preference/updateUpdateAvailable', false)
           this.$store.dispatch('preference/updateNewVersion', '')
+        }
+      },
+      githubMirrorConfigVisible (visible) {
+        if (!visible) {
+          document.removeEventListener('mousedown', this.handleGithubMirrorOutsideClick)
         }
       },
       searchKeyword: {
@@ -1242,33 +924,15 @@
           clipboard.writeText(url)
         } catch (e) {
         }
-      },
-      // 监听引擎列表变化，确保当前选择的引擎有效
-      engineList (newList) {
-        if (newList.length > 0) {
-          this.initEngineSelection(newList)
-        }
-      },
-      // 监听store中的engineBinary变化，确保表单与最新配置同步
-      configEngineBinary: {
-        handler (newValue) {
-          if (newValue && this.engineList.length > 0) {
-            this.form.engineBinary = newValue
-            this.formOriginal.engineBinary = newValue
-          }
-        },
-        immediate: true
       }
     },
     async created () {
       // 获取引擎列表
       await this.fetchEngineList()
-      this.rebuildTrackerSourceOptions()
     },
     async mounted () {
       await this.fetchEngineList()
       await this.fetchEngineInfo()
-      this.rebuildTrackerSourceOptions()
       this.checkFfmpegStatus()
 
       // 初始化 previousGithubMirrorUrls
@@ -1355,7 +1019,7 @@
           this.$store.dispatch('preference/updateLastCheckUpdateTime', timeToSet)
         }
       } catch (error) {
-        console.error('[Motrix] Failed to get app version:', error)
+        console.error('[LinkCore] Failed to get app version:', error)
       }
 
       // 注册更新事件全局监听器
@@ -1416,26 +1080,13 @@
       this.$electron.ipcRenderer.on('update-downloaded', this._updateEventListeners.onUpdateDownloaded)
       this.$electron.ipcRenderer.on('update-error', this._updateEventListeners.onUpdateError)
       this.$electron.ipcRenderer.on('update-cancelled', this._updateEventListeners.onUpdateCancelled)
-
-      // 监听窗口大小变化，更新 tracker 选择框的 collapse-tags 状态
-      this._handleAdvancedWindowResize = () => {
-        this.updateTrackerSelectCollapse()
-      }
-      window.addEventListener('resize', this._handleAdvancedWindowResize)
-      // 延迟调用，确保 DOM 已渲染完成
-      setTimeout(() => {
-        this.updateTrackerSelectCollapse()
-      }, 200)
     },
     beforeDestroy () {
       if (this._filterTimer) {
         clearTimeout(this._filterTimer)
       }
-      // 移除窗口 resize 监听
-      if (this._handleAdvancedWindowResize) {
-        window.removeEventListener('resize', this._handleAdvancedWindowResize)
-        this._handleAdvancedWindowResize = null
-      }
+      // 清理 GitHub 镜像弹窗外部点击监听
+      document.removeEventListener('mousedown', this.handleGithubMirrorOutsideClick)
       // 清理更新事件监听器
       if (this._updateEventListeners) {
         this.$electron.ipcRenderer.removeListener('checking-for-update', this._updateEventListeners.onCheckingForUpdate)
@@ -1461,37 +1112,7 @@
           return `${text || ''}`.length * 10
         }
       },
-      computeTrackerSelectCollapse () {
-        const el = this.$el
-        if (!el) return false
-        const v = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
-        if (v.length <= 1) return false
-        const selectEl = el.querySelector('.select-track-source')
-        if (!selectEl) return false
-        const inputInner = selectEl.querySelector('.el-input__inner') || selectEl.querySelector('.el-input')
-        if (!inputInner) return false
-        const rect = inputInner.getBoundingClientRect()
-        const width = rect && rect.width ? rect.width : 0
-        if (!width) return false
-        const available = Math.max(width - 72, 120)
-        const allOptions = []
-        ;(this.trackerSourceOptions || []).forEach(g => {
-          ;(g.options || []).forEach(opt => allOptions.push(opt))
-        })
-        const map = new Map(allOptions.map(o => [o.value, o.label]))
-        const font = window.getComputedStyle(inputInner).font
-        let total = 0
-        v.forEach(val => {
-          const label = map.get(val) || `${val}`
-          total += this.measureTextWidth(label, font) + 46
-        })
-        return total > available
-      },
-      updateTrackerSelectCollapse () {
-        this.$nextTick(() => {
-          this.collapseTagsTrackerSource = this.computeTrackerSelectCollapse()
-        })
-      },
+
       // GitHub 镜像延迟检测
       async checkGithubMirrorLatency (mirror) {
         // 使用一个小的测试文件来检测延迟
@@ -1569,8 +1190,72 @@
         this.githubMirrorCheckingAll = false
       },
       openGithubMirrorConfigDialog () {
+        if (this.githubMirrorConfigVisible) {
+          this.closeGithubMirrorPopup()
+          return
+        }
         this.githubMirrorInput = ''
         this.githubMirrorConfigVisible = true
+        this.$nextTick(() => {
+          this.adjustGithubMirrorPopupPosition()
+          document.addEventListener('mousedown', this.handleGithubMirrorOutsideClick)
+        })
+      },
+      adjustGithubMirrorPopupPosition () {
+        const popup = this.$el.querySelector('.github-mirror-popup')
+        const wrapper = this.$el.querySelector('.github-mirror-popup-wrapper')
+        if (!popup || !wrapper) return
+        const popupRect = popup.getBoundingClientRect()
+        const viewportW = window.innerWidth
+        const viewportH = window.innerHeight
+        popup.style.left = ''
+        popup.style.right = ''
+        popup.style.top = ''
+        popup.style.bottom = ''
+        popup.style.marginTop = ''
+        popup.style.marginBottom = ''
+        popup.style.transformOrigin = 'top right'
+        if (popupRect.right > viewportW - 8) {
+          popup.style.right = '0'
+        }
+        if (popupRect.left < 8) {
+          popup.style.left = '0'
+          popup.style.right = ''
+          popup.style.transformOrigin = 'top left'
+        }
+        if (popupRect.bottom > viewportH - 8) {
+          popup.style.top = 'auto'
+          popup.style.bottom = '100%'
+          popup.style.marginBottom = '6px'
+          popup.style.marginTop = '0'
+          if (popup.style.right === '0') {
+            popup.style.transformOrigin = 'bottom right'
+          } else if (popup.style.left === '0') {
+            popup.style.transformOrigin = 'bottom left'
+          } else {
+            popup.style.transformOrigin = 'bottom right'
+          }
+        }
+      },
+      handleGithubMirrorOutsideClick (e) {
+        const wrapper = this.$el.querySelector('.github-mirror-popup-wrapper')
+        if (wrapper && !wrapper.contains(e.target)) {
+          this.closeGithubMirrorPopup()
+        }
+      },
+      closeGithubMirrorPopup () {
+        const popup = this.$el.querySelector('.github-mirror-popup')
+        if (popup) {
+          popup.style.left = ''
+          popup.style.right = ''
+          popup.style.top = ''
+          popup.style.bottom = ''
+          popup.style.marginTop = ''
+          popup.style.marginBottom = ''
+          popup.style.transformOrigin = ''
+        }
+        this.githubMirrorConfigVisible = false
+        document.removeEventListener('mousedown', this.handleGithubMirrorOutsideClick)
       },
       addGithubMirrorFromInput () {
         const input = (this.githubMirrorInput || '').trim()
@@ -1585,7 +1270,7 @@
         // 检查是否已存在
         if (this.form.githubMirrorUrls && this.form.githubMirrorUrls.includes(mirrorUrl)) {
           this.$msg.warning(this.$t('preferences.github-mirror-already-exists'))
-          this.githubMirrorConfigVisible = false
+          this.closeGithubMirrorPopup()
           return
         }
 
@@ -1596,10 +1281,10 @@
         // 保存配置
         this.autoSaveForm()
 
-        // 关闭对话框
-        this.githubMirrorConfigVisible = false
+        // 关闭弹窗
+        this.closeGithubMirrorPopup()
 
-        // 自动检测新添加的镜像
+        // 提示添加成功
         this.$msg.success(this.$t('preferences.github-mirror-add-success'))
       },
       onGithubMirrorChange (newValue) {
@@ -1813,17 +1498,8 @@
           if (!this.$el) return
           const cards = this.$el.querySelectorAll('.preference-card')
           const k = (keyword || '').toLowerCase()
-          const activeCategory = category || ''
-          const allowAll = !activeCategory || activeCategory === 'advanced'
           let visibleCount = 0
           cards.forEach(card => {
-            const rawCategory = `${card.dataset.category || ''}`.trim()
-            const categories = rawCategory ? rawCategory.split(/\s+/) : []
-            const categoryMatch = allowAll || categories.includes(activeCategory)
-            if (!categoryMatch) {
-              card.style.display = 'none'
-              return
-            }
             if (!k) {
               card.style.display = ''
               visibleCount++
@@ -1837,75 +1513,10 @@
               card.style.display = 'none'
             }
           })
-          this.hasNoResults = visibleCount === 0 && (k !== '' || !allowAll)
+          this.hasNoResults = visibleCount === 0 && k !== ''
         })
       },
-      getBuiltinOrigins () {
-        return (TRACKER_SOURCE_OPTIONS || [])
-          .map(g => g && g.label ? g.label : '')
-          .filter(Boolean)
-          .filter(l => l.includes('/'))
-          .map(l => `https://github.com/${l}`)
-      },
-      onOriginMouseDown (o, e) {
-        if (!e || e.button !== 0) return
-        if (!this.originHoldTimers) this.originHoldTimers = {}
-        this.originHoldActivated = false
-        const tid = setTimeout(() => {
-          this.originHoldActivated = true
-          this.deleteOrigin(o)
-        }, 800)
-        this.originHoldTimers[o] = tid
-      },
-      onOriginMouseUp (o) {
-        this.cancelOriginHold(o)
-      },
-      onOriginMouseLeave (o) {
-        this.cancelOriginHold(o)
-      },
-      cancelOriginHold (o) {
-        if (this.originHoldTimers && this.originHoldTimers[o]) {
-          clearTimeout(this.originHoldTimers[o])
-          delete this.originHoldTimers[o]
-        }
-      },
-      onOriginClick (o) {
-        if (this.originHoldActivated) return
-        try {
-          window.open(o, '_blank')
-        } catch (_) {}
-      },
-      deleteOrigin (o) {
-        const builtin = this.getBuiltinOrigins()
-        if (builtin.includes(o)) {
-          this.$msg.warning('内置来源不可删除')
-          return
-        }
-        const origins = Array.isArray(this.form.trackerSourceOrigins) ? [...this.form.trackerSourceOrigins] : []
-        const idx = origins.indexOf(o)
-        if (idx >= 0) origins.splice(idx, 1)
-        this.form.trackerSourceOrigins = origins
-        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
-        const map = typeof this.form.trackerSourceMap === 'object' && this.form.trackerSourceMap ? { ...this.form.trackerSourceMap } : {}
-        const filtered = discovered.filter(u => {
-          const origin = map[u] || this.deriveOriginSite(u)
-          return origin !== o
-        })
-        this.form.trackerSourceDiscovered = filtered
-        Object.keys(map).forEach(k => { if (map[k] === o) delete map[k] })
-        this.form.trackerSourceMap = map
-        const selected = Array.isArray(this.form.trackerSource) ? [...this.form.trackerSource] : []
-        const selectedFiltered = selected.filter(u => {
-          const origin = map[u] || this.deriveOriginSite(u)
-          return origin !== o
-        })
-        this.form.trackerSource = selectedFiltered
-        this.rebuildTrackerSourceOptions()
-        this.sanitizeSelectedSources()
-        this.autoSaveForm()
-        this.recomputeBtTrackerFromSelected()
-        this.$msg.success(this.$t('preferences.origin-removed'))
-      },
+
       hasMsgSupport () {
         return typeof this.$msg !== 'undefined' && this.$msg !== null
       },
@@ -1913,7 +1524,7 @@
         if (this.hasMsgSupport()) {
           this.$msg[type](message)
         } else {
-          console.log(`[Motrix] Update message: ${type} - ${message}`)
+          console.log(`[LinkCore] Update message: ${type} - ${message}`)
           if (type === 'error') {
             alert(message)
           }
@@ -1979,225 +1590,7 @@
         this.$electron.ipcRenderer.on('update-cancelled', onDownloadCancelled)
         this.$electron.ipcRenderer.send('command', 'application:download-update')
       },
-      recomputeBtTrackerFromSelected () {
-        const selected = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
-        if (!selected.length) {
-          this.form.btTracker = ''
-          this.form.lastSyncTrackerTime = Date.now()
-          return
-        }
-        this.trackerSyncing = true
-        this.$store.dispatch('preference/fetchBtTracker', selected)
-          .then((data) => {
-            const texts = Array.isArray(data) ? data : []
-            const lines = []
-            texts.forEach(t => {
-              const ls = this.extractTrackerLines(t)
-              if (ls && ls.length) lines.push(...ls)
-            })
-            const uniq = Array.from(new Set(lines))
-            const tracker = uniq.join('\n')
-            this.form.lastSyncTrackerTime = Date.now()
-            this.form.btTracker = tracker
-            this.trackerSyncing = false
-          })
-          .catch((_) => {
-            this.trackerSyncing = false
-          })
-      },
-      sanitizeSelectedSources () {
-        const allowed = new Set()
-        ;(this.trackerSourceOptions || []).forEach(group => {
-          ;(group.options || []).forEach(opt => allowed.add(opt.value))
-        })
-        const current = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
-        const filtered = current.filter(v => allowed.has(v))
-        if (filtered.length !== current.length) {
-          this.form.trackerSource = filtered
-        }
-      },
-      applyTrackerResult (lines, usedUrls = [], originSite = '') {
-        const uniq = Array.from(new Set(lines))
-        this.form.btTracker = uniq.join('\n')
-        this.form.lastSyncTrackerTime = Date.now()
-        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
-        usedUrls.forEach(u => { if (!discovered.includes(u)) discovered.push(u) })
-        this.form.trackerSourceDiscovered = discovered
-        const origins = Array.isArray(this.form.trackerSourceOrigins) ? [...this.form.trackerSourceOrigins] : []
-        const normalizedOrigin = originSite ? this.normalizeOriginUrl(originSite) : ''
-        if (normalizedOrigin && !origins.map(o => this.normalizeOriginUrl(o)).includes(normalizedOrigin)) origins.push(normalizedOrigin)
-        this.form.trackerSourceOrigins = origins
-        const map = typeof this.form.trackerSourceMap === 'object' && this.form.trackerSourceMap ? { ...this.form.trackerSourceMap } : {}
-        usedUrls.forEach(u => { if (originSite) map[u] = originSite })
-        this.form.trackerSourceMap = map
-        this.rebuildTrackerSourceOptions()
-        this.autoSaveForm()
-        this.$msg.success(this.$t('preferences.extract-success', { count: uniq.length }))
-      },
-      applySourceDiscovery (usedUrls = [], originSite = '') {
-        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
-        usedUrls.forEach(u => { if (!discovered.includes(u)) discovered.push(u) })
-        this.form.trackerSourceDiscovered = discovered
-        const origins = Array.isArray(this.form.trackerSourceOrigins) ? [...this.form.trackerSourceOrigins] : []
-        const normalizedOrigin = originSite ? this.normalizeOriginUrl(originSite) : ''
-        if (normalizedOrigin && !origins.map(o => this.normalizeOriginUrl(o)).includes(normalizedOrigin)) origins.push(normalizedOrigin)
-        this.form.trackerSourceOrigins = origins
-        const map = typeof this.form.trackerSourceMap === 'object' && this.form.trackerSourceMap ? { ...this.form.trackerSourceMap } : {}
-        usedUrls.forEach(u => { if (originSite) map[u] = originSite })
-        this.form.trackerSourceMap = map
-        this.rebuildTrackerSourceOptions()
-        this.sanitizeSelectedSources()
-        this.autoSaveForm()
-        this.$msg.success(this.$t('preferences.added-origin-files-success', { count: usedUrls.length }))
-      },
-      ...mapActions('app', ['updateCheckingUpdate']),
-      // 初始化引擎选择
-      initEngineSelection (engineList) {
-        // 1. 从store获取最新的引擎配置
-        const storeConfig = this.$store.state.preference.config
-        const storeEngineBinary = storeConfig.engineBinary || storeConfig['engine-binary']
 
-        // 2. 检查store中的引擎配置是否有效
-        if (storeEngineBinary && engineList.includes(storeEngineBinary)) {
-          // 如果有效，使用store中的配置
-          this.form.engineBinary = storeEngineBinary
-          this.formOriginal.engineBinary = storeEngineBinary
-        } else if (this.form.engineBinary && engineList.includes(this.form.engineBinary)) {
-          // 3. 检查当前表单中的引擎配置是否有效
-          // 如果有效，保持当前配置
-          this.formOriginal.engineBinary = this.form.engineBinary
-        } else if (engineList.length > 0) {
-          // 4. 否则，使用第一个可用引擎
-          this.form.engineBinary = engineList[0]
-          this.formOriginal.engineBinary = engineList[0]
-          // 保存新的引擎配置
-          this.autoSaveForm()
-        }
-      },
-      rebuildTrackerSourceOptions () {
-        const base = JSON.parse(JSON.stringify(TRACKER_SOURCE_OPTIONS))
-        const srcs = Array.isArray(this.form.trackerSourceDiscovered) ? this.form.trackerSourceDiscovered : []
-        const groups = {}
-        srcs.forEach(u => {
-          const groupLabel = this.deriveTrackerGroup(u) || this.deriveTrackerGroupByHost(u)
-          const opt = { value: u, label: this.deriveTrackerLabel(u), cdn: false }
-          if (!groupLabel) return
-          if (!groups[groupLabel]) groups[groupLabel] = []
-          groups[groupLabel].push(opt)
-        })
-        Object.keys(groups).forEach(label => {
-          const idx = base.findIndex(i => i.label === label)
-          if (idx >= 0) {
-            const exist = base[idx].options || []
-            const merged = [...exist]
-            groups[label].forEach(opt => {
-              if (!merged.find(o => o.value === opt.value)) merged.push(opt)
-            })
-            base[idx].options = merged
-          } else {
-            base.push({ label, options: groups[label] })
-          }
-        })
-        this.trackerSourceOptions = base
-        this.sanitizeSelectedSources()
-        this.updateTrackerSelectCollapse()
-      },
-      deriveTrackerLabel (u) {
-        const m = /([^/]+\.txt)(?:\?.*)?$/i.exec(`${u}`)
-        if (m) return m[1]
-        return u
-      },
-      deriveTrackerGroup (u) {
-        const s = `${u}`
-        const m1 = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//i.exec(s)
-        if (m1) return `${m1[1]}/${m1[2]}`
-        const m2 = /^https:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/]+)\//i.exec(s)
-        if (m2) return `${m2[1]}/${m2[2]}`
-        const m3 = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\//i.exec(s)
-        if (m3) return `${m3[1]}/${m3[2]}`
-        if (/down\.adysec\.com/i.test(s)) return 'adysec/tracker'
-        return ''
-      },
-      deriveTrackerGroupByHost (u) {
-        try {
-          const { host } = new URL(u)
-          return host
-        } catch (_) {
-          return ''
-        }
-      },
-      openTrackerSourceConfigDialog () {
-        this.trackerSourceInput = ''
-        this.trackerSourceConfigVisible = true
-      },
-      onTrackerDropdownVisibleChange (visible) {
-        this.trackerDropdownVisible = visible
-      },
-      toggleTrackerDropdown () {
-        const selectRef = this.$refs.trackerSelectRef
-        if (selectRef) {
-          if (this.trackerDropdownVisible) {
-            selectRef.blur()
-          } else {
-            selectRef.focus()
-          }
-        }
-      },
-      async addTrackerSourceFromInput () {
-        const url = `${this.trackerSourceInput}`.trim()
-        if (!url) return
-        await this.configureTrackerFromGithubWithUrl(url)
-        this.trackerSourceInput = ''
-      },
-      removeDiscoveredSource (u) {
-        const list = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
-        const idx = list.indexOf(u)
-        if (idx >= 0) {
-          list.splice(idx, 1)
-          this.form.trackerSourceDiscovered = list
-          this.rebuildTrackerSourceOptions()
-          this.autoSaveForm()
-        }
-      },
-      resetTrackerSelectBoxSources () {
-        this.form.trackerSource = []
-        this.form.trackerSourceDiscovered = []
-        this.form.trackerSourceMap = {}
-        this.rebuildTrackerSourceOptions()
-        this.sanitizeSelectedSources()
-        this.autoSaveForm()
-        this.$msg.success(this.$t('preferences.reset-select-sources-success'))
-      },
-      toggleAllTrackerSources () {
-        // 判断当前是否全选
-        if (this.isAllTrackerSourcesSelected) {
-          // 如果已全选，则取消全选
-          this.form.trackerSource = []
-          this.$msg.success(this.$t('preferences.deselect-all-tracker-sources-success'))
-
-          // 清除输入框里的Tracker服务器内容
-          this.recomputeBtTrackerFromSelected()
-        } else {
-          // 否则全选
-          const allSources = []
-          ;(this.trackerSourceOptions || []).forEach(group => {
-            ;(group.options || []).forEach(opt => {
-              if (opt.value && !allSources.includes(opt.value)) {
-                allSources.push(opt.value)
-              }
-            })
-          })
-
-          this.form.trackerSource = allSources
-          this.$msg.success(this.$t('preferences.select-all-tracker-sources-success', { count: allSources.length }))
-
-          // 自动同步Tracker
-          this.recomputeBtTrackerFromSelected()
-        }
-
-        // 自动保存配置
-        this.autoSaveForm()
-      },
       // 获取引擎列表方法
       async fetchEngineList () {
         try {
@@ -2224,23 +1617,7 @@
           if (!isEmpty(diffConfig(this.formOriginal, this.form))) {
             this.submitForm('advancedForm')
           }
-        }, 500)
-      },
-      onEngineBinaryChange () {
-        // 引擎选择变化时，直接触发保存，不更新formOriginal
-        this.autoSaveForm()
-      },
-      formatFileSize (bytes) {
-        if (!bytes || bytes === 0) return '0 B'
-        const k = 1024
-        const sizes = ['B', 'KB', 'MB', 'GB']
-        const i = Math.floor(Math.log(bytes) / Math.log(k))
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-      },
-      formatDate (date) {
-        if (!date) return '--'
-        const d = new Date(date)
-        return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }, 800)
       },
       handleLocaleChange (locale) {
         const lng = getLanguage(locale)
@@ -2288,7 +1665,7 @@
 
         // 设置超时处理，防止无限期等待
         const timeout = setTimeout(() => {
-          console.log('[Motrix] Update check timed out')
+          console.log('[LinkCore] Update check timed out')
           // 移除所有临时事件监听器
           this.$electron.ipcRenderer.removeListener('update-error', onUpdateError)
           this.$electron.ipcRenderer.removeListener('update-not-available', onUpdateNotAvailable)
@@ -2302,7 +1679,7 @@
         // 监听任何更新事件，清除超时
         const clearTimeoutListener = () => {
           clearTimeout(timeout)
-          console.log('[Motrix] Update check completed, clearing timeout')
+          console.log('[LinkCore] Update check completed, clearing timeout')
           // 移除清除超时的监听器
           this.$electron.ipcRenderer.removeListener('update-error', clearTimeoutListener)
           this.$electron.ipcRenderer.removeListener('update-not-available', clearTimeoutListener)
@@ -2313,7 +1690,7 @@
         this.$electron.ipcRenderer.once('update-available', clearTimeoutListener)
 
         // 发送检查更新命令
-        console.log('[Motrix] Sending check for updates command')
+        console.log('[LinkCore] Sending check for updates command')
         this.$electron.ipcRenderer.send('command', 'application:check-for-updates')
 
         // 更新最后检查时间
@@ -2581,7 +1958,7 @@
           this.updatePreviewContent = displayContent
           this.updatePreviewVisible = true
         } catch (e) {
-          console.error('[Motrix] Preview update failed', e)
+          console.error('[LinkCore] Preview update failed', e)
           if (this.$msg) {
             this.$msg.error(this.$t('app.update-error-message'))
           }
@@ -2614,301 +1991,10 @@
         try {
           this.$electron.ipcRenderer.send('command', 'application:open-external', href)
         } catch (e) {
-          console.error('[Motrix] open external url failed:', href, e)
+          console.error('[LinkCore] open external url failed:', href, e)
         }
       },
-      syncTrackerFromSource () {
-        this.trackerSyncing = true
-        const { trackerSource } = this.form
-        this.$store.dispatch('preference/fetchBtTracker', trackerSource)
-          .then((data) => {
-            const texts = Array.isArray(data) ? data : []
-            const lines = []
-            texts.forEach(t => {
-              const ls = this.extractTrackerLines(t)
-              if (ls && ls.length) lines.push(...ls)
-            })
-            const uniq = Array.from(new Set(lines))
-            const tracker = uniq.join('\n')
-            this.form.lastSyncTrackerTime = Date.now()
-            this.form.btTracker = tracker
-            this.trackerSyncing = false
-            if (!uniq.length) {
-              this.$msg.warning(this.$t('preferences.sync-none'))
-            } else {
-              this.$msg.success(this.$t('preferences.sync-success', { count: uniq.length }))
-            }
-          })
-          .catch((_) => {
-            this.trackerSyncing = false
-            this.$msg.error(this.$t('preferences.sync-failed'))
-          })
-      },
-      async configureTrackerFromGithub () {
-        try {
-          const r = await this.$prompt(
-            this.$t('preferences.configure-tracker-prompt-message'),
-            this.$t('preferences.configure-tracker-prompt-title'),
-            {
-              confirmButtonText: this.$t('preferences.extract'),
-              cancelButtonText: this.$t('app.cancel'),
-              inputPlaceholder: this.$t('preferences.tracker-source-input-placeholder')
-            }
-          )
-          const url = `${r.value}`.trim()
-          if (!url) return
-          await this.configureTrackerFromGithubWithUrl(url)
-        } catch (e) {
-          if (e && e === 'cancel') return
-          this.$msg.error(this.$t('preferences.extract-failed'))
-        }
-      },
-      async configureTrackerFromGithubWithUrl (url) {
-        try {
-          const origin = this.deriveOriginSite(url)
-          if (origin && this.isOriginDuplicated(origin)) {
-            this.$msg.warning(this.$t('preferences.origin-exists'))
-            return
-          }
-          if (this.isGithubRepoUrl(url)) {
-            const result = await this.resolveGithubRepo(url)
-            const lines = result.trackers || []
-            if (!lines.length) {
-              this.$msg.error(this.$t('preferences.extract-empty-repo'))
-              return
-            }
-            this.applySourceDiscovery(result.usedUrls || [], origin)
-            return
-          }
-          const raw = this.toRawUrl(url)
-          if (this.isSourceDuplicated(raw)) {
-            this.$msg.warning(this.$t('preferences.source-exists'))
-            return
-          }
-          const resp = await axios.get(raw, { responseType: 'text' })
-          const text = `${resp && resp.data ? resp.data : ''}`
-          const trackers = this.extractTrackerLines(text)
-          if (!trackers.length) {
-            this.$msg.error(this.$t('preferences.extract-empty-link'))
-            return
-          }
-          this.applySourceDiscovery([raw], this.deriveOriginSite(url))
-        } catch (e) {
-          this.$msg.error(this.$t('preferences.extract-failed'))
-        }
-      },
-      isOriginDuplicated (origin) {
-        const n = this.normalizeOriginUrl(origin)
-        const builtin = this.getBuiltinOrigins().map(o => this.normalizeOriginUrl(o))
-        const saved = (Array.isArray(this.form.trackerSourceOrigins) ? this.form.trackerSourceOrigins : []).map(o => this.normalizeOriginUrl(o))
-        return builtin.includes(n) || saved.includes(n)
-      },
-      isSourceDuplicated (rawUrl) {
-        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? this.form.trackerSourceDiscovered : []
-        if (discovered.includes(rawUrl)) return true
-        const allOptionValues = []
-        ;(this.trackerSourceOptions || []).forEach(g => {
-          ;(g.options || []).forEach(opt => allOptionValues.push(opt.value))
-        })
-        return allOptionValues.includes(rawUrl)
-      },
-      deriveOriginSite (url) {
-        const s = `${url}`
-        const repo = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(s)
-        if (repo) return this.normalizeOriginUrl(`https://github.com/${repo[1]}/${repo[2]}`)
-        let m = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//i.exec(s)
-        if (m) return this.normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
-        m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\//i.exec(s)
-        if (m) return this.normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
-        m = /^https:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/]+)\//i.exec(s)
-        if (m) return this.normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
-        try {
-          const u = new URL(s)
-          return this.normalizeOriginUrl(`${u.protocol}//${u.host}`)
-        } catch (_) {
-          return this.normalizeOriginUrl(s)
-        }
-      },
-      normalizeOriginUrl (url) {
-        try {
-          const s = `${url}`.trim()
-          const repo = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(s)
-          if (repo) {
-            const owner = repo[1]
-            const name = repo[2]
-            return `https://github.com/${owner}/${name}`
-          }
-          const u = new URL(s)
-          const protocol = u.protocol.toLowerCase()
-          const host = u.host.toLowerCase()
-          return `${protocol}//${host}`
-        } catch (_) {
-          return url.replace(/\/+$/, '')
-        }
-      },
-      deriveOriginLabel (url) {
-        const s = `${url}`
-        const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(s)
-        if (m) return `${m[1]}/${m[2]}`
-        try {
-          const u = new URL(s)
-          return u.host
-        } catch (_) {
-          return s
-        }
-      },
-      isGithubRepoUrl (url) {
-        return /^https:\/\/github\.com\/[^/]+\/[^/]+\/?$/i.test(`${url}`)
-      },
-      async resolveGithubRepo (url) {
-        const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(`${url}`)
-        if (!m) return { trackers: [], usedUrls: [] }
-        const owner = m[1]
-        const repo = m[2]
-        const branches = ['main', 'master']
-        const files = [
-          'trackers_best.txt',
-          'trackers_all.txt',
-          'trackers_best_http.txt',
-          'trackers_best_https.txt',
-          'trackers_best_udp.txt',
-          'trackers_best_wss.txt',
-          'best.txt'
-        ]
-        const readmeCandidates = branches.map(b => `https://raw.githubusercontent.com/${owner}/${repo}/${b}/README.md`)
-        const fileCandidates = []
-        branches.forEach(b => {
-          files.forEach(f => fileCandidates.push(`https://raw.githubusercontent.com/${owner}/${repo}/${b}/${f}`))
-        })
-        const used = []
-        let lines = []
-        for (let i = 0; i < readmeCandidates.length; i++) {
-          const u = readmeCandidates[i]
-          try {
-            const r = await axios.get(u, { responseType: 'text' })
-            const text = `${r && r.data ? r.data : ''}`
-            const linkUrls = this.extractTxtLinksFromReadme(text)
-            const rawUrls = linkUrls.map(this.toRawUrl)
-            const rawSet = Array.from(new Set(rawUrls))
-            const fetched = await this.fetchTrackersFromUrls(rawSet)
-            if (fetched.lines && fetched.lines.length) {
-              const preferred = this.preferCanonicalSources(fetched.usedUrls)
-              used.push(...preferred)
-              lines = fetched.lines
-              break
-            }
-          } catch (_) {}
-        }
-        if (!lines.length) {
-          const fetched = await this.fetchTrackersFromUrls(fileCandidates)
-          if (fetched.lines && fetched.lines.length) {
-            const preferred = this.preferCanonicalSources(fetched.usedUrls)
-            used.push(...preferred)
-            lines = fetched.lines
-          }
-        }
-        if (!lines.length && owner.toLowerCase() === 'adysec' && repo.toLowerCase() === 'tracker') {
-          try {
-            const r = await axios.get('https://down.adysec.com/trackers_best.txt', { responseType: 'text' })
-            const text = `${r && r.data ? r.data : ''}`
-            const fetched = this.extractTrackerLines(text)
-            if (fetched.length) {
-              used.push('https://down.adysec.com/trackers_best.txt')
-              lines = fetched
-            }
-          } catch (_) {}
-        }
-        return { trackers: lines, usedUrls: used }
-      },
-      extractTxtLinksFromReadme (text) {
-        const raw = `${text}`
-        const urls = []
-        const regex = /(https?:\/\/[^\s)]+?trackers[^\s)]*?\.txt|https?:\/\/[^\s)]+?best\.txt)/ig
-        let m
-        while ((m = regex.exec(raw)) !== null) {
-          urls.push(m[1])
-        }
-        const blobRegex = /https?:\/\/github\.com\/[^\s)]+?\.txt/ig
-        let mb
-        while ((mb = blobRegex.exec(raw)) !== null) {
-          urls.push(mb[0])
-        }
-        return Array.from(new Set(urls))
-      },
-      async fetchTrackersFromUrls (urls) {
-        const allLines = []
-        const usedUrls = []
-        for (let i = 0; i < urls.length; i++) {
-          const u = urls[i]
-          try {
-            const r = await axios.get(u, { responseType: 'text' })
-            const text = `${r && r.data ? r.data : ''}`
-            const lines = this.extractTrackerLines(text)
-            if (lines.length) {
-              usedUrls.push(u)
-              allLines.push(...lines)
-            }
-          } catch (_) {}
-        }
-        return { lines: Array.from(new Set(allLines)), usedUrls: Array.from(new Set(usedUrls)) }
-      },
-      toRawUrl (url) {
-        const u = `${url}`
-        if (/^https:\/\/raw\.githubusercontent\.com\//i.test(u)) return u
-        if (/^https:\/\/github\.com\//i.test(u)) {
-          return u.replace('https://github.com/', 'https://raw.githubusercontent.com/').replace('/blob/', '/')
-        }
-        const m = /^https:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/@]+)(?:@([^/]+))?\/(.+)$/i.exec(u)
-        if (m) {
-          const owner = m[1]
-          const repo = m[2]
-          const branch = m[3] || 'main'
-          const path = m[4]
-          return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`
-        }
-        return u
-      },
-      preferCanonicalSources (urls) {
-        const items = (urls || []).map(u => ({ url: u, label: this.deriveTrackerLabel(u), rank: this.getSourceRank(u) }))
-        const byLabel = {}
-        items.forEach(it => {
-          if (!byLabel[it.label]) byLabel[it.label] = []
-          byLabel[it.label].push(it)
-        })
-        const result = []
-        Object.keys(byLabel).forEach(label => {
-          const arr = byLabel[label]
-          arr.sort((a, b) => a.rank - b.rank)
-          result.push(arr[0].url)
-        })
-        return Array.from(new Set(result))
-      },
-      getSourceRank (u) {
-        try {
-          const url = new URL(u)
-          const host = url.host
-          let base = 100
-          if (/raw\.githubusercontent\.com$/i.test(host)) base = 1
-          else if (/github\.com$/i.test(host)) base = 2
-          else if (/cdn\.jsdelivr\.net$/i.test(host)) base = 3
-          else if (/down\.adysec\.com$/i.test(host)) base = 4
-          // 优先 main 分支
-          let branchRank = 0
-          const m = /^https:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/([^/]+)\//i.exec(u)
-          if (m) {
-            const br = m[1].toLowerCase()
-            branchRank = br === 'main' ? 0 : (br === 'master' ? 1 : 2)
-          }
-          return base * 10 + branchRank
-        } catch (_) {
-          return 999
-        }
-      },
-      extractTrackerLines (text) {
-        const raw = `${text}`
-        const tokens = raw.split(/\r?\n|,/)
-        return tokens.map(t => `${t}`.trim()).filter(Boolean).filter(t => /^(udp|http|https):\/\//i.test(t))
-      },
+
       onProtocolsChange (protocol, enabled) {
         const { protocols } = this.form
         this.form.protocols = {
@@ -3005,129 +2091,6 @@
           }
         })
       },
-      openAria2ConfEditor () {
-        this.aria2ConfEditorVisible = true
-        this.loadAria2Conf()
-      },
-      async loadAria2Conf () {
-        this.aria2ConfLoading = true
-        try {
-          const res = await this.$electron.ipcRenderer.invoke('aria2-conf:read')
-          const text = res && res.content ? res.content : ''
-          const lines = `${text}`.split(/\r?\n/)
-          this.aria2ConfOriginalLines = lines
-          const items = []
-          lines.forEach((line, idx) => {
-            const m = /^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*)\s*$/.exec(line)
-            if (m) {
-              items.push({ key: m[1], value: m[2], index: idx })
-            }
-          })
-          this.aria2ConfItems = items
-        } catch (e) {
-          this.$msg.error(this.$t('preferences.save-fail-message'))
-        } finally {
-          this.aria2ConfLoading = false
-        }
-      },
-      addConfItem () {
-        this.aria2ConfItems = [...this.aria2ConfItems, { key: '', value: '', index: -1 }]
-      },
-      removeConfItem (row) {
-        const idx = this.aria2ConfItems.indexOf(row)
-        if (idx !== -1) {
-          this.aria2ConfItems.splice(idx, 1)
-        }
-      },
-      async saveAria2Conf () {
-        const original = [...this.aria2ConfOriginalLines]
-        const kvRegex = /^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*)\s*$/
-        const kvMap = {}
-        original.forEach(line => {
-          const m = kvRegex.exec(line)
-          if (m) { kvMap[m[1]] = m[2] }
-        })
-        this.aria2ConfItems.forEach(item => {
-          const k = `${item.key}`.trim()
-          if (!k) return
-          const v = `${item.value}`.trim()
-          kvMap[k] = v
-        })
-        const rebuilt = original.map(line => {
-          const m = kvRegex.exec(line)
-          if (!m) return line
-          const k = m[1]
-          const v = kvMap[k]
-          return typeof v !== 'undefined' ? `${k}=${v}` : line
-        })
-        // 追加原文件中未包含但编辑器新增的键
-        const existingKeys = new Set(Object.keys(kvMap))
-        original.forEach(line => {
-          const m = kvRegex.exec(line)
-          if (m) existingKeys.delete(m[1])
-        })
-        existingKeys.forEach(k => {
-          rebuilt.push(`${k}=${kvMap[k]}`)
-        })
-        const content = rebuilt.join('\n')
-        const res = await this.$electron.ipcRenderer.invoke('aria2-conf:write', { content })
-        if (res && res.success) {
-          this.$msg.success(`${this.$t('preferences.save-success-message')} \n${res.path}`)
-          // 立即重新加载以验证写入成功，不关闭编辑器
-          await this.loadAria2Conf()
-        } else {
-          const msg = (res && res.error) ? res.error : this.$t('preferences.save-fail-message')
-          this.$msg.error(msg)
-        }
-      },
-      addConfKey () {
-        const key = this.aria2ConfQuickKey
-        if (!key) return
-        const exists = this.aria2ConfItems.find(item => item.key === key)
-        if (!exists) {
-          this.aria2ConfItems = [...this.aria2ConfItems, { key, value: '', index: -1 }]
-        }
-      },
-      copyAria2ConfText () {
-        const text = this.aria2ConfItems
-          .filter(i => i.key)
-          .map(i => `${i.key}=${i.value}`)
-          .join('\n')
-        if (text) {
-          try {
-            const { clipboard } = require('electron')
-            clipboard.writeText(text)
-          } catch (e) {
-          }
-        }
-      },
-      importFromText () {
-        const raw = `${this.aria2ConfRawText}`
-        const lines = raw.split(/\r?\n/)
-        lines.forEach(line => {
-          const m = /^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*)\s*$/.exec(line)
-          if (m) {
-            const key = m[1]
-            const value = m[2]
-            const idx = this.aria2ConfItems.findIndex(i => i.key === key)
-            if (idx >= 0) {
-              this.aria2ConfItems.splice(idx, 1, { ...this.aria2ConfItems[idx], value })
-            } else {
-              this.aria2ConfItems.push({ key, value, index: -1 })
-            }
-          }
-        })
-      },
-      async pasteFromClipboard () {
-        try {
-          const { clipboard } = require('electron')
-          const text = clipboard.readText()
-          this.aria2ConfRawText = text
-          this.importFromText()
-        } catch (e) {
-          this.$msg.error(this.$t('preferences.save-fail-message'))
-        }
-      },
       syncFormConfig () {
         // 保存成功后，直接使用当前表单数据更新 formOriginal
         // 而不是从后端重新获取，避免竞态条件导致配置被重置
@@ -3144,7 +2107,7 @@
       submitForm (formName) {
         this.$refs[formName].validate((valid) => {
           if (!valid) {
-            console.error('[Motrix] preference form valid:', valid)
+            console.error('[LinkCore] preference form valid:', valid)
             return false
           }
 
@@ -3199,7 +2162,7 @@
             data.rpcListenPort = this.rpcDefaultPort
           }
 
-          console.log('[Motrix] preference changed data:', data)
+          console.log('[LinkCore] preference changed data:', data)
 
           // 检查是否需要重启
           const needRelaunch = this.isRenderer && (
@@ -3269,7 +2232,8 @@
     overflow-y: auto;
   }
 }
-.ua-group {
+/* UA 快速选择滑块容器间距 */
+.ua-segmented {
   margin-top: 8px;
 }
 
@@ -3310,48 +2274,78 @@
   }
 }
 
-.el-dialog.tracker-source-dialog {
-  background: transparent !important;
-  box-shadow: none !important;
-  border: none !important;
+/* Local popup for adding github mirror (appears below the button) */
+.github-mirror-popup-wrapper {
+  position: relative;
+  display: inline-flex;
 }
 
-.el-dialog.tracker-source-dialog .el-dialog__header {
-  display: none;
-}
-
-.el-dialog.tracker-source-dialog .el-dialog__body {
-  padding: 0;
-}
-
-.el-dialog.tracker-source-dialog .el-input-group__prepend {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-.el-dialog.tracker-source-dialog .el-input__inner {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-}
-
-.tracker-source-close-btn {
-  width: 40px;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 10px;
+.github-mirror-popup {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 14px;
+  width: 280px;
+  background: var(--lc-bg-dropdown, #fff);
   border: none;
-  background: transparent;
-  font-size: 18px;
-  color: #606266;
+  border-radius: var(--lc-radius-dropdown);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  z-index: 999;
+  overflow: hidden;
+  transform-origin: top right;
 }
 
-.tracker-source-dialog__footer {
-  position: fixed;
-  right: 14px;
-  bottom: 24px;
-  z-index: 3001;
+.github-mirror-popup__header {
+  padding: 10px 14px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lc-text-primary, #333);
+}
+
+.github-mirror-popup__body {
+  padding: 10px 14px;
+}
+
+.github-mirror-popup__body .el-input__inner {
+  padding-left: 8px;
+  padding-right: 8px;
+  background-color: transparent !important;
+}
+
+.github-mirror-popup__footer {
+  display: flex;
+  justify-content: center;
+  padding: 4px 8px 12px;
+}
+
+.github-mirror-popup__footer .el-button.el-button--primary,
+.theme-dark .github-mirror-popup__footer .el-button.el-button--primary {
+  border-radius: 8px;
+  padding: 6px 20px;
+  background-color: var(--lc-color-primary) !important;
+  border-color: var(--lc-color-primary) !important;
+  color: #fff !important;
+
+  &:hover,
+  &:focus {
+    background-color: var(--lc-color-primary) !important;
+    border-color: var(--lc-color-primary) !important;
+    color: #fff !important;
+    opacity: 0.85;
+  }
+}
+
+/* popup-scale transition: 与全局弹窗一致的缩放动画 */
+.popup-scale-enter-active {
+  transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.popup-scale-leave-active {
+  transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1), opacity 0.14s cubic-bezier(0.4, 0, 1, 1);
+}
+.popup-scale-enter,
+.popup-scale-leave-to {
+  transform: scale(0.92);
+  opacity: 0;
 }
 
 .update-preview-mask {
@@ -3516,62 +2510,6 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
-.el-dialog.aria2conf-editor-dialog {
-  :deep(.el-dialog__wrapper) {
-    background: rgba(0, 0, 0, 0.5);
-  }
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  .el-dialog__header {
-    padding: 10px 20px;
-    border-bottom: none;
-  }
-  .el-dialog__body {
-    flex: 1 1 auto;
-    overflow-y: auto;
-    padding-bottom: 10px;
-  }
-  .el-dialog__footer {
-    border-top: none;
-    background: transparent;
-  }
-  .dialog-footer {
-    position: fixed;
-    right: 16px;
-    bottom: 16px;
-    left: auto;
-    padding: 0;
-    background: transparent;
-  }
-  .aria2conf-toolbar {
-    background: var(--panel-background);
-    padding: 8px 0 4px;
-  }
-  :deep(.el-table__header-wrapper) {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    background: var(--panel-background);
-  }
-  :deep(.el-table--border) {
-    border: none !important;
-  }
-  :deep(.el-table::before),
-  :deep(.el-table--border::after),
-  :deep(.el-table__border-left-patch),
-  :deep(.el-table__border-right-patch) {
-    display: none !important;
-  }
-  :deep(.el-table th),
-  :deep(.el-table td),
-  :deep(.el-table__header-wrapper th),
-  :deep(.el-table__body-wrapper td),
-  :deep(.el-table--border .el-table__cell) {
-    border: none !important;
-  }
-}
-
 .github-mirror-row {
   align-items: stretch !important;
 }
@@ -3580,6 +2518,18 @@
   border-right: none;
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
+  border-color: var(--lc-border-base);
+  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+// 悬停整个选择框（含标签区域）即触发边框高亮，而非仅悬停边框线
+.github-mirror-row .el-select:hover:not(:focus-within) .el-input__inner {
+  border-color: var(--lc-border-hover);
+}
+
+.github-mirror-row .el-select .el-input__inner:focus,
+.github-mirror-row .el-select .el-input.is-focus .el-input__inner {
+  border-color: var(--lc-color-primary);
 }
 
 .github-mirror-actions {
@@ -3587,10 +2537,10 @@
   margin-left: 0;
   display: flex;
   align-items: center;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--lc-border-base);
   border-left: none;
   border-radius: 0 6px 6px 0;
-  background-color: #fff;
+  background-color: var(--lc-bg-input);
   box-sizing: border-box;
   transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 
@@ -3601,7 +2551,7 @@
     top: 6px;
     bottom: 6px;
     width: 1px;
-    background-color: #dcdfe6;
+    background-color: var(--lc-border-base);
     z-index: 1;
     transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
   }
@@ -3623,7 +2573,7 @@
       top: 6px;
       bottom: 6px;
       width: 1px;
-      background-color: #dcdfe6;
+      background-color: var(--lc-border-base);
       transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
     }
 
@@ -3637,56 +2587,43 @@
   }
 }
 
-.theme-dark .github-mirror-actions .el-button:not(:last-child)::after {
-  background-color: #5f5f5f;
-}
-
-.theme-dark .github-mirror-actions {
-  border-color: #5f5f5f;
-  background-color: #373737;
-
-  &::before {
-    background-color: #5f5f5f;
-  }
-}
-
-// 选择框悬停时，相邻按钮容器边框与分割线高亮（白色/灰色）
+// 选择框悬停时，相邻按钮容器边框与分割线高亮
 .github-mirror-row:has(.el-select:hover) .github-mirror-actions {
-  border-color: $--border-color-hover;
+  border-color: var(--lc-border-hover);
 
   &::before {
-    background-color: $--border-color-hover;
+    background-color: var(--lc-border-hover);
   }
 }
 
-// 选择框聚焦时，相邻按钮容器边框与分割线高亮（紫色）
+// 选择框聚焦时，相邻按钮容器边框与分割线高亮（主题色）
 .github-mirror-row:has(.el-select .el-input.is-focus) .github-mirror-actions {
-  border-color: $--color-primary;
+  border-color: var(--lc-color-primary);
 
   &::before {
-    background-color: $--color-primary;
+    background-color: var(--lc-color-primary);
   }
 }
 
 .bt-tracker .tracker-row:has(.el-select:hover) {
   .tracker-left,
   .tracker-right {
-    border-color: $--border-color-hover;
+    border-color: var(--lc-border-hover);
   }
   .tracker-left::after,
   .tracker-right::before {
-    background-color: $--border-color-hover;
+    background-color: var(--lc-border-hover);
   }
 }
 
 .bt-tracker .tracker-row:has(.el-select .el-input.is-focus) {
   .tracker-left,
   .tracker-right {
-    border-color: $--color-primary;
+    border-color: var(--lc-color-primary);
   }
   .tracker-left::after,
   .tracker-right::before {
-    background-color: $--color-primary;
+    background-color: var(--lc-color-primary);
   }
 }
 
@@ -3697,6 +2634,35 @@
       border-right: none;
       border-radius: 0;
       font-size: 12px;
+      border-color: var(--lc-border-base);
+      transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+    }
+
+    // 悬停整个选择框（含标签区域）即触发边框高亮，而非仅悬停边框线
+    &:hover:not(:focus-within) .el-input__inner {
+      border-color: var(--lc-border-hover);
+    }
+
+    .el-input__inner:focus,
+    .el-input.is-focus .el-input__inner {
+      border-color: var(--lc-color-primary);
+    }
+  }
+}
+
+// 已添加来源标题及链接适配深色模式
+.tracker-origins-info {
+  color: var(--lc-text-secondary);
+
+  a {
+    color: var(--lc-form-link);
+
+    &:hover {
+      color: var(--lc-form-link-hover);
+    }
+
+    &:active {
+      color: var(--lc-form-link-hover);
     }
   }
 }
@@ -3706,10 +2672,10 @@
   align-items: center;
   justify-content: center;
   position: relative;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--lc-border-base);
   border-right: none;
   border-radius: 6px 0 0 6px;
-  background-color: #fff;
+  background-color: var(--lc-bg-input);
   box-sizing: border-box;
   transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 
@@ -3720,7 +2686,7 @@
     top: 6px;
     bottom: 6px;
     width: 1px;
-    background-color: #dcdfe6;
+    background-color: var(--lc-border-base);
     transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
   }
 
@@ -3752,10 +2718,10 @@
   align-items: center;
   justify-content: center;
   position: relative;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--lc-border-base);
   border-left: none;
   border-radius: 0 6px 6px 0;
-  background-color: #fff;
+  background-color: var(--lc-bg-input);
   box-sizing: border-box;
   transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 
@@ -3766,7 +2732,7 @@
     top: 6px;
     bottom: 6px;
     width: 1px;
-    background-color: #dcdfe6;
+    background-color: var(--lc-border-base);
     transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
   }
 
@@ -3790,7 +2756,7 @@
       top: 6px;
       bottom: 6px;
       width: 1px;
-      background-color: #dcdfe6;
+      background-color: var(--lc-border-base);
       transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
     }
 
@@ -3800,30 +2766,6 @@
       background-color: transparent !important;
       border-color: transparent !important;
       box-shadow: none !important;
-    }
-  }
-}
-
-.theme-dark {
-  .tracker-left {
-    border-color: #5f5f5f;
-    background-color: #373737;
-
-    &::after {
-      background-color: #5f5f5f;
-    }
-  }
-
-  .tracker-right {
-    border-color: #5f5f5f;
-    background-color: #373737;
-
-    &::before {
-      background-color: #5f5f5f;
-    }
-
-    .el-button:not(:last-child)::after {
-      background-color: #5f5f5f;
     }
   }
 }

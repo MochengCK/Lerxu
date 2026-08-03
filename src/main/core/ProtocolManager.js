@@ -3,7 +3,7 @@ import { app } from 'electron'
 import is from 'electron-is'
 import { parse } from 'querystring'
 
-import logger from './Logger'
+import logger from './LogManager'
 import protocolMap from '../configs/protocol'
 import { ADD_TASK_TYPE } from '@shared/constants'
 
@@ -46,14 +46,15 @@ export default class ProtocolManager extends EventEmitter {
   }
 
   handle (url) {
-    logger.info(`[Motrix] protocol url: ${url}`)
+    logger.info(`[LinkCore] protocol url: ${url}`)
 
     if (
       url.toLowerCase().startsWith('ftp:') ||
       url.toLowerCase().startsWith('http:') ||
       url.toLowerCase().startsWith('https:') ||
       url.toLowerCase().startsWith('magnet:') ||
-      url.toLowerCase().startsWith('thunder:')
+      url.toLowerCase().startsWith('thunder:') ||
+      url.toLowerCase().startsWith('ed2k:')
     ) {
       return this.handleResourceProtocol(url)
     }
@@ -80,7 +81,7 @@ export default class ProtocolManager extends EventEmitter {
   handleMoProtocol (url) {
     const parsed = new URL(url)
     const { host, search } = parsed
-    logger.info('[Motrix] protocol parsed:', parsed, host)
+    logger.info('[LinkCore] protocol parsed:', parsed, host)
 
     const command = protocolMap[host]
     if (!command) {

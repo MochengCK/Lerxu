@@ -1,0 +1,404 @@
+/**
+ * LinkCore Theme Tokens
+ * --------------------------
+ * This is the SINGLE SOURCE OF TRUTH for all theme colors.
+ * All SCSS variables and components should reference these CSS custom properties.
+ *
+ * Usage in SCSS:   color: var(--lc-text-primary);
+ * Usage in JS:     getComputedStyle(el).getPropertyValue('--lc-text-primary')
+ *
+ * To change the brand color, only update --lc-color-primary here.
+ */
+
+/* ============================================
+   Light Theme (default — :root)
+   ============================================ */
+:root {
+  /* Brand Colors
+  -------------------------- */
+  --lc-color-primary: #1a7fe0;
+  --lc-color-primary-rgb: 26, 127, 224;
+  --lc-color-primary-light: rgba(var(--lc-color-primary-rgb), 0.06);
+  --lc-color-primary-lighter: rgba(var(--lc-color-primary-rgb), 0.1);
+  --lc-color-primary-active: var(--lc-color-primary);
+
+  /* Functional Colors
+  -------------------------- */
+  --lc-color-success: #67c23a;
+  --lc-color-warning: #e6a23c;
+  --lc-color-danger: #f56c6c;
+  --lc-color-danger-hover: #f78989;
+  --lc-color-info: #909399;
+
+  /* Text Colors
+  -------------------------- */
+  --lc-text-primary: #2c3e50;
+  --lc-text-regular: #3d4d5c;
+  --lc-text-secondary: #5a6c7d;
+  --lc-text-placeholder: #8492a6;
+  --lc-text-disabled: #c4cdd5;
+  --lc-text-inverse: #ffffff;
+
+  /* Background Colors
+  -------------------------- */
+  --lc-bg-app: transparent;
+  --lc-bg-main: #f0f4f8;
+  --lc-bg-panel: #ffffff;
+  --lc-bg-panel-rgb: 255, 255, 255;
+  --lc-bg-subnav: #f0f4f8;
+  --lc-bg-aside: rgba(26, 35, 50, 0.85);
+  --lc-bg-input: #ffffff;
+  --lc-bg-input-disabled: #f5f7fa;
+  --lc-bg-button: #ffffff;
+  --lc-bg-button-hover: #f0f4f8;
+  --lc-bg-hover: #f0f4f8;
+  --lc-bg-active: #eef2f7;
+  --lc-bg-dropdown: #ffffff;
+  --lc-bg-popover: #ffffff;
+  --lc-bg-message: #edf2fc;
+  --lc-bg-dialog: #ffffff;
+  --lc-bg-message-box: #ffffff;
+  --lc-bg-upload: #f5f7fa;
+  --lc-bg-progress-track: #e2e8f0;
+  --lc-bg-dialog-footer: #f7f9fc;
+  --lc-bg-subnav-three-column: #e3eaf2;
+
+  /* Radius
+  -------------------------- */
+  /* 全局下拉框/局部弹窗统一圆角，所有 dropdown / popover / popup 复用 */
+  --lc-radius-dropdown: 8px;
+
+  /* Border Colors
+  -------------------------- */
+  --lc-border-base: #d3dde6;
+  --lc-border-light: #e2e8f0;
+  --lc-border-lighter: #eef2f7;
+  --lc-border-hover: #8492a6;
+  --lc-border-divider: rgba(26, 35, 50, 0.08);
+  --lc-border-panel: rgba(26, 35, 50, 0.08);
+
+  /* Aside / Subnav specific
+  -------------------------- */
+  --lc-aside-text: #ffffff;
+  --lc-subnav-title: var(--lc-text-primary);
+  --lc-subnav-text: var(--lc-text-secondary);
+  --lc-subnav-active-text: var(--lc-color-primary);
+  --lc-subnav-active-bg: rgba(0, 0, 0, 0.12);
+  --lc-subnav-border: var(--lc-border-base);
+  --lc-subnav-hover-bg: rgba(0, 0, 0, 0.06);
+  --lc-subnav-active-item-bg: rgba(0, 0, 0, 0.12);
+
+  /* Task
+  -------------------------- */
+  --lc-task-item-bg: transparent;
+  --lc-task-item-border: var(--lc-border-base);
+  --lc-task-item-hover-border: var(--lc-color-primary);
+  --lc-task-item-hover-bg: var(--lc-color-primary);
+  --lc-task-item-text: var(--lc-text-regular);
+  --lc-task-action: var(--lc-text-secondary);
+  --lc-task-action-hover: var(--lc-color-primary);
+  --lc-task-action-disabled: rgba(90, 108, 125, 0.5);
+  --lc-task-action-bg: #ffffff;
+  --lc-task-action-hover-bg: var(--lc-color-primary);
+  --lc-task-action-border: var(--lc-border-lighter);
+  --lc-task-action-hover-border: var(--lc-color-primary);
+  --lc-task-action-verify-bg: rgba(var(--lc-color-primary-rgb), 0.05);
+  --lc-task-action-verify-hover-bg: rgba(var(--lc-color-primary-rgb), 0.1);
+  --lc-no-task: var(--lc-text-disabled);
+  --lc-task-detail-border: var(--lc-border-light);
+
+  /* Preference
+  -------------------------- */
+  --lc-preference-text: var(--lc-text-regular);
+
+  /* Graphic
+  -------------------------- */
+  --lc-graphic-box-bg: transparent;
+  --lc-graphic-atom-outline: rgba(26, 35, 50, 0.06);
+  --lc-graphic-atom-0: #ebedf0;
+  --lc-graphic-atom-1: #9be9a8;
+  --lc-graphic-atom-2: #40c463;
+  --lc-graphic-atom-3: #30a14e;
+  --lc-graphic-atom-4: #39d353;
+
+  /* Form
+  -------------------------- */
+  --lc-form-actions-bg: #ffffff;
+
+  /* Scrollbar
+  -------------------------- */
+  --lc-scrollbar-thumb: rgba(26, 35, 50, 0.35);
+  --lc-scrollbar-thumb-inactive: rgba(26, 35, 50, 0.2);
+
+  /* Shadow
+  -------------------------- */
+  --lc-shadow-switch-thumb: 0 2px 4px rgba(0, 0, 0, 0.2);
+
+  /* Background image mode
+  -------------------------- */
+  --lc-bg-image-aside: rgba(26, 35, 50, var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9)));
+  --lc-bg-image-subnav: rgba(255, 255, 255, var(--app-ui-opacity-subnav, var(--app-ui-opacity, 0.9)));
+
+  /* Element UI specific tokens (light mode defaults)
+  -------------------------- */
+  --lc-table-th-bg: transparent;
+  --lc-table-striped-bg: #fafafa;
+  --lc-table-hover-bg: #f5f7fa;
+  --lc-table-border: #e2e8f0;
+  --lc-table-text: #5a6c7d;
+
+  --lc-tab-text: #5a6c7d;
+  --lc-tab-active: #1a7fe0;
+  --lc-tab-border: #e2e8f0;
+
+  --lc-switch-bg: #dcdfe6;
+  --lc-switch-border: #dcdfe6;
+  --lc-switch-thumb: #ffffff;
+  --lc-switch-checked-bg: #1a7fe0;
+  --lc-switch-disabled-bg: #f5f7fa;
+  --lc-switch-disabled-thumb: #c0c4cc;
+
+  --lc-checkbox-bg: #ffffff;
+  --lc-checkbox-border: #dcdfe6;
+  --lc-checkbox-checked-bg: #1a7fe0;
+  --lc-checkbox-disabled-bg: #f5f7fa;
+  --lc-checkbox-disabled-border: #e4e7ed;
+  --lc-checkbox-disabled-thumb: #c4cad3;
+
+  --lc-radio-bg: #ffffff;
+  --lc-radio-border: #dcdfe6;
+  --lc-radio-text: #606266;
+  --lc-radio-checked-bg: #1a7fe0;
+  --lc-radio-checked-text: #ffffff;
+  --lc-radio-disabled-bg: #f5f7fa;
+  --lc-radio-disabled-text: #c0c4cc;
+
+  --lc-select-item-text: #606266;
+  --lc-select-item-hover-bg: #f0f4f8;
+  --lc-select-item-selected: #1a7fe0;
+
+  --lc-message-info-text: #909399;
+  --lc-message-success-text: #67c23a;
+  --lc-message-warning-text: #e6a23c;
+  --lc-message-error-text: #f56c6c;
+
+  --lc-dialog-title: #303133;
+  --lc-dialog-text: #606266;
+
+  --lc-danger-plain-text: #f56c6c;
+  --lc-danger-plain-border: #fbc4c4;
+  --lc-danger-plain-hover-bg: #f56c6c;
+
+  --lc-tag-info-bg: #f4f4f5;
+  --lc-tag-info-border: #e9e9eb;
+  --lc-tag-info-text: #909399;
+
+  --lc-time-panel-text: #606266;
+  --lc-time-panel-active: #1a7fe0;
+  --lc-time-panel-disabled: #c0c4cc;
+
+  --lc-form-link: #5a6c7d;
+  --lc-form-link-hover: #2c3e50;
+}
+
+/* ============================================
+   Dark Theme (.theme-dark)
+   ============================================ */
+.theme-dark {
+  /* Brand Colors
+  -------------------------- */
+  --lc-color-primary: #4a9eff;
+  --lc-color-primary-rgb: 74, 158, 255;
+  --lc-color-primary-light: rgba(74, 158, 255, 0.12);
+  --lc-color-primary-lighter: rgba(74, 158, 255, 0.25);
+  --lc-color-primary-active: var(--lc-color-primary);
+
+  /* Functional Colors (same, slightly adjusted for dark)
+  -------------------------- */
+  --lc-color-success: #67c23a;
+  --lc-color-warning: #e6a23c;
+  --lc-color-danger: #f56c6c;
+  --lc-color-danger-hover: #f78989;
+  --lc-color-info: #909399;
+
+  /* Text Colors
+  -------------------------- */
+  --lc-text-primary: #dfe3e8;
+  --lc-text-regular: #c4cad3;
+  --lc-text-secondary: #8b95a3;
+  --lc-text-placeholder: #6b7280;
+  --lc-text-disabled: #6b7280;
+  --lc-text-inverse: #ffffff;
+
+  /* Background Colors
+  -------------------------- */
+  --lc-bg-app: transparent;
+  --lc-bg-main: #1e2228;
+  --lc-bg-panel: #262a31;
+  --lc-bg-panel-rgb: 38, 42, 49;
+  --lc-bg-subnav: #1e2228;
+  --lc-bg-aside: rgba(12, 16, 22, 0.92);
+  --lc-bg-input: #2a2e35;
+  --lc-bg-input-disabled: #1e2228;
+  --lc-bg-button: #363b44;
+  --lc-bg-button-hover: #2a2e35;
+  --lc-bg-hover: #363b44;
+  --lc-bg-active: rgba(255, 255, 255, 0.08);
+  --lc-bg-dropdown: #2e333b;
+  --lc-bg-popover: #2e333b;
+  --lc-bg-message: #1e2228;
+  --lc-bg-dialog: #262a31;
+  --lc-bg-message-box: #1e2228;
+  --lc-bg-upload: #1e2228;
+  --lc-bg-progress-track: #363b44;
+  --lc-bg-dialog-footer: #363b44;
+  --lc-bg-subnav-three-column: #1a1e24;
+
+  /* Radius
+  -------------------------- */
+  /* 全局下拉框/局部弹窗统一圆角，所有 dropdown / popover / popup 复用 */
+  --lc-radius-dropdown: 8px;
+
+  /* Border Colors
+  -------------------------- */
+  --lc-border-base: #3d424d;
+  --lc-border-light: rgba(255, 255, 255, 0.08);
+  --lc-border-lighter: rgba(255, 255, 255, 0.06);
+  --lc-border-hover: #6b7280;
+  --lc-border-divider: rgba(255, 255, 255, 0.06);
+  --lc-border-panel: rgba(255, 255, 255, 0.08);
+
+  /* Aside / Subnav specific
+  -------------------------- */
+  --lc-aside-text: #ffffff;
+  --lc-subnav-title: #e8eaed;
+  --lc-subnav-text: #8b95a3;
+  --lc-subnav-active-text: #4a9eff;
+  --lc-subnav-active-bg: rgba(255, 255, 255, 0.15);
+  --lc-subnav-border: #3d424d;
+  --lc-subnav-hover-bg: rgba(255, 255, 255, 0.14);
+  --lc-subnav-active-item-bg: rgba(255, 255, 255, 0.22);
+
+  /* Task
+  -------------------------- */
+  --lc-task-item-bg: transparent;
+  --lc-task-item-border: #3d424d;
+  --lc-task-item-hover-border: #4a9eff;
+  --lc-task-item-hover-bg: #4a9eff;
+  --lc-task-item-text: #dfe3e8;
+  --lc-task-action: #dfe3e8;
+  --lc-task-action-hover: #4a9eff;
+  --lc-task-action-disabled: rgba(223, 227, 232, 0.5);
+  --lc-task-action-bg: #363b44;
+  --lc-task-action-hover-bg: #4a9eff;
+  --lc-task-action-border: #3d424d;
+  --lc-task-action-hover-border: #4a9eff;
+  --lc-task-action-verify-bg: #2a2e35;
+  --lc-task-action-verify-hover-bg: #333841;
+  --lc-no-task: #6b7280;
+  --lc-task-detail-border: #3d424d;
+
+  /* Preference
+  -------------------------- */
+  --lc-preference-text: #c4cad3;
+
+  /* Graphic
+  -------------------------- */
+  --lc-graphic-box-bg: #2a2e35;
+  --lc-graphic-atom-outline: transparent;
+  --lc-graphic-atom-0: #161b22;
+  --lc-graphic-atom-1: #0e4429;
+  --lc-graphic-atom-2: #006d32;
+  --lc-graphic-atom-3: #26a641;
+  --lc-graphic-atom-4: #39d353;
+
+  /* Form
+  -------------------------- */
+  --lc-form-actions-bg: #262a31;
+
+  /* Scrollbar
+  -------------------------- */
+  --lc-scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --lc-scrollbar-thumb-inactive: rgba(255, 255, 255, 0.1);
+
+  /* Shadow
+  -------------------------- */
+  --lc-shadow-switch-thumb: 0 2px 4px rgba(0, 0, 0, 0.3);
+
+  /* Background image mode
+  -------------------------- */
+  --lc-bg-image-aside: rgba(12, 16, 22, var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9)));
+  --lc-bg-image-subnav: rgba(30, 34, 40, var(--app-ui-opacity-subnav, var(--app-ui-opacity, 0.9)));
+
+  /* Element UI overrides for dark mode
+  -------------------------- */
+  --lc-table-th-bg: #1a1e24;
+  --lc-table-striped-bg: #1a1e24;
+  --lc-table-hover-bg: #363b44;
+  --lc-table-border: #3d424d;
+  --lc-table-text: #8b95a3;
+
+  /* Tabs */
+  --lc-tab-text: #8b95a3;
+  --lc-tab-active: #4a9eff;
+  --lc-tab-border: #3d424d;
+
+  /* Switch */
+  --lc-switch-bg: #2a2e35;
+  --lc-switch-border: #3d424d;
+  --lc-switch-thumb: #dfe3e8;
+  --lc-switch-checked-bg: #4a9eff;
+  --lc-switch-disabled-bg: #1e2228;
+  --lc-switch-disabled-thumb: #6b7280;
+
+  /* Checkbox */
+  --lc-checkbox-bg: #2a2e35;
+  --lc-checkbox-border: #3d424d;
+  --lc-checkbox-checked-bg: #4a9eff;
+  --lc-checkbox-disabled-bg: #1e2228;
+  --lc-checkbox-disabled-border: #3d424d;
+  --lc-checkbox-disabled-thumb: #6b7280;
+
+  /* Radio Button */
+  --lc-radio-bg: #363b44;
+  --lc-radio-border: #3d424d;
+  --lc-radio-text: #c4cad3;
+  --lc-radio-checked-bg: #4a9eff;
+  --lc-radio-checked-text: #ffffff;
+  --lc-radio-disabled-bg: #2a2e35;
+  --lc-radio-disabled-text: #6b7280;
+
+  /* Select dropdown */
+  --lc-select-item-text: #dfe3e8;
+  --lc-select-item-hover-bg: #363b44;
+  --lc-select-item-selected: #4a9eff;
+
+  /* Message */
+  --lc-message-info-text: #8b95a3;
+  --lc-message-success-text: #67c23a;
+  --lc-message-warning-text: #e6a23c;
+  --lc-message-error-text: #f56c6c;
+
+  /* Dialog */
+  --lc-dialog-title: #e8eaed;
+  --lc-dialog-text: #8b95a3;
+
+  /* Danger button plain */
+  --lc-danger-plain-text: #ff6157;
+  --lc-danger-plain-border: #ffc0bc;
+  --lc-danger-plain-hover-bg: #ff6157;
+
+  /* Tag */
+  --lc-tag-info-bg: #363b44;
+  --lc-tag-info-border: #3d424d;
+  --lc-tag-info-text: #c4cad3;
+
+  /* Time panel */
+  --lc-time-panel-text: #c4cad3;
+  --lc-time-panel-active: #4a9eff;
+  --lc-time-panel-disabled: #6b7280;
+
+  /* Misc */
+  --lc-form-link: #c4cad3;
+  --lc-form-link-hover: #dfe3e8;
+}

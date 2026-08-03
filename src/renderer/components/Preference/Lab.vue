@@ -13,7 +13,7 @@
   import { mapState } from 'vuex'
 
   import { APP_THEME } from '@shared/constants'
-  import Browser from '@/components/Browser'
+  import Browser from '@/components/Browser/Browser'
   import '@/components/Icons/info-square'
 
   export default {

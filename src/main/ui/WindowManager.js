@@ -1,18 +1,43 @@
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { debounce } from 'lodash'
-import { app, shell, screen, BrowserWindow } from 'electron'
+import { app, shell, screen, BrowserWindow, nativeTheme } from 'electron'
 import is from 'electron-is'
 
 import pageConfig from '../configs/page'
-import logger from '../core/Logger'
+import logger from '../core/LogManager'
+import { APP_THEME } from '@shared/constants'
+
+/**
+ * Resolve the effective theme from user config.
+ * When set to AUTO, fall back to the OS native theme.
+ */
+function resolveEffectiveTheme (userConfig) {
+  const theme = (userConfig && userConfig.theme) || APP_THEME.AUTO
+  if (theme === APP_THEME.AUTO) {
+    return nativeTheme.shouldUseDarkColors ? APP_THEME.DARK : APP_THEME.LIGHT
+  }
+  return theme
+}
+
+/**
+ * Get the initial window background color that matches the app theme,
+ * so the window doesn't flash the wrong color before the UI loads.
+ */
+function getInitialBackgroundColor (userConfig) {
+  // On macOS the window is transparent (vibrancy handles the background)
+  if (is.macOS()) {
+    return '#00000000'
+  }
+  const effective = resolveEffectiveTheme(userConfig)
+  return effective === APP_THEME.DARK ? '#262a31' : '#ffffff'
+}
 
 const baseBrowserOptions = {
   titleBarStyle: 'hiddenInset',
   show: false,
   width: 1024,
   height: 768,
-  backgroundColor: '#fff',
   webPreferences: {
     nodeIntegration: true
   }
@@ -52,7 +77,13 @@ export default class WindowManager extends EventEmitter {
   }
 
   getPageOptions (page) {
-    const result = pageConfig[page] || {}
+    // 浅拷贝共享 pageConfig，避免小屏缩放/隐藏菜单修改污染共享配置，
+    // 否则窗口销毁重建后 width/height 会被反复缩放
+    const origin = pageConfig[page] || {}
+    const result = {
+      ...origin,
+      attrs: { ...(origin.attrs || {}) }
+    }
     const hideAppMenu = this.userConfig['hide-app-menu']
     if (hideAppMenu) {
       result.attrs.frame = false
@@ -62,8 +93,12 @@ export default class WindowManager extends EventEmitter {
     const { width, height } = screen.getPrimaryDisplay().workAreaSize
     const widthScale = width >= 1280 ? 1 : 0.875
     const heightScale = height >= 800 ? 1 : 0.875
-    result.attrs.width *= widthScale
-    result.attrs.height *= heightScale
+    if (typeof result.attrs.width === 'number') {
+      result.attrs.width *= widthScale
+    }
+    if (typeof result.attrs.height === 'number') {
+      result.attrs.height *= heightScale
+    }
 
     if (is.linux()) {
       result.attrs.icon = join(__static, './512x512.png')
@@ -106,6 +141,7 @@ export default class WindowManager extends EventEmitter {
     window = new BrowserWindow({
       ...defaultBrowserOptions,
       ...pageOptions.attrs,
+      backgroundColor: getInitialBackgroundColor(this.userConfig),
       webPreferences: {
         contextIsolation: false,
         backgroundThrottling: true,
@@ -205,7 +241,7 @@ export default class WindowManager extends EventEmitter {
       state.recoverCount = 0
     }
     if (state.recoverCount >= 3) {
-      logger.error(`[Motrix] window recovery halted (too frequent): page=${page} reason=${reason}`)
+      logger.error(`[LinkCore] window recovery halted (too frequent): page=${page} reason=${reason}`)
       return
     }
 
@@ -222,7 +258,7 @@ export default class WindowManager extends EventEmitter {
         state.recoverCount += 1
         window.loadURL(pageOptions.url)
       } catch (e) {
-        logger.error(`[Motrix] window reload failed: page=${page} reason=${reason} message=${e && e.message ? e.message : e}`)
+        logger.error(`[LinkCore] window reload failed: page=${page} reason=${reason} message=${e && e.message ? e.message : e}`)
       }
     }, 1200)
   }
@@ -235,7 +271,7 @@ export default class WindowManager extends EventEmitter {
 
     window.on('unresponsive', () => {
       state.lastUnresponsiveAt = Date.now()
-      logger.warn(`[Motrix] window unresponsive: page=${page}`)
+      logger.warn(`[LinkCore] window unresponsive: page=${page}`)
       this.scheduleWindowReload(page, window, pageOptions, 'unresponsive')
     })
 
@@ -248,7 +284,7 @@ export default class WindowManager extends EventEmitter {
       window.webContents.on('render-process-gone', (_event, details) => {
         const reason = details && details.reason ? details.reason : 'unknown'
         const exitCode = details && typeof details.exitCode !== 'undefined' ? details.exitCode : ''
-        logger.error(`[Motrix] render-process-gone: page=${page} reason=${reason} exitCode=${exitCode}`)
+        logger.error(`[LinkCore] render-process-gone: page=${page} reason=${reason} exitCode=${exitCode}`)
         this.scheduleWindowReload(page, window, pageOptions, `render-process-gone:${reason}`)
       })
 
@@ -256,7 +292,7 @@ export default class WindowManager extends EventEmitter {
         if (!isMainFrame) {
           return
         }
-        logger.warn(`[Motrix] did-fail-load: page=${page} code=${errorCode} desc=${errorDescription} url=${validatedURL}`)
+        logger.warn(`[LinkCore] did-fail-load: page=${page} code=${errorCode} desc=${errorDescription} url=${validatedURL}`)
         this.scheduleWindowReload(page, window, pageOptions, `did-fail-load:${errorCode}`)
       })
     }
@@ -285,9 +321,11 @@ export default class WindowManager extends EventEmitter {
     }
 
     this.removeWindow(page)
-    win.removeListener('closed')
-    win.removeListener('move')
-    win.removeListener('resize')
+    // 移除 move/resize 监听，避免窗口销毁后 debounce 回调调用已销毁的窗口。
+    // 不能对 'closed' 调用 removeListener（此前代码漏传回调参数会抛
+    // ERR_INVALID_ARG_TYPE），closed 回调由 bindAfterClosed 注册并负责清理。
+    win.removeAllListeners('move')
+    win.removeAllListeners('resize')
     win.destroy()
   }
 
@@ -298,7 +336,7 @@ export default class WindowManager extends EventEmitter {
   clearWindows () {
     // Clear all windows from the registry
     this.windows = {}
-    logger.info('[Motrix] All windows cleared from registry')
+    logger.info('[LinkCore] All windows cleared from registry')
   }
 
   bindAfterClosed (page, window) {
@@ -484,7 +522,7 @@ export default class WindowManager extends EventEmitter {
     if (!window) {
       return
     }
-    logger.info('[Motrix] send command to:', command, ...args)
+    logger.info('[LinkCore] send command to:', command, ...args)
     window.webContents.send('command', command, ...args)
   }
 

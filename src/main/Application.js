@@ -7,12 +7,13 @@ import { app, clipboard, shell, dialog, ipcMain } from 'electron'
 import { createServer } from 'node:http'
 import is from 'electron-is'
 import { isEmpty, isEqual } from 'lodash'
-import Store from 'electron-store'
 
 import {
   APP_RUN_MODE,
   APP_THEME,
   AUTO_SYNC_TRACKER_INTERVAL,
+  AUTO_SYNC_ED2K_SERVER_INTERVAL,
+  BUILTIN_ED2K_SERVERS,
   ONE_HOUR,
   PROXY_SCOPES,
   PROXY_MODE,
@@ -22,14 +23,15 @@ import {
 } from '@shared/constants'
 import { bytesToSize, checkIsNeedRunAdvanced, detectResource, sanitizeLink, getTaskName, removeExtensionDot, timeFormat, timeRemaining } from '@shared/utils'
 import {
-  convertTrackerDataToComma,
+  deduplicateTrackers,
   fetchBtTrackerFromSource,
   reduceTrackerString
 } from '@shared/utils/tracker'
+import { fetchEd2kServersFromSource } from '@shared/utils/ed2k'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
 import { getLanguage } from '@shared/locales'
-import { showItemInFolder, getEngineList, getAria2ConfPath, getSystemHttpProxy } from './utils'
-import logger from './core/Logger'
+import { showItemInFolder, getEngineList, mergeAria2Conf, getSystemHttpProxy } from './utils'
+import logger from './core/LogManager'
 import Context from './core/Context'
 import ConfigManager from './core/ConfigManager'
 import { setupLocaleManager } from './ui/Locale'
@@ -77,13 +79,20 @@ export default class Application extends EventEmitter {
     this.tokenVersion = Date.now()
     this.sessionTokenTTL = 24 * 60 * 60 * 1000 // session token 24小时过期
 
-    // 定期清理过期的 challenge 和 session tokens
-    setInterval(() => {
+    // 定期清理过期的 challenge 和 session tokens（保存引用，退出时清除）
+    this._tokenCleanupTimer = setInterval(() => {
       this.cleanupExpiredChallenges()
       this.cleanupExpiredSessionTokens()
     }, 60000) // 每分钟清理一次
 
-    this.init()
+    this._initPromise = this.init()
+  }
+
+  stopTokenCleanupTimer () {
+    if (this._tokenCleanupTimer) {
+      clearInterval(this._tokenCleanupTimer)
+      this._tokenCleanupTimer = null
+    }
   }
 
   async init () {
@@ -153,16 +162,16 @@ export default class Application extends EventEmitter {
       const { bypass, scope = [] } = proxy
 
       if (proxyMode === PROXY_MODE.SYSTEM && scope.includes(PROXY_SCOPES.DOWNLOAD)) {
-        logger.info('[Motrix] System proxy mode enabled, fetching system proxy...')
+        logger.info('[LinkCore] System proxy mode enabled, fetching system proxy...')
         const systemProxy = await getSystemHttpProxy()
         if (systemProxy) {
-          logger.info('[Motrix] System proxy detected:', systemProxy)
+          logger.info('[LinkCore] System proxy detected:', systemProxy)
           this.configManager.setSystemConfig({
             'all-proxy': systemProxy,
             'no-proxy': bypass || ''
           })
         } else {
-          logger.warn('[Motrix] No system proxy detected, downloads will use direct connection')
+          logger.warn('[LinkCore] No system proxy detected, downloads will use direct connection')
           this.configManager.setSystemConfig({
             'all-proxy': '',
             'no-proxy': ''
@@ -170,7 +179,7 @@ export default class Application extends EventEmitter {
         }
       }
     } catch (error) {
-      logger.warn('[Motrix] Failed to initialize system proxy:', error.message)
+      logger.warn('[LinkCore] Failed to initialize system proxy:', error.message)
     }
   }
 
@@ -763,31 +772,31 @@ export default class Application extends EventEmitter {
 
       // 添加错误处理
       server.on('error', (err) => {
-        logger.error('[Motrix] App HTTP server error:', err && err.message ? err.message : err)
+        logger.error('[LinkCore] App HTTP server error:', err && err.message ? err.message : err)
         if (err.code === 'EADDRINUSE') {
-          logger.error(`[Motrix] Port ${APP_HTTP_PORT} is already in use. Browser extension connection will not work.`)
+          logger.error(`[LinkCore] Port ${APP_HTTP_PORT} is already in use. Browser extension connection will not work.`)
         }
       })
 
       server.listen(APP_HTTP_PORT, '127.0.0.1', () => {
-        logger.info(`[Motrix] App HTTP server listening at http://127.0.0.1:${APP_HTTP_PORT}/`)
+        logger.info(`[LinkCore] App HTTP server listening at http://127.0.0.1:${APP_HTTP_PORT}/`)
       })
       this.httpServer = server
     } catch (e) {
-      logger.warn('[Motrix] Failed to start app HTTP server:', e && e.message ? e.message : e)
+      logger.warn('[LinkCore] Failed to start app HTTP server:', e && e.message ? e.message : e)
     }
   }
 
   async autoFetchEngineInfo () {
     try {
-      logger.info('[Motrix] Auto fetching engine info on app startup')
+      logger.info('[LinkCore] Auto fetching engine info on app startup')
       const engineInfo = await this.getEngineVersionInfo()
-      logger.info('[Motrix] Engine info fetched successfully:', engineInfo)
+      logger.info('[LinkCore] Engine info fetched successfully:', engineInfo)
 
       // 发送引擎信息到所有窗口
       this.sendCommandToAll('engine-version-info', engineInfo)
     } catch (error) {
-      logger.warn('[Motrix] Failed to fetch engine info on startup:', error.message)
+      logger.warn('[LinkCore] Failed to fetch engine info on startup:', error.message)
       // 发送错误信息到前端
       this.sendCommandToAll('engine-version-info', {
         error: error.message,
@@ -802,10 +811,10 @@ export default class Application extends EventEmitter {
 
   async autoFetchEngineList () {
     try {
-      logger.info('[Motrix] Auto fetching engine list on app startup')
+      logger.info('[LinkCore] Auto fetching engine list on app startup')
       const { platform, arch } = process
       const engineList = getEngineList(platform, arch)
-      logger.info('[Motrix] Engine list fetched successfully:', engineList)
+      logger.info('[LinkCore] Engine list fetched successfully:', engineList)
 
       // 发送引擎列表到所有窗口
       this.sendCommandToAll('engine-list', {
@@ -815,7 +824,7 @@ export default class Application extends EventEmitter {
         timestamp: Date.now()
       })
     } catch (error) {
-      logger.warn('[Motrix] Failed to fetch engine list on startup:', error.message)
+      logger.warn('[LinkCore] Failed to fetch engine list on startup:', error.message)
       // 发送错误信息到前端
       this.sendCommandToAll('engine-list', {
         error: error.message,
@@ -849,10 +858,10 @@ export default class Application extends EventEmitter {
           formats: Array.isArray(savedFormats) ? savedFormats : ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
           autoCombine: savedAutoCombine !== undefined ? savedAutoCombine : true
         }
-        logger.log('[Motrix] Video sniffer config loaded from disk:', this._videoSnifferConfig)
+        logger.log('[LinkCore] Video sniffer config loaded from disk:', this._videoSnifferConfig)
       }
     } catch (e) {
-      logger.warn('[Motrix] Failed to load video sniffer config from disk:', e)
+      logger.warn('[LinkCore] Failed to load video sniffer config from disk:', e)
     }
   }
 
@@ -862,7 +871,7 @@ export default class Application extends EventEmitter {
         this.configListeners[key]()
       })
     } catch (e) {
-      logger.warn('[Motrix] offConfigListeners===>', e)
+      logger.warn('[LinkCore] offConfigListeners===>', e)
     }
     this.configListeners = {}
   }
@@ -874,17 +883,17 @@ export default class Application extends EventEmitter {
     logger.transports.file.level = logLevel
 
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
       logger.transports.file.level = newValue
     })
 
     const keymapKey = 'custom-keymap'
     this.configListeners[keymapKey] = userConfig.onDidChange(keymapKey, async (newValue, oldValue) => {
       try {
-        logger.info('[Motrix] detected custom-keymap change, rebuilding application menu')
+        logger.info('[LinkCore] detected custom-keymap change, rebuilding application menu')
         this.menuManager && this.menuManager.setup()
       } catch (e) {
-        logger.warn('[Motrix] rebuild menu failed after custom-keymap change:', e && e.message ? e.message : e)
+        logger.warn('[LinkCore] rebuild menu failed after custom-keymap change:', e && e.message ? e.message : e)
       }
     })
   }
@@ -915,6 +924,15 @@ export default class Application extends EventEmitter {
     const self = this
 
     try {
+      // 智能合并 aria2.conf：更新未修改的配置项，添加新增项，移除已删除项
+      const { platform, arch } = process
+      mergeAria2Conf(platform, arch)
+
+      // 每次启动生成随机 RPC secret，防止未授权的外部 RPC 访问。
+      // secret 通过 systemConfig 传递给 Engine（命令行参数）和 EngineClient。
+      const rpcSecret = randomBytes(16).toString('hex')
+      this.configManager.setSystemConfig('rpc-secret', rpcSecret)
+
       this.engine = new Engine({
         systemConfig: this.configManager.getSystemConfig(),
         userConfig: this.configManager.getUserConfig(),
@@ -940,8 +958,15 @@ export default class Application extends EventEmitter {
   }
 
   async stopEngine () {
-    logger.info('[Motrix] stopEngine===>')
+    logger.info('[LinkCore] stopEngine===>')
     try {
+      // 引擎已停止（如 will-quit 已调用 engine.stop()）时跳过所有 RPC 调用，
+      // 避免 fetch failed 噪声和 undefined is not iterable 崩溃。
+      if (!this.engine || !this.engine.instance) {
+        logger.info('[LinkCore] Engine already stopped, skipping RPC shutdown')
+        return
+      }
+
       const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
 
       await this.pauseTasksBeforeExit('shutdown')
@@ -961,13 +986,13 @@ export default class Application extends EventEmitter {
           wait(1200)
         ])
       }
-      logger.info('[Motrix] stopEngine.engine.stop===>')
+      logger.info('[LinkCore] stopEngine.engine.stop===>')
       // 直接 await engine.stop()，确保 app.exit() 前子进程已收到信号。
       // 原实现用 setImmediate 调度，但 quit() 紧接着调用 app.exit() 同步
       // 退出主进程，setImmediate 回调永不执行，导致引擎子进程变孤儿。
       await this.engine.stop()
     } catch (err) {
-      logger.warn('[Motrix] shutdown engine fail: ', err.message)
+      logger.warn('[LinkCore] shutdown engine fail: ', err.message)
     } finally {
       // no finally
     }
@@ -980,6 +1005,35 @@ export default class Application extends EventEmitter {
       port,
       secret
     })
+    // 引擎通知事件（onDownloadStart 等）广播到所有渲染窗口
+    this.engineClient.setEventForwarder((name, ...args) => {
+      this.broadcastEngineEvent(name, ...args)
+    })
+  }
+
+  broadcastEngineEvent (name, ...args) {
+    if (!this.windowManager) {
+      return
+    }
+    this.windowManager.getWindowList().forEach((win) => {
+      try {
+        win.webContents.send('engine:event', { name, args })
+      } catch (e) {}
+    })
+  }
+
+  // 缓存 taskHistory store 实例，避免每次添加任务 / 退出时重复创建
+  // electron-store 并全量解析历史 JSON（历史越大同步阻塞越明显）
+  getTaskHistoryStore () {
+    if (!this._taskHistoryStore) {
+      const Store = require('electron-store')
+      this._taskHistoryStore = new Store({
+        name: 'taskHistory',
+        // 与 quit() 中历史记录 store 的 cwd 保持一致
+        cwd: process.env.NODE_ENV === 'development' ? './dev-config' : undefined
+      })
+    }
+    return this._taskHistoryStore
   }
 
   async generateUniqueTaskName (suggestedFilename) {
@@ -1013,13 +1067,16 @@ export default class Application extends EventEmitter {
         }
       }
 
-      const taskHistoryStore = new Store({
-        name: 'taskHistory',
-        cwd: this.configManager.getUserDataPath()
-      })
-      const historyTasks = taskHistoryStore.get('tasks', [])
+      const historyTasks = this.getTaskHistoryStore().get('tasks', [])
+      const deletedGids = new Set(
+        (Array.isArray(this.getTaskHistoryStore().get('deletedGids', [])) ? this.getTaskHistoryStore().get('deletedGids', []) : [])
+          .map(gid => `${gid}`)
+      )
       if (Array.isArray(historyTasks)) {
         for (const task of historyTasks) {
+          if (!task || deletedGids.has(`${task.gid || ''}`)) {
+            continue
+          }
           let name = null
           if (task.files && task.files.length > 0) {
             const path = task.files[0].path || ''
@@ -1050,7 +1107,7 @@ export default class Application extends EventEmitter {
 
       return suggestedFilename
     } catch (err) {
-      logger.warn('[Motrix] Failed to generate unique task name:', err.message)
+      logger.warn('[LinkCore] Failed to generate unique task name:', err.message)
       return suggestedFilename
     }
   }
@@ -1095,7 +1152,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'tray-speedometer'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
       this.trayManager.handleSpeedometerEnableChange(newValue)
     })
   }
@@ -1104,11 +1161,11 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'custom-keymap'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
       if (this.menuManager) {
         this.menuManager.setup(this.locale)
       } else {
-        logger.warn('[Motrix] menuManager not initialized')
+        logger.warn('[LinkCore] menuManager not initialized')
       }
     })
   }
@@ -1123,7 +1180,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'open-at-login'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
       if (is.linux()) {
         return
       }
@@ -1140,17 +1197,17 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'protocols'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
 
       if (!newValue || isEqual(newValue, oldValue)) {
         return
       }
 
-      logger.info('[Motrix] setup protocols client:', newValue)
+      logger.info('[LinkCore] setup protocols client:', newValue)
       if (this.protocolManager) {
         this.protocolManager.setup(newValue)
       } else {
-        logger.warn('[Motrix] protocolManager not initialized')
+        logger.warn('[LinkCore] protocolManager not initialized')
       }
     })
   }
@@ -1159,7 +1216,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'run-mode'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
       this.trayManager.handleRunModeChange(newValue)
 
       if (newValue !== APP_RUN_MODE.TRAY) {
@@ -1176,7 +1233,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'proxy'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
       this.updateManager.setupProxy(newValue)
 
       const { server, bypass, scope = [] } = newValue
@@ -1229,11 +1286,14 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'locale'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
       this.localeManager.changeLanguageByLocale(newValue)
         .then(() => {
           this.menuManager.handleLocaleChange(newValue)
           this.trayManager.handleLocaleChange(newValue)
+        })
+        .catch((err) => {
+          logger.warn('[LinkCore] failed to apply locale change:', err)
         })
       const resolvedLocale = getLanguage(newValue)
       this.sendCommandToAll('application:update-locale', { locale: resolvedLocale })
@@ -1244,7 +1304,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'theme'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
       this.themeManager.updateSystemTheme(newValue)
       this.sendCommandToAll('application:update-theme', { theme: newValue })
     })
@@ -1254,7 +1314,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'auto-check-update'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
       if (this.updateManager && typeof this.updateManager.setAutoCheckEnabled === 'function') {
         this.updateManager.setAutoCheckEnabled(!!newValue)
       }
@@ -1265,7 +1325,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'show-progress-bar'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[Motrix] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
 
       if (newValue) {
         this.bindProgressChange()
@@ -1301,7 +1361,7 @@ export default class Application extends EventEmitter {
     try {
       await Promise.allSettled(promises)
     } catch (e) {
-      logger.warn('[Motrix] start UPnP mapping fail', e.message)
+      logger.warn('[LinkCore] start UPnP mapping fail', e.message)
     }
   }
 
@@ -1316,7 +1376,7 @@ export default class Application extends EventEmitter {
     try {
       await Promise.allSettled(promises)
     } catch (e) {
-      logger.warn('[Motrix] stop UPnP mapping fail', e)
+      logger.warn('[LinkCore] stop UPnP mapping fail', e)
     }
   }
 
@@ -1326,7 +1386,7 @@ export default class Application extends EventEmitter {
 
     watchKeys.forEach((key) => {
       this.configListeners[key] = systemConfig.onDidChange(key, async (newValue, oldValue) => {
-        logger.info('[Motrix] detected port change event:', key, newValue, oldValue)
+        logger.info('[LinkCore] detected port change event:', key, newValue, oldValue)
         const enable = this.configManager.getUserConfig('enable-upnp')
         if (!enable) {
           return
@@ -1339,7 +1399,7 @@ export default class Application extends EventEmitter {
         try {
           await Promise.allSettled(promises)
         } catch (e) {
-          logger.info('[Motrix] change UPnP port mapping failed:', e)
+          logger.info('[LinkCore] change UPnP port mapping failed:', e)
         }
       })
     })
@@ -1349,7 +1409,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'enable-upnp'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info('[Motrix] detected enable-upnp value change event:', newValue, oldValue)
+      logger.info('[LinkCore] detected enable-upnp value change event:', newValue, oldValue)
       if (newValue) {
         this.startUPnPMapping()
       } else {
@@ -1375,12 +1435,15 @@ export default class Application extends EventEmitter {
 
     setTimeout(() => {
       fetchBtTrackerFromSource(source, proxy).then((data) => {
-        logger.warn('[Motrix] auto sync tracker data:', data)
+        logger.warn('[LinkCore] auto sync tracker data:', data)
         if (!data || data.length === 0) {
           return
         }
 
-        let tracker = convertTrackerDataToComma(data)
+        // Split raw text responses into individual tracker URLs and
+        // deduplicate — different sources often return overlapping trackers.
+        const uniqueTrackers = deduplicateTrackers(data)
+        let tracker = uniqueTrackers.join(',')
         tracker = reduceTrackerString(tracker)
         this.savePreference({
           system: {
@@ -1391,7 +1454,7 @@ export default class Application extends EventEmitter {
           }
         })
       }).catch((err) => {
-        logger.warn('[Motrix] auto sync tracker failed:', err.message)
+        logger.warn('[LinkCore] auto sync tracker failed:', err.message)
       })
     }, 500)
   }
@@ -1409,7 +1472,7 @@ export default class Application extends EventEmitter {
 
     // 使用新的高级检查函数
     const result = checkIsNeedRunAdvanced(enable, lastTime, interval, customTime)
-    logger.info('[Motrix] auto sync tracker checkIsNeedRunAdvanced:', result, 'interval:', interval, 'customTime:', customTime)
+    logger.info('[LinkCore] auto sync tracker checkIsNeedRunAdvanced:', result, 'interval:', interval, 'customTime:', customTime)
     if (!result) {
       return
     }
@@ -1418,6 +1481,55 @@ export default class Application extends EventEmitter {
     const proxy = this.configManager.getUserConfig('proxy', { enable: false })
 
     this.syncTrackers(source, proxy)
+  }
+
+  syncEd2kServers (source, proxy) {
+    if (isEmpty(source)) {
+      return
+    }
+
+    setTimeout(() => {
+      fetchEd2kServersFromSource(source, proxy).then((servers) => {
+        logger.warn('[LinkCore] auto sync ed2k servers:', servers.length)
+        if (!servers || servers.length === 0) {
+          return
+        }
+
+        // Merge with builtin servers and dedupe
+        const merged = [...new Set([...servers, ...BUILTIN_ED2K_SERVERS])]
+        const serversStr = merged.join(',')
+
+        this.savePreference({
+          user: {
+            'ed2k-default-servers': serversStr,
+            'ed2k-last-sync-server-time': Date.now()
+          }
+        })
+      }).catch((err) => {
+        logger.warn('[LinkCore] auto sync ed2k servers failed:', err.message)
+      })
+    }, 500)
+  }
+
+  autoSyncEd2kServers () {
+    const enable = this.configManager.getUserConfig('ed2k-auto-sync-server')
+    const lastTime = this.configManager.getUserConfig('ed2k-last-sync-server-time')
+
+    const customInterval = this.configManager.getUserConfig('ed2k-auto-sync-server-interval')
+    const customTime = this.configManager.getUserConfig('ed2k-auto-sync-server-time')
+
+    const interval = customInterval ? customInterval * ONE_HOUR : AUTO_SYNC_ED2K_SERVER_INTERVAL
+
+    const result = checkIsNeedRunAdvanced(enable, lastTime, interval, customTime)
+    logger.info('[LinkCore] auto sync ed2k servers checkIsNeedRunAdvanced:', result, 'interval:', interval, 'customTime:', customTime)
+    if (!result) {
+      return
+    }
+
+    const source = this.configManager.getUserConfig('ed2k-server-source')
+    const proxy = this.configManager.getUserConfig('proxy', { enable: false })
+
+    this.syncEd2kServers(source, proxy)
   }
 
   async autoResumeTask () {
@@ -1447,14 +1559,14 @@ export default class Application extends EventEmitter {
         // 额外检查：如果是BT任务但没有文件信息，也跳过
         // 这种情况可能是元数据正在获取中
         if (bittorrent && (!files || files.length === 0)) {
-          logger.info(`[Motrix] Skipping BT task ${task.gid} - no files info yet`)
+          logger.info(`[LinkCore] Skipping BT task ${task.gid} - no files info yet`)
           continue
         }
 
         // 检查是否是元数据任务（名称以[METADATA]开头）
         const taskName = files && files.length > 0 && files[0].path ? files[0].path : ''
         if (taskName.includes('[METADATA]')) {
-          logger.info(`[Motrix] Skipping metadata task ${task.gid}`)
+          logger.info(`[LinkCore] Skipping metadata task ${task.gid}`)
           continue
         }
 
@@ -1465,13 +1577,13 @@ export default class Application extends EventEmitter {
       for (const gid of tasksToResume) {
         try {
           await this.engineClient.call('unpause', gid)
-          logger.info(`[Motrix] Resumed task: ${gid}`)
+          logger.info(`[LinkCore] Resumed task: ${gid}`)
         } catch (err) {
-          logger.warn(`[Motrix] Failed to resume task ${gid}:`, err.message)
+          logger.warn(`[LinkCore] Failed to resume task ${gid}:`, err.message)
         }
       }
     } catch (error) {
-      logger.warn('[Motrix] Failed to auto resume tasks:', error.message)
+      logger.warn('[LinkCore] Failed to auto resume tasks:', error.message)
       // 如果出错，不要回退到 unpauseAll，因为这可能会恢复不应该恢复的任务
     }
   }
@@ -1521,7 +1633,7 @@ export default class Application extends EventEmitter {
 
       if (allWindowsHidden && !this.isAppInBackground) {
         this.isAppInBackground = true
-        logger.info('[Motrix] App entered background, releasing memory')
+        logger.info('[LinkCore] App entered background, releasing memory')
         this.releaseBackgroundMemory()
       }
     })
@@ -1530,7 +1642,7 @@ export default class Application extends EventEmitter {
     app.on('browser-window-focus', () => {
       if (this.isAppInBackground) {
         this.isAppInBackground = false
-        logger.info('[Motrix] App returned to foreground')
+        logger.info('[LinkCore] App returned to foreground')
       }
     })
 
@@ -1545,7 +1657,7 @@ export default class Application extends EventEmitter {
           })
           if (allWindowsHidden && !this.isAppInBackground) {
             this.isAppInBackground = true
-            logger.info('[Motrix] All windows hidden, releasing memory')
+            logger.info('[LinkCore] All windows hidden, releasing memory')
             this.releaseBackgroundMemory()
           }
         }, 100)
@@ -1558,7 +1670,7 @@ export default class Application extends EventEmitter {
           })
           if (allWindowsHidden && !this.isAppInBackground) {
             this.isAppInBackground = true
-            logger.info('[Motrix] All windows minimized, releasing memory')
+            logger.info('[LinkCore] All windows minimized, releasing memory')
             this.releaseBackgroundMemory()
           }
         }, 100)
@@ -1585,12 +1697,12 @@ export default class Application extends EventEmitter {
       // Force garbage collection if available
       if (global.gc) {
         global.gc()
-        logger.info('[Motrix] Forced garbage collection')
+        logger.info('[LinkCore] Forced garbage collection')
       }
 
-      logger.info('[Motrix] Background memory release completed')
+      logger.info('[LinkCore] Background memory release completed')
     } catch (err) {
-      logger.warn('[Motrix] Failed to release background memory:', err.message)
+      logger.warn('[LinkCore] Failed to release background memory:', err.message)
     }
   }
 
@@ -1609,8 +1721,19 @@ export default class Application extends EventEmitter {
     this.configManager.setUserConfig('window-state', newState)
   }
 
-  start (page, options = {}) {
+  async start (page, options = {}) {
+    try {
+      await this._initPromise
+    } catch (err) {
+      logger.error('[LinkCore] Application init failed, cannot start:', err)
+      return
+    }
+
     const win = this.showPage(page, options)
+    if (!win) {
+      logger.error('[LinkCore] showPage returned null, cannot start')
+      return
+    }
 
     win.once('ready-to-show', () => {
       this.isReady = true
@@ -1622,15 +1745,62 @@ export default class Application extends EventEmitter {
     }
   }
 
+  /**
+   * 当 activate 事件触发但 windowManager 未初始化时（init 失败的级联场景），
+   * 重新尝试 init 并显示窗口。仅在 init 已 settle 后调用。
+   */
+  async retryStart (page = 'index') {
+    try {
+      await this._initPromise
+    } catch (err) {
+      logger.info('[LinkCore] Retrying init after previous failure:', err.message)
+      this._initPromise = this.init()
+      try {
+        await this._initPromise
+      } catch (retryErr) {
+        logger.error('[LinkCore] Retry init failed:', retryErr.message)
+        return
+      }
+    }
+
+    if (!this.windowManager) {
+      logger.error('[LinkCore] windowManager still not initialized after retry')
+      return
+    }
+
+    const win = this.showPage(page)
+    if (win && !this.isReady) {
+      win.once('ready-to-show', () => {
+        this.isReady = true
+        this.emit('ready')
+      })
+    }
+  }
+
+  /**
+   * 引擎是否仍在运行（用于退出流程判断是否需要 RPC 调用）
+   */
+  isEngineRunning () {
+    return this.engine && this.engine.instance !== null
+  }
+
   showPage (page, options = {}) {
+    if (!this.windowManager) {
+      logger.error('[LinkCore] windowManager is not initialized, cannot show page:', page)
+      return null
+    }
     const { openedAtLogin } = options
-    const autoHideWindow = this.configManager.getUserConfig('auto-hide-window')
+    const autoHideWindow = this.configManager ? this.configManager.getUserConfig('auto-hide-window') : false
     return this.windowManager.openWindow(page, {
       hidden: openedAtLogin || autoHideWindow
     })
   }
 
   show (page = 'index') {
+    if (!this.windowManager) {
+      logger.error('[LinkCore] windowManager is not initialized, cannot show:', page)
+      return
+    }
     this.windowManager.showWindow(page)
   }
 
@@ -1638,6 +1808,14 @@ export default class Application extends EventEmitter {
     if (this._clipboardWatchTimer) {
       return
     }
+    // 未开启自动弹出添加任务时不启动常驻剪贴板轮询，避免
+    // 无意义的 800ms 系统级 clipboard.readText() 持续占用 CPU
+    try {
+      const raw = this.configManager.getUserConfig('clipboard-auto-open-add-task')
+      if (raw !== undefined && !raw) {
+        return
+      }
+    } catch (e) {}
     try {
       this._clipboardLastText = `${clipboard.readText() || ''}`
     } catch (e) {
@@ -1812,6 +1990,7 @@ export default class Application extends EventEmitter {
   }
 
   hide (page) {
+    if (!this.windowManager) return
     if (page) {
       this.windowManager.hideWindow(page)
     } else {
@@ -1820,10 +1999,12 @@ export default class Application extends EventEmitter {
   }
 
   toggle (page = 'index') {
+    if (!this.windowManager) return
     this.windowManager.toggleWindow(page)
   }
 
   closePage (page) {
+    if (!this.windowManager) return
     this.windowManager.destroyWindow(page)
   }
 
@@ -1841,7 +2022,7 @@ export default class Application extends EventEmitter {
         promises.push(new Promise((resolve) => {
           // 先强制销毁所有活跃连接
           if (this.httpConnections) {
-            logger.info(`[Motrix] Destroying ${this.httpConnections.size} active HTTP connections`)
+            logger.info(`[LinkCore] Destroying ${this.httpConnections.size} active HTTP connections`)
             this.httpConnections.forEach(conn => {
               conn.destroy()
             })
@@ -1850,14 +2031,14 @@ export default class Application extends EventEmitter {
 
           // 设置超时，如果1秒内没有关闭就强制resolve
           const timeout = setTimeout(() => {
-            logger.warn('[Motrix] HTTP server close timeout, forcing shutdown')
+            logger.warn('[LinkCore] HTTP server close timeout, forcing shutdown')
             resolve()
           }, 1000)
 
           // 关闭服务器
           this.httpServer.close(() => {
             clearTimeout(timeout)
-            logger.info('[Motrix] App HTTP server closed gracefully')
+            logger.info('[LinkCore] App HTTP server closed gracefully')
             resolve()
           })
         }))
@@ -1865,7 +2046,7 @@ export default class Application extends EventEmitter {
 
       return promises
     } catch (err) {
-      logger.warn('[Motrix] stop error: ', err.message)
+      logger.warn('[LinkCore] stop error: ', err.message)
     }
   }
 
@@ -1876,7 +2057,7 @@ export default class Application extends EventEmitter {
   async pauseTasksBeforeExit (reason) {
     const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
     try {
-      logger.info(`[Motrix] Pausing tasks before ${reason}`)
+      logger.info(`[LinkCore] Pausing tasks before ${reason}`)
       const [activeTasks, waitingTasks] = await Promise.all([
         this.engineClient.call('tellActive'),
         this.engineClient.call('tellWaiting', 0, 1000)
@@ -1886,10 +2067,10 @@ export default class Application extends EventEmitter {
         ...(Array.isArray(waitingTasks) ? waitingTasks : [])
       ]
       if (tasks.length === 0) {
-        logger.info('[Motrix] No active or waiting tasks found')
+        logger.info('[LinkCore] No active or waiting tasks found')
         return
       }
-      logger.info(`[Motrix] Found ${tasks.length} active/waiting tasks, pausing them...`)
+      logger.info(`[LinkCore] Found ${tasks.length} active/waiting tasks, pausing them...`)
       const pausePromises = tasks.map(task => {
         const gid = task && task.gid
         if (!gid) {
@@ -1899,107 +2080,137 @@ export default class Application extends EventEmitter {
         return this.engineClient.call(method, gid)
       })
       await Promise.allSettled(pausePromises)
-      logger.info('[Motrix] All active/waiting tasks paused')
+      logger.info('[LinkCore] All active/waiting tasks paused')
       await wait(500)
     } catch (error) {
-      logger.warn('[Motrix] Failed to pause tasks:', error.message)
+      logger.warn('[LinkCore] Failed to pause tasks:', error.message)
     }
   }
 
   async quit () {
-    await this.pauseTasksBeforeExit('quit')
+    // 退出前停止剪贴板轮询与其它常驻定时器，避免退出路径残留
+    this.stopClipboardAutoOpenWatch()
+    this.stopTokenCleanupTimer()
+
+    // 引擎未运行时跳过 RPC 调用，避免大量 fetch failed 警告
+    const engineRunning = this.isEngineRunning()
+
+    if (engineRunning) {
+      await this.pauseTasksBeforeExit('quit')
+    }
 
     // Check if auto-purge-record is enabled and purge records before quitting
     const autoPurgeRecord = this.configManager.getUserConfig('auto-purge-record', false)
     if (autoPurgeRecord) {
       try {
-        logger.info('[Motrix] Auto-purging download records before quit')
+        logger.info('[LinkCore] Auto-purging download records before quit')
         // 清除 aria2 引擎中的下载记录
-        await this.engineClient.call('purgeDownloadResult')
+        if (engineRunning) {
+          await this.engineClient.call('purgeDownloadResult')
+        }
 
         // 清除本地存储的历史记录
-        const Store = require('electron-store')
-        const taskHistoryStore = new Store({
-          name: 'taskHistory',
-          cwd: process.env.NODE_ENV === 'development' ? './dev-config' : undefined
-        })
-        taskHistoryStore.set('tasks', [])
-        logger.info('[Motrix] Download records purged successfully')
+        this.getTaskHistoryStore().set('tasks', [])
+        this.getTaskHistoryStore().set('deletedGids', [])
+        logger.info('[LinkCore] Download records purged successfully')
       } catch (error) {
-        logger.warn('[Motrix] Failed to purge download records:', error.message)
+        logger.warn('[LinkCore] Failed to purge download records:', error.message)
       }
     } else {
       // 如果未启用自动清除，则在退出前保存所有任务到历史记录
-      try {
-        logger.info('[Motrix] Saving all tasks to history before quit')
-        // 获取所有任务（包括活跃、等待和已停止的任务）
-        const allTasks = await this.engineClient.call('tellActive')
-          .then(activeTasks => {
-            return this.engineClient.call('tellWaiting', 0, 1000)
-              .then(waitingTasks => {
-                return this.engineClient.call('tellStopped', 0, 10000)
-                  .then(stoppedTasks => {
-                    return [...activeTasks, ...waitingTasks, ...stoppedTasks]
-                  })
-              })
-          })
-          .catch(error => {
-            logger.warn('[Motrix] Failed to fetch all tasks before quit:', error.message)
-            return []
-          })
+      if (engineRunning) {
+        try {
+          logger.info('[LinkCore] Saving all tasks to history before quit')
+          // 获取所有任务（包括活跃、等待和已停止的任务）
+          const allTasks = await this.engineClient.call('tellActive')
+            .then(activeTasks => {
+              return this.engineClient.call('tellWaiting', 0, 1000)
+                .then(waitingTasks => {
+                  return this.engineClient.call('tellStopped', 0, 10000)
+                    .then(stoppedTasks => {
+                      return [
+                        ...(Array.isArray(activeTasks) ? activeTasks : []),
+                        ...(Array.isArray(waitingTasks) ? waitingTasks : []),
+                        ...(Array.isArray(stoppedTasks) ? stoppedTasks : [])
+                      ]
+                    })
+                })
+            })
+            .catch(error => {
+              logger.warn('[LinkCore] Failed to fetch all tasks before quit:', error.message)
+              return []
+            })
 
-        if (allTasks.length > 0) {
-          // 保存任务到历史记录
-          const taskHistoryStore = new Store({
-            name: 'taskHistory',
-            cwd: process.env.NODE_ENV === 'development' ? './dev-config' : undefined
-          })
+          if (allTasks.length > 0) {
+            // 保存任务到历史记录
+            const taskHistoryStore = this.getTaskHistoryStore()
 
-          const currentHistoryRaw = taskHistoryStore.get('tasks', [])
-          const currentHistory = Array.isArray(currentHistoryRaw) ? currentHistoryRaw : []
+            const currentHistoryRaw = taskHistoryStore.get('tasks', [])
+            const currentHistory = Array.isArray(currentHistoryRaw) ? currentHistoryRaw : []
 
-          // 过滤需要保存的任务（仅保存已停止状态的任务，排除元数据解析任务）
-          const tasksToSave = allTasks.filter(task => {
-            const { status } = task
-            // 检查是否为种子解析任务 - 这些是临时任务，不应该保存到历史记录
-            const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
-            if (isMetadataTask) {
-              return false
+            // 已删除任务的 gid 黑名单：本次运行中删除的任务不再写回历史，防止退出后复活
+            const deletedGids = new Set(
+              (Array.isArray(taskHistoryStore.get('deletedGids', [])) ? taskHistoryStore.get('deletedGids', []) : [])
+                .map(gid => `${gid}`)
+            )
+
+            // 过滤需要保存的任务（仅保存已停止状态的任务，排除元数据解析任务和已删除任务）
+            const tasksToSave = allTasks.filter(task => {
+              const { status } = task
+              // 检查是否为种子解析任务 - 这些是临时任务，不应该保存到历史记录
+              const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
+              if (isMetadataTask) {
+                return false
+              }
+              if (deletedGids.has(`${task.gid || ''}`)) {
+                return false
+              }
+              // 仅保存已停止状态的任务
+              return ['complete', 'error', 'removed'].includes(status)
+            })
+
+            // 历史记录中残留的已删除任务一并移除
+            let updatedHistory = [...currentHistory]
+            if (deletedGids.size > 0) {
+              updatedHistory = updatedHistory.filter(t => !t || !t.gid || !deletedGids.has(`${t.gid}`))
             }
-            // 仅保存已停止状态的任务
-            return ['complete', 'error', 'removed'].includes(status)
-          })
-
-          const updatedHistory = [...currentHistory]
-          tasksToSave.forEach(task => {
-            if (!task || !task.gid) {
-              return
-            }
-            const idx = updatedHistory.findIndex(t => t && t.gid === task.gid)
-            if (idx === -1) {
-              updatedHistory.push({
+            tasksToSave.forEach(task => {
+              if (!task || !task.gid) {
+                return
+              }
+              const idx = updatedHistory.findIndex(t => t && t.gid === task.gid)
+              if (idx === -1) {
+                updatedHistory.push({
+                  ...task,
+                  savedAt: Date.now()
+                })
+                return
+              }
+              const prev = updatedHistory[idx] || {}
+              if (prev.deletedAt) {
+                return
+              }
+              const savedAt = prev.savedAt != null ? prev.savedAt : Date.now()
+              updatedHistory[idx] = {
+                ...prev,
                 ...task,
-                savedAt: Date.now()
-              })
-              return
-            }
-            const prev = updatedHistory[idx] || {}
-            if (prev.deletedAt) {
-              return
-            }
-            const savedAt = prev.savedAt != null ? prev.savedAt : Date.now()
-            updatedHistory[idx] = {
-              ...prev,
-              ...task,
-              savedAt
-            }
-          })
+                savedAt
+              }
+            })
 
-          taskHistoryStore.set('tasks', updatedHistory)
-          logger.info(`[Motrix] Saved ${tasksToSave.length} tasks to history before quit`)
+            // 限制历史总量，防止 taskHistory.json 无限膨胀导致每次
+            // 读取/写入都全量序列化大数组（同步阻塞主进程、增大内存）
+            const MAX_HISTORY_SIZE = 5000
+            if (updatedHistory.length > MAX_HISTORY_SIZE) {
+              updatedHistory = updatedHistory.slice(-MAX_HISTORY_SIZE)
+            }
+
+            taskHistoryStore.set('tasks', updatedHistory)
+            logger.info(`[LinkCore] Saved ${tasksToSave.length} tasks to history before quit`)
+          }
+        } catch (error) {
+          logger.warn('[LinkCore] Failed to save tasks to history before quit:', error.message)
         }
-      } catch (error) {
-        logger.warn('[Motrix] Failed to save tasks to history before quit:', error.message)
       }
     }
 
@@ -2078,7 +2289,7 @@ export default class Application extends EventEmitter {
     const name = basename(filePath)
     readFile(filePath, (err, data) => {
       if (err) {
-        logger.warn(`[Motrix] read file error: ${filePath}`, err.message)
+        logger.warn(`[LinkCore] read file error: ${filePath}`, err.message)
         return
       }
       const dataURL = Buffer.from(data).toString('base64')
@@ -2095,12 +2306,18 @@ export default class Application extends EventEmitter {
     }
 
     const enabled = this.configManager.getUserConfig('auto-check-update', is.macOS())
-    const proxy = this.configManager.getSystemConfig('all-proxy')
     const autoCheck = enabled
     this.updateManager = new UpdateManager({
-      autoCheck,
-      proxy
+      autoCheck
     })
+
+    // 设置安装前回调：停止引擎、保存会话
+    this.updateManager.setBeforeInstallCallback(async () => {
+      this._isQuittingForInstall = true
+      this.windowManager.setWillQuit(true)
+      await this.stopAllSettled()
+    })
+
     this.handleUpdaterEvents()
   }
 
@@ -2138,148 +2355,19 @@ export default class Application extends EventEmitter {
       this.menuManager.updateMenuItemEnabledState('app.check-for-updates', true)
       this.trayManager.updateMenuItemEnabledState('app.check-for-updates', true)
       const win = this.windowManager.getWindow('index')
-      win.setProgressBar(1)
+      if (win) win.setProgressBar(1)
     })
 
     this.updateManager.on('update-cancelled', (event) => {
       this.menuManager.updateMenuItemEnabledState('app.check-for-updates', true)
       this.trayManager.updateMenuItemEnabledState('app.check-for-updates', true)
       const win = this.windowManager.getWindow('index')
-      win.setProgressBar(-1)
+      if (win) win.setProgressBar(-1)
     })
 
-    this.updateManager.on('will-updated', async (event) => {
-      this.windowManager.setWillQuit(true)
-      await this.stopAllSettled()
-      const info = (event && typeof event === 'object') ? event : {}
-      const downloadedFile = info && info.downloadedFile ? `${info.downloadedFile}` : ''
-
-      if (process.platform === 'linux') {
-        const currentAppImage = process.env.APPIMAGE ? `${process.env.APPIMAGE}` : ''
-        if (downloadedFile) {
-          try {
-            const fs = require('node:fs')
-            const path = require('node:path')
-            const { spawn } = require('node:child_process')
-            const { app } = require('electron')
-
-            const ensureExecutable = (p) => {
-              try { fs.chmodSync(p, 0o755) } catch (_) {}
-            }
-
-            const spawnDetached = (p) => {
-              ensureExecutable(p)
-              const child = spawn(p, [], {
-                detached: true,
-                stdio: 'ignore',
-                env: process.env
-              })
-              child.unref()
-              app.exit(0)
-            }
-
-            if (currentAppImage && fs.existsSync(currentAppImage) && fs.existsSync(downloadedFile)) {
-              try {
-                fs.accessSync(path.dirname(currentAppImage), fs.constants.W_OK)
-                fs.accessSync(currentAppImage, fs.constants.W_OK)
-                const bak = `${currentAppImage}.bak`
-                try {
-                  if (!fs.existsSync(bak)) {
-                    fs.copyFileSync(currentAppImage, bak)
-                    ensureExecutable(bak)
-                  }
-                } catch (_) {}
-                fs.copyFileSync(downloadedFile, currentAppImage)
-                ensureExecutable(currentAppImage)
-                spawnDetached(currentAppImage)
-                return
-              } catch (_) {}
-            }
-
-            if (fs.existsSync(downloadedFile)) {
-              spawnDetached(downloadedFile)
-              return
-            }
-          } catch (_) {}
-        }
-      }
-
-      // macOS: 挂载 DMG 并自动安装
-      if (process.platform === 'darwin' && downloadedFile && downloadedFile.toLowerCase().endsWith('.dmg')) {
-        const { execSync } = require('node:child_process')
-        const { app } = require('electron')
-        const fs = require('node:fs')
-        const path = require('node:path')
-
-        try {
-          // 挂载 DMG
-          logger.info('[Motrix] Mounting DMG:', downloadedFile)
-          const mountOutput = execSync(`hdiutil attach "${downloadedFile}" -nobrowse -noautoopen`, { encoding: 'utf8' })
-          const volumeMatch = mountOutput.match(/\/Volumes\/[^\s]+/)
-
-          if (volumeMatch) {
-            const mountPoint = volumeMatch[0]
-            logger.info('[Motrix] DMG mounted at:', mountPoint)
-
-            try {
-              // 查找 .app 文件
-              const files = fs.readdirSync(mountPoint)
-              const appFile = files.find(f => f.endsWith('.app'))
-
-              if (appFile) {
-                const sourcePath = path.join(mountPoint, appFile)
-                const destPath = '/Applications/' + appFile
-
-                logger.info('[Motrix] Installing app from', sourcePath, 'to', destPath)
-
-                // 如果目标已存在，先删除
-                if (fs.existsSync(destPath)) {
-                  execSync(`rm -rf "${destPath}"`)
-                }
-
-                // 复制新版本
-                execSync(`cp -R "${sourcePath}" /Applications/`)
-
-                // 卸载 DMG
-                execSync(`hdiutil detach "${mountPoint}"`)
-
-                logger.info('[Motrix] Installation complete, restarting...')
-
-                // 启动新版本
-                const { spawn } = require('node:child_process')
-                const child = spawn('open', [destPath], {
-                  detached: true,
-                  stdio: 'ignore'
-                })
-                child.unref()
-
-                // 退出当前应用
-                setTimeout(() => {
-                  app.exit(0)
-                }, 500)
-                return
-              }
-            } catch (err) {
-              logger.error('[Motrix] Installation failed:', err)
-              // 确保卸载 DMG
-              try {
-                execSync(`hdiutil detach "${mountPoint}"`)
-              } catch (_) {}
-            }
-          }
-        } catch (err) {
-          logger.error('[Motrix] DMG mount failed:', err)
-        }
-      }
-
-      // Windows / macOS (ZIP fallback): 打开下载的文件
-      if (downloadedFile) {
-        const { shell, app } = require('electron')
-        shell.openPath(downloadedFile)
-        setTimeout(() => {
-          app.exit(0)
-        }, 1000)
-      }
+    this.updateManager.on('installing-update', () => {
+      this.menuManager.updateMenuItemEnabledState('app.check-for-updates', false)
+      this.trayManager.updateMenuItemEnabledState('app.check-for-updates', false)
     })
 
     this.updateManager.on('update-error', (event) => {
@@ -2302,7 +2390,7 @@ export default class Application extends EventEmitter {
     const sessionPath = this.context.get('session-path')
     setTimeout(async () => {
       unlink(sessionPath, (err) => {
-        logger.info('[Motrix] Removed the download seesion file:', err)
+        logger.info('[LinkCore] Removed the download seesion file:', err)
       })
 
       await this.engine.start()
@@ -2310,16 +2398,16 @@ export default class Application extends EventEmitter {
   }
 
   savePreference (config = {}) {
-    logger.info('[Motrix] save preference:', config)
+    logger.info('[LinkCore] save preference:', config)
     const { system, user } = config
     if (!isEmpty(system)) {
-      console.info('[Motrix] main save system config: ', system)
+      console.info('[LinkCore] main save system config: ', system)
       this.configManager.setSystemConfig(system)
       this.engineClient.changeGlobalOption(system)
     }
 
     if (!isEmpty(user)) {
-      console.info('[Motrix] main save user config: ', user)
+      console.info('[LinkCore] main save user config: ', user)
       this.configManager.setUserConfig(user)
       if (
         Object.prototype.hasOwnProperty.call(user, 'task-plan-action') ||
@@ -2472,7 +2560,7 @@ export default class Application extends EventEmitter {
           ...extra
         })
       } catch (e) {
-        logger.warn('[Motrix] send security-scan-status failed:', e.message)
+        logger.warn('[LinkCore] send security-scan-status failed:', e.message)
       }
     }
 
@@ -2490,7 +2578,7 @@ export default class Application extends EventEmitter {
 
       // 检查文件是否存在
       if (!fs.existsSync(filePath)) {
-        logger.warn('[Motrix] Security scan: file not found:', filePath)
+        logger.warn('[LinkCore] Security scan: file not found:', filePath)
         sendStatus('failed', { reason: 'file-not-found' })
         return
       }
@@ -2501,7 +2589,7 @@ export default class Application extends EventEmitter {
       if (securityScanTool === 'custom') {
         // 使用自定义杀毒软件
         if (!customSecurityScanPath || !fs.existsSync(customSecurityScanPath)) {
-          logger.warn('[Motrix] Security scan: custom antivirus not found:', customSecurityScanPath)
+          logger.warn('[LinkCore] Security scan: custom antivirus not found:', customSecurityScanPath)
           sendStatus('failed', { reason: 'custom-tool-not-found' })
           return
         }
@@ -2530,18 +2618,18 @@ export default class Application extends EventEmitter {
             scanCommand = 'clamscan'
             scanArgs = ['--no-summary', filePath]
           } catch (e) {
-            logger.warn('[Motrix] Security scan: clamscan not found on Linux, skipping scan')
+            logger.warn('[LinkCore] Security scan: clamscan not found on Linux, skipping scan')
             sendStatus('skipped', { reason: 'clamscan-not-installed' })
             return
           }
         } else {
-          logger.warn('[Motrix] Security scan: unsupported platform')
+          logger.warn('[LinkCore] Security scan: unsupported platform')
           sendStatus('skipped', { reason: 'unsupported-platform' })
           return
         }
       }
 
-      logger.info('[Motrix] Starting security scan:', filePath)
+      logger.info('[LinkCore] Starting security scan:', filePath)
       sendStatus('running')
 
       const scanProcess = spawn(scanCommand, scanArgs, {
@@ -2558,18 +2646,18 @@ export default class Application extends EventEmitter {
       }
 
       scanProcess.on('error', (error) => {
-        logger.warn('[Motrix] Security scan error:', error.message)
+        logger.warn('[LinkCore] Security scan error:', error.message)
         sendStatus('failed', { reason: 'process-error', error: error.message })
       })
 
       scanProcess.on('exit', (code) => {
         if (code === 0) {
-          logger.info('[Motrix] Security scan completed successfully:', filePath)
+          logger.info('[LinkCore] Security scan completed successfully:', filePath)
           sendStatus('success')
         } else {
-          logger.warn('[Motrix] Security scan exited with code:', code)
+          logger.warn('[LinkCore] Security scan exited with code:', code)
           if (stderr) {
-            logger.warn('[Motrix] Security scan stderr:', stderr)
+            logger.warn('[LinkCore] Security scan stderr:', stderr)
           }
           // 在 macOS 上，xattr 返回非 0 表示文件可能有问题
           // 在 Windows 上，非 0 通常表示发现威胁或错误
@@ -2584,7 +2672,7 @@ export default class Application extends EventEmitter {
         }
       })
     } catch (error) {
-      logger.error('[Motrix] Security scan failed:', error.message)
+      logger.error('[LinkCore] Security scan failed:', error.message)
       sendStatus('failed', { reason: 'exception', error: error.message })
     }
   }
@@ -2635,7 +2723,7 @@ export default class Application extends EventEmitter {
           this._taskPlanCheckTimer = null
           this.checkTaskPlanIdle().catch((e) => {
             this._taskPlanTriggered = false
-            logger.warn('[Motrix] checkTaskPlanIdle failed:', e && e.message ? e.message : e)
+            logger.warn('[LinkCore] checkTaskPlanIdle failed:', e && e.message ? e.message : e)
           })
         }, delay)
         return
@@ -2659,7 +2747,7 @@ export default class Application extends EventEmitter {
         this._taskPlanScheduleTimer = null
         this.triggerScheduledTaskPlan().catch((e) => {
           this._taskPlanTriggered = false
-          logger.warn('[Motrix] triggerScheduledTaskPlan failed:', e && e.message ? e.message : e)
+          logger.warn('[LinkCore] triggerScheduledTaskPlan failed:', e && e.message ? e.message : e)
         })
       }, delayMs)
       if (this._taskPlanScheduleTimer && typeof this._taskPlanScheduleTimer.unref === 'function') {
@@ -2681,7 +2769,7 @@ export default class Application extends EventEmitter {
       this._taskPlanCheckTimer = null
       this.checkTaskPlan().catch((e) => {
         this._taskPlanTriggered = false
-        logger.warn('[Motrix] checkTaskPlan failed:', e && e.message ? e.message : e)
+        logger.warn('[LinkCore] checkTaskPlan failed:', e && e.message ? e.message : e)
       })
     }, delay)
   }
@@ -2807,7 +2895,7 @@ export default class Application extends EventEmitter {
       }).unref()
       return true
     } catch (e) {
-      logger.warn('[Motrix] spawnDetached failed:', e && e.message ? e.message : e)
+      logger.warn('[LinkCore] spawnDetached failed:', e && e.message ? e.message : e)
       return false
     }
   }
@@ -2919,6 +3007,7 @@ export default class Application extends EventEmitter {
     })
 
     this.on('application:bring-to-front', ({ page }) => {
+      if (!this.windowManager) return
       this.windowManager.bringToFront(page || 'index')
     })
 
@@ -3014,11 +3103,11 @@ export default class Application extends EventEmitter {
       if (is.dev() || is.mas() || !protocols) {
         return
       }
-      logger.info('[Motrix] setup protocols client:', protocols)
+      logger.info('[LinkCore] setup protocols client:', protocols)
       if (this.protocolManager) {
         this.protocolManager.setup(protocols)
       } else {
-        logger.warn('[Motrix] protocolManager not initialized')
+        logger.warn('[LinkCore] protocolManager not initialized')
       }
     })
 
@@ -3039,7 +3128,7 @@ export default class Application extends EventEmitter {
         const versionInfo = await this.getEngineVersionInfo()
         this.sendCommandToAll('engine-version-info', versionInfo)
       } catch (error) {
-        logger.error('[Motrix] Failed to get engine version info:', error)
+        logger.error('[LinkCore] Failed to get engine version info:', error)
         this.sendCommandToAll('engine-version-info', {
           error: error.message,
           version: 'Unknown',
@@ -3055,7 +3144,7 @@ export default class Application extends EventEmitter {
       try {
         const { platform, arch } = process
         const engineList = getEngineList(platform, arch)
-        logger.info('[Motrix] Engine list retrieved:', engineList)
+        logger.info('[LinkCore] Engine list retrieved:', engineList)
         this.sendCommandToAll('engine-list', {
           engines: engineList,
           platform,
@@ -3063,7 +3152,7 @@ export default class Application extends EventEmitter {
           timestamp: Date.now()
         })
       } catch (error) {
-        logger.error('[Motrix] Failed to get engine list:', error)
+        logger.error('[LinkCore] Failed to get engine list:', error)
         this.sendCommandToAll('engine-list', {
           error: error.message,
           engines: [],
@@ -3076,7 +3165,7 @@ export default class Application extends EventEmitter {
 
     this.on('application:reveal-in-folder', (data) => {
       const { gid, path } = data
-      logger.info('[Motrix] application:reveal-in-folder===>', path)
+      logger.info('[LinkCore] application:reveal-in-folder===>', path)
       if (path) {
         showItemInFolder(path)
       }
@@ -3111,11 +3200,25 @@ export default class Application extends EventEmitter {
 
   async getEngineVersionInfo () {
     try {
+      // 引擎启动早期 WebSocket 可能尚未连上，engineClient.call 会走 HTTP
+      // 路径；若引擎端口未就绪，请求可能长时间挂起，超过渲染进程的 5s
+      // 等待后前端报 "Timeout fetching engine info"。给 RPC 调用加超时
+      // 兜底：超时按 null 处理（版本显示 Unknown），引擎就绪后可手动刷新。
+      const withTimeout = (promise, fallback) => {
+        return Promise.race([
+          Promise.resolve(promise),
+          new Promise((resolve) => setTimeout(() => resolve(fallback), 3000))
+        ])
+      }
+
       // 获取引擎版本信息
-      const version = await this.engineClient.call('getVersion')
+      const version = await withTimeout(this.engineClient.call('getVersion'), null)
 
       // 获取支持的协议
-      const protocols = await this.engineClient.call('getGlobalOption', ['enable-http-pipelining', 'enable-mmap', 'check-certificate'])
+      const protocols = await withTimeout(
+        this.engineClient.call('getGlobalOption', ['enable-http-pipelining', 'enable-mmap', 'check-certificate']),
+        null
+      )
 
       // 获取系统架构信息
       const { platform, arch } = process
@@ -3133,10 +3236,10 @@ export default class Application extends EventEmitter {
         binPath: engineBinPath
       }
 
-      logger.info('[Motrix] Engine version info:', versionInfo)
+      logger.info('[LinkCore] Engine version info:', versionInfo)
       return versionInfo
     } catch (error) {
-      logger.error('[Motrix] Failed to get engine version info:', error)
+      logger.error('[LinkCore] Failed to get engine version info:', error)
       throw error
     }
   }
@@ -3156,7 +3259,7 @@ export default class Application extends EventEmitter {
     }
 
     // 添加基本功能
-    features.push('HTTP/HTTPS', 'FTP', 'BitTorrent', 'Metalink')
+    features.push('HTTP/HTTPS', 'FTP', 'BitTorrent', 'Metalink', 'ED2K')
 
     return features
   }
@@ -3191,27 +3294,24 @@ export default class Application extends EventEmitter {
     this.once('application:initialized', () => {
       this.autoSyncTrackers()
 
+      this.autoSyncEd2kServers()
+
       this.autoResumeTask()
 
       this.adjustMenu()
       this.scheduleCheckTaskPlan(2000)
 
-      // 监听主窗口加载完成事件，确保前端组件已挂载后再发送更新状态
-      const mainWindow = this.windowManager.getWindow('index')
-      if (mainWindow) {
-        mainWindow.webContents.once('did-finish-load', () => {
-          // 延迟发送更新状态，确保前端组件已完全初始化
-          setTimeout(() => {
-            this.loadAndSendUpdateStatus()
-          }, 500)
-        })
-      }
+      // 主窗口在 start() 中才创建（init 完成之后），此处可能尚未存在，
+      // 需要等窗口出现后再挂载 did-finish-load，否则启动时更新状态推送永不执行
+      this.sendUpdateStatusWhenReady()
 
       this.startClipboardAutoOpenWatch()
     })
 
-    this.configManager.userConfig.onDidAnyChange(() => this.handleConfigChange('user'))
-    this.configManager.systemConfig.onDidAnyChange(() => this.handleConfigChange('system'))
+    // 将 onDidAnyChange 的卸载函数保存到 configListeners，
+    // 否则 factory-reset 无法卸载、init 重试时监听器会叠加
+    this.configListeners.__any_user = this.configManager.userConfig.onDidAnyChange(() => this.handleConfigChange('user'))
+    this.configListeners.__any_system = this.configManager.systemConfig.onDidAnyChange(() => this.handleConfigChange('system'))
 
     this.watchOpenAtLoginChange()
     this.watchProtocolsChange()
@@ -3266,7 +3366,10 @@ export default class Application extends EventEmitter {
     if (!is.windows() && progress === 2) {
       progress = 0
     }
-    this.windowManager.getWindow('index').setProgressBar(progress)
+    const win = this.windowManager.getWindow('index')
+    if (win && !win.isDestroyed()) {
+      win.setProgressBar(progress)
+    }
   }
 
   bindProgressChange () {
@@ -3283,17 +3386,20 @@ export default class Application extends EventEmitter {
     }
 
     this.off('progress-change', this.handleProgressChange)
-    this.windowManager.getWindow('index').setProgressBar(-1)
+    const win = this.windowManager.getWindow('index')
+    if (win && !win.isDestroyed()) {
+      win.setProgressBar(-1)
+    }
   }
 
   handleIpcMessages () {
     ipcMain.on('command', (event, command, ...args) => {
-      logger.log('[Motrix] ipc receive command', command, ...args)
+      logger.log('[LinkCore] ipc receive command', command, ...args)
       this.emit(command, ...args)
     })
 
     ipcMain.on('event', (event, eventName, ...args) => {
-      logger.log('[Motrix] ipc receive event', eventName, ...args)
+      logger.log('[LinkCore] ipc receive event', eventName, ...args)
       this.emit(eventName, ...args)
     })
 
@@ -3305,7 +3411,7 @@ export default class Application extends EventEmitter {
           win.minimize()
         }
       } catch (e) {
-        logger.warn('[Motrix] Failed to minimize progress window:', e.message)
+        logger.warn('[LinkCore] Failed to minimize progress window:', e.message)
       }
     })
 
@@ -3317,7 +3423,7 @@ export default class Application extends EventEmitter {
           win.close()
         }
       } catch (e) {
-        logger.warn('[Motrix] Failed to close progress window:', e.message)
+        logger.warn('[LinkCore] Failed to close progress window:', e.message)
       }
     })
 
@@ -3329,7 +3435,7 @@ export default class Application extends EventEmitter {
           win.close()
         }
       } catch (e) {
-        logger.warn('[Motrix] Failed to close completed task window:', e.message)
+        logger.warn('[LinkCore] Failed to close completed task window:', e.message)
       }
     })
 
@@ -3346,7 +3452,7 @@ export default class Application extends EventEmitter {
           win.close()
         }
       } catch (e) {
-        logger.warn('[Motrix] Failed to open completed task folder:', e.message)
+        logger.warn('[LinkCore] Failed to open completed task folder:', e.message)
       }
     })
 
@@ -3363,7 +3469,7 @@ export default class Application extends EventEmitter {
           win.close()
         }
       } catch (e) {
-        logger.warn('[Motrix] Failed to open completed task file:', e.message)
+        logger.warn('[LinkCore] Failed to open completed task file:', e.message)
       }
     })
 
@@ -3375,7 +3481,7 @@ export default class Application extends EventEmitter {
           win.minimize()
         }
       } catch (e) {
-        logger.warn('[Motrix] Failed to minimize completed task window:', e.message)
+        logger.warn('[LinkCore] Failed to minimize completed task window:', e.message)
       }
     })
 
@@ -3413,7 +3519,7 @@ export default class Application extends EventEmitter {
 
     // Handle video-sniffer-settings-updated
     ipcMain.on('video-sniffer-settings-updated', (event, settings) => {
-      logger.log('[Motrix] Video sniffer settings updated:', settings)
+      logger.log('[LinkCore] Video sniffer settings updated:', settings)
 
       this._videoSnifferConfig = {
         enabled: settings.enabled,
@@ -3421,71 +3527,83 @@ export default class Application extends EventEmitter {
         autoCombine: settings.autoCombine
       }
 
-      logger.log('[Motrix] Video sniffer config updated in main process:', this._videoSnifferConfig)
+      logger.log('[LinkCore] Video sniffer config updated in main process:', this._videoSnifferConfig)
 
       this.configManager.setUserConfig({
         'video-sniffer-enabled': settings.enabled,
         'video-sniffer-formats': settings.formats,
         'video-sniffer-auto-combine': settings.autoCombine
       })
-      logger.log('[Motrix] Video sniffer config saved to disk')
+      logger.log('[LinkCore] Video sniffer config saved to disk')
     })
 
     // Handle file-categories-settings-updated
     ipcMain.on('file-categories-settings-updated', (event, categories) => {
-      logger.log('[Motrix] File categories settings updated:', categories)
+      logger.log('[LinkCore] File categories settings updated:', categories)
 
       this.configManager.setUserConfig({
         'file-categories': categories
       })
-      logger.log('[Motrix] File categories config saved to disk')
+      logger.log('[LinkCore] File categories config saved to disk')
     })
   }
 
-  handleIpcInvokes () {
-    ipcMain.on('get-app-config', (event) => {
-      const systemConfig = this.configManager.getSystemConfig()
-      const userConfig = this.configManager.getUserConfig()
-      const context = this.context.get()
-      const appVersion = require('../../package.json').version
+  // 汇总系统/用户配置与应用上下文，供同步/异步 get-app-config 共用
+  _collectAppConfig () {
+    const systemConfig = this.configManager.getSystemConfig()
+    const userConfig = this.configManager.getUserConfig()
+    const context = this.context.get()
+    const appVersion = require('../../package.json').version
 
-      const result = {
-        ...systemConfig,
-        ...userConfig,
-        ...context,
-        version: appVersion
+    const result = {
+      ...systemConfig,
+      ...userConfig,
+      ...context,
+      version: appVersion
+    }
+    try {
+      const customKeymap = this.configManager.getUserConfig('custom-keymap') ||
+        this.configManager.getUserConfig('customKeymap') || {}
+      if (customKeymap && Object.keys(customKeymap).length) {
+        this.menuManager && this.menuManager.setup()
+      }
+    } catch (e) {}
+    return result
+  }
+
+  handleIpcInvokes () {
+    // 渲染进程引擎 RPC 统一转发（主进程持有与引擎的 WebSocket 长连接）。
+    // 返回 { ok, result/error } 契约：Electron 的 IPC 结构化克隆不会传输
+    // Error 的自定义属性（code），直接 throw 会导致渲染进程拿不到
+    // aria2 的错误码（如 remove 任务的 code===1 判断），因此错误信息
+    // 以普通对象返回，由 IpcEngineClient 恢复为带 code 的 Error。
+    ipcMain.handle('engine:rpc', async (event, payload) => {
+      const { method, args } = payload || {}
+      if (!method || !this.engineClient) {
+        return { ok: false, error: { message: 'engine not ready' } }
       }
       try {
-        const customKeymap = this.configManager.getUserConfig('custom-keymap') ||
-          this.configManager.getUserConfig('customKeymap') || {}
-        if (customKeymap && Object.keys(customKeymap).length) {
-          this.menuManager && this.menuManager.setup()
+        const result = method === 'multicall'
+          ? await this.engineClient.multicall(args && args[0] ? args[0] : [])
+          : await this.engineClient.callForRenderer(method, ...(Array.isArray(args) ? args : []))
+        return { ok: true, result }
+      } catch (err) {
+        return {
+          ok: false,
+          error: {
+            code: err && err.code !== undefined ? err.code : undefined,
+            message: err && err.message ? err.message : 'engine rpc failed'
+          }
         }
-      } catch (e) {}
-      event.returnValue = result
+      }
+    })
+
+    ipcMain.on('get-app-config', (event) => {
+      event.returnValue = this._collectAppConfig()
     })
 
     ipcMain.handle('get-app-config', async () => {
-      const systemConfig = this.configManager.getSystemConfig()
-      const userConfig = this.configManager.getUserConfig()
-      const context = this.context.get()
-      // 获取应用版本号，来自package.json
-      const appVersion = require('../../package.json').version
-
-      const result = {
-        ...systemConfig,
-        ...userConfig,
-        ...context,
-        version: appVersion
-      }
-      try {
-        const customKeymap = this.configManager.getUserConfig('custom-keymap') ||
-          this.configManager.getUserConfig('customKeymap') || {}
-        if (customKeymap && Object.keys(customKeymap).length) {
-          this.menuManager && this.menuManager.setup()
-        }
-      } catch (e) {}
-      return result
+      return this._collectAppConfig()
     })
 
     ipcMain.handle('get-update-status', async () => {
@@ -3494,7 +3612,7 @@ export default class Application extends EventEmitter {
           return this.updateManager.getStatus()
         }
       } catch (e) {
-        logger.warn('[Motrix] get-update-status failed:', e.message)
+        logger.warn('[LinkCore] get-update-status failed:', e.message)
       }
       return {
         isChecking: false,
@@ -3518,7 +3636,7 @@ export default class Application extends EventEmitter {
       try {
         const { platform, arch } = process
         const engines = getEngineList(platform, arch)
-        logger.info('[Motrix] IPC get-engine-list:', engines)
+        logger.info('[LinkCore] IPC get-engine-list:', engines)
         return {
           success: true,
           engines,
@@ -3527,7 +3645,7 @@ export default class Application extends EventEmitter {
           timestamp: Date.now()
         }
       } catch (error) {
-        logger.error('[Motrix] IPC get-engine-list failed:', error)
+        logger.error('[LinkCore] IPC get-engine-list failed:', error)
         return {
           success: false,
           error: error.message,
@@ -3536,35 +3654,6 @@ export default class Application extends EventEmitter {
           arch: process.arch,
           timestamp: Date.now()
         }
-      }
-    })
-
-    ipcMain.handle('aria2-conf:read', async () => {
-      const { platform, arch } = process
-      const confPath = getAria2ConfPath(platform, arch)
-      const fs = require('node:fs')
-      let content = ''
-      try {
-        if (fs.existsSync(confPath)) {
-          content = fs.readFileSync(confPath, 'utf8')
-        }
-      } catch (e) {
-        logger.warn('[Motrix] read aria2.conf failed:', e.message)
-      }
-      return { path: confPath, content }
-    })
-
-    ipcMain.handle('aria2-conf:write', async (_event, payload = {}) => {
-      const { platform, arch } = process
-      const confPath = getAria2ConfPath(platform, arch)
-      const { content = '' } = payload || {}
-      const fs = require('node:fs')
-      try {
-        fs.writeFileSync(confPath, content, 'utf8')
-        return { success: true, path: confPath }
-      } catch (e) {
-        logger.error('[Motrix] write aria2.conf failed:', e.message)
-        return { success: false, error: e.message, path: confPath }
       }
     })
 
@@ -3577,7 +3666,7 @@ export default class Application extends EventEmitter {
           return { width: size[0], height: size[1] }
         }
       } catch (e) {
-        logger.warn('[Motrix] Failed to get progress window size:', e.message)
+        logger.warn('[LinkCore] Failed to get progress window size:', e.message)
       }
       return null
     })
@@ -3595,7 +3684,7 @@ export default class Application extends EventEmitter {
           return { success: true }
         }
       } catch (e) {
-        logger.warn('[Motrix] Failed to resize progress window:', e.message)
+        logger.warn('[LinkCore] Failed to resize progress window:', e.message)
       }
       return { success: false }
     })
@@ -3609,7 +3698,7 @@ export default class Application extends EventEmitter {
           return { success: true }
         }
       } catch (e) {
-        logger.warn('[Motrix] Failed to set progress window always on top:', e.message)
+        logger.warn('[LinkCore] Failed to set progress window always on top:', e.message)
       }
       return { success: false }
     })
@@ -3691,34 +3780,15 @@ export default class Application extends EventEmitter {
       const numPieces = Number(task.numPieces || 0)
       if (bitfield && numPieces > 0) {
         const pieces = []
-        let completedCount = 0
-        let partialCount = 0
-        let pendingCount = 0
         for (let i = 0; i < bitfield.length; i++) {
           const hex = parseInt(bitfield[i], 16)
-          let pieceStatus
-          if (hex === 0) {
-            pieceStatus = 0
-            pendingCount++
-          } else if (hex === 15) {
-            pieceStatus = 2
-            completedCount++
-          } else {
-            pieceStatus = 1
-            partialCount++
-          }
-          pieces.push(pieceStatus)
+          // 与 TaskGraphic buildAtom 一致: Math.floor(hex / 4) → 0..3
+          pieces.push(Math.floor(hex / 4))
         }
-        const pieceSize = Number(task.pieceLength || 0)
-        const pieceSizeText = pieceSize > 0 ? bytesToSize(pieceSize, 2) : ''
         piecesData = {
           numPieces,
           pieces,
-          tabText: this.i18n.t('task.task-pieces-progress'),
-          infoText: `${this.i18n.t('task.task-num-pieces')}: ${numPieces} ${this.i18n.t('task.task-pieces-unit')}` + (pieceSizeText ? ` (${pieceSizeText}/${this.i18n.t('task.task-piece-unit')})` : ''),
-          completedText: `${this.i18n.t('task.piece-completed')} (${completedCount})`,
-          partialText: `${this.i18n.t('task.piece-partial')} (${partialCount})`,
-          pendingText: `${this.i18n.t('task.piece-pending')} (${pendingCount})`
+          tabText: this.i18n.t('task.task-pieces-progress')
         }
       }
 
@@ -3789,6 +3859,10 @@ export default class Application extends EventEmitter {
           isPaused,
           tabInfoText: this.i18n.t('task.task-progress-info'),
           tabConnectionsText: this.i18n.t('task.task-connections-detail'),
+          tabPiecesText: this.i18n.t('task.task-pieces-progress'),
+          piecesEmptyText: this.i18n.t('task.task-no-pieces-data'),
+          tabInfoShort: this.i18n.t('task.task-progress-info'),
+          tabPiecesShort: this.i18n.t('task.task-pieces-progress'),
           sizeText,
           speedText: `${this.i18n.t('task.task-download-speed')}: ${speedValue}`,
           avgSpeedText: `${this.i18n.t('task.task-average-speed')}: ${avgSpeedValue}`,
@@ -3851,10 +3925,64 @@ export default class Application extends EventEmitter {
 
         return tasks || []
       } catch (err) {
-        logger.warn('[Motrix] Failed to get task list:', err.message)
+        logger.warn('[LinkCore] Failed to get task list:', err.message)
         return []
       }
     })
+
+    // Priority rebalance handler
+    ipcMain.handle('priority:rebalance', async () => {
+      return { success: true }
+    })
+
+    // ED2K server fetch handler (bypasses renderer CORS restrictions)
+    ipcMain.handle('ed2k:fetch-servers', async (_event, { source, proxy }) => {
+      return fetchEd2kServersFromSource(source, proxy)
+    })
+  }
+
+  /**
+   * 等待主窗口创建后推送已保存的更新状态。
+   * init() 完成时 index 窗口尚未创建（窗口在 start() 中才打开），
+   * 因此需轮询等待窗口出现再挂载 did-finish-load。
+   */
+  sendUpdateStatusWhenReady () {
+    if (this._updateStatusWatchTimer) {
+      return
+    }
+    const tryAttach = () => {
+      const mainWindow = this.windowManager.getWindow('index')
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return false
+      }
+      mainWindow.webContents.once('did-finish-load', () => {
+        // 延迟发送更新状态，确保前端组件已完全初始化
+        setTimeout(() => {
+          this.loadAndSendUpdateStatus()
+        }, 500)
+      })
+      return true
+    }
+
+    if (tryAttach()) {
+      return
+    }
+
+    // 窗口尚未创建，每 200ms 轮询一次，最多等待 10 秒
+    this._updateStatusWatchTimer = setInterval(() => {
+      if (tryAttach()) {
+        clearInterval(this._updateStatusWatchTimer)
+        this._updateStatusWatchTimer = null
+        return
+      }
+      const timeout = Date.now() - (this._updateStatusWatchStartedAt || Date.now())
+      if (timeout > 10000) {
+        clearInterval(this._updateStatusWatchTimer)
+        this._updateStatusWatchTimer = null
+        logger.warn('[LinkCore] Timed out waiting for main window to send update status')
+      }
+    }, 200)
+    this._updateStatusWatchStartedAt = Date.now()
   }
 
   /**
@@ -3870,7 +3998,7 @@ export default class Application extends EventEmitter {
       const newVersion = this.configManager.getUserConfig('new-version') || ''
       const lastCheckUpdateTime = this.configManager.getUserConfig('last-check-update-time') || 0
 
-      logger.info('[Motrix] Loading saved update status:', {
+      logger.info('[LinkCore] Loading saved update status:', {
         updateAvailable,
         newVersion,
         lastCheckUpdateTime
@@ -3899,7 +4027,7 @@ export default class Application extends EventEmitter {
         })
       }
     } catch (error) {
-      logger.warn('[Motrix] Failed to load and send update status:', error.message)
+      logger.warn('[LinkCore] Failed to load and send update status:', error.message)
     }
   }
 

@@ -17,6 +17,7 @@ const state = {
   newVersion: '',
   lastCheckUpdateTime: 0,
   isDownloadingUpdate: false,
+  isInstallingUpdate: false,
   updateDownloaded: false,
   downloadProgress: 0,
   downloadTotal: 0,
@@ -66,6 +67,9 @@ const mutations = {
   },
   UPDATE_IS_DOWNLOADING_UPDATE (state, isDownloadingUpdate) {
     state.isDownloadingUpdate = isDownloadingUpdate
+  },
+  UPDATE_IS_INSTALLING_UPDATE (state, isInstallingUpdate) {
+    state.isInstallingUpdate = isInstallingUpdate
   },
   UPDATE_UPDATE_DOWNLOADED (state, downloaded) {
     state.updateDownloaded = downloaded
@@ -194,6 +198,9 @@ const actions = {
   updateIsDownloadingUpdate ({ commit }, isDownloadingUpdate) {
     commit('UPDATE_IS_DOWNLOADING_UPDATE', isDownloadingUpdate)
   },
+  updateIsInstallingUpdate ({ commit }, isInstallingUpdate) {
+    commit('UPDATE_IS_INSTALLING_UPDATE', isInstallingUpdate)
+  },
   updateUpdateDownloaded ({ commit }, downloaded) {
     commit('UPDATE_UPDATE_DOWNLOADED', downloaded)
   },
@@ -206,15 +213,22 @@ const actions = {
   updateReleaseNotes ({ commit }, releaseNotes) {
     commit('UPDATE_RELEASE_NOTES', releaseNotes)
   },
-  fetchBtTracker (_, trackerSource = []) {
-    const { proxy = { enable: false } } = state.config
+  fetchBtTracker ({ state }, trackerSource = []) {
+    const config = state.config || {}
+    const { proxy = {} } = config
     // 与 task.js 的 addUri 保持一致的 useGithubMirror 推断逻辑：
     // 若用户显式设置则尊重，否则由镜像列表非空推断。
-    const githubMirrorUrls = state.config.githubMirrorUrls || state.config['github-mirror-urls'] || []
-    const useGithubMirror = state.config.useGithubMirror !== undefined
-      ? !!state.config.useGithubMirror
+    const githubMirrorUrls = config.githubMirrorUrls || config['github-mirror-urls'] || []
+    const useGithubMirror = config.useGithubMirror !== undefined
+      ? !!config.useGithubMirror
       : githubMirrorUrls.length > 0
     return fetchBtTrackerFromSource(trackerSource, proxy, { useGithubMirror, githubMirrorUrls })
+  },
+  fetchEd2kServers ({ state }, ed2kServerSource = []) {
+    const config = state.config || {}
+    const { proxy = {} } = config
+    const { ipcRenderer } = require('electron')
+    return ipcRenderer.invoke('ed2k:fetch-servers', { source: ed2kServerSource, proxy })
   },
   toggleEngineMode () {
 

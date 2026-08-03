@@ -1,8 +1,13 @@
 <template>
   <div class="mo-task-trackers">
+    <link
+      v-for="origin in preconnectOrigins"
+      :key="origin"
+      rel="preconnect"
+      :href="origin"
+    />
     <div class="mo-table-wrapper" ref="tableWrapper">
       <el-table
-        stripe
         ref="trackerTable"
         class="mo-tracker-table"
         size="mini"
@@ -22,9 +27,19 @@
               <span class="mo-tracker-group-label">{{ scope.row.groupLabel }}</span>
             </template>
             <template v-else>
-              <el-tooltip :content="scope.row.url" placement="top" :disabled="!isTextOverflow(scope.row.url)">
-                <span class="mo-tracker-text">{{ scope.row.url }}</span>
-              </el-tooltip>
+              <img
+                class="mo-tracker-favicon"
+                :class="{ 'is-loaded': isFaviconLoaded(scope.row.url) }"
+                :src="getFaviconUrl(scope.row.url)"
+                :data-tracker-url="scope.row.url"
+                :alt="''"
+                referrerpolicy="no-referrer"
+                loading="lazy"
+                decoding="async"
+                @load="onFaviconLoad"
+                @error="onFaviconError"
+              />
+              <span class="mo-tracker-text" :title="scope.row.url">{{ scope.row.url }}</span>
             </template>
           </template>
         </el-table-column>
@@ -121,8 +136,13 @@
         formLabelWidth: calcFormLabelWidth(locale),
         locale,
         tableHeight: '100%',
-        overflowMap: {},
-        trackerStats: []
+        trackerStats: [],
+        // 通用网页图标（地球），用于 favicon 加载失败或无法获取时的占位
+        defaultFavicon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23909399' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E",
+        // 追踪器 URL -> 解析后的 favicon URL（加载失败后永久记为 defaultFavicon）
+        faviconUrlCache: {},
+        // 追踪器 URL -> 是否已加载完成（响应式，避免静态 inline style 被 re-render 重置）
+        faviconLoaded: {}
       }
     },
     computed: {
@@ -202,7 +222,31 @@
           })
         })
 
-        return result
+        return Object.freeze(result)
+      },
+      trackerStatusMap () {
+        return {
+          working: this.$t('task.tracker-status-working'),
+          updating: this.$t('task.tracker-status-updating'),
+          error: this.$t('task.tracker-status-error'),
+          unknown: this.$t('task.tracker-status-unknown'),
+          disabled: this.$t('task.tracker-status-disabled'),
+          pending: this.$t('task.tracker-status-pending'),
+          waiting: this.$t('task.tracker-status-waiting'),
+          'not-working': this.$t('task.tracker-status-not-working')
+        }
+      },
+      preconnectOrigins () {
+        const origins = new Set()
+        this.trackerList.forEach(t => {
+          const faviconUrl = this.getFaviconUrl(t.url)
+          if (faviconUrl && faviconUrl.startsWith('http')) {
+            try {
+              origins.add(new URL(faviconUrl).origin)
+            } catch (e) {}
+          }
+        })
+        return Array.from(origins)
       }
     },
     watch: {
@@ -214,6 +258,14 @@
           // calls. Tracker list changes infrequently, so gid-keyed refresh is
           // sufficient; periodic refresh is handled by a separate timer.
           this._trackerFetchTimer && clearTimeout(this._trackerFetchTimer)
+          // 切换任务时清空 favicon 缓存，避免旧任务的图标缓存污染
+          if (this._faviconFlushRafId) {
+            cancelAnimationFrame(this._faviconFlushRafId)
+            this._faviconFlushRafId = null
+          }
+          this._faviconLoadQueue = null
+          this.faviconUrlCache = {}
+          this.faviconLoaded = {}
           if (newGid && this.task && checkTaskIsBT(this.task)) {
             this.fetchTrackerStats(newGid)
             this._startTrackerRefreshTimer(newGid)
@@ -237,17 +289,10 @@
       }
     },
     mounted () {
-      this.$nextTick(() => {
-        this.scheduleDetectTextOverflow()
-      })
-    },
-    updated () {
-      // 防抖：避免每次轮询更新都强制 reflow。
-      this.scheduleDetectTextOverflow()
     },
     beforeDestroy () {
-      if (this._textOverflowTimer) {
-        clearTimeout(this._textOverflowTimer)
+      if (this._faviconFlushRafId) {
+        cancelAnimationFrame(this._faviconFlushRafId)
       }
       this._stopTrackerRefreshTimer()
     },
@@ -275,21 +320,30 @@
           const stats = await api.fetchTaskTrackers({ gid })
           // 引擎返回按状态分类的 Dict: { working: [], not-working: [], waiting: [] }
           // 兼容旧版返回扁平 List 的格式
+          let list = []
           if (Array.isArray(stats)) {
-            this.trackerStats = stats
+            list = stats
           } else if (stats && typeof stats === 'object') {
-            const merged = []
             const keys = ['working', 'not-working', 'waiting']
             keys.forEach(key => {
               const arr = stats[key]
               if (Array.isArray(arr)) {
-                merged.push(...arr)
+                list.push(...arr)
               }
             })
-            this.trackerStats = merged
-          } else {
-            this.trackerStats = []
           }
+          // Deduplicate by URL — the engine may return the same tracker multiple
+          // times (torrent announce list + global bt-tracker config overlap).
+          const seen = new Set()
+          list = list.filter(stat => {
+            const url = ((stat && stat.url) || '').trim()
+            if (!url || seen.has(url)) return false
+            seen.add(url)
+            return true
+          })
+          this.trackerStats = list
+          // Pre-compute favicon URLs to avoid URL parsing & side effects during render
+          this.precomputeFaviconUrls()
         } catch (error) {
           this.trackerStats = []
         }
@@ -305,7 +359,8 @@
       },
       getRowClassName ({ row }) {
         if (row.isGroup) {
-          return 'mo-tracker-group-row'
+          const groupKey = row.groupKey || ''
+          return `mo-tracker-group-row mo-tracker-group-${groupKey}`
         }
         return ''
       },
@@ -313,17 +368,75 @@
         // 分组行点击暂不处理展开/折叠，保持全部展开
       },
       getTrackerStatusText (status) {
-        const statusMap = {
-          working: this.$t('task.tracker-status-working'),
-          updating: this.$t('task.tracker-status-updating'),
-          error: this.$t('task.tracker-status-error'),
-          unknown: this.$t('task.tracker-status-unknown'),
-          disabled: this.$t('task.tracker-status-disabled'),
-          pending: this.$t('task.tracker-status-pending'),
-          waiting: this.$t('task.tracker-status-waiting'),
-          'not-working': this.$t('task.tracker-status-not-working')
+        return this.trackerStatusMap[status] || status || '-'
+      },
+      precomputeFaviconUrls () {
+        // Pre-resolve favicon URLs when tracker data changes so the render
+        // path is a pure cache lookup with zero side effects.
+        this.trackerStats.forEach(stat => {
+          const url = stat.url || ''
+          if (url && this.faviconUrlCache[url] === undefined) {
+            this.faviconUrlCache[url] = this.resolveFaviconUrl(url)
+          }
+        })
+      },
+      resolveFaviconUrl (url) {
+        try {
+          const parsed = new URL(url)
+          const host = parsed.hostname
+          if (!host) {
+            return this.defaultFavicon
+          }
+          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+            return `${parsed.origin}/favicon.ico`
+          }
+          return `https://${host}/favicon.ico`
+        } catch (e) {
+          return this.defaultFavicon
         }
-        return statusMap[status] || status || '-'
+      },
+      getFaviconUrl (url) {
+        // Pure cache lookup — no URL parsing, no side effects during render
+        return this.faviconUrlCache[url] || this.defaultFavicon
+      },
+      isFaviconLoaded (url) {
+        return this.faviconLoaded[url] === true
+      },
+      onFaviconError (e) {
+        const img = e.target
+        const url = img.getAttribute('data-tracker-url')
+        // favicon 加载失败时永久标记为 defaultFavicon 并更新 src
+        if (url && this.faviconUrlCache[url] !== this.defaultFavicon) {
+          this.$set(this.faviconUrlCache, url, this.defaultFavicon)
+          img.src = this.defaultFavicon
+        } else if (url) {
+          // 已在使用 defaultFavicon 但仍出错（data URI 极少出错），直接标记为已加载
+          this._enqueueFaviconLoaded(url)
+        }
+      },
+      onFaviconLoad (e) {
+        const url = e.target.getAttribute('data-tracker-url')
+        if (url) {
+          this._enqueueFaviconLoaded(url)
+        }
+      },
+      _enqueueFaviconLoaded (url) {
+        // Batch favicon loaded-state updates: collect URLs and flush in a
+        // single requestAnimationFrame to avoid N individual re-renders.
+        if (!this._faviconLoadQueue) {
+          this._faviconLoadQueue = {}
+        }
+        this._faviconLoadQueue[url] = true
+        if (!this._faviconFlushRafId) {
+          this._faviconFlushRafId = requestAnimationFrame(() => {
+            this._faviconFlushRafId = null
+            const queue = this._faviconLoadQueue
+            this._faviconLoadQueue = null
+            if (queue && Object.keys(queue).length > 0) {
+              this.faviconLoaded = Object.assign({}, this.faviconLoaded, queue)
+            }
+          })
+        }
       },
       formatNextAnnounceTime (timestamp) {
         if (!timestamp || timestamp <= 0) {
@@ -344,39 +457,6 @@
           return `${minutes}m ${seconds}s`
         }
         return `${seconds}s`
-      },
-      scheduleDetectTextOverflow () {
-        // Debounce: collapse repeated updated() calls into a single layout read.
-        if (this._textOverflowTimer) {
-          clearTimeout(this._textOverflowTimer)
-        }
-        this._textOverflowTimer = setTimeout(() => {
-          this._textOverflowTimer = null
-          this.detectTextOverflow()
-        }, 200)
-      },
-      detectTextOverflow () {
-        const textElements = this.$el.querySelectorAll('.mo-tracker-text')
-        const newOverflowMap = {}
-
-        textElements.forEach(el => {
-          const isOverflow = el.scrollWidth > el.clientWidth + 1
-          if (isOverflow) {
-            el.classList.add('is-overflow')
-          } else {
-            el.classList.remove('is-overflow')
-          }
-
-          const text = el.textContent.trim()
-          if (text) {
-            newOverflowMap[text] = isOverflow
-          }
-        })
-
-        this.overflowMap = newOverflowMap
-      },
-      isTextOverflow (text) {
-        return this.overflowMap[text] === true
       }
     }
   }
@@ -388,7 +468,7 @@
   display: flex;
   flex-direction: column;
   .mo-table-wrapper {
-    border: 1px solid #dcdfe6;
+    border: 1px solid var(--lc-border-base);
     border-radius: 8px;
     box-sizing: border-box;
     padding: 0;
@@ -435,29 +515,42 @@
     padding-left: 10px !important;
     padding-right: 10px !important;
   }
+  .mo-tracker-favicon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    margin-right: 6px;
+    border-radius: 2px;
+    object-fit: contain;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
+    visibility: hidden;
+    &.is-loaded {
+      visibility: visible;
+    }
+  }
   .mo-tracker-text {
     display: block;
     white-space: nowrap;
     overflow: hidden;
     position: relative;
-    &.is-overflow {
-      mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
-      -webkit-mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
-    }
+    text-overflow: ellipsis;
   }
-  .mo-tracker-group-row {
-    background-color: #f5f7fa !important;
-    td {
-      background-color: transparent !important;
-      border-bottom: 1px solid #ebeef5 !important;
-    }
+.mo-tracker-group-row {
+background-color: var(--lc-table-striped-bg, #f5f7fa) !important;
+td,
+td.el-table__cell {
+background-color: var(--lc-table-striped-bg, #f5f7fa) !important;
+border-bottom: 1px solid var(--lc-border-base) !important;
+}
     .cell {
       padding-left: 12px !important;
     }
     .mo-tracker-group-label {
       font-size: 12px;
       font-weight: 600;
-      color: #606266;
+      color: var(--lc-text-secondary);
       letter-spacing: 0.3px;
     }
   }
@@ -491,35 +584,71 @@
 }
 
 .theme-dark .mo-task-trackers .mo-table-wrapper {
-  border-color: #4c4d4f;
+  border-color: var(--lc-border-base) !important;
+  background-color: var(--lc-task-item-bg) !important;
 }
 .theme-dark .mo-tracker-table {
   border-color: transparent !important;
-  background-color: transparent;
+  background-color: transparent !important;
+  color: var(--lc-text-regular) !important;
+  .el-table__inner-wrapper {
+    background-color: transparent !important;
+  }
+  .el-table__header-wrapper,
+  .el-table__body-wrapper,
+  .el-table__footer-wrapper {
+    background-color: transparent !important;
+  }
+  .el-table__header,
+  .el-table__body,
+  .el-table__footer {
+    background-color: transparent !important;
+  }
   .el-table__row {
-    background-color: transparent;
+    background-color: transparent !important;
   }
-  .el-table__body tr:hover > td {
-    background-color: rgba(255, 255, 255, 0.05) !important;
+  // 悬停高亮：强制覆盖 Element UI 默认白色背景
+  .el-table__body tr:hover > td,
+  .el-table__body tr:hover > td.el-table__cell,
+  .el-table--enable-row-hover .el-table__body tr:hover > td {
+    background-color: var(--lc-table-hover-bg) !important;
   }
+  &.el-table thead th,
+  &.el-table thead th.el-table__cell,
+  &.el-table thead th.is-leaf,
+  &.el-table thead th.el-table__cell.is-leaf,
   th.el-table__cell {
-    background-color: #1a1a1a !important;
-    color: #909399 !important;
+    background-color: transparent !important;
+    color: var(--lc-text-secondary) !important;
     border-bottom: none !important;
   }
-  .el-table__body-wrapper {
+  td.el-table__cell {
     background-color: transparent !important;
+    color: var(--lc-text-regular) !important;
+    border-bottom: 1px solid var(--lc-border-base) !important;
+  }
+  .el-table__empty-block {
+    background-color: transparent !important;
+  }
+  .el-table__empty-text {
+    color: var(--lc-text-placeholder) !important;
   }
   .el-table--border::after, .el-table--group::after, .el-table::before {
     display: none !important;
   }
   .mo-tracker-group-row {
-    background-color: rgba(255, 255, 255, 0.03) !important;
-    td {
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    background-color: var(--lc-table-striped-bg) !important;
+    &.el-table__row td,
+    td.el-table__cell {
+      background-color: var(--lc-table-striped-bg) !important;
+      border-bottom: 1px solid var(--lc-border-base) !important;
     }
     .mo-tracker-group-label {
-      color: #c0c4cc;
+      color: var(--lc-text-secondary) !important;
+    }
+    &.el-table__row:hover > td,
+    &:hover > td {
+      background-color: var(--lc-table-hover-bg) !important;
     }
   }
 }

@@ -32,6 +32,10 @@ export const buildHeadersFromCurl = (uris = []) => {
       if (parsed.referer) {
         header.referer = parsed.referer
       }
+      // curl -u/--user user:pass → Basic Auth 头，否则认证信息会被静默丢弃
+      if (parsed.user) {
+        header.authorization = `Basic ${Buffer.from(String(parsed.user)).toString('base64')}`
+      }
       return header
     } else {
       return undefined

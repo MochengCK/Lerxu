@@ -127,6 +127,10 @@ function build () {
 
   del.sync(['dist/electron/*', '!.gitkeep'])
 
+  // Clean previous build output so stale files don't inflate the next
+  // package size or cause inconsistent build artifacts.
+  del.sync(['release/*', '!.gitkeep'])
+
   const tasks = ['main', 'renderer']
   const m = new Multispinner(tasks, {
     preText: 'building',
@@ -214,7 +218,7 @@ function pack (config) {
 }
 
 function web () {
-  deleteSync(['dist/web/*', '!.gitkeep'])
+  del.sync(['dist/web/*', '!.gitkeep'])
   webConfig.mode = 'production'
   Webpack(webConfig, (err, stats) => {
     if (err || stats.hasErrors()) console.log(err)

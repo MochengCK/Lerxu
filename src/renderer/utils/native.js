@@ -18,7 +18,7 @@ export const showItemInFolder = (fullPath, { errorMsg }) => {
 
   fullPath = resolve(fullPath)
   access(fullPath, constants.F_OK, (err) => {
-    console.warn(`[Motrix] ${fullPath} ${err ? 'does not exist' : 'exists'}`)
+    console.warn(`[LinkCore] ${fullPath} ${err ? 'does not exist' : 'exists'}`)
     if (err && errorMsg) {
       Message.error(errorMsg)
       return
@@ -160,7 +160,7 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
   const taskDir = task && task.dir ? resolve(`${task.dir}`) : ''
   let path = getTaskFullPath(task)
 
-  console.log('[Motrix] moveTaskFilesToTrash - task fields:', {
+  console.log('[LinkCore] moveTaskFilesToTrash - task fields:', {
     gid: task && task.gid,
     dir: task && task.dir,
     name: task && task.name,
@@ -182,7 +182,7 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
       const dirFromOpt = preOpt.dir ? resolve(`${preOpt.dir}`) : taskDir
       const outFromOpt = preOpt.out ? `${preOpt.out}` : ''
       const nameFallback = task && task.name ? `${task.name}` : ''
-      console.log('[Motrix] moveTaskFilesToTrash - pre-fetched getOption fallback:', { dirFromOpt, outFromOpt, nameFallback })
+      console.log('[LinkCore] moveTaskFilesToTrash - pre-fetched getOption fallback:', { dirFromOpt, outFromOpt, nameFallback })
       if (dirFromOpt && outFromOpt) {
         path = resolve(dirFromOpt, outFromOpt)
         resolved = true
@@ -201,7 +201,7 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
           const dirFromOpt = opt && opt.dir ? resolve(`${opt.dir}`) : taskDir
           const outFromOpt = opt && opt.out ? `${opt.out}` : ''
           const nameFallback = task && task.name ? `${task.name}` : ''
-          console.log('[Motrix] moveTaskFilesToTrash - live getOption fallback:', { dirFromOpt, outFromOpt, nameFallback })
+          console.log('[LinkCore] moveTaskFilesToTrash - live getOption fallback:', { dirFromOpt, outFromOpt, nameFallback })
           if (dirFromOpt && outFromOpt) {
             path = resolve(dirFromOpt, outFromOpt)
           } else if (dirFromOpt && nameFallback) {
@@ -209,19 +209,19 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
           }
         }
       } catch (e) {
-        console.warn('[Motrix] moveTaskFilesToTrash - getOption fallback failed:', e.message)
+        console.warn('[LinkCore] moveTaskFilesToTrash - getOption fallback failed:', e.message)
       }
     }
   }
 
   if (!path || (taskDir && resolve(path) === taskDir)) {
     const err = new Error(`无法解析任务文件路径，跳过文件删除（gid=${task && task.gid}, dir=${taskDir}）`)
-    console.warn('[Motrix] moveTaskFilesToTrash -', err.message)
+    console.warn('[LinkCore] moveTaskFilesToTrash -', err.message)
     throw err
   }
 
   const candidates = getPathCandidates(path, suffix, config)
-  console.log('[Motrix] moveTaskFilesToTrash - candidates:', candidates.map(p => ({ path: p, exists: existsSync(p) })))
+  console.log('[LinkCore] moveTaskFilesToTrash - candidates:', candidates.map(p => ({ path: p, exists: existsSync(p) })))
 
   let deletedCount = 0
   let lastError = null
@@ -231,31 +231,31 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
     try {
       if (existsSync(p)) {
         const target = resolve(p)
-        console.log(`[Motrix] ${target} exists, deleting...`)
+        console.log(`[LinkCore] ${target} exists, deleting...`)
         await shell.trashItem(target)
         deletedCount++
       }
     } catch (e) {
-      console.warn(`[Motrix] Failed to trash ${p}:`, e)
+      console.warn(`[LinkCore] Failed to trash ${p}:`, e)
       lastError = e
     }
 
-    // Delete .aria2 file
-    const aria2Path = `${p}.aria2`
+    // Delete .xfer control file
+    const xferPath = `${p}.xfer`
     try {
-      if (existsSync(aria2Path)) {
-        console.log(`[Motrix] ${aria2Path} exists, deleting...`)
-        await shell.trashItem(aria2Path)
+      if (existsSync(xferPath)) {
+        console.log(`[LinkCore] ${xferPath} exists, deleting...`)
+        await shell.trashItem(xferPath)
         deletedCount++
       }
     } catch (e) {
-      console.warn(`[Motrix] Failed to trash ${aria2Path}:`, e)
+      console.warn(`[LinkCore] Failed to trash ${xferPath}:`, e)
       lastError = e
     }
   }
 
   // 如果候选路径中有文件存在但全部删除失败，抛出错误让上层提示用户
-  const anyExists = candidates.some(p => existsSync(p) || existsSync(`${p}.aria2`))
+  const anyExists = candidates.some(p => existsSync(p) || existsSync(`${p}.xfer`))
   if (anyExists && deletedCount === 0 && lastError) {
     throw new Error(`删除文件失败: ${lastError.message || lastError}`)
   }

@@ -1,4 +1,6 @@
 export default {
   'task-list': 'Aufgaben',
-  'preferences': 'Einstellungen'
+  'preferences': 'Einstellungen',
+  'download-section': 'Download',
+  'type-section': 'Typ'
 }

@@ -21,11 +21,11 @@ body {
 
 ::-webkit-scrollbar-thumb {
   border-radius: 8px;
-  background-color: rgba(0, 0, 0, 0.4);
+  background-color: var(--lc-scrollbar-thumb);
 }
 
 ::-webkit-scrollbar-thumb:window-inactive {
-  background-color: rgba(0, 0, 0, 0.25);
+  background-color: var(--lc-scrollbar-thumb-inactive);
 }
 
 ::-webkit-scrollbar-corner {
@@ -106,6 +106,10 @@ iframe {
 
 .el-progress-bar__inner {
   transition: all 0.4s cubic-bezier(0.08, 0.82, 0.17, 1) 0s;
+}
+
+.el-progress.is-pending-selection .el-progress-bar__outer {
+  background-color: rgba(240, 173, 78, 0.35);
 }
 
 .el-progress--line.is-text {
@@ -216,11 +220,16 @@ iframe {
 .el-input__inner,
 .el-textarea__inner {
   border-radius: 6px;
+  /* 只显示边框，不显示背景，透出底层容器底色 */
+  background-color: transparent !important;
 }
 
 .el-select-dropdown {
-  border-radius: 6px;
+  border-radius: var(--lc-radius-dropdown);
   overflow: hidden;
+  border: none !important;
+  /* 统一所有下拉框相对输入框的间距，与局部弹窗（如添加 Tracker 源）margin-top:6px 对齐 */
+  margin: 6px 0;
 
   .popper__arrow {
     display: none;
@@ -235,47 +244,207 @@ iframe {
   }
 }
 
-/* 重做所有二级选择框的展开收起动画 */
-.el-zoom-in-top-enter-active,
-.el-zoom-in-top-leave-active {
-  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  transform-origin: center top;
+/* 全局弹窗缩放过渡动画 */
+.popup-scale-enter-active {
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1), transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
 }
 
+.popup-scale-leave-active {
+  transition: opacity 0.14s cubic-bezier(0.4, 0, 1, 1), transform 0.14s cubic-bezier(0.4, 0, 1, 1);
+  will-change: transform, opacity;
+}
+
+.popup-scale-enter,
+.popup-scale-leave-to {
+  opacity: 0;
+  transform: scale(0.92);
+}
+
+/* el-dialog 弹窗：遮罩层做淡入淡出，内部 dialog 做缩放过渡 */
+.dialog-fade-enter-active {
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+
+  .el-dialog {
+    transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform;
+  }
+}
+
+.dialog-fade-leave-active {
+  transition: opacity 0.14s cubic-bezier(0.4, 0, 1, 1);
+
+  .el-dialog {
+    transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1);
+    will-change: transform;
+  }
+}
+
+.dialog-fade-enter,
+.dialog-fade-leave-to {
+  opacity: 0;
+
+  .el-dialog {
+    transform: scale(0.92);
+  }
+}
+
+/* el-message-box 弹窗：遮罩层做淡入淡出，内部 messagebox 做缩放过渡 */
+.msgbox-fade-enter-active {
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+
+  .el-message-box {
+    transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform;
+  }
+}
+
+.msgbox-fade-leave-active {
+  transition: opacity 0.14s cubic-bezier(0.4, 0, 1, 1);
+
+  .el-message-box {
+    transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1);
+    will-change: transform;
+  }
+}
+
+.msgbox-fade-enter,
+.msgbox-fade-leave-to {
+  opacity: 0;
+
+  .el-message-box {
+    transform: scale(0.92);
+  }
+}
+
+/* 重做所有二级选择框的展开收起动画（缩放效果，与全局弹窗一致） */
 .el-zoom-in-top-enter-active {
-  opacity: 1;
-  transform: scaleY(1) translateY(0);
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1), transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center top;
+  will-change: transform, opacity;
 }
 
 .el-zoom-in-top-leave-active {
-  opacity: 0;
-  transform: scaleY(0.97) translateY(-2px);
+  transition: opacity 0.14s cubic-bezier(0.4, 0, 1, 1), transform 0.14s cubic-bezier(0.4, 0, 1, 1);
+  transform-origin: center top;
+  will-change: transform, opacity;
 }
 
-.el-zoom-in-top-enter {
+.el-zoom-in-top-enter,
+.el-zoom-in-top-leave-to {
   opacity: 0;
-  transform: scaleY(0.97) translateY(-2px);
+  transform: scale(0.92);
+}
+
+/* 弹窗显示在上方时（如 select 翻转、date-picker 上方展开） */
+.el-zoom-in-bottom-enter-active {
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1), transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center bottom;
+  will-change: transform, opacity;
+}
+
+.el-zoom-in-bottom-leave-active {
+  transition: opacity 0.14s cubic-bezier(0.4, 0, 1, 1), transform 0.14s cubic-bezier(0.4, 0, 1, 1);
+  transform-origin: center bottom;
+  will-change: transform, opacity;
+}
+
+.el-zoom-in-bottom-enter,
+.el-zoom-in-bottom-leave-to {
+  opacity: 0;
+  transform: scale(0.92);
+}
+
+/* popover / tooltip 等中心展开的局部弹窗 */
+.el-zoom-in-center-enter-active {
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1), transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+}
+
+.el-zoom-in-center-leave-active {
+  transition: opacity 0.14s cubic-bezier(0.4, 0, 1, 1), transform 0.14s cubic-bezier(0.4, 0, 1, 1);
+  will-change: transform, opacity;
+}
+
+.el-zoom-in-center-enter,
+.el-zoom-in-center-leave-to {
+  opacity: 0;
+  transform: scale(0.92);
 }
 
 .el-select-dropdown__item {
   margin: 2px 6px;
   border-radius: 6px;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  transition: color 0.2s ease, background-color 0.2s ease;
 
   &.hover,
   &:hover {
     border-radius: 6px;
-    background-color: #f5f7fa;
+    background-color: var(--lc-bg-hover);
   }
 
   &.selected {
     border-radius: 6px;
     color: $--color-primary;
-    font-weight: 500;
+    font-size: 14px !important;
+    font-weight: 400 !important;
 
     &:hover {
-      background-color: #f5f7fa !important;
+      background-color: var(--lc-bg-hover) !important;
+    }
+
+    &::after {
+      font-weight: normal !important;
+      opacity: 1;
+      transform: scale(1);
+      transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
   }
+}
+
+/* 多选模式下勾选图标的出现/消失动画 */
+.el-select-dropdown.is-multiple .el-select-dropdown__item {
+  font-weight: 400 !important;
+  font-size: 14px !important;
+  position: relative;
+
+  &::after {
+    content: "\e6da";
+    position: absolute;
+    right: 18px;
+    font-family: 'element-icons';
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    opacity: 0;
+    transform: scale(0.4);
+    transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+    will-change: opacity, transform;
+  }
+
+  &.selected {
+    font-weight: 400 !important;
+    font-size: 14px !important;
+
+    &::after {
+      opacity: 1;
+      transform: scale(1);
+      font-size: 16px !important;
+      transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+  }
+}
+
+/* 移除 Tracker 源选择框各分组之间的横杠划分 */
+.el-select-group__wrap:not(:last-of-type)::after {
+  display: none !important;
+}
+
+.el-select-group__wrap:not(:last-of-type) {
+  padding-bottom: 0 !important;
 }
 
 .el-time-panel,
@@ -305,7 +474,7 @@ iframe {
 .el-input-group__prepend {
   background-color: transparent !important;
   position: relative;
-  border-color: #dcdfe6;
+  border-color: var(--lc-border-base);
   border-radius: 6px;
   transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
@@ -320,7 +489,7 @@ iframe {
     top: 6px;
     bottom: 6px;
     width: 1px;
-    background-color: #dcdfe6;
+    background-color: var(--lc-border-base);
     transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
   }
 }
@@ -335,7 +504,7 @@ iframe {
     top: 6px;
     bottom: 6px;
     width: 1px;
-    background-color: #dcdfe6;
+    background-color: var(--lc-border-base);
     transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
   }
 }
@@ -365,6 +534,12 @@ iframe {
 .el-input-group--append .el-input-group__append {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+}
+
+/* 带前后按钮的输入框组：prepend/append 只显示边框，不显示背景（与暗色模式一致） */
+.el-input-group__append,
+.el-input-group__prepend {
+  background-color: transparent !important;
 }
 
 .el-input-group__prepend .el-button,
@@ -425,7 +600,7 @@ iframe {
     top: 6px;
     bottom: 0;
     width: 1px;
-    background-color: #dcdfe6;
+    background-color: var(--lc-border-base);
     transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
   }
 }
@@ -440,7 +615,7 @@ iframe {
     top: 0;
     bottom: 6px;
     width: 1px;
-    background-color: #dcdfe6;
+    background-color: var(--lc-border-base);
     transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
   }
 }
@@ -452,7 +627,7 @@ iframe {
 
 .el-input-number__increase.is-disabled,
 .el-input-number__decrease.is-disabled {
-  color: #c0c4cc !important;
+  color: var(--lc-text-disabled) !important;
   cursor: not-allowed;
 }
 
@@ -473,7 +648,7 @@ iframe {
     bottom: 0;
     width: 1px;
     z-index: 1;
-    background-color: #dcdfe6;
+    background-color: var(--lc-border-base);
     transition: background-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
   }
 }
@@ -689,33 +864,25 @@ iframe {
 
 .theme-light.has-app-background-image {
   .aside {
-    background-color: rgba(0, 0, 0, var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9))) !important;
-    background: rgba(0, 0, 0, var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9))) !important;
-    backdrop-filter: blur(var(--app-ui-frosted-blur-aside, var(--app-ui-frosted-blur, 0px)));
-    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-aside, var(--app-ui-frosted-blur, 0px)));
+    background-color: transparent !important;
+    background: transparent !important;
   }
 
   .subnav {
-    background-color: rgba(255, 255, 255, var(--app-ui-opacity-subnav, var(--app-ui-opacity, 0.9))) !important;
-    background: rgba(255, 255, 255, var(--app-ui-opacity-subnav, var(--app-ui-opacity, 0.9))) !important;
-    backdrop-filter: blur(var(--app-ui-frosted-blur-subnav, var(--app-ui-frosted-blur, 0px)));
-    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-subnav, var(--app-ui-frosted-blur, 0px)));
+    background-color: transparent !important;
+    background: transparent !important;
   }
 }
 
 .theme-dark.has-app-background-image {
   .aside {
-    background-color: rgba(0, 0, 0, var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9))) !important;
-    background: rgba(0, 0, 0, var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9))) !important;
-    backdrop-filter: blur(var(--app-ui-frosted-blur-aside, var(--app-ui-frosted-blur, 0px)));
-    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-aside, var(--app-ui-frosted-blur, 0px)));
+    background-color: transparent !important;
+    background: transparent !important;
   }
 
   .subnav {
-    background-color: rgba(45, 45, 45, var(--app-ui-opacity-subnav, var(--app-ui-opacity, 0.9))) !important;
-    background: rgba(45, 45, 45, var(--app-ui-opacity-subnav, var(--app-ui-opacity, 0.9))) !important;
-    backdrop-filter: blur(var(--app-ui-frosted-blur-subnav, var(--app-ui-frosted-blur, 0px)));
-    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-subnav, var(--app-ui-frosted-blur, 0px)));
+    background-color: transparent !important;
+    background: transparent !important;
   }
 }
 
@@ -729,7 +896,7 @@ iframe {
 }
 
 .aside {
-  background-color: $--aside-background;
+  background-color: transparent;
   color: $--aside-text-color;
 }
 
@@ -747,7 +914,7 @@ iframe {
 }
 
 .subnav {
-  background-color: $--subnav-background;
+  background-color: transparent;
   color: $--subnav-text-color;
 }
 
@@ -772,7 +939,7 @@ iframe {
 }
 .subnav.three-column-subnav.is-auto-hide-aside {
   position: relative;
-  height: auto;
+  height: 100%;
   z-index: 999;
   margin-left: -220px;
   transform: none;
@@ -800,26 +967,25 @@ iframe {
   z-index: -1;
 }
 
-/* Three-column layout: slightly lighter background for sidebar area */
-/* For light theme, aside stays dark (rgba(0,0,0,0.8)), but subnav gets slightly darker gray */
+/* Three-column layout: sidebar transparent */
 .theme-light .has-three-column-layout .subnav.three-column-subnav {
-  background-color: #DCDEE2 !important; /* Darker than #F4F5F7, lighter than active #EAECF0 */
+  background-color: transparent !important;
 }
 
-/* For dark theme, darker background for fixed sidebar */
+/* For dark theme, sidebar transparent */
 .theme-dark .has-three-column-layout .aside {
-  background-color: rgba(0, 0, 0, 0.35) !important;
+  background-color: transparent !important;
 }
 
 .theme-dark .has-three-column-layout .subnav.three-column-subnav {
-  background-color: #252525 !important;
+  background-color: transparent !important;
 }
 
 /* Three-column layout: larger border-radius for active/hover subnav items */
 .has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li {
   border-radius: 8px;
-  padding-left: 12px;
-  padding-right: 8px;
+  padding-left: 10px;
+  padding-right: 10px;
 }
 
 /* Three-column layout: reduce sidebar horizontal padding */
@@ -843,17 +1009,26 @@ iframe {
 
 /* Three-column layout: hover background for sidebar items (not active) */
 .has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li:hover:not(.active) {
-  background-color: rgba(0, 0, 0, 0.04);
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
-/* Three-column layout: active background for sidebar items (light theme) */
+/* Three-column layout: active background for sidebar items */
 .has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li.active {
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: rgba(0, 0, 0, 0.12);
+}
+
+/* Dark theme: three-column layout hover/active backgrounds */
+.theme-dark.has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li:hover:not(.active) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.theme-dark.has-three-column-layout .subnav.three-column-subnav .subnav-inner ul li.active {
+  background-color: rgba(255, 255, 255, 0.15);
 }
 
 /* Three-column layout: move task count to the right edge */
 .has-three-column-layout .subnav.three-column-subnav .subnav-inner .subnav-count {
-  right: 3px !important;
+  right: 0px !important;
 }
 
 .has-three-column-layout .subnav.three-column-subnav .subnav-inner .preference-subnav-ul .nav-slider {
@@ -863,8 +1038,9 @@ iframe {
 /* Preference standalone: match three-column layout styles */
 .preference-standalone .subnav-inner ul li {
   border-radius: 8px;
-  padding-left: 12px;
-  padding-right: 8px;
+  height: 32px;
+  line-height: 32px;
+  padding: 0 10px;
 }
 
 .preference-standalone .subnav-inner {
@@ -885,11 +1061,19 @@ iframe {
 }
 
 .preference-standalone .subnav-inner ul li:hover:not(.active) {
-  background-color: rgba(0, 0, 0, 0.04);
+  background-color: rgba(0, 0, 0, 0.08);
 }
 
 .preference-standalone .subnav-inner ul li.active {
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: rgba(0, 0, 0, 0.12);
+}
+
+.theme-dark.preference-standalone .subnav-inner ul li:hover:not(.active) {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.theme-dark.preference-standalone .subnav-inner ul li.active {
+  background-color: rgba(255, 255, 255, 0.15);
 }
 
 .preference-standalone .subnav-inner .subnav-count {
@@ -900,24 +1084,24 @@ iframe {
   border-radius: 8px;
 }
 
-/* Three-column layout with background image: lighter sidebar background */
+/* Three-column layout with background image: sidebar transparent */
 .theme-light.has-app-background-image .has-three-column-layout .aside,
 .theme-light.has-app-background-image .has-three-column-layout .subnav.three-column-subnav {
-  background-color: rgba(0, 0, 0, calc(var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9)) + 0.02)) !important;
+  background-color: transparent !important;
 }
 
 .theme-dark.has-app-background-image .has-three-column-layout .aside,
 .theme-dark.has-app-background-image .has-three-column-layout .subnav.three-column-subnav {
-  background-color: rgba(0, 0, 0, calc(var(--app-ui-opacity-aside, var(--app-ui-opacity, 0.9)) + 0.02)) !important;
+  background-color: transparent !important;
 }
 
-.main {
+.main.panel {
   background-color: $--main-background;
 }
 
 .subnav-inner {
   margin-top: 44px;
-  padding: 0 16px;
+  padding: 0 18px;
   user-select: none;
 
   h3 {
@@ -936,7 +1120,7 @@ iframe {
 
     li {
       margin-bottom: 8px;
-      padding: 8px 10px;
+      padding: 8px 14px;
       font-size: 0;
       line-height: 20px;
       border-radius: 6px;
@@ -1003,9 +1187,12 @@ iframe {
 
   .panel-header {
     position: relative;
-    padding: 44px 0 12px;
-    margin: 0 16px;
-    border-bottom: 2px solid $--panel-border-color;
+    padding: 6px 2px 6px 12px;
+    margin: 44px 16px 0;
+    height: auto !important;
+    border: 1px solid $--task-item-border-color;
+    border-radius: 10px;
+    box-sizing: border-box;
     user-select: none;
 
     h4 {
@@ -1077,8 +1264,8 @@ iframe {
   }
 
   .task-list {
-    padding-left: 36px;
-    padding-right: 36px;
+    padding-left: 14px;
+    padding-right: 14px;
   }
 
   .form-preference {
@@ -1088,10 +1275,6 @@ iframe {
 
   .form-actions {
     padding: 24px 36px;
-  }
-
-  .mo-speedometer {
-    right: 14px;
   }
 
   .hidden-sm-and-up {

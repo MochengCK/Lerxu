@@ -116,6 +116,7 @@
     timeFormat,
     timeRemaining,
     isMagnetTask,
+    isEd2kTask,
     calcProgress,
     calcRatio
   } from '@shared/utils'
@@ -148,7 +149,8 @@
         dataAccessStatuses: state => state.dataAccessStatuses,
         taskPriorities: state => state.taskPriorities,
         taskLinkUpdateHints: state => state.taskLinkUpdateHints || {},
-        mergeProgresses: state => state.mergeProgresses
+        mergeProgresses: state => state.mergeProgresses,
+        pendingFileSelection: state => state.pendingFileSelection || {}
       }),
       ...mapState('preference', {
         preferenceConfig: state => state.config
@@ -246,32 +248,57 @@
       },
       connectingStatusText () {
         const task = this.task || {}
-        // 已进入下载阶段（有总长度或已下载量）时优先让位给下载进度显示，
-        // 否则磁力任务的 "磁力任务下载中" 会一直遮住进度。
+        // 待选择文件的BT任务：左下角直接显示下载进度
+        if (this.isPendingFileSelection) {
+          return ''
+        }
         const total = Number(task.totalLength)
         const completed = Number(task.completedLength)
+
+        // ED2K tasks: totalLength is known from the ed2k:// URL even before
+        // any data is downloaded. Show "searching for sources" until actual
+        // download progress (completedLength > 0) is made.
+        if (isEd2kTask(task) && completed === 0) {
+          const taskStatus = `${task.status || ''}`
+          // 完成、错误、暂停状态：不再显示搜索提示，改为显示进度（0 B / 总大小）
+          if (
+            taskStatus === TASK_STATUS.COMPLETE ||
+            taskStatus === TASK_STATUS.ERROR ||
+            taskStatus === TASK_STATUS.PAUSED
+          ) {
+            return ''
+          }
+          const statusHint = `${task.statusHint || ''}`.trim()
+          if (statusHint === 'task.ed2k-searching-sources') {
+            return this.$t(statusHint)
+          }
+          // Fallback: show searching hint for active/waiting ED2K with no progress
+          return this.$t('task.ed2k-searching-sources')
+        }
+
+        // For non-ED2K tasks: if total/completed > 0, let download progress show.
         if (total > 0 || completed > 0) {
           return ''
         }
         // 当任务已经是 active 状态时，不显示 waiting 相关的提示。
-        // 这修复了扩展传入任务时卡片卡在"等待可用连接"的问题：
-        // 任务从 waiting→active 的过渡期中，旧的 statusHint/engineStatus
-        // 可能尚未被清除，而 totalLength 还是 0，导致错误显示等待提示。
-        // active 状态的零速提示由 dataAccessHintText 负责（有 10 秒缓冲）。
-        const taskStatus = `${task.status || ''}`
-        if (taskStatus === TASK_STATUS.ACTIVE) {
-          return ''
-        }
-        const engineStatus = `${task.engineStatus || ''}`.trim()
-        const statusHint = `${task.statusHint || ''}`.trim()
-        // "磁力任务下载中" 由右下角 statusRightText 显示，左下角不再重复
         const engineConnectingHints = [
           'task.status-waiting'
         ]
         const hintConnectingHints = [
           'task.waiting-download-data',
-          'task.magnet-fetching-metadata'
+          'task.magnet-fetching-metadata',
+          'task.ed2k-searching-sources'
         ]
+        const taskStatus = `${task.status || ''}`
+        if (taskStatus === TASK_STATUS.ACTIVE) {
+          const statusHint = `${task.statusHint || ''}`.trim()
+          if (hintConnectingHints.includes(statusHint)) {
+            return this.$t(statusHint)
+          }
+          return ''
+        }
+        const engineStatus = `${task.engineStatus || ''}`.trim()
+        const statusHint = `${task.statusHint || ''}`.trim()
         if (engineConnectingHints.includes(engineStatus)) {
           return this.$t(engineStatus)
         }
@@ -280,8 +307,18 @@
         }
         return ''
       },
+      isPendingFileSelection () {
+        const task = this.task || {}
+        const gid = task.gid ? `${task.gid}` : ''
+        if (!gid) return false
+        return !!(this.pendingFileSelection && this.pendingFileSelection[gid])
+      },
       statusRightText () {
         const task = this.task || {}
+        // 待选择文件的BT任务显示"待选择文件"
+        if (this.isPendingFileSelection) {
+          return this.$t('task.pending-file-selection')
+        }
         // 磁力任务右下角直接显示速度信息（与普通卡片一致），
         // 不再展示 "磁力任务下载中" 等引擎透传的状态提示
         if (isMagnetTask(task)) {
@@ -429,17 +466,31 @@
     watch: {
       connectingStatusText () {
         this.updateStatusTruncation()
+      },
+      'task.status' () {
+        this.$nextTick(() => this.recalcSpeedItems())
+      },
+      viewMode () {
+        this.$nextTick(() => this.recalcSpeedItems())
       }
     },
     mounted () {
       this.updateStatusTruncation()
+      this.$nextTick(() => this.recalcSpeedItems())
       if (typeof window !== 'undefined') {
-        window.addEventListener('resize', this.updateStatusTruncation)
+        this._handleResize = () => {
+          this.updateStatusTruncation()
+          this.recalcSpeedItems()
+        }
+        window.addEventListener('resize', this._handleResize)
       }
     },
     beforeDestroy () {
       if (typeof window !== 'undefined') {
-        window.removeEventListener('resize', this.updateStatusTruncation)
+        if (this._handleResize) {
+          window.removeEventListener('resize', this._handleResize)
+          this._handleResize = null
+        }
       }
     },
     methods: {
@@ -495,6 +546,43 @@
           }
           this.isStatusTruncated = el.scrollWidth > el.clientWidth
         })
+      },
+      recalcSpeedItems () {
+        this.$nextTick(() => {
+          const containers = this.$el.querySelectorAll('.task-speed-info')
+          containers.forEach(container => {
+            const parent = container.parentElement
+            if (!parent) return
+            const availableWidth = parent.clientWidth
+            if (!availableWidth) return
+
+            const items = container.querySelectorAll('.task-speed-text')
+            if (!items.length) return
+
+            // Show all items first for accurate measurement
+            items.forEach(item => { item.style.display = '' })
+
+            // Measure each item's width (including margin-left ~6px)
+            const widths = []
+            for (let i = 0; i < items.length; i++) {
+              widths[i] = items[i].offsetWidth + 6
+            }
+
+            // Calculate how many items fit
+            let totalWidth = widths.reduce((sum, w) => sum + w, 0)
+            let fitCount = items.length
+
+            while (totalWidth > availableWidth && fitCount > 1) {
+              fitCount--
+              totalWidth -= widths[fitCount]
+            }
+
+            // Hide items that don't fit (from the end, keeping essential ones)
+            for (let i = fitCount; i < items.length; i++) {
+              items[i].style.display = 'none'
+            }
+          })
+        })
       }
     },
     filters: {
@@ -511,6 +599,7 @@
   min-height: 0.875rem;
   color: #9B9B9B;
   margin-top: 0.6rem;
+  overflow: hidden;
   i {
     font-style: normal;
   }
@@ -519,6 +608,7 @@
 .task-progress-info-left {
   min-height: 0.875rem;
   text-align: left;
+  overflow: hidden;
 
   // 进度文字仅保证不换行，不进入省略模式：右边 speed-info 列还有空余空间时
   // 不应在本列固定宽度内提前截断成 "12.3 MB / 45.6 MB …"
@@ -550,9 +640,11 @@
 .task-progress-info-right {
   min-height: 0.875rem;
   text-align: right;
+  overflow: hidden;
 }
 .task-speed-info {
   font-size: 0;
+  white-space: nowrap;
   & > .task-speed-text {
     margin-left: 0.375rem;
     font-size: 0;

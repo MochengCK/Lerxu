@@ -1,7 +1,7 @@
 import { app, dialog } from 'electron'
 import is from 'electron-is'
 
-import logger from './Logger'
+import logger from './LogManager'
 
 const defaults = {
   showDialog: !is.dev()
@@ -23,7 +23,7 @@ export default class ExceptionHandler {
     const { showDialog } = this.options
     process.on('uncaughtException', (err) => {
       const { message, stack } = err
-      logger.error(`[Motrix] Uncaught exception: ${message}`)
+      logger.error(`[LinkCore] Uncaught exception: ${message}`)
       logger.error(stack)
 
       if (showDialog && app.isReady()) {

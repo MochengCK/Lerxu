@@ -85,7 +85,7 @@ const isPreferenceWindow = typeof window !== 'undefined' &&
 
 store.dispatch('preference/fetchPreference')
   .then((config) => {
-    console.info('[Motrix] load preference:', config)
+    console.info('[LinkCore] load preference:', config)
     if (!isPreferenceWindow) {
       // Initialize task view mode from preferences
       store.dispatch('task/initializeViewMode', config)

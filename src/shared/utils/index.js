@@ -1,5 +1,4 @@
 import {
-  camelCase,
   compact,
   difference,
   isArray,
@@ -52,8 +51,8 @@ export const getEngineConnectionPolicy = (engineBinary = '') => {
   if (ENGINE_CONNECTION_POLICY[key]) {
     return ENGINE_CONNECTION_POLICY[key]
   }
-  if (/fluxcore/.test(normalized)) {
-    return ENGINE_CONNECTION_POLICY.fluxcore
+  if (/xfercore/.test(normalized)) {
+    return ENGINE_CONNECTION_POLICY.xfercore
   }
   if (/1\.36\.0/.test(normalized)) {
     return ENGINE_CONNECTION_POLICY['aria2-1.36.0']
@@ -125,32 +124,32 @@ export const peerIdParser = (str) => {
     return UNKNOWN_PEERID_NAME
   }
 
-  // 优先检查 FluxCore/LinkCore，在 bittorrent-peerid 解析之前
-  // 这样可以避免 FC 前缀被错误识别为 FileCroc
+  // 优先检查 XferCore/LinkCore，在 bittorrent-peerid 解析之前
+  // 这样可以避免 XC 前缀被错误识别为其他客户端
   let decodedStr
   try {
     decodedStr = unescape(str)
 
-    // 检查是否是 FluxCore 或 LinkCore
-    if (decodedStr && (decodedStr.startsWith('FluxCore') || decodedStr.startsWith('LinkCore'))) {
-      // 尝试提取版本号，格式如 "FluxCore/1.0.6"
-      const match = decodedStr.match(/^(FluxCore|LinkCore)\/?([\d.]+)?/)
+    // 检查是否是 XferCore 或 LinkCore
+    if (decodedStr && (decodedStr.startsWith('XferCore') || decodedStr.startsWith('LinkCore'))) {
+      // 尝试提取版本号，格式如 "XferCore/1.3.0"
+      const match = decodedStr.match(/^(XferCore|LinkCore)\/?([\d.]+)?/)
       if (match) {
         const version = match[2]
-        return version ? `FluxCore v${version}` : 'FluxCore'
+        return version ? `XferCore v${version}` : 'XferCore'
       }
-      return 'FluxCore'
+      return 'XferCore'
     }
 
-    // 检查 Peer ID 是否以 -FX 开头（Azureus 风格）
-    // 格式：-FX1060-xxxxxxxxxxxx
-    if (decodedStr && decodedStr.startsWith('-FX')) {
-      const versionMatch = decodedStr.match(/^-FX(\d)(\d)(\d)(\d)-/)
+    // 检查 Peer ID 是否以 -XC 开头（Azureus 风格）
+    // 格式：-XC1300-xxxxxxxxxxxx
+    if (decodedStr && decodedStr.startsWith('-XC')) {
+      const versionMatch = decodedStr.match(/^-XC(\d)(\d)(\d)(\d)-/)
       if (versionMatch) {
         const version = `${versionMatch[1]}.${versionMatch[2]}.${versionMatch[3]}`
-        return `FluxCore v${version}`
+        return `XferCore v${version}`
       }
-      return 'FluxCore'
+      return 'XferCore'
     }
   } catch (e) {
     console.log('peerIdParser.precheck.fail', e, str)
@@ -167,13 +166,13 @@ export const peerIdParser = (str) => {
 
   let client = parsed.client
 
-  // 如果被错误识别为 FileCroc，改为 FluxCore
+  // 如果被错误识别为 FileCroc，改为 XferCore
   if (client === 'FileCroc') {
-    client = 'FluxCore'
+    client = 'XferCore'
   }
 
   if (client === 'aria2') {
-    client = 'FluxCore'
+    client = 'XferCore'
   }
 
   const result = parsed.version
@@ -327,8 +326,10 @@ export const getTaskName = (task, options = {}) => {
   if (bittorrent && bittorrent.info && bittorrent.info.name) {
     result = ellipsis(bittorrent.info.name, maxLen)
   } else if (total === 1) {
-    result = getFileNameFromFile(files[0])
-    result = ellipsis(result, maxLen)
+    const fileName = getFileNameFromFile(files[0])
+    if (fileName) {
+      result = ellipsis(fileName, maxLen)
+    }
   }
 
   return result
@@ -367,6 +368,27 @@ export const getFileNameFromFile = (file) => {
 export const isMagnetTask = (task) => {
   const { bittorrent } = task
   return bittorrent && !bittorrent.info
+}
+
+export const isEd2kTask = (task = {}) => {
+  const files = Array.isArray(task.files) ? task.files : []
+  if (files.length > 0 && files[0].uris && files[0].uris.length > 0) {
+    return files[0].uris[0].uri.toLowerCase().startsWith('ed2k://')
+  }
+  return false
+}
+
+export const getEd2kFileHash = (task = {}) => {
+  const files = Array.isArray(task.files) ? task.files : []
+  if (isEd2kTask(task) && files.length > 0 && files[0].uris && files[0].uris.length > 0) {
+    const uri = files[0].uris[0].uri
+    const parts = uri.split('|')
+    // ed2k://|file|filename|size|hash|/
+    if (parts.length >= 5) {
+      return parts[4]
+    }
+  }
+  return ''
 }
 
 export const checkTaskIsSeeder = (task) => {
@@ -449,22 +471,28 @@ export const isTorrent = (file) => {
   return name.endsWith('.torrent') || type === 'application/x-bittorrent'
 }
 
-export const getAsBase64 = (file, callback) => {
-  const reader = new FileReader()
-  reader.addEventListener('load', () => {
-    // https://developer.mozilla.org/en-US/docs/Web/API/FileReader/readAsDataURL
-    const result = reader.result.split('base64,')[1]
-    callback(result)
+export const getAsBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.addEventListener('load', () => {
+      // https://developer.mozilla.org/en-US/docs/Web/API/FileReader/readAsDataURL
+      const result = reader.result.split('base64,')[1]
+      resolve(result)
+    })
+    reader.addEventListener('error', reject)
+    reader.readAsDataURL(file)
   })
-  reader.readAsDataURL(file)
 }
 
+/**
+ * 合并 aria2 system.multicall 的结果。
+ * aria2 的 system.multicall 返回 [[[r1]], [[r2]], ...] 三层嵌套：
+ * 外层是方法调用数组，每层内层 [rN] 是返回值包裹，最内层才是任务数组。
+ * 仅 flat() 一层会把任务对象留在子数组里，导致 task.status/gid 全部取不到，
+ * 因此需要摊平两层得到扁平的任务数组。
+ */
 export const mergeTaskResult = (response = []) => {
-  let result = []
-  for (const res of response) {
-    result = result.concat(...res)
-  }
-  return result
+  return response.flat(2)
 }
 
 export const changeKeysCase = (obj, caseConverter) => {
@@ -481,12 +509,41 @@ export const changeKeysCase = (obj, caseConverter) => {
   return result
 }
 
+// Custom key case converters that, unlike lodash camelCase/kebabCase, do NOT
+// split at letter<->digit boundaries. Lodash splits `ed2k` into `ed`/`2`/`k`,
+// which breaks the round-trip for `ed2k-*` config keys:
+//   kebabCase('ed2kEnabled') => 'ed-2-k-enabled'  (wrong, not in userKeys)
+//   camelCase('ed2k-enabled') => 'ed2KEnabled'    (wrong, mismatches form fields)
+// This caused ED2K preference edits to be discarded as illegal keys on save and
+// to fall back to defaults on load. Treating digit-letter runs as one word keeps
+// `ed2k` intact while matching lodash exactly for all all-letter keys.
+const splitKeyWords = (str) => String(str == null ? '' : str)
+  .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+  .split(/[^a-zA-Z0-9]+/)
+  .filter(Boolean)
+
+const keyToCamelCase = (str) => {
+  const words = splitKeyWords(str)
+  if (words.length === 0) return ''
+  return words
+    .map((w, i) => {
+      const lower = w.toLowerCase()
+      return i === 0 ? lower : lower.charAt(0).toUpperCase() + lower.slice(1)
+    })
+    .join('')
+}
+
+const keyToKebabCase = (str) => splitKeyWords(str)
+  .map((w) => w.toLowerCase())
+  .join('-')
+
 export const changeKeysToCamelCase = (obj = {}) => {
-  return changeKeysCase(obj, camelCase)
+  return changeKeysCase(obj, keyToCamelCase)
 }
 
 export const changeKeysToKebabCase = (obj = {}) => {
-  return changeKeysCase(obj, kebabCase)
+  return changeKeysCase(obj, keyToKebabCase)
 }
 
 export const validateNumber = (n) => {
@@ -523,9 +580,9 @@ export const separateConfig = (options = {}) => {
       continue
     }
 
-    if (userKeys.indexOf(k) !== -1) {
+    if (userKeys.includes(k)) {
       user[k] = v
-    } else if (systemKeys.indexOf(k) !== -1) {
+    } else if (systemKeys.includes(k)) {
       system[k] = v
     } else {
       others[k] = v
@@ -702,12 +759,20 @@ export const removeExtensionDot = (extension = '') => {
 
 export const diffConfig = (current = {}, next = {}) => {
   const result = {}
-
-  // 检查next中新增或修改的属性
-  Object.keys(next).forEach(key => {
+  const allKeys = new Set([...Object.keys(current), ...Object.keys(next)])
+  for (const key of allKeys) {
+    if (!(key in next)) {
+      // 属性被删除
+      result[key] = undefined
+      continue
+    }
+    if (!(key in current)) {
+      // 新增属性
+      result[key] = next[key]
+      continue
+    }
     const currentVal = current[key]
     const nextVal = next[key]
-
     if (isArray(nextVal) || isPlainObject(nextVal)) {
       if (JSON.stringify(currentVal) !== JSON.stringify(nextVal)) {
         result[key] = nextVal
@@ -715,17 +780,7 @@ export const diffConfig = (current = {}, next = {}) => {
     } else if (currentVal !== nextVal) {
       result[key] = nextVal
     }
-  })
-
-  // 检查current中被删除的属性（在next中不存在）
-  Object.keys(current).forEach(key => {
-    if (!(key in next)) {
-      // 对于被删除的属性，设置一个特殊标记或null值
-      // 这里使用undefined表示该属性应该被删除
-      result[key] = undefined
-    }
-  })
-
+  }
   return result
 }
 
@@ -824,6 +879,36 @@ export const formatOptionsForEngine = (options = {}) => {
   return result
 }
 
+/**
+ * 将 bt-encryption-mode / bt-force-encryption 转换为引擎实际接受的
+ * bt-require-crypto + bt-min-crypto-level 选项，并删除已转换的旧字段。
+ * 返回新对象，不修改入参。引擎启动参数与运行时选项共用此逻辑。
+ */
+export const normalizeBtEncryptionOptions = (options = {}) => {
+  const normalized = { ...options }
+  if (normalized['bt-encryption-mode'] !== undefined) {
+    const mode = normalized['bt-encryption-mode']
+    if (mode === 'force') {
+      normalized['bt-require-crypto'] = true
+      normalized['bt-min-crypto-level'] = 'arc4'
+    } else if (mode === 'none') {
+      normalized['bt-require-crypto'] = false
+      normalized['bt-min-crypto-level'] = 'plain'
+    } else {
+      normalized['bt-require-crypto'] = false
+      normalized['bt-min-crypto-level'] = 'arc4'
+    }
+    delete normalized['bt-encryption-mode']
+    delete normalized['bt-force-encryption']
+  } else if (normalized['bt-force-encryption'] !== undefined) {
+    const forceEncryption = normalized['bt-force-encryption'] === true || normalized['bt-force-encryption'] === 'true'
+    normalized['bt-require-crypto'] = forceEncryption
+    normalized['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
+    delete normalized['bt-force-encryption']
+  }
+  return normalized
+}
+
 export const buildRpcUrl = (options = {}) => {
   const { port, secret } = options
   let result = `${ENGINE_RPC_HOST}:${port}/jsonrpc`
@@ -836,22 +921,12 @@ export const buildRpcUrl = (options = {}) => {
 }
 
 export const checkIsNeedRestart = (changed = {}) => {
-  let result = false
-
   if (isEmpty(changed)) {
-    return result
-  }
-
-  const kebabCaseChanged = changeKeysToKebabCase(changed)
-  needRestartKeys.some((key) => {
-    if (Object.keys(kebabCaseChanged).includes(key)) {
-      result = true
-      return true
-    }
     return false
-  })
-
-  return result
+  }
+  const kebabCaseChanged = changeKeysToKebabCase(changed)
+  const changedKeys = new Set(Object.keys(kebabCaseChanged))
+  return needRestartKeys.some(key => changedKeys.has(key))
 }
 
 export const checkIsNeedRun = (enable, lastTime, interval) => {

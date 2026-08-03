@@ -5,33 +5,43 @@ import { getGithubUrlsWithMirrors, isGithubUrl } from './github-mirror'
 
 export const convertToAxiosProxy = (proxyServer = '') => {
   if (!proxyServer) {
-    return
+    return undefined
   }
 
-  const url = new URL(proxyServer)
-  const { username, password, protocol = 'http:', hostname, port } = url
-
-  let result = {
-    protocol: protocol.replace(':', ''),
-    host: hostname,
-    port
-  }
-
-  const auth = username || password
-    ? {
-      username,
-      password
+  try {
+    // 兼容无协议前缀的代理地址（如 127.0.0.1:7890）
+    let target = proxyServer
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(target)) {
+      target = `http://${target}`
     }
-    : undefined
+    const url = new URL(target)
+    const { username, password, protocol = 'http:', hostname, port } = url
 
-  if (auth) {
-    result = {
-      ...result,
-      auth
+    let result = {
+      protocol: protocol.replace(':', ''),
+      host: hostname,
+      port
     }
-  }
 
-  return result
+    const auth = username || password
+      ? {
+        username,
+        password
+      }
+      : undefined
+
+    if (auth) {
+      result = {
+        ...result,
+        auth
+      }
+    }
+
+    return result
+  } catch (e) {
+    console.warn('[Tracker] Invalid proxy server config:', proxyServer, e.message)
+    return undefined
+  }
 }
 
 export const fetchBtTrackerFromSource = async (source, proxyConfig = {}, githubMirrorConfig = {}) => {
@@ -40,9 +50,11 @@ export const fetchBtTrackerFromSource = async (source, proxyConfig = {}, githubM
   }
 
   const now = Date.now()
-  const { enable, server, scope = [] } = proxyConfig
+  const { enable, mode, server, scope = [] } = proxyConfig
   const { useGithubMirror = false, githubMirrorUrls = [] } = githubMirrorConfig
-  const proxy = enable && server && scope.includes(PROXY_SCOPES.UPDATE_TRACKERS)
+  // 兼容新旧配置：新配置用 mode 字段，旧配置可能用 enable 字段
+  const proxyEnabled = enable !== undefined ? enable : (mode === 'custom')
+  const proxy = proxyEnabled && server && scope.includes(PROXY_SCOPES.UPDATE_TRACKERS)
     ? convertToAxiosProxy(server)
     : undefined
 
@@ -55,7 +67,11 @@ export const fetchBtTrackerFromSource = async (source, proxyConfig = {}, githubM
     // 依次尝试每个 URL（镜像 + 原始）
     for (const tryUrl of urls) {
       try {
-        const response = await axios.get(`${tryUrl}?t=${now}`, {
+        // 源 URL 可能自带查询参数，需用 & 拼接而非无条件追加 ?t=
+        const cacheBustUrl = tryUrl.includes('?')
+          ? `${tryUrl}&t=${now}`
+          : `${tryUrl}?t=${now}`
+        const response = await axios.get(cacheBustUrl, {
           timeout: 30 * ONE_SECOND,
           proxy
         })
@@ -86,6 +102,49 @@ export const convertTrackerDataToLine = (arr = []) => {
 export const convertTrackerDataToComma = (arr = []) => {
   const result = convertTrackerDataToLine(arr).replace(/(?:\r\n|\r|\n)/g, ',').trim()
   return result
+}
+
+/**
+ * Deduplicate individual tracker URLs from raw text responses.
+ * Each element in `data` is a raw string that may contain multiple tracker
+ * URLs separated by newlines or commas (as returned by tracker-list sources).
+ * Returns a flat array of unique, trimmed tracker URLs.
+ */
+export const deduplicateTrackers = (data = []) => {
+  const seen = new Set()
+  const result = []
+  data.forEach(text => {
+    if (typeof text !== 'string') return
+    text.split(/[\r\n,]+/).forEach(line => {
+      const trimmed = line.trim()
+      if (trimmed && !seen.has(trimmed)) {
+        seen.add(trimmed)
+        result.push(trimmed)
+      }
+    })
+  })
+  return result
+}
+
+/**
+ * Deduplicate tracker URLs in a comma/newline-separated string.
+ * Returns a comma-separated string with duplicates removed, preserving
+ * first-occurrence order.  Use this on any `bt-tracker` config value
+ * before it reaches the engine so the engine never wastes announce
+ * cycles on duplicate trackers.
+ */
+export const deduplicateTrackerString = (str = '') => {
+  if (!str) return ''
+  const seen = new Set()
+  const result = []
+  String(str).split(/[\r\n,]+/).forEach(line => {
+    const trimmed = line.trim()
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed)
+      result.push(trimmed)
+    }
+  })
+  return result.join(',')
 }
 
 export const reduceTrackerString = (str = '') => {

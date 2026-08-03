@@ -120,6 +120,10 @@ function doSearch (searcher, ipBytes) {
 
   if (dLen === 0 || dLen > _regionBuff.length) return ''
 
+  // 越界时静默截断会导致 _regionBuff 中残留上一次查询的陈旧数据，
+  // 必须显式校验目标范围
+  if (dPtr + dLen > cBuffer.length) return ''
+
   cBuffer.copy(_regionBuff, 0, dPtr, dPtr + dLen)
   return _regionBuff.toString('utf-8', 0, dLen)
 }
@@ -127,11 +131,11 @@ function doSearch (searcher, ipBytes) {
 // --- Fast IP version detection (string-based, no Buffer allocation) ---
 
 function isIPv4String (ip) {
-  return ip.indexOf('.') !== -1 && ip.indexOf(':') === -1
+  return ip.includes('.') && !ip.includes(':')
 }
 
 function isIPv6String (ip) {
-  return ip.indexOf(':') !== -1
+  return ip.includes(':')
 }
 
 // --- Pre-parsed zero-IP bytes for fast skip ---

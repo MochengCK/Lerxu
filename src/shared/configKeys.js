@@ -66,10 +66,8 @@ const userKeys = [
   'extension-exclude-domains',
   'extension-min-file-size',
   'extension-shift-toggle-enabled',
-  'sidebar-layout-mode',
   'auto-hide-aside',
   'auto-hide-subnav',
-  'auto-hide-floating-bar',
   'task-plan-type',
   'task-plan-time',
   'task-plan-action',
@@ -77,7 +75,6 @@ const userKeys = [
   'task-plan-only-when-idle',
   'clipboard-auto-paste',
   'clipboard-auto-open-add-task',
-  'floating-bar-display-mode',
   'preference-cards-collapsed',
   'enable-security-scan',
   'security-scan-tool',
@@ -93,7 +90,23 @@ const userKeys = [
   'show-task-type-badge',
   'peer-group-visibility',
   'use-github-mirror',
-  'github-mirror-urls'
+  'github-mirror-urls',
+  'ed2k-enabled',
+  'ed2k-listen-port',
+  'ed2k-max-connections',
+  'ed2k-connection-timeout',
+  'ed2k-max-sources-per-file',
+  'ed2k-default-servers',
+  'ed2k-server-source-enabled',
+  'ed2k-source-exchange-enabled',
+  'ed2k-source-exchange-interval',
+  'ed2k-kad-enabled',
+  'ed2k-kad-bootstrap-nodes',
+  'ed2k-server-source',
+  'ed2k-auto-sync-server',
+  'ed2k-auto-sync-server-interval',
+  'ed2k-auto-sync-server-time',
+  'ed2k-last-sync-server-time'
 ]
 
 const systemKeys = [
@@ -224,6 +237,7 @@ const systemKeys = [
 
 const needRestartKeys = [
   'dht-listen-port',
+  'ed2k-listen-port',
   'hide-app-menu',
   'listen-port',
   'rpc-listen-port',

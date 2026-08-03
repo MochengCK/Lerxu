@@ -1,6 +1,10 @@
 import Vue from 'vue'
 import Router from 'vue-router'
 
+import store from '@/store'
+import Main from '@/components/Main'
+import TaskIndex from '@/components/Task/TaskView'
+
 Vue.use(Router)
 
 const isPreferenceWindow = typeof window !== 'undefined' &&
@@ -8,120 +12,81 @@ const isPreferenceWindow = typeof window !== 'undefined' &&
   window.location.hash &&
   window.location.hash.startsWith('#/preference-window')
 
+const lazySubnav = () => import('@/components/Subnav/PreferenceSubnav')
+const lazyBasicForm = () => import('@/components/Preference/Basic')
+const lazyAdvancedForm = () => import('@/components/Preference/Advanced')
+const lazyLabForm = () => import('@/components/Preference/Lab')
+
 const preferenceChildren = [
   {
     path: 'basic',
     alias: '',
-    components: {
-      subnav: () => import('@/components/Subnav/PreferenceSubnav'),
-      form: () => import('@/components/Preference/Basic')
-    },
-    props: {
-      subnav: { current: 'basic' },
-      form: { category: 'basic' }
-    }
+    components: { subnav: lazySubnav, form: lazyBasicForm },
+    props: { subnav: { current: 'basic' }, form: { category: 'basic' } }
   },
   {
     path: 'appearance',
-    components: {
-      subnav: () => import('@/components/Subnav/PreferenceSubnav'),
-      form: () => import('@/components/Preference/Basic')
-    },
-    props: {
-      subnav: { current: 'appearance' },
-      form: { category: 'appearance' }
-    }
+    components: { subnav: lazySubnav, form: lazyBasicForm },
+    props: { subnav: { current: 'appearance' }, form: { category: 'appearance' } }
   },
   {
     path: 'transfer',
-    components: {
-      subnav: () => import('@/components/Subnav/PreferenceSubnav'),
-      form: () => import('@/components/Preference/Basic')
-    },
-    props: {
-      subnav: { current: 'transfer' },
-      form: { category: 'transfer' }
-    }
+    components: { subnav: lazySubnav, form: lazyBasicForm },
+    props: { subnav: { current: 'transfer' }, form: { category: 'transfer' } }
   },
   {
     path: 'task',
-    components: {
-      subnav: () => import('@/components/Subnav/PreferenceSubnav'),
-      form: () => import('@/components/Preference/Basic')
-    },
-    props: {
-      subnav: { current: 'task' },
-      form: { category: 'task' }
-    }
+    components: { subnav: lazySubnav, form: lazyBasicForm },
+    props: { subnav: { current: 'task' }, form: { category: 'task' } }
   },
   {
     path: 'file',
-    components: {
-      subnav: () => import('@/components/Subnav/PreferenceSubnav'),
-      form: () => import('@/components/Preference/Basic')
-    },
-    props: {
-      subnav: { current: 'file' },
-      form: { category: 'file' }
-    }
+    components: { subnav: lazySubnav, form: lazyBasicForm },
+    props: { subnav: { current: 'file' }, form: { category: 'file' } }
   },
   {
     path: 'bt',
-    components: {
-      subnav: () => import('@/components/Subnav/PreferenceSubnav'),
-      form: () => import('@/components/Preference/Basic')
-    },
-    props: {
-      subnav: { current: 'bt' },
-      form: { category: 'bt' }
-    }
+    components: { subnav: lazySubnav, form: lazyBasicForm },
+    props: { subnav: { current: 'bt' }, form: { category: 'bt' } }
+  },
+  {
+    path: 'ed2k',
+    components: { subnav: lazySubnav, form: lazyBasicForm },
+    props: { subnav: { current: 'ed2k' }, form: { category: 'ed2k' } }
   },
   {
     path: 'advanced',
-    components: {
-      subnav: () => import('@/components/Subnav/PreferenceSubnav'),
-      form: () => import('@/components/Preference/Advanced')
-    },
-    props: {
-      subnav: { current: 'advanced' },
-      form: { category: 'advanced' }
-    }
+    components: { subnav: lazySubnav, form: lazyAdvancedForm },
+    props: { subnav: { current: 'advanced' }, form: { category: 'advanced' } }
   },
   {
     path: 'lab',
-    components: {
-      subnav: () => import('@/components/Subnav/PreferenceSubnav'),
-      form: () => import('@/components/Preference/Lab')
-    },
-    props: {
-      subnav: { current: 'lab' }
-    }
+    components: { subnav: lazySubnav, form: lazyLabForm },
+    props: { subnav: { current: 'lab' } }
   }
 ]
 
 const mainRoute = {
   path: '/',
   name: 'main',
-  component: require('@/components/Main').default,
+  component: Main,
   children: [
     {
       path: '/task',
       alias: '/',
-      component: require('@/components/Task/Index').default,
-      props: {
-        status: 'all'
-      }
+      component: TaskIndex,
+      props: { status: 'all' }
     },
     {
       path: '/task/:status',
       name: 'task',
-      component: require('@/components/Task/Index').default,
+      component: TaskIndex,
       props: true
     },
     {
       path: '/task/date/:date',
       name: 'task-date',
-      component: require('@/components/Task/Index').default,
+      component: TaskIndex,
       props: (route) => ({
         status: 'date',
         filterDate: route.params.date
@@ -133,7 +98,7 @@ const mainRoute = {
 const preferenceWindowRoute = {
   path: '/preference-window',
   name: 'preference-window',
-  component: () => import('@/components/Preference/Index'),
+  component: () => import('@/components/Preference/PreferencePanel'),
   props: true,
   children: preferenceChildren
 }
@@ -141,36 +106,21 @@ const preferenceWindowRoute = {
 const routes = isPreferenceWindow
   ? [
     preferenceWindowRoute,
-    {
-      path: '*',
-      redirect: '/preference-window'
-    }
+    { path: '*', redirect: '/preference-window' }
   ]
   : [
     mainRoute,
-    {
-      path: '*',
-      redirect: '/'
-    }
+    { path: '*', redirect: '/' }
   ]
 
 const router = new Router({ routes })
 
-// Update currentPage in store when route changes
-router.afterEach((to, from) => {
-  const store = require('@/store').default
-  let page = '/task'
-
-  if (to.path.startsWith('/preference')) {
-    page = '/preference'
-  }
-
+router.afterEach((to) => {
+  const page = to.path.startsWith('/preference') ? '/preference' : '/task'
   store.dispatch('app/updateCurrentPage', page)
 })
 
-// Initialize currentPage based on initial route
 router.beforeEach((to, from, next) => {
-  const store = require('@/store').default
   let page = '/task'
 
   if (isPreferenceWindow && !to.path.startsWith('/preference-window')) {

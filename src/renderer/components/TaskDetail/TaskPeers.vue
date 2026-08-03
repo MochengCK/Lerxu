@@ -37,7 +37,6 @@
     </div>
     <div class="mo-table-wrapper" ref="tableWrapper" @contextmenu.prevent="handleTableContextMenu">
       <el-table
-        stripe
         ref="peerTable"
         class="mo-peer-table"
         size="mini"
@@ -47,7 +46,7 @@
         :expand-row-keys="expandedGroupKeys"
         :tree-props="{children: 'children', hasChildren: 'hasChildren'}"
         :span-method="handleSpanMethod"
-        :row-class-name="getRowClassName"
+        :row-class-name="rowClassNameFn"
         @sort-change="handleSortChange"
         @expand-change="handleExpandChange"
         @row-click="handleRowClick"
@@ -64,9 +63,7 @@
             </template>
             <template v-else>
               <!-- 所有peer都显示IP:Port格式，保持一致 -->
-              <el-tooltip :content="`${scope.row.ip}:${scope.row.port}`" placement="top" :disabled="!isTextOverflow(`${scope.row.ip}:${scope.row.port}`)">
-                <span class="mo-peer-text">{{ `${scope.row.ip}:${scope.row.port}` }}</span>
-              </el-tooltip>
+              <span class="mo-peer-text" :title="`${scope.row.ip}:${scope.row.port}`">{{ `${scope.row.ip}:${scope.row.port}` }}</span>
             </template>
           </template>
         </el-table-column>
@@ -76,15 +73,13 @@
           sortable="custom"
           min-width="100">
           <template slot-scope="scope">
-            <el-tooltip :content="getPeerLocation(scope.row.ip)" placement="top" :disabled="!isTextOverflow(getPeerLocation(scope.row.ip))">
-              <span class="mo-peer-location">
-                <span
-                  v-if="getPeerCountryCode(scope.row.ip)"
-                  :class="getPeerCountryClass(scope.row.ip)"
-                ></span>
-                <span class="mo-peer-text">{{ getPeerLocation(scope.row.ip) }}</span>
-              </span>
-            </el-tooltip>
+            <span class="mo-peer-location" :title="getPeerLocation(scope.row.ip)">
+              <span
+                v-if="getPeerCountryCode(scope.row.ip)"
+                :class="getPeerCountryClass(scope.row.ip)"
+              ></span>
+              <span class="mo-peer-text">{{ getPeerLocation(scope.row.ip) }}</span>
+            </span>
           </template>
         </el-table-column>
         <el-table-column
@@ -93,9 +88,7 @@
           sortable="custom"
           min-width="125">
           <template slot-scope="scope">
-            <el-tooltip :content="getPeerClientTooltip(scope.row)" placement="top" :disabled="!getPeerClientTooltip(scope.row)">
-              <span class="mo-peer-text">{{ renderPeerClient(scope.row) }}</span>
-            </el-tooltip>
+            <span class="mo-peer-text" :title="getPeerClientTooltip(scope.row)">{{ renderPeerClient(scope.row) }}</span>
           </template>
         </el-table-column>
         <el-table-column
@@ -128,9 +121,7 @@
               -
             </template>
             <template v-else-if="scope.row.status === 'disconnected'">
-              <el-tooltip :content="getPeerFailureDetailText(scope.row)" placement="top" :disabled="!hasPeerFailureCounts(scope.row)">
-                <span class="mo-peer-text">{{ getPeerFailureSummaryText(scope.row) }}</span>
-              </el-tooltip>
+              <span class="mo-peer-text" :title="getPeerFailureDetailText(scope.row)">{{ getPeerFailureSummaryText(scope.row) }}</span>
             </template>
             <template v-else>
               {{ getPeerStatus(scope.row) }}
@@ -617,7 +608,6 @@
         contextMenuX: 0,
         contextMenuY: 0,
         contextMenuPeer: null,
-        overflowMap: {},
         attemptStats: {},
         disconnectedMap: {},
         lastAttemptingMap: {},
@@ -626,7 +616,8 @@
         peerOrderSeed: 1,
         ipInfoCache: {},
         contextMenuType: '',
-        contextMenuCloseHandler: null
+        contextMenuCloseHandler: null,
+        contextMenuTimer: null
       }
     },
     computed: {
@@ -638,6 +629,21 @@
           attempting: raw.attempting !== false,
           banned: raw.banned !== false,
           disconnected: raw.disconnected !== false
+        }
+      },
+      rowClassNameFn () {
+        const contextMenuVisible = this.contextMenuVisible
+        const contextMenuPeerId = this.contextMenuPeer ? this.contextMenuPeer.id : null
+        return ({ row }) => {
+          if (row.isGroup) {
+            const groupId = row.id || ''
+            const groupType = groupId.replace('group-', '')
+            return `mo-peer-group-row mo-peer-group-${groupType}`
+          }
+          if (contextMenuVisible && contextMenuPeerId && row.id === contextMenuPeerId) {
+            return 'mo-peer-row-active'
+          }
+          return ''
         }
       },
       bestPeer () {
@@ -655,10 +661,6 @@
           return currentSpeed > bestSpeed ? current : best
         }, connected[0])
       },
-      filteredPeers () {
-        // 这个computed已经不需要了，逻辑移到groupedPeers中
-        return []
-      },
       countAll () {
         const peers = this.peers || {}
         if (Array.isArray(peers)) {
@@ -669,42 +671,6 @@
         const banned = Array.isArray(peers.banned) ? peers.banned : []
         const mergedDisconnected = this.getMergedDisconnectedPeers(peers)
         return connected.length + attempting.length + banned.length + mergedDisconnected.length
-      },
-      countDownloading () {
-        const peers = this.peers || {}
-        if (Array.isArray(peers)) {
-          return peers.filter(p => (Number(p.downloadSpeed) || 0) > 0).length
-        }
-        const connected = Array.isArray(peers.connected) ? peers.connected : []
-        return connected.filter(p => (Number(p.downloadSpeed) || 0) > 0).length
-      },
-      countUploading () {
-        const peers = this.peers || {}
-        if (Array.isArray(peers)) {
-          return peers.filter(p => {
-            const up = Number(p.uploadSpeed) || 0
-            const percent = bitfieldToPercent(p.bitfield)
-            return up > 0 || percent >= 100
-          }).length
-        }
-        const connected = Array.isArray(peers.connected) ? peers.connected : []
-        return connected.filter(p => {
-          const up = Number(p.uploadSpeed) || 0
-          const percent = bitfieldToPercent(p.bitfield)
-          return up > 0 || percent >= 100
-        }).length
-      },
-      countIdle () {
-        const peers = this.peers || {}
-        if (Array.isArray(peers)) {
-          return peers.filter(p => (Number(p.uploadSpeed) || 0) === 0 && (Number(p.downloadSpeed) || 0) === 0).length
-        }
-        const connected = Array.isArray(peers.connected) ? peers.connected : []
-        return connected.filter(p => (Number(p.uploadSpeed) || 0) === 0 && (Number(p.downloadSpeed) || 0) === 0).length
-      },
-      sortedPeers () {
-        // 这个computed已经不需要了，逻辑移到groupedPeers中
-        return []
       },
       groupedPeers () {
         let peers = this.peers || {}
@@ -928,23 +894,15 @@
         return result
       }
     },
-    mounted () {
-      // 初始加载时检测溢出
-      this.$nextTick(() => {
-        this.scheduleDetectTextOverflow()
-      })
-    },
-    updated () {
-      // 防抖：避免每次轮询更新都强制 reflow。仅在 DOM 稳定后检测一次。
-      this.scheduleDetectTextOverflow()
-    },
     beforeDestroy () {
-      if (this._textOverflowTimer) {
-        clearTimeout(this._textOverflowTimer)
+      // 清理可能仍在等待注册的右键菜单关闭监听，防止组件销毁后再注册
+      if (this.contextMenuTimer) {
+        clearTimeout(this.contextMenuTimer)
+        this.contextMenuTimer = null
       }
-      if (this._contextMenuCloseHandler) {
-        document.removeEventListener('click', this._contextMenuCloseHandler)
-        this._contextMenuCloseHandler = null
+      if (this.contextMenuCloseHandler) {
+        document.removeEventListener('click', this.contextMenuCloseHandler)
+        this.contextMenuCloseHandler = null
       }
     },
     watch: {
@@ -1111,10 +1069,6 @@
           udp: Number(stat.udpFails) || 0
         }
       },
-      hasPeerFailureCounts (peer) {
-        const { tcp, utp, udp } = this.getPeerFailureCounts(peer)
-        return tcp > 0 || utp > 0 || udp > 0
-      },
       getPeerFailureSummaryText (peer) {
         const { tcp, utp, udp } = this.getPeerFailureCounts(peer)
         const tcpLabel = this.$t('task.peer-failure-short-tcp')
@@ -1133,59 +1087,6 @@
         if (utp > 0) parts.push(`${this.$t('task.peer-status-utp-failed')} ${utp}`)
         if (udp > 0) parts.push(`${this.$t('task.peer-status-udp-punch-failed')} ${udp}`)
         return parts.length > 0 ? parts.join(' ') : ''
-      },
-      getAttemptStatText (peer) {
-        if (!peer) return ''
-        const attempts = Number(peer.attempts) || 0
-        const fails = Number(peer.fails) || 0
-        if (attempts > 0 || fails > 0) {
-          return this.$t('task.peer-status-attempts', { attempts, fails })
-        }
-        const key = this.peerKey(peer)
-        if (!key) return ''
-        const stat = this.attemptStats[key]
-        if (!stat) return ''
-        const fallbackAttempts = Number(stat.attempts) || 0
-        const fallbackFails = Number(stat.fails) || 0
-        if (fallbackAttempts === 0 && fallbackFails === 0) return ''
-        return this.$t('task.peer-status-attempts', { attempts: fallbackAttempts, fails: fallbackFails })
-      },
-      scheduleDetectTextOverflow () {
-        // Debounce: collapse repeated updated() calls (e.g. every poll tick)
-        // into a single layout read after the DOM has stabilized.
-        if (this._textOverflowTimer) {
-          clearTimeout(this._textOverflowTimer)
-        }
-        this._textOverflowTimer = setTimeout(() => {
-          this._textOverflowTimer = null
-          this.detectTextOverflow()
-        }, 200)
-      },
-      detectTextOverflow () {
-        // 检测所有 .mo-peer-text 元素是否溢出
-        const textElements = this.$el.querySelectorAll('.mo-peer-text')
-        const newOverflowMap = {}
-
-        textElements.forEach(el => {
-          const isOverflow = el.scrollWidth > el.clientWidth + 1
-          if (isOverflow) {
-            el.classList.add('is-overflow')
-          } else {
-            el.classList.remove('is-overflow')
-          }
-
-          // 存储溢出状态，使用元素的文本内容作为key
-          const text = el.textContent.trim()
-          if (text) {
-            newOverflowMap[text] = isOverflow
-          }
-        })
-
-        this.overflowMap = newOverflowMap
-      },
-      isTextOverflow (text) {
-        // 检查特定文本是否溢出
-        return this.overflowMap[text] === true
       },
       getPeerInfo (ip) {
         if (!ip) return null
@@ -1290,11 +1191,8 @@
         }
         const clientText = this.renderPeerClient(peer)
         const prefix = this.getPeerIdPrefix(peer)
-        if (!prefix) return ''
-        if (this.isTextOverflow(clientText)) {
-          return `${clientText} / ${prefix}`
-        }
-        return prefix
+        if (!prefix) return clientText
+        return `${clientText} / ${prefix}`
       },
       renderPeerClient (peer) {
         const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
@@ -1332,10 +1230,6 @@
       getLocationFromIp (ip) {
         const info = this.getPeerInfo(ip)
         return info ? info.location : '-'
-      },
-      getCountryCode (ip) {
-        const info = this.getPeerInfo(ip)
-        return info ? info.countryCode : null
       },
       countryNameToCode (countryName) {
         const name = `${countryName || ''}`.trim()
@@ -1406,15 +1300,6 @@
           }
         }
       },
-      getRowClassName ({ row }) {
-        if (row.isGroup) {
-          return 'mo-peer-group-row'
-        }
-        if (this.contextMenuVisible && this.contextMenuPeer && row.id === this.contextMenuPeer.id) {
-          return 'mo-peer-row-active'
-        }
-        return ''
-      },
       handleRowClick (row) {
         if (row.isGroup) {
           this.$refs.peerTable.toggleRowExpansion(row)
@@ -1477,7 +1362,12 @@
           }
           this.closeContextMenu()
         }
-        setTimeout(() => {
+        // 延迟注册点击关闭监听，避免本次触发右键的 click 立即关闭菜单
+        if (this.contextMenuTimer) {
+          clearTimeout(this.contextMenuTimer)
+        }
+        this.contextMenuTimer = setTimeout(() => {
+          this.contextMenuTimer = null
           document.addEventListener('click', this.contextMenuCloseHandler)
         }, 100)
       },
@@ -1628,7 +1518,7 @@
   display: flex;
   flex-direction: column;
   .mo-table-wrapper {
-    border: 1px solid #dcdfe6;
+    border: 1px solid var(--lc-border-base);
     border-radius: 8px;
     box-sizing: border-box;
     padding: 0;
@@ -1677,11 +1567,7 @@
     white-space: nowrap;
     overflow: hidden;
     position: relative;
-    // 只在溢出时应用渐隐效果
-    &.is-overflow {
-      mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
-      -webkit-mask-image: linear-gradient(to right, black calc(100% - 20px), transparent 100%);
-    }
+    text-overflow: ellipsis;
   }
   .mo-peer-location {
     display: flex;
@@ -1709,18 +1595,22 @@
   }
   .mo-peer-group-label {
     font-weight: 600;
-    color: #606266;
+    color: var(--lc-text-secondary);
     font-size: 13px;
     line-height: 1;
     margin-left: 4px;
     vertical-align: middle;
   }
-  .mo-peer-group-row {
-    background-color: #f5f7fa !important;
+.mo-peer-group-row {
+    background-color: var(--lc-table-striped-bg, #f5f7fa) !important;
     cursor: pointer;
     position: sticky;
     top: 0;
     z-index: 10;
+    td,
+    td.el-table__cell {
+      background-color: var(--lc-table-striped-bg, #f5f7fa) !important;
+    }
   }
   // 严格强制单行高度并修复对齐
   .el-table__row {
@@ -1772,15 +1662,17 @@
     }
   }
 }
-.el-table__body .mo-peer-row-active > td {
+.el-table.mo-peer-table .el-table__body tr.mo-peer-row-active > td,
+.el-table.mo-peer-table .el-table__body tr.mo-peer-row-active > td.el-table__cell {
   background-color: rgba(64, 158, 255, 0.12) !important;
 }
-.el-table.mo-peer-table .el-table__body tr.mo-peer-row-active:hover > td {
+.el-table.mo-peer-table .el-table__body tr.mo-peer-row-active:hover > td,
+.el-table.mo-peer-table .el-table__body tr.mo-peer-row-active:hover > td.el-table__cell {
   background-color: rgba(64, 158, 255, 0.12) !important;
 }
 .mo-best-peer {
   background: transparent;
-  border: 1px solid #dcdfe6;
+  border: 1px solid var(--lc-border-base);
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 12px;
@@ -1790,7 +1682,7 @@
 .best-peer-label {
   font-size: 13px;
   font-weight: 600;
-  color: #606266;
+  color: var(--lc-text-secondary);
   margin-bottom: 8px;
 }
 .best-peer-info {
@@ -1805,10 +1697,10 @@
   font-size: 13px;
 }
 .best-peer-key {
-  color: #909399;
+  color: var(--lc-text-secondary);
 }
 .best-peer-value {
-  color: #606266;
+  color: var(--lc-text-regular);
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -1825,8 +1717,8 @@
 .mo-peer-context-menu {
   position: fixed;
   z-index: 9999;
-  background: #fff;
-  border: 1px solid #ebeef5;
+  background: var(--lc-bg-popover, #fff);
+  border: 1px solid var(--lc-border-base);
   border-radius: 8px;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
   padding: 5px 0;
@@ -1837,7 +1729,7 @@
     line-height: 36px;
     padding: 0 20px;
     font-size: 13px;
-    color: #606266;
+    color: var(--lc-text-regular);
     cursor: pointer;
 
     i {
@@ -1846,14 +1738,14 @@
     }
 
     &:hover {
-      background-color: #ecf5ff;
-      color: #409eff;
+      background-color: var(--lc-color-primary-light);
+      color: var(--lc-color-primary);
     }
   }
 
   .context-menu-divider {
     height: 1px;
-    background-color: #e4e7ed;
+    background-color: var(--lc-border-base);
     margin: 5px 0;
   }
 }
@@ -1861,82 +1753,126 @@
 // 暗色主题适配 - 与 el-table 保持一致
 .theme-dark .mo-best-peer {
   background: transparent;
-  border-color: #4c4d4f;
+  border-color: var(--lc-border-base);
 }
 .theme-dark .best-peer-label {
-  color: #c0c4cc;
+  color: var(--lc-text-secondary);
 }
 .theme-dark .best-peer-key {
-  color: #909399;
+  color: var(--lc-text-secondary);
 }
 .theme-dark .best-peer-value {
-  color: #c0c4cc;
-}
-.theme-dark .mo-peer-group-row {
-  background-color: #2b2b2b !important;
-}
-.theme-dark .mo-peer-group-label {
-  color: #c0c4cc;
+  color: var(--lc-text-regular);
 }
 .theme-dark .mo-peer-context-menu {
-  background: #2b2b2b;
-  border-color: #404040;
+  background: var(--lc-bg-popover);
+  border-color: var(--lc-border-base);
 
   .context-menu-item {
-    color: #c0c4cc;
+    color: var(--lc-text-regular);
 
     &:hover {
-      background-color: rgba(64, 158, 255, 0.2);
-      color: #409eff;
+      background-color: var(--lc-color-primary-light);
+      color: var(--lc-color-primary);
     }
   }
 
   .context-menu-divider {
-    background-color: #4c4d4f;
+    background-color: var(--lc-border-base);
   }
 }
 .theme-dark .mo-task-peers .mo-table-wrapper {
-  border-color: #4c4d4f;
+  border-color: var(--lc-border-base) !important;
+  background-color: var(--lc-task-item-bg) !important;
 }
 .theme-dark .mo-peer-table {
   border-color: transparent !important;
-  background-color: transparent;
-  .el-table__row {
-    background-color: transparent;
+  background-color: transparent !important;
+  color: var(--lc-text-regular) !important;
+  .el-table__inner-wrapper {
+    background-color: transparent !important;
   }
-  .el-table__body tr:hover > td {
-    background-color: rgba(255, 255, 255, 0.05) !important;
+  .el-table__header-wrapper,
+  .el-table__body-wrapper,
+  .el-table__footer-wrapper {
+    background-color: transparent !important;
+  }
+  .el-table__header,
+  .el-table__body,
+  .el-table__footer {
+    background-color: transparent !important;
+  }
+  .el-table__row {
+    background-color: transparent !important;
+    // 树形表格子行（不同层级）背景强制透明
+    &.el-table__row--level-0,
+    &.el-table__row--level-1,
+    &.el-table__row--level-2 {
+      background-color: transparent !important;
+      td {
+        background-color: transparent !important;
+      }
+    }
+  }
+  // 悬停高亮：强制覆盖 Element UI 默认白色背景
+  .el-table__body tr:hover > td,
+  .el-table__body tr:hover > td.el-table__cell,
+  .el-table--enable-row-hover .el-table__body tr:hover > td {
+    background-color: var(--lc-table-hover-bg) !important;
   }
   .mo-peer-group-row {
-    background-color: #2b2b2b !important;
-    color: #c0c4cc;
-    .mo-peer-group-label {
-      color: #c0c4cc;
+    background-color: var(--lc-table-striped-bg) !important;
+    color: var(--lc-text-secondary) !important;
+    &.el-table__row td,
+    td.el-table__cell {
+      background-color: var(--lc-table-striped-bg) !important;
+      border-bottom: 1px solid var(--lc-border-base) !important;
     }
+    .mo-peer-group-label {
+      color: var(--lc-text-secondary) !important;
+    }
+    &.el-table__row:hover > td,
     &:hover > td {
-      background-color: rgba(255, 255, 255, 0.08) !important;
+      background-color: var(--lc-table-hover-bg) !important;
     }
   }
   .el-table__expand-icon {
-    color: #909399;
+    color: var(--lc-text-secondary) !important;
+    background-color: transparent !important;
   }
-  // 覆盖表头背景
-  th.el-table__cell {
-    background-color: #1a1a1a !important;
-    color: #909399 !important;
+  &.el-table thead th,
+  &.el-table thead th.el-table__cell,
+  &.el-table thead th.is-leaf,
+  &.el-table thead th.el-table__cell.is-leaf {
+    background-color: transparent !important;
+    color: var(--lc-text-secondary) !important;
     border-bottom: none !important;
   }
-  .el-table__body-wrapper {
+  td.el-table__cell {
     background-color: transparent !important;
+    color: var(--lc-text-regular) !important;
+    border-bottom: 1px solid var(--lc-border-base) !important;
+  }
+  .el-table__empty-block {
+    background-color: transparent !important;
+  }
+  .el-table__empty-text {
+    color: var(--lc-text-placeholder) !important;
   }
   .el-table--border::after, .el-table--group::after, .el-table::before {
     display: none !important;
   }
+  .el-checkbox__inner {
+    background-color: var(--lc-bg-input) !important;
+    border-color: var(--lc-border-base) !important;
+  }
 }
-.theme-dark .el-table__body .mo-peer-row-active > td {
+.theme-dark .el-table.mo-peer-table .el-table__body tr.mo-peer-row-active > td,
+.theme-dark .el-table.mo-peer-table .el-table__body tr.mo-peer-row-active > td.el-table__cell {
   background-color: rgba(64, 158, 255, 0.2) !important;
 }
-.theme-dark .el-table.mo-peer-table .el-table__body tr.mo-peer-row-active:hover > td {
+.theme-dark .el-table.mo-peer-table .el-table__body tr.mo-peer-row-active:hover > td,
+.theme-dark .el-table.mo-peer-table .el-table__body tr.mo-peer-row-active:hover > td.el-table__cell {
   background-color: rgba(64, 158, 255, 0.2) !important;
 }
 </style>

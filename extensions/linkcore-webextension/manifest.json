@@ -6,6 +6,7 @@
   "default_locale": "en",
   "permissions": [
     "downloads",
+    "downloads.ui",
     "storage",
     "contextMenus",
     "cookies",
@@ -28,7 +29,8 @@
       ],
       "js": [
         "video-sniffer.js",
-        "key-listener.js"
+        "key-listener.js",
+        "download-interceptor.js"
       ],
       "run_at": "document_start",
       "all_frames": true

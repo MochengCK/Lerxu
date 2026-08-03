@@ -144,10 +144,10 @@
 
 /* 三栏式布局下，标题栏文字与任务卡片左侧对齐 */
 .has-three-column-layout .title-bar .title-bar-title {
-  margin-left: calc(220px + 20px + 12px); /* 侧边栏宽度 + el-main padding + 任务卡片padding */
+  margin-left: calc(200px + 6px + 6px); /* 侧边栏宽度 + task-list padding + task-item padding */
   transition: margin-left 0.35s cubic-bezier(0.22, 1, 0.36, 1); /* 与侧边栏动画同步 */
   @media only screen and (min-width: 568px) {
-    margin-left: calc(220px + 20px + 12px);
+    margin-left: calc(200px + 6px + 6px);
   }
 }
 

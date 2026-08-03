@@ -3,7 +3,7 @@ import is from 'electron-is'
 import { isEmpty, clone } from 'lodash'
 import { existsSync } from 'fs'
 import { basename, resolve, isAbsolute } from 'path'
-import { Aria2 } from '@shared/aria2'
+import IpcEngineClient from './IpcEngineClient'
 import {
   separateConfig,
   compactUndefined,
@@ -15,6 +15,7 @@ import {
   checkTaskIsBT,
   checkTaskIsSeeder
 } from '@shared/utils'
+import { deduplicateTrackerString } from '@shared/utils/tracker'
 import { ENGINE_RPC_HOST, TASK_STATUS } from '@shared/constants'
 import taskHistory from './TaskHistory'
 
@@ -89,6 +90,43 @@ const isTransientMagnetTask = (task) => {
 
 const isNonEmptyString = (value) => {
   return typeof value === 'string' && value.trim() !== ''
+}
+
+/**
+ * 将应用层的 BT 加密选项（bt-encryption-mode / bt-force-encryption）
+ * 规范化为 aria2 原生键（bt-require-crypto / bt-min-crypto-level）。
+ * @param {Object} options 原始选项
+ * @param {Object} [opts]
+ * @param {boolean} [opts.keepAppKeys=false] 为 true 时保留应用层键（持久化需要），
+ *        否则删除，避免把 aria2 不认识的键通过 RPC 传给引擎
+ */
+const normalizeBtEncryptionForEngine = (options, { keepAppKeys = false } = {}) => {
+  const normalized = { ...options }
+  if (normalized['bt-encryption-mode'] !== undefined) {
+    const mode = normalized['bt-encryption-mode']
+    if (mode === 'force') {
+      normalized['bt-require-crypto'] = true
+      normalized['bt-min-crypto-level'] = 'arc4'
+    } else if (mode === 'none') {
+      normalized['bt-require-crypto'] = false
+      normalized['bt-min-crypto-level'] = 'plain'
+    } else {
+      normalized['bt-require-crypto'] = false
+      normalized['bt-min-crypto-level'] = 'arc4'
+    }
+    if (!keepAppKeys) {
+      delete normalized['bt-encryption-mode']
+    }
+    delete normalized['bt-force-encryption']
+  } else if (normalized['bt-force-encryption'] !== undefined) {
+    const forceEncryption = normalized['bt-force-encryption'] === true || normalized['bt-force-encryption'] === 'true'
+    normalized['bt-require-crypto'] = forceEncryption
+    normalized['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
+    if (!keepAppKeys) {
+      delete normalized['bt-force-encryption']
+    }
+  }
+  return normalized
 }
 
 const cloneTaskFiles = (files) => {
@@ -193,9 +231,6 @@ const shouldAdoptHistoryFiles = (task, historyTask) => {
 export default class Api {
   constructor (options = {}) {
     this.options = options
-    this._reconnectTimer = null
-    this._reconnectAttempts = 0
-    this._isReconnecting = false
 
     this.init()
   }
@@ -205,52 +240,6 @@ export default class Api {
 
     this.client = this.initClient()
     this.client.open()
-
-    // 监听 WebSocket 断线，自动重连。
-    // BT 下载时引擎高负载可能导致 WebSocket 超时断开，
-    // 但 aria2 进程仍在后台运行，重连后即可恢复通信。
-    this.client.on('close', () => {
-      if (this._intentionalClose) {
-        return
-      }
-      this.scheduleReconnect()
-    })
-  }
-
-  scheduleReconnect () {
-    if (this._isReconnecting) {
-      return
-    }
-    this._isReconnecting = true
-
-    // 指数退避：1s, 2s, 4s, 8s, 16s，上限 30s
-    this._reconnectAttempts += 1
-    const delay = Math.min(1000 * Math.pow(2, this._reconnectAttempts - 1), 30000)
-    console.warn(`[Motrix] WebSocket disconnected, attempting reconnect #${this._reconnectAttempts} in ${delay}ms`)
-
-    clearTimeout(this._reconnectTimer)
-    this._reconnectTimer = setTimeout(() => {
-      this._isReconnecting = false
-      this.reconnect()
-    }, delay)
-  }
-
-  async reconnect () {
-    try {
-      // 重新打开 WebSocket
-      await this.client.open()
-
-      // 重连成功，重置计数器
-      this._reconnectAttempts = 0
-      console.log('[Motrix] WebSocket reconnected successfully')
-
-      // 通知外部组件重新绑定引擎事件（onDownloadStart 等），
-      // 因为旧 socket 上的事件监听器已随 socket 销毁而失效
-      this.client.emit('reconnect')
-    } catch (err) {
-      console.error('[Motrix] WebSocket reconnect failed:', err.message)
-      this.scheduleReconnect()
-    }
   }
 
   loadConfigFromLocalStorage () {
@@ -279,7 +268,9 @@ export default class Api {
       rpcSecret: secret
     } = this.config
     const host = ENGINE_RPC_HOST
-    return new Aria2({
+    // 渲染进程经 IPC 桥接调用引擎 RPC（主进程持有 WebSocket 长连接），
+    // 避免 Chromium 走系统代理导致本地 16800 端口被拒
+    return new IpcEngineClient({
       host,
       port,
       secret
@@ -287,8 +278,6 @@ export default class Api {
   }
 
   closeClient () {
-    this._intentionalClose = true
-    clearTimeout(this._reconnectTimer)
     this.client.close()
       .then(() => {
         this.client = null
@@ -317,44 +306,23 @@ export default class Api {
   }
 
   savePreferenceToNativeStore (params = {}) {
-    const normalizedParams = { ...params }
-    if (normalizedParams['bt-encryption-mode'] !== undefined) {
-      const mode = normalizedParams['bt-encryption-mode']
-      if (mode === 'force') {
-        normalizedParams['bt-require-crypto'] = true
-        normalizedParams['bt-min-crypto-level'] = 'arc4'
-      } else if (mode === 'none') {
-        normalizedParams['bt-require-crypto'] = false
-        normalizedParams['bt-min-crypto-level'] = 'plain'
-      } else {
-        normalizedParams['bt-require-crypto'] = false
-        normalizedParams['bt-min-crypto-level'] = 'arc4'
-      }
-      // 保留 bt-encryption-mode 以便持久化到 system.json，
-      // 否则重新打开偏好设置时会因读取不到该值而回退到默认值 adaptive。
-      // 派生的 bt-require-crypto / bt-min-crypto-level 仅用于引擎即时生效。
-      delete normalizedParams['bt-force-encryption']
-    } else if (normalizedParams['bt-force-encryption'] !== undefined) {
-      const forceEncryption = normalizedParams['bt-force-encryption'] === true || normalizedParams['bt-force-encryption'] === 'true'
-      normalizedParams['bt-require-crypto'] = forceEncryption
-      normalizedParams['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
-    }
+    const normalizedParams = normalizeBtEncryptionForEngine(params, { keepAppKeys: true })
     const { user, system, others } = separateConfig(normalizedParams)
     const config = {}
 
     if (!isEmpty(user)) {
-      console.info('[Motrix] save user config: ', user)
+      console.info('[LinkCore] save user config: ', user)
       config.user = user
     }
 
     if (!isEmpty(system)) {
-      console.info('[Motrix] save system config: ', system)
+      console.info('[LinkCore] save system config: ', system)
       config.system = system
       this.updateActiveTaskOption(system)
     }
 
     if (!isEmpty(others)) {
-      console.info('[Motrix] save config found illegal key: ', others)
+      console.info('[LinkCore] save config found illegal key: ', others)
     }
 
     ipcRenderer.send('command', 'application:save-preference', config)
@@ -365,25 +333,11 @@ export default class Api {
   }
 
   changeGlobalOption (options) {
-    const normalizedOptions = { ...options }
-    if (normalizedOptions['bt-encryption-mode'] !== undefined) {
-      const mode = normalizedOptions['bt-encryption-mode']
-      if (mode === 'force') {
-        normalizedOptions['bt-require-crypto'] = true
-        normalizedOptions['bt-min-crypto-level'] = 'arc4'
-      } else if (mode === 'none') {
-        normalizedOptions['bt-require-crypto'] = false
-        normalizedOptions['bt-min-crypto-level'] = 'plain'
-      } else {
-        normalizedOptions['bt-require-crypto'] = false
-        normalizedOptions['bt-min-crypto-level'] = 'arc4'
-      }
-      delete normalizedOptions['bt-encryption-mode']
-      delete normalizedOptions['bt-force-encryption']
-    } else if (normalizedOptions['bt-force-encryption'] !== undefined) {
-      const forceEncryption = normalizedOptions['bt-force-encryption'] === true || normalizedOptions['bt-force-encryption'] === 'true'
-      normalizedOptions['bt-require-crypto'] = forceEncryption
-      normalizedOptions['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
+    const normalizedOptions = normalizeBtEncryptionForEngine(options)
+    // Deduplicate bt-tracker URLs before sending to the engine so it
+    // never wastes announce cycles on duplicate trackers.
+    if (normalizedOptions['bt-tracker'] !== undefined && normalizedOptions['bt-tracker']) {
+      normalizedOptions['bt-tracker'] = deduplicateTrackerString(normalizedOptions['bt-tracker'])
     }
     const args = formatOptionsForEngine(normalizedOptions)
 
@@ -429,26 +383,7 @@ export default class Api {
   changeOption (params = {}) {
     const { gid, options = {} } = params
 
-    const normalizedOptions = { ...options }
-    if (normalizedOptions['bt-encryption-mode'] !== undefined) {
-      const mode = normalizedOptions['bt-encryption-mode']
-      if (mode === 'force') {
-        normalizedOptions['bt-require-crypto'] = true
-        normalizedOptions['bt-min-crypto-level'] = 'arc4'
-      } else if (mode === 'none') {
-        normalizedOptions['bt-require-crypto'] = false
-        normalizedOptions['bt-min-crypto-level'] = 'plain'
-      } else {
-        normalizedOptions['bt-require-crypto'] = false
-        normalizedOptions['bt-min-crypto-level'] = 'arc4'
-      }
-      delete normalizedOptions['bt-encryption-mode']
-      delete normalizedOptions['bt-force-encryption']
-    } else if (normalizedOptions['bt-force-encryption'] !== undefined) {
-      const forceEncryption = normalizedOptions['bt-force-encryption'] === true || normalizedOptions['bt-force-encryption'] === 'true'
-      normalizedOptions['bt-require-crypto'] = forceEncryption
-      normalizedOptions['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
-    }
+    const normalizedOptions = normalizeBtEncryptionForEngine(options)
     const engineOptions = formatOptionsForEngine(normalizedOptions)
     const args = compactUndefined([gid, engineOptions])
 
@@ -673,7 +608,7 @@ export default class Api {
         ['aria2.tellActive', ...activeArgs],
         ['aria2.tellWaiting', ...waitingArgs]
       ]).then((data) => {
-        console.log('[Motrix] fetch downloading task list data:', data)
+        console.log('[LinkCore] fetch downloading task list data:', data)
         let result = mergeTaskResult(data)
         result = this._mergeHistoryToTasks(result)
         result = result.filter(task => {
@@ -682,7 +617,7 @@ export default class Api {
         })
         resolve(result)
       }).catch((err) => {
-        console.log('[Motrix] fetch downloading task list fail:', err)
+        console.log('[LinkCore] fetch downloading task list fail:', err)
         reject(err)
       })
     })
@@ -749,19 +684,17 @@ export default class Api {
             result = [...result, ...newHistoryTasks]
           }
 
-          try {
-            const deleted = taskHistory.getAllHistory().filter(t => t && t.deletedAt && t.gid).map(t => t.gid)
-            if (deleted.length > 0) {
-              const deletedGids = new Set(deleted)
-              result = result.filter(task => task && task.gid && !deletedGids.has(task.gid))
-            }
-          } catch (e) {}
+          // 过滤已删除的任务（黑名单），防止删除后 aria2 重新上报导致任务复活
+          const deletedGids = new Set(taskHistory.getDeletedGids().map(gid => `${gid}`))
+          if (deletedGids.size > 0) {
+            result = result.filter(task => task && task.gid && !deletedGids.has(`${task.gid}`))
+          }
 
           result = result.filter(task => !looksLikeBilibiliDashPart(task))
 
           resolve(result)
         }).catch((err) => {
-          console.log('[Motrix] fetch all task list fail:', err)
+          console.log('[LinkCore] fetch all task list fail:', err)
           reject(err)
         })
       })
@@ -801,18 +734,16 @@ export default class Api {
           stoppedTasks = stoppedTasks.filter(task => isStoppedCategoryStatus(task && task.status))
 
           let merged = [...stoppedTasks, ...newHistoryTasks]
-          try {
-            const deleted = taskHistory.getAllHistory().filter(t => t && t.deletedAt && t.gid).map(t => t.gid)
-            if (deleted.length > 0) {
-              const deletedGids = new Set(deleted)
-              merged = merged.filter(task => task && task.gid && !deletedGids.has(task.gid))
-            }
-          } catch (e) {}
+          // 过滤已删除的任务（黑名单），防止删除后 aria2 重新上报导致任务复活
+          const deletedGids = new Set(taskHistory.getDeletedGids().map(gid => `${gid}`))
+          if (deletedGids.size > 0) {
+            merged = merged.filter(task => task && task.gid && !deletedGids.has(`${task.gid}`))
+          }
 
           return merged.filter(task => !looksLikeBilibiliDashPart(task))
         })
         .catch(err => {
-          console.log('[Motrix] fetch stopped task list fail, fallback to history:', err)
+          console.log('[LinkCore] fetch stopped task list fail, fallback to history:', err)
           const history = taskHistory.getHistory()
           return history
             .filter(task => isHistoryStoppedStatus(task && task.status))
@@ -829,7 +760,7 @@ export default class Api {
     const args = compactUndefined([gid, keys])
     return this.client.call('tellStatus', ...args)
       .catch((error) => {
-        console.log('[Motrix] fetchTaskItem fail:', error.message)
+        console.log('[LinkCore] fetchTaskItem fail:', error.message)
         // 返回一个空对象或者重新抛出错误，让上层调用者处理
         return Promise.reject(error)
       })
@@ -844,7 +775,7 @@ export default class Api {
         ['aria2.tellStatus', ...statusArgs],
         ['aria2.getPeers', ...peersArgs]
       ]).then((data) => {
-        console.log('[Motrix] fetchTaskItemWithPeers:', data)
+        console.log('[LinkCore] fetchTaskItemWithPeers:', data)
 
         // multicall 返回的是 [result1, result2]，每个result是 [value] 或 value
         // 需要处理两种可能的格式
@@ -857,8 +788,8 @@ export default class Api {
           peers = Array.isArray(data[1]) ? data[1][0] : data[1]
         }
 
-        console.log('[Motrix] fetchTaskItemWithPeers.result:', result)
-        console.log('[Motrix] fetchTaskItemWithPeers.peers:', peers)
+        console.log('[LinkCore] fetchTaskItemWithPeers.result:', result)
+        console.log('[LinkCore] fetchTaskItemWithPeers.peers:', peers)
 
         // 确保result存在再设置peers
         if (result) {
@@ -868,7 +799,7 @@ export default class Api {
           reject(new Error('No task data returned'))
         }
       }).catch((err) => {
-        console.log('[Motrix] fetchTaskItemWithPeers fail:', err.message)
+        console.log('[LinkCore] fetchTaskItemWithPeers fail:', err.message)
         reject(err)
       })
     })
@@ -913,7 +844,7 @@ export default class Api {
     const args = compactUndefined([gid])
     return this.client.call('getServers', ...args)
       .catch((error) => {
-        console.log('[Motrix] fetchTaskServers fail:', error.message)
+        console.log('[LinkCore] fetchTaskServers fail:', error.message)
         return []
       })
   }
@@ -924,7 +855,7 @@ export default class Api {
     const args = compactUndefined([gid])
     return this.client.call('getTrackers', ...args)
       .catch((error) => {
-        console.log('[Motrix] fetchTaskTrackers fail:', error.message)
+        console.log('[LinkCore] fetchTaskTrackers fail:', error.message)
         return []
       })
   }
@@ -980,12 +911,10 @@ export default class Api {
         throw error
       })
       .then((result) => this.client.call('removeDownloadResult', ...args)
-        .catch((error) => {
-          if (error && error.code === 1) {
-            return
-          }
-          throw error
-        })
+        // removeDownloadResult 失败不阻断本地清理：
+        // 任务可能已从 active 移除但结果残留，此时必须同步清理
+        // 本地历史与黑名单，否则任务会持续显示在停止分类中
+        .catch(() => {})
         .then(() => {
           taskHistory.removeTask(gid)
           return result
@@ -1004,12 +933,7 @@ export default class Api {
         throw error
       })
       .then((result) => this.client.call('removeDownloadResult', ...args)
-        .catch((error) => {
-          if (error && error.code === 1) {
-            return
-          }
-          throw error
-        })
+        .catch(() => {})
         .then(() => {
           taskHistory.removeTask(gid)
           return result
@@ -1033,12 +957,8 @@ export default class Api {
     const args = compactUndefined([gid])
 
     return this.client.call('removeDownloadResult', ...args)
-      .catch((error) => {
-        if (error && error.code === 1) {
-          return
-        }
-        throw error
-      })
+      // removeDownloadResult 失败不阻断本地清理（任务可能已不在 aria2 中）
+      .catch(() => {})
       .then(() => {
         taskHistory.removeTask(gid)
       })
@@ -1052,26 +972,7 @@ export default class Api {
 
   multicall (method, params = {}) {
     let { gids, options = {} } = params
-    const normalizedOptions = { ...options }
-    if (normalizedOptions['bt-encryption-mode'] !== undefined) {
-      const mode = normalizedOptions['bt-encryption-mode']
-      if (mode === 'force') {
-        normalizedOptions['bt-require-crypto'] = true
-        normalizedOptions['bt-min-crypto-level'] = 'arc4'
-      } else if (mode === 'none') {
-        normalizedOptions['bt-require-crypto'] = false
-        normalizedOptions['bt-min-crypto-level'] = 'plain'
-      } else {
-        normalizedOptions['bt-require-crypto'] = false
-        normalizedOptions['bt-min-crypto-level'] = 'arc4'
-      }
-      delete normalizedOptions['bt-encryption-mode']
-      delete normalizedOptions['bt-force-encryption']
-    } else if (normalizedOptions['bt-force-encryption'] !== undefined) {
-      const forceEncryption = normalizedOptions['bt-force-encryption'] === true || normalizedOptions['bt-force-encryption'] === 'true'
-      normalizedOptions['bt-require-crypto'] = forceEncryption
-      normalizedOptions['bt-min-crypto-level'] = forceEncryption ? 'arc4' : 'plain'
-    }
+    const normalizedOptions = normalizeBtEncryptionForEngine(options)
     options = formatOptionsForEngine(normalizedOptions)
 
     const data = gids.map((gid, index) => {
@@ -1100,12 +1001,7 @@ export default class Api {
       .then(() => Promise.all(list.map(gid => {
         const args = compactUndefined([gid])
         return this.client.call('removeDownloadResult', ...args)
-          .catch((error) => {
-            if (error && error.code === 1) {
-              return
-            }
-            throw error
-          })
+          .catch(() => {})
       })))
       .then((result) => {
         list.forEach(gid => taskHistory.removeTask(gid))
@@ -1128,7 +1024,7 @@ export default class Api {
   // 优先级管理相关方法
   getPriorityStatus () {
     return ipcRenderer.invoke('priority:status').catch(err => {
-      console.warn('[Motrix] getPriorityStatus failed:', err.message)
+      console.warn('[LinkCore] getPriorityStatus failed:', err.message)
       return { success: false, error: err.message }
     })
   }
@@ -1136,7 +1032,7 @@ export default class Api {
   // 触发优先级重新平衡（当用户修改任务优先级后调用）
   rebalancePriority () {
     return ipcRenderer.invoke('priority:rebalance').catch(err => {
-      console.warn('[Motrix] rebalancePriority failed:', err.message)
+      console.warn('[LinkCore] rebalancePriority failed:', err.message)
       return { success: false, error: err.message }
     })
   }

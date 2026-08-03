@@ -33,6 +33,13 @@ export const buildRule = (rule) => {
     if (operator === MINUS) {
       step = -step
     }
+  } else {
+    // 规则串不含 +/- 操作符（如 "(5)"），起始数字就是纯数字本身
+    const parsed = parseInt(rule, 10)
+    if (Number.isFinite(parsed)) {
+      init = parsed
+      len = rule.length
+    }
   }
 
   return {

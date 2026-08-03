@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { access, chmodSync, constants, copyFileSync, existsSync, lstatSync, readdirSync } from 'node:fs'
+import { access, chmodSync, constants, copyFileSync, existsSync, lstatSync } from 'node:fs'
 import { app, nativeTheme, shell, session } from 'electron'
 import is from 'electron-is'
 
@@ -11,7 +11,7 @@ import {
   PORTABLE_EXECUTABLE_DIR
 } from '@shared/constants'
 import { engineBinMap, engineArchMap } from '../configs/engine'
-import logger from '../core/Logger'
+import logger from '../core/LogManager'
 
 export const getUserDataPath = () => {
   return IS_PORTABLE ? PORTABLE_EXECUTABLE_DIR : app.getPath('userData')
@@ -101,18 +101,131 @@ export const getAria2BinPath = (platform, arch) => {
 
 export const getAria2ConfPath = (platform, arch) => {
   const userConfigPath = resolve(getUserDataPath(), './aria2.conf')
+  const defaultConfigPath = resolve(getEnginePath(platform, arch), './aria2.conf')
+  const storedDefaultPath = resolve(getUserDataPath(), './aria2.conf.default')
 
   // 首次运行时，将默认配置从引擎目录复制到用户数据目录
   if (!existsSync(userConfigPath)) {
-    const defaultConfigPath = resolve(getEnginePath(platform, arch), './aria2.conf')
     if (existsSync(defaultConfigPath)) {
       copyFileSync(defaultConfigPath, userConfigPath)
-      // 确保文件可写
       chmodSync(userConfigPath, 0o644)
     }
   }
 
+  // 始终存储一份当前版本的默认配置，用于后续合并比较
+  if (existsSync(defaultConfigPath)) {
+    try {
+      copyFileSync(defaultConfigPath, storedDefaultPath)
+      chmodSync(storedDefaultPath, 0o644)
+    } catch (_) {}
+  }
+
   return userConfigPath
+}
+
+/**
+ * 解析 aria2.conf 文件为 key-value Map
+ * 忽略注释行和空行
+ */
+const parseConf = (content) => {
+  const map = new Map()
+  const lines = `${content}`.split(/\r?\n/)
+  for (const line of lines) {
+    const m = /^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*)\s*$/.exec(line)
+    if (m) {
+      map.set(m[1], m[2])
+    }
+  }
+  return map
+}
+
+/**
+ * 将 key-value Map 序列化为 aria2.conf 格式文本
+ */
+const serializeConf = (map) => {
+  const lines = []
+  for (const [k, v] of map) {
+    lines.push(`${k}=${v}`)
+  }
+  return lines.join('\n')
+}
+
+/**
+ * 智能合并 aria2.conf
+ * 策略：
+ * - 用户未修改的项（值与上一版默认值相同）→ 更新为新版默认值
+ * - 用户修改过的项（值与上一版默认值不同）→ 保留用户值
+ * - 新版新增的项 → 自动添加
+ * - 旧版有但新版删除的项 → 如果用户未修改则删除，如果修改了则保留
+ */
+export const mergeAria2Conf = (platform, arch) => {
+  const fs = require('node:fs')
+  const userConfigPath = resolve(getUserDataPath(), './aria2.conf')
+  const defaultConfigPath = resolve(getEnginePath(platform, arch), './aria2.conf')
+  const storedDefaultPath = resolve(getUserDataPath(), './aria2.conf.default')
+
+  // 如果用户配置或新默认配置不存在，无法合并
+  if (!existsSync(userConfigPath) || !existsSync(defaultConfigPath)) {
+    return
+  }
+
+  try {
+    const userContent = fs.readFileSync(userConfigPath, 'utf8')
+    const newDefaultContent = fs.readFileSync(defaultConfigPath, 'utf8')
+    const oldDefaultContent = existsSync(storedDefaultPath)
+      ? fs.readFileSync(storedDefaultPath, 'utf8')
+      : ''
+
+    const userMap = parseConf(userContent)
+    const newDefaultMap = parseConf(newDefaultContent)
+    const oldDefaultMap = parseConf(oldDefaultContent)
+
+    const merged = new Map()
+
+    // 1. 处理新默认配置中的所有键
+    for (const [key, newDefaultVal] of newDefaultMap) {
+      const userVal = userMap.get(key)
+      const oldDefaultVal = oldDefaultMap.get(key)
+
+      if (userVal === undefined) {
+        // 用户配置中没有此键 → 新增的默认项，添加
+        merged.set(key, newDefaultVal)
+      } else if (oldDefaultVal !== undefined && userVal === oldDefaultVal) {
+        // 用户值与旧默认值相同 → 用户未修改，更新为新默认值
+        merged.set(key, newDefaultVal)
+      } else {
+        // 用户值与旧默认值不同，或没有旧默认值可比较 → 用户修改过，保留用户值
+        merged.set(key, userVal)
+      }
+    }
+
+    // 2. 处理用户配置中有但新默认配置中没有的键
+    for (const [key, userVal] of userMap) {
+      if (!newDefaultMap.has(key)) {
+        const oldDefaultVal = oldDefaultMap.get(key)
+        // 如果旧默认配置有此键且用户未修改 → 说明此键已从默认中移除，删除
+        // 如果用户修改过 → 保留用户自定义项
+        if (oldDefaultVal !== undefined && userVal === oldDefaultVal) {
+          // 键已被新版移除且用户未修改 → 不添加到 merged（即删除）
+        } else {
+          // 用户自定义的键 → 保留
+          merged.set(key, userVal)
+        }
+      }
+    }
+
+    // 3. 写入合并后的配置
+    const mergedContent = serializeConf(merged)
+    fs.writeFileSync(userConfigPath, mergedContent, 'utf8')
+
+    // 4. 更新存储的默认配置为当前版本
+    try {
+      copyFileSync(defaultConfigPath, storedDefaultPath)
+      chmodSync(storedDefaultPath, 0o644)
+    } catch (_) {}
+  } catch (e) {
+    // 合并失败时不影响启动
+  }
 }
 
 export const transformConfig = (config) => {
@@ -185,6 +298,7 @@ export const checkIsSupportedSchema = (url = '') => {
     str.startsWith('https:') ||
     str.startsWith('magnet:') ||
     str.startsWith('thunder:') ||
+    str.startsWith('ed2k:') ||
     str.startsWith('mo:') ||
     str.startsWith('motrix:')
   ) {
@@ -234,10 +348,10 @@ export const getSystemHttpProxy = async () => {
       return ''
     }
     const url = `http://${hostPort}`
-    logger.info('[Motrix] detected system http proxy:', url, 'raw:', result)
+    logger.info('[LinkCore] detected system http proxy:', url, 'raw:', result)
     return url
   } catch (e) {
-    logger.warn('[Motrix] getSystemHttpProxy failed:', e.message)
+    logger.warn('[LinkCore] getSystemHttpProxy failed:', e.message)
     return ''
   }
 }
@@ -265,7 +379,7 @@ export const showItemInFolder = (fullPath) => {
   fullPath = resolve(fullPath)
   access(fullPath, constants.F_OK, (err) => {
     if (err) {
-      logger.warn(`[Motrix] ${fullPath} ${err ? 'does not exist' : 'exists'}`)
+      logger.warn(`[LinkCore] ${fullPath} ${err ? 'does not exist' : 'exists'}`)
       return
     }
 
@@ -281,107 +395,20 @@ export const showItemInFolder = (fullPath) => {
  */
 export const getEngineList = (platform, arch) => {
   const enginePath = getEnginePath(platform, arch)
-  const engines = []
-  const scannedPaths = new Set() // 避免重复扫描
-
-  const scanDirectory = (dirPath, relativePrefix = '') => {
-    // 防止循环引用或重复扫描
-    let realPath
-    try {
-      realPath = require('fs').realpathSync(dirPath)
-    } catch (e) {
-      realPath = dirPath
-    }
-    if (scannedPaths.has(realPath)) {
-      return
-    }
-    scannedPaths.add(realPath)
-
-    try {
-      const files = readdirSync(dirPath)
-      const binName = getEngineBin(platform)
-
-      files.forEach(file => {
-        const fullPath = resolve(dirPath, file)
-        const relativePath = relativePrefix ? `${relativePrefix}/${file}` : file
-        const stats = lstatSync(fullPath)
-
-        if (stats.isDirectory()) {
-          // 递归扫描子目录
-          scanDirectory(fullPath, relativePath)
-        } else if (stats.isFile()) {
-          if (!file.endsWith('.backup') &&
-            !file.endsWith('.tmp') &&
-            !file.endsWith('.log') &&
-            !file.endsWith('.conf') &&
-            !file.endsWith('.txt') &&
-            !file.endsWith('.md')) {
-            let isExecutable = platform === 'win32'
-              ? file.endsWith('.exe')
-              : (stats.mode & parseInt('111', 8)) !== 0
-            const isCandidate = file.includes('fluxcore') || file === binName
-            if (!isExecutable && platform !== 'win32' && isCandidate) {
-              try {
-                chmodSync(fullPath, 0o755)
-                const nextStats = lstatSync(fullPath)
-                isExecutable = (nextStats.mode & parseInt('111', 8)) !== 0
-              } catch (_) {}
-            }
-
-            if (isExecutable || (platform !== 'win32' && isCandidate)) {
-              engines.push({
-                name: relativePath,
-                path: fullPath,
-                size: stats.size,
-                modified: stats.mtime,
-                isDefault: relativePath === binName
-              })
-            }
-          }
-        }
-      })
-    } catch (error) {
-      logger.warn(`[Motrix] Failed to scan directory ${dirPath}:`, error.message)
-    }
-  }
+  const binName = getEngineBin(platform)
+  const fullPath = resolve(enginePath, binName)
 
   try {
-    if (existsSync(enginePath)) {
-      scanDirectory(enginePath)
-
-      const binName = getEngineBin(platform)
-
-      // 确保默认引擎位于列表首位（如果存在）
-      const defaultBinPath = resolve(enginePath, binName)
-      if (existsSync(defaultBinPath)) {
-        const defaultIndex = engines.findIndex(e => e.name === binName)
-        if (defaultIndex > 0) {
-          // 将默认引擎移到首位
-          const defaultEngine = engines.splice(defaultIndex, 1)[0]
-          engines.unshift(defaultEngine)
-        } else if (defaultIndex === -1) {
-          // 如果默认引擎不在列表中，添加到首位
-          const stats = lstatSync(defaultBinPath)
-          engines.unshift({
-            name: binName,
-            path: defaultBinPath,
-            size: stats.size,
-            modified: stats.mtime,
-            isDefault: true
-          })
-        }
-      }
-
-      // 按名称排序（除了默认引擎）
-      if (engines.length > 1) {
-        const defaultEngine = engines[0]
-        const otherEngines = engines.slice(1).sort((a, b) => a.name.localeCompare(b.name))
-        engines.splice(0, engines.length, defaultEngine, ...otherEngines)
-      }
-    }
+    const stats = lstatSync(fullPath)
+    return [{
+      name: binName,
+      path: fullPath,
+      size: stats.size,
+      modified: stats.mtime,
+      isDefault: true
+    }]
   } catch (error) {
-    logger.error(`[Motrix] Get engine list failed: ${error}`)
+    logger.warn(`[LinkCore] Engine binary not found: ${fullPath}`)
+    return []
   }
-
-  return engines
 }

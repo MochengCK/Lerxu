@@ -1,112 +1,104 @@
+/**
+ * Dark Theme SCSS Variables
+ * --------------------------
+ * All values are mapped to CSS custom properties defined in Tokens.scss.
+ * The .theme-dark class overrides the :root defaults.
+ *
+ * These $--dk-* variables mirror the light-mode $--* variables for
+ * backward compatibility with existing Dark.scss references.
+ */
+
 /* Color
 -------------------------- */
-$--dk-border-color-base: #555;
-$--dk-font-color-base: #eee;
-$--dk-action-color-base: #eee;
+$--dk-border-color-base: var(--lc-border-base);
+$--dk-font-color-base: var(--lc-text-primary);
+$--dk-action-color-base: var(--lc-text-primary);
 
 /* App
 -------------------------- */
-$--dk-app-background: transparent !default;
-$--dk-titlebar-actions-color: $--dk-action-color-base !default;
+$--dk-app-background: var(--lc-bg-app) !default;
+$--dk-titlebar-actions-color: var(--lc-text-primary) !default;
 $--dk-titlebar-close-active-color: #fff !default;
-$--dk-titlebar-actions-active-background: rgba(0, 0, 0, 0.9) !default;
+$--dk-titlebar-actions-active-background: var(--lc-bg-active) !default;
 $--dk-titlebar-close-active-background: #fd0007 !default;
-$--dk-app-logo-color: #eee !default;
-$--dk-app-version-color: #a2a3a4 !default;
-$--dk-app-engine-title-color: #a2a3a4 !default;
-$--dk-app-engine-info-color: #777 !default;
-$--dk-app-copyright-color: #a2a3a4 !default;
+$--dk-app-logo-color: var(--lc-text-primary) !default;
+$--dk-app-version-color: var(--lc-text-secondary) !default;
+$--dk-app-engine-title-color: var(--lc-text-secondary) !default;
+$--dk-app-engine-info-color: var(--lc-text-placeholder) !default;
+$--dk-app-copyright-color: var(--lc-text-secondary) !default;
 
 /* Aside
 -------------------------- */
-$--dk-aside-background: rgba(0, 0, 0, 0.9) !default;
-$--dk-aside-text-color: #fff !default;
+$--dk-aside-background: var(--lc-bg-aside) !default;
+$--dk-aside-text-color: var(--lc-aside-text) !default;
 
 /* SubNav
 -------------------------- */
-$--dk-subnav-background: #2D2D2D !default;
-$--dk-subnav-title-color: #fff !default;
-$--dk-subnav-action-color: #fff !default;
-$--dk-subnav-text-color: #aaa !default;
-$--dk-subnav-active-text-color: #fff !default;
-$--dk-subnav-active-background: #444 !default;
-$--dk-subnav-border-color: #ccc !default;
+$--dk-subnav-background: var(--lc-bg-subnav) !default;
+$--dk-subnav-title-color: var(--lc-subnav-title) !default;
+$--dk-subnav-action-color: var(--lc-subnav-text) !default;
+$--dk-subnav-text-color: var(--lc-subnav-text) !default;
+$--dk-subnav-active-text-color: var(--lc-subnav-active-text) !default;
+$--dk-subnav-active-background: var(--lc-subnav-active-bg) !default;
+$--dk-subnav-border-color: var(--lc-subnav-border) !default;
 
 /* Main
 -------------------------- */
-$--dk-main-background: #343434 !default;
+$--dk-main-background: var(--lc-bg-main) !default;
 
 /* Panel
 -------------------------- */
-$--dk-panel-background: #343434 !default;
-$--dk-panel-title-color: #fff !default;
-$--dk-panel-border-color: #EBECF0 !default;
+$--dk-panel-background: var(--lc-bg-panel) !default;
+$--dk-panel-title-color: var(--lc-text-primary) !default;
+$--dk-panel-border-color: var(--lc-border-panel) !default;
 
 /* Form Actions
 -------------------------- */
-$--dk-form-actions-background: #343434 !default;
+$--dk-form-actions-background: var(--lc-form-actions-bg) !default;
 
 /* Task
 -------------------------- */
-$--dk-task-action-color: $--dk-action-color-base !default;
-$--dk-task-action-hover-color: $--color-primary !default;
-$--dk-task-item-backgroud: #2d2d2d !default;
-$--dk-task-item-border-color: $--dk-border-color-base !default;
-$--dk-task-item-hover-border-color: $--color-primary !default;
-$--dk-task-item-hover-background: $--color-primary !default;
-$--dk-task-item-text-color: #eee !default;
-$--dk-task-item-action-background: #4a4a4a !default;
-$--dk-task-item-action-hover-background: $--color-primary !default;
-$--dk-task-item-action-border-color: #5f5f5f !default;
-$--dk-task-item-action-hover-border-color: $--color-primary !default;
-$--dk-task-item-action-color: $--dk-action-color-base !default;
-$--dk-task-item-action-hover-color: #fff !default;
-$--dk-task-item-action-verify-background: #333333 !default;
-$--dk-task-item-action-verify-hover-background: #262626 !default;
-$--dk-no-task-color: #aaa !default;
-$--dk-add-task-dialog-footer-background: #4a4a4a !default;
-$--dk-task-detail-box-border: #565656 !default;
+$--dk-task-action-color: var(--lc-task-action) !default;
+$--dk-task-action-hover-color: var(--lc-task-action-hover) !default;
+$--dk-task-item-backgroud: var(--lc-task-item-bg) !default;
+$--dk-task-item-border-color: var(--lc-task-item-border) !default;
+$--dk-task-item-hover-border-color: var(--lc-task-item-hover-border) !default;
+$--dk-task-item-hover-background: var(--lc-task-item-hover-bg) !default;
+$--dk-task-item-text-color: var(--lc-task-item-text) !default;
+$--dk-task-item-action-background: var(--lc-task-action-bg) !default;
+$--dk-task-item-action-hover-background: var(--lc-task-action-hover-bg) !default;
+$--dk-task-item-action-border-color: var(--lc-task-action-border) !default;
+$--dk-task-item-action-hover-border-color: var(--lc-task-action-hover-border) !default;
+$--dk-task-item-action-color: var(--lc-text-primary) !default;
+$--dk-task-item-action-hover-color: var(--lc-text-inverse) !default;
+$--dk-task-item-action-verify-background: var(--lc-task-action-verify-bg) !default;
+$--dk-task-item-action-verify-hover-background: var(--lc-task-action-verify-hover-bg) !default;
+$--dk-no-task-color: var(--lc-no-task) !default;
+$--dk-add-task-dialog-footer-background: var(--lc-bg-dialog-footer) !default;
+$--dk-task-detail-box-border: var(--lc-task-detail-border) !default;
 
 /* Preference
 -------------------------- */
-$--dk-preference-form-text-color: #dfdfdf !default;
-
-/* Floating Bar
--------------------------- */
-$--dk-floating-bar-background: #333 !default;
-$--dk-floating-bar-border-color: #5f5f5f !default;
-$--dk-floating-bar-hover-border-color: #9b9b9b !default;
-$--dk-floating-bar-divider-color: rgba(255, 255, 255, 0.1) !default;
-$--dk-floating-bar-item-hover-background: rgba(255, 255, 255, 0.05) !default;
-$--dk-floating-bar-item-color: #9b9b9b !default;
-
-/* Speedometer
--------------------------- */
-$--dk-speedometer-background: #333 !default;
-$--dk-speedometer-border-color: #5f5f5f !default;
-$--dk-speedometer-hover-border-color: #9b9b9b !default;
-$--dk-speedometer-primary-color: $--color-primary !default;
-$--dk-speedometer-stopped-color: #9b9b9b !default;
-$--dk-speedometer-text-color: #9b9b9b !default;
+$--dk-preference-form-text-color: var(--lc-preference-text) !default;
 
 /* Task Graphic
 -------------------------- */
-$--dk-graphic-box-background: #3f3f3f !default;
-$--dk-graphic-atom-color-0: #161b22 !default;
-$--dk-graphic-atom-color-1: #0e4429 !default;
-$--dk-graphic-atom-color-2: #006d32 !default;
-$--dk-graphic-atom-color-3: #26a641 !default;
-$--dk-graphic-atom-color-4: #39d353 !default;
+$--dk-graphic-box-background: var(--lc-graphic-box-bg) !default;
+$--dk-graphic-atom-color-0: var(--lc-graphic-atom-0) !default;
+$--dk-graphic-atom-color-1: var(--lc-graphic-atom-1) !default;
+$--dk-graphic-atom-color-2: var(--lc-graphic-atom-2) !default;
+$--dk-graphic-atom-color-3: var(--lc-graphic-atom-3) !default;
+$--dk-graphic-atom-color-4: var(--lc-graphic-atom-4) !default;
 
 /* Element UI
 -------------------------- */
-$--dk-dialog-background: #343434 !default;
-$--dk-dialog-text-color: #9b9b9b !default;
-$--dk-table-background: #2a2b2c !default;
-$--dk-table-striped-background: #1f2122 !default;
-$--dk-table-hover-background: #565656 !default;
-$--dk-table-th-background: #1f2122 !default;
-$--dk-table-text-color: #9b9b9b !default;
-$--dk-table-border-color: #565656 !default;
-$--dk-popover-background: #3d3d3d !default;
-$--dk-popover-border-color: $--dk-border-color-base !default;
+$--dk-dialog-background: var(--lc-bg-dialog) !default;
+$--dk-dialog-text-color: var(--lc-dialog-text) !default;
+$--dk-table-background: var(--lc-task-item-bg) !default;
+$--dk-table-striped-background: var(--lc-table-striped-bg) !default;
+$--dk-table-hover-background: var(--lc-table-hover-bg) !default;
+$--dk-table-th-background: var(--lc-table-th-bg) !default;
+$--dk-table-text-color: var(--lc-table-text) !default;
+$--dk-table-border-color: var(--lc-table-border) !default;
+$--dk-popover-background: var(--lc-bg-popover) !default;
+$--dk-popover-border-color: var(--lc-border-base) !default;

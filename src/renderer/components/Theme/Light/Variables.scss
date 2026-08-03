@@ -1,100 +1,92 @@
+/**
+ * Light Theme SCSS Variables
+ * --------------------------
+ * All values are mapped to CSS custom properties defined in Tokens.scss.
+ * This allows runtime theme switching and centralized color management.
+ *
+ * Note: $--color-primary and its mix() variants stay as SCSS compile-time
+ * values in Variables.scss for Element UI compatibility.
+ */
+
 /* App
 -------------------------- */
-$--app-background: transparent !default;
-$--titlebar-actions-color: #1f1f1f !default;
-$--titlebar-actions-active-background: #eee !default;
+$--app-background: var(--lc-bg-app) !default;
+$--titlebar-actions-color: var(--lc-text-primary) !default;
+$--titlebar-actions-active-background: var(--lc-bg-active) !default;
 $--titlebar-close-active-color: #fff !default;
 $--titlebar-close-active-background: #fd0007 !default;
-$--app-logo-color: #4D515A !default;
-$--app-version-color: $--color-text-regular !default;
-$--app-engine-title-color: $--color-text-regular !default;
-$--app-engine-info-color: $--color-text-secondary !default;
-$--app-copyright-color: $--color-text-regular !default;
+$--app-logo-color: var(--lc-text-primary) !default;
+$--app-version-color: var(--lc-text-secondary) !default;
+$--app-engine-title-color: var(--lc-text-secondary) !default;
+$--app-engine-info-color: var(--lc-text-placeholder) !default;
+$--app-copyright-color: var(--lc-text-secondary) !default;
 
 /* Aside
 -------------------------- */
-$--aside-background: rgba(0, 0, 0, 0.8) !default;
-$--aside-text-color: #fff !default;
+$--aside-background: var(--lc-bg-aside) !default;
+$--aside-text-color: var(--lc-aside-text) !default;
 
 /* SubNav
 -------------------------- */
-$--subnav-background: #F4F5F7 !default;
-$--subnav-title-color: $--color-text-primary !default;
-$--subnav-action-color: #4D515A !default;
-$--subnav-text-color: #4D515A !default;
-$--subnav-active-text-color: $--color-primary !default;
-$--subnav-active-background: #EAECF0 !default;
-$--subnav-border-color: #ccc !default;
+$--subnav-background: var(--lc-bg-subnav) !default;
+$--subnav-title-color: var(--lc-subnav-title) !default;
+$--subnav-action-color: var(--lc-subnav-text) !default;
+$--subnav-text-color: var(--lc-subnav-text) !default;
+$--subnav-active-text-color: var(--lc-subnav-active-text) !default;
+$--subnav-active-background: var(--lc-subnav-active-bg) !default;
+$--subnav-border-color: var(--lc-subnav-border) !default;
 
 /* Main
 -------------------------- */
-$--main-background: $--color-white !default;
+$--main-background: var(--lc-bg-main) !default;
 
 /* Panel
 -------------------------- */
-$--panel-background: $--color-white !default;
-$--panel-title-color: $--color-text-primary !default;
-$--panel-border-color: rgba(0, 0, 0, 0.1) !default;
+$--panel-background: var(--lc-bg-panel) !default;
+$--panel-title-color: var(--lc-text-primary) !default;
+$--panel-border-color: var(--lc-border-panel) !default;
 
 /* Form Actions
 -------------------------- */
-$--form-actions-background: $--color-white !default;
+$--form-actions-background: var(--lc-form-actions-bg) !default;
 
 /* Task
 -------------------------- */
-$--task-action-color: #4d515a !default;
-$--task-action-hover-color: $--color-primary !default;
-$--task-action-disabled-color: rgba(77, 81, 90, 0.5) !default;
-$--task-item-background: #fff !default;
-$--task-item-border-color: #ccc !default;
-$--task-item-hover-border-color: $--color-primary !default;
-$--task-item-hover-background: $--color-primary !default;
-$--task-item-text-color: #505753 !default;
-$--task-item-action-background: #fff !default;
-$--task-item-action-hover-background: $--color-primary !default;
-$--task-item-action-border-color: #F5F5F5 !default;
-$--task-item-action-hover-border-color: $--color-primary !default;
-$--task-item-action-color: #9B9B9B !default;
-$--task-item-action-hover-color: $--color-primary !default;
-$--task-item-action-verify-background: rgba(0, 0, 0, 0.05) !default;
-$--task-item-action-verify-hover-background: rgba(0, 0, 0, 0.10) !default;
-$--no-task-color: #eee !default;
-$--add-task-dialog-footer-background: #f5f5f5 !default;
-$--task-detail-box-border: #ebeef5 !default;
+$--task-action-color: var(--lc-task-action) !default;
+$--task-action-hover-color: var(--lc-task-action-hover) !default;
+$--task-action-disabled-color: var(--lc-task-action-disabled) !default;
+$--task-item-background: var(--lc-task-item-bg) !default;
+$--task-item-border-color: var(--lc-task-item-border) !default;
+$--task-item-hover-border-color: var(--lc-task-item-hover-border) !default;
+$--task-item-hover-background: var(--lc-task-item-hover-bg) !default;
+$--task-item-text-color: var(--lc-task-item-text) !default;
+$--task-item-action-background: var(--lc-task-action-bg) !default;
+$--task-item-action-hover-background: var(--lc-task-action-hover-bg) !default;
+$--task-item-action-border-color: var(--lc-task-action-border) !default;
+$--task-item-action-hover-border-color: var(--lc-task-action-hover-border) !default;
+$--task-item-action-color: var(--lc-text-placeholder) !default;
+$--task-item-action-hover-color: var(--lc-task-action-hover) !default;
+$--task-item-action-verify-background: var(--lc-task-action-verify-bg) !default;
+$--task-item-action-verify-hover-background: var(--lc-task-action-verify-hover-bg) !default;
+$--no-task-color: var(--lc-no-task) !default;
+$--add-task-dialog-footer-background: var(--lc-bg-dialog-footer) !default;
+$--task-detail-box-border: var(--lc-task-detail-border) !default;
 
 /* Preference
 -------------------------- */
-$--preference-form-text-color: #4c4c4c;
-
-/* Floating Bar
--------------------------- */
-$--floating-bar-background: $--color-white !default;
-$--floating-bar-border-color: #ccc !default;
-$--floating-bar-hover-border-color: #9b9b9b !default;
-$--floating-bar-divider-color: rgba(0, 0, 0, 0.1) !default;
-$--floating-bar-item-hover-background: rgba(0, 0, 0, 0.05) !default;
-$--floating-bar-item-color: #9b9b9b !default;
-
-/* Speedometer
--------------------------- */
-$--speedometer-background: $--color-white !default;
-$--speedometer-border-color: #ccc !default;
-$--speedometer-hover-border-color: #9b9b9b !default;
-$--speedometer-primary-color: $--color-primary !default;
-$--speedometer-stopped-color: #9b9b9b !default;
-$--speedometer-text-color: #9b9b9b !default;
+$--preference-form-text-color: var(--lc-preference-text) !default;
 
 /* Task Graphic
 -------------------------- */
-$--graphic-box-background: transparent !default;
-$--graphic-atom-outline-color: rgba(27, 31, 35, 0.06) !default;
-$--graphic-atom-color-0: #ebedf0 !default;
-$--graphic-atom-color-1: #9be9a8 !default;
-$--graphic-atom-color-2: #40c463 !default;
-$--graphic-atom-color-3: #30a14e !default;
-$--graphic-atom-color-4: #39d353 !default;
+$--graphic-box-background: var(--lc-graphic-box-bg) !default;
+$--graphic-atom-outline-color: var(--lc-graphic-atom-outline) !default;
+$--graphic-atom-color-0: var(--lc-graphic-atom-0) !default;
+$--graphic-atom-color-1: var(--lc-graphic-atom-1) !default;
+$--graphic-atom-color-2: var(--lc-graphic-atom-2) !default;
+$--graphic-atom-color-3: var(--lc-graphic-atom-3) !default;
+$--graphic-atom-color-4: var(--lc-graphic-atom-4) !default;
 
 /* Element UI
 -------------------------- */
-$--dialog-background: #fff !default;
-$--table-border-color: #ebeef5 !default;
+$--dialog-background: var(--lc-bg-dialog) !default;
+$--table-border-color: var(--lc-table-border) !default;

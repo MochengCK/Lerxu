@@ -18,6 +18,21 @@ const extConfigDefaults = {
 const EXT_CONFIG_STORAGE_KEY = 'extConfig'
 
 // 从 chrome.storage 恢复上次持久化的 extConfig，防止 Service Worker 重启后配置丢失
+//
+// 冷启动竞态修复:
+// 模块级 extConfig 默认值 interceptAllDownloads=false，而 storage 恢复是异步的。
+// SW 休眠后被下载事件唤醒时，downloads.onCreated 可能先于恢复完成触发，
+// 导致接管被跳过、下载漏进浏览器自己的下载列表。
+// 所有接管决策统一 await extConfigReady，确保拿到真实配置后再判断。
+let resolveExtConfigReady = null
+const extConfigReady = new Promise((resolve) => { resolveExtConfigReady = resolve })
+const markExtConfigReady = () => {
+  if (resolveExtConfigReady) {
+    resolveExtConfigReady()
+    resolveExtConfigReady = null
+  }
+}
+
 let extConfig = { ...extConfigDefaults }
 try {
   chrome.storage.local.get([EXT_CONFIG_STORAGE_KEY], (res) => {
@@ -29,8 +44,12 @@ try {
       }
       console.log('[Background] Restored extConfig from storage:', extConfig.interceptAllDownloads ? 'intercept ON' : 'intercept OFF')
     }
+    markExtConfigReady()
+    applyDownloadUiSetting()
   })
-} catch (e) {}
+} catch (e) {
+  markExtConfigReady()
+}
 
 let extConfigTimer = null
 let extConfigSyncedOnce = false
@@ -40,6 +59,43 @@ const TOKEN_VERSION_KEY = 'linkcoreTokenVersion'
 // 回退到浏览器下载的 URL 集合，防止接管循环（取消→重新下载→取消→...）
 // 使用 Map 记录时间戳，定期清理过期条目
 const fallbackBrowserUrls = new Map()
+// 缓存 autoHijackOverride 状态，避免 onCreated 中的异步 storage 读取延迟
+// 同步读取是让 cancel 在下载项出现前立即执行的关键
+let cachedAutoHijackDisabled = false
+try {
+  chrome.storage.local.get([AUTO_HIJACK_OVERRIDE_KEY], (res) => {
+    cachedAutoHijackDisabled = !!(res && res[AUTO_HIJACK_OVERRIDE_KEY])
+  })
+} catch (e) {}
+// 监听 storage 变化，保持缓存同步
+try {
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes[AUTO_HIJACK_OVERRIDE_KEY]) {
+      cachedAutoHijackDisabled = !!changes[AUTO_HIJACK_OVERRIDE_KEY].newValue
+      // 通知所有 content script 更新缓存
+      chrome.tabs.query({}, (tabs) => {
+        tabs.forEach(tab => {
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'autoHijackToggled',
+            disabled: cachedAutoHijackDisabled
+          }).catch(() => {})
+        })
+      })
+    }
+  })
+} catch (e) {}
+// webRequest.onHeadersReceived 预检测到的下载 URL 集合
+// 当服务器响应 Content-Disposition: attachment 时，URL 被记录在此
+// onCreated 可据此做更快决策（已知是下载，直接 cancel）
+const pendingDownloadUrls = new Map()
+setInterval(() => {
+  const now = Date.now()
+  for (const [url, ts] of pendingDownloadUrls) {
+    if (now - ts > 15000) {
+      pendingDownloadUrls.delete(url)
+    }
+  }
+}, 10000)
 setInterval(() => {
   const now = Date.now()
   for (const [url, ts] of fallbackBrowserUrls) {
@@ -284,9 +340,10 @@ const notifyConnectionChange = (connected) => {
   })
 }
 
-const tryChannel = async (path, options = {}, timeout = 1000, allowRetry = true) => {
-  const hosts = ['127.0.0.1', 'localhost']
+// 缓存上次成功的 host，避免每次都遍历两个
+let cachedHost = null
 
+const tryChannel = async (path, options = {}, timeout = 1000, allowRetry = true) => {
   // 对于需要认证的请求，先确保 token 有效
   if (!path.startsWith('/linkcore/handshake') && !path.startsWith('/linkcore/authorize')) {
     const tokenValid = await ensureSessionToken()
@@ -295,6 +352,10 @@ const tryChannel = async (path, options = {}, timeout = 1000, allowRetry = true)
       return null
     }
   }
+
+  // 优先使用缓存的 host，失败后再尝试全部
+  const allHosts = ['127.0.0.1', 'localhost']
+  const hosts = cachedHost ? [cachedHost, ...allHosts.filter(h => h !== cachedHost)] : allHosts
 
   for (const h of hosts) {
     try {
@@ -327,6 +388,8 @@ const tryChannel = async (path, options = {}, timeout = 1000, allowRetry = true)
       }
 
       if (resp && resp.ok) {
+        // 缓存成功的 host
+        cachedHost = h
         // 检测连接状态变化
         if (!lastConnectionCheck.connected) {
           notifyConnectionChange(true)
@@ -346,6 +409,8 @@ const tryChannel = async (path, options = {}, timeout = 1000, allowRetry = true)
   }
   lastConnectionCheck.connected = false
   lastConnectionCheck.lastCheckTime = Date.now()
+  // 清除 host 缓存，下次重新探测
+  cachedHost = null
   return null
 }
 
@@ -474,6 +539,8 @@ const syncExtConfigFromClient = async () => {
       videoSnifferAutoCombine
     }
     extConfig = nextConfig
+    markExtConfigReady()
+    applyDownloadUiSetting()
     
     // 持久化完整 extConfig 到 chrome.storage，防止 Service Worker 重启后配置丢失
     chrome.storage.local.set({
@@ -484,6 +551,13 @@ const syncExtConfigFromClient = async () => {
       ...(lastKnownTheme ? { uiTheme: lastKnownTheme } : {})
     }, () => {
       console.log('[Background] extConfig saved to storage')
+    })
+
+    // 通知所有 content script 配置已更新
+    chrome.tabs.query({}, (tabs) => {
+      tabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, { type: 'extConfigUpdated' }).catch(() => {})
+      })
     })
 
     if (themeChanged) {
@@ -611,18 +685,29 @@ const mergeHeaderLines = (baseLines, extraLines) => {
 
 const addUri = async (url, referer, suggestedFilename, extraHeaders) => {
   try {
-    const baseHeaders = await getHeadersForUrl(url, referer)
+    // 并行获取 headers 和确保 token 有效，减少总等待时间
+    const [baseHeaders] = await Promise.all([
+      getHeadersForUrl(url, referer),
+      ensureSessionToken()
+    ])
     const headers = mergeHeaderLines(baseHeaders, extraHeaders)
     const payload = { url, referer, headers }
     // 如果有建议的文件名，添加到请求中
     if (suggestedFilename) {
       payload.suggestedFilename = suggestedFilename
     }
-    const ok = await tryChannel('/linkcore/add', {
+    const reqOptions = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    }, 3000)
+    }
+    // 首次尝试，使用较短超时
+    let ok = await tryChannel('/linkcore/add', reqOptions, 2000)
+    if (!ok) {
+      // 首次失败，短暂等待后重试一次（可能是瞬时网络抖动）
+      await new Promise(r => setTimeout(r, 200))
+      ok = await tryChannel('/linkcore/add', reqOptions, 3000)
+    }
     if (!ok) return false
     const data = await ok.resp.json().catch(() => ({}))
     return !!(data && data.ok)
@@ -681,6 +766,9 @@ const initializeBackground = async () => {
   startLocalePolling()
   // 同步客户端扩展配置
   startExtConfigPolling()
+
+  // SW 重启后恢复放行下载的气泡跟踪(等配置就绪再判断)
+  extConfigReady.then(() => recoverActiveBrowserDownloads())
   
   console.log('[Background] Background script initialized')
 }
@@ -707,16 +795,14 @@ if (chrome.runtime.onActivate) {
 }
 
 const getAutoHijackOverride = () => {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(AUTO_HIJACK_OVERRIDE_KEY, (res) => {
-      resolve(!!(res && res[AUTO_HIJACK_OVERRIDE_KEY]))
-    })
-  })
+  // 返回缓存值，避免异步延迟
+  return Promise.resolve(cachedAutoHijackDisabled)
 }
 
 const toggleAutoHijackOverride = async () => {
-  const current = await getAutoHijackOverride()
+  const current = cachedAutoHijackDisabled
   const next = !current
+  cachedAutoHijackDisabled = next // 立即更新缓存
   await new Promise((resolve) => {
     chrome.storage.local.set({ [AUTO_HIJACK_OVERRIDE_KEY]: next }, () => resolve(true))
   })
@@ -974,14 +1060,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const referer = msg.referer || ''
       const suggestedFilename = msg.suggestedFilename || ''
       const extraHeaders = Array.isArray(msg.headers) ? msg.headers : []
-      const connected = await isClientAvailable()
-      if (!connected) {
+      // 直接尝试发送到程序，跳过 isClientAvailable 预检查以减少延迟
+      const ok = await addUri(url, referer, suggestedFilename, extraHeaders)
+      if (ok) {
+        sendResponse({ ok: true, via: 'client' })
+      } else {
+        // 发送失败，回退到浏览器下载
+        // 必须先标记 fallbackBrowserUrls，否则 onCreated 会把回退下载再次取消
+        fallbackBrowserUrls.set(url, Date.now())
         const fallback = await downloadViaBrowser(url, suggestedFilename)
         sendResponse({ ok: !!fallback.ok, via: 'browser' })
-        return
       }
-      const ok = await addUri(url, referer, suggestedFilename, extraHeaders)
-      sendResponse({ ok, via: 'client' })
     }
     handleAddFromContent()
     return true
@@ -1162,140 +1251,316 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   let url = info.linkUrl || info.srcUrl || info.pageUrl
   const referer = tab && tab.url ? tab.url : ''
   if (url) {
-    const connected = await isClientAvailable()
-    if (connected) {
-      const ok = await addUri(url, referer)
-      if (ok) return
-    }
+    // 直接尝试发送到程序，跳过预检查以减少延迟
+    const ok = await addUri(url, referer)
+    if (ok) return
+    // 回退浏览器下载前先标记，防止被接管逻辑再次取消
+    fallbackBrowserUrls.set(url, Date.now())
     await downloadViaBrowser(url, '')
   }
 })
 
-chrome.downloads.onCreated.addListener((item) => {
-  const handleDownloadCreated = async () => {
-    // 只处理正在进行中的下载，忽略历史记录
-    if (item.state !== 'in_progress') {
-      return
-    }
+// === 下载接管核心:统一决策 + 幂等执行 ===
+// Chromium 扩展 API 的上限说明:
+//   没有任何扩展 API 能在"下载项创建之前"介入(MV3 webRequest 不可阻塞、
+//   declarativeNetRequest 无法按响应头拦截)。IDM/FDM/ABDM 在 Chrome 上
+//   全都是 cancel + erase 路线。能把体验做干净的关键是:
+//   1. 决策前必须等配置就绪(修复 SW 冷启动漏接管)
+//   2. cancel 必须 await 成功后再 erase,否则"已取消"条目残留下载列表
+//   3. onDeterminingFilename 在写盘/另存为弹窗之前介入,不留 .crdownload
+//   4. downloads.ui 按决策动态显隐:接管隐藏气泡,放行显示气泡(见 applyUiForDecision)
 
-    // 检查是否临时禁用了自动接管
-    const overrideDisabled = await getAutoHijackOverride()
-    if (overrideDisabled) {
-      return
-    }
+// 已成功接管(或正在接管)的下载 id,防止 onCreated/onDeterminingFilename 重复执行
+const handledDownloadIds = new Set()
+// downloadId -> Promise<'intercept'|'skip'>,让两个事件共享同一份决策
+const takeoverDecisions = new Map()
 
-    // 使用已缓存的 extConfig（由定时轮询保持同步），避免每次下载都发起网络请求
+setInterval(() => {
+  if (handledDownloadIds.size > 500) {
+    const keep = Array.from(handledDownloadIds).slice(-200)
+    handledDownloadIds.clear()
+    keep.forEach(id => handledDownloadIds.add(id))
+  }
+}, 60000)
+
+// 浏览器下载气泡按接管结果动态显隐:
+//   - 下载被接管 → 隐藏气泡(浏览器侧不留痕迹)
+//   - 下载被放行(临时禁用/命中排除规则/回退浏览器下载) → 显示气泡,
+//     浏览器真正在下载,用户需要正常的下载反馈;该下载结束后恢复隐藏
+//   - 接管功能关闭 → 始终显示气泡(基线)
+// 注意 setUiOptions 是 profile 级全局开关,无法按单个下载设置,
+// 所以放行中的下载与新接管下载并发时,气泡以后到的决策为准
+const setDownloadUiEnabled = (enabled) => {
+  try {
+    if (chrome.downloads && typeof chrome.downloads.setUiOptions === 'function') {
+      chrome.downloads.setUiOptions({ enabled }, () => {
+        if (chrome.runtime.lastError) {
+          // 不支持 downloads.ui 的平台(如 Firefox),忽略
+        }
+      })
+    }
+  } catch (e) {}
+}
+
+// 基线:接管开启时默认隐藏,关闭时显示
+const applyDownloadUiSetting = () => {
+  setDownloadUiEnabled(!extConfig.interceptAllDownloads)
+}
+
+// 决策为"放行"的进行中下载 id —— 这些由浏览器处理,期间气泡保持显示
+const activeBrowserDownloads = new Set()
+
+// 决策副作用(幂等,onCreated/onDeterminingFilename 都会调用):
+// 接管 → 尽早隐藏气泡;放行 → 显示气泡并跟踪,终态时统一恢复基线
+const applyUiForDecision = (item, decision) => {
+  if (decision === 'intercept') {
+    applyDownloadUiSetting()
+    return
+  }
+  if (extConfig.interceptAllDownloads && item && typeof item.id === 'number') {
+    activeBrowserDownloads.add(item.id)
+    setDownloadUiEnabled(true)
+  }
+}
+
+// SW 重启恢复:仍在进行中的下载说明之前被放行(接管的已被取消),
+// 重新纳入跟踪并显示气泡,避免长下载期间 SW 休眠唤醒后气泡消失
+const recoverActiveBrowserDownloads = () => {
+  try {
+    chrome.downloads.search({ state: 'in_progress' }, (items) => {
+      if (chrome.runtime.lastError || !Array.isArray(items)) {
+        return
+      }
+      if (!extConfig.interceptAllDownloads) {
+        return
+      }
+      for (const it of items) {
+        if (it && typeof it.id === 'number') {
+          activeBrowserDownloads.add(it.id)
+        }
+      }
+      if (activeBrowserDownloads.size > 0) {
+        setDownloadUiEnabled(true)
+      }
+    })
+  } catch (e) {}
+}
+
+// 判断一个下载项是否应该被接管(所有排除规则集中在此,onCreated 与
+// onDeterminingFilename 通过 takeoverDecisions 共享同一份决策,不会重复判断)
+const decideTakeover = (item) => {
+  if (!item || typeof item.id !== 'number') {
+    return Promise.resolve('skip')
+  }
+  const existing = takeoverDecisions.get(item.id)
+  if (existing) {
+    return existing
+  }
+
+  const decision = (async () => {
+    // 等待配置从 storage 恢复/从客户端同步,修复 SW 冷启动竞态导致的漏接管
+    await extConfigReady
+
     if (!extConfig.interceptAllDownloads) {
-      return
+      return 'skip'
     }
 
-    const url = item && item.url ? item.url : ''
+    const url = item.url || ''
     if (!url || !/^https?:/i.test(url)) {
-      return
+      return 'skip'
     }
 
-    // 如果该 URL 是我们回退到浏览器下载的，跳过接管
+    // 我们主动回退给浏览器的下载,跳过接管(防止 取消→重下→取消 循环)
     if (fallbackBrowserUrls.has(url)) {
       fallbackBrowserUrls.delete(url)
-      return
+      return 'skip'
     }
 
-    // 接管模式：立即取消浏览器下载，不让浏览器下载任何数据
-    chrome.downloads.cancel(item.id)
-    chrome.downloads.erase({ id: item.id })
+    // 临时禁用接管(缓存值,同步判断)
+    if (cachedAutoHijackDisabled) {
+      return 'skip'
+    }
 
-    // 检查排除域名
+    // 域名排除(下载域名或来源域名命中即放行)
     try {
-      const downloadUrl = new URL(url)
-      const downloadDomain = downloadUrl.hostname
-
+      const downloadDomain = new URL(url).hostname.toLowerCase()
       let refererDomain = ''
       if (item.referrer) {
         try {
-          const refererUrl = new URL(item.referrer)
-          refererDomain = refererUrl.hostname
+          refererDomain = new URL(item.referrer).hostname.toLowerCase()
         } catch (e) {}
       }
-
       const excludeDomains = Array.isArray(extConfig.excludeDomains) ? extConfig.excludeDomains : []
       const isDomainExcluded = excludeDomains.some(domain => {
-        const normalizedDomain = domain.toLowerCase().trim()
-        return downloadDomain.toLowerCase().includes(normalizedDomain) ||
-               (refererDomain && refererDomain.toLowerCase().includes(normalizedDomain))
+        const normalized = `${domain}`.toLowerCase().trim()
+        return normalized && (downloadDomain.includes(normalized) || (refererDomain && refererDomain.includes(normalized)))
       })
-
       if (isDomainExcluded) {
-        console.log('[LinkCore] Domain excluded, restarting browser download:', downloadDomain)
-        fallbackBrowserUrls.set(url, Date.now())
-        await downloadViaBrowser(url, item.filename)
-        return
+        return 'skip'
       }
-    } catch (e) {
-      console.error('[LinkCore] Error checking excluded domain:', e)
-    }
+    } catch (e) {}
 
-    // 检查排除的文件扩展名
-    let shouldExclude = false
+    // 文件扩展名排除 + 文件大小排除
     try {
       let name = item.filename || ''
       if (!name) {
         try {
-          const u = new URL(url)
-          name = u.pathname ? u.pathname.split('/').pop() || '' : ''
+          name = new URL(url).pathname.split('/').pop() || ''
         } catch (e) {}
       }
       const ext = name && name.indexOf('.') !== -1 ? name.split('.').pop().toLowerCase() : ''
       if (ext && Array.isArray(extConfig.skipFileExtensions) && extConfig.skipFileExtensions.includes(ext)) {
-        shouldExclude = true
+        return 'skip'
       }
-
-      // 检查文件大小限制
-      if (!shouldExclude) {
-        const minFileSizeMB = Number(extConfig.minFileSize) || 0
-        if (minFileSizeMB > 0) {
-          const totalBytes = item.totalBytes || 0
-          const fileSizeMB = totalBytes / (1024 * 1024)
-          if (totalBytes > 0 && fileSizeMB < minFileSizeMB) {
-            console.log('[LinkCore] File size below minimum, restarting browser download:', url)
-            shouldExclude = true
-          }
+      const minFileSizeMB = Number(extConfig.minFileSize) || 0
+      if (minFileSizeMB > 0) {
+        const totalBytes = item.totalBytes || 0
+        // 注意:onCreated 阶段 totalBytes 常为 0(响应头未就绪),此过滤为尽力而为
+        if (totalBytes > 0 && totalBytes / (1024 * 1024) < minFileSizeMB) {
+          return 'skip'
         }
       }
     } catch (e) {}
 
-    if (shouldExclude) {
-      fallbackBrowserUrls.set(url, Date.now())
-      await downloadViaBrowser(url, item.filename)
-      return
-    }
+    return 'intercept'
+  })()
 
-    // 检查程序是否在运行
-    const clientAvailable = await isClientAvailable()
-    if (!clientAvailable) {
-      console.log('[LinkCore] Client not available, restarting browser download')
-      fallbackBrowserUrls.set(url, Date.now())
-      await downloadViaBrowser(url, item.filename)
-      return
-    }
+  takeoverDecisions.set(item.id, decision)
+  decision.finally(() => {
+    setTimeout(() => takeoverDecisions.delete(item.id), 30000)
+  })
+  return decision
+}
 
-    // 发送到程序
-    try {
-      const success = await addUri(url, item.referrer, item.filename)
-      if (!success) {
-        // addUri 返回 false 表示发送失败，回退到浏览器下载
-        console.log('[LinkCore] Failed to send to client (addUri returned false), restarting browser download')
-        fallbackBrowserUrls.set(url, Date.now())
-        await downloadViaBrowser(url, item.filename)
-      }
-    } catch (e) {
-      // 如果发送异常，回退到浏览器下载
-      console.log('[LinkCore] Failed to send to client, restarting browser download:', e)
-      fallbackBrowserUrls.set(url, Date.now())
-      await downloadViaBrowser(url, item.filename)
-    }
+// 执行接管:取消浏览器下载(等待取消完成)→ 从历史擦除 → 转交 LinkCore → 失败回退浏览器
+const executeTakeover = async (item) => {
+  if (handledDownloadIds.has(item.id)) {
+    return
   }
-  handleDownloadCreated()
+  handledDownloadIds.add(item.id)
+
+  const url = item.url || ''
+  try {
+    // 必须 await:进行中的下载 erase 不生效,只有取消完成后才能彻底移除,
+    // 否则浏览器下载列表会残留"已取消"条目
+    await chrome.downloads.cancel(item.id)
+  } catch (e) {}
+  try {
+    await chrome.downloads.erase({ id: item.id })
+  } catch (e) {}
+
+  try {
+    const success = await addUri(url, item.referrer, item.filename)
+    if (!success) {
+      fallbackBrowserUrls.set(url, Date.now())
+      await downloadViaBrowser(url, item.filename)
+    }
+  } catch (e) {
+    fallbackBrowserUrls.set(url, Date.now())
+    await downloadViaBrowser(url, item.filename)
+  }
+}
+
+chrome.downloads.onCreated.addListener((item) => {
+  // 只处理正在进行中的下载，忽略历史记录
+  if (!item || item.state !== 'in_progress') {
+    return
+  }
+  decideTakeover(item).then((decision) => {
+    applyUiForDecision(item, decision)
+    if (decision === 'intercept') {
+      executeTakeover(item)
+    }
+  }).catch(() => {})
 })
+
+// onDeterminingFilename 在浏览器确定文件名/写入磁盘/弹出"另存为"之前触发。
+// 在这里取消可以:
+//   - 不留 .crdownload 残留文件
+//   - 避免用户开启"下载前询问保存位置"时弹窗一闪而过
+// 规则:决定接管 → 取消(不可再调 suggest);决定放行 → 必须调 suggest() 走默认文件名
+try {
+  chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+    decideTakeover(item).then((decision) => {
+      applyUiForDecision(item, decision)
+      if (decision === 'intercept') {
+        executeTakeover(item)
+      } else {
+        try { suggest() } catch (e) {}
+      }
+    }).catch(() => {
+      try { suggest() } catch (e) {}
+    })
+    return true
+  })
+} catch (e) {
+  console.log('[Background] onDeterminingFilename setup failed:', e)
+}
+
+// 放行的浏览器下载到达终态后,若没有其他进行中的放行下载,恢复气泡基线(隐藏)
+try {
+  chrome.downloads.onChanged.addListener((delta) => {
+    if (!delta || typeof delta.id !== 'number') {
+      return
+    }
+    if (!activeBrowserDownloads.has(delta.id)) {
+      return
+    }
+    const state = delta.state && delta.state.current
+    if (state === 'complete' || state === 'interrupted') {
+      activeBrowserDownloads.delete(delta.id)
+      if (activeBrowserDownloads.size === 0) {
+        applyDownloadUiSetting()
+      }
+    }
+  })
+} catch (e) {
+  console.log('[Background] onChanged setup failed:', e)
+}
+
+// === webRequest.onHeadersReceived: 预检测下载响应 ===
+// 在浏览器创建下载项之前检测 Content-Disposition: attachment
+// 记录 URL 到 pendingDownloadUrls，让 onCreated 处理器做更快决策
+try {
+  chrome.webRequest.onHeadersReceived.addListener(
+    (details) => {
+      // 只处理主框架的响应
+      if (details.type !== 'main_frame' && details.type !== 'sub_frame') {
+        return
+      }
+
+      // 检查拦截功能是否开启（同步检查）
+      if (!extConfig.interceptAllDownloads) {
+        return
+      }
+
+      // 检查响应头是否有 Content-Disposition: attachment
+      const headers = details.responseHeaders || []
+      let isAttachment = false
+      for (const header of headers) {
+        const name = (header.name || '').toLowerCase()
+        const value = (header.value || '')
+        if (name === 'content-disposition' && /attachment/i.test(value)) {
+          isAttachment = true
+          break
+        }
+        // Content-Type 不是 HTML/JSON/XML 的也可能触发下载
+        // 但只靠 Content-Disposition 判断更精确
+      }
+
+      if (isAttachment) {
+        const url = details.url || ''
+        if (url && /^https?:/i.test(url)) {
+          pendingDownloadUrls.set(url, Date.now())
+        }
+      }
+    },
+    { urls: ['<all_urls>'] },
+    ['responseHeaders']
+  )
+} catch (e) {
+  console.log('[Background] webRequest.onHeadersReceived setup failed:', e)
+}
 
 // Service Worker 每次加载时执行初始化
 // 使用 setTimeout 确保所有 const 函数声明都已完成

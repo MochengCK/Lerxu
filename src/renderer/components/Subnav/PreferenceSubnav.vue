@@ -28,6 +28,7 @@
   import '@/components/Icons/preference-task'
   import '@/components/Icons/preference-file'
   import '@/components/Icons/preference-bt'
+  import '@/components/Icons/preference-ed2k'
 
   export default {
     name: 'mo-preference-subnav',
@@ -63,6 +64,7 @@
           { key: 'appearance', title: this.$t('preferences.appearance'), icon: 'preference-appearance' },
           { key: 'transfer', title: this.$t('preferences.transfer-settings'), icon: 'preference-transfer' },
           { key: 'bt', title: this.$t('preferences.bt-settings'), icon: 'preference-bt' },
+          { key: 'ed2k', title: this.$t('preferences.ed2k-settings'), icon: 'preference-ed2k' },
           { key: 'task', title: this.$t('preferences.task-manage'), icon: 'preference-task' },
           { key: 'file', title: this.$t('preferences.file-manage'), icon: 'preference-file' },
           { key: 'advanced', title: this.$t('preferences.advanced'), icon: 'preference-advanced' }
@@ -91,7 +93,7 @@
         const appConfig = await this.$electron.ipcRenderer.invoke('get-app-config')
         this.appVersion = appConfig.version
       } catch (error) {
-        console.error('[Motrix] Failed to get app version:', error)
+        console.error('[LinkCore] Failed to get app version:', error)
       }
 
       // 从主进程获取当前实时更新状态
@@ -152,7 +154,7 @@
           }
         }
       } catch (error) {
-        console.error('[Motrix] Failed to get update status:', error)
+        console.error('[LinkCore] Failed to get update status:', error)
       }
 
       this.updateSliderFromDom()
@@ -302,7 +304,7 @@
         if (this.hasMsgSupport()) {
           this.$msg[type](message)
         } else {
-          console.log(`[Motrix] Update message: ${type} - ${message}`)
+          console.log(`[LinkCore] Update message: ${type} - ${message}`)
           // 如果没有消息组件，使用浏览器的alert
           if (type === 'error') {
             alert(message)
@@ -352,7 +354,7 @@
 
         // 设置超时处理，防止无限期等待
         const timeout = setTimeout(() => {
-          console.log('[Motrix] Update check timed out')
+          console.log('[LinkCore] Update check timed out')
           // 移除所有临时事件监听器
           this.$electron.ipcRenderer.removeListener('update-error', onUpdateError)
           this.$electron.ipcRenderer.removeListener('update-not-available', onUpdateNotAvailable)
@@ -366,7 +368,7 @@
         // 监听任何更新事件，清除超时
         const clearTimeoutListener = () => {
           clearTimeout(timeout)
-          console.log('[Motrix] Update check completed, clearing timeout')
+          console.log('[LinkCore] Update check completed, clearing timeout')
           // 移除清除超时的监听器
           this.$electron.ipcRenderer.removeListener('update-error', clearTimeoutListener)
           this.$electron.ipcRenderer.removeListener('update-not-available', clearTimeoutListener)
@@ -377,7 +379,7 @@
         this.$electron.ipcRenderer.once('update-available', clearTimeoutListener)
 
         // 发送检查更新命令
-        console.log('[Motrix] Sending check for updates command')
+        console.log('[LinkCore] Sending check for updates command')
         this.$electron.ipcRenderer.send('command', 'application:check-for-updates')
       },
 
@@ -437,7 +439,7 @@
         this.$electron.ipcRenderer.on('update-cancelled', onDownloadCancelled)
 
         // 发送下载更新命令
-        console.log('[Motrix] Sending download update command')
+        console.log('[LinkCore] Sending download update command')
         this.$electron.ipcRenderer.send('command', 'application:download-update')
       }
     }

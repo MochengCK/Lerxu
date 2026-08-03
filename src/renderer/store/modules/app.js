@@ -183,7 +183,7 @@ const actions = {
         clearTimeout(timeoutId)
 
         if (engineInfo && engineInfo.error) {
-          console.error('[Motrix] Failed to fetch engine info:', engineInfo.error)
+          console.error('[LinkCore] Failed to fetch engine info:', engineInfo.error)
           reject(new Error(engineInfo.error))
           return
         }
@@ -195,7 +195,7 @@ const actions = {
       // 设置超时处理
       const timeoutId = setTimeout(() => {
         ipcRenderer.removeListener('command', handleEngineInfo)
-        console.warn('[Motrix] Timeout fetching engine info')
+        console.warn('[LinkCore] Timeout fetching engine info')
         reject(new Error('Timeout fetching engine info'))
       }, 5000)
 
@@ -285,6 +285,9 @@ const actions = {
         }
         commit('UPDATE_PROGRESS', progress)
       })
+      .catch(() => {
+        // 引擎断线时轮询会 reject，静默忽略避免每秒产生 unhandled rejection
+      })
   },
   clearProgress ({ commit }) {
     commit('UPDATE_PROGRESS', -1)
@@ -307,7 +310,7 @@ const actions = {
         clearTimeout(timeoutId)
 
         if (engineListData && engineListData.error) {
-          console.error('[Motrix] Failed to fetch engine list:', engineListData.error)
+          console.error('[LinkCore] Failed to fetch engine list:', engineListData.error)
           reject(new Error(engineListData.error))
           return
         }
@@ -319,7 +322,7 @@ const actions = {
       // 设置超时处理
       const timeoutId = setTimeout(() => {
         ipcRenderer.removeListener('command', handleEngineList)
-        console.warn('[Motrix] Timeout fetching engine list')
+        console.warn('[LinkCore] Timeout fetching engine list')
         reject(new Error('Timeout fetching engine list'))
       }, 5000)
 

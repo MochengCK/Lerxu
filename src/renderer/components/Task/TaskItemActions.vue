@@ -62,6 +62,29 @@
         </li>
       </ul>
     </transition>
+    <transition name="verify-slide">
+      <ul
+        v-if="showSelectFilesBar"
+        :key="`${task.gid}-select-files`"
+        class="task-item-actions task-item-actions--verify"
+      >
+        <li class="task-item-action is-verify task-item-action--verify-trigger">
+          <el-tooltip
+            effect="dark"
+            :content="$t('task.select-files')"
+            placement="top"
+            :open-delay="500"
+          >
+            <span
+              class="task-verify-dropdown-ref"
+              @click.stop="onSelectFilesClick"
+            >
+              <mo-icon name="select-files" width="14" height="14" />
+            </span>
+          </el-tooltip>
+        </li>
+      </ul>
+    </transition>
     <ul
       :key="task.gid"
       :class="['task-item-actions', { 'task-item-actions--verify-open': verifyPanelVisible }]"
@@ -277,6 +300,26 @@
         <el-button type="primary" @click="saveAdvancedPreset">{{ $t('app.save') }}</el-button>
       </div>
     </el-dialog>
+    <el-dialog
+      :visible.sync="selectFilesDialogVisible"
+      :title="$t('task.select-files')"
+      width="600px"
+      append-to-body
+      :close-on-click-modal="false"
+      custom-class="select-files-dialog"
+    >
+      <mo-task-files
+        ref="selectFilesTable"
+        mode="ADD"
+        :files="selectFilesData"
+        :height="360"
+        @confirm-selection="onConfirmFileSelection"
+      />
+      <div slot="footer" class="dialog-footer">
+        <el-button @click="selectFilesDialogVisible = false">{{ $t('app.cancel') }}</el-button>
+        <el-button type="primary" @click="onConfirmFileSelection">{{ $t('app.save') }}</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -289,10 +332,17 @@
 
   import { commands } from '@/components/CommandManager/instance'
   import api from '@/api'
-  import { TASK_STATUS } from '@shared/constants'
+  import {
+    TASK_STATUS,
+    NONE_SELECTED_FILES,
+    SELECTED_ALL_FILES,
+    EMPTY_STRING
+  } from '@shared/constants'
   import {
     checkTaskIsSeeder,
-    getTaskName
+    getTaskName,
+    getFileName,
+    getFileExtension
   } from '@shared/utils'
   import { getTaskActualPath, getPathCandidates } from '@/utils/native'
   import '@/components/Icons/task-start-line'
@@ -305,6 +355,8 @@
   import '@/components/Icons/info-circle'
   import '@/components/Icons/verify-file'
   import '@/components/Icons/trash'
+  import '@/components/Icons/select-files'
+  import TaskFiles from '@/components/TaskDetail/TaskFiles'
 
   const taskActionsMap = {
     [TASK_STATUS.ACTIVE]: ['PAUSE', 'DELETE'],
@@ -318,12 +370,15 @@
 
   export default {
     name: 'mo-task-item-actions',
+    components: {
+      [TaskFiles.name]: TaskFiles
+    },
     props: {
       mode: {
         type: String,
         default: 'LIST',
         validator: function (value) {
-          return ['LIST', 'DETAIL'].indexOf(value) !== -1
+          return ['LIST', 'DETAIL'].includes(value)
         }
       },
       task: {
@@ -351,7 +406,9 @@
         updateHeadersCookie: '',
         updateHeadersAuthorization: '',
         updateAllProxy: '',
-        updateLinkSubmitting: false
+        updateLinkSubmitting: false,
+        selectFilesDialogVisible: false,
+        selectFilesData: []
       }
     },
     computed: {
@@ -361,7 +418,8 @@
       }),
       ...mapState('task', {
         securityScanStatuses: state => state.taskSecurityScanStatuses || {},
-        taskLinkUpdateHints: state => state.taskLinkUpdateHints || {}
+        taskLinkUpdateHints: state => state.taskLinkUpdateHints || {},
+        pendingFileSelection: state => state.pendingFileSelection || {}
       }),
       needUpdateLink () {
         const { task, taskLinkUpdateHints } = this
@@ -454,11 +512,17 @@
           return true
         }
         const { taskActions, path } = this
-        const canVerify = taskActions.indexOf('VERIFY') !== -1
+        const canVerify = taskActions.includes('VERIFY')
         if (!canVerify) {
           return false
         }
         return !!(path && existsSync(path))
+      },
+      showSelectFilesBar () {
+        const { task, pendingFileSelection } = this
+        const gid = task && task.gid ? `${task.gid}` : ''
+        if (!gid) return false
+        return !!(pendingFileSelection && pendingFileSelection[gid])
       },
       verifyCanSlideOut () {
         const { path } = this
@@ -717,9 +781,69 @@
       },
       onResumeClick () {
         const { task, taskName } = this
+        const gid = task && task.gid ? `${task.gid}` : ''
+        if (gid && this.pendingFileSelection && this.pendingFileSelection[gid]) {
+          this.$store.dispatch('task/clearPendingFileSelection', gid)
+        }
         commands.emit('resume-task', {
           task,
           taskName
+        })
+      },
+      onSelectFilesClick () {
+        this.selectFilesDialogVisible = true
+        const rawFiles = Array.isArray(this.task.files) ? this.task.files : []
+        // 映射文件列表，确保包含 name/extension/idx 等字段（aria2 仅返回 path）
+        this.selectFilesData = rawFiles.map((item, index) => {
+          const rawName = getFileName(item.path || '')
+          const extension = getFileExtension(rawName)
+          return {
+            idx: Number(item.index) || (index + 1),
+            selected: item.selected === 'true' || item.selected === true,
+            path: item.path || '',
+            name: item.name || rawName,
+            extension: extension ? `.${extension}` : '',
+            length: parseInt(item.length, 10) || 0,
+            completedLength: item.completedLength || '0'
+          }
+        })
+        // 使用双 rAF 确保弹窗和表格完成渲染后再勾选
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const table = this.$refs.selectFilesTable
+            if (!table) return
+            const files = this.selectFilesData
+            const selected = files.filter(f => f.selected)
+            if (selected.length > 0) {
+              table.toggleSelection(selected)
+            } else {
+              // 默认勾选全部文件
+              table.toggleSelection(files)
+            }
+          })
+        })
+      },
+      onConfirmFileSelection () {
+        const table = this.$refs.selectFilesTable
+        if (!table) return
+        const fileIndex = table.selectedFileIndex
+        if (fileIndex === NONE_SELECTED_FILES) {
+          this.$msg.warning(this.$t('task.select-at-least-one'))
+          return
+        }
+        const gid = this.task && this.task.gid ? `${this.task.gid}` : ''
+        if (!gid) return
+        const options = {
+          selectFile: fileIndex !== SELECTED_ALL_FILES ? fileIndex : EMPTY_STRING
+        }
+        this.$store.dispatch('task/changeTaskOption', { gid, options }).then(() => {
+          this.selectFilesDialogVisible = false
+          this.$store.dispatch('task/clearPendingFileSelection', gid)
+          this.$store.dispatch('task/confirmFileSelection', gid)
+          return api.resumeTask({ gid })
+        }).catch(() => {
+          this.$store.dispatch('task/setPendingFileSelection', gid)
+          this.$msg.error(this.$t('task.select-files-fail'))
         })
       },
       onRestartClick (event) {

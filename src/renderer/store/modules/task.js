@@ -2,6 +2,7 @@ import api from '@/api'
 import { EMPTY_STRING, TASK_STATUS, AUDIO_SUFFIXES, DOCUMENT_SUFFIXES, IMAGE_SUFFIXES, SUB_SUFFIXES, VIDEO_SUFFIXES } from '@shared/constants'
 import { checkTaskIsBT, getFileNameFromFile, getFileExtension, getTaskUri, intersection, isGithubUrl, getGithubUrlsWithMirrors } from '@shared/utils'
 import taskHistory from '@/api/TaskHistory'
+import pendingFileSelectionStore from '@/api/PendingFileSelection'
 import fetch from 'node-fetch'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
 
@@ -258,6 +259,8 @@ const state = {
   allTaskList: [], // 全部任务（不受 currentList 影响，已按日期过滤），用于侧边栏计数
   selectedGidList: [],
   magnetStatuses: {},
+  pendingFileSelection: {},
+  confirmedFileSelection: {},
   dataAccessStatuses: {},
   taskPriorities: {},
   taskSpeedSamples: {},
@@ -302,6 +305,21 @@ const getters = {
       waiting,
       stopped
     }
+  },
+  // 各文件类型分类的任务数量
+  categoryCounts (state, getters, rootState) {
+    const downloadingFileSuffix = (rootState.preference && rootState.preference.config && rootState.preference.config.downloadingFileSuffix) || ''
+    const list = state.allTaskList
+    const categories = ['', 'archives', 'programs', 'videos', 'music', 'images', 'documents']
+    const counts = {}
+    categories.forEach(cat => {
+      if (!cat) {
+        counts[''] = list.length
+      } else {
+        counts[cat] = list.filter(task => taskMatchesCategory(task, cat, downloadingFileSuffix)).length
+      }
+    })
+    return counts
   }
 }
 
@@ -344,6 +362,9 @@ const mutations = {
     const oldList = state.taskList
     const oldMap = new Map(oldList.map(t => [t.gid, t]))
     const newList = []
+    // 数量变化（含清空场景）时必然需要更新数组，
+    // 否则任务全部移除后旧卡片会残留显示
+    let changed = oldList.length !== taskList.length
 
     taskList.forEach(newTask => {
       const oldTask = oldMap.get(newTask.gid)
@@ -381,8 +402,12 @@ const mutations = {
         const updatedKeys = Object.keys(updatedTask)
         const unchanged = oldKeys.length === updatedKeys.length && updatedKeys.every(k => updatedTask[k] === oldTask[k])
         newList.push(unchanged ? oldTask : updatedTask)
+        if (!unchanged) {
+          changed = true
+        }
       } else {
         newList.push(newTask)
+        changed = true
       }
     })
 
@@ -394,29 +419,58 @@ const mutations = {
           const oldTask = oldMap.get(gid)
           if (oldTask) {
             newList.push({ ...oldTask, status: TASK_STATUS.MERGING })
+            changed = true
           }
         }
       })
     }
 
-    // 直接替换整个数组，确保 Vue 能检测到变化
-    // 使用 splice 方法清空并重新填充数组，这样可以保持数组引用不变
-    // 同时触发 Vue 的响应式更新
-    state.taskList.splice(0, state.taskList.length, ...newList)
+    // 本轮无任何变化时不替换数组，避免任务列表组件与下游
+    // getter 在每个轮询周期内无谓重算/重渲染
+    if (changed) {
+      // 直接替换整个数组，确保 Vue 能检测到变化
+      // 使用 splice 方法清空并重新填充数组，这样可以保持数组引用不变
+      // 同时触发 Vue 的响应式更新
+      state.taskList.splice(0, state.taskList.length, ...newList)
 
-    // 重新应用当前的排序（如果有的话）
-    if (state.sortField && state.sortOrder && state.sortField !== 'name') {
-      // 只有在非默认排序时才重新排序，避免不必要的排序操作
-      const sortedList = sortTaskList(state.taskList, state.sortField, state.sortOrder)
-      state.taskList.splice(0, state.taskList.length, ...sortedList)
-    } else if (state.sortField === 'name' && state.sortOrder !== 'asc') {
-      // 名称排序但非升序时也需要重新排序
-      const sortedList = sortTaskList(state.taskList, state.sortField, state.sortOrder)
-      state.taskList.splice(0, state.taskList.length, ...sortedList)
+      // 重新应用当前的排序（如果有的话）
+      if (state.sortField && state.sortOrder && state.sortField !== 'name') {
+        // 只有在非默认排序时才重新排序，避免不必要的排序操作
+        const sortedList = sortTaskList(state.taskList, state.sortField, state.sortOrder)
+        state.taskList.splice(0, state.taskList.length, ...sortedList)
+      } else if (state.sortField === 'name' && state.sortOrder !== 'asc') {
+        // 名称排序但非升序时也需要重新排序
+        const sortedList = sortTaskList(state.taskList, state.sortField, state.sortOrder)
+        state.taskList.splice(0, state.taskList.length, ...sortedList)
+      }
     }
   },
   UPDATE_ALL_TASK_LIST (state, taskList) {
-    state.allTaskList.splice(0, state.allTaskList.length, ...taskList)
+    const oldList = state.allTaskList
+    const oldMap = new Map(oldList.map(t => [t.gid, t]))
+    const newList = []
+    let changed = oldList.length !== taskList.length
+    taskList.forEach(newTask => {
+      const oldTask = oldMap.get(newTask.gid)
+      if (oldTask) {
+        const oldKeys = Object.keys(oldTask)
+        const updatedKeys = Object.keys(newTask)
+        const unchanged = oldKeys.length === updatedKeys.length && updatedKeys.every(k => newTask[k] === oldTask[k])
+        // 无变化的条目复用旧对象引用，避免触发子组件重渲染
+        newList.push(unchanged ? oldTask : newTask)
+        if (!unchanged) {
+          changed = true
+        }
+      } else {
+        newList.push(newTask)
+        changed = true
+      }
+    })
+    // 本轮无任何变化时不替换数组，避免侧边栏计数等 getter 与
+    // 依赖 allTaskList 的组件在每个轮询周期内无谓重算/重渲染
+    if (changed) {
+      state.allTaskList.splice(0, state.allTaskList.length, ...newList)
+    }
   },
   UPDATE_SELECTED_GID_LIST (state, gidList) {
     state.selectedGidList = gidList
@@ -459,6 +513,36 @@ const mutations = {
     const next = { ...state.magnetStatuses }
     delete next[gid]
     state.magnetStatuses = next
+  },
+  SET_PENDING_FILE_SELECTION (state, gid) {
+    state.pendingFileSelection = { ...state.pendingFileSelection, [gid]: true }
+    const confirmed = { ...state.confirmedFileSelection }
+    delete confirmed[gid]
+    state.confirmedFileSelection = confirmed
+    pendingFileSelectionStore.add(gid)
+    pendingFileSelectionStore.removeConfirmed(gid)
+  },
+  CLEAR_PENDING_FILE_SELECTION (state, gid) {
+    const next = { ...state.pendingFileSelection }
+    delete next[gid]
+    state.pendingFileSelection = next
+    pendingFileSelectionStore.remove(gid)
+  },
+  LOAD_PENDING_FILE_SELECTION (state, mapping) {
+    state.pendingFileSelection = { ...(mapping || {}) }
+    pendingFileSelectionStore.setAll(state.pendingFileSelection)
+  },
+  REPLACE_PENDING_FILE_SELECTION (state, mapping) {
+    state.pendingFileSelection = { ...(mapping || {}) }
+    pendingFileSelectionStore.setAll(state.pendingFileSelection)
+  },
+  LOAD_CONFIRMED_FILE_SELECTION (state, mapping) {
+    state.confirmedFileSelection = { ...(mapping || {}) }
+    pendingFileSelectionStore.setConfirmedAll(state.confirmedFileSelection)
+  },
+  CONFIRM_FILE_SELECTION (state, gid) {
+    state.confirmedFileSelection = { ...state.confirmedFileSelection, [gid]: true }
+    pendingFileSelectionStore.confirm(gid)
   },
   UPDATE_DATA_ACCESS_STATUS (state, payload) {
     const { gid, ...rest } = payload
@@ -587,6 +671,10 @@ const mutations = {
     state.taskPrioritiesTouchedAt = pruneBySet(state.taskPrioritiesTouchedAt)
     state.taskLinkUpdateHints = pruneBySet(state.taskLinkUpdateHints)
     state.taskLinkUpdateHintsTouchedAt = pruneBySet(state.taskLinkUpdateHintsTouchedAt)
+    state.pendingFileSelection = pruneBySet(state.pendingFileSelection)
+    state.confirmedFileSelection = pruneBySet(state.confirmedFileSelection)
+    pendingFileSelectionStore.setAll(state.pendingFileSelection)
+    pendingFileSelectionStore.setConfirmedAll(state.confirmedFileSelection)
   },
   PRUNE_TASK_CACHES (state, payload) {
     const gids = Array.isArray(payload && payload.gids) ? payload.gids : []
@@ -881,7 +969,7 @@ const actions = {
           commit('CHANGE_TASK_DETAIL_VISIBLE', true)
         } else {
           // 只有在本地和历史记录中都找不到任务时，才尝试从 aria2 引擎获取
-          console.log('[Motrix] Task not found in local list or history, try to get from engine:', gid)
+          console.log('[LinkCore] Task not found in local list or history, try to get from engine:', gid)
           return api.fetchTaskItem({ gid })
             .then((task) => {
               dispatch('updateCurrentTaskItem', task)
@@ -889,13 +977,13 @@ const actions = {
               commit('CHANGE_TASK_DETAIL_VISIBLE', true)
             })
             .catch((error) => {
-              console.error('[Motrix] Task not found in engine:', error.message)
+              console.error('[LinkCore] Task not found in engine:', error.message)
               // 可以添加一个错误提示给用户
             })
         }
       })
       .catch((err) => {
-        console.error('[Motrix] fetch stopped task list fail:', err)
+        console.error('[LinkCore] fetch stopped task list fail:', err)
         // 可以添加一个错误提示给用户
       })
   },
@@ -994,9 +1082,10 @@ const actions = {
         normalizedOptions['max-connection-per-server'] = maxPerServer
       }
 
-      // 设置最小分段大小为 1MB，确保小文件也能分段
+      // 设置最小分段大小，与引擎全局默认一致（4M 兼顾分片数与请求开销，
+      // 过小的分片在高带宽下会因 HTTP Range 请求往返开销导致利用率下降）
       if (!normalizedOptions['min-split-size']) {
-        normalizedOptions['min-split-size'] = '1M'
+        normalizedOptions['min-split-size'] = '4M'
       }
     }
 
@@ -1076,7 +1165,7 @@ const actions = {
 
         return filename // 如果找不到唯一名称，返回原始名称
       } catch (e) {
-        console.warn('[Motrix] getUniqueFilename error:', e.message)
+        console.warn('[LinkCore] getUniqueFilename error:', e.message)
         return filename
       }
     }
@@ -1112,7 +1201,11 @@ const actions = {
         if (!uri || isMagnetLikeUri(uri)) {
           return null
         }
-        const name = safeGetNameFromUri(`${uri}`)
+        // uri may be an array (GitHub mirrors) or a string (single URL)
+        // Extract the first URL for name extraction to avoid turning the
+        // array into a comma-separated string which breaks getFileNameFromFile.
+        const firstUri = Array.isArray(uri) ? uri[0] : uri
+        const name = safeGetNameFromUri(firstUri)
         return name || null
       })
       : outs
@@ -1294,7 +1387,7 @@ const actions = {
       .catch((e) => {
         // 任务可能处于无法暂停的状态（如已完成、正在完成、已被移除等）。
         // 调用方均为删除流程，暂停失败不应阻塞后续的任务移除操作。
-        console.warn('[Motrix] forcePauseTask failed, continuing with removal:', e && e.message)
+        console.warn('[LinkCore] forcePauseTask failed, continuing with removal:', e && e.message)
       })
       .finally(() => {
         dispatch('fetchList')
@@ -1397,10 +1490,10 @@ const actions = {
         // 立即获取任务列表和全局统计以加快UI更新
         return Promise.all([
           dispatch('fetchList').catch(err => {
-            console.error('[Motrix] pauseAllTask: fetchList failed', err)
+            console.error('[LinkCore] pauseAllTask: fetchList failed', err)
           }),
           dispatch('app/fetchGlobalStat', {}, { root: true }).catch(err => {
-            console.error('[Motrix] pauseAllTask: fetchGlobalStat failed', err)
+            console.error('[LinkCore] pauseAllTask: fetchGlobalStat failed', err)
           })
         ])
       })
@@ -1414,10 +1507,10 @@ const actions = {
         // 立即获取任务列表和全局统计以加快UI更新
         return Promise.all([
           dispatch('fetchList').catch(err => {
-            console.error('[Motrix] resumeAllTask: fetchList failed', err)
+            console.error('[LinkCore] resumeAllTask: fetchList failed', err)
           }),
           dispatch('app/fetchGlobalStat', {}, { root: true }).catch(err => {
-            console.error('[Motrix] resumeAllTask: fetchGlobalStat failed', err)
+            console.error('[LinkCore] resumeAllTask: fetchGlobalStat failed', err)
           })
         ])
       })
@@ -1430,6 +1523,63 @@ const actions = {
   },
   clearMagnetStatus ({ commit }, gid) {
     commit('CLEAR_MAGNET_STATUS', gid)
+  },
+  setPendingFileSelection ({ commit }, gid) {
+    commit('SET_PENDING_FILE_SELECTION', gid)
+  },
+  clearPendingFileSelection ({ commit }, gid) {
+    commit('CLEAR_PENDING_FILE_SELECTION', gid)
+  },
+  loadPendingFileSelection ({ commit }) {
+    const mapping = pendingFileSelectionStore.getAll()
+    commit('LOAD_PENDING_FILE_SELECTION', mapping)
+    commit('LOAD_CONFIRMED_FILE_SELECTION', pendingFileSelectionStore.getConfirmedAll())
+  },
+  confirmFileSelection ({ commit }, gid) {
+    commit('CONFIRM_FILE_SELECTION', gid)
+  },
+  syncPendingFileSelection ({ commit, state }, tasks) {
+    // 根据当前任务列表校验待选择文件状态:
+    // - pending(待选择): 仅保留仍为暂停状态的多文件 BT 任务，且未被用户确认过
+    // - confirmed(已确认选择): 只要任务仍存在（任意状态）就保留。
+    //   旧逻辑在任务非暂停（如下载中/重启后元数据重解析中）时会丢弃 confirmed，
+    //   导致重启后任务被重新标记回"待选择文件"。
+    const list = Array.isArray(tasks) ? tasks : []
+    const existingGids = new Set()
+    const validPendingGids = new Set()
+    list.forEach(task => {
+      const gid = task && task.gid ? `${task.gid}` : ''
+      if (!gid) return
+      existingGids.add(gid)
+      const status = `${task.status || ''}`
+      if (status !== TASK_STATUS.PAUSED) return
+      const bt = task.bittorrent
+      if (!bt || !bt.info) return
+      const files = Array.isArray(task.files) ? task.files : []
+      if (files.length > 1) {
+        validPendingGids.add(gid)
+      }
+    })
+    const current = state.pendingFileSelection || {}
+    const confirmed = state.confirmedFileSelection || {}
+    const next = {}
+    const nextConfirmed = {}
+    Object.keys(current).forEach(gid => {
+      if (validPendingGids.has(gid) && !confirmed[gid]) {
+        next[gid] = true
+      }
+    })
+    Object.keys(confirmed).forEach(gid => {
+      if (existingGids.has(gid)) {
+        nextConfirmed[gid] = true
+      }
+    })
+    if (Object.keys(next).length !== Object.keys(current).length) {
+      commit('REPLACE_PENDING_FILE_SELECTION', next)
+    }
+    if (Object.keys(nextConfirmed).length !== Object.keys(confirmed).length) {
+      commit('LOAD_CONFIRMED_FILE_SELECTION', nextConfirmed)
+    }
   },
   addToSeedingList ({ state, commit }, gid) {
     const { seedingList } = state
@@ -1571,14 +1721,14 @@ const actions = {
 
     const { ERROR, COMPLETE, REMOVED } = TASK_STATUS
     const validStatus = status || REMOVED // 确保状态有效
-    if ([ERROR, COMPLETE, REMOVED].indexOf(validStatus) === -1) {
+    if (![ERROR, COMPLETE, REMOVED].includes(validStatus)) {
       return
     }
 
     // 尝试从Aria2中删除任务记录，如果失败则忽略，因为任务可能已经不在Aria2中
     return api.removeTaskRecord({ gid })
       .catch((err) => {
-        console.log('[Motrix] removeTaskRecord from aria2 fail:', err)
+        console.log('[LinkCore] removeTaskRecord from aria2 fail:', err)
         // 忽略Aria2删除失败的错误，继续执行
       })
       .finally(() => {
@@ -1626,7 +1776,7 @@ const actions = {
     return api.batchForcePauseTask({ gids })
       .catch((e) => {
         // 批量暂停在删除流程中属于尽力而为的步骤，失败不应阻塞后续移除。
-        console.warn('[Motrix] batchForcePauseTask failed, continuing with removal:', e && e.message)
+        console.warn('[LinkCore] batchForcePauseTask failed, continuing with removal:', e && e.message)
       })
   },
   batchResumeTask (_, gids) {

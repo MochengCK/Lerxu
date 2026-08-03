@@ -1,11 +1,9 @@
-'use strict'
-
 import { JSONRPCClient } from './JSONRPCClient'
 
 export class Aria2 extends JSONRPCClient {
   prefix (str) {
     if (!str.startsWith('system.') && !str.startsWith('aria2.')) {
-      str = 'aria2.' + str
+      str = `aria2.${str}`
     }
     return str
   }
@@ -16,9 +14,9 @@ export class Aria2 extends JSONRPCClient {
   }
 
   addSecret (parameters) {
-    let params = this.secret ? ['token:' + this.secret] : []
+    const params = this.secret ? [`token:${this.secret}`] : []
     if (Array.isArray(parameters)) {
-      params = params.concat(parameters)
+      params.push(...parameters)
     }
     return params
   }
@@ -62,11 +60,12 @@ export class Aria2 extends JSONRPCClient {
     return methods.map((method) => this.unprefix(method))
   }
 
-  defaultOptions = Object.assign({}, JSONRPCClient.defaultOptions, {
+  defaultOptions = {
+    ...JSONRPCClient.defaultOptions,
     secure: false,
     host: 'localhost',
     port: 16800,
     secret: '',
     path: '/jsonrpc'
-  })
+  }
 }

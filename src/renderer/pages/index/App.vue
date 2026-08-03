@@ -2,7 +2,7 @@
   <div
     id="app"
     :style="appRootStyle"
-    :class="{ 'has-custom-titlebar': showWindowActions, 'show-window-actions': showWindowActions, 'is-preference-window': isPreferenceWindow, 'is-task-detail-open': taskDetailVisible, 'is-add-task-open': addTaskVisible, 'is-task-plan-open': taskPlanVisible, 'has-three-column-layout': isThreeColumn, 'is-aside-auto-hide': isAsideAutoHide, 'is-aside-hovered': isAsideHovered, 'is-mac': isMac }"
+    :class="{ 'has-custom-titlebar': showWindowActions, 'show-window-actions': showWindowActions, 'is-preference-window': isPreferenceWindow, 'is-task-detail-open': taskDetailVisible, 'is-add-task-open': addTaskVisible, 'is-task-plan-open': taskPlanVisible, 'is-mac': isMac }"
   >
     <div
       v-if="shouldUseBackgroundImage"
@@ -29,7 +29,8 @@
 <script>
   import is from 'electron-is'
   import { mapGetters, mapState } from 'vuex'
-  import { ADD_TASK_TYPE, APP_RUN_MODE, APP_THEME } from '@shared/constants'
+  import { ADD_TASK_TYPE, APP_RUN_MODE } from '@shared/constants'
+  import themeTokens from '@/utils/themeTokens'
   import DynamicTray from '@/components/Native/DynamicTray'
   import EngineClient from '@/components/Native/EngineClient'
   import Ipc from '@/components/Native/Ipc'
@@ -69,7 +70,7 @@
         clipboardWatchTimer: null,
         lastClipboardText: '',
         lastClipboardTriggerAt: 0,
-        windowWidth: 0
+        downloadMsgInstance: null
       }
     },
     computed: {
@@ -121,9 +122,7 @@
         taskDetailDefaultTransparent: state => state.config.taskDetailDefaultTransparent,
         taskDetailFrostedBlur: state => state.config.taskDetailFrostedBlur,
         dateFilterFrosted: state => state.config.dateFilterFrosted,
-        dateFilterFrostedBlur: state => state.config.dateFilterFrostedBlur,
-        sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating',
-        autoHideAside: state => state.config.autoHideAside
+        dateFilterFrostedBlur: state => state.config.dateFilterFrostedBlur
       }),
       ...mapGetters('preference', [
         'theme',
@@ -131,11 +130,8 @@
         'direction'
       ]),
       themeClass () {
-        if (this.theme === APP_THEME.AUTO) {
-          return `theme-${this.systemTheme}`
-        } else {
-          return `theme-${this.theme}`
-        }
+        const effective = themeTokens.resolveTheme(this.theme, this.systemTheme)
+        return `theme-${effective}`
       },
       i18nClass () {
         return `i18n-${this.locale}`
@@ -151,6 +147,9 @@
       taskDetailTransparentClass () {
         const enabled = this.taskDetailDefaultTransparent === undefined ? false : !!this.taskDetailDefaultTransparent
         return enabled ? 'task-detail-default-transparent' : ''
+      },
+      layoutClass () {
+        return 'has-three-column-layout'
       },
       shouldUseBackgroundImage () {
         return this.backgroundType === 'image' && !!this.backgroundImageUrl
@@ -232,27 +231,6 @@
       clipboardAutoPasteEnabled () {
         if (this.clipboardAutoPaste === undefined) return true
         return !!this.clipboardAutoPaste
-      },
-      isSmallWindow () {
-        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
-        if (!width) {
-          return false
-        }
-        return width < 700
-      },
-      isThreeColumn () {
-        if (this.sidebarLayoutMode !== 'three-column') {
-          return false
-        }
-        return !this.isSmallWindow
-      },
-      isAsideAutoHide () {
-        return this.isThreeColumn && this.autoHideAside
-      },
-      isAsideHovered () {
-        // 从Task/Index.vue组件获取侧边栏悬停状态
-        // 这个状态会通过事件或store传递
-        return this.$store.state.app.isAsideHovered || false
       }
     },
     methods: {
@@ -393,8 +371,8 @@
         return scopes.includes(scope) ? this.uiFrostedBlur : 0
       },
       updateRootClassName () {
-        const { themeClass = '', i18nClass = '', directionClass = '', backgroundClass = '', taskDetailTransparentClass = '' } = this
-        const className = `${themeClass} ${i18nClass} ${directionClass} ${backgroundClass} ${taskDetailTransparentClass}`.trim()
+        const { themeClass = '', i18nClass = '', directionClass = '', backgroundClass = '', taskDetailTransparentClass = '', layoutClass = '' } = this
+        const className = `${themeClass} ${i18nClass} ${directionClass} ${backgroundClass} ${taskDetailTransparentClass} ${layoutClass}`.trim()
         document.documentElement.className = className
       },
       updateRootCssVars () {
@@ -416,12 +394,7 @@
           document.documentElement.style.setProperty(`--app-ui-opacity-${scope}`, `${this.getUiOpacityForScope(scope)}`)
         })
       },
-      handleWindowResize () {
-        if (typeof window === 'undefined') {
-          return
-        }
-        this.windowWidth = window.innerWidth || 0
-      }
+      handleWindowResize () {}
     },
     beforeMount () {
       this.updateRootClassName()
@@ -505,7 +478,7 @@
         // 仅主窗口、进度 > 0 时显示一条持久通知
         if (!this.isPreferenceWindow && percent > 0 && !this._downloadStartNotified && this.$msg) {
           this._downloadStartNotified = true
-          this.$msg({
+          this.downloadMsgInstance = this.$msg({
             message: '正在下载更新...',
             type: 'info',
             duration: 0,
@@ -517,25 +490,47 @@
         this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
         this.$store.dispatch('preference/updateUpdateDownloaded', true)
         this.$store.dispatch('preference/updateUpdateAvailable', false)
+        // 主进程会自动安装，等待installing-update事件，不在此显示通知
+      }
+      const onInstallingUpdate = () => {
+        this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+        this.$store.dispatch('preference/updateIsInstallingUpdate', true)
+        this.$store.dispatch('preference/updateDownloadProgress', 100)
+        this.$store.dispatch('preference/updateUpdateDownloaded', false)
         this._downloadStartNotified = false
+        // 关闭之前的"正在下载"通知
+        if (this.downloadMsgInstance && typeof this.downloadMsgInstance.close === 'function') {
+          try { this.downloadMsgInstance.close() } catch (e) {}
+          this.downloadMsgInstance = null
+        }
         if (!this.isPreferenceWindow && this.$msg && typeof this.$msg.success === 'function') {
-          this.$msg.success(this.$t('app.update-downloaded-message') || '更新下载完成，请在偏好设置中点击重启安装')
+          this.$msg.success('更新下载完成，准备重启到新版本...')
         }
       }
       const onDownloadError = (_event, errMsg) => {
         this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+        this.$store.dispatch('preference/updateIsInstallingUpdate', false)
         this.$store.dispatch('preference/updateUpdateDownloaded', false)
         this._downloadStartNotified = false
+        if (this.downloadMsgInstance && typeof this.downloadMsgInstance.close === 'function') {
+          try { this.downloadMsgInstance.close() } catch (e) {}
+          this.downloadMsgInstance = null
+        }
         if (!this.isPreferenceWindow && this.$msg && typeof this.$msg.error === 'function') {
           this.$msg.error(errMsg || this.$t('app.update-error-message'))
         }
       }
       const onDownloadCancelled = () => {
         this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
+        this.$store.dispatch('preference/updateIsInstallingUpdate', false)
         this.$store.dispatch('preference/updateUpdateDownloaded', false)
         this.$store.dispatch('preference/updateDownloadProgress', 0)
         this.$store.dispatch('preference/updateDownloadSize', { total: 0, transferred: 0 })
         this._downloadStartNotified = false
+        if (this.downloadMsgInstance && typeof this.downloadMsgInstance.close === 'function') {
+          try { this.downloadMsgInstance.close() } catch (e) {}
+          this.downloadMsgInstance = null
+        }
       }
       this.$electron.ipcRenderer.on('update-available', onUpdateAvailable)
       this.$electron.ipcRenderer.on('update-not-available', onUpdateNotAvailable)
@@ -543,8 +538,9 @@
       this.$electron.ipcRenderer.on('download-start', onDownloadStart)
       this.$electron.ipcRenderer.on('download-progress', onDownloadProgress)
       this.$electron.ipcRenderer.on('update-downloaded', onDownloaded)
+      this.$electron.ipcRenderer.on('installing-update', onInstallingUpdate)
       this.$electron.ipcRenderer.on('update-cancelled', onDownloadCancelled)
-      this._updateHandlers = { onUpdateAvailable, onUpdateNotAvailable, onUpdateError, onDownloadStart, onDownloadProgress, onDownloaded, onDownloadError, onDownloadCancelled }
+      this._updateHandlers = { onUpdateAvailable, onUpdateNotAvailable, onUpdateError, onDownloadStart, onDownloadProgress, onDownloaded, onInstallingUpdate, onDownloadError, onDownloadCancelled }
     },
     destroyed () {
       if (typeof window !== 'undefined' && this._handleWindowResize) {
@@ -573,6 +569,9 @@
       if (h.onDownloaded) {
         this.$electron.ipcRenderer.removeListener('update-downloaded', h.onDownloaded)
       }
+      if (h.onInstallingUpdate) {
+        this.$electron.ipcRenderer.removeListener('installing-update', h.onInstallingUpdate)
+      }
       if (h.onDownloadError) {
         this.$electron.ipcRenderer.removeListener('update-error', h.onDownloadError)
       }
@@ -599,6 +598,9 @@
         this.updateRootClassName()
       },
       taskDetailTransparentClass () {
+        this.updateRootClassName()
+      },
+      layoutClass () {
         this.updateRootClassName()
       },
       taskDetailFrostedBlur () {

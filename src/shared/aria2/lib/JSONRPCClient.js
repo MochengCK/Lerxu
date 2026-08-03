@@ -1,12 +1,9 @@
-'use strict'
-
 import { EventEmitter } from 'node:events'
 import _fetch from 'node-fetch'
 import _WebSocket from 'ws'
 import { JSONRPCError } from './JSONRPCError'
-
-const Deferred = require('./Deferred')
-const promiseEvent = require('./promiseEvent')
+import { Deferred } from './Deferred'
+import promiseEvent from './promiseEvent'
 
 const WebSocket = global.WebSocket || _WebSocket
 const fetch = global.fetch ? global.fetch.bind(global) : _fetch
@@ -48,23 +45,40 @@ export class JSONRPCClient extends EventEmitter {
   }
 
   async http (message) {
-    const response = await fetch(this.url('http'), {
-      method: 'POST',
-      body: JSON.stringify(message),
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json'
-      }
-    })
-
-    response
-      .json()
-      .then(this._onmessage)
-      .catch((err) => {
-        this.emit('error', err)
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+    const timeout = controller ? setTimeout(() => controller.abort(), this.timeout) : null
+    try {
+      const response = await fetch(this.url('http'), {
+        method: 'POST',
+        body: JSON.stringify(message),
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json'
+        },
+        signal: controller ? controller.signal : undefined
       })
 
-    return response
+      if (!response.ok) {
+        throw new Error(`HTTP request failed with status ${response.status}`)
+      }
+
+      let data
+      try {
+        data = await response.json()
+      } catch (err) {
+        throw new Error(`Invalid JSON response: ${err && err.message ? err.message : err}`)
+      }
+      this._onmessage(data)
+    } catch (err) {
+      this.emit('error', err)
+      // 响应解析失败或超时时按消息 id reject 对应 deferred，
+      // 否则调用方 promise 会永久挂起
+      this._failMessage(message, err)
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout)
+      }
+    }
   }
 
   _buildMessage (method, params) {
@@ -90,8 +104,11 @@ export class JSONRPCClient extends EventEmitter {
     await this._send(message)
 
     return message.map(({ id }) => {
-      const { promise } = (this.deferreds[id] = new Deferred())
-      return promise
+      const deferred = new Deferred()
+      deferred._message = { method: id, params: undefined, id }
+      deferred._batchMessage = message
+      this.deferreds[id] = deferred
+      return deferred.promise
     })
   }
 
@@ -99,9 +116,11 @@ export class JSONRPCClient extends EventEmitter {
     const message = this._buildMessage(method, parameters)
     await this._send(message)
 
-    const { promise } = (this.deferreds[message.id] = new Deferred())
+    const deferred = new Deferred()
+    deferred._message = message
+    this.deferreds[message.id] = deferred
 
-    return promise
+    return deferred.promise
   }
 
   async _send (message) {
@@ -122,11 +141,29 @@ export class JSONRPCClient extends EventEmitter {
   }
 
   _onrequest ({ method, params }) {
-    return this.onrequest(method, params)
+    if (typeof this.onrequest === 'function') {
+      return this.onrequest(method, params)
+    }
+    // 未定义 onrequest 时退化为事件通知，避免抛 TypeError
+    this.emit('request', method, params)
+    return undefined
   }
 
   _onnotification ({ method, params }) {
     this.emit(method, params)
+  }
+
+  _failMessage (message, err) {
+    const ids = Array.isArray(message)
+      ? message.map(m => m && m.id).filter(id => id !== undefined)
+      : [message && message.id]
+    for (const id of ids) {
+      if (id === undefined) continue
+      const deferred = this.deferreds[id]
+      if (!deferred) continue
+      deferred.reject(new JSONRPCError({ message: (err && err.message) || String(err) }))
+      delete this.deferreds[id]
+    }
   }
 
   _onmessage = (message) => {
@@ -149,17 +186,55 @@ export class JSONRPCClient extends EventEmitter {
 
   _rejectAllDeferreds (reason) {
     const ids = Object.keys(this.deferreds)
+    const retried = new Set()
     for (const id of ids) {
       const deferred = this.deferreds[id]
-      if (deferred && typeof deferred.reject === 'function') {
-        deferred.reject(new Error(reason || 'WebSocket closed'))
+      if (!deferred) continue
+
+      // If we have the original message, retry via HTTP instead of rejecting
+      const msg = deferred._batchMessage || deferred._message
+      if (msg) {
+        // 同一批 batch 消息的所有 deferred 共享同一个 _batchMessage，
+        // 只重试一次，避免断线时同一条消息被重复 POST N 次
+        const key = Array.isArray(msg) ? msg.map(m => m && m.id).join(',') : String(msg && msg.id)
+        if (!retried.has(key)) {
+          retried.add(key)
+          this.http(msg)
+        }
+        // Don't delete — HTTP response will resolve via _onresponse
+        continue
       }
+
+      // No message to retry — reject immediately
+      deferred.reject(new Error(reason || 'WebSocket closed'))
       delete this.deferreds[id]
     }
   }
 
   async open () {
-    const socket = (this.socket = new WebSocket(this.url('ws')))
+    // 清理可能残留的旧连接，避免重连时旧 socket 的事件继续影响新连接
+    if (this.socket) {
+      const old = this.socket
+      try {
+        old.onclose = null
+        old.onmessage = null
+        old.onopen = null
+        old.onerror = null
+      } catch (_) {}
+      try {
+        if (old.readyState === WebSocket.OPEN || old.readyState === WebSocket.CONNECTING) {
+          old.close()
+        }
+      } catch (_) {}
+    }
+
+    let socket
+    try {
+      socket = (this.socket = new WebSocket(this.url('ws')))
+    } catch (err) {
+      this.emit('error', err)
+      throw err
+    }
 
     socket.onclose = (...args) => {
       // 断线时立即 reject 所有 pending 请求，防止它们永久挂起
@@ -189,8 +264,16 @@ export class JSONRPCClient extends EventEmitter {
 
   async close () {
     const { socket } = this
-    socket.close()
-    return promiseEvent(this, 'close')
+    if (!socket) {
+      return undefined
+    }
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.CLOSING) {
+      socket.close()
+      return promiseEvent(this, 'close')
+    }
+    // 已关闭或从未成功打开：close 事件不会再触发，直接返回
+    this.socket = null
+    return undefined
   }
 
   defaultOptions = {
@@ -199,6 +282,7 @@ export class JSONRPCClient extends EventEmitter {
     port: 80,
     secret: '',
     path: '/jsonrpc',
+    timeout: 10000,
     fetch,
     WebSocket
   }

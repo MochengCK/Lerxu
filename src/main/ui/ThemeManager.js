@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { nativeTheme } from 'electron'
 
 import { APP_THEME } from '@shared/constants'
-import logger from '../core/Logger'
+import logger from '../core/LogManager'
 import { getSystemTheme } from '../utils'
 
 export default class ThemeManager extends EventEmitter {
@@ -27,7 +27,7 @@ export default class ThemeManager extends EventEmitter {
     nativeTheme.on('updated', () => {
       const theme = getSystemTheme()
       this.systemTheme = theme
-      logger.info('[Motrix] nativeTheme updated===>', theme)
+      logger.info('[LinkCore] nativeTheme updated===>', theme)
       this.emit('system-theme-change', theme)
     })
   }

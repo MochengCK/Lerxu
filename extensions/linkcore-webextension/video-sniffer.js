@@ -2192,24 +2192,36 @@
         if (xhr.readyState === xhr.HEADERS_RECEIVED) {
           const contentType = xhr.getResponseHeader('Content-Type')
           const contentLength = xhr.getResponseHeader('Content-Length')
-          const contentRange = xhr.getResponseHeader('Content-Range')
-          
+
           if (contentType) {
             xhr._mimeType = contentType
           }
-          
+
           // 优先使用Content-Length
           if (contentLength) {
             xhr._size = parseInt(contentLength) || 0
             log('XHR Content-Length:', xhr._size, 'for', xhr._url.substring(0, 100))
           }
-          
-          // 如果是Range请求，尝试从Content-Range获取总大小
-          if (!xhr._size && contentRange) {
-            const match = contentRange.match(/bytes \d+-\d+\/(\d+)/)
-            if (match) {
-              xhr._size = parseInt(match[1]) || 0
-              log('XHR Content-Range total size:', xhr._size, 'for', xhr._url.substring(0, 100))
+
+          // 如果没有Content-Length，尝试从Content-Range获取总大小
+          // 注意：跨域请求中读取Content-Range会触发浏览器的安全警告，
+          // 因此仅在Content-Length不可用时才尝试，且仅对同源请求读取
+          if (!xhr._size) {
+            let contentRange = null
+            try {
+              const urlObj = new URL(xhr._url, location.href)
+              if (urlObj.origin === location.origin) {
+                contentRange = xhr.getResponseHeader('Content-Range')
+              }
+            } catch (e) {
+              // URL解析失败或无法读取头部，忽略
+            }
+            if (contentRange) {
+              const match = contentRange.match(/bytes \d+-\d+\/(\d+)/)
+              if (match) {
+                xhr._size = parseInt(match[1]) || 0
+                log('XHR Content-Range total size:', xhr._size, 'for', xhr._url.substring(0, 100))
+              }
             }
           }
         }

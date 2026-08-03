@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { accessSync, chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, readFile, writeFile, unlink } from 'node:fs'
-import { resolve } from 'node:path'
+import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import is from 'electron-is'
 
-import logger from './Logger'
+import logger from './LogManager'
 import {
   getI18n
 } from '../ui/Locale'
@@ -17,7 +17,8 @@ import {
   getEngineBin,
   getEnginePath
 } from '../utils/index'
-import { getEngineConnectionPolicy } from '@shared/utils'
+import { ensureDhtRoutingTable } from '../utils/dht'
+import { getEngineConnectionPolicy, normalizeBtEncryptionOptions } from '@shared/utils'
 
 const { platform, arch } = process
 
@@ -40,25 +41,34 @@ export default class Engine {
 
   async start () {
     const pidPath = getEnginePidPath()
-    logger.info('[Motrix] Engie pid path:', pidPath)
+    logger.info('[LinkCore] Engine pid path:', pidPath)
 
     if (this.instance) {
       return
     }
+    // 重新启动前清除主动停止标记
+    this._stopping = false
 
     // 启动前清理可能存在的孤儿引擎进程。上次退出若异常（如崩溃、
     // 强制结束主进程），PID 文件会残留且对应进程仍存活，此时若直接
     // spawn 新进程会导致两个引擎并存，旧进程继续下载、占用端口。
     await this.killStaleProcess(pidPath)
 
+    // 启动前截断旧日志，防止日志文件无限增长占用磁盘
+    this.truncateAria2Log()
+
     const originBinPath = this.getEngineBinPath()
     const binPath = this.prepareEngineBinary(originBinPath)
 
     const args = this.getStartArgs(binPath)
 
+    // 首次启动时预热 DHT 路由表（预置引导节点），加速 DHT 网络接入。
+    // 必须在 spawn 引擎之前完成，失败静默跳过，不影响启动。
+    await this.prepareDhtBootstrap()
+
     const enableEngineLogs = is.dev() || is.linux() || is.windows()
-    logger.info('[Motrix] engine bin path:', binPath)
-    logger.info('[Motrix] engine start args:', args)
+    logger.info('[LinkCore] engine bin path:', binPath)
+    logger.info('[LinkCore] engine start args:', args)
 
     // 获取引擎所在目录作为工作目录
     const engineDir = require('path').dirname(binPath)
@@ -69,10 +79,10 @@ export default class Engine {
     })
 
     this.instance.on('error', (err) => {
-      logger.error('[Motrix] engine process error:', err && err.message ? err.message : err)
+      logger.error('[LinkCore] engine process error:', err && err.message ? err.message : err)
     })
     if (typeof this.instance.pid !== 'number') {
-      logger.error('[Motrix] engine process pid is invalid:', this.instance.pid)
+      logger.error('[LinkCore] engine process pid is invalid:', this.instance.pid)
       const e = new Error(this.i18n.t('app.engine-damaged-message'))
       e.details = [
         `platform=${platform} arch=${arch}`,
@@ -86,15 +96,15 @@ export default class Engine {
     this.writePidFile(pidPath, pid)
 
     this.instance.once('close', (code, signal) => {
-      logger.warn('[Motrix] engine process exited:', code, signal)
+      logger.warn('[LinkCore] engine process exited:', code, signal)
       try {
         unlink(pidPath, (err) => {
           if (err) {
-            logger.warn(`[Motrix] Unlink engine process pid file failed: ${err}`)
+            logger.warn(`[LinkCore] Unlink engine process pid file failed: ${err}`)
           }
         })
       } catch (err) {
-        logger.warn(`[Motrix] Unlink engine process pid file failed: ${err}`)
+        logger.warn(`[LinkCore] Unlink engine process pid file failed: ${err}`)
       }
 
       // 清理实例引用
@@ -106,11 +116,11 @@ export default class Engine {
 
     if (enableEngineLogs) {
       this.instance.stdout.on('data', (data) => {
-        logger.log('[Motrix] engine stdout===>', data.toString())
+        logger.log('[LinkCore] engine stdout===>', data.toString())
       })
 
       this.instance.stderr.on('data', (data) => {
-        logger.error('[Motrix] engine stderr===>', data.toString())
+        logger.error('[LinkCore] engine stderr===>', data.toString())
       })
     }
 
@@ -120,6 +130,42 @@ export default class Engine {
     // 同步发信号杀掉引擎，否则任何异步路径（will-quit/setImmediate/
     // setTimeout）都可能在主进程退出前没机会执行。
     this.registerExitHandlers()
+  }
+
+  /**
+   * DHT 路由表预热。首次运行（dht.dat / dht6.dat 不存在）时，
+   * 预置公共 DHT 引导节点，让引擎启动后立即有可联系节点并强制
+   * bucket refresh，大幅加快磁链 / BT 任务的节点发现速度。
+   * 引擎运行后会自行维护路由表文件，此逻辑只在文件缺失时介入。
+   * 整个过程有超时保护，失败静默跳过，不阻塞引擎启动。
+   */
+  async prepareDhtBootstrap () {
+    const enabled = (v) => v !== false && v !== 'false'
+    const job = (async () => {
+      const tasks = []
+      if (enabled(this.systemConfig['enable-dht'])) {
+        tasks.push(ensureDhtRoutingTable(this.systemConfig['dht-file-path'], false))
+      }
+      if (enabled(this.systemConfig['enable-dht6'])) {
+        tasks.push(ensureDhtRoutingTable(this.systemConfig['dht-file-path6'], true))
+      }
+      const results = await Promise.all(tasks)
+      results.forEach((r) => {
+        if (r && r.created) {
+          logger.info(`[LinkCore] DHT routing table pre-seeded with ${r.nodes} bootstrap nodes`)
+        }
+      })
+    })()
+
+    try {
+      // 整体超时兜底：DNS 异常时最多等待 4 秒，不拖慢引擎启动
+      await Promise.race([
+        job,
+        new Promise((resolve) => setTimeout(resolve, 4000))
+      ])
+    } catch (e) {
+      logger.warn('[LinkCore] DHT bootstrap pre-seed skipped:', e && e.message ? e.message : e)
+    }
   }
 
   // 注册进程级退出处理器，确保任何退出路径下引擎都会被清理：
@@ -151,7 +197,7 @@ export default class Engine {
     // 这些信号默认不会触发 Electron 的 before-quit/will-quit 事件，
     // 不注册的话引擎会直接变孤儿。
     const onSignal = (signal) => {
-      logger.warn(`[Motrix] Received ${signal}, stopping engine before exit`)
+      logger.warn(`[LinkCore] Received ${signal}, stopping engine before exit`)
       // 同步发 SIGTERM，给 aria2 保存 session 的机会
       this.stop(1500).finally(() => {
         // 信号处理后立即退出（不能阻塞太久，系统关机有超时）
@@ -163,7 +209,7 @@ export default class Engine {
 
     // Electron 主进程未捕获异常时触发，保底杀引擎
     process.on('uncaughtException', (err) => {
-      logger.error('[Motrix] Uncaught exception:', err && err.message)
+      logger.error('[LinkCore] Uncaught exception:', err && err.message)
       onExit()
       process.exit(1)
     })
@@ -262,7 +308,7 @@ export default class Engine {
       try {
         copyFileSync(p, destPath)
       } catch (e) {
-        logger.warn('[Motrix] Copy engine to userData failed:', e && e.message ? e.message : e)
+        logger.warn('[LinkCore] Copy engine to userData failed:', e && e.message ? e.message : e)
         const err = new Error(this.i18n.t('app.engine-damaged-message'))
         err.details = [
           `platform=${platform} arch=${arch}`,
@@ -271,6 +317,21 @@ export default class Engine {
           `copy_failed=${e && e.message ? e.message : String(e)}`
         ].join('\n')
         throw err
+      }
+
+      // 复制 lib/ 目录（macOS 动态库依赖）
+      if (is.macOS()) {
+        const srcDir = dirname(p)
+        const srcLib = join(srcDir, 'lib')
+        if (existsSync(srcLib)) {
+          const destLib = join(destDir, 'lib')
+          try {
+            cpSync(srcLib, destLib, { recursive: true, force: true })
+            logger.info('[LinkCore] Copied engine lib directory to userData:', destLib)
+          } catch (e) {
+            logger.warn('[LinkCore] Copy engine lib directory failed:', e && e.message ? e.message : e)
+          }
+        }
       }
 
       tryChmod(destPath)
@@ -301,7 +362,7 @@ export default class Engine {
       ].join('\n')
       throw err
     } catch (e) {
-      logger.warn('[Motrix] prepareEngineBinary failed:', e && e.message ? e.message : e)
+      logger.warn('[LinkCore] prepareEngineBinary failed:', e && e.message ? e.message : e)
       lastError = e
     }
 
@@ -323,28 +384,34 @@ export default class Engine {
   // 调用方应 await 本方法，确保 app.exit() 前子进程已被清理，否则引擎会
   // 变成孤儿进程继续占用端口、写 session 文件。
   stop (timeout = 3000) {
-    logger.info('[Motrix] engine.stop.instance')
+    logger.info('[LinkCore] engine.stop.instance')
     if (!this.instance) {
       return Promise.resolve()
     }
     const instance = this.instance
     // 立即置空，避免重入时重复 kill / 重复注册监听器
     this.instance = null
+    // 标记正在主动停止，避免退出流程中 SIGKILL 兜底被误判为崩溃而重启
+    this._stopping = true
 
     return new Promise((resolve) => {
       let settled = false
+      let killTimer = null
       const finish = () => {
         if (settled) {
           return
         }
         settled = true
-        clearTimeout(killTimer)
+        if (killTimer) {
+          clearTimeout(killTimer)
+          killTimer = null
+        }
         resolve()
       }
 
       // 子进程退出时（无论正常还是被信号杀掉）触发 close 事件
       instance.once('close', (code, signal) => {
-        logger.info('[Motrix] engine process closed during stop:', code, signal)
+        logger.info('[LinkCore] engine process closed during stop:', code, signal)
         finish()
       })
 
@@ -352,20 +419,20 @@ export default class Engine {
       try {
         instance.kill('SIGTERM')
       } catch (err) {
-        logger.warn('[Motrix] engine SIGTERM failed:', err && err.message)
+        logger.warn('[LinkCore] engine SIGTERM failed:', err && err.message)
         finish()
         return
       }
 
       // 超时后 SIGKILL 强制终止，防止 aria2 卡死（如磁盘 IO 阻塞、
       // BT 种子校验）导致 SIGTERM 被忽略、进程永不退出
-      const killTimer = setTimeout(() => {
+      killTimer = setTimeout(() => {
         if (!settled) {
-          logger.warn(`[Motrix] engine SIGTERM timeout after ${timeout}ms, sending SIGKILL`)
+          logger.warn(`[LinkCore] engine SIGTERM timeout after ${timeout}ms, sending SIGKILL`)
           try {
             instance.kill('SIGKILL')
           } catch (err) {
-            logger.warn('[Motrix] engine SIGKILL failed:', err && err.message)
+            logger.warn('[LinkCore] engine SIGKILL failed:', err && err.message)
             // 即使 SIGKILL 失败也 resolve，避免阻塞退出流程
             finish()
           }
@@ -377,33 +444,43 @@ export default class Engine {
   writePidFile (pidPath, pid) {
     writeFile(pidPath, pid, (err) => {
       if (err) {
-        logger.error(`[Motrix] Write engine process pid failed: ${err}`)
+        logger.error(`[LinkCore] Write engine process pid failed: ${err}`)
       }
     })
   }
 
   // 检查并自动重启引擎
   checkAndRestartEngine (exitCode, signal) {
+    // 主动停止（应用退出/手动停止）时不重启，避免 SIGKILL 兜底被误判为崩溃
+    if (this._stopping) {
+      logger.info('[LinkCore] Engine stopped intentionally, not restarting')
+      if (this.restartTimer) {
+        clearTimeout(this.restartTimer)
+        this.restartTimer = null
+      }
+      return
+    }
+
     const now = Date.now()
     const timeSinceLastRestart = now - Engine.lastRestartTime
 
     // 如果是正常退出或收到SIGTERM，不重启
     if (signal === 'SIGTERM' || exitCode === 0) {
-      logger.info('[Motrix] Engine exited normally, not restarting')
+      logger.info('[LinkCore] Engine exited normally, not restarting')
       Engine.restartAttempts = 0
       return
     }
 
     // 检查重启条件
     if (Engine.restartAttempts >= Engine.maxRestartAttempts) {
-      logger.error(`[Motrix] Engine restart attempts (${Engine.restartAttempts}) exceeded maximum (${Engine.maxRestartAttempts})`)
+      logger.error(`[LinkCore] Engine restart attempts (${Engine.restartAttempts}) exceeded maximum (${Engine.maxRestartAttempts})`)
       return
     }
 
     // 如果距离上次重启时间太短，延迟重启
     if (timeSinceLastRestart < 5000) {
       const delay = 5000 - timeSinceLastRestart
-      logger.warn(`[Motrix] Engine crash detected, will restart in ${delay}ms (attempt ${Engine.restartAttempts + 1}/${Engine.maxRestartAttempts})`)
+      logger.warn(`[LinkCore] Engine crash detected, will restart in ${delay}ms (attempt ${Engine.restartAttempts + 1}/${Engine.maxRestartAttempts})`)
 
       if (this.restartTimer) {
         clearTimeout(this.restartTimer)
@@ -413,7 +490,7 @@ export default class Engine {
         this.performEngineRestart()
       }, delay)
     } else {
-      logger.warn(`[Motrix] Engine crash detected, restarting immediately (attempt ${Engine.restartAttempts + 1}/${Engine.maxRestartAttempts})`)
+      logger.warn(`[LinkCore] Engine crash detected, restarting immediately (attempt ${Engine.restartAttempts + 1}/${Engine.maxRestartAttempts})`)
       this.performEngineRestart()
     }
   }
@@ -425,9 +502,9 @@ export default class Engine {
     try {
       // 清理可能残留的旧进程
       this.killStaleProcess(getEnginePidPath()).then(() => {
-        logger.info('[Motrix] Starting automatic engine restart')
+        logger.info('[LinkCore] Starting automatic engine restart')
         this.start().catch((error) => {
-          logger.error('[Motrix] Failed to restart engine:', error.message)
+          logger.error('[LinkCore] Failed to restart engine:', error.message)
           // 如果重启失败，指数退避延迟下一次尝试
           const delay = Math.pow(2, Engine.restartAttempts) * 1000
           if (Engine.restartAttempts < Engine.maxRestartAttempts) {
@@ -438,7 +515,7 @@ export default class Engine {
         })
       })
     } catch (error) {
-      logger.error('[Motrix] Error during engine restart:', error.message)
+      logger.error('[LinkCore] Error during engine restart:', error.message)
     }
   }
 
@@ -471,7 +548,7 @@ export default class Engine {
           unlink(pidPath, () => resolve(false))
           return
         }
-        logger.warn(`[Motrix] Found stale engine process pid=${pid}, killing it`)
+        logger.warn(`[LinkCore] Found stale engine process pid=${pid}, killing it`)
         // 先 SIGTERM 优雅关闭，1.5s 后 SIGKILL 兜底
         try {
           process.kill(pid, 'SIGTERM')
@@ -511,130 +588,20 @@ export default class Engine {
     let binName = ''
     const enginePath = getEnginePath(platform, arch)
 
-    // 优先从ConfigManager获取最新配置
-    if (this.configManager) {
-      binName = this.configManager.getUserConfig('engine-binary') || ''
-      logger.info(`[Motrix] Got engine from config manager: ${binName}`)
-    } else {
-      // 降级：从传入的userConfig对象获取
-      binName = this.userConfig['engine-binary'] || ''
-      logger.info(`[Motrix] Got engine from user config: ${binName}`)
-    }
-
-    // 获取可用引擎列表（递归扫描子目录）
-    const availableEngines = []
-    const scannedPaths = new Set() // 避免重复扫描
-
-    const scanDirectory = (dirPath, relativePrefix = '') => {
-      // 防止循环引用或重复扫描
-      const realPath = require('fs').realpathSync(dirPath)
-      if (scannedPaths.has(realPath)) {
-        return
-      }
-      scannedPaths.add(realPath)
-
-      try {
-        const files = require('fs').readdirSync(dirPath)
-        files.forEach(file => {
-          const fullPath = resolve(dirPath, file)
-          const relativePath = relativePrefix ? `${relativePrefix}/${file}` : file
-          const stats = require('fs').lstatSync(fullPath)
-
-          if (stats.isDirectory()) {
-            // 递归扫描子目录
-            scanDirectory(fullPath, relativePath)
-          } else if (stats.isFile()) {
-            const defaultBinName = getEngineBin(platform)
-            const isCandidate = file.includes('fluxcore') || file === defaultBinName
-            let isExecutable = platform === 'win32'
-              ? file.endsWith('.exe')
-              : (stats.mode & parseInt('111', 8)) !== 0
-            if (!isExecutable && platform !== 'win32' && isCandidate) {
-              try {
-                chmodSync(fullPath, 0o755)
-                const nextStats = require('fs').lstatSync(fullPath)
-                isExecutable = (nextStats.mode & parseInt('111', 8)) !== 0
-              } catch (_) {}
-            }
-
-            if ((isExecutable || platform !== 'win32') &&
-                isCandidate &&
-                !file.endsWith('.backup') && !file.endsWith('.tmp')) {
-              availableEngines.push(relativePath)
-            }
-          }
-        })
-      } catch (error) {
-        logger.warn(`[Motrix] Failed to scan directory ${dirPath}:`, error.message)
-      }
-    }
-
-    try {
-      scanDirectory(enginePath)
-
-      const fluxCoreRelative = 'src/FluxCore.exe'
-      const fluxCoreFullPath = resolve(enginePath, fluxCoreRelative)
-      if (existsSync(fluxCoreFullPath) && !availableEngines.includes(fluxCoreRelative)) {
-        availableEngines.push(fluxCoreRelative)
-      }
-    } catch (error) {
-      logger.error('[Motrix] Failed to scan engine directory:', error)
-    }
-
-    // 1. 检查当前配置的引擎是否存在
-    if (binName) {
-      const binPath = resolve(enginePath, binName)
-      if (!existsSync(binPath)) {
-        // 当前配置的引擎不存在，尝试使用可用引擎
-        logger.warn(`[Motrix] Configured engine ${binName} not found, trying to find available engines`)
-        binName = ''
-      }
-    }
-
-    // 2. 如果用户没有配置引擎或配置的引擎不存在，尝试查找默认引擎或可用引擎
-    if (!binName) {
-      // 默认引擎文件名
-      const defaultBinName = getEngineBin(platform)
-      const defaultPath = resolve(enginePath, defaultBinName)
-
-      if (existsSync(defaultPath)) {
-        // 默认引擎文件存在，使用默认引擎
-        binName = defaultBinName
-      } else if (availableEngines.length > 0) {
-        // 默认引擎文件不存在，使用可用引擎
-        // 优先选择包含 fluxcore 的引擎
-        const specificEngine = availableEngines.find(file => /fluxcore(\.exe)?$/i.test(file))
-        if (specificEngine) {
-          binName = specificEngine
-        } else {
-          // 最后使用第一个找到的引擎
-          binName = availableEngines[0]
-        }
-        // 保存为默认引擎，下次启动使用
-        logger.info(`[Motrix] Using available engine ${binName} as default`)
-        // 使用ConfigManager保存配置到文件
-        if (this.configManager) {
-          this.configManager.setUserConfig('engine-binary', binName)
-          logger.info(`[Motrix] Engine configuration saved: ${binName}`)
-        } else {
-          logger.warn('[Motrix] ConfigManager not available, cannot save engine configuration')
-        }
-      } else {
-        // 没有找到任何引擎文件，使用默认引擎名（会失败）
-        binName = defaultBinName
-      }
-    }
+    // 直接使用 xfercore 作为引擎，不再支持多引擎选择
+    binName = getEngineBin(platform)
+    logger.info(`[LinkCore] Using engine: ${binName}`)
 
     const result = resolve(enginePath, binName)
     const binIsExist = existsSync(result)
     if (!binIsExist) {
-      logger.error('[Motrix] engine bin is not exist:', result)
+      logger.error('[LinkCore] engine bin is not exist:', result)
       const e = new Error(this.i18n.t('app.engine-missing-message'))
       e.details = [
         `platform=${platform} arch=${arch}`,
         `engine_path=${enginePath}`,
         `configured=${binName || ''}`,
-        `available=${Array.isArray(availableEngines) ? availableEngines.join(',') : ''}`,
+        `engine_binary=${binName}`,
         `missing=${result}`
       ].join('\n')
       throw e
@@ -652,6 +619,44 @@ export default class Engine {
     return result
   }
 
+  /**
+   * 将用户设置的日志级别映射到 aria2 的日志级别
+   * aria2 支持的级别: debug, info, notice, warn, error
+   * 默认 warn，避免 debug 级别产生过多日志导致磁盘占用过高
+   */
+  getAria2LogLevel () {
+    const appLevel = (this.userConfig && this.userConfig['log-level']) || 'warn'
+    const mapping = {
+      error: 'error',
+      warn: 'warn',
+      info: 'info',
+      verbose: 'info',
+      debug: 'debug',
+      silly: 'debug'
+    }
+    return mapping[appLevel] || 'warn'
+  }
+
+  /**
+   * 引擎启动前截断旧日志文件，防止日志无限增长占用磁盘
+   * 如果日志文件超过 5MB，清空文件内容
+   */
+  truncateAria2Log () {
+    const logPath = getAria2LogPath()
+    try {
+      if (existsSync(logPath)) {
+        // 引擎日志文件可能处于异常状态：xfercore 的 Logger 打开失败时
+        // 会直接报错退出（退出码 1/28），导致引擎反复重启后放弃，RPC
+        // 端口一直无法连接。已确认"文件存在但引擎打不开"的状态无法靠
+        // 内容校验（appendFileSync）识别，因此每次启动前直接删除，
+        // 由引擎全新创建，规避任何异常 inode / 权限 / 锁状态。
+        unlinkSync(logPath)
+      }
+    } catch (e) {
+      // 删除失败不影响启动
+    }
+  }
+
   getStartArgs (binPath) {
     const confPath = getAria2ConfPath(platform, arch)
     const logPath = getAria2LogPath()
@@ -659,12 +664,15 @@ export default class Engine {
     const sessionPath = getSessionPath()
     const sessionIsExist = existsSync(sessionPath)
 
+    // 根据用户设置的日志级别映射到 aria2 日志级别，默认 warn
+    const aria2LogLevel = this.getAria2LogLevel()
+
     // 添加日志路径和日志级别参数
     let result = [
       `--conf-path=${confPath}`,
       `--save-session=${sessionPath}`,
       `--log=${logPath}`,
-      '--log-level=debug'
+      `--log-level=${aria2LogLevel}`
     ]
     if (sessionIsExist) {
       result = [...result, `--input-file=${sessionPath}`]
@@ -695,9 +703,21 @@ export default class Engine {
     extraConfig.split = Math.min(baseSplit, splitMax)
 
     // === 下载速度保障：确保关键参数不被旧配置覆盖 ===
-    // min-split-size 过大会导致文件分片不足，连接在后期无片可下，速度骤降
-    if (!extraConfig['min-split-size'] || extraConfig['min-split-size'] === '4M' || extraConfig['min-split-size'] === '4m') {
-      extraConfig['min-split-size'] = '1M'
+    // min-split-size 过小会导致高带宽下每个分片的 HTTP Range 请求往返
+    // 开销占比过高，连接利用率下降（表现为"几秒后速度降低"）；
+    // 4M 是分片数与请求开销之间的平衡点
+    if (!extraConfig['min-split-size'] || extraConfig['min-split-size'] === '1M' || extraConfig['min-split-size'] === '1m') {
+      extraConfig['min-split-size'] = '4M'
+    }
+    // disk-cache 提供多连接并发写入的缓冲，避免高速下载时缓存被写满、
+    // aria2 等待落盘导致的周期性速度抖动
+    if (!extraConfig['disk-cache']) {
+      extraConfig['disk-cache'] = '128M'
+    }
+    // keep-alive 关闭会让每个分片请求都新建 TCP/TLS 连接，
+    // 高延迟网络下速度骤降，确保开启
+    if (extraConfig['enable-http-keep-alive'] === false || extraConfig['enable-http-keep-alive'] === 'false') {
+      extraConfig['enable-http-keep-alive'] = true
     }
     // geom 选择器会让后期片段越来越大，并行度递减，改为 default 保持均匀分片
     if (!extraConfig['stream-piece-selector'] || extraConfig['stream-piece-selector'] === 'geom') {
@@ -708,6 +728,37 @@ export default class Engine {
     // 确保 check-certificate 为 false，避免 HTTPS 证书验证导致下载失败
     extraConfig['check-certificate'] = false
 
+    // === 下载容错保障：防止用户旧配置覆盖新的容错参数 ===
+    // lowest-speed-limit 过高会导致慢速 CDN（如 dl.hdslb.com）连接被过早中止
+    {
+      const sp = String(extraConfig['lowest-speed-limit'] || '')
+      const num = parseFloat(sp)
+      if (!sp || (!isNaN(num) && num > 1024)) {
+        extraConfig['lowest-speed-limit'] = '1K'
+      }
+    }
+    // retry-wait >= 5，给 CDN 限流场景更多恢复时间
+    {
+      const rw = Number(extraConfig['retry-wait'])
+      if (!Number.isFinite(rw) || rw < 5) {
+        extraConfig['retry-wait'] = 5
+      }
+    }
+    // timeout >= 60，避免大文件传输时连接被过早断开
+    {
+      const to = Number(extraConfig.timeout)
+      if (!Number.isFinite(to) || to < 60) {
+        extraConfig.timeout = 60
+      }
+    }
+    // connect-timeout >= 20，给慢速 DNS 解析更多时间
+    {
+      const ct = Number(extraConfig['connect-timeout'])
+      if (!Number.isFinite(ct) || ct < 20) {
+        extraConfig['connect-timeout'] = 20
+      }
+    }
+
     const keepSeeding = this.userConfig['keep-seeding']
     const seedRatio = this.systemConfig['seed-ratio']
     if (keepSeeding || seedRatio === 0) {
@@ -715,23 +766,40 @@ export default class Engine {
       delete extraConfig['seed-time']
     }
 
-    if (extraConfig['bt-encryption-mode'] !== undefined) {
-      const mode = extraConfig['bt-encryption-mode']
-      if (mode === 'force') {
-        extraConfig['bt-require-crypto'] = true
-        extraConfig['bt-min-crypto-level'] = 'arc4'
-      } else if (mode === 'none') {
-        extraConfig['bt-require-crypto'] = false
-        extraConfig['bt-min-crypto-level'] = 'plain'
-      } else {
-        extraConfig['bt-require-crypto'] = false
-        extraConfig['bt-min-crypto-level'] = 'arc4'
-      }
+    if (extraConfig['bt-encryption-mode'] !== undefined || extraConfig['bt-force-encryption'] !== undefined) {
+      // normalizeBtEncryptionOptions 会将应用层的 bt-encryption-mode/bt-force-encryption
+      // 转换为引擎原生选项（bt-require-crypto/bt-min-crypto-level），但 Object.assign
+      // 不会删除原对象中已存在的键，必须显式删除，否则引擎会收到无法识别的
+      // --bt-encryption-mode 参数而启动失败（退出码 28）。
       delete extraConfig['bt-encryption-mode']
       delete extraConfig['bt-force-encryption']
+      Object.assign(extraConfig, normalizeBtEncryptionOptions(extraConfig))
     }
 
-    console.log('extraConfig===>', extraConfig)
+    // ED2K engine options live in userConfig (they're user preferences),
+    // but the engine reads them via getOption() at startup. Merge them
+    // into the engine's command-line config so Ed2kDownloadCommand picks
+    // up the user's source-discovery settings (KAD, source exchange, etc.).
+    // These options are registered in OptionHandlerFactory.cc, so the
+    // engine accepts them on the command line.
+    const ed2kEngineKeys = [
+      'ed2k-enabled',
+      'ed2k-listen-port',
+      'ed2k-max-connections',
+      'ed2k-connection-timeout',
+      'ed2k-max-sources-per-file',
+      'ed2k-default-servers',
+      'ed2k-server-source-enabled',
+      'ed2k-source-exchange-enabled',
+      'ed2k-source-exchange-interval',
+      'ed2k-kad-enabled',
+      'ed2k-kad-bootstrap-nodes'
+    ]
+    for (const k of ed2kEngineKeys) {
+      if (this.userConfig[k] !== undefined) {
+        extraConfig[k] = this.userConfig[k]
+      }
+    }
 
     const extra = transformConfig(extraConfig)
     result = [...result, ...extra]
@@ -747,8 +815,9 @@ export default class Engine {
     }
   }
 
-  restart () {
-    this.stop()
-    this.start()
+  async restart () {
+    // 必须等旧进程完全退出后再启动，否则两个引擎会竞争 RPC/BT 端口
+    await this.stop()
+    await this.start()
   }
 }

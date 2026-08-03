@@ -103,13 +103,13 @@
           switch (type) {
           case 'initialized':
           case 'log':
-            console.log('[Motrix] Log from Tray Worker: ', payload)
+            console.log('[LinkCore] Log from Tray Worker: ', payload)
             break
           case 'tray:drawed':
             this.updateTray(payload)
             break
           default:
-            console.warn('[Motrix] Tray Worker unhandled message type:', type, payload)
+            console.warn('[LinkCore] Tray Worker unhandled message type:', type, payload)
           }
         })
         this.trayWorker = worker
@@ -132,6 +132,14 @@
         }
 
         const iconImage = document.getElementById(key)
+        if (!iconImage || !iconImage.complete || iconImage.naturalWidth === 0) {
+          await new Promise((resolve, reject) => {
+            if (!iconImage) return reject(new Error('Icon not found'))
+            iconImage.addEventListener('load', resolve, { once: true })
+            iconImage.addEventListener('error', reject, { once: true })
+          })
+        }
+
         const result = await createImageBitmap(iconImage)
         cache[key] = result
 

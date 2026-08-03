@@ -2,15 +2,6 @@
   <el-container id="container">
     <div class="content-area">
       <router-view />
-      <mo-floating-bar
-        :class="{
-          'is-auto-hide-floating-bar': autoHideFloatingBar && !isFloatingBarSearchExpanded && !isBottomHovered,
-          'is-hovered': isBottomHovered,
-          'is-three-column-layout': isThreeColumn && (!autoHideAside || isAsideHovered)
-        }"
-        @mouseenter.native="isBottomHovered = true"
-        @mouseleave.native="isBottomHovered = false"
-      />
     </div>
     <el-dialog
       :visible.sync="taskPlanVisible"
@@ -20,13 +11,11 @@
       :modal="true"
     >
       <div slot="title" class="task-plan-dialog-title">
-        <div class="task-type-slider" role="group">
-          <div class="task-type-slider-indicator" :style="taskPlanTypeIndicatorStyle"></div>
-          <el-radio-group v-model="taskPlanType" size="mini">
-            <el-radio-button label="complete" :disabled="isTaskPlanCompleteTypeDisabled">{{ $t('app.task-plan-type-complete') }}</el-radio-button>
-            <el-radio-button label="scheduled">{{ $t('app.task-plan-type-scheduled') }}</el-radio-button>
-          </el-radio-group>
-        </div>
+        <mo-segmented-slider
+          class="task-type-slider"
+          v-model="taskPlanType"
+          :options="taskPlanTypeOptions"
+        />
       </div>
       <el-form label-position="top">
         <el-form-item>
@@ -60,7 +49,6 @@
         <el-button type="primary" class="dialog-submit-btn" :disabled="isTaskPlanSaveDisabled" @click="saveTaskPlan">{{ $t('app.save') }}</el-button>
       </div>
     </el-dialog>
-    <mo-speedometer :class="{ 'is-shifted': isSpeedometerShifted }" />
     <mo-add-task v-if="addTaskVisible" :visible="addTaskVisible" :type="addTaskType" />
     <mo-task-detail
       v-if="taskDetailVisible"
@@ -71,23 +59,6 @@
       :peers="currentTaskPeers"
     />
     <mo-dragger />
-    <div v-if="showMainFloatingAside" class="aside-small-screen" :class="{ 'is-auto-hide-aside': autoHideAside, 'is-proximity-hovered': isAsideProximityHovered }">
-      <ul class="menu small-menu">
-        <li
-          @click="nav('/preference')"
-          :class="{ active: currentPage === '/preference' }"
-        >
-          <el-tooltip
-            effect="dark"
-            :content="$t('subnav.preferences')"
-            placement="right"
-            :open-delay="500"
-          >
-            <mo-icon name="menu-preference" width="20" height="20" />
-          </el-tooltip>
-        </li>
-      </ul>
-    </div>
   </el-container>
 </template>
 
@@ -96,6 +67,7 @@
   import { dialog } from '@electron/remote'
   import { commands } from '@/components/CommandManager/instance'
   import { TASK_STATUS, APP_THEME } from '@shared/constants'
+  import themeTokens from '@/utils/themeTokens'
   import api from '@/api'
   import {
     bytesToSize,
@@ -107,21 +79,20 @@
   import {
     moveTaskFilesToTrash
   } from '@/utils/native'
-  import FloatingBar from '@/components/BottomBar/FloatingBar'
-  import Speedometer from '@/components/Speedometer/Speedometer'
+  import EngineClient from '@/components/Native/EngineClient'
   import AddTask from '@/components/Task/AddTask'
-  import TaskDetail from '@/components/TaskDetail/Index'
-  import Dragger from '@/components/Dragger/Index'
-  import '@/components/Icons/menu-preference'
+  import TaskDetail from '@/components/TaskDetail/TaskDetailDrawer'
+  import Dragger from '@/components/Dragger/DragDropZone'
+  import SegmentedSlider from '@/components/SegmentedSlider/SegmentedSlider'
 
   export default {
     name: 'mo-main',
     components: {
-      [FloatingBar.name]: FloatingBar,
-      [Speedometer.name]: Speedometer,
+      [EngineClient.name]: EngineClient,
       [AddTask.name]: AddTask,
       [TaskDetail.name]: TaskDetail,
-      [Dragger.name]: Dragger
+      [Dragger.name]: Dragger,
+      [SegmentedSlider.name]: SegmentedSlider
     },
     data () {
       return {
@@ -135,21 +106,14 @@
         autoOpenedProgressGids: new Set(),
         progressWindows: new Map(), // gid -> window
         progressTaskGids: new Set(),
-        completedTaskWindows: new Map(), // gid -> window for completed tasks
-        isFloatingBarSearchOpen: false,
-        isFloatingBarSearchExpanded: false,
-        isBottomHovered: false,
-        isAsideProximityHovered: false,
-        windowWidth: 0
+        completedTaskWindows: new Map() // gid -> window for completed tasks
       }
     },
     computed: {
       ...mapState('app', {
         addTaskVisible: state => state.addTaskVisible,
         addTaskType: state => state.addTaskType,
-        currentPage: state => state.currentPage,
-        systemTheme: state => state.systemTheme,
-        isAsideHovered: state => state.isAsideHovered
+        systemTheme: state => state.systemTheme
       }),
       taskPlanVisible: {
         get () {
@@ -173,10 +137,7 @@
         taskPlanTypeFromConfig: state => (state.config && state.config.taskPlanType) || 'complete',
         taskPlanTimeFromConfig: state => (state.config && state.config.taskPlanTime) || '',
         taskPlanOnlyWhenIdleFromConfig: state => !!(state.config && state.config.taskPlanOnlyWhenIdle),
-        prefTheme: state => state.config && state.config.theme,
-        sidebarLayoutMode: state => (state.config && state.config.sidebarLayoutMode) || 'floating',
-        autoHideAside: state => state.config.autoHideAside,
-        autoHideFloatingBar: state => state.config.autoHideFloatingBar
+        prefTheme: state => state.config && state.config.theme
       }),
       isTaskPlanPlanned () {
         return (this.taskPlanActionFromConfig || 'none') !== 'none'
@@ -201,32 +162,11 @@
         }
         return false
       },
-      taskPlanTypeIndicatorStyle () {
-        const idx = this.taskPlanType === 'scheduled' ? 1 : 0
-        return {
-          transform: `translateX(${idx * 100}%)`
-        }
-      },
-      isSpeedometerShifted () {
-        return false
-      },
-      isSmallWindow () {
-        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
-        if (!width) {
-          return false
-        }
-        return width < 700
-      },
-      isThreeColumn () {
-        if (this.sidebarLayoutMode !== 'three-column') {
-          return false
-        }
-        return !this.isSmallWindow
-      },
-      showMainFloatingAside () {
-        // 悬浮模式和三栏模式都不显示独立的设置按钮
-        // 因为设置按钮已经集成到左侧任务导航中
-        return false
+      taskPlanTypeOptions () {
+        return [
+          { value: 'complete', label: this.$t('app.task-plan-type-complete'), disabled: this.isTaskPlanCompleteTypeDisabled },
+          { value: 'scheduled', label: this.$t('app.task-plan-type-scheduled') }
+        ]
       }
     },
     watch: {
@@ -263,11 +203,8 @@
           this.taskPlanOnlyWhenIdle = !!this.taskPlanOnlyWhenIdleFromConfig
         }
       },
-      taskList: {
-        deep: true,
-        handler (val) {
-          this.handleTaskListChange(val || [])
-        }
+      taskList (val) {
+        this.handleTaskListChange(val || [])
       },
       prefTheme () {
         this.handleThemeChangeForProgressWindow()
@@ -277,85 +214,6 @@
       }
     },
     methods: {
-      handleFloatingBarSearchOpen (open) {
-        this.isFloatingBarSearchOpen = !!open
-      },
-      handleFloatingBarSearchExpanded (expanded) {
-        this.isFloatingBarSearchExpanded = !!expanded
-      },
-      handleWindowResize () {
-        if (typeof window === 'undefined') {
-          return
-        }
-        this.windowWidth = window.innerWidth || 0
-      },
-      updateAsideProximityHover (event) {
-        if (!this.showMainFloatingAside || !this.autoHideAside) {
-          if (this.isAsideProximityHovered) {
-            this.isAsideProximityHovered = false
-          }
-          return
-        }
-        if (!event) {
-          return
-        }
-        const height = typeof window !== 'undefined' ? window.innerHeight : 0
-        if (!height) {
-          return
-        }
-        const aside = this.$el && this.$el.querySelector ? this.$el.querySelector('.aside-small-screen') : null
-        const asideHeight = aside ? aside.offsetHeight : 0
-        const zoneHeight = Math.max(asideHeight || 0, 120) + 100
-        const centerY = height / 2
-        const top = centerY - zoneHeight / 2
-        const bottom = centerY + zoneHeight / 2
-        const withinY = event.clientY >= top && event.clientY <= bottom
-        const withinX = event.clientX <= 120
-        const next = withinX && withinY
-        if (next !== this.isAsideProximityHovered) {
-          this.isAsideProximityHovered = next
-        }
-      },
-      updateBottomProximityHover (event) {
-        if (!this.autoHideFloatingBar || !event) {
-          return
-        }
-        const height = typeof window !== 'undefined' ? window.innerHeight : 0
-        const width = typeof window !== 'undefined' ? window.innerWidth : 0
-        if (!height || !width) {
-          return
-        }
-        const top = height - 160
-        const bottom = height
-        const withinY = event.clientY >= top && event.clientY <= bottom
-
-        const centerX = width / 2
-        const left = centerX - 260
-        const right = centerX + 320
-        const withinX = event.clientX >= left && event.clientX <= right
-
-        const next = withinX && withinY
-        if (next !== this.isBottomHovered) {
-          this.isBottomHovered = next
-        }
-        const shouldOpen = next || this.isFloatingBarSearchExpanded
-        if (shouldOpen !== this.isFloatingBarSearchOpen) {
-          this.isFloatingBarSearchOpen = shouldOpen
-        }
-      },
-      handleWindowMouseMoveForAside (event) {
-        this._asideMouseEvent = event
-        if (this._asideMouseRaf) {
-          return
-        }
-        this._asideMouseRaf = window.requestAnimationFrame(() => {
-          this._asideMouseRaf = null
-          const lastEvent = this._asideMouseEvent
-          this._asideMouseEvent = null
-          this.updateAsideProximityHover(lastEvent)
-          this.updateBottomProximityHover(lastEvent)
-        })
-      },
       isAliveWindow (win) {
         if (!win) {
           return false
@@ -438,17 +296,6 @@
         const list = Array.isArray(this.selectedGidList) ? this.selectedGidList : []
         return list.map(x => `${x || ''}`.trim()).filter(Boolean)
       },
-      nav (page) {
-        if (page === '/preference') {
-          this.$electron.ipcRenderer.send('open-preference-window')
-          return
-        }
-        this.$router.push({
-          path: page
-        }).catch(err => {
-          console.log(err)
-        })
-      },
       saveTaskPlan () {
         const action = this.normalizeTaskPlanAction(this.taskPlanAction)
         const type = this.normalizeTaskPlanType(this.taskPlanType, action)
@@ -521,26 +368,21 @@
           }
 
           try {
-            const prefState = this.$store && this.$store.state && this.$store.state.preference
-            const prefConfig = prefState && prefState.config ? prefState.config : {}
-            const themeConfig = prefConfig.theme || APP_THEME.LIGHT
-            const appState = this.$store && this.$store.state && this.$store.state.app
-            const systemTheme = appState && appState.systemTheme ? appState.systemTheme : APP_THEME.LIGHT
-            const finalTheme = themeConfig === APP_THEME.AUTO ? systemTheme : themeConfig
-            const isDark = finalTheme === APP_THEME.DARK
-            const bodyBg = isDark ? '#343434' : '#ffffff'
-            const textColor = isDark ? '#e5e5e5' : '#303133'
-            const statusColor = isDark ? '#c0c4cc' : '#606266'
-            const metaColor = isDark ? '#b0b0b0' : '#909399'
-            const barBg = isDark ? '#3a3a3a' : '#ebeef5'
-            const barInner = '#409EFF'
-            const controlsBg = isDark ? '#3a3a3a' : '#ffffff'
-            const controlsBorder = isDark ? '#4a4a4a' : '#dcdfe6'
-            const controlsDivider = isDark ? '#555555' : '#e4e7ed'
-            const controlsItemColor = isDark ? '#e5e5e5' : '#606266'
-            const controlsItemHoverBg = isDark ? '#444444' : '#f2f6fc'
-            const titleBtnHoverBg = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'
-            const indicatorBg = isDark ? '#4a4a4a' : '#e8e8e8'
+            const tc = this.getThemeColors()
+            const bodyBg = tc.bodyBg
+            const textColor = tc.textColor
+            const statusColor = tc.statusColor
+            const metaColor = tc.metaColor
+            const barBg = tc.barBg
+            const barInner = tc.barInner
+            const controlsBg = tc.controlsBg
+            const controlsBorder = tc.controlsBorder
+            const controlsDivider = tc.controlsDivider
+            const controlsItemColor = tc.controlsItemColor
+            const controlsItemHoverBg = tc.controlsItemHoverBg
+            const titleBtnHoverBg = tc.titleBtnHoverBg
+            const indicatorBg = tc.indicatorBg
+            const primaryColor = tc.primaryColor
 
             if (typeof win.setBackgroundColor === 'function') {
               win.setBackgroundColor(bodyBg)
@@ -560,10 +402,11 @@
                 controlsItemHoverBg,
                 titleBtnHoverBg,
                 indicatorBg,
-                tabBg: isDark ? '#2a2a2a' : '#f5f7fa',
-                tabColor: isDark ? '#b0b0b0' : '#606266',
-                tabBorder: isDark ? '#4a4a4a' : '#dcdfe6',
-                piecePending: isDark ? '#4a4a4a' : '#dcdfe6'
+                primaryColor,
+                tabBg: tc.tabBg,
+                tabColor: tc.tabColor,
+                tabBorder: tc.tabBorder,
+                pieceColors: tc.pieceColors
               })
             } catch (e) {}
             this.updateProgressWindow(task)
@@ -586,7 +429,7 @@
             const finalTheme = themeConfig === APP_THEME.AUTO ? systemTheme : themeConfig
             const isDark = finalTheme === APP_THEME.DARK
 
-            const bodyBg = isDark ? '#343434' : '#ffffff'
+            const bodyBg = this.getThemeColors().bodyBg
             if (typeof win.setBackgroundColor === 'function') {
               win.setBackgroundColor(bodyBg)
             }
@@ -595,6 +438,14 @@
             } catch (e) {}
           } catch (e) {}
         })
+      },
+      getThemeColors () {
+        const prefState = this.$store && this.$store.state && this.$store.state.preference
+        const themeConfig = (prefState && prefState.config && prefState.config.theme) || APP_THEME.LIGHT
+        const appState = this.$store && this.$store.state && this.$store.state.app
+        const systemTheme = (appState && appState.systemTheme) || APP_THEME.LIGHT
+        const effectiveTheme = themeTokens.resolveTheme(themeConfig, systemTheme)
+        return themeTokens.getColors(effectiveTheme)
       },
       async handleTaskProgressControl (payload) {
         const data = payload || {}
@@ -651,7 +502,7 @@
         try {
           await moveTaskFilesToTrash(task, downloadingFileSuffix, config)
         } catch (err) {
-          console.warn('[Motrix] deleteTaskFilesFromProgress error:', err)
+          console.warn('[LinkCore] deleteTaskFilesFromProgress error:', err)
           const taskName = (task && task.name) ? task.name : (task && task.gid ? task.gid : '')
           this.$msg.error(`删除文件失败: ${taskName}`)
         }
@@ -684,7 +535,7 @@
               taskForDeletion = { ...originalTask, ...fresh }
             }
           } catch (e) {
-            console.warn('[Motrix] Failed to fetch fresh task for deletion:', e.message)
+            console.warn('[LinkCore] Failed to fetch fresh task for deletion:', e.message)
           }
           // 预获取引擎选项（dir + out），避免任务被 aria2 删除后 getOption 失败导致文件路径无法解析
           try {
@@ -693,7 +544,7 @@
               taskForDeletion = { ...taskForDeletion, _engineOptions: opt }
             }
           } catch (e) {
-            console.warn('[Motrix] Failed to pre-fetch getOption for deletion:', e.message)
+            console.warn('[LinkCore] Failed to pre-fetch getOption for deletion:', e.message)
           }
           return taskForDeletion
         }
@@ -747,26 +598,21 @@
         this.openProgressWindowForTask(task)
       },
       buildProgressWindowHtml (useCustomFrame = false, isMac = false) {
-        const prefState = this.$store && this.$store.state && this.$store.state.preference
-        const prefConfig = prefState && prefState.config ? prefState.config : {}
-        const themeConfig = prefConfig.theme || APP_THEME.LIGHT
-        const appState = this.$store && this.$store.state && this.$store.state.app
-        const systemTheme = appState && appState.systemTheme ? appState.systemTheme : APP_THEME.LIGHT
-        const finalTheme = themeConfig === APP_THEME.AUTO ? systemTheme : themeConfig
-        const isDark = finalTheme === APP_THEME.DARK
-        const bodyBg = isDark ? '#343434' : '#ffffff'
-        const textColor = isDark ? '#e5e5e5' : '#303133'
-        const statusColor = isDark ? '#c0c4cc' : '#606266'
-        const metaColor = isDark ? '#b0b0b0' : '#909399'
-        const barBg = isDark ? '#3a3a3a' : '#ebeef5'
-        const barInner = '#409EFF'
-        const controlsBg = isDark ? '#3a3a3a' : '#ffffff'
-        const controlsBorder = isDark ? '#4a4a4a' : '#dcdfe6'
-        const controlsDivider = isDark ? '#555555' : '#e4e7ed'
-        const controlsItemColor = isDark ? '#e5e5e5' : '#606266'
-        const controlsItemHoverBg = isDark ? '#444444' : '#f2f6fc'
-        const titleBtnHoverBg = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'
-        const indicatorBg = isDark ? '#4a4a4a' : '#e8e8e8'
+        const tc = this.getThemeColors()
+        const bodyBg = tc.bodyBg
+        const textColor = tc.textColor
+        const statusColor = tc.statusColor
+        const metaColor = tc.metaColor
+        const barBg = tc.barBg
+        const barInner = tc.barInner
+        const controlsBg = tc.controlsBg
+        const controlsBorder = tc.controlsBorder
+        const controlsDivider = tc.controlsDivider
+        const controlsItemColor = tc.controlsItemColor
+        const controlsItemHoverBg = tc.controlsItemHoverBg
+        const titleBtnHoverBg = tc.titleBtnHoverBg
+        const indicatorBg = tc.indicatorBg
+        const primaryColor = tc.primaryColor
         const showTitleBar = useCustomFrame || isMac
         const titleBarStyle = showTitleBar
           ? `.title-bar{height:26px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;padding-left:${isMac ? '78px' : '16px'};-webkit-app-region:drag;background-color:VAR_BODY_BG;}`
@@ -792,13 +638,6 @@
               '.title-actions{display:none !important;}'
             ]
             : []),
-          '.tab-nav{display:flex;gap:0;margin-bottom:10px;border-radius:7px;overflow:hidden;border:none;background:VAR_TAB_BG;-webkit-app-region:no-drag;}',
-          '.tab-btn{flex:1;padding:6px 12px;margin:0;border:none;border-radius:0;background:VAR_TAB_BG;color:VAR_TAB_COLOR;cursor:pointer;font-size:12px;transition:all .15s ease;appearance:none;-webkit-appearance:none;}',
-          '.tab-btn:first-child{border-top-left-radius:6px;border-bottom-left-radius:6px;}',
-          '.tab-btn:last-child{border-top-right-radius:6px;border-bottom-right-radius:6px;}',
-          '.tab-btn:not(:last-child){border-right:none;}',
-          '.tab-btn:hover{background:VAR_TAB_HOVER_BG;}',
-          '.tab-btn.active{background:VAR_TAB_ACTIVE_BG;color:VAR_TAB_ACTIVE_COLOR;position:relative;z-index:1;}',
           '.tab-content{display:none;}',
           '.tab-content.active{display:block;}',
           '.bar{height:6px;background:VAR_BAR_BG;border-radius:3px;overflow:hidden;margin-bottom:8px;}',
@@ -806,17 +645,23 @@
           '.bar-inner{height:100%;background:VAR_BAR_INNER;width:0;transition:width .2s ease;}',
           '.meta{color:VAR_META_COLOR;font-size:12px;margin-bottom:8px;}',
           '.meta-line{margin-bottom:2px;}',
-          '.pieces-info{color:VAR_META_COLOR;font-size:12px;margin-bottom:8px;}',
-          '.pieces-bar{display:flex;flex-wrap:wrap;gap:1px;margin-bottom:8px;}',
-          '.piece{width:6px;height:6px;border-radius:1px;background:VAR_PIECE_PENDING;}',
-          '.piece.completed{background:VAR_PIECE_COMPLETED;}',
-          '.piece.partial{background:VAR_PIECE_PARTIAL;}',
-          '.pieces-legend{display:flex;gap:12px;font-size:11px;color:VAR_META_COLOR;}',
-          '.legend-item{display:flex;align-items:center;gap:4px;}',
-          '.legend-color{width:10px;height:10px;border-radius:2px;}',
-          '.legend-completed{background:VAR_PIECE_COMPLETED;}',
-          '.legend-partial{background:VAR_PIECE_PARTIAL;}',
-          '.legend-pending{background:VAR_PIECE_PENDING;}',
+          '.pieces-scroll-wrap{position:relative;margin-bottom:8px;}',
+          '.pieces-empty{padding:28px 0;text-align:center;font-size:12px;color:VAR_META_COLOR;user-select:none;}',
+          '.pieces-scroll-box{max-height:120px;overflow-y:auto;overflow-x:hidden;cursor:grab;user-select:none;-webkit-user-select:none;scrollbar-width:thin;scrollbar-color:rgba(0,0,0,0.15) transparent;}',
+          '.pieces-scroll-box.is-dragging{cursor:grabbing;}',
+          '.pieces-scroll-box::-webkit-scrollbar{width:6px;}',
+          '.pieces-scroll-box::-webkit-scrollbar-track{background:transparent;}',
+          '.pieces-scroll-box::-webkit-scrollbar-thumb{background:rgba(0,0,0,0.15);border-radius:3px;}',
+          '.pieces-bar{display:flex;flex-wrap:wrap;gap:3px;}',
+          '.piece{width:10px;height:10px;border-radius:4px;}',
+          '.piece.s0{background:VAR_PIECE_COLOR_0;}',
+          '.piece.s1{background:VAR_PIECE_COLOR_1;}',
+          '.piece.s2{background:VAR_PIECE_COLOR_2;}',
+          '.piece.s3{background:VAR_PIECE_COLOR_3;}',
+          '.piece.s4{background:VAR_PIECE_COLOR_4;}',
+          '.pieces-fade{position:absolute;left:0;right:0;height:16px;pointer-events:none;z-index:2;}',
+          '.pieces-fade--top{top:0;background:linear-gradient(to bottom,VAR_BODY_BG 0%,transparent 100%);}',
+          '.pieces-fade--bottom{bottom:0;background:linear-gradient(to top,VAR_BODY_BG 0%,transparent 100%);}',
           '.conn-summary{display:flex;gap:16px;margin-bottom:10px;padding:8px;background:VAR_BAR_BG;border-radius:0;}',
           '.conn-summary-item{text-align:center;flex:1;min-width:0;}',
           '.conn-summary-label{font-size:11px;color:VAR_META_COLOR;margin-bottom:2px;white-space:nowrap;}',
@@ -834,15 +679,19 @@
           '.host-tooltip{position:fixed;left:0;top:0;display:none;max-width:420px;white-space:normal;word-break:break-all;padding:6px 8px;border-radius:6px;background:rgba(0,0,0,0.78);color:#fff;font-size:12px;line-height:1.25;pointer-events:none;z-index:3000;box-shadow:0 6px 18px rgba(0,0,0,0.25);}',
           '.conn-empty{text-align:center;padding:20px;color:VAR_META_COLOR;}',
           '.connections-panel{position:fixed;top:220px;left:0;right:0;padding:12px 0;background-color:VAR_BODY_BG;box-sizing:border-box;}',
-          '.controls{position:fixed;top:170px;left:12px;right:12px;display:flex;justify-content:space-between;padding:8px 0;background-color:VAR_BODY_BG;pointer-events:none;z-index:1000;}',
+          '.controls{position:fixed;top:170px;left:12px;right:12px;display:flex;justify-content:flex-end;gap:8px;padding:8px 0;background-color:VAR_BODY_BG;pointer-events:none;z-index:1000;}',
           '.controls-left{display:flex;pointer-events:auto;}',
           '.controls-left .controls-btn{position:relative;}',
-          '#pinBtn{margin-left:-18px;z-index:0;border-radius:0 18px 18px 0;width:46px;background-color:VAR_CONTROLS_ITEM_HOVER_BG;}',
-          '#pinBtn:hover{background-color:VAR_CONTROLS_BORDER;}',
-          '#connToggle{z-index:1;}',
+          '.pieces-toggle-group{display:none;background-color:VAR_CONTROLS_BG;border-radius:18px;box-shadow:0 2px 8px rgba(0,0,0,0.15);border:1px solid VAR_CONTROLS_BORDER;overflow:hidden;position:relative;pointer-events:auto;-webkit-app-region:no-drag;}',
+          '.pieces-toggle-indicator{position:absolute;height:32px;top:2px;left:0;width:0;background-color:VAR_PRIMARY_COLOR;border-radius:16px;transition:transform 0.25s cubic-bezier(0.4,0,0.2,1),width 0.25s ease;z-index:0;}',
+          '.pieces-toggle-tab{border:none;box-shadow:none;margin:0;background-color:transparent;height:36px;padding:0 12px 0 8px;font-size:12px;color:VAR_CONTROLS_ITEM_COLOR;cursor:pointer;position:relative;z-index:1;transition:color 0.2s ease;white-space:nowrap;}',
+          '.pieces-toggle-tab:hover:not(.active){color:VAR_PRIMARY_COLOR;}',
+          '.pieces-toggle-tab.active{color:#fff;}',
+          '#pinBtn{margin-left:-18px;z-index:1;border-radius:0 18px 18px 0;width:46px;background-color:VAR_CONTROLS_BG;}',
+          '#connToggle{z-index:2;}',
           '.controls-inner{display:flex;align-items:center;justify-content:flex-end;gap:8px;pointer-events:auto;}',
           '.controls-divider{display:none;}',
-          '.pause-resume-group{display:flex;background-color:VAR_CONTROLS_BG;border-radius:18px;box-shadow:0 2px 8px rgba(0,0,0,0.15);border:1px solid VAR_CONTROLS_BORDER;overflow:hidden;position:relative;margin-left:8px;}',
+          '.pause-resume-group{display:flex;background-color:VAR_CONTROLS_BG;border-radius:18px;box-shadow:0 2px 8px rgba(0,0,0,0.15);border:1px solid VAR_CONTROLS_BORDER;overflow:hidden;position:relative;}',
           '.pause-resume-indicator{position:absolute;width:32px;height:32px;background-color:VAR_INDICATOR_BG;border-radius:50%;top:2px;left:2px;transition:transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);z-index:0;box-shadow:inset 0 1px 3px rgba(0,0,0,0.1);}',
           '.pause-resume-indicator.right{transform:translateX(36px);}',
           '.pause-resume-group .controls-btn{border-radius:0;border:none;box-shadow:none;margin:0;background-color:transparent;width:36px;height:36px;position:relative;z-index:1;}',
@@ -850,7 +699,7 @@
           '.pause-resume-group .controls-btn:last-child{border-radius:0 18px 18px 0;}',
           '.controls-btn{width:36px;height:36px;border-radius:50%;border:none;background-color:VAR_CONTROLS_BG;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;color:VAR_CONTROLS_ITEM_COLOR;transition:background-color .2s ease,opacity .2s ease;box-shadow:0 2px 8px rgba(0,0,0,0.15);border:1px solid VAR_CONTROLS_BORDER;}',
           '.controls-btn:hover:not(:disabled){background-color:VAR_CONTROLS_ITEM_HOVER_BG;}',
-          '.pause-resume-group .controls-btn:hover:not(:disabled){background-color:transparent;color:#409EFF;}',
+          '.pause-resume-group .controls-btn:hover:not(:disabled){background-color:transparent;color:VAR_PRIMARY_COLOR;}',
           '.controls-btn:disabled{cursor:not-allowed;opacity:0.4;}',
           '.controls-btn-icon{width:14px;height:14px;display:block;position:relative;}',
           '.icon-pause::before,.icon-pause::after{content:"";position:absolute;top:1px;bottom:1px;width:3px;border-radius:1px;background:currentColor;}',
@@ -865,7 +714,7 @@
           '.icon-connections::after{content:"";position:absolute;width:2px;height:8px;background:currentColor;left:6px;top:3px;}',
           '.controls-btn.active .icon-connections{transform:rotate(180deg);}',
           '.icon-pin-svg{display:inline-block;width:14px;height:14px;transition:all .2s ease;margin-left:8px;}',
-          '.controls-btn.active .icon-pin-svg{color:#409EFF;}'
+          '.controls-btn.active .icon-pin-svg{color:VAR_PRIMARY_COLOR;}'
         ].join('').replace(/VAR_BODY_BG/g, bodyBg)
           .replace(/VAR_TEXT_COLOR/g, textColor)
           .replace(/VAR_STATUS_COLOR/g, statusColor)
@@ -879,15 +728,19 @@
           .replace(/VAR_CONTROLS_ITEM_HOVER_BG/g, controlsItemHoverBg)
           .replace(/VAR_TITLE_BTN_HOVER_BG/g, titleBtnHoverBg)
           .replace(/VAR_INDICATOR_BG/g, indicatorBg)
-          .replace(/VAR_PIECE_COMPLETED/g, '#67c23a')
-          .replace(/VAR_PIECE_PARTIAL/g, '#e6a23c')
-          .replace(/VAR_PIECE_PENDING/g, isDark ? '#4a4a4a' : '#dcdfe6')
-          .replace(/VAR_TAB_BORDER/g, isDark ? '#4a4a4a' : '#dcdfe6')
-          .replace(/VAR_TAB_BG/g, isDark ? '#2a2a2a' : '#f5f7fa')
-          .replace(/VAR_TAB_COLOR/g, isDark ? '#b0b0b0' : '#606266')
-          .replace(/VAR_TAB_HOVER_BG/g, isDark ? '#333333' : '#e4e7ed')
-          .replace(/VAR_TAB_ACTIVE_BG/g, '#409EFF')
-          .replace(/VAR_TAB_ACTIVE_COLOR/g, '#ffffff')
+          .replace(/VAR_PIECE_COLOR_0/g, tc.pieceColors[0])
+          .replace(/VAR_PIECE_COLOR_1/g, tc.pieceColors[1])
+          .replace(/VAR_PIECE_COLOR_2/g, tc.pieceColors[2])
+          .replace(/VAR_PIECE_COLOR_3/g, tc.pieceColors[3])
+          .replace(/VAR_PIECE_COLOR_4/g, tc.pieceColors[4])
+          .replace(/VAR_TAB_BORDER/g, tc.tabBorder)
+          .replace(/VAR_TAB_BG/g, tc.tabBg)
+          .replace(/VAR_TAB_COLOR/g, tc.tabColor)
+          .replace(/VAR_TAB_HOVER_BG/g, tc.tabHoverBg)
+          .replace(/VAR_TAB_ACTIVE_BG/g, tc.tabActiveBg)
+          .replace(/VAR_TAB_ACTIVE_COLOR/g, tc.tabActiveColor)
+          .replace(/VAR_SUCCESS_COLOR/g, tc.successColor)
+          .replace(/VAR_PRIMARY_COLOR/g, primaryColor)
         const html = [
           '<!DOCTYPE html>',
           '<html>',
@@ -903,10 +756,6 @@
           '<div class="title-actions"><button class="title-btn" id="min-btn">–</button><button class="title-btn" id="close-btn">×</button></div>',
           '</div>',
           '<div class="content">',
-          '<div class="tab-nav" id="tabNav">',
-          '<button class="tab-btn active" data-tab="info" id="tabInfo"></button>',
-          '<button class="tab-btn" data-tab="pieces" id="tabPieces" style="display:none;"></button>',
-          '</div>',
           '<div class="tab-content active" id="contentInfo">',
           '<div class="meta">',
           '<div class="meta-line" id="size"></div>',
@@ -931,12 +780,13 @@
           '<div class="conn-empty" id="connEmpty" style="display:none;"></div>',
           '</div>',
           '<div class="tab-content" id="contentPieces">',
-          '<div class="pieces-info" id="piecesInfo"></div>',
+          '<div class="pieces-scroll-wrap">',
+          '<div class="pieces-scroll-box" id="piecesScrollBox">',
           '<div class="pieces-bar" id="piecesBar"></div>',
-          '<div class="pieces-legend">',
-          '<span class="legend-item"><span class="legend-color legend-completed"></span><span id="legendCompleted"></span></span>',
-          '<span class="legend-item"><span class="legend-color legend-partial"></span><span id="legendPartial"></span></span>',
-          '<span class="legend-item"><span class="legend-color legend-pending"></span><span id="legendPending"></span></span>',
+          '</div>',
+          '<div class="pieces-empty" id="piecesEmpty" style="display:none;"></div>',
+          '<div class="pieces-fade pieces-fade--top" id="piecesFadeTop" style="display:none;"></div>',
+          '<div class="pieces-fade pieces-fade--bottom" id="piecesFadeBottom" style="display:none;"></div>',
           '</div>',
           '</div>',
           '</div>',
@@ -947,6 +797,11 @@
           '<button id="pinBtn" class="controls-btn" title="固定窗口"><svg class="icon-pin-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" width="14" height="14" fill="none"><path d="M 8.5 0.5 L 13.5 5.5 L 10.5 8.5 L 10 10.5 L 7.5 8 L 3.5 12 L 2.5 11 L 6.5 7 L 4 4.5 L 6 4 Z" fill="currentColor"/><circle cx="11" cy="3" r="1" fill="currentColor" opacity="0.35"/></svg></button>',
           '</div>',
           '<div class="controls-inner">',
+          '<div id="piecesToggle" class="pieces-toggle-group" style="display:none;">',
+          '<div class="pieces-toggle-indicator" id="piecesToggleIndicator"></div>',
+          '<button id="piecesTabInfo" class="pieces-toggle-tab active"></button>',
+          '<button id="piecesTabPieces" class="pieces-toggle-tab"></button>',
+          '</div>',
           '<div class="pause-resume-group">',
           '<div class="pause-resume-indicator" id="pauseResumeIndicator"></div>',
           '<button id="pause" class="controls-btn" title="暂停"><span class="controls-btn-icon icon-pause"></span></button>',
@@ -961,13 +816,16 @@
           'let currentGid = "";',
           'let currentTab = "info";',
           'let cachedPiecesData = null;',
-          `let currentTheme = { tabBg: "${isDark ? '#2a2a2a' : '#f5f7fa'}", tabColor: "${isDark ? '#b0b0b0' : '#606266'}", tabBorder: "${isDark ? '#4a4a4a' : '#dcdfe6'}", tabActiveBg: "#409EFF", tabActiveColor: "#ffffff" };`,
+          'let _piecesIndicatorW = 0;',
+          'let _piecesIndicatorX = 0;',
+          `let currentTheme = { tabBg: "${tc.tabBg}", tabColor: "${tc.tabColor}", tabBorder: "${tc.tabBorder}", tabActiveBg: "${tc.tabActiveBg}", tabActiveColor: "${tc.tabActiveColor}", barBg: "${tc.barBg}" };`,
           'const windowTitleEl = document.getElementById("window-title");',
           'const closeBtn = document.getElementById("close-btn");',
           'const minBtn = document.getElementById("min-btn");',
-          'const tabInfoBtn = document.getElementById("tabInfo");',
-          'const tabConnectionsBtn = document.getElementById("tabConnections");',
-          'const tabPiecesBtn = document.getElementById("tabPieces");',
+          'const piecesToggleGroup = document.getElementById("piecesToggle");',
+          'const piecesToggleIndicator = document.getElementById("piecesToggleIndicator");',
+          'const piecesTabInfoBtn = document.getElementById("piecesTabInfo");',
+          'const piecesTabPiecesBtn = document.getElementById("piecesTabPieces");',
           'const contentInfoEl = document.getElementById("contentInfo");',
           'const contentConnectionsEl = document.getElementById("contentConnections");',
           'const contentPiecesEl = document.getElementById("contentPieces");',
@@ -990,11 +848,11 @@
           'const avgSpeedEl = document.getElementById("avgSpeed");',
           'const connectionsEl = document.getElementById("connections");',
           'const remainingEl = document.getElementById("remaining");',
-          'const piecesInfoEl = document.getElementById("piecesInfo");',
           'const piecesBarEl = document.getElementById("piecesBar");',
-          'const legendCompletedEl = document.getElementById("legendCompleted");',
-          'const legendPartialEl = document.getElementById("legendPartial");',
-          'const legendPendingEl = document.getElementById("legendPending");',
+          'const piecesEmptyEl = document.getElementById("piecesEmpty");',
+          'const piecesScrollBoxEl = document.getElementById("piecesScrollBox");',
+          'const piecesFadeTopEl = document.getElementById("piecesFadeTop");',
+          'const piecesFadeBottomEl = document.getElementById("piecesFadeBottom");',
           'const pauseBtn = document.getElementById("pause");',
           'const resumeBtn = document.getElementById("resume");',
           'const cancelBtn = document.getElementById("cancel");',
@@ -1005,6 +863,59 @@
           'const PANEL_HEIGHT = 200;',
           'let isPanelOpen = false;',
           'let initialWidth = 0;',
+          'let piecesDragState = null;',
+          'let piecesFadeRafId = null;',
+          'function updatePiecesFadeState() {',
+          '  if (!piecesScrollBoxEl) return;',
+          '  try {',
+          '    const scrollH = piecesScrollBoxEl.scrollHeight || 0;',
+          '    const clientH = piecesScrollBoxEl.clientHeight || 0;',
+          '    if (scrollH <= clientH + 2) {',
+          '      if (piecesFadeTopEl) piecesFadeTopEl.style.display = "none";',
+          '      if (piecesFadeBottomEl) piecesFadeBottomEl.style.display = "none";',
+          '      return;',
+          '    }',
+          '    const scrollTop = piecesScrollBoxEl.scrollTop || 0;',
+          '    if (piecesFadeTopEl) piecesFadeTopEl.style.display = scrollTop > 2 ? "block" : "none";',
+          '    const atBottom = scrollTop + clientH >= scrollH - 2;',
+          '    if (piecesFadeBottomEl) piecesFadeBottomEl.style.display = atBottom ? "none" : "block";',
+          '  } catch (_) {',
+          '    if (piecesFadeTopEl) piecesFadeTopEl.style.display = "none";',
+          '    if (piecesFadeBottomEl) piecesFadeBottomEl.style.display = "none";',
+          '  }',
+          '}',
+          'function schedulePiecesFadeUpdate() {',
+          '  if (piecesFadeRafId) return;',
+          '  piecesFadeRafId = requestAnimationFrame(() => {',
+          '    piecesFadeRafId = null;',
+          '    updatePiecesFadeState();',
+          '  });',
+          '}',
+          'if (piecesScrollBoxEl) {',
+          '  piecesScrollBoxEl.addEventListener("scroll", schedulePiecesFadeUpdate);',
+          '  piecesScrollBoxEl.addEventListener("mousedown", function(e) {',
+          '    try {',
+          '      const scrollH = piecesScrollBoxEl.scrollHeight || 0;',
+          '      const clientH = piecesScrollBoxEl.clientHeight || 0;',
+          '      if (scrollH <= clientH + 2) return;',
+          '      piecesDragState = { startY: e.clientY, startScrollTop: piecesScrollBoxEl.scrollTop || 0 };',
+          '      piecesScrollBoxEl.classList.add("is-dragging");',
+          '      e.preventDefault();',
+          '    } catch (_) {}',
+          '  });',
+          '  document.addEventListener("mousemove", function(e) {',
+          '    if (!piecesDragState) return;',
+          '    try {',
+          '      const deltaY = e.clientY - piecesDragState.startY;',
+          '      piecesScrollBoxEl.scrollTop = piecesDragState.startScrollTop - deltaY;',
+          '    } catch (_) {}',
+          '  });',
+          '  document.addEventListener("mouseup", function() {',
+          '    if (!piecesDragState) return;',
+          '    piecesDragState = null;',
+          '    if (piecesScrollBoxEl) piecesScrollBoxEl.classList.remove("is-dragging");',
+          '  });',
+          '}',
           'function hideHostTooltip() {',
           '  if (!hostTooltipEl) return;',
           '  hostTooltipEl.style.display = "none";',
@@ -1068,33 +979,38 @@
           '    ipcRenderer.invoke("set-progress-window-always-on-top", isPinned).catch(() => {});',
           '  };',
           '}',
+          'function updatePiecesIndicator() {',
+          '  if (!piecesToggleIndicator) return;',
+          '  var activeTab = currentTab === "pieces" ? piecesTabPiecesBtn : piecesTabInfoBtn;',
+          '  if (!activeTab) return;',
+          '  var w = activeTab.offsetWidth;',
+          '  if (w > 0) {',
+          '    var x = activeTab.offsetLeft;',
+          '    var leftInset = 2;',
+          '    var rightInset = 2;',
+          '    w = w - leftInset - rightInset;',
+          '    x = x + leftInset;',
+          '    if (w !== _piecesIndicatorW) {',
+          '      _piecesIndicatorW = w;',
+          '      piecesToggleIndicator.style.width = w + "px";',
+          '    }',
+          '    if (x !== _piecesIndicatorX) {',
+          '      _piecesIndicatorX = x;',
+          '      piecesToggleIndicator.style.transform = "translateX(" + x + "px)";',
+          '    }',
+          '  }',
+          '}',
           'function switchTab(tab) {',
           '  currentTab = tab;',
-          '  if (tabInfoBtn) {',
-          '    tabInfoBtn.classList.toggle("active", tab === "info");',
-          '    if (tab === "info") {',
-          '      tabInfoBtn.style.backgroundColor = currentTheme.tabActiveBg;',
-          '      tabInfoBtn.style.color = currentTheme.tabActiveColor;',
-          '    } else {',
-          '      tabInfoBtn.style.backgroundColor = currentTheme.tabBg;',
-          '      tabInfoBtn.style.color = currentTheme.tabColor;',
-          '    }',
-          '  }',
-          '  if (tabPiecesBtn) {',
-          '    tabPiecesBtn.classList.toggle("active", tab === "pieces");',
-          '    if (tab === "pieces") {',
-          '      tabPiecesBtn.style.backgroundColor = currentTheme.tabActiveBg;',
-          '      tabPiecesBtn.style.color = currentTheme.tabActiveColor;',
-          '    } else {',
-          '      tabPiecesBtn.style.backgroundColor = currentTheme.tabBg;',
-          '      tabPiecesBtn.style.color = currentTheme.tabColor;',
-          '    }',
-          '  }',
+          '  if (piecesTabInfoBtn) piecesTabInfoBtn.classList.toggle("active", tab === "info");',
+          '  if (piecesTabPiecesBtn) piecesTabPiecesBtn.classList.toggle("active", tab === "pieces");',
+          '  updatePiecesIndicator();',
           '  if (contentInfoEl) contentInfoEl.classList.toggle("active", tab === "info");',
           '  if (contentPiecesEl) contentPiecesEl.classList.toggle("active", tab === "pieces");',
+          '  if (tab === "pieces") { schedulePiecesFadeUpdate(); }',
           '}',
-          'if (tabInfoBtn) tabInfoBtn.onclick = () => switchTab("info");',
-          'if (tabPiecesBtn) tabPiecesBtn.onclick = () => switchTab("pieces");',
+          'if (piecesTabInfoBtn) piecesTabInfoBtn.onclick = () => { switchTab("info"); };',
+          'if (piecesTabPiecesBtn) piecesTabPiecesBtn.onclick = () => { switchTab("pieces"); };',
           'if (minBtn) {',
           '  minBtn.onclick = () => {',
           '    try {',
@@ -1127,19 +1043,21 @@
           '    return;',
           '  }',
           '  const bodyBg = payload.bodyBg || "#ffffff";',
-          '  const textColor = payload.textColor || "#303133";',
-          '  const statusColor = payload.statusColor || "#606266";',
-          '  const metaColor = payload.metaColor || "#909399";',
-          '  const barBg = payload.barBg || "#ebeef5";',
-          '  const barInner = payload.barInner || "#409EFF";',
+          '  const textColor = payload.textColor || "#2c3e50";',
+          '  const statusColor = payload.statusColor || "#5a6c7d";',
+          '  const metaColor = payload.metaColor || "#8492a6";',
+          '  const barBg = payload.barBg || "#e2e8f0";',
+          '  const barInner = payload.barInner || "#1a7fe0";',
           '  const controlsBg = payload.controlsBg || "#ffffff";',
-          '  const controlsBorder = payload.controlsBorder || "#dcdfe6";',
-          '  const controlsDivider = payload.controlsDivider || "#e4e7ed";',
-          '  const controlsItemColor = payload.controlsItemColor || "#606266";',
-          '  const controlsItemHoverBg = payload.controlsItemHoverBg || "#f2f6fc";',
-          '  const titleBtnHoverBg = payload.titleBtnHoverBg || "rgba(0,0,0,0.08)";',
+          '  const controlsBorder = payload.controlsBorder || "#d3dde6";',
+          '  const controlsDivider = payload.controlsDivider || "#e2e8f0";',
+          '  const controlsItemColor = payload.controlsItemColor || "#5a6c7d";',
+          '  const controlsItemHoverBg = payload.controlsItemHoverBg || "#f0f4f8";',
+          '  const titleBtnHoverBg = payload.titleBtnHoverBg || "rgba(26,35,50,0.08)";',
           '  document.body.style.backgroundColor = bodyBg;',
           '  document.body.style.color = textColor;',
+          '  if (piecesFadeTopEl) { piecesFadeTopEl.style.background = "linear-gradient(to bottom," + bodyBg + " 0%,transparent 100%)"; }',
+          '  if (piecesFadeBottomEl) { piecesFadeBottomEl.style.background = "linear-gradient(to top," + bodyBg + " 0%,transparent 100%)"; }',
           '  const titleBarEl = document.querySelector(".title-bar");',
           '  if (titleBarEl) {',
           '    titleBarEl.style.backgroundColor = bodyBg;',
@@ -1175,24 +1093,23 @@
           '    pauseResumeGroupEl.style.backgroundColor = controlsBg;',
           '    pauseResumeGroupEl.style.borderColor = controlsBorder;',
           '  }',
+          '  const piecesToggleGroupEl = document.querySelector(".pieces-toggle-group");',
+          '  if (piecesToggleGroupEl) {',
+          '    piecesToggleGroupEl.style.backgroundColor = controlsBg;',
+          '    piecesToggleGroupEl.style.borderColor = controlsBorder;',
+          '  }',
           '  const dividerEls = document.querySelectorAll(".controls-divider");',
           '  if (dividerEls && dividerEls.length) {',
           '    dividerEls.forEach(el => {',
           '      el.style.backgroundColor = controlsDivider;',
           '    });',
           '  }',
-          '  const btnEls = document.querySelectorAll(".controls-btn");',
-          '  if (btnEls && btnEls.length) {',
-          '    btnEls.forEach(el => {',
-          '      el.style.color = controlsItemColor;',
-          '      if (!el.closest(".pause-resume-group")) {',
-          '        el.style.backgroundColor = controlsBg;',
-          '      }',
-          '    });',
-          '  }',
+          // 按钮颜色和背景已通过 dynamic-theme-style 管理，无需设置内联样式
           '  const styleEl = document.getElementById("dynamic-theme-style");',
+          '  const primaryColor = payload.primaryColor || "#1a7fe0";',
+          '  const pieceColors = payload.pieceColors || ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#39d353"];',
           '  if (styleEl) {',
-          '    styleEl.textContent = ".title-btn:hover{background-color:" + titleBtnHoverBg + ";}.controls-btn:hover:not(:disabled):not(.pause-resume-group .controls-btn){background-color:" + controlsItemHoverBg + ";}";',
+          '    styleEl.textContent = ".title-btn:hover{background-color:" + titleBtnHoverBg + ";}.controls-btn{color:" + controlsItemColor + "!important;background-color:" + controlsBg + "!important;}.controls-btn:hover:not(:disabled){background-color:" + controlsItemHoverBg + "!important;}.pause-resume-group .controls-btn{background-color:transparent!important;}.pause-resume-group .controls-btn:hover:not(:disabled){background-color:transparent!important;color:" + primaryColor + "!important;}.pieces-toggle-tab{color:" + controlsItemColor + "!important;}.pieces-toggle-group .pieces-toggle-tab{background-color:transparent!important;}.pieces-toggle-tab:hover:not(.active){color:" + primaryColor + "!important;}.pieces-toggle-indicator{background-color:" + primaryColor + "!important;}#pinBtn:hover{background-color:" + controlsItemHoverBg + "!important;}#connToggle:hover:not(:disabled) ~ #pinBtn{background-color:" + controlsItemHoverBg + "!important;}.controls-btn.active .icon-pin-svg{color:" + primaryColor + "!important;}.piece.s0{background-color:" + pieceColors[0] + "!important;}.piece.s1{background-color:" + pieceColors[1] + "!important;}.piece.s2{background-color:" + pieceColors[2] + "!important;}.piece.s3{background-color:" + pieceColors[3] + "!important;}.piece.s4{background-color:" + pieceColors[4] + "!important;}";',
           '  }',
           '  const indicatorBg = payload.indicatorBg || "#e8e8e8";',
           '  if (pauseResumeIndicator) {',
@@ -1220,8 +1137,8 @@
           '  }',
           '  const connTableThEls = document.querySelectorAll(".conn-table th");',
           '  if (connTableThEls && connTableThEls.length) {',
-          '    const tabBg = payload.tabBg || "#f5f7fa";',
-          '    const tabBorder = payload.tabBorder || "#dcdfe6";',
+          '    const tabBg = payload.tabBg || "#f0f4f8";',
+          '    const tabBorder = payload.tabBorder || "#d3dde6";',
           '    connTableThEls.forEach(el => {',
           '      el.style.backgroundColor = tabBg;',
           '      el.style.borderColor = tabBorder;',
@@ -1230,7 +1147,7 @@
           '  }',
           '  const connTableTdEls = document.querySelectorAll(".conn-table td");',
           '  if (connTableTdEls && connTableTdEls.length) {',
-          '    const tabBorder = payload.tabBorder || "#dcdfe6";',
+          '    const tabBorder = payload.tabBorder || "#d3dde6";',
           '    connTableTdEls.forEach(el => {',
           '      el.style.borderColor = tabBorder;',
           '      if (!el.classList.contains("speed-active")) {',
@@ -1242,50 +1159,8 @@
           '  if (connEmptyEl) {',
           '    connEmptyEl.style.color = metaColor;',
           '  }',
-          '  const tabNavEl = document.querySelector(".tab-nav");',
-          '  if (tabNavEl) {',
-          '    const tabBorder = payload.tabBorder || "#dcdfe6";',
-          '    tabNavEl.style.borderColor = tabBorder;',
-          '  }',
-          '  const tabBtnEls = document.querySelectorAll(".tab-btn");',
-          '  if (tabBtnEls && tabBtnEls.length) {',
-          '    const tabBg = payload.tabBg || "#f5f7fa";',
-          '    const tabColor = payload.tabColor || "#606266";',
-          '    const tabBorder = payload.tabBorder || "#dcdfe6";',
-          '    const tabActiveBg = "#409EFF";',
-          '    const tabActiveColor = "#ffffff";',
-          '    currentTheme = { tabBg, tabColor, tabBorder, tabActiveBg, tabActiveColor };',
-          '    tabBtnEls.forEach(el => {',
-          '      if (el.classList.contains("active")) {',
-          '        el.style.backgroundColor = tabActiveBg;',
-          '        el.style.color = tabActiveColor;',
-          '      } else {',
-          '        el.style.backgroundColor = tabBg;',
-          '        el.style.color = tabColor;',
-          '      }',
-          '      el.style.borderColor = tabBorder;',
-          '    });',
-          '  }',
-          '  const piecesInfoEl = document.querySelector(".pieces-info");',
-          '  if (piecesInfoEl) {',
-          '    piecesInfoEl.style.color = metaColor;',
-          '  }',
-          '  const piecesLegendEl = document.querySelector(".pieces-legend");',
-          '  if (piecesLegendEl) {',
-          '    piecesLegendEl.style.color = metaColor;',
-          '  }',
-          '  const piecePendingEls = document.querySelectorAll(".piece:not(.completed):not(.partial)");',
-          '  if (piecePendingEls && piecePendingEls.length) {',
-          '    const piecePending = payload.piecePending || "#dcdfe6";',
-          '    piecePendingEls.forEach(el => {',
-          '      el.style.backgroundColor = piecePending;',
-          '    });',
-          '  }',
-          '  const legendPendingEl = document.querySelector(".legend-pending");',
-          '  if (legendPendingEl) {',
-          '    const piecePending = payload.piecePending || "#dcdfe6";',
-          '    legendPendingEl.style.backgroundColor = piecePending;',
-          '  }',
+          '  const tabBorder = payload.tabBorder || "#d3dde6";',
+          '  currentTheme = { tabBorder, tabActiveBg: payload.primaryColor || "#1a7fe0" };',
           '});',
           'function applyPayload(payload) {',
           '  if (!payload) {',
@@ -1302,15 +1177,29 @@
           '  if (windowTitleEl) {',
           '    windowTitleEl.innerText = title;',
           '  }',
-          '  if (tabInfoBtn && payload.tabInfoText) {',
-          '    tabInfoBtn.innerText = payload.tabInfoText || "Info";',
+          '  if (piecesTabInfoBtn) {',
+          '    if (payload.tabInfoShort !== undefined || payload.tabInfoText !== undefined) {',
+          '      var infoShort = payload.tabInfoShort || payload.tabInfoText || "";',
+          '      if (piecesTabInfoBtn.innerText !== infoShort) {',
+          '        piecesTabInfoBtn.innerText = infoShort;',
+          '        updatePiecesIndicator();',
+          '      }',
+          '      piecesTabInfoBtn.title = payload.tabInfoText || "";',
+          '    }',
           '  }',
-          '  if (tabConnectionsBtn && payload.tabConnectionsText) {',
-          '    tabConnectionsBtn.innerText = payload.tabConnectionsText || "Connections";',
+          '  if (piecesTabPiecesBtn) {',
+          '    if (payload.tabPiecesShort !== undefined || payload.tabPiecesText !== undefined) {',
+          '      var psShort = payload.tabPiecesShort || payload.tabPiecesText || "";',
+          '      if (piecesTabPiecesBtn.innerText !== psShort) {',
+          '        piecesTabPiecesBtn.innerText = psShort;',
+          '        updatePiecesIndicator();',
+          '      }',
+          '      piecesTabPiecesBtn.title = payload.tabPiecesText || (payload.piecesData && payload.piecesData.tabText) || "";',
+          '    }',
           '  }',
           '  if (barEl) {',
           '    barEl.style.width = percentText;',
-          '    barEl.style.backgroundColor = payload.isPaused ? "#909399" : "#409EFF";',
+          '    barEl.style.backgroundColor = payload.isPaused ? "#8b95a3" : "#1a7fe0";',
           '  }',
           '  if (sizeEl && payload.sizeText != null) {',
           '    sizeEl.innerText = payload.sizeText || "";',
@@ -1330,12 +1219,15 @@
           '  if (payload.piecesData && payload.piecesData.numPieces > 0) {',
           '    const pd = payload.piecesData;',
           '    cachedPiecesData = pd;',
-          '    if (tabPiecesBtn) {',
-          '      tabPiecesBtn.style.display = "block";',
-          '      tabPiecesBtn.innerText = pd.tabText || "Pieces";',
+          '    if (piecesToggleGroup && piecesToggleGroup.style.display !== "flex") {',
+          '      piecesToggleGroup.style.display = "flex";',
+          '      requestAnimationFrame(updatePiecesIndicator);',
           '    }',
-          '    if (piecesInfoEl) {',
-          '      piecesInfoEl.innerText = pd.infoText || "";',
+          '    if (piecesEmptyEl) {',
+          '      piecesEmptyEl.style.display = "none";',
+          '    }',
+          '    if (piecesTabPiecesBtn && pd.tabText) {',
+          '      piecesTabPiecesBtn.title = pd.tabText;',
           '    }',
           '    if (piecesBarEl && pd.pieces) {',
           '      const pieces = Array.from(piecesBarEl.querySelectorAll(".piece"));',
@@ -1344,7 +1236,7 @@
           '      const newPieceCount = newPieces.length;',
           '      for (let i = 0; i < newPieceCount; i++) {',
           '        const status = newPieces[i];',
-          '        const cls = status === 2 ? "completed" : (status === 1 ? "partial" : "");',
+          '        const cls = "s" + status;',
           '        if (i < pieceCount) {',
           '          const piece = pieces[i];',
           '          if (piece.className !== "piece " + cls) {',
@@ -1359,28 +1251,22 @@
           '      for (let i = pieceCount - 1; i >= newPieceCount; i--) {',
           '        pieces[i].remove();',
           '      }',
-          '    }',
-          '    if (legendCompletedEl) {',
-          '      legendCompletedEl.innerText = pd.completedText || "";',
-          '    }',
-          '    if (legendPartialEl) {',
-          '      legendPartialEl.innerText = pd.partialText || "";',
-          '    }',
-          '    if (legendPendingEl) {',
-          '      legendPendingEl.innerText = pd.pendingText || "";',
-          '    }',
-          '  } else if (cachedPiecesData && cachedPiecesData.numPieces > 0) {',
-          '    if (tabPiecesBtn && tabPiecesBtn.style.display === "none") {',
-          '      tabPiecesBtn.style.display = "block";',
-          '      if (cachedPiecesData.tabText) tabPiecesBtn.innerText = cachedPiecesData.tabText;',
+          '      schedulePiecesFadeUpdate();',
           '    }',
           '  } else {',
           '    cachedPiecesData = null;',
-          '    if (tabPiecesBtn) {',
-          '      tabPiecesBtn.style.display = "none";',
+          '    if (piecesToggleGroup) {',
+          '      piecesToggleGroup.style.display = "none";',
           '    }',
           '    if (currentTab === "pieces") {',
           '      switchTab("info");',
+          '    }',
+          '    if (piecesBarEl) {',
+          '      piecesBarEl.innerHTML = "";',
+          '    }',
+          '    if (piecesEmptyEl) {',
+          '      piecesEmptyEl.innerText = payload.piecesEmptyText || "";',
+          '      piecesEmptyEl.style.display = "block";',
           '    }',
           '  }',
           '  if (payload.connectionsData) {',
@@ -1504,6 +1390,8 @@
           '  } catch (e) {}',
           '}',
           'let pollTimer = setInterval(pollProgress, 1000);',
+          '/* 滑块切换组常显，加载后初始化一次指示器位置 */',
+          'requestAnimationFrame(updatePiecesIndicator);',
           'window.addEventListener("beforeunload", () => {',
           '  try { if (pollTimer) clearInterval(pollTimer); } catch (e) {}',
           '});',
@@ -1586,42 +1474,22 @@
         }
         const avgSpeedValue = avgSpeed > 0 ? `${bytesToSize(avgSpeed, 2)}/s` : `${bytesToSize(0, 2)}/s`
 
-        // 解析分片进度
+        // 解析分片进度 - 与任务详情活动图表 (TaskGraphic) 保持一致的 5 级分类
         let piecesData = null
         const bitfield = t.bitfield || ''
         const numPieces = Number(t.numPieces || 0)
         if (bitfield && numPieces > 0) {
           const pieces = []
-          let completedCount = 0
-          let partialCount = 0
-          let pendingCount = 0
           for (let i = 0; i < bitfield.length; i++) {
             const hex = parseInt(bitfield[i], 16)
-            // hex 值 0-15 对应状态 0-3 (0=0%, 1-3=25%, 4-7=50%, 8-11=75%, 12-15=100%)
-            // 简化为: 0=pending, 1-14=partial, 15=completed
-            let status
-            if (hex === 0) {
-              status = 0 // pending
-              pendingCount++
-            } else if (hex === 15) {
-              status = 2 // completed (f = 15 = 100%)
-              completedCount++
-            } else {
-              status = 1 // partial
-              partialCount++
-            }
-            pieces.push(status)
+            // 与 TaskGraphic buildAtom 一致: Math.floor(hex / 4) → 0..3
+            // hex 0-3 → s0, 4-7 → s1, 8-11 → s2, 12-15 → s3
+            pieces.push(Math.floor(hex / 4))
           }
-          const pieceSize = Number(t.pieceLength || 0)
-          const pieceSizeText = pieceSize > 0 ? bytesToSize(pieceSize, 2) : ''
           piecesData = {
             numPieces,
             pieces,
-            tabText: this.$t('task.task-pieces-progress'),
-            infoText: `${this.$t('task.task-num-pieces')}: ${numPieces} ${this.$t('task.task-pieces-unit')}` + (pieceSizeText ? ` (${pieceSizeText}/${this.$t('task.task-piece-unit')})` : ''),
-            completedText: `${this.$t('task.piece-completed')} (${completedCount})`,
-            partialText: `${this.$t('task.piece-partial')} (${partialCount})`,
-            pendingText: `${this.$t('task.piece-pending')} (${pendingCount})`
+            tabText: this.$t('task.task-pieces-progress')
           }
         }
 
@@ -1646,6 +1514,10 @@
         const status = t.status
         const doneStatuses = [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED]
         const isPaused = status === TASK_STATUS.PAUSED || status === TASK_STATUS.WAITING
+        // 待选择文件状态（磁力元数据已下载完、等待用户选择文件），
+        // 进度窗口据此用橙色进度条区分"任务还没正式开始"
+        const pendingMap = this.$store.state.task.pendingFileSelection || {}
+        const pendingSelection = !!(gid && pendingMap[gid])
         const canPause = status === TASK_STATUS.ACTIVE && completed > 0
         const canResume = status === TASK_STATUS.WAITING || status === TASK_STATUS.PAUSED
         const canCancel = !doneStatuses.includes(status)
@@ -1656,8 +1528,14 @@
           percentText: `${percent}%`,
           nameText: title,
           isPaused,
+          pendingSelection,
+          // 与主进程 task-progress:fetch 返回保持一致，
+          // 避免事件推送缺字段时滑块按钮文本被清空导致宽度闪烁
           tabInfoText: this.$t('task.task-progress-info'),
-          tabConnectionsText: this.$t('task.task-connections-detail'),
+          tabPiecesText: this.$t('task.task-pieces-progress'),
+          piecesEmptyText: this.$t('task.task-no-pieces-data'),
+          tabInfoShort: this.$t('task.task-progress-info'),
+          tabPiecesShort: this.$t('task.task-pieces-progress'),
           sizeText: sizeText ? `${this.$t('task.task-file-size')}: ${sizeText}` : '',
           speedText: `${this.$t('task.task-download-speed')}: ${speedValue}`,
           avgSpeedText: `${this.$t('task.task-average-speed')}: ${avgSpeedValue}`,
@@ -1758,7 +1636,7 @@
               } catch (e) {}
             }, 100)
           } catch (e) {
-            console.warn('[Motrix] Failed to activate existing progress window:', e.message)
+            console.warn('[LinkCore] Failed to activate existing progress window:', e.message)
           }
           this.updateProgressWindow(task)
           return
@@ -1767,11 +1645,6 @@
         this.progressTaskGids.add(gid)
         const prefState = this.$store && this.$store.state && this.$store.state.preference
         const prefConfig = prefState && prefState.config ? prefState.config : {}
-        const themeConfig = prefConfig.theme || APP_THEME.LIGHT
-        const appState = this.$store && this.$store.state && this.$store.state.app
-        const systemTheme = appState && appState.systemTheme ? appState.systemTheme : APP_THEME.LIGHT
-        const finalTheme = themeConfig === APP_THEME.AUTO ? systemTheme : themeConfig
-        const isDark = finalTheme === APP_THEME.DARK
         const hideAppMenu = !!prefConfig.hideAppMenu
         const isWin = process && process.platform === 'win32'
         const isLinux = process && process.platform === 'linux'
@@ -1812,7 +1685,7 @@
           useContentSize: true,
           frame: !useCustomFrame,
           titleBarStyle: isMac ? 'hiddenInset' : 'default',
-          backgroundColor: isDark ? '#343434' : '#ffffff',
+          backgroundColor: this.getThemeColors().bodyBg,
           icon,
           // 确保窗口独立于主窗口，不会继承主窗口的最小化状态
           parent: null,
@@ -1831,7 +1704,23 @@
           this.progressTaskGids.delete(gid)
         })
         const html = this.buildProgressWindowHtml(useCustomFrame, isMac)
-        win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+        // Write HTML to a temp file and load it, because data: URLs have
+        // size limits in Chromium that this large HTML can exceed.
+        try {
+          const path = require('node:path')
+          const os = require('node:os')
+          const fs = require('node:fs')
+          const tmpDir = os.tmpdir()
+          const tmpFile = path.join(tmpDir, `lc-progress-${gid}.html`)
+          fs.writeFileSync(tmpFile, html, 'utf-8')
+          win.loadFile(tmpFile)
+          win.once('closed', () => {
+            try { fs.unlinkSync(tmpFile) } catch (e) {}
+          })
+        } catch (e) {
+          // Fallback to data URL if temp file approach fails
+          win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+        }
         win.once('ready-to-show', () => {
           if (!this.isAliveWindow(win)) {
             this.progressWindows.delete(gid)
@@ -1874,7 +1763,7 @@
               } catch (e) {}
             }, 100)
           } catch (e) {
-            console.warn('[Motrix] Failed to activate progress window:', e.message)
+            console.warn('[LinkCore] Failed to activate progress window:', e.message)
           }
           this.updateProgressWindow(task)
         })
@@ -1917,6 +1806,11 @@
           return
         }
         try {
+          // 独立进度窗口的平均速度由窗口自身轮询 (task-progress:fetch) 计算
+          // 此处移除 avgSpeedText 以避免两个数据源交替覆盖导致闪烁
+          if ('avgSpeedText' in payload) {
+            delete payload.avgSpeedText
+          }
           win.webContents.send('task-progress-update', payload)
         } catch (e) {}
       },
@@ -1947,17 +1841,17 @@
 
       // Open a window to show task completion notification
       openCompletedTaskWindow (task) {
-        console.log('[Motrix] openCompletedTaskWindow called:', task)
+        console.log('[LinkCore] openCompletedTaskWindow called:', task)
         if (!task) {
-          console.log('[Motrix] No task provided')
+          console.log('[LinkCore] No task provided')
           return
         }
         const gid = task && task.gid ? `${task.gid}` : ''
         if (!gid) {
-          console.log('[Motrix] No gid found in task')
+          console.log('[LinkCore] No gid found in task')
           return
         }
-        console.log('[Motrix] Opening completed task window for gid:', gid)
+        console.log('[LinkCore] Opening completed task window for gid:', gid)
 
         // Check if already showing a window for this task
         const existingWindow = this.completedTaskWindows.get(gid)
@@ -1969,11 +1863,6 @@
 
         const prefState = this.$store && this.$store.state && this.$store.state.preference
         const prefConfig = prefState && prefState.config ? prefState.config : {}
-        const themeConfig = prefConfig.theme || APP_THEME.LIGHT
-        const appState = this.$store && this.$store.state && this.$store.state.app
-        const systemTheme = appState && appState.systemTheme ? appState.systemTheme : APP_THEME.LIGHT
-        const finalTheme = themeConfig === APP_THEME.AUTO ? systemTheme : themeConfig
-        const isDark = finalTheme === APP_THEME.DARK
         const hideAppMenu = !!prefConfig.hideAppMenu
         const isWin = process && process.platform === 'win32'
         const isLinux = process && process.platform === 'linux'
@@ -2008,7 +1897,7 @@
           useContentSize: true,
           frame: !useCustomFrame,
           titleBarStyle: isMac ? 'hiddenInset' : 'default',
-          backgroundColor: isDark ? '#343434' : '#ffffff',
+          backgroundColor: this.getThemeColors().bodyBg,
           icon,
           parent: null,
           modal: false,
@@ -2025,8 +1914,21 @@
           this.completedTaskWindows.delete(gid)
         })
 
-        const html = this.buildCompletedTaskWindowHtml(task, useCustomFrame, isMac, isDark)
-        win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+        const html = this.buildCompletedTaskWindowHtml(task, useCustomFrame, isMac)
+        try {
+          const path = require('node:path')
+          const os = require('node:os')
+          const fs = require('node:fs')
+          const tmpDir = os.tmpdir()
+          const tmpFile = path.join(tmpDir, `lc-completed-${gid}.html`)
+          fs.writeFileSync(tmpFile, html, 'utf-8')
+          win.loadFile(tmpFile)
+          win.once('closed', () => {
+            try { fs.unlinkSync(tmpFile) } catch (e) {}
+          })
+        } catch (e) {
+          win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+        }
 
         win.once('ready-to-show', () => {
           if (!this.isAliveWindow(win)) {
@@ -2064,13 +1966,13 @@
               } catch (e) {}
             }, 100)
           } catch (e) {
-            console.warn('[Motrix] Failed to set always on top:', e.message)
+            console.warn('[LinkCore] Failed to set always on top:', e.message)
           }
         })
       },
 
       // Build HTML for completed task window
-      buildCompletedTaskWindowHtml (task, useCustomFrame = false, isMac = false, isDark = false) {
+      buildCompletedTaskWindowHtml (task, useCustomFrame = false, isMac = false) {
         // Get task name from files or bittorrent info
         let taskName = 'Unknown'
         const files = Array.isArray(task.files) ? task.files : []
@@ -2122,12 +2024,13 @@
         }
 
         const gid = task.gid || ''
-        const bgColor = isDark ? '#343434' : '#ffffff'
-        const textColor = isDark ? '#e0e0e0' : '#333333'
-        const secondaryTextColor = isDark ? '#909399' : '#606266'
-        const successColor = '#67c23a'
-        const buttonBg = isDark ? '#3a3a3a' : '#f5f7fa'
-        const buttonHoverBg = isDark ? '#444444' : '#e4e7ed'
+        const tc2 = this.getThemeColors()
+        const bgColor = tc2.bodyBg
+        const textColor = tc2.textColor
+        const secondaryTextColor = tc2.secondaryTextColor
+        const successColor = tc2.successColor
+        const buttonBg = tc2.buttonBg
+        const buttonHoverBg = tc2.buttonHoverBg
 
         const showTitleBar = useCustomFrame || isMac
 
@@ -2187,7 +2090,7 @@
             transition: background 0.3s;
           }
           .title-btn:hover {
-            background-color: ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'};
+            background-color: ${tc2.titleBtnHoverBg};
             color: ${textColor};
           }
           ${
@@ -2230,11 +2133,18 @@
     ${titleBarCss}
     .container {
       padding: ${containerPadding};
+      padding-bottom: 0;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    .content-wrapper {
+      flex: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 100vh;
+      width: 100%;
     }
     .icon-wrapper {
       width: 48px;
@@ -2268,6 +2178,8 @@
       margin-bottom: 16px;
     }
     .buttons {
+      margin-top: auto;
+      padding-bottom: 16px;
       display: flex;
       gap: 8px;
       width: 100%;
@@ -2278,7 +2190,7 @@
       border: none;
       border-radius: 4px;
       background: ${buttonBg};
-      color: ${textColor};
+      color: #ffffff;
       font-size: 13px;
       cursor: pointer;
       transition: all 0.3s;
@@ -2292,8 +2204,10 @@
 <body>
   ${titleBarHtml}
   <div class="container">
-    <div class="task-name" title="${this.escapeHtml(taskName)}">${this.escapeHtml(taskName)}</div>
-    <div class="task-info">${formattedSize}</div>
+    <div class="content-wrapper">
+      <div class="task-name" title="${this.escapeHtml(taskName)}">${this.escapeHtml(taskName)}</div>
+      <div class="task-info">${formattedSize}</div>
+    </div>
     <div class="buttons">
       <button class="btn" id="openFileBtn">${this.$t('task.open-file') || '打开文件'}</button>
       <button class="btn" id="openFolderBtn">${this.$t('task.open-folder') || '打开文件夹'}</button>
@@ -2334,11 +2248,12 @@
     // Listen for theme changes from main window
     ipcRenderer.on('theme-changed', (event, theme) => {
       const isDark = theme === 'dark'
-      const bgColor = isDark ? '#343434' : '#ffffff'
-      const textColor = isDark ? '#e0e0e0' : '#333333'
-      const secondaryTextColor = isDark ? '#909399' : '#606266'
-      const buttonBg = isDark ? '#3a3a3a' : '#f5f7fa'
-      const buttonHoverBg = isDark ? '#444444' : '#e4e7ed'
+      const bgColor = isDark ? '#262a31' : '#ffffff'
+      const textColor = isDark ? '#dfe3e8' : '#2c3e50'
+      const secondaryTextColor = isDark ? '#8b95a3' : '#5a6c7d'
+      const buttonBg = isDark ? '#3d424d' : '#1a7fe0'
+      const buttonHoverBg = isDark ? '#4a505c' : '#1a7fe0'
+      const buttonTextColor = '#ffffff'
 
       document.body.style.background = bgColor
       document.body.style.color = textColor
@@ -2355,7 +2270,7 @@
       const buttons = document.querySelectorAll('.btn')
       buttons.forEach(btn => {
         btn.style.background = buttonBg
-        btn.style.color = textColor
+        btn.style.color = buttonTextColor
         btn.onmouseover = () => btn.style.background = buttonHoverBg
         btn.onmouseout = () => btn.style.background = buttonBg
       })
@@ -2498,9 +2413,9 @@
             const prevStatus = prev[gid]
             const currentStatus = task.status
             // Show completion window when task becomes complete (but not on initial load)
-            console.log('[Motrix] Task status check:', gid, 'prev:', prevStatus, 'current:', currentStatus)
+            console.log('[LinkCore] Task status check:', gid, 'prev:', prevStatus, 'current:', currentStatus)
             if (prevStatus && currentStatus === TASK_STATUS.COMPLETE && prevStatus !== TASK_STATUS.COMPLETE) {
-              console.log('[Motrix] Opening completed task window for:', gid)
+              console.log('[LinkCore] Opening completed task window for:', gid)
               this.openCompletedTaskWindow(task)
             }
           })
@@ -2519,7 +2434,7 @@
 
           // 如果有消失的任务，异步获取它们的最新状态
           if (disappearedGids.length > 0) {
-            console.log('[Motrix] Checking disappeared tasks:', disappearedGids)
+            console.log('[LinkCore] Checking disappeared tasks:', disappearedGids)
             // 使用 API 直接获取所有任务（不受分类过滤限制，包含历史记录）
             api.fetchTaskList({ type: 'all' })
               .then(allTasks => {
@@ -2527,13 +2442,13 @@
                 disappearedGids.forEach(gid => {
                   const task = allTasks.find(t => t && `${t.gid}` === gid)
                   if (task && task.status === TASK_STATUS.COMPLETE) {
-                    console.log('[Motrix] Opening completed task window for disappeared task:', gid)
+                    console.log('[LinkCore] Opening completed task window for disappeared task:', gid)
                     this.openCompletedTaskWindow(task)
                   }
                 })
               })
               .catch(err => {
-                console.warn('[Motrix] Failed to check disappeared tasks:', err)
+                console.warn('[LinkCore] Failed to check disappeared tasks:', err)
               })
           }
         }
@@ -2541,17 +2456,6 @@
     },
     mounted () {
       this.updateModalMaskVisible()
-      if (typeof window !== 'undefined') {
-        this.handleWindowResize()
-        this._handleWindowResize = () => {
-          this.handleWindowResize()
-        }
-        window.addEventListener('resize', this._handleWindowResize)
-        this._handleWindowMouseMoveForAside = (event) => {
-          this.handleWindowMouseMoveForAside(event)
-        }
-        window.addEventListener('mousemove', this._handleWindowMouseMoveForAside)
-      }
       if (typeof MutationObserver === 'undefined') {
         return
       }
@@ -2572,22 +2476,8 @@
       commands.on('show-task-progress', this.handleShowTaskProgress)
       commands.on('task-progress:control', this.handleTaskProgressControl)
       commands.on('task-progress:auto-open', this.handleTaskProgressAutoOpen)
-      commands.on('floating-bar:search-open', this.handleFloatingBarSearchOpen)
-      commands.on('floating-bar:search-expanded', this.handleFloatingBarSearchExpanded)
     },
     beforeDestroy () {
-      if (typeof window !== 'undefined' && this._handleWindowResize) {
-        window.removeEventListener('resize', this._handleWindowResize)
-        this._handleWindowResize = null
-      }
-      if (typeof window !== 'undefined' && this._handleWindowMouseMoveForAside) {
-        window.removeEventListener('mousemove', this._handleWindowMouseMoveForAside)
-        this._handleWindowMouseMoveForAside = null
-      }
-      if (this._asideMouseRaf) {
-        window.cancelAnimationFrame(this._asideMouseRaf)
-        this._asideMouseRaf = null
-      }
       if (this._modalObserver) {
         try {
           this._modalObserver.disconnect()
@@ -2597,8 +2487,6 @@
       commands.off('show-task-progress', this.handleShowTaskProgress)
       commands.off('task-progress:control', this.handleTaskProgressControl)
       commands.off('task-progress:auto-open', this.handleTaskProgressAutoOpen)
-      commands.off('floating-bar:search-open', this.handleFloatingBarSearchOpen)
-      commands.off('floating-bar:search-expanded', this.handleFloatingBarSearchExpanded)
     }
   }
 </script>
@@ -2628,85 +2516,9 @@
     margin-top: -8px;
   }
 
-  .task-plan-dialog .task-type-slider {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    padding: 2px;
-    border: none;
-    border-radius: 10px;
-    background: rgba(0, 0, 0, 0.05);
-
-    .task-type-slider-indicator {
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: calc(50% - 2px);
-      height: calc(100% - 4px);
-      background: $--color-primary;
-      border-radius: 8px;
-      transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
-      z-index: 0;
-      pointer-events: none;
-    }
-
-    .el-radio-group {
-      display: inline-flex;
-      position: relative;
-      z-index: 1;
-    }
-
-    .el-radio-button {
-      display: flex;
-      .el-radio-button__inner {
-        position: relative;
-        z-index: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 5px 20px;
-        font-size: 13px;
-        font-weight: 500;
-        background: transparent !important;
-        border: none !important;
-        border-radius: 8px;
-        box-shadow: none !important;
-        color: $--color-text-secondary;
-        transition: color 0.32s ease;
-      }
-
-      &.is-disabled .el-radio-button__inner {
-        color: $--color-text-secondary;
-        opacity: 0.4;
-      }
-
-      .el-radio-button__orig-radio:checked + .el-radio-button__inner {
-        color: #fff;
-        background: transparent !important;
-        border-color: transparent !important;
-        box-shadow: none !important;
-      }
-
-      &.is-active .el-radio-button__inner {
-        color: #fff;
-        background: transparent !important;
-        box-shadow: none !important;
-      }
-    }
-  }
-
-  .theme-dark .task-plan-dialog .task-type-slider {
-    background: rgba(255, 255, 255, 0.06);
-
-    .el-radio-button {
-      .el-radio-button__inner {
-        color: rgba(255, 255, 255, 0.55);
-      }
-
-      &.is-active .el-radio-button__inner {
-        color: #fff;
-      }
-    }
+  /* 任务计划分类切换滑块：项内边距加大 */
+  .task-plan-dialog .task-type-slider .lc-segmented__item {
+    padding: 0 20px;
   }
 
   .el-dialog.task-plan-dialog .el-select {
@@ -2734,109 +2546,5 @@
 
   .el-dialog.task-plan-dialog .el-dialog__footer::before {
     display: none;
-  }
-
-  /* 小屏幕侧边栏样式 */
-  .aside-small-screen {
-    position: fixed;
-    left: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 1000;
-    background-color: transparent;
-    border-radius: 100px;
-    opacity: 0.5;
-    transition: opacity 0.3s ease;
-    padding: 8px;
-
-    &:hover {
-      opacity: 1;
-    }
-
-    &.is-auto-hide-aside {
-      transform: translateY(-50%) translateX(calc(-100% - 20px));
-      transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
-
-      /* 感应区域 */
-      &::before {
-        content: '';
-        position: absolute;
-        top: -50px;
-        bottom: -50px;
-        right: -100px;
-        width: 150px;
-        background: transparent;
-        cursor: default;
-        pointer-events: none;
-        z-index: -1;
-      }
-
-      &:hover,
-      &.is-proximity-hovered {
-        transform: translateY(-50%) translateX(0);
-      }
-    }
-  }
-
-  /* 只针对小窗模式的菜单样式 */
-  .aside-small-screen .menu {
-    list-style: none;
-    padding: 0;
-    margin: 0 auto;
-    user-select: none;
-    cursor: default;
-    > li {
-      width: 32px;
-      height: 32px;
-      cursor: pointer;
-      border-radius: 16px;
-      transition: background-color 0.25s, border-radius 0.25s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      outline: none;
-      border: none;
-      box-shadow: none;
-      &:focus,
-      &:active {
-        outline: none;
-        border: none;
-        box-shadow: none;
-      }
-      &:hover {
-        background-color: rgba(0, 0, 0, 0.15);
-        border-radius: 8px;
-      }
-      &.active {
-        background-color: rgba(0, 0, 0, 0.25);
-        border-radius: 8px;
-      }
-    }
-    svg {
-      padding: 6px;
-      color: $--icon-color;
-      outline: none;
-      border: none;
-      box-shadow: none;
-    }
-  }
-
-  .aside-small-screen .small-menu {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    margin: 0;
-    padding: 4px 0;
-    > li {
-      margin-top: 8px;
-      margin-bottom: 8px;
-      &:first-child {
-        margin-top: 0;
-      }
-      &:last-child {
-        margin-bottom: 0;
-      }
-    }
   }
 </style>

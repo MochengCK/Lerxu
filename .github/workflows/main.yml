@@ -2,12 +2,12 @@ name: CI Tests
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [ main, develop ]
     # 排除标签推送，避免与release工作流重复
     tags-ignore:
       - 'v*'
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
   schedule:
     # 每周一早上6点运行完整测试
     - cron: '0 6 * * 1'
@@ -25,11 +25,11 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '16'
+        node-version: '22'
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm install --legacy-peer-deps
+      run: npm ci --legacy-peer-deps
       
     - name: Run ESLint
       run: npm run lint
@@ -71,11 +71,11 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '16'
+        node-version: '22'
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm install --legacy-peer-deps
+      run: npm ci --legacy-peer-deps
 
     - name: Build application
       run: npm run build:dir
@@ -110,11 +110,11 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '16'
+        node-version: '22'
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm install --legacy-peer-deps
+      run: npm ci --legacy-peer-deps
       
     - name: Test webpack build (renderer)
       run: npm run pack:renderer
@@ -150,7 +150,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '16'
+        node-version: '22'
         cache: 'npm'
         
     - name: Test extension manifest
@@ -196,11 +196,11 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '16'
+        node-version: '22'
         cache: 'npm'
         
     - name: Install dependencies
-      run: npm install --legacy-peer-deps
+      run: npm ci --legacy-peer-deps
       
     - name: Run post-install script
       run: npm run postinstall

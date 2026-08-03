@@ -7,6 +7,18 @@
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
   <style>
+    :root {
+      --lc-color-primary: #1a7fe0;
+      --lc-color-primary-rgb: 26, 127, 224;
+      --lc-color-success: #67c23a;
+      --lc-color-danger: #f56c6c;
+      --lc-text-inverse: #ffffff;
+    }
+    body.dark {
+      --lc-color-primary: #4a9eff;
+      --lc-color-primary-rgb: 74, 158, 255;
+      --lc-color-danger: #f56c6c;
+    }
     * {
       margin: 0;
       padding: 0;
@@ -28,13 +40,13 @@
 
     @media (prefers-color-scheme: dark) {
       body {
-        background: #343434;
+        background: #262a31;
         color: #e0e0e0;
       }
     }
 
     body.dark {
-      background: #343434;
+      background: #262a31;
       color: #e0e0e0;
     }
 
@@ -51,7 +63,7 @@
     }
 
     body.dark .container {
-      background: #343434;
+      background: #262a31;
     }
 
     .form-item {
@@ -66,7 +78,7 @@
       display: block;
       margin-bottom: 8px;
       font-weight: 500;
-      color: #606266;
+      color: #5a6c7d;
       transition: color 0.3s;
     }
 
@@ -77,7 +89,7 @@
     input[type="text"] {
       width: 100%;
       padding: 8px 12px;
-      border: 1px solid #dcdfe6;
+      border: 1px solid #d3dde6;
       border-radius: 4px;
       font-size: 14px;
       outline: none;
@@ -87,13 +99,13 @@
     }
 
     body.dark input[type="text"] {
-      border-color: #4a4a4a;
-      background: #3a3a3a;
+      border-color: #363b44;
+      background: #2a2e35;
       color: #e0e0e0;
     }
 
     input[type="text"]:focus {
-      border-color: #409EFF;
+      border-color: var(--lc-color-primary);
     }
 
     .button-group {
@@ -106,7 +118,7 @@
     .button-group button {
       flex: 1;
       padding: 8px 16px;
-      background: #409EFF;
+      background: var(--lc-color-primary);
       color: #fff;
       border: none;
       border-radius: 4px;
@@ -125,26 +137,26 @@
 
     .button-secondary {
       background: #fff;
-      color: #606266;
-      border: 1px solid #dcdfe6;
+      color: #5a6c7d;
+      border: 1px solid #d3dde6;
     }
 
     body.dark .button-secondary {
-      background: #3a3a3a;
+      background: #2a2e35;
       color: #b0b0b0;
-      border-color: #4a4a4a;
+      border-color: #363b44;
     }
 
     .button-secondary:hover {
-      background: #f5f7fa;
+      background: #f0f4f8;
       border-color: #c6e2ff;
-      color: #409EFF;
+      color: var(--lc-color-primary);
     }
 
     body.dark .button-secondary:hover {
       background: #444444;
-      border-color: #409EFF;
-      color: #409EFF;
+      border-color: var(--lc-color-primary);
+      color: var(--lc-color-primary);
     }
 
     .title-bar {
@@ -163,7 +175,7 @@
     }
 
     body.dark .title-bar {
-      background: #343434;
+      background: #262a31;
     }
 
     body.use-custom-frame .title-bar {

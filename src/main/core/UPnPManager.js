@@ -1,6 +1,6 @@
 import NatAPI from '@motrix/nat-api'
 
-import logger from './Logger'
+import logger from './LogManager'
 
 let client = null
 const mappingStatus = {}
@@ -26,22 +26,22 @@ export default class UPnPManager {
     this.init()
 
     return new Promise((resolve, reject) => {
-      logger.info('[Motrix] UPnPManager port mapping: ', port)
+      logger.info('[LinkCore] UPnPManager port mapping: ', port)
       if (!port) {
-        reject(new Error('[Motrix] port was not specified'))
+        reject(new Error('[LinkCore] port was not specified'))
         return
       }
 
       try {
         client.map(port, (err) => {
           if (err) {
-            logger.warn(`[Motrix] UPnPManager map ${port} failed, error: `, err.message)
+            logger.warn(`[LinkCore] UPnPManager map ${port} failed, error: `, err.message)
             reject(err.message)
             return
           }
 
           mappingStatus[port] = true
-          logger.info(`[Motrix] UPnPManager port ${port} mapping succeeded`)
+          logger.info(`[LinkCore] UPnPManager port ${port} mapping succeeded`)
           resolve()
         })
       } catch (err) {
@@ -54,9 +54,9 @@ export default class UPnPManager {
     this.init()
 
     return new Promise((resolve, reject) => {
-      logger.info('[Motrix] UPnPManager port unmapping: ', port)
+      logger.info('[LinkCore] UPnPManager port unmapping: ', port)
       if (!port) {
-        reject(new Error('[Motrix] port was not specified'))
+        reject(new Error('[LinkCore] port was not specified'))
         return
       }
 
@@ -68,12 +68,12 @@ export default class UPnPManager {
       try {
         client.unmap(port, (err) => {
           if (err) {
-            logger.warn(`[Motrix] UPnPManager unmap ${port} failed, error: `, err)
+            logger.warn(`[LinkCore] UPnPManager unmap ${port} failed, error: `, err)
             reject(err.message)
             return
           }
 
-          logger.info(`[Motrix] UPnPManager port ${port} unmapping succeeded`)
+          logger.info(`[LinkCore] UPnPManager port ${port} unmapping succeeded`)
           mappingStatus[port] = false
           resolve()
         })
@@ -93,7 +93,7 @@ export default class UPnPManager {
         client = null
       })
     } catch (err) {
-      logger.warn('[Motrix] close UPnP client fail', err)
+      logger.warn('[LinkCore] close UPnP client fail', err)
     }
   }
 }

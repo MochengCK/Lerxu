@@ -25,7 +25,7 @@
         type: String,
         default: APP_THEME.DARK,
         validator: function (value) {
-          return [APP_THEME.LIGHT, APP_THEME.DARK].indexOf(value) !== -1
+          return [APP_THEME.LIGHT, APP_THEME.DARK].includes(value)
         }
       },
       status: {

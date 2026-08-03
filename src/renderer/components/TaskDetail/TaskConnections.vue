@@ -32,7 +32,6 @@
     </div>
     <div class="mo-table-wrapper" v-if="!initialLoading && serverList.length > 0">
       <el-table
-        stripe
         class="mo-connection-table"
         :data="serverList"
         :row-key="row => row._key"
@@ -153,8 +152,9 @@
         handler (newStatus) {
           // 检查是否在做种，做种时不清空连接数据
           const isSeeding = checkTaskIsSeeder(this.task)
-          // 只在任务暂停、完成（非做种）、停止或出错时，清空连接列表
-          if (newStatus === 'paused' || newStatus === 'stopped' || newStatus === 'error' || newStatus === 'removed' ||
+          // 只在任务暂停、完成（非做种）、出错或已移除时，清空连接列表
+          // （TASK_STATUS 无 stopped 状态，历史遗留分支已移除）
+          if (newStatus === 'paused' || newStatus === 'error' || newStatus === 'removed' ||
             (newStatus === 'complete' && !isSeeding)) {
             this.connectionsData = null
             this.initialLoading = false
@@ -197,13 +197,13 @@
         this.fetchConnections()
       },
       debouncedFetchConnections () {
-        // 防抖：100ms 内只调用一次 fetchConnections
+        // 防抖：300ms 内只调用一次 fetchConnections
         if (this.fetchTimer) {
           clearTimeout(this.fetchTimer)
         }
         this.fetchTimer = setTimeout(() => {
           this.fetchConnections()
-        }, 100)
+        }, 300)
       },
       async fetchConnections () {
         const gid = this.task && this.task.gid
@@ -324,10 +324,10 @@
     }
   }
 
-  .mo-table-wrapper {
-    max-height: 450px;
-    overflow-y: auto;
-    border: 1px solid #ebeef5;
+.mo-table-wrapper {
+max-height: 450px;
+overflow-y: auto;
+border: 1px solid var(--lc-border-base);
     border-radius: 8px;
   }
 
@@ -342,9 +342,7 @@
       max-width: 100%;
       white-space: nowrap;
       overflow: hidden;
-      text-overflow: clip;
-      -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) calc(100% - 18px), rgba(0, 0, 0, 0) 100%);
-      mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) calc(100% - 18px), rgba(0, 0, 0, 0) 100%);
+      text-overflow: ellipsis;
     }
 
     .speed-active {
@@ -357,15 +355,73 @@
 // 暗色主题适配
 .theme-dark .mo-task-connections {
   .mo-connections-summary {
-    background: var(--task-detail-summary-bg, #2c2c2c);
+    background: var(--lc-table-striped-bg, #1a1e24);
+    border-radius: 8px;
+
+    .summary-label {
+      color: var(--lc-text-secondary);
+    }
 
     .summary-value {
-      color: #e0e0e0;
+      color: var(--lc-text-primary);
     }
   }
 
+  .mo-connections-empty,
+  .mo-connections-loading {
+    color: var(--lc-text-secondary);
+  }
+
   .mo-table-wrapper {
-    border-color: #404040;
+    border-color: var(--lc-border-base) !important;
+    background-color: var(--lc-task-item-bg) !important;
+  }
+
+  .mo-connection-table {
+    background-color: transparent !important;
+    color: var(--lc-text-regular) !important;
+
+    .el-table__inner-wrapper {
+      background-color: transparent !important;
+    }
+    .el-table__header-wrapper,
+    .el-table__body-wrapper,
+    .el-table__footer-wrapper {
+      background-color: transparent !important;
+    }
+    .el-table__header,
+    .el-table__body,
+    .el-table__footer {
+      background-color: transparent !important;
+    }
+    .el-table__row {
+      background-color: transparent !important;
+    }
+    th.el-table__cell {
+      background-color: var(--lc-table-th-bg) !important;
+      color: var(--lc-text-secondary) !important;
+      border-bottom: none !important;
+    }
+    // 悬停高亮：强制覆盖 Element UI 默认白色背景
+    .el-table__body tr:hover > td,
+    .el-table__body tr:hover > td.el-table__cell,
+    .el-table--enable-row-hover .el-table__body tr:hover > td {
+      background-color: var(--lc-table-hover-bg) !important;
+    }
+    td.el-table__cell {
+      background-color: transparent !important;
+      color: var(--lc-text-regular) !important;
+      border-bottom: 1px solid var(--lc-border-base) !important;
+    }
+    .el-table__empty-block {
+      background-color: transparent !important;
+    }
+    .el-table__empty-text {
+      color: var(--lc-text-placeholder) !important;
+    }
+    &::before, &::after {
+      display: none !important;
+    }
   }
 }
 </style>
