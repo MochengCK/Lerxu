@@ -159,6 +159,12 @@ export default class ConfigManager {
         'task-priorities': {},
         'task-multi-select-modifier': 'ctrl',
         'enable-upnp': true,
+        // uTP (BEP 29) transport for BT peer connections (engine-side).
+        // Passed to the engine via getStartArgs; requires engine restart.
+        'enable-utp': true,
+        // NAT-PMP (RFC 6886) port mapping, tried by the engine when UPnP
+        // mapping fails on the BT listen port. Requires engine restart.
+        'enable-nat-pmp': true,
         'engine-binary': defaultEngineBinary,
         'engine-max-connection-per-server': Number(enginePolicy && enginePolicy.max) || getMaxConnectionPerServer(),
         'favorite-directories': [],
@@ -214,7 +220,8 @@ export default class ConfigManager {
         'tracker-source': getDefaultTrackerSources(),
         'tray-theme': APP_THEME.AUTO,
         'tray-speedometer': is.macOS(),
-        'update-channel': 'latest',
+        // 更新渠道：stable（正式版）/ beta（最新预发布版）/ all（全部）
+        'update-channel': 'stable',
         'window-state': {},
         'extension-intercept-all-downloads': false,
         'extension-silent-download': false,
@@ -455,7 +462,9 @@ export default class ConfigManager {
       }
     })
 
-    if (this.getUserConfig('tracker-source').length === 0) {
+    // 配置损坏或旧版本格式（非数组）时回退到默认 tracker 源，防止启动即抛 TypeError
+    const trackerSource = this.getUserConfig('tracker-source')
+    if (!Array.isArray(trackerSource) || trackerSource.length === 0) {
       this.setUserConfig('tracker-source', getDefaultTrackerSources())
     }
   }

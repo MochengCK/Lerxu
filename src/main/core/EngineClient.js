@@ -106,7 +106,7 @@ export default class EngineClient {
   }
 
   scheduleReconnect () {
-    if (this._reconnectTimer) {
+    if (this._reconnectTimer || this._intentionalClose) {
       return
     }
     this._reconnectAttempts += 1
@@ -151,6 +151,9 @@ export default class EngineClient {
    * 主进程内部调用：失败时吞错返回 null（保持原有语义）。
    */
   async call (method, ...args) {
+    if (!this.client) {
+      return null
+    }
     return this.client.call(method, ...args).catch((err) => {
       logger.warn('[LinkCore] call client fail:', err.message)
       return null
@@ -161,10 +164,16 @@ export default class EngineClient {
    * 供渲染进程 IPC 转发使用：失败时向上抛错，让调用方感知引擎不可用。
    */
   async callForRenderer (method, ...args) {
+    if (!this.client) {
+      throw new Error('engine client is closed')
+    }
     return this.client.call(method, ...args)
   }
 
   async multicall (calls) {
+    if (!this.client) {
+      throw new Error('engine client is closed')
+    }
     return this.client.multicall(calls)
   }
 
@@ -200,5 +209,28 @@ export default class EngineClient {
     const method = force ? 'forceShutdown' : 'shutdown'
     const args = compactUndefined([secret])
     return this.call(method, ...args)
+  }
+
+  /**
+   * 主动关闭与引擎的连接：停止自动重连并清理定时器。
+   * 应用退出 / 引擎停止时调用，防止重连定时器无限存活。
+   */
+  close () {
+    this._intentionalClose = true
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer)
+      this._reconnectTimer = null
+    }
+    const client = this.client
+    this.client = null
+    EngineClient.client = null
+    if (client) {
+      try {
+        client.removeAllListeners && client.removeAllListeners()
+        client.close && client.close()
+      } catch (err) {
+        logger.warn('[LinkCore] engine client close fail:', err && err.message ? err.message : err)
+      }
+    }
   }
 }

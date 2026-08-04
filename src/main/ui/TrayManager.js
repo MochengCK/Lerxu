@@ -60,7 +60,6 @@ export default class TrayManager extends EventEmitter {
     this.bindEvents()
 
     this.initialized = true
-    this.init()
   }
 
   loadTemplate () {
@@ -381,10 +380,11 @@ export default class TrayManager extends EventEmitter {
 
   destroy () {
     logger.info('[LinkCore] TrayManager.destroy')
-    if (tray) {
-      this.unbindEvents()
+    if (!tray) {
+      return
     }
 
+    this.unbindEvents()
     tray.destroy()
     tray = null
     this.initialized = false

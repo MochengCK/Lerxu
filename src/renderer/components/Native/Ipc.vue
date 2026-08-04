@@ -9,12 +9,16 @@
     name: 'mo-ipc',
     methods: {
       bindIpcEvents () {
-        this.$electron.ipcRenderer.on('command', (event, command, ...args) => {
+        this._commandHandler = (event, command, ...args) => {
           commands.execute(command, ...args)
-        })
+        }
+        this.$electron.ipcRenderer.on('command', this._commandHandler)
       },
       unbindIpcEvents () {
-        this.$electron.ipcRenderer.removeAllListeners('command')
+        if (this._commandHandler) {
+          this.$electron.ipcRenderer.removeListener('command', this._commandHandler)
+          this._commandHandler = null
+        }
       }
     },
     created () {

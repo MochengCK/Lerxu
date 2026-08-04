@@ -547,6 +547,9 @@
         window.removeEventListener('resize', this._handleWindowResize)
         this._handleWindowResize = null
       }
+      if (typeof this.stopClipboardAutoOpenWatch === 'function') {
+        this.stopClipboardAutoOpenWatch()
+      }
       if (this._preferenceCommandHandler) {
         this.$electron.ipcRenderer.removeListener('command', this._preferenceCommandHandler)
       }
@@ -571,9 +574,6 @@
       }
       if (h.onInstallingUpdate) {
         this.$electron.ipcRenderer.removeListener('installing-update', h.onInstallingUpdate)
-      }
-      if (h.onDownloadError) {
-        this.$electron.ipcRenderer.removeListener('update-error', h.onDownloadError)
       }
       if (h.onDownloadCancelled) {
         this.$electron.ipcRenderer.removeListener('update-cancelled', h.onDownloadCancelled)

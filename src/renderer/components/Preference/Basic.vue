@@ -24,30 +24,50 @@
         <div v-if="activeCategory === 'appearance'" class="preference-card" data-category="appearance">
           <h3 class="card-title">{{ $t('preferences.ui') }}</h3>
           <el-form-item size="mini">
-            <el-col v-if="showHideAppMenuOption" class="form-item-sub" :span="16">
-              <el-checkbox v-model="form.hideAppMenu" @change="autoSaveForm">
-                {{ $t('preferences.hide-app-menu') }}
-              </el-checkbox>
-            </el-col>
-            <el-col class="form-item-sub" :span="16">
-              <el-checkbox v-model="form.autoHideWindow" @change="autoSaveForm">
-                {{ $t('preferences.auto-hide-window') }}
-              </el-checkbox>
-            </el-col>
-            <el-col v-if="isMac" class="form-item-sub" :span="16">
-              <el-checkbox v-model="form.traySpeedometer" @change="autoSaveForm">
-                {{ $t('preferences.tray-speedometer') }}
-              </el-checkbox>
-            </el-col>
-            <el-col class="form-item-sub" :span="16">
-              <el-checkbox v-model="form.showProgressBar" @change="autoSaveForm">
-                {{ $t('preferences.show-progress-bar') }}
-              </el-checkbox>
+            <el-col v-if="showHideAppMenuOption" class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.hide-app-menu') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.hide-app-menu-desc') }}</div>
+                </div>
+                <el-switch v-model="form.hideAppMenu" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.dateFilterFrosted" @change="autoSaveForm">
-                {{ $t('preferences.date-filter-frosted') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.auto-hide-window') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.auto-hide-window-desc') }}</div>
+                </div>
+                <el-switch v-model="form.autoHideWindow" @change="autoSaveForm" />
+              </div>
+            </el-col>
+            <el-col v-if="isMac" class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.tray-speedometer') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.tray-speedometer-desc') }}</div>
+                </div>
+                <el-switch v-model="form.traySpeedometer" @change="autoSaveForm" />
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.show-progress-bar') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.show-progress-bar-desc') }}</div>
+                </div>
+                <el-switch v-model="form.showProgressBar" @change="autoSaveForm" />
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.date-filter-frosted') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.date-filter-frosted-desc') }}</div>
+                </div>
+                <el-switch v-model="form.dateFilterFrosted" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col v-if="form.dateFilterFrosted" class="form-item-sub-sub" :span="24">
               <el-form-item class="background-slider-item" :label="$t('preferences.date-filter-frosted-strength')">
@@ -61,9 +81,13 @@
               </el-form-item>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.taskDetailDefaultTransparent" @change="autoSaveForm">
-                {{ $t('preferences.task-detail-default-transparent') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.task-detail-default-transparent') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.task-detail-default-transparent-desc') }}</div>
+                </div>
+                <el-switch v-model="form.taskDetailDefaultTransparent" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col v-if="form.taskDetailDefaultTransparent" class="form-item-sub-sub" :span="24">
               <el-form-item class="background-slider-item" :label="$t('preferences.task-detail-frosted-strength')">
@@ -77,11 +101,12 @@
               </el-form-item>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.showTaskTypeBadge" @change="autoSaveForm">
-                {{ $t('preferences.show-task-type-badge') }}
-              </el-checkbox>
-              <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.show-task-type-badge-tips') }}
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.show-task-type-badge') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.show-task-type-badge-tips') }}</div>
+                </div>
+                <el-switch v-model="form.showTaskTypeBadge" @change="autoSaveForm" />
               </div>
             </el-col>
           </el-form-item>
@@ -89,7 +114,6 @@
 
         <!-- 背景设置卡片 -->
         <div v-if="activeCategory === 'appearance'" class="preference-card" data-category="appearance">
-          <span style="display: none;">外观</span>
           <div class="card-title background-type-nav">
             <div class="background-type-nav__left">
               <mo-segmented-slider
@@ -277,19 +301,31 @@
               :span="24"
               v-if="!isLinux"
             >
-              <el-checkbox v-model="form.openAtLogin" @change="autoSaveForm">
-                {{ $t('preferences.open-at-login') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.open-at-login') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.open-at-login-desc') }}</div>
+                </div>
+                <el-switch v-model="form.openAtLogin" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.keepWindowState" @change="autoSaveForm">
-                {{ $t('preferences.keep-window-state') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.keep-window-state') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.keep-window-state-desc') }}</div>
+                </div>
+                <el-switch v-model="form.keepWindowState" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.resumeAllWhenAppLaunched" @change="autoSaveForm">
-                {{ $t('preferences.auto-resume-all') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.auto-resume-all') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.auto-resume-all-desc') }}</div>
+                </div>
+                <el-switch v-model="form.resumeAllWhenAppLaunched" @change="autoSaveForm" />
+              </div>
             </el-col>
           </el-form-item>
         </div>
@@ -318,23 +354,32 @@
                   Chrome
                 </span>
               </div>
-              <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.extension-tips') }}
-              </div>
               <div class="form-item-sub" style="margin-top: 12px;">
-                <el-checkbox v-model="form.extensionInterceptAllDownloads" @change="autoSaveForm">
-                  {{ $t('preferences.extension-intercept-all-downloads') }}
-                </el-checkbox>
+<div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.extension-intercept-all-downloads') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.extension-intercept-all-downloads-desc') }}</div>
+                </div>
+                <el-switch v-model="form.extensionInterceptAllDownloads" @change="autoSaveForm" />
+                </div>
               </div>
               <div class="form-item-sub" style="margin-top: 4px;">
-                <el-checkbox v-model="form.extensionSilentDownload" @change="autoSaveForm">
-                  {{ $t('preferences.extension-silent-download') }}
-                </el-checkbox>
+<div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.extension-silent-download') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.extension-silent-download-desc') }}</div>
+                </div>
+                <el-switch v-model="form.extensionSilentDownload" @change="autoSaveForm" />
+                </div>
               </div>
               <div class="form-item-sub" style="margin-top: 4px;">
-                <el-checkbox v-model="form.extensionShiftToggleEnabled" @change="autoSaveForm">
-                  {{ $t('preferences.extension-shift-toggle-enabled') }}
-                </el-checkbox>
+<div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.extension-shift-toggle-enabled') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.extension-shift-toggle-enabled-desc') }}</div>
+                </div>
+                <el-switch v-model="form.extensionShiftToggleEnabled" @change="autoSaveForm" />
+                </div>
               </div>
               <div class="settings-divider" style="margin-top: 16px; margin-bottom: 8px;"></div>
               <div class="form-item-sub" style="margin-top: 8px;">
@@ -497,17 +542,25 @@
           <h3 class="card-title">{{ $t('preferences.bt-options') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.btSaveMetadata" @change="autoSaveForm">
-                {{ $t('preferences.bt-save-metadata') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.bt-save-metadata') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.bt-save-metadata-desc') }}</div>
+                </div>
+                <el-switch v-model="form.btSaveMetadata" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox
-                v-model="form.btAutoDownloadContent"
-                @change="autoSaveForm"
-              >
-                {{ $t('preferences.bt-auto-download-content') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.bt-auto-download-content') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.bt-auto-download-content-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.btAutoDownloadContent"
+                  @change="autoSaveForm"
+                />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
               <div class="bt-encryption-row">
@@ -546,12 +599,16 @@
           <h3 class="card-title">{{ $t('preferences.bt-seeding-settings') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
-              <el-switch
-                v-model="form.keepSeeding"
-                :active-text="$t('preferences.keep-seeding')"
-                @change="onKeepSeedingChange"
-              >
-              </el-switch>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.keep-seeding') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.keep-seeding-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.keepSeeding"
+                  @change="onKeepSeedingChange"
+                />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24" v-if="!form.keepSeeding">
               {{ $t('preferences.seed-ratio') }}
@@ -742,9 +799,13 @@
               </div>
             </div>
             <div class="form-item-sub">
-              <el-checkbox v-model="form.autoSyncTracker">
-                {{ $t('preferences.auto-sync-tracker') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.auto-sync-tracker') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.auto-sync-tracker-desc') }}</div>
+                </div>
+                <el-switch v-model="form.autoSyncTracker" />
+              </div>
             </div>
             <div class="form-item-sub" v-if="form.autoSyncTracker" style="margin-top: 12px;">
               <div class="sync-time-setting" style="display: flex; align-items: center; margin-bottom: 12px;">
@@ -832,19 +893,21 @@
               </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.ed2kServerSourceEnabled" @change="autoSaveForm">
-                {{ $t('preferences.ed2k-server-source') }}
-              </el-checkbox>
-              <div class="el-form-item__info" style="margin-left: 24px;">
-                {{ $t('preferences.ed2k-server-source-tips') }}
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.ed2k-server-source') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.ed2k-server-source-tips') }}</div>
+                </div>
+                <el-switch v-model="form.ed2kServerSourceEnabled" @change="autoSaveForm" />
               </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.ed2kSourceExchangeEnabled" @change="autoSaveForm">
-                {{ $t('preferences.ed2k-source-exchange') }}
-              </el-checkbox>
-              <div class="el-form-item__info" style="margin-left: 24px;">
-                {{ $t('preferences.ed2k-source-exchange-tips') }}
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.ed2k-source-exchange') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.ed2k-source-exchange-tips') }}</div>
+                </div>
+                <el-switch v-model="form.ed2kSourceExchangeEnabled" @change="autoSaveForm" />
               </div>
               <div v-if="form.ed2kSourceExchangeEnabled" style="margin-left: 24px; margin-top: 4px;">
                 {{ $t('preferences.ed2k-source-exchange-interval') }}
@@ -862,11 +925,12 @@
               </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.ed2kKadEnabled" @change="autoSaveForm">
-                {{ $t('preferences.ed2k-kad') }}
-              </el-checkbox>
-              <div class="el-form-item__info" style="margin-left: 24px;">
-                {{ $t('preferences.ed2k-kad-tips') }}
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.ed2k-kad') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.ed2k-kad-tips') }}</div>
+                </div>
+                <el-switch v-model="form.ed2kKadEnabled" @change="autoSaveForm" />
               </div>
               <div v-if="form.ed2kKadEnabled" style="margin-left: 24px; margin-top: 8px;">
                 <div style="margin-bottom: 4px;">
@@ -944,9 +1008,13 @@
               </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.ed2kAutoSyncServer" @change="autoSaveForm">
-                {{ $t('preferences.ed2k-auto-sync-server') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.ed2k-auto-sync-server') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.ed2k-auto-sync-server-desc') }}</div>
+                </div>
+                <el-switch v-model="form.ed2kAutoSyncServer" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col v-if="form.ed2kAutoSyncServer" class="form-item-sub-sub" :span="24">
               <div class="sub-row-reverse">
@@ -1036,24 +1104,40 @@
               </el-input-number>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.continue" @change="autoSaveForm">
-                {{ $t('preferences.continue') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.continue') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.continue-desc') }}</div>
+                </div>
+                <el-switch v-model="form.continue" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.noConfirmBeforeDeleteTask" @change="autoSaveForm">
-                {{ $t('preferences.no-confirm-before-delete-task') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.no-confirm-before-delete-task') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.no-confirm-before-delete-task-desc') }}</div>
+                </div>
+                <el-switch v-model="form.noConfirmBeforeDeleteTask" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.autoPurgeRecord" @change="autoSaveForm">
-                {{ $t('preferences.auto-purge-record') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.auto-purge-record') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.auto-purge-record-desc') }}</div>
+                </div>
+                <el-switch v-model="form.autoPurgeRecord" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.autoOpenTaskProgressWindow" @change="autoSaveForm">
-                {{ $t('preferences.auto-open-task-progress-window') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.auto-open-task-progress-window') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.auto-open-task-progress-window-desc') }}</div>
+                </div>
+                <el-switch v-model="form.autoOpenTaskProgressWindow" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col v-if="form.autoOpenTaskProgressWindow" class="form-item-sub-sub" :span="24">
               <el-radio-group v-model="form.taskProgressWindowMode" @change="autoSaveForm">
@@ -1062,9 +1146,13 @@
               </el-radio-group>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.newTaskShowDownloading" @change="autoSaveForm">
-                {{ $t('preferences.new-task-show-downloading') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.new-task-show-downloading') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.new-task-show-downloading-desc') }}</div>
+                </div>
+                <el-switch v-model="form.newTaskShowDownloading" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col v-if="form.newTaskShowDownloading" class="form-item-sub-sub" :span="24">
               <el-tooltip
@@ -1084,35 +1172,43 @@
               </el-tooltip>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.showTaskCompletedWindow" @change="autoSaveForm">
-                {{ $t('preferences.show-task-completed-window') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.show-task-completed-window') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.show-task-completed-window-desc') }}</div>
+                </div>
+                <el-switch v-model="form.showTaskCompletedWindow" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.taskNotification" @change="autoSaveForm">
-                {{ $t('preferences.task-completed-notify') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.task-completed-notify') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.task-completed-notify-desc') }}</div>
+                </div>
+                <el-switch v-model="form.taskNotification" @change="autoSaveForm" />
+              </div>
             </el-col>
-            <el-col v-if="form.taskNotification" class="form-item-sub-sub" :span="24">
-              <el-tooltip
-                effect="dark"
-                :content="$t('preferences.task-complete-notify-click-action-tips')"
-                placement="top"
-                :open-delay="400"
-              >
-                <el-radio-group v-model="form.taskCompleteNotifyClickAction" @change="autoSaveForm">
-                  <el-radio label="open-folder">
-                    {{ $t('preferences.task-complete-notify-click-action-open-folder') }}
-                  </el-radio>
-                  <el-radio label="show-app">
-                    {{ $t('preferences.task-complete-notify-click-action-show-app') }}
-                  </el-radio>
-                  <el-radio label="execute-file">
-                    {{ $t('preferences.task-complete-notify-click-action-execute-file') }}
-                  </el-radio>
-                </el-radio-group>
-              </el-tooltip>
-            </el-col>
+<el-col v-if="form.taskNotification" class="form-item-sub-sub" :span="24">
+<el-tooltip
+effect="dark"
+:content="$t('preferences.task-complete-notify-click-action-tips')"
+placement="top"
+:open-delay="400"
+>
+<el-radio-group v-model="form.taskCompleteNotifyClickAction" @change="autoSaveForm">
+<el-radio label="open-folder">
+{{ $t('preferences.task-complete-notify-click-action-open-folder') }}
+</el-radio>
+<el-radio label="show-app">
+{{ $t('preferences.task-complete-notify-click-action-show-app') }}
+</el-radio>
+<el-radio label="execute-file">
+{{ $t('preferences.task-complete-notify-click-action-execute-file') }}
+</el-radio>
+</el-radio-group>
+</el-tooltip>
+</el-col>
           </el-form-item>
         </div>
 
@@ -1132,19 +1228,26 @@
               </el-input>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.setFileMtimeOnComplete" @change="autoSaveForm">
-                {{ $t('preferences.set-file-mtime-on-complete') }}
-              </el-checkbox>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.set-file-mtime-on-complete') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.set-file-mtime-on-complete-desc') }}</div>
+                </div>
+                <el-switch v-model="form.setFileMtimeOnComplete" @change="autoSaveForm" />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
               <div class="settings-divider" style="margin: 8px 0;"></div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.autoCategorizeFiles" @change="autoSaveForm">
-                {{ $t('preferences.auto-categorize-files') }}
-              </el-checkbox>
-              <div class="el-form-item__info">
-                {{ $t('preferences.auto-categorize-files-tips') }}
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.auto-categorize-files') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.auto-categorize-files-tips') }}</div>
+                </div>
+                <el-switch v-model="form.autoCategorizeFiles" @change="autoSaveForm" />
+              </div>
+              <div style="margin-top: 8px;">
                 <el-button
                   type="primary"
                   size="mini"
@@ -1164,11 +1267,12 @@
           <div class="card-content">
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.enableSecurityScan" @change="autoSaveForm">
-                {{ $t('preferences.enable-security-scan') }}
-              </el-checkbox>
-              <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.security-scan-tips') }}
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-security-scan') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.security-scan-tips') }}</div>
+                </div>
+                <el-switch v-model="form.enableSecurityScan" @change="autoSaveForm" />
               </div>
             </el-col>
             <el-col class="form-item-sub" :span="24" v-if="form.enableSecurityScan">
@@ -1214,23 +1318,25 @@
           <div class="card-content">
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.clipboardAutoPaste" @change="autoSaveForm">
-                {{ $t('preferences.clipboard-auto-paste') }}
-              </el-checkbox>
-              <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.clipboard-auto-paste-tips') }}
-              </div>
-            </el-col>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.clipboard-auto-paste') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.clipboard-auto-paste-desc') }}</div>
+                </div>
+<el-switch v-model="form.clipboardAutoPaste" @change="autoSaveForm" />
+</div>
+</el-col>
             <el-col class="form-item-sub" :span="24" v-if="form.clipboardAutoPaste">
               <div class="form-item-sub-sub">
-                <el-checkbox v-model="form.clipboardAutoOpenAddTask" @change="autoSaveForm">
-                  {{ $t('preferences.clipboard-auto-open-add-task') }}
-                </el-checkbox>
-                <div class="el-form-item__info" style="margin-top: 8px;">
-                  {{ $t('preferences.clipboard-auto-open-add-task-tips') }}
+<div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.clipboard-auto-open-add-task') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.clipboard-auto-open-add-task-desc') }}</div>
                 </div>
-              </div>
-            </el-col>
+<el-switch v-model="form.clipboardAutoOpenAddTask" @change="autoSaveForm" />
+</div>
+</div>
+</el-col>
           </el-form-item>
           </div>
         </div>
@@ -2089,6 +2195,16 @@
       if (this._filterTimer) {
         clearTimeout(this._filterTimer)
       }
+      if (this.saveTimeout) {
+        clearTimeout(this.saveTimeout)
+        this.saveTimeout = null
+      }
+      if (this.originHoldTimers) {
+        Object.keys(this.originHoldTimers).forEach((key) => {
+          clearTimeout(this.originHoldTimers[key])
+        })
+        this.originHoldTimers = {}
+      }
       // 移除 ipcRenderer 监听
       if (this.$electron && this.$electron.ipcRenderer && this._extensionUpdateHandler) {
         this.$electron.ipcRenderer.removeListener('command', this._extensionUpdateHandler)
@@ -2417,7 +2533,7 @@
           'task:multi-select': null
         }
         if (command === 'task:multi-select') {
-          return '多选任务'
+          return this.$t('preferences.multi-select-task')
         }
         const key = map[command]
         return key ? this.$t(key) : command
@@ -2943,7 +3059,7 @@
 
         // 弹出文件夹选择对话框
         const result = await dialog.showOpenDialog({
-          title: '选择扩展文件保存位置',
+          title: this.$t('preferences.select-extension-file-path'),
           defaultPath: require('os').homedir() + '/Desktop',
           properties: ['openDirectory', 'createDirectory']
         })
@@ -3139,7 +3255,7 @@
       deleteOrigin (o) {
         const builtin = this.getBuiltinOrigins()
         if (builtin.includes(o)) {
-          this.$msg.warning('内置来源不可删除')
+          this.$msg.warning(this.$t('preferences.builtin-origin-undeletable'))
           return
         }
         const origins = Array.isArray(this.form.trackerSourceOrigins) ? [...this.form.trackerSourceOrigins] : []
@@ -3239,7 +3355,7 @@
         this.$msg.success(this.$t('preferences.added-origin-files-success', { count: usedUrls.length }))
       },
       rebuildTrackerSourceOptions () {
-        const base = JSON.parse(JSON.stringify(TRACKER_SOURCE_OPTIONS))
+        const base = structuredClone(TRACKER_SOURCE_OPTIONS)
         const srcs = Array.isArray(this.form.trackerSourceDiscovered) ? this.form.trackerSourceDiscovered : []
         const groups = {}
         srcs.forEach(u => {

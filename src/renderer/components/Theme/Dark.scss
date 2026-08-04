@@ -1207,42 +1207,22 @@
     color: $--dk-preference-form-text-color;
   }
 
-  .form-preference .el-checkbox__input.is-checked+.el-checkbox__label {
-    color: $--dk-preference-form-text-color;
-  }
-
   .form-preference .form-item-sub {
-    .el-checkbox {
-      .el-checkbox__label {
-        font-size: 13px;
-        color: rgba(255, 255, 255, 0.55);
-        transition: color 0.2s;
-      }
-
-      .el-checkbox__input.is-checked + .el-checkbox__label {
-        color: rgba(255, 255, 255, 0.85);
-      }
-    }
-
     .sub-row-reverse .sub-row-label {
       color: rgba(255, 255, 255, 0.55);
     }
   }
 
+  .form-preference .toggle-row .toggle-label {
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  .form-preference .toggle-row--with-desc .toggle-desc {
+    color: rgba(255, 255, 255, 0.4);
+  }
+
   .form-preference .form-item-sub-sub {
     border-left-color: rgba(255, 255, 255, 0.08);
-
-    .el-checkbox {
-      .el-checkbox__label {
-        font-size: 13px;
-        color: rgba(255, 255, 255, 0.45);
-        transition: color 0.2s;
-      }
-
-      .el-checkbox__input.is-checked + .el-checkbox__label {
-        color: rgba(255, 255, 255, 0.75);
-      }
-    }
 
     .el-radio-group {
       .el-radio__label {

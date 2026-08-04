@@ -37,9 +37,24 @@ export default class Engine {
     this.userConfig = options.userConfig
     this.configManager = options.configManager // 接收ConfigManager实例
     this.restartTimer = null
+    this._startingPromise = null
   }
 
   async start () {
+    // 并发锁：自动重启 / 手动 restart / resetSession 可能交错触发 start，
+    // 重入时返回同一个 Promise，避免两个引擎进程并存抢 RPC/BT 端口。
+    if (this._startingPromise) {
+      return this._startingPromise
+    }
+    this._startingPromise = this._doStart()
+    try {
+      return await this._startingPromise
+    } finally {
+      this._startingPromise = null
+    }
+  }
+
+  async _doStart () {
     const pidPath = getEnginePidPath()
     logger.info('[LinkCore] Engine pid path:', pidPath)
 
@@ -58,7 +73,12 @@ export default class Engine {
     this.truncateAria2Log()
 
     const originBinPath = this.getEngineBinPath()
-    const binPath = this.prepareEngineBinary(originBinPath)
+    // 二进制可用性检查（xattr/版本探测）含多个最长 3~5s 的同步子进程，
+    // 同一会话内缓存结果，避免引擎重启时重复阻塞主进程。
+    const binPath = this._preparedBinPath || this.prepareEngineBinary(originBinPath)
+    if (binPath) {
+      this._preparedBinPath = binPath
+    }
 
     const args = this.getStartArgs(binPath)
 
@@ -207,11 +227,12 @@ export default class Engine {
     process.on('SIGTERM', () => onSignal('SIGTERM'))
     process.on('SIGINT', () => onSignal('SIGINT'))
 
-    // Electron 主进程未捕获异常时触发，保底杀引擎
+    // Electron 主进程未捕获异常时触发，保底杀引擎。
+    // 不主动 process.exit：上报/弹窗由 ExceptionHandler 统一负责，
+    // 普通异常不应直接杀掉整个应用；若进程真的退出，'exit' 处理器会兜底。
     process.on('uncaughtException', (err) => {
-      logger.error('[LinkCore] Uncaught exception:', err && err.message)
+      logger.error('[LinkCore] Uncaught exception, killing engine:', err && err.message)
       onExit()
-      process.exit(1)
     })
   }
 
@@ -798,6 +819,24 @@ export default class Engine {
     for (const k of ed2kEngineKeys) {
       if (this.userConfig[k] !== undefined) {
         extraConfig[k] = this.userConfig[k]
+      }
+    }
+
+    // NAT traversal / transport toggles live in userConfig (UI layer) but
+    // are consumed by the engine at startup (BtSetup / UtpContext). Merge
+    // them explicitly so --enable-upnp / --enable-utp / --enable-nat-pmp
+    // reach the engine, while keeping them out of the system config that
+    // gets pushed via changeGlobalOption (the engine registers these as
+    // startup-only options and would reject runtime changes).
+    const natTransportEngineKeys = [
+      'enable-upnp',
+      'enable-utp',
+      'enable-nat-pmp'
+    ]
+    for (const k of natTransportEngineKeys) {
+      const v = this.userConfig[k]
+      if (v !== undefined) {
+        extraConfig[k] = v
       }
     }
 

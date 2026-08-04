@@ -209,6 +209,7 @@ const actions = {
           commit('UPDATE_ENGINE_OPTIONS', data)
           resolve(data)
         })
+        .catch(() => {})
     })
   },
   fetchGlobalStat ({ commit, dispatch }) {
@@ -229,6 +230,7 @@ const actions = {
         }
         commit('UPDATE_GLOBAL_STAT', stat)
       })
+      .catch(() => {})
   },
   increaseInterval ({ commit }, millisecond = 100) {
     commit('INCREASE_INTERVAL', millisecond)

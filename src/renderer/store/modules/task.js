@@ -3,7 +3,6 @@ import { EMPTY_STRING, TASK_STATUS, AUDIO_SUFFIXES, DOCUMENT_SUFFIXES, IMAGE_SUF
 import { checkTaskIsBT, getFileNameFromFile, getFileExtension, getTaskUri, intersection, isGithubUrl, getGithubUrlsWithMirrors } from '@shared/utils'
 import taskHistory from '@/api/TaskHistory'
 import pendingFileSelectionStore from '@/api/PendingFileSelection'
-import fetch from 'node-fetch'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
 
 const MAX_TASK_SPEED_SAMPLE_GIDS = 200
@@ -507,9 +506,17 @@ const mutations = {
       nextRest.updatedAt = now
     }
     const prev = state.magnetStatuses[gid] || {}
+    // 高频调用：除 updatedAt 外无变化时短路，避免无谓重建对象
+    const dataKeys = Object.keys(nextRest).filter(k => k !== 'updatedAt')
+    if (dataKeys.length > 0 && dataKeys.every(k => prev[k] === nextRest[k])) {
+      return
+    }
     state.magnetStatuses = { ...state.magnetStatuses, [gid]: { ...prev, ...nextRest } }
   },
   CLEAR_MAGNET_STATUS (state, gid) {
+    if (!(gid in state.magnetStatuses)) {
+      return
+    }
     const next = { ...state.magnetStatuses }
     delete next[gid]
     state.magnetStatuses = next
@@ -555,6 +562,9 @@ const mutations = {
     state.dataAccessStatuses = { ...state.dataAccessStatuses, [gid]: { ...prev, ...nextRest } }
   },
   CLEAR_DATA_ACCESS_STATUS (state, gid) {
+    if (!(gid in state.dataAccessStatuses)) {
+      return
+    }
     const next = { ...state.dataAccessStatuses }
     delete next[gid]
     state.dataAccessStatuses = next
@@ -610,6 +620,9 @@ const mutations = {
   },
   CLEAR_TASK_SPEED_SAMPLES (state, gid) {
     if (!gid) {
+      return
+    }
+    if (!state.taskSpeedSamples[gid]) {
       return
     }
     const next = { ...state.taskSpeedSamples }
@@ -1741,7 +1754,7 @@ const actions = {
     commit('CLEAR_TASK_CACHES_FOR_GIDS', gids)
   },
   saveSession () {
-    api.saveSession()
+    return api.saveSession().catch(() => {})
   },
   purgeTaskRecord ({ dispatch }) {
     return api.purgeTaskRecord()

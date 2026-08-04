@@ -1010,8 +1010,10 @@ export default class Application extends EventEmitter {
       logger.transports.file.level = newValue
     })
 
-    const keymapKey = 'custom-keymap'
-    this.configListeners[keymapKey] = userConfig.onDidChange(keymapKey, async (newValue, oldValue) => {
+    // 注意：configListeners 的 key 必须唯一，watchCustomKeymapChange 中
+    // 也监听了 'custom-keymap'，同名会覆盖导致前一个卸载函数丢失。
+    const keymapKey = 'custom-keymap:menu'
+    this.configListeners[keymapKey] = userConfig.onDidChange('custom-keymap', async (newValue, oldValue) => {
       try {
         logger.info('[LinkCore] detected custom-keymap change, rebuilding application menu')
         this.menuManager && this.menuManager.setup()
@@ -1474,30 +1476,24 @@ export default class Application extends EventEmitter {
   }
 
   async startUPnPMapping () {
-    const btPort = this.configManager.getSystemConfig('listen-port')
+    // 分工：BT TCP 端口由引擎端 UPnPContext/NatPmpContext 映射（与 DHT
+    // 防火墙感知联动、UPnP 失败自动回退 NAT-PMP）；主进程只负责引擎不
+    // 映射的 DHT UDP 端口，避免同一端口被两端重复映射（部分路由器上
+    // 两次 AddPortMapping 会互相覆盖，导致映射失效）。
     const dhtPort = this.configManager.getSystemConfig('dht-listen-port')
 
-    const promises = [
-      this.upnp.map(btPort),
-      this.upnp.map(dhtPort)
-    ]
     try {
-      await Promise.allSettled(promises)
+      await this.upnp.map(dhtPort)
     } catch (e) {
       logger.warn('[LinkCore] start UPnP mapping fail', e.message)
     }
   }
 
   async stopUPnPMapping () {
-    const btPort = this.configManager.getSystemConfig('listen-port')
     const dhtPort = this.configManager.getSystemConfig('dht-listen-port')
 
-    const promises = [
-      this.upnp.unmap(btPort),
-      this.upnp.unmap(dhtPort)
-    ]
     try {
-      await Promise.allSettled(promises)
+      await this.upnp.unmap(dhtPort)
     } catch (e) {
       logger.warn('[LinkCore] stop UPnP mapping fail', e)
     }
@@ -1505,7 +1501,9 @@ export default class Application extends EventEmitter {
 
   watchUPnPPortsChange () {
     const { systemConfig } = this.configManager
-    const watchKeys = ['listen-port', 'dht-listen-port']
+    // 只监听 DHT 端口：BT TCP 端口的映射/重映射由引擎侧负责，
+    // 主进程不参与，避免双端竞争同一映射。
+    const watchKeys = ['dht-listen-port']
 
     watchKeys.forEach((key) => {
       this.configListeners[key] = systemConfig.onDidChange(key, async (newValue, oldValue) => {
@@ -1769,35 +1767,25 @@ export default class Application extends EventEmitter {
       }
     })
 
-    // Also listen to window hide/minimize events
-    this.windowManager.getWindowList().forEach(win => {
-      if (!win) return
+    // 窗口在 start() 阶段才创建，init 时 getWindowList() 为空，
+    // 直接遍历绑定是死代码。改为监听 browser-window-created，每个新窗口
+    // 创建时绑定 hide/minimize，确保所有窗口（含后续打开的）都能触发检查。
+    const checkAllWindowsHidden = () => {
+      setTimeout(() => {
+        const allWindowsHidden = this.windowManager.getWindowList().every(w => {
+          return w && (!w.isVisible() || w.isMinimized())
+        })
+        if (allWindowsHidden && !this.isAppInBackground) {
+          this.isAppInBackground = true
+          logger.info('[LinkCore] All windows hidden/minimized, releasing memory')
+          this.releaseBackgroundMemory()
+        }
+      }, 100)
+    }
 
-      win.on('hide', () => {
-        setTimeout(() => {
-          const allWindowsHidden = this.windowManager.getWindowList().every(w => {
-            return w && (!w.isVisible() || w.isMinimized())
-          })
-          if (allWindowsHidden && !this.isAppInBackground) {
-            this.isAppInBackground = true
-            logger.info('[LinkCore] All windows hidden, releasing memory')
-            this.releaseBackgroundMemory()
-          }
-        }, 100)
-      })
-
-      win.on('minimize', () => {
-        setTimeout(() => {
-          const allWindowsHidden = this.windowManager.getWindowList().every(w => {
-            return w && (!w.isVisible() || w.isMinimized())
-          })
-          if (allWindowsHidden && !this.isAppInBackground) {
-            this.isAppInBackground = true
-            logger.info('[LinkCore] All windows minimized, releasing memory')
-            this.releaseBackgroundMemory()
-          }
-        }, 100)
-      })
+    app.on('browser-window-created', (event, win) => {
+      win.on('hide', checkAllWindowsHidden)
+      win.on('minimize', checkAllWindowsHidden)
     })
   }
 
@@ -1805,11 +1793,9 @@ export default class Application extends EventEmitter {
     try {
       // Send command to all renderer processes to release memory
       this.windowManager.getWindowList().forEach(win => {
-        if (win && win.webContents) {
-          // Clear renderer cache
-          win.webContents.session.clearCache()
-
-          // Send message to renderer to cleanup
+        if (win && !win.isDestroyed() && win.webContents) {
+          // 不再 clearCache()：清掉 HTTP 缓存会让回前台时重新拉取全部资源，
+          // 属于反优化。仅通知渲染进程做内存清理即可。
           win.webContents.send('application:background-memory-release')
 
           // Reduce polling frequency for background tasks
@@ -1954,6 +1940,20 @@ export default class Application extends EventEmitter {
       clearInterval(this._clipboardWatchTimer)
       this._clipboardWatchTimer = null
     }
+  }
+
+  // 运行期开关剪贴板监听：用户在偏好设置里开启/关闭时即时生效，无需重启
+  watchClipboardAutoOpenChange () {
+    const { userConfig } = this.configManager
+    const key = 'clipboard-auto-open-add-task'
+    this.configListeners[key] = userConfig.onDidChange(key, (newValue) => {
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue)
+      if (newValue) {
+        this.startClipboardAutoOpenWatch()
+      } else {
+        this.stopClipboardAutoOpenWatch()
+      }
+    })
   }
 
   isDownloadLinkLine (line = '') {
@@ -2133,6 +2133,11 @@ export default class Application extends EventEmitter {
 
   stop () {
     try {
+      // 主动关闭引擎 WebSocket 客户端，停止自动重连定时器
+      if (this.engineClient) {
+        this.engineClient.close()
+      }
+
       const promises = [
         this.stopEngine(),
         this.shutdownUPnPManager(),
@@ -2170,11 +2175,13 @@ export default class Application extends EventEmitter {
       return promises
     } catch (err) {
       logger.warn('[LinkCore] stop error: ', err.message)
+      // 必须返回数组，否则 Promise.allSettled(undefined) 会抛错导致 quit 失败
+      return []
     }
   }
 
   async stopAllSettled () {
-    await Promise.allSettled(this.stop())
+    await Promise.allSettled(this.stop() || [])
   }
 
   async pauseTasksBeforeExit (reason) {
@@ -2215,6 +2222,24 @@ export default class Application extends EventEmitter {
     this.stopClipboardAutoOpenWatch()
     this.stopTokenCleanupTimer()
 
+    // 清理任务计划 / 更新状态轮询 / 会话重置定时器
+    if (this._taskPlanCheckTimer) {
+      clearTimeout(this._taskPlanCheckTimer)
+      this._taskPlanCheckTimer = null
+    }
+    if (this._taskPlanScheduleTimer) {
+      clearTimeout(this._taskPlanScheduleTimer)
+      this._taskPlanScheduleTimer = null
+    }
+    if (this._updateStatusWatchTimer) {
+      clearTimeout(this._updateStatusWatchTimer)
+      this._updateStatusWatchTimer = null
+    }
+    if (this._resetSessionTimer) {
+      clearTimeout(this._resetSessionTimer)
+      this._resetSessionTimer = null
+    }
+
     // 引擎未运行时跳过 RPC 调用，避免大量 fetch failed 警告
     const engineRunning = this.isEngineRunning()
 
@@ -2244,20 +2269,18 @@ export default class Application extends EventEmitter {
       if (engineRunning) {
         try {
           logger.info('[LinkCore] Saving all tasks to history before quit')
-          // 获取所有任务（包括活跃、等待和已停止的任务）
-          const allTasks = await this.engineClient.call('tellActive')
-            .then(activeTasks => {
-              return this.engineClient.call('tellWaiting', 0, 1000)
-                .then(waitingTasks => {
-                  return this.engineClient.call('tellStopped', 0, 10000)
-                    .then(stoppedTasks => {
-                      return [
-                        ...(Array.isArray(activeTasks) ? activeTasks : []),
-                        ...(Array.isArray(waitingTasks) ? waitingTasks : []),
-                        ...(Array.isArray(stoppedTasks) ? stoppedTasks : [])
-                      ]
-                    })
-                })
+          // 获取所有任务（包括活跃、等待和已停止的任务），三路并行拉取
+          const allTasks = await Promise.all([
+            this.engineClient.call('tellActive'),
+            this.engineClient.call('tellWaiting', 0, 1000),
+            this.engineClient.call('tellStopped', 0, 10000)
+          ])
+            .then(([activeTasks, waitingTasks, stoppedTasks]) => {
+              return [
+                ...(Array.isArray(activeTasks) ? activeTasks : []),
+                ...(Array.isArray(waitingTasks) ? waitingTasks : []),
+                ...(Array.isArray(stoppedTasks) ? stoppedTasks : [])
+              ]
             })
             .catch(error => {
               logger.warn('[LinkCore] Failed to fetch all tasks before quit:', error.message)
@@ -2511,7 +2534,9 @@ export default class Application extends EventEmitter {
     app.clearRecentDocuments()
 
     const sessionPath = this.context.get('session-path')
-    setTimeout(async () => {
+    // 保存句柄以便 quit() 时取消，避免退出竞态下 3 秒后引擎又被拉起
+    this._resetSessionTimer = setTimeout(async () => {
+      this._resetSessionTimer = null
       unlink(sessionPath, (err) => {
         logger.info('[LinkCore] Removed the download seesion file:', err)
       })
@@ -3429,6 +3454,7 @@ export default class Application extends EventEmitter {
       this.sendUpdateStatusWhenReady()
 
       this.startClipboardAutoOpenWatch()
+      this.watchClipboardAutoOpenChange()
     })
 
     // 将 onDidAnyChange 的卸载函数保存到 configListeners，
@@ -3516,6 +3542,12 @@ export default class Application extends EventEmitter {
   }
 
   handleIpcMessages () {
+    // retryStart 等路径可能重复执行初始化，重复注册会导致监听叠加
+    if (this._ipcMessagesRegistered) {
+      return
+    }
+    this._ipcMessagesRegistered = true
+
     ipcMain.on('command', (event, command, ...args) => {
       logger.log('[LinkCore] ipc receive command', command, ...args)
       this.emit(command, ...args)
@@ -3678,23 +3710,24 @@ export default class Application extends EventEmitter {
     const context = this.context.get()
     const appVersion = require('../../package.json').version
 
-    const result = {
+    // 注意：这里不能重建应用菜单（menuManager.setup）。该函数在每个窗口
+    // 加载时都会被同步 IPC 调用，菜单重建只应发生在 keymap 变更监听里。
+    return {
       ...systemConfig,
       ...userConfig,
       ...context,
       version: appVersion
     }
-    try {
-      const customKeymap = this.configManager.getUserConfig('custom-keymap') ||
-        this.configManager.getUserConfig('customKeymap') || {}
-      if (customKeymap && Object.keys(customKeymap).length) {
-        this.menuManager && this.menuManager.setup()
-      }
-    } catch (e) {}
-    return result
   }
 
   handleIpcInvokes () {
+    // retryStart 等路径可能重复执行初始化；ipcMain.handle 对同一频道
+    // 重复注册会直接抛 "second handler"，这里做幂等保护。
+    if (this._ipcInvokesRegistered) {
+      return
+    }
+    this._ipcInvokesRegistered = true
+
     // 渲染进程引擎 RPC 统一转发（主进程持有与引擎的 WebSocket 长连接）。
     // 返回 { ok, result/error } 契约：Electron 的 IPC 结构化克隆不会传输
     // Error 的自定义属性（code），直接 throw 会导致渲染进程拿不到

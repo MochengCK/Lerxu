@@ -160,79 +160,77 @@
       this.updateSliderFromDom()
 
       // 监听更新事件
-      this.$electron.ipcRenderer.on('checking-for-update', () => {
-        this.updateCheckingUpdate(true)
-      })
-
-      this.$electron.ipcRenderer.on('update-available', (event, version, releaseNotes) => {
-        this.updateCheckingUpdate(false)
-        this.updateUpdateAvailable(true)
-        this.updateUpdateDownloaded(false)
-        this.updateNewVersion(version)
-        this.updateLastCheckUpdateTime(Date.now())
-        this.updateReleaseNotes(releaseNotes || '')
-      })
-
-      this.$electron.ipcRenderer.on('update-not-available', () => {
-        this.updateCheckingUpdate(false)
-        this.updateUpdateAvailable(false)
-        this.updateUpdateDownloaded(false)
-        this.updateNewVersion('')
-        this.updateLastCheckUpdateTime(Date.now())
-      })
-
-      this.$electron.ipcRenderer.on('update-error', () => {
-        this.updateCheckingUpdate(false)
-        this.updateIsDownloadingUpdate(false)
-        this.updateUpdateDownloaded(false)
-      })
-
-      // 监听下载开始事件
-      this.$electron.ipcRenderer.on('download-start', () => {
-        this.updateIsDownloadingUpdate(true)
-        this.updateUpdateDownloaded(false)
-        this.updateUpdateAvailable(false)
-        this.updateDownloadProgress(0)
-        this.updateDownloadSize({ total: 0, transferred: 0 })
-      })
-
-      // 监听下载进度事件
-      this.$electron.ipcRenderer.on('download-progress', (event, progress) => {
-        const percent = Math.round(progress.percent)
-        this.updateDownloadProgress(percent)
-        this.updateIsDownloadingUpdate(true)
-        this.updateDownloadSize({
-          total: progress.total || 0,
-          transferred: progress.transferred || 0
-        })
-      })
-
-      // 监听下载完成事件
-      this.$electron.ipcRenderer.on('update-downloaded', () => {
-        this.updateIsDownloadingUpdate(false)
-        this.updateUpdateDownloaded(true)
-        this.updateUpdateAvailable(false)
-        this.showMessage('success', '更新下载完成，请在高级设置中点击重启安装')
-      })
-
-      // 监听下载取消事件
-      this.$electron.ipcRenderer.on('update-cancelled', () => {
-        this.updateIsDownloadingUpdate(false)
-        this.updateUpdateDownloaded(false)
-        this.updateDownloadProgress(0)
-        this.updateDownloadSize({ total: 0, transferred: 0 })
+      this._updateIpcHandlers = {
+        'checking-for-update': () => {
+          this.updateCheckingUpdate(true)
+        },
+        'update-available': (event, version, releaseNotes, isPrerelease) => {
+          this.updateCheckingUpdate(false)
+          this.updateUpdateAvailable(true)
+          this.updateUpdateDownloaded(false)
+          this.updateNewVersion(version)
+          this.updateUpdateIsPrerelease(!!isPrerelease)
+          this.updateLastCheckUpdateTime(Date.now())
+          this.updateReleaseNotes(releaseNotes || '')
+        },
+        'update-not-available': () => {
+          this.updateCheckingUpdate(false)
+          this.updateUpdateAvailable(false)
+          this.updateUpdateDownloaded(false)
+          this.updateNewVersion('')
+          this.updateUpdateIsPrerelease(false)
+          this.updateLastCheckUpdateTime(Date.now())
+        },
+        'update-error': () => {
+          this.updateCheckingUpdate(false)
+          this.updateIsDownloadingUpdate(false)
+          this.updateUpdateDownloaded(false)
+        },
+        // 监听下载开始事件
+        'download-start': () => {
+          this.updateIsDownloadingUpdate(true)
+          this.updateUpdateDownloaded(false)
+          this.updateUpdateAvailable(false)
+          this.updateDownloadProgress(0)
+          this.updateDownloadSize({ total: 0, transferred: 0 })
+        },
+        // 监听下载进度事件
+        'download-progress': (event, progress) => {
+          const percent = Math.round(progress.percent)
+          this.updateDownloadProgress(percent)
+          this.updateIsDownloadingUpdate(true)
+          this.updateDownloadSize({
+            total: progress.total || 0,
+            transferred: progress.transferred || 0
+          })
+        },
+        // 监听下载完成事件
+        'update-downloaded': () => {
+          this.updateIsDownloadingUpdate(false)
+          this.updateUpdateDownloaded(true)
+          this.updateUpdateAvailable(false)
+          this.showMessage('success', this.$t('app.update-download-complete-subnav'))
+        },
+        // 监听下载取消事件
+        'update-cancelled': () => {
+          this.updateIsDownloadingUpdate(false)
+          this.updateUpdateDownloaded(false)
+          this.updateDownloadProgress(0)
+          this.updateDownloadSize({ total: 0, transferred: 0 })
+        }
+      }
+      Object.keys(this._updateIpcHandlers).forEach((channel) => {
+        this.$electron.ipcRenderer.on(channel, this._updateIpcHandlers[channel])
       })
     },
     beforeDestroy () {
       // 移除事件监听
-      this.$electron.ipcRenderer.removeAllListeners('checking-for-update')
-      this.$electron.ipcRenderer.removeAllListeners('update-available')
-      this.$electron.ipcRenderer.removeAllListeners('update-not-available')
-      this.$electron.ipcRenderer.removeAllListeners('update-error')
-      this.$electron.ipcRenderer.removeAllListeners('download-start')
-      this.$electron.ipcRenderer.removeAllListeners('download-progress')
-      this.$electron.ipcRenderer.removeAllListeners('update-downloaded')
-      this.$electron.ipcRenderer.removeAllListeners('update-cancelled')
+      if (this._updateIpcHandlers) {
+        Object.keys(this._updateIpcHandlers).forEach((channel) => {
+          this.$electron.ipcRenderer.removeListener(channel, this._updateIpcHandlers[channel])
+        })
+        this._updateIpcHandlers = null
+      }
     },
     watch: {
       current () {
@@ -248,7 +246,7 @@
     },
     methods: {
       ...mapActions('app', ['updateCheckingUpdate']),
-      ...mapActions('preference', ['updateUpdateAvailable', 'updateUpdateDownloaded', 'updateNewVersion', 'updateLastCheckUpdateTime', 'updateIsDownloadingUpdate', 'updateDownloadProgress', 'updateDownloadSize', 'updateReleaseNotes']),
+      ...mapActions('preference', ['updateUpdateAvailable', 'updateUpdateDownloaded', 'updateNewVersion', 'updateUpdateIsPrerelease', 'updateLastCheckUpdateTime', 'updateIsDownloadingUpdate', 'updateDownloadProgress', 'updateDownloadSize', 'updateReleaseNotes']),
       nav (category = 'basic') {
         const base = this.preferenceBasePath
         this.$router.push({
@@ -391,7 +389,7 @@
         this.updateDownloadSize({ total: 0, transferred: 0 })
 
         // 显示下载开始消息
-        this.showMessage('info', '开始下载新版本...')
+        this.showMessage('info', this.$t('app.downloading-new-version'))
 
         const cleanupListeners = () => {
           this.$electron.ipcRenderer.removeListener('download-progress', onDownloadProgress)
@@ -413,14 +411,14 @@
         const onDownloaded = () => {
           this.updateIsDownloadingUpdate(false)
           this.updateUpdateAvailable(false)
-          this.showMessage('success', '更新下载完成，应用程序将自动重启并安装更新')
+          this.showMessage('success', this.$t('app.update-download-complete-restart'))
           cleanupListeners()
         }
 
         // 监听下载错误事件
         const onDownloadError = (_event, errMsg) => {
           this.updateIsDownloadingUpdate(false)
-          const msg = errMsg ? `下载更新失败：${errMsg}` : '下载更新失败，请检查网络连接后重试'
+          const msg = errMsg ? this.$t('app.update-download-failed', { message: errMsg }) : this.$t('app.update-download-failed-network')
           this.showMessage('error', msg)
           cleanupListeners()
         }
@@ -428,7 +426,7 @@
         // 监听下载取消事件
         const onDownloadCancelled = () => {
           this.updateIsDownloadingUpdate(false)
-          this.showMessage('info', '更新下载已取消')
+          this.showMessage('info', this.$t('app.update-download-cancelled'))
           cleanupListeners()
         }
 

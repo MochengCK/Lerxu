@@ -41,9 +41,12 @@
             style="width: 100%;"
           />
         </el-form-item>
-        <el-form-item v-if="taskPlanType === 'scheduled' && isTaskPlanOnlyWhenIdleVisible">
-          <el-checkbox v-model="taskPlanOnlyWhenIdle">{{ $t('app.task-plan-only-when-idle') }}</el-checkbox>
-        </el-form-item>
+<el-form-item v-if="taskPlanType === 'scheduled' && isTaskPlanOnlyWhenIdleVisible">
+<div class="toggle-row">
+<span class="toggle-label">{{ $t('app.task-plan-only-when-idle') }}</span>
+<el-switch v-model="taskPlanOnlyWhenIdle" />
+</div>
+</el-form-item>
       </el-form>
       <div slot="footer" class="dialog-footer">
         <el-button type="primary" class="dialog-submit-btn" :disabled="isTaskPlanSaveDisabled" @click="saveTaskPlan">{{ $t('app.save') }}</el-button>

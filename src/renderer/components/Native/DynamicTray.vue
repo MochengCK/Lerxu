@@ -42,8 +42,7 @@
         theme: state => state.systemTheme,
         focused: state => state.trayFocused,
         uploadSpeed: state => state.stat.uploadSpeed,
-        downloadSpeed: state => state.stat.downloadSpeed,
-        speed: state => state.stat.uploadSpeed + state.stat.downloadSpeed
+        downloadSpeed: state => state.stat.downloadSpeed
       }),
       scale () {
         return 2
@@ -57,13 +56,16 @@
         return focused ? getInverseTheme(theme) : theme
       },
       iconKey () {
-        const { bigSur, iconStatus, currentTheme } = this
-        return bigSur ? 'tray-icon-light-normal' : `tray-icon-${currentTheme}-${iconStatus}`
+        const { iconStatus, currentTheme } = this
+        return `tray-icon-${currentTheme}-${iconStatus}`
       }
     },
     watch: {
-      async speed (val) {
-        await this.drawTray()
+      uploadSpeed () {
+        this.onSpeedChange()
+      },
+      downloadSpeed () {
+        this.onSpeedChange()
       },
       async iconKey (val) {
         await this.drawTray()
@@ -88,6 +90,15 @@
       this.trayWorker = null
     },
     methods: {
+      async onSpeedChange () {
+        const { uploadSpeed, downloadSpeed } = this
+        if (uploadSpeed === this._lastUploadSpeed && downloadSpeed === this._lastDownloadSpeed) {
+          return
+        }
+        this._lastUploadSpeed = uploadSpeed
+        this._lastDownloadSpeed = downloadSpeed
+        await this.drawTray()
+      },
       ensureTrayWorker () {
         if (this.trayWorker) {
           return this.trayWorker

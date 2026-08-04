@@ -13,46 +13,66 @@
           <h3 class="card-title">{{ $t('preferences.auto-update') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
-              <el-checkbox v-model="form.autoCheckUpdate" @change="autoSaveForm">
-                {{ $t('preferences.auto-check-update') }}
-              </el-checkbox>
-              <div
-                class="el-form-item__info"
-                style="margin-top: 8px;"
-                v-if="lastCheckUpdateTime !== 0 || updateAvailable || isDownloadingUpdate || updateDownloaded"
-              >
-                {{ $t('preferences.last-check-update-time') + ': ' +
-                  (lastCheckUpdateTime !== 0 ?
-                    new Date(lastCheckUpdateTime).toLocaleString() :
-                    new Date().toLocaleString())
-                }}
-                <span
-                  class="action-link"
-                  :class="{
-                    'action-link--disabled': isCheckingUpdate,
-                    'update-available': (updateAvailable || isDownloadingUpdate || updateDownloaded) && !isCheckingUpdate
-                  }"
-                  @click.prevent="isCheckingUpdate ? null : ((updateAvailable || isDownloadingUpdate || updateDownloaded) ? onPreviewUpdateClick() : onCheckUpdateClick())"
-                >
-                  {{ (updateAvailable || isDownloadingUpdate || updateDownloaded) ? $t('app.preview-update') : $t('app.check-updates-now') }}
-                </span>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.auto-check-update') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.auto-check-update-desc') }}</div>
+                </div>
+                <el-switch v-model="form.autoCheckUpdate" @change="autoSaveForm" />
               </div>
-              <div
-                class="version-item"
-                :class="{
-                  'update-available': updateAvailable && !updateDownloaded && !isDownloadingUpdate,
-                  'is-checking': isCheckingUpdate,
-                  'downloading': isDownloadingUpdate,
-                  'downloaded': updateDownloaded,
-                  'is-disabled': isDownloadingUpdate
-                }"
-                :style="{ pointerEvents: isDownloadingUpdate ? 'none' : 'auto' }"
-                @click="handleVersionItemClick"
-              >
-                <span>{{ versionText }}</span>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.update-channel') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.update-channel-desc') }}</div>
+                </div>
+                <mo-segmented-slider
+                  :value="form.updateChannel"
+                  :options="updateChannelOptions"
+                  size="mini"
+                  @change="onUpdateChannelChange"
+                />
               </div>
             </el-col>
           </el-form-item>
+          <div
+            class="version-item"
+            :class="{
+              'update-available': updateAvailable && !updateDownloaded && !isDownloadingUpdate,
+              'is-checking': isCheckingUpdate,
+              'downloading': isDownloadingUpdate,
+              'downloaded': updateDownloaded,
+              'is-disabled': isDownloadingUpdate
+            }"
+            :style="{ pointerEvents: isDownloadingUpdate ? 'none' : 'auto' }"
+            @click="handleVersionItemClick"
+          >
+            <span>{{ versionText }}</span>
+          </div>
+          <div
+            class="auto-update-footer"
+            v-if="lastCheckUpdateTime !== 0 || (updateAvailable || isDownloadingUpdate || updateDownloaded)"
+          >
+            <span class="auto-update-time" v-if="lastCheckUpdateTime !== 0">
+              {{ $t('preferences.last-check-update-time') + ': ' +
+                (lastCheckUpdateTime !== 0 ?
+                  new Date(lastCheckUpdateTime).toLocaleString() :
+                  new Date().toLocaleString())
+              }}
+            </span>
+            <span
+              class="action-link"
+              :class="{
+                'action-link--disabled': isCheckingUpdate,
+                'update-available': (updateAvailable || isDownloadingUpdate || updateDownloaded) && !isCheckingUpdate
+              }"
+              v-if="updateAvailable || isDownloadingUpdate || updateDownloaded"
+              @click.prevent="isCheckingUpdate ? null : onPreviewUpdateClick()"
+            >
+              {{ $t('app.preview-update') }}
+            </span>
+          </div>
         </div>
 
         <!-- 代理设置卡片 -->
@@ -244,13 +264,7 @@
           <h3 class="card-title">{{ $t('preferences.rpc') }}</h3>
           <el-form-item size="mini">
             <el-row style="margin-bottom: 8px;">
-              <el-col
-                class="form-item-sub"
-                :xs="24"
-                :sm="18"
-                :md="10"
-                :lg="10"
-              >
+              <el-col class="form-item-sub" :span="24">
                 {{ $t('preferences.rpc-listen-port') }}
                 <el-input
                   :placeholder="rpcDefaultPort"
@@ -265,13 +279,7 @@
               </el-col>
             </el-row>
             <el-row style="margin-bottom: 8px;">
-              <el-col
-                class="form-item-sub"
-                :xs="24"
-                :sm="18"
-                :md="18"
-                :lg="18"
-              >
+              <el-col class="form-item-sub" :span="24">
                 {{ $t('preferences.rpc-secret') }}
                 <el-input
                   :show-password="hideRpcSecret"
@@ -298,28 +306,35 @@
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.port') }}</h3>
           <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-upnp') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.enable-upnp-desc') }}</div>
+                </div>
+                <el-switch v-model="form.enableUpnp" />
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-nat-pmp') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.enable-nat-pmp-desc') }}</div>
+                </div>
+                <el-switch v-model="form.enableNatPmp" />
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-utp') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.enable-utp-desc') }}</div>
+                </div>
+                <el-switch v-model="form.enableUtp" />
+              </div>
+            </el-col>
             <el-row style="margin-bottom: 8px;">
-              <el-col
-                class="form-item-sub"
-                :xs="24"
-                :sm="18"
-                :md="12"
-                :lg="12"
-              >
-                <el-switch
-                  v-model="form.enableUpnp"
-                  active-text="UPnP/NAT-PMP"
-                  >
-                </el-switch>
-              </el-col>
-            </el-row>
-            <el-row style="margin-bottom: 8px;">
-              <el-col class="form-item-sub"
-                :xs="24"
-                :sm="18"
-                :md="10"
-                :lg="10"
-              >
+              <el-col class="form-item-sub" :span="24">
                 {{ $t('preferences.bt-port') }}
                 <el-input
                   placeholder="BT Port"
@@ -333,13 +348,7 @@
               </el-col>
             </el-row>
             <el-row>
-              <el-col
-                class="form-item-sub"
-                :xs="24"
-                :sm="18"
-                :md="10"
-                :lg="10"
-              >
+              <el-col class="form-item-sub" :span="24">
                 {{ $t('preferences.dht-port') }}
                 <el-input
                   placeholder="DHT Port"
@@ -359,30 +368,41 @@
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.download-protocol') }}</h3>
           <el-form-item size="mini">
-            {{ $t('preferences.protocols-default-client') }}
             <el-col class="form-item-sub" :span="24">
-              <el-switch
-                v-model="form.protocols.magnet"
-                :active-text="$t('preferences.protocols-magnet')"
-                @change="(val) => onProtocolsChange('magnet', val)"
-                >
-              </el-switch>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.protocols-magnet') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.protocols-magnet-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.protocols.magnet"
+                  @change="(val) => onProtocolsChange('magnet', val)"
+                />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-switch
-                v-model="form.protocols.thunder"
-                :active-text="$t('preferences.protocols-thunder')"
-                @change="(val) => onProtocolsChange('thunder', val)"
-                >
-              </el-switch>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.protocols-thunder') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.protocols-thunder-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.protocols.thunder"
+                  @change="(val) => onProtocolsChange('thunder', val)"
+                />
+              </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              <el-switch
-                v-model="form.protocols.ed2k"
-                :active-text="$t('preferences.protocols-ed2k')"
-                @change="(val) => onProtocolsChange('ed2k', val)"
-                >
-              </el-switch>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.protocols-ed2k') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.protocols-ed2k-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.protocols.ed2k"
+                  @change="(val) => onProtocolsChange('ed2k', val)"
+                />
+              </div>
             </el-col>
           </el-form-item>
         </div>
@@ -622,7 +642,9 @@
     const {
       autoCheckUpdate,
       dhtListenPort,
+      enableNatPmp,
       enableUpnp,
+      enableUtp,
       hideAppMenu,
       lastCheckUpdateTime,
       listenPort,
@@ -637,6 +659,8 @@
       engineBinary,
       githubMirrorUrls
     } = config
+    // 兼容 kebab-case 配置键；历史默认值 'latest' 归一为 'stable'
+    const updateChannel = config['update-channel'] === 'latest' ? 'stable' : (config['update-channel'] || 'stable')
     // 兼容旧的单个镜像配置
     const githubMirrorUrl = config.githubMirrorUrl || config['github-mirror-url']
     // 兼容 kebab-case 配置键
@@ -662,8 +686,11 @@
     const clonedScheduler = { ...defaultScheduler, ...(scheduler || {}) }
     const result = {
       autoCheckUpdate,
+      updateChannel,
       dhtListenPort,
+      enableNatPmp,
       enableUpnp,
+      enableUtp,
       hideAppMenu,
       lastCheckUpdateTime,
       listenPort,
@@ -736,10 +763,17 @@
     },
     computed: {
       ...mapState('app', ['isCheckingUpdate']),
-      ...mapState('preference', ['updateAvailable', 'newVersion', 'isDownloadingUpdate', 'updateDownloaded', 'downloadProgress', 'downloadTotal', 'downloadTransferred', 'releaseNotes', 'lastCheckUpdateTime', 'searchKeyword']),
+      ...mapState('preference', ['updateAvailable', 'newVersion', 'updateIsPrerelease', 'isDownloadingUpdate', 'updateDownloaded', 'downloadProgress', 'downloadTotal', 'downloadTransferred', 'releaseNotes', 'lastCheckUpdateTime', 'searchKeyword']),
       ...mapState('app', {
         storeEngineInfo: state => state.engineInfo
       }),
+      updateChannelOptions () {
+        return [
+          { value: 'stable', label: this.$t('preferences.update-channel-stable') },
+          { value: 'beta', label: this.$t('preferences.update-channel-beta') },
+          { value: 'all', label: this.$t('preferences.update-channel-all') }
+        ]
+      },
       versionText () {
         const bytesToSize = (this.$options && this.$options.filters && this.$options.filters.bytesToSize)
           ? this.$options.filters.bytesToSize
@@ -751,7 +785,7 @@
               return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i]
             }
         if (this.updateDownloaded) {
-          return '立即重启安装'
+          return this.$t('app.restart-to-install')
         } else if (this.isDownloadingUpdate) {
           const transferred = bytesToSize(this.downloadTransferred, 2)
           const total = bytesToSize(this.downloadTotal, 2)
@@ -760,7 +794,8 @@
           }
           return `下载中 ${this.downloadProgress}%`
         } else if (this.updateAvailable) {
-          return `下载新版本 ${this.newVersion}`
+          const betaTag = this.updateIsPrerelease ? ' (Beta)' : ''
+          return `下载新版本 ${this.newVersion}${betaTag}`
         } else {
           return this.appVersion
         }
@@ -1027,10 +1062,11 @@
         onCheckingForUpdate: () => {
           this.$store.dispatch('app/updateCheckingUpdate', true)
         },
-        onUpdateAvailable: (event, version, releaseNotes) => {
+        onUpdateAvailable: (event, version, releaseNotes, isPrerelease) => {
           this.$store.dispatch('app/updateCheckingUpdate', false)
           this.$store.dispatch('preference/updateUpdateAvailable', true)
           this.$store.dispatch('preference/updateNewVersion', version)
+          this.$store.dispatch('preference/updateUpdateIsPrerelease', !!isPrerelease)
           this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
           this.$store.dispatch('preference/updateReleaseNotes', releaseNotes || '')
         },
@@ -1038,6 +1074,7 @@
           this.$store.dispatch('app/updateCheckingUpdate', false)
           this.$store.dispatch('preference/updateUpdateAvailable', false)
           this.$store.dispatch('preference/updateNewVersion', '')
+          this.$store.dispatch('preference/updateUpdateIsPrerelease', false)
           this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
         },
         onDownloadStart: () => {
@@ -1057,7 +1094,7 @@
           this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
           this.$store.dispatch('preference/updateUpdateDownloaded', true)
           this.$store.dispatch('preference/updateUpdateAvailable', false)
-          this.showMessage('success', '更新下载完成，点击"立即重启安装"按钮开始安装更新')
+          this.showMessage('success', this.$t('app.update-download-complete-click-restart'))
         },
         onUpdateError: () => {
           this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
@@ -1084,6 +1121,14 @@
     beforeDestroy () {
       if (this._filterTimer) {
         clearTimeout(this._filterTimer)
+      }
+      if (this.saveTimeout) {
+        clearTimeout(this.saveTimeout)
+        this.saveTimeout = null
+      }
+      if (this.mirrorCheckTimeout) {
+        clearTimeout(this.mirrorCheckTimeout)
+        this.mirrorCheckTimeout = null
       }
       // 清理 GitHub 镜像弹窗外部点击监听
       document.removeEventListener('mousedown', this.handleGithubMirrorOutsideClick)
@@ -1544,7 +1589,7 @@
       },
       // 安装更新
       installUpdate () {
-        this.showMessage('info', '正在准备安装更新，应用将自动重启...')
+        this.showMessage('info', this.$t('app.preparing-update-restart'))
         this.$electron.ipcRenderer.send('command', 'application:quit-and-install-update')
       },
       downloadUpdate () {
@@ -1553,7 +1598,7 @@
         this.$store.dispatch('preference/updateUpdateDownloaded', false)
         this.$store.dispatch('preference/updateDownloadProgress', 0)
         this.$store.dispatch('preference/updateDownloadSize', { total: 0, transferred: 0 })
-        this.showMessage('info', '开始下载新版本...')
+        this.showMessage('info', this.$t('app.downloading-new-version'))
         const cleanupListeners = () => {
           this.$electron.ipcRenderer.removeListener('download-progress', onDownloadProgress)
           this.$electron.ipcRenderer.removeListener('update-downloaded', onDownloaded)
@@ -1570,18 +1615,18 @@
         const onDownloaded = () => {
           this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
           this.$store.dispatch('preference/updateUpdateAvailable', false)
-          this.showMessage('success', '更新下载完成，应用程序将自动重启并安装更新')
+          this.showMessage('success', this.$t('app.update-download-complete-restart'))
           cleanupListeners()
         }
         const onDownloadError = (_event, errMsg) => {
           this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
-          const msg = errMsg ? `下载更新失败：${errMsg}` : '下载更新失败，请检查网络连接后重试'
+          const msg = errMsg ? this.$t('app.update-download-failed', { message: errMsg }) : this.$t('app.update-download-failed-network')
           this.showMessage('error', msg)
           cleanupListeners()
         }
         const onDownloadCancelled = () => {
           this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
-          this.showMessage('info', '更新下载已取消')
+          this.showMessage('info', this.$t('app.update-download-cancelled'))
           cleanupListeners()
         }
         this.$electron.ipcRenderer.on('download-progress', onDownloadProgress)
@@ -2008,6 +2053,13 @@
           mode
         }
       },
+      onUpdateChannelChange (channel) {
+        this.form.updateChannel = channel
+        this.autoSaveForm()
+        // 清除之前的更新状态，以便下次检查使用新渠道
+        this.$store.dispatch('preference/updateUpdateAvailable', false)
+        this.$store.dispatch('preference/updateNewVersion', '')
+      },
       onProxyServerChange (server) {
         this.form.proxy = {
           ...this.form.proxy,
@@ -2139,6 +2191,12 @@
           if ('githubMirrorUrls' in data) {
             data['github-mirror-urls'] = data.githubMirrorUrls
             delete data.githubMirrorUrls
+          }
+
+          // 显式处理 updateChannel 字段，转换为 kebab-case
+          if ('updateChannel' in data) {
+            data['update-channel'] = data.updateChannel
+            delete data.updateChannel
           }
 
           const {
@@ -2767,6 +2825,20 @@
       border-color: transparent !important;
       box-shadow: none !important;
     }
+  }
+}
+
+.auto-update-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 12px;
+  gap: 6px;
+
+  .auto-update-time {
+    font-size: 12px;
+    color: var(--lc-text-secondary, #999);
   }
 }
 

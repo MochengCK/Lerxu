@@ -2,5 +2,6 @@ export default {
   'official-website': 'Sito di LinkCore',
   'release-notes': 'Note di rilascio...',
   'report-problem': 'Segnala un\'problema',
-  'toggle-dev-tools': 'Attiva/disatttiva gli Strumenti di sviluppo'
+  'toggle-dev-tools': 'Attiva/disatttiva gli Strumenti di sviluppo',
+  'manual': 'User Manual',
 }

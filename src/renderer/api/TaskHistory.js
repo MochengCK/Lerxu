@@ -12,6 +12,46 @@ const taskHistoryStore = new Store({
 })
 
 const MAX_HISTORY_ITEMS = 100// 最大历史记录数量
+const MAX_DELETED_GIDS = 2000// 删除黑名单最大数量（滚动裁剪）
+
+// 'tasks' 写盘防抖：高频调用（轮询 saveStoppedTasks / updateTask）时
+// 先更新内存中的待写数据，2 秒后落盘；退出前通过 beforeunload flush
+let pendingTasks = null
+let writeTimer = null
+
+const flushPendingWrites = () => {
+  if (writeTimer) {
+    clearTimeout(writeTimer)
+    writeTimer = null
+  }
+  if (pendingTasks !== null) {
+    const tasks = pendingTasks
+    pendingTasks = null
+    try {
+      taskHistoryStore.set('tasks', tasks)
+    } catch (_) { }
+  }
+}
+
+const scheduleTasksWrite = (tasks) => {
+  pendingTasks = tasks
+  if (writeTimer) {
+    clearTimeout(writeTimer)
+  }
+  writeTimer = setTimeout(flushPendingWrites, 2000)
+}
+
+const cancelPendingWrites = () => {
+  if (writeTimer) {
+    clearTimeout(writeTimer)
+    writeTimer = null
+  }
+  pendingTasks = null
+}
+
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('beforeunload', flushPendingWrites)
+}
 
 class TaskHistory {
   /**
@@ -23,13 +63,20 @@ class TaskHistory {
     return Array.isArray(raw) ? raw : []
   }
 
+  _readTasks () {
+    if (pendingTasks !== null) {
+      return pendingTasks
+    }
+    const raw = taskHistoryStore.get('tasks', [])
+    return Array.isArray(raw) ? raw : []
+  }
+
   _deletedGidSet () {
     return new Set(this.getDeletedGids().map(gid => `${gid}`))
   }
 
   getAllHistory () {
-    const raw = taskHistoryStore.get('tasks', [])
-    const list = Array.isArray(raw) ? raw : []
+    const list = this._readTasks()
     const deleted = this._deletedGidSet()
     const cleaned = list.filter(t => {
       if (!t || !t.gid || t.deletedAt) return false
@@ -46,15 +93,11 @@ class TaskHistory {
         return tsB - tsA
       })
       const limited = cleaned.slice(0, MAX_HISTORY_ITEMS)
-      try {
-        taskHistoryStore.set('tasks', limited)
-      } catch (_) { }
+      scheduleTasksWrite(limited)
       return limited
     }
     if (cleaned.length !== list.length) {
-      try {
-        taskHistoryStore.set('tasks', cleaned)
-      } catch (_) { }
+      scheduleTasksWrite(cleaned)
     }
     return cleaned
   }
@@ -120,7 +163,7 @@ class TaskHistory {
       }
     })
 
-    taskHistoryStore.set('tasks', updatedHistory)
+    scheduleTasksWrite(updatedHistory)
   }
 
   /**
@@ -177,7 +220,7 @@ class TaskHistory {
       if (savedAt !== undefined) {
         entry.savedAt = savedAt
       }
-      taskHistoryStore.set('tasks', [
+      scheduleTasksWrite([
         ...currentHistory,
         entry
       ])
@@ -219,7 +262,7 @@ class TaskHistory {
       delete entry.savedAt
     }
     next[idx] = entry
-    taskHistoryStore.set('tasks', next)
+    scheduleTasksWrite(next)
   }
 
   consolidateTasks (canonicalGid, memberGids = [], patch = {}, fallbackTask = null) {
@@ -230,7 +273,7 @@ class TaskHistory {
     if (this._deletedGidSet().has(`${canonicalGid}`)) {
       return
     }
-    const raw = taskHistoryStore.get('tasks', [])
+    const raw = this._readTasks()
     const currentHistory = Array.isArray(raw) ? raw : []
     const members = new Set((memberGids || []).map(gid => `${gid}`))
     members.add(`${canonicalGid}`)
@@ -246,7 +289,7 @@ class TaskHistory {
       return task && !members.has(`${task.gid}`)
     })
     next.push(entry)
-    taskHistoryStore.set('tasks', next)
+    scheduleTasksWrite(next)
   }
 
   /**
@@ -259,20 +302,25 @@ class TaskHistory {
       return
     }
 
-    const raw = taskHistoryStore.get('tasks', [])
+    const raw = this._readTasks()
     const currentHistory = Array.isArray(raw) ? raw : []
     const next = currentHistory.filter(task => task && `${task.gid}` !== `${gid}`)
-    taskHistoryStore.set('tasks', next)
+    scheduleTasksWrite(next)
 
     const deleted = this._deletedGidSet()
     deleted.add(`${gid}`)
-    taskHistoryStore.set('deletedGids', Array.from(deleted))
+    let deletedList = Array.from(deleted)
+    if (deletedList.length > MAX_DELETED_GIDS) {
+      deletedList = deletedList.slice(deletedList.length - MAX_DELETED_GIDS)
+    }
+    taskHistoryStore.set('deletedGids', deletedList)
   }
 
   /**
    * 清空任务历史记录
    */
   clearHistory () {
+    cancelPendingWrites()
     taskHistoryStore.set('tasks', [])
     taskHistoryStore.set('deletedGids', [])
   }

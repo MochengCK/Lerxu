@@ -52,6 +52,7 @@ const userKeys = [
   'tracker-source-map',
   'tray-speedometer',
   'downloading-file-suffix',
+  'update-channel',
   'auto-categorize-files',
   'file-categories',
   'set-file-mtime-on-complete',
@@ -106,7 +107,9 @@ const userKeys = [
   'ed2k-auto-sync-server',
   'ed2k-auto-sync-server-interval',
   'ed2k-auto-sync-server-time',
-  'ed2k-last-sync-server-time'
+  'ed2k-last-sync-server-time',
+  'enable-utp',
+  'enable-nat-pmp'
 ]
 
 const systemKeys = [
@@ -238,6 +241,9 @@ const systemKeys = [
 const needRestartKeys = [
   'dht-listen-port',
   'ed2k-listen-port',
+  'enable-nat-pmp',
+  'enable-upnp',
+  'enable-utp',
   'hide-app-menu',
   'listen-port',
   'rpc-listen-port',

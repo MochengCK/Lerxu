@@ -355,12 +355,9 @@
         this.downloadStartTime = Date.now()
         this.initialCompletedLength = initLength
       }
-      document.addEventListener('mousemove', this.onGraphicMouseMove)
-      document.addEventListener('mouseup', this.onGraphicMouseUp)
     },
     beforeDestroy () {
-      document.removeEventListener('mousemove', this.onGraphicMouseMove)
-      document.removeEventListener('mouseup', this.onGraphicMouseUp)
+      this.unbindGraphicDragEvents()
       if (this.graphicRafId) {
         cancelAnimationFrame(this.graphicRafId)
         this.graphicRafId = null
@@ -445,8 +442,21 @@
           this.isDragging = true
           this.dragStartY = e.clientY
           this.dragStartScrollTop = box.scrollTop || 0
+          this.bindGraphicDragEvents()
           e.preventDefault()
         } catch (_) {}
+      },
+      bindGraphicDragEvents () {
+        if (this._graphicDragBound) return
+        this._graphicDragBound = true
+        document.addEventListener('mousemove', this.onGraphicMouseMove)
+        document.addEventListener('mouseup', this.onGraphicMouseUp)
+      },
+      unbindGraphicDragEvents () {
+        if (!this._graphicDragBound) return
+        this._graphicDragBound = false
+        document.removeEventListener('mousemove', this.onGraphicMouseMove)
+        document.removeEventListener('mouseup', this.onGraphicMouseUp)
       },
       onGraphicMouseMove (e) {
         if (!this.isDragging) return
@@ -459,6 +469,7 @@
       },
       onGraphicMouseUp () {
         this.isDragging = false
+        this.unbindGraphicDragEvents()
       },
       resetSpeedSamples () {
         const gid = this.task && this.task.gid ? `${this.task.gid}` : ''

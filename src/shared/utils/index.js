@@ -6,7 +6,6 @@ import {
   isFunction,
   isNaN,
   isPlainObject,
-  kebabCase,
   parseInt
 } from 'lodash'
 import bitTorrentPeerId from 'bittorrent-peerid'
@@ -119,6 +118,12 @@ export const bitfieldToGraphic = (text) => {
   return result
 }
 
+// 替代已废弃的全局 unescape()：行为等价（%uXXXX 与 %XX 转字符），
+// 但对非法输入不会抛 URIError，peerId 等任意二进制串都能安全处理。
+const safePercentDecode = (str) => String(str)
+  .replace(/%u([0-9A-Fa-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+  .replace(/%([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+
 export const peerIdParser = (str) => {
   if (!str || str === UNKNOWN_PEERID) {
     return UNKNOWN_PEERID_NAME
@@ -128,7 +133,7 @@ export const peerIdParser = (str) => {
   // 这样可以避免 XC 前缀被错误识别为其他客户端
   let decodedStr
   try {
-    decodedStr = unescape(str)
+    decodedStr = safePercentDecode(str)
 
     // 检查是否是 XferCore 或 LinkCore
     if (decodedStr && (decodedStr.startsWith('XferCore') || decodedStr.startsWith('LinkCore'))) {
@@ -157,7 +162,7 @@ export const peerIdParser = (str) => {
 
   let parsed = {}
   try {
-    const buffer = Buffer.from(decodedStr || unescape(str), 'binary')
+    const buffer = Buffer.from(decodedStr || safePercentDecode(str), 'binary')
     parsed = bitTorrentPeerId(buffer)
   } catch (e) {
     console.log('peerIdParser.fail', e, str, decodedStr)
@@ -289,7 +294,6 @@ export const ellipsis = (str = '', maxLen = 64) => {
 }
 
 export const getFileSelection = (files = []) => {
-  console.log('getFileSelection===>', files)
   const selectedFiles = files.filter((file) => file.selected)
   if (files.length === 0 || selectedFiles.length === 0) {
     return NONE_SELECTED_FILES
@@ -868,7 +872,8 @@ export const formatOptionsForEngine = (options = {}) => {
   const result = {}
 
   Object.keys(options).forEach((key) => {
-    const kebabCaseKey = kebabCase(key)
+    // 不能用 lodash kebabCase：它会把 ed2k 拆成 ed-2-k，导致 ED2K 选项丢失
+    const kebabCaseKey = keyToKebabCase(key)
     if (Array.isArray(options[key])) {
       result[kebabCaseKey] = options[key].join('\n')
     } else {

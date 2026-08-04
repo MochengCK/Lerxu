@@ -2839,7 +2839,7 @@
         const taskName = getTaskName(task)
 
         const message = this.$t('task.download-fail-message', { taskName })
-        this.$msg.success(message)
+        this.$msg.error(message)
 
         if (!this.taskNotification) {
           return
@@ -3695,6 +3695,13 @@
           clearTimeout(timer)
         })
         this._btRetryTimers.clear()
+      }
+      // 清理分片合并的重试定时器
+      if (this._mergeRetryTimers && this._mergeRetryTimers.size > 0) {
+        this._mergeRetryTimers.forEach((timer) => {
+          clearTimeout(timer)
+        })
+        this._mergeRetryTimers.clear()
       }
       this.$store.dispatch('task/saveSession')
 

@@ -1,12 +1,12 @@
 import { EventEmitter } from 'node:events'
-import _fetch from 'node-fetch'
 import _WebSocket from 'ws'
 import { JSONRPCError } from './JSONRPCError'
 import { Deferred } from './Deferred'
 import promiseEvent from './promiseEvent'
 
 const WebSocket = global.WebSocket || _WebSocket
-const fetch = global.fetch ? global.fetch.bind(global) : _fetch
+// Electron 43（Node 22 / 现代 Chromium）已内置全局 fetch，不再需要 node-fetch
+const fetch = global.fetch.bind(global)
 
 export class JSONRPCClient extends EventEmitter {
   constructor (options) {
@@ -120,6 +120,19 @@ export class JSONRPCClient extends EventEmitter {
     deferred._message = message
     this.deferreds[message.id] = deferred
 
+    // WebSocket 路径没有 HTTP 超时保护，引擎挂起不回包时 deferred 会永久
+    // 驻留。加一个超时兜底，超时后 reject 并移除，防止内存泄漏。
+    deferred._timeoutTimer = setTimeout(() => {
+      if (this.deferreds[message.id] === deferred) {
+        delete this.deferreds[message.id]
+        deferred.reject(new Error(`JSONRPC call timeout: ${method}`))
+      }
+    }, this.timeout)
+    // 不阻止进程退出
+    if (typeof deferred._timeoutTimer.unref === 'function') {
+      deferred._timeoutTimer.unref()
+    }
+
     return deferred.promise
   }
 
@@ -135,6 +148,9 @@ export class JSONRPCClient extends EventEmitter {
   _onresponse ({ id, error, result }) {
     const deferred = this.deferreds[id]
     if (!deferred) return
+    if (deferred._timeoutTimer) {
+      clearTimeout(deferred._timeoutTimer)
+    }
     if (error) deferred.reject(new JSONRPCError(error))
     else deferred.resolve(result)
     delete this.deferreds[id]
@@ -161,6 +177,9 @@ export class JSONRPCClient extends EventEmitter {
       if (id === undefined) continue
       const deferred = this.deferreds[id]
       if (!deferred) continue
+      if (deferred._timeoutTimer) {
+        clearTimeout(deferred._timeoutTimer)
+      }
       deferred.reject(new JSONRPCError({ message: (err && err.message) || String(err) }))
       delete this.deferreds[id]
     }

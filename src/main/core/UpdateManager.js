@@ -32,19 +32,12 @@ const MIRROR_HOSTS = [
 
 /**
  * 构建 latest.yml 的下载 URL 列表（优先平台特定 YML，再通用 YML）
+ * 稳定渠道：固定从 releases/latest 拉取（electron-builder 的 latest.yml
+ * 永远指向最新正式版，即使存在 pre-release 也不包含）。
  */
 function buildLatestYmlUrls () {
+  const ymlNames = getYmlNames()
   const urls = []
-  const ymlNames = []
-
-  // 优先平台特定的 YML 文件
-  if (process.platform === 'darwin') {
-    ymlNames.push('latest-mac.yml')
-  } else if (process.platform === 'linux') {
-    ymlNames.push('latest-linux.yml')
-  }
-  // 通用 YML 作为回退
-  ymlNames.push('latest.yml')
 
   for (const ymlName of ymlNames) {
     // GitHub 直连
@@ -61,13 +54,114 @@ function buildLatestYmlUrls () {
 }
 
 /**
- * 获取发行说明（从 GitHub Releases API 或镜像）
+ * 构建指定 release tag 的 latest.yml 下载 URL 列表（beta/all 渠道用）。
+ * tagName 形如 v3.0.1-beta.1。
  */
-async function fetchReleaseNotes (version, axiosConfig = {}) {
+function buildTaggedYmlUrls (tagName) {
+  const ymlNames = getYmlNames()
+  const urls = []
+
+  for (const ymlName of ymlNames) {
+    urls.push(
+      `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${tagName}/${ymlName}`
+    )
+    for (const host of MIRROR_HOSTS) {
+      urls.push(`https://${host}/https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/${tagName}/${ymlName}`)
+    }
+  }
+  return urls
+}
+
+function getYmlNames () {
+  const ymlNames = []
+  // 优先平台特定的 YML 文件
+  if (process.platform === 'darwin') {
+    ymlNames.push('latest-mac.yml')
+  } else if (process.platform === 'linux') {
+    ymlNames.push('latest-linux.yml')
+  }
+  // 通用 YML 作为回退
+  ymlNames.push('latest.yml')
+  return ymlNames
+}
+
+/**
+ * 从 GitHub Releases API 拉取 release 列表（含 pre-release 标志），
+ * 供 beta/all 渠道挑选目标版本。失败返回 null（调用方降级到稳定渠道）。
+ */
+async function fetchReleaseList (axiosConfig = {}) {
   const apiUrls = [
-    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
-    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/v${version}`
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=50`,
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=50&draft=false`
   ]
+  let lastError = null
+  for (const url of apiUrls) {
+    try {
+      const response = await axios.get(url, {
+        timeout: 15000,
+        maxRedirects: 5,
+        headers: { Accept: 'application/vnd.github.v3+json', 'User-Agent': 'LinkCore-UpdateCheck' },
+        ...axiosConfig
+      })
+      if (response.status === 200 && Array.isArray(response.data)) {
+        return response.data
+      }
+    } catch (err) {
+      lastError = err
+      logger.warn(`[LinkCore] Releases API failed: ${url} - ${err.message}`)
+    }
+  }
+  if (lastError) {
+    throw lastError
+  }
+  return null
+}
+
+/**
+ * 按渠道挑选目标 release：beta → 版本最高的 pre-release；all → 版本最高
+ * 的任意 release（含 pre-release）。返回 { tagName, prerelease, version }，
+ * 无可用 release 时返回 null。
+ */
+function pickReleaseByChannel (releases, channel) {
+  if (!Array.isArray(releases) || releases.length === 0) {
+    return null
+  }
+  const clean = (r) => semver.clean(r.tag_name || r.name || '') || '0.0.0'
+  let pool = releases
+  if (channel === 'beta') {
+    // 只考虑 pre-release（GitHub 官方 Beta 标识），排除草稿
+    pool = releases.filter(r => r.prerelease && !r.draft)
+  }
+  if (pool.length === 0) {
+    return null
+  }
+  pool = pool.filter(r => !r.draft)
+  pool.sort((a, b) => semver.gt(clean(b), clean(a)) ? 1 : -1)
+  const best = pool[0]
+  if (!best) {
+    return null
+  }
+  const tagName = best.tag_name
+  return {
+    tagName,
+    prerelease: !!best.prerelease,
+    version: clean(best) || (tagName || '').replace(/^v/, ''),
+    publishedAt: best.published_at || ''
+  }
+}
+
+/**
+ * 获取发行说明（从 GitHub Releases API 或镜像）
+ * preferExactTag=true（beta/all 渠道）时只查 tags/v{version}，避免
+ * releases/latest 返回正式版说明与 beta 版本号不匹配。
+ */
+async function fetchReleaseNotes (version, axiosConfig = {}, preferExactTag = false) {
+  const apiUrls = preferExactTag
+    ? [`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/v${version}`]
+    : [
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/v${version}`
+    ]
 
   const config = {
     timeout: 15000,
@@ -174,6 +268,21 @@ function parseUpdateInfo (ymlContent) {
 function isNewerVersion (latest, current) {
   try {
     return semver.gt(semver.coerce(latest) || '0.0.0', semver.coerce(current) || '0.0.0')
+  } catch {
+    return latest !== current
+  }
+}
+
+/**
+ * 保留 pre-release 语义的版本比较（beta/all 渠道用）。
+ * coerce 会把 3.0.1-beta.1 折叠成 3.0.1，无法区分 beta 与正式版；
+ * 这里用完整 semver（clean 仅去除 v 前缀/空白）。
+ */
+function isNewerVersionFull (latest, current) {
+  try {
+    const l = semver.clean(latest) || '0.0.0'
+    const c = semver.clean(current) || '0.0.0'
+    return semver.gt(l, c)
   } catch {
     return latest !== current
   }
@@ -336,11 +445,57 @@ export default class UpdateManager extends EventEmitter {
 
     try {
       const axiosConfig = this._getAxiosConfig()
-      const urls = buildLatestYmlUrls()
+
+      // 读取更新渠道：stable（正式版）/ beta（最新预发布）/ all（全部取最新）。
+      // 兼容历史默认值 'latest'（视为 stable）。读取失败时退回 stable。
+      let channel = 'stable'
+      try {
+        const cfg = global.application?.configManager
+        if (cfg && typeof cfg.getUserConfig === 'function') {
+          const raw = cfg.getUserConfig('update-channel')
+          if (raw === 'beta' || raw === 'all') {
+            channel = raw
+          }
+        }
+      } catch (e) {
+        logger.warn(`[LinkCore] Failed to read update-channel, fallback to stable: ${e.message}`)
+      }
+
+      let urls
+      let channelPrerelease = false
+      if (channel === 'beta' || channel === 'all') {
+        // beta/all 渠道：先从 Releases API 挑目标 release（GitHub 的
+        // prerelease 标志即官方 Beta 标识），再下载对应 tag 的 latest.yml。
+        try {
+          const releases = await fetchReleaseList(axiosConfig)
+          const pick = pickReleaseByChannel(releases, channel)
+          if (pick && pick.tagName) {
+            urls = buildTaggedYmlUrls(pick.tagName)
+            channelPrerelease = !!pick.prerelease
+            logger.info(`[LinkCore] Update channel "${channel}" targeting ${pick.tagName} (prerelease=${pick.prerelease})`)
+          }
+        } catch (err) {
+          logger.warn(`[LinkCore] Channel "${channel}" release lookup failed, falling back to stable: ${err.message}`)
+        }
+      }
+      if (!urls) {
+        urls = buildLatestYmlUrls()
+      }
+
       const { data: ymlContent } = await fetchFromMirrors(urls, axiosConfig)
       const info = parseUpdateInfo(ymlContent)
+      if (info.version && info.version.toLowerCase().includes('beta') && !channelPrerelease) {
+        // 兜底：即使 tag 选择偏差，也记录真实类型供前端展示
+        channelPrerelease = true
+      }
 
-      if (!isNewerVersion(info.version, CURRENT_VERSION)) {
+      // 版本比较：stable 用 coerce（兼容旧行为）；beta/all 用完整 semver，
+      // 保留 pre-release 标签语义（3.0.1-beta.1 可被 beta 渠道识别）。
+      const newer = channel === 'stable'
+        ? isNewerVersion(info.version, CURRENT_VERSION)
+        : isNewerVersionFull(info.version, CURRENT_VERSION)
+
+      if (!newer) {
         this.isChecking = false
         this._notifyWindows('update-not-available')
         this.emit('update-not-available', info)
@@ -436,10 +591,12 @@ export default class UpdateManager extends EventEmitter {
       // 获取发行说明（latest.yml 中不包含，需从 GitHub API 获取）
       let releaseNotes = info.releaseNotes || ''
       if (!releaseNotes) {
-        releaseNotes = await fetchReleaseNotes(info.version, axiosConfig)
+        releaseNotes = await fetchReleaseNotes(info.version, axiosConfig, channel !== 'stable')
       }
       this.isChecking = false
-      this._notifyWindows('update-available', info.version, releaseNotes)
+      // 第三参标识该更新是否为预发布版（Beta），供前端 UI 展示徽标
+      this._notifyWindows('update-available', info.version, releaseNotes, channelPrerelease)
+      info.prerelease = channelPrerelease
       this.emit('update-available', info)
       this._saveCheckResult(true, info.version, releaseNotes)
     } catch (err) {
@@ -602,7 +759,9 @@ export default class UpdateManager extends EventEmitter {
         // 延迟一小段时间让UI更新后，自动执行安装
         setTimeout(() => {
           if (!this._isInstalling) {
-            this.quitAndInstall()
+            Promise.resolve(this.quitAndInstall()).catch((err) => {
+              logger.error('[LinkCore] auto quitAndInstall failed:', err && err.message ? err.message : err)
+            })
           }
         }, 500)
         return
@@ -947,14 +1106,13 @@ export default class UpdateManager extends EventEmitter {
 
   _saveCheckResult (available, version, releaseNotes) {
     if (global.application?.configManager) {
-      global.application.configManager.setUserConfig('update-available', available)
-      global.application.configManager.setUserConfig('new-version', version || '')
-      global.application.configManager.setUserConfig('last-check-update-time', Date.now())
-      if (available && releaseNotes) {
-        global.application.configManager.setUserConfig('release-notes', releaseNotes)
-      } else if (!available) {
-        global.application.configManager.setUserConfig('release-notes', '')
-      }
+      // 合并为一次对象写入，避免逐 key set 导致整个 user.json 被重写 4 次
+      global.application.configManager.setUserConfig({
+        'update-available': available,
+        'new-version': version || '',
+        'last-check-update-time': Date.now(),
+        'release-notes': available && releaseNotes ? releaseNotes : ''
+      })
     }
   }
 

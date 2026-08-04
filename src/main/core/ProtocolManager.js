@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { app } from 'electron'
 import is from 'electron-is'
-import { parse } from 'querystring'
 
 import logger from './LogManager'
 import protocolMap from '../configs/protocol'
@@ -79,7 +78,13 @@ export default class ProtocolManager extends EventEmitter {
   }
 
   handleMoProtocol (url) {
-    const parsed = new URL(url)
+    let parsed
+    try {
+      parsed = new URL(url)
+    } catch (err) {
+      logger.warn('[LinkCore] malformed protocol url, ignored:', url, err && err.message ? err.message : err)
+      return
+    }
     const { host, search } = parsed
     logger.info('[LinkCore] protocol parsed:', parsed, host)
 
@@ -88,8 +93,8 @@ export default class ProtocolManager extends EventEmitter {
       return
     }
 
-    const query = search.startsWith('?') ? search.replace('?', '') : search
-    const args = parse(query)
+    // querystring.parse 已废弃，改用 URLSearchParams
+    const args = Object.fromEntries(new URLSearchParams(search.startsWith('?') ? search.slice(1) : search))
     global.application.sendCommandToAll(command, args)
   }
 }

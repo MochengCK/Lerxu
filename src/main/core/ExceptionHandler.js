@@ -26,6 +26,15 @@ export default class ExceptionHandler {
       logger.error(`[LinkCore] Uncaught exception: ${message}`)
       logger.error(stack)
 
+      // 兜底清理钩子（如杀掉引擎进程），由外部注入。
+      // 注意：不在这里 process.exit，是否退出由 Electron 默认行为决定，
+      // 避免普通异常直接杀掉整个应用。
+      if (typeof this.onError === 'function') {
+        try {
+          this.onError(err)
+        } catch (_) {}
+      }
+
       if (showDialog && app.isReady()) {
         dialog.showErrorBox('Error: ', message)
       }

@@ -840,18 +840,18 @@
         const sortedBanned = sortPeers(filteredBanned)
         const sortedDisconnected = sortPeers(filteredDisconnected)
 
-        // 构建分组结构 - 优化：直接修改对象，避免展开运算符
+        // 构建分组结构 - 返回新对象，避免在 computed 中修改源 peer 对象
         const result = []
         if (sortedConnected.length > 0 && this.peerGroupVisibility.connected) {
           result.push({
             id: 'group-connected',
             isGroup: true,
             groupLabel: `${this.$t('task.peers-connected')} (${sortedConnected.length})`,
-            children: sortedConnected.map(p => {
-              p.status = 'connected'
-              p.id = `${p.peerId}-${p.ip}:${p.port}`
-              return p
-            })
+            children: sortedConnected.map(p => ({
+              ...p,
+              status: 'connected',
+              id: `${p.peerId}-${p.ip}:${p.port}`
+            }))
           })
         }
         if (sortedDisconnected.length > 0 && this.peerGroupVisibility.disconnected) {
@@ -859,11 +859,11 @@
             id: 'group-disconnected',
             isGroup: true,
             groupLabel: `${this.$t('task.peers-disconnected')} (${sortedDisconnected.length})`,
-            children: sortedDisconnected.map(p => {
-              p.status = 'disconnected'
-              p.id = `disconnected-${p.ip}:${p.port}`
-              return p
-            })
+            children: sortedDisconnected.map(p => ({
+              ...p,
+              status: 'disconnected',
+              id: `disconnected-${p.ip}:${p.port}`
+            }))
           })
         }
         if (sortedAttempting.length > 0 && this.peerGroupVisibility.attempting) {
@@ -871,11 +871,11 @@
             id: 'group-attempting',
             isGroup: true,
             groupLabel: `${this.$t('task.peers-attempting')} (${sortedAttempting.length})`,
-            children: sortedAttempting.map(p => {
-              p.status = 'attempting'
-              p.id = `attempting-${p.ip}:${p.port}`
-              return p
-            })
+            children: sortedAttempting.map(p => ({
+              ...p,
+              status: 'attempting',
+              id: `attempting-${p.ip}:${p.port}`
+            }))
           })
         }
         if (sortedBanned.length > 0 && this.peerGroupVisibility.banned) {
@@ -883,11 +883,11 @@
             id: 'group-banned',
             isGroup: true,
             groupLabel: `${this.$t('task.peers-banned')} (${sortedBanned.length})`,
-            children: sortedBanned.map(p => {
-              p.status = 'banned'
-              p.id = `banned-${p.ip}`
-              return p
-            })
+            children: sortedBanned.map(p => ({
+              ...p,
+              status: 'banned',
+              id: `banned-${p.ip}`
+            }))
           })
         }
 

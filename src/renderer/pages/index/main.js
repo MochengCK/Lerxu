@@ -3,7 +3,6 @@ import Vue from 'vue'
 import VueI18Next from '@panter/vue-i18next'
 import { sync } from 'vuex-router-sync'
 import Element, { Loading, Message } from 'element-ui'
-import axios from 'axios'
 
 import App from './App'
 import router from '@/router'
@@ -21,7 +20,6 @@ function init (config, options = {}) {
     Vue.use(require('vue-electron'))
   }
 
-  Vue.http = Vue.prototype.$http = axios
   Vue.config.productionTip = false
 
   const { locale } = config

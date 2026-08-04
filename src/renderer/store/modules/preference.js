@@ -15,6 +15,8 @@ const state = {
   // 版本更新状态持久化存储
   updateAvailable: false,
   newVersion: '',
+  // 可用更新是否为预发布版（Beta），由主进程按 update-channel 判定
+  updateIsPrerelease: false,
   lastCheckUpdateTime: 0,
   isDownloadingUpdate: false,
   isInstallingUpdate: false,
@@ -62,6 +64,9 @@ const mutations = {
   UPDATE_NEW_VERSION (state, newVersion) {
     state.newVersion = newVersion
   },
+  UPDATE_UPDATE_IS_PRERELEASE (state, isPrerelease) {
+    state.updateIsPrerelease = !!isPrerelease
+  },
   UPDATE_LAST_CHECK_UPDATE_TIME (state, lastCheckUpdateTime) {
     state.lastCheckUpdateTime = lastCheckUpdateTime
   },
@@ -100,11 +105,11 @@ const actions = {
     })
   },
   save ({ dispatch }, config) {
-    dispatch('task/saveSession', null, { root: true })
     if (isEmpty(config)) {
       return
     }
 
+    dispatch('task/saveSession', null, { root: true })
     dispatch('updatePreference', config)
     return api.savePreference(config)
   },
@@ -191,6 +196,9 @@ const actions = {
   },
   updateNewVersion ({ commit }, newVersion) {
     commit('UPDATE_NEW_VERSION', newVersion)
+  },
+  updateUpdateIsPrerelease ({ commit }, isPrerelease) {
+    commit('UPDATE_UPDATE_IS_PRERELEASE', isPrerelease)
   },
   updateLastCheckUpdateTime ({ commit }, lastCheckUpdateTime) {
     commit('UPDATE_LAST_CHECK_UPDATE_TIME', lastCheckUpdateTime)

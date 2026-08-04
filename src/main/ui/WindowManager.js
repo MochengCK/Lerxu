@@ -330,7 +330,7 @@ export default class WindowManager extends EventEmitter {
   }
 
   removeWindow (page) {
-    this.windows[page] = null
+    delete this.windows[page]
   }
 
   clearWindows () {
@@ -353,15 +353,30 @@ export default class WindowManager extends EventEmitter {
   }
 
   handleWindowState (page, window) {
-    window.on('resize', debounce(() => {
+    const onResized = debounce(() => {
+      if (window.isDestroyed()) {
+        return
+      }
       const bounds = window.getBounds()
       this.emit('window-resized', { page, bounds })
-    }, 500))
+    }, 500)
 
-    window.on('move', debounce(() => {
+    const onMoved = debounce(() => {
+      if (window.isDestroyed()) {
+        return
+      }
       const bounds = window.getBounds()
       this.emit('window-moved', { page, bounds })
-    }, 500))
+    }, 500)
+
+    window.on('resize', onResized)
+    window.on('move', onMoved)
+
+    // 窗口自然关闭时取消未触发的 debounce，避免在已销毁窗口上回调。
+    window.once('closed', () => {
+      onResized.cancel()
+      onMoved.cancel()
+    })
   }
 
   handleWindowClose (pageOptions, page, window) {
@@ -498,14 +513,22 @@ export default class WindowManager extends EventEmitter {
   }
 
   onWindowBlur (event, window) {
-    window.hide()
+    if (window && !window.isDestroyed()) {
+      window.hide()
+    }
   }
 
   handleWindowBlur () {
+    // 防止 openWindow 被多次调用时重复注册同一个监听器
+    if (this._windowBlurBound) {
+      return
+    }
+    this._windowBlurBound = true
     app.on('browser-window-blur', this.onWindowBlur)
   }
 
   unbindWindowBlur () {
+    this._windowBlurBound = false
     app.removeListener('browser-window-blur', this.onWindowBlur)
   }
 
@@ -519,7 +542,7 @@ export default class WindowManager extends EventEmitter {
   }
 
   sendCommandTo (window, command, ...args) {
-    if (!window) {
+    if (!window || window.isDestroyed()) {
       return
     }
     logger.info('[LinkCore] send command to:', command, ...args)
@@ -527,7 +550,7 @@ export default class WindowManager extends EventEmitter {
   }
 
   sendMessageTo (window, channel, ...args) {
-    if (!window) {
+    if (!window || window.isDestroyed()) {
       return
     }
     window.webContents.send(channel, ...args)

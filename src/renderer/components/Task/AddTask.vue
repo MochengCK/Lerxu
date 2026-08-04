@@ -215,16 +215,20 @@
           </el-col>
         </el-row>
         <el-form-item label="" :label-width="formLabelWidth" style="margin-top: 12px;">
-          <el-checkbox class="chk" v-model="form.newTaskShowDownloading">
-            {{$t('task.navigate-to-downloading')}}
-          </el-checkbox>
+          <div class="toggle-row">
+            <span class="toggle-label">{{$t('task.navigate-to-downloading')}}</span>
+            <el-switch v-model="form.newTaskShowDownloading" />
+          </div>
         </el-form-item>
       </div>
   </el-form>
-      <div slot="footer" class="dialog-footer">
-        <el-checkbox class="chk" v-model="showAdvanced">
-          {{$t('task.show-advanced-options')}}
-        </el-checkbox>
+<div slot="footer" class="dialog-footer">
+<el-checkbox
+class="chk"
+v-model="showAdvanced"
+>
+{{$t('task.show-advanced-options')}}
+</el-checkbox>
         <el-button
           type="primary"
           class="dialog-submit-btn"
@@ -258,7 +262,6 @@
   import is from 'electron-is'
   import { mapState } from 'vuex'
   import { isEmpty } from 'lodash'
-  import fetch from 'node-fetch'
   import HistoryDirectory from '@/components/Preference/HistoryDirectory'
   import SelectDirectory from '@/components/Native/SelectDirectory'
   import SelectTorrent from '@/components/Task/SelectTorrent'
@@ -1317,17 +1320,19 @@
     align-items: center;
     min-height: 52px;
     padding-left: 20px;
-    .chk {
-      line-height: 28px;
-      &.el-checkbox {
-        & .el-checkbox__input {
-          line-height: 19px;
-        }
-        & .el-checkbox__label {
-          padding-left: 6px;
-        }
+  .chk {
+    line-height: 28px;
+    &.el-checkbox {
+      .el-checkbox__label {
+        padding-left: 6px;
+        font-size: 13px;
+        color: var(--lc-text-regular, #606266);
+      }
+      &.is-checked .el-checkbox__label {
+        color: var(--lc-text-regular, #606266);
       }
     }
+  }
   }
   .dialog-submit-btn {
     position: absolute;

@@ -26,7 +26,7 @@
           }
         ]"
         :ref="setItemRef(opt.value)"
-        @click="onSelect(opt)"
+        @click="onSelect(opt, $event)"
       >
         <mo-icon
           v-if="opt.icon"
@@ -139,7 +139,7 @@
       setItemRef (value) {
         return `item-${value}`
       },
-      onSelect (opt) {
+      onSelect (opt, event) {
         if (opt.disabled || opt.value === this.activeValue) {
           return
         }

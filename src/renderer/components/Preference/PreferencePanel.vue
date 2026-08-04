@@ -741,15 +741,36 @@
       margin-bottom: 0;
     }
 
-    .el-checkbox {
-      .el-checkbox__label {
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+
+      .toggle-label {
         font-size: 13px;
         color: $--color-text-secondary;
-        transition: color 0.2s;
+        flex: 1;
+        min-width: 0;
       }
 
-      .el-checkbox__input.is-checked + .el-checkbox__label {
-        color: $--color-text-regular;
+      &.toggle-row--with-desc {
+        align-items: center;
+
+        .toggle-row__text {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .toggle-desc {
+          font-size: 12px;
+          color: $--color-text-secondary;
+          line-height: 1.4;
+          opacity: 0.7;
+        }
       }
     }
 
@@ -773,18 +794,6 @@
     padding-left: 12px;
     border-left: 2px solid $--border-color-lighter;
     line-height: 1.6;
-
-    .el-checkbox {
-      .el-checkbox__label {
-        font-size: 13px;
-        color: $--color-text-secondary;
-        transition: color 0.2s;
-      }
-
-      .el-checkbox__input.is-checked + .el-checkbox__label {
-        color: $--color-text-regular;
-      }
-    }
 
     .el-radio-group {
       .el-radio__label {

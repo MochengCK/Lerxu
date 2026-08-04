@@ -19,6 +19,11 @@ import { deduplicateTrackerString } from '@shared/utils/tracker'
 import { ENGINE_RPC_HOST, TASK_STATUS } from '@shared/constants'
 import taskHistory from './TaskHistory'
 
+// existsSync 结果缓存：该判断在高频轮询中对每个 stopped 任务执行，
+// 用 path 做 key 缓存，避免每秒重复同步 fs 调用
+const dashPartExistsCache = new Map()
+const DASH_PART_CACHE_LIMIT = 500
+
 const looksLikeBilibiliDashPart = (task) => {
   try {
     if (!task || typeof task !== 'object') {
@@ -56,9 +61,19 @@ const looksLikeBilibiliDashPart = (task) => {
       absolutePath = rawPath
     }
     let missing = false
-    try {
-      missing = !existsSync(absolutePath)
-    } catch (_) {}
+    if (dashPartExistsCache.has(absolutePath)) {
+      missing = !dashPartExistsCache.get(absolutePath)
+    } else {
+      let exists = false
+      try {
+        exists = existsSync(absolutePath)
+      } catch (_) {}
+      if (dashPartExistsCache.size >= DASH_PART_CACHE_LIMIT) {
+        dashPartExistsCache.clear()
+      }
+      dashPartExistsCache.set(absolutePath, exists)
+      missing = !exists
+    }
     return missing
   } catch (_) {
     return false
@@ -650,53 +665,51 @@ export default class Api {
       const activeArgs = compactUndefined([keys])
       const waitingArgs = compactUndefined([offset, 1000, keys])
       const stoppedArgs = compactUndefined([offset, 10000, keys])
-      return new Promise((resolve, reject) => {
-        this.client.multicall([
-          ['aria2.tellActive', ...activeArgs],
-          ['aria2.tellWaiting', ...waitingArgs],
-          ['aria2.tellStopped', ...stoppedArgs]
-        ]).then((data) => {
-          let result = mergeTaskResult(data)
+      return this.client.multicall([
+        ['aria2.tellActive', ...activeArgs],
+        ['aria2.tellWaiting', ...waitingArgs],
+        ['aria2.tellStopped', ...stoppedArgs]
+      ]).then((data) => {
+        let result = mergeTaskResult(data)
 
-          const stoppedTasks = result.filter(task => {
-            const { status } = task
-            const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
-            if (isMetadataTask || looksLikeBilibiliDashPart(task)) {
-              return false
-            }
-            return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR].includes(status)
-          })
-          taskHistory.saveStoppedTasks(stoppedTasks)
-
-          result = this._mergeHistoryToTasks(result)
-          // 移除已停止状态下的临时磁力任务，避免出现无效重复记录
-          result = result.filter(task => !(isTransientMagnetTask(task) && isHistoryStoppedStatus(task && task.status)))
-
-          // 获取历史记录并合并到结果中
-          const historyTasks = taskHistory.getHistory()
-          if (historyTasks.length > 0) {
-            // 合并历史任务，避免重复，仅展示真正已停止的记录
-            const currentGids = new Set(result.map(task => task.gid))
-            const newHistoryTasks = historyTasks
-              .filter(task => isHistoryStoppedStatus(task && task.status))
-              .filter(task => !isTransientMagnetTask(task))
-              .filter(task => !currentGids.has(task.gid))
-            result = [...result, ...newHistoryTasks]
+        const stoppedTasks = result.filter(task => {
+          const { status } = task
+          const isMetadataTask = task.name && task.name.startsWith('[METADATA]')
+          if (isMetadataTask || looksLikeBilibiliDashPart(task)) {
+            return false
           }
-
-          // 过滤已删除的任务（黑名单），防止删除后 aria2 重新上报导致任务复活
-          const deletedGids = new Set(taskHistory.getDeletedGids().map(gid => `${gid}`))
-          if (deletedGids.size > 0) {
-            result = result.filter(task => task && task.gid && !deletedGids.has(`${task.gid}`))
-          }
-
-          result = result.filter(task => !looksLikeBilibiliDashPart(task))
-
-          resolve(result)
-        }).catch((err) => {
-          console.log('[LinkCore] fetch all task list fail:', err)
-          reject(err)
+          return [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR].includes(status)
         })
+        taskHistory.saveStoppedTasks(stoppedTasks)
+
+        result = this._mergeHistoryToTasks(result)
+        // 移除已停止状态下的临时磁力任务，避免出现无效重复记录
+        result = result.filter(task => !(isTransientMagnetTask(task) && isHistoryStoppedStatus(task && task.status)))
+
+        // 获取历史记录并合并到结果中
+        const historyTasks = taskHistory.getHistory()
+        if (historyTasks.length > 0) {
+          // 合并历史任务，避免重复，仅展示真正已停止的记录
+          const currentGids = new Set(result.map(task => task.gid))
+          const newHistoryTasks = historyTasks
+            .filter(task => isHistoryStoppedStatus(task && task.status))
+            .filter(task => !isTransientMagnetTask(task))
+            .filter(task => !currentGids.has(task.gid))
+          result = [...result, ...newHistoryTasks]
+        }
+
+        // 过滤已删除的任务（黑名单），防止删除后 aria2 重新上报导致任务复活
+        const deletedGids = new Set(taskHistory.getDeletedGids().map(gid => `${gid}`))
+        if (deletedGids.size > 0) {
+          result = result.filter(task => task && task.gid && !deletedGids.has(`${task.gid}`))
+        }
+
+        result = result.filter(task => !looksLikeBilibiliDashPart(task))
+
+        return result
+      }).catch((err) => {
+        console.log('[LinkCore] fetch all task list fail:', err)
+        throw err
       })
     }
     case 'active':
