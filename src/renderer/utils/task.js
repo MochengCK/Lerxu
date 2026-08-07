@@ -254,3 +254,24 @@ export const buildTorrentPayload = (form) => {
   }
   return result
 }
+
+// 判断任务是否已被用户确认过文件选择。
+// confirmedMap: confirmedFileSelection（gid -> infoHash | true）
+// 兼容两种匹配：gid 精确匹配（同任务恢复）与 infoHash 匹配
+// （磁力任务 follow 生成新 gid / 引擎重启后 gid 漂移）。
+export const isTaskFileSelectionConfirmed = (confirmedMap, task) => {
+  if (!confirmedMap || !task) {
+    return false
+  }
+  const gid = String(task.gid || '')
+  if (gid && confirmedMap[gid]) {
+    return true
+  }
+  const bt = task.bittorrent
+  const hash = String(task.infoHash || (bt && bt.info && bt.info.hash) || '').trim().toLowerCase()
+  if (!hash) {
+    return false
+  }
+  return Object.values(confirmedMap).some(v =>
+    typeof v === 'string' && v.trim().toLowerCase() === hash)
+}

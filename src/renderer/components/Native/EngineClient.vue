@@ -15,6 +15,7 @@
   } from '@/utils/native'
 
   import { checkTaskIsBT, getTaskName, getTaskUri, isMagnetTask } from '@shared/utils'
+  import { isTaskFileSelectionConfirmed } from '@/utils/task'
   import { TASK_STATUS } from '@shared/constants'
   import { spawn, spawnSync, execSync } from 'node:child_process'
   import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync, copyFileSync } from 'node:fs'
@@ -3241,7 +3242,7 @@
               api.fetchTaskItem({ gid: newGid }).then((newTask) => {
                 const files = Array.isArray(newTask && newTask.files) ? newTask.files : []
                 if (files.length > 1) {
-                  if (confirmed[gid] || confirmed[newGid]) {
+                  if (isTaskFileSelectionConfirmed(confirmed, newTask || detail)) {
                     api.resumeTask({ gid: newGid }).catch(() => {})
                   } else {
                     this.$store.dispatch('task/setPendingFileSelection', newGid)
@@ -3258,7 +3259,7 @@
             const files = Array.isArray(detail && detail.files) ? detail.files : []
             const bt = detail && detail.bittorrent ? detail.bittorrent : null
             if (bt && bt.info && files.length > 1 && detail.status === TASK_STATUS.PAUSED) {
-              if (confirmed[gid]) {
+              if (isTaskFileSelectionConfirmed(confirmed, detail)) {
                 api.resumeTask({ gid }).catch(() => {})
               } else {
                 this.$store.dispatch('task/setPendingFileSelection', gid)
@@ -3279,7 +3280,7 @@
         const confirmed = this.$store.state.task.confirmedFileSelection || {}
         list.forEach(task => {
           const taskGid = task && task.gid ? `${task.gid}` : ''
-          if (!taskGid || pending[taskGid] || confirmed[taskGid]) return
+          if (!taskGid || pending[taskGid] || isTaskFileSelectionConfirmed(confirmed, task)) return
           if (task.status !== TASK_STATUS.PAUSED) return
           const bt = task.bittorrent
           if (!bt || !bt.info) return

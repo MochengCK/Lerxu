@@ -23,6 +23,8 @@ function resolveEffectiveTheme (userConfig) {
 /**
  * Get the initial window background color that matches the app theme,
  * so the window doesn't flash the wrong color before the UI loads.
+ * 颜色与主题 --lc-bg-main 保持一致（浅色 #f0f4f8 / 深色 #1e2228），
+ * 否则 UI 未加载时窗口会闪现旧版白/深灰背景。
  */
 function getInitialBackgroundColor (userConfig) {
   // On macOS the window is transparent (vibrancy handles the background)
@@ -30,7 +32,7 @@ function getInitialBackgroundColor (userConfig) {
     return '#00000000'
   }
   const effective = resolveEffectiveTheme(userConfig)
-  return effective === APP_THEME.DARK ? '#262a31' : '#ffffff'
+  return effective === APP_THEME.DARK ? '#1e2228' : '#f0f4f8'
 }
 
 const baseBrowserOptions = {
@@ -44,10 +46,11 @@ const baseBrowserOptions = {
 }
 
 // fix: BrowserWindow rendering bug under linux
+// macOS 的 vibrancy 在 openWindow 中按主题动态设置（浅色 ultra-light /
+// 深色 ultra-dark），避免 UI 未加载时硬编码深色毛玻璃造成旧背景闪烁
 const defaultBrowserOptions = is.macOS()
   ? {
     ...baseBrowserOptions,
-    vibrancy: 'ultra-dark',
     visualEffectState: 'active',
     backgroundColor: '#00000000'
   }
@@ -141,6 +144,15 @@ export default class WindowManager extends EventEmitter {
     window = new BrowserWindow({
       ...defaultBrowserOptions,
       ...pageOptions.attrs,
+      // macOS 毛玻璃跟随主题：浅色主题用 ultra-light、深色用 ultra-dark，
+      // 避免 UI 未加载时窗口呈现与主题不符的旧背景色
+      ...(is.macOS()
+        ? {
+          vibrancy: resolveEffectiveTheme(this.userConfig) === APP_THEME.DARK
+            ? 'ultra-dark'
+            : 'ultra-light'
+        }
+        : {}),
       backgroundColor: getInitialBackgroundColor(this.userConfig),
       webPreferences: {
         contextIsolation: false,

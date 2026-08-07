@@ -245,6 +245,7 @@ export default {
   'protocols-thunder': '迅雷連結 [ thunder:// ]',
   'browser-extensions': '瀏覽器擴充功能',
   'auto-update': '自動更新',
+  'restart-to-apply': '此設定將於應用程式重新啟動後生效',
   'auto-check-update': '自動檢查更新',
   'last-check-update-time': '上次檢查更新時間',
   

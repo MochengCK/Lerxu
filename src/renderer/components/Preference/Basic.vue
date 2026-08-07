@@ -828,7 +828,159 @@
           </div>
         </div>
 
-        <!-- ED2K设置卡片 -->
+<!-- 传输协议卡片 -->
+        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
+          <h3 class="card-title">{{ $t('preferences.bt-transport-protocol') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-utp') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.enable-utp-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.enableUtp"
+                  @change="(val) => onNatToggleChange('enableUtp', val)"
+                />
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-peer-exchange') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.enable-peer-exchange-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.enablePeerExchange"
+                  @change="(val) => onNatToggleChange('enablePeerExchange', val)"
+                />
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-lpd') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.enable-lpd-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.btEnableLpd"
+                  @change="(val) => onNatToggleChange('btEnableLpd', val)"
+                />
+              </div>
+            </el-col>
+          </el-form-item>
+        </div>
+
+        <!-- 网络发现卡片 -->
+        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
+          <h3 class="card-title">{{ $t('preferences.bt-network-discovery') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-dht') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.enable-dht-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.enableDht"
+                  @change="(val) => onNatToggleChange('enableDht', val)"
+                />
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-dht6') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.enable-dht6-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.enableDht6"
+                  @change="(val) => onNatToggleChange('enableDht6', val)"
+                />
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-upnp') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.enable-upnp-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.enableUpnp"
+                  @change="(val) => onNatToggleChange('enableUpnp', val)"
+                />
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.enable-nat-pmp') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.enable-nat-pmp-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.enableNatPmp"
+                  @change="(val) => onNatToggleChange('enableNatPmp', val)"
+                />
+              </div>
+            </el-col>
+          </el-form-item>
+        </div>
+
+        <!-- 监听端口卡片 -->
+        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
+          <h3 class="card-title">{{ $t('preferences.bt-port-settings') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              {{ $t('preferences.bt-port') }}
+              <el-input
+                placeholder="BT Port"
+                :maxlength="8"
+                v-model="form.listenPort"
+              >
+                <i slot="append" @click.prevent="onBtPortDiceClick">
+                  <mo-icon name="dice" width="12" height="12" />
+                </i>
+              </el-input>
+            </el-col>
+            <el-col class="form-item-sub" :span="24" style="margin-top: 8px;">
+              {{ $t('preferences.dht-port') }}
+              <el-input
+                placeholder="DHT Port"
+                :maxlength="8"
+                v-model="form.dhtListenPort"
+              >
+                <i slot="append" @click.prevent="onDhtPortDiceClick">
+                  <mo-icon name="dice" width="12" height="12" />
+                </i>
+              </el-input>
+            </el-col>
+          </el-form-item>
+        </div>
+
+        <!-- 连接与缓存卡片 -->
+        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
+          <h3 class="card-title">{{ $t('preferences.bt-connections') }}</h3>
+          <el-form-item size="mini">
+            <el-col class="form-item-sub" :span="24">
+              {{ $t('preferences.bt-max-peers') }}
+              <el-input
+                :maxlength="5"
+                v-model="form.btMaxPeers"
+                @change="autoSaveForm"
+              />
+            </el-col>
+            <el-col class="form-item-sub" :span="24" style="margin-top: 8px;">
+              {{ $t('preferences.disk-cache') }}
+              <el-input
+                :maxlength="16"
+                v-model="form.diskCache"
+                @change="autoSaveForm"
+              />
+            </el-col>
+          </el-form-item>
+        </div>
+
+<!-- ED2K设置卡片 -->
         <div v-if="activeCategory === 'ed2k'" class="preference-card" data-category="ed2k">
           <h3 class="card-title">{{ $t('preferences.ed2k-options') }}</h3>
           <el-form-item size="mini">
@@ -889,7 +1041,6 @@
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
               <div class="el-form-item__info" style="margin-bottom: 8px;">
-                {{ $t('preferences.ed2k-source-discovery-tips') }}
               </div>
             </el-col>
             <el-col class="form-item-sub" :span="24">
@@ -1368,7 +1519,8 @@ placement="top"
     convertLineToComma,
     convertCommaToLine,
     diffConfig,
-    extractSpeedUnit
+    extractSpeedUnit,
+    generateRandomInt
   } from '@shared/utils'
   import {
     APP_HTTP_PORT,
@@ -1382,6 +1534,7 @@ placement="top"
   import { reduceTrackerString } from '@shared/utils/tracker'
   import axios from 'axios'
   import keymap from '@shared/keymap'
+  import '@/components/Icons/dice'
   import '@/components/Icons/sync'
   import '@/components/Icons/select-all'
   import '@/components/Icons/deselect-all'
@@ -1462,6 +1615,17 @@ placement="top"
   const initForm = (config) => {
     const {
       autoHideWindow,
+      btMaxPeers,
+      dhtListenPort,
+      diskCache,
+      enableDht,
+      enableDht6,
+      btEnableLpd,
+      enableNatPmp,
+      enablePeerExchange,
+      enableUpnp,
+      enableUtp,
+      listenPort,
       autoPurgeRecord,
       btEncryptionMode,
       btIpBanList,
@@ -1575,6 +1739,17 @@ placement="top"
       autoPurgeRecord: autoPurgeRecord || false,
       btAutoDownloadContent,
       btEncryptionMode: normalizeBtEncryptionMode(btEncryptionMode, config.btForceEncryption),
+      btMaxPeers: btMaxPeers !== undefined ? btMaxPeers : '128',
+      dhtListenPort,
+      diskCache: diskCache || '128M',
+      enableDht: enableDht === true,
+      enableDht6: enableDht6 === true,
+      btEnableLpd: btEnableLpd === true,
+      enableNatPmp: enableNatPmp === true,
+      enablePeerExchange: enablePeerExchange === true,
+      enableUpnp: enableUpnp === true,
+      enableUtp: enableUtp === true,
+      listenPort,
       btIpBanList: normalizeBtIpBanList(btIpBanList),
       btSaveMetadata,
       continue: config.continue,
@@ -2552,6 +2727,43 @@ placement="top"
             this.submitForm('basicForm')
           }
         }, 300)
+      },
+      // BT 协议开关/选项的专用保存：点击立即保存、失败立即回弹并弹错误
+      // 提示。任何异常都必须可见，不能静默失败（否则用户看到的就是
+      // "点了没反应"）。
+      // 生效方式（引擎已支持 changeGlobalOption 热更新）：
+      // - enable-utp：立即生效（出站/入站实时响应）
+      // - enable-dht / enable-dht6：关闭立即生效；重新开启在下一个
+      //   BT 任务创建时恢复（DHTSetup）
+      // - enable-peer-exchange / enable-lpd：立即生效
+      // - enable-upnp / enable-nat-pmp：端口映射在引擎启动时执行，
+      //   下次引擎启动生效
+      onNatToggleChange (key, value) {
+        const data = {}
+        data[key] = value
+        const original = this.formOriginal[key]
+        this.$store.dispatch('preference/save', data)
+          .then(() => {
+            this.$store.dispatch('app/fetchEngineOptions')
+            this.formOriginal[key] = value
+            const restartOnNextBootKeys = ['enableUpnp', 'enableNatPmp']
+            if (restartOnNextBootKeys.includes(key)) {
+              this.$msg.info(this.$t('preferences.restart-to-apply'))
+            }
+          })
+          .catch(() => {
+            // 保存失败：回弹开关，让 UI 与实际配置保持一致，并明确报错
+            this.form[key] = original
+            this.$msg.error(this.$t('preferences.save-fail-message'))
+          })
+      },
+      onBtPortDiceClick () {
+        const port = generateRandomInt(20000, 24999)
+        this.form.listenPort = port
+      },
+      onDhtPortDiceClick () {
+        const port = generateRandomInt(25000, 29999)
+        this.form.dhtListenPort = port
       },
       validateDownloadingFileSuffix () {
         const suffix = this.form.downloadingFileSuffix

@@ -2551,12 +2551,35 @@ export default class Application extends EventEmitter {
     if (!isEmpty(system)) {
       console.info('[LinkCore] main save system config: ', system)
       this.configManager.setSystemConfig(system)
-      this.engineClient.changeGlobalOption(system)
+      // 热更新运行中的引擎。部分键是引擎 startup-only 选项（如
+      // enable-dht / dht-listen-port），changeGlobalOption 会返回错误
+      // —— 静默忽略即可：持久化配置在下次引擎启动时经 getStartArgs
+      // 生效，不应因热更新失败影响保存流程。
+      this.engineClient.changeGlobalOption(system).catch((e) => {
+        logger.warn('[LinkCore] changeGlobalOption (best-effort) failed:', e && e.message)
+      })
     }
 
     if (!isEmpty(user)) {
       console.info('[LinkCore] main save user config: ', user)
       this.configManager.setUserConfig(user)
+      // NAT/传输类开关（enable-upnp / enable-utp / enable-nat-pmp）属于
+      // userKeys（Engine.js 从 userConfig 注入启动参数），引擎侧现已
+      // 注册 changeGlobalOption 支持——这里单独热更新推送，让开关无需
+      // 重启引擎即可生效（UPnP/NAT-PMP 的实际端口映射动作仍在引擎
+      // 启动期执行，热更新仅更新配置值）。
+      const natTransportKeys = ['enable-upnp', 'enable-utp', 'enable-nat-pmp']
+      const hotNat = {}
+      for (const k of natTransportKeys) {
+        if (user[k] !== undefined) {
+          hotNat[k] = user[k]
+        }
+      }
+      if (!isEmpty(hotNat)) {
+        this.engineClient.changeGlobalOption(hotNat).catch((e) => {
+          logger.warn('[LinkCore] changeGlobalOption (NAT/transport) failed:', e && e.message)
+        })
+      }
       if (
         Object.prototype.hasOwnProperty.call(user, 'task-plan-action') ||
         Object.prototype.hasOwnProperty.call(user, 'task-plan-type') ||
@@ -2744,19 +2767,32 @@ export default class Application extends EventEmitter {
         scanCommand = customSecurityScanPath
         scanArgs = [filePath]
       } else {
-        // 使用系统默认杀毒软件
+        // 使用系统默认杀毒软件（三平台，退出码语义各自正确）
         if (is.windows()) {
-          // Windows Defender
-          scanCommand = 'powershell.exe'
-          scanArgs = [
-            '-Command',
-            `Start-MpScan -ScanType CustomScan -ScanPath "${filePath}"`
+          // Windows Defender 命令行工具：退出码 0=干净，2=发现威胁，其他=错误。
+          // （Start-MpScan 是 PowerShell cmdlet，退出码恒 0，无法反映扫描结果，
+          // 故改用 MpCmdRun.exe）
+          const candidatePaths = [
+            'C:\\Program Files\\Windows Defender\\MpCmdRun.exe',
+            'C:\\Program Files (x86)\\Windows Defender\\MpCmdRun.exe'
           ]
+          const mpCmd = candidatePaths.find(p => {
+            try { return fs.existsSync(p) } catch (_) { return false }
+          })
+          if (!mpCmd) {
+            logger.warn('[LinkCore] Security scan: MpCmdRun.exe not found on Windows, skipping scan')
+            sendStatus('skipped', { reason: 'defender-tool-not-found' })
+            return
+          }
+          scanCommand = mpCmd
+          scanArgs = ['-Scan', '-ScanType', '3', '-File', filePath]
         } else if (is.macOS()) {
-          // macOS 没有内置命令行杀毒工具，使用 xattr 检查隔离属性
-          // 如果文件被系统标记为危险，会有 com.apple.quarantine 属性
+          // macOS 没有免费命令行杀毒引擎，改用隔离属性（quarantine）判定：
+          // com.apple.quarantine 存在 = 文件来自外部来源（下载/邮件），
+          // 触发 warning 级提示；不存在 = 本地安全。
+          // xattr -p 退出码：0=有该属性，1=无该属性。
           scanCommand = 'xattr'
-          scanArgs = ['-l', filePath]
+          scanArgs = ['-p', 'com.apple.quarantine', filePath]
         } else if (is.linux()) {
           // Linux 尝试使用 ClamAV
           // 先检查 clamscan 是否存在
@@ -2799,24 +2835,35 @@ export default class Application extends EventEmitter {
       })
 
       scanProcess.on('exit', (code) => {
-        if (code === 0) {
-          logger.info('[LinkCore] Security scan completed successfully:', filePath)
-          sendStatus('success')
-        } else {
-          logger.warn('[LinkCore] Security scan exited with code:', code)
-          if (stderr) {
-            logger.warn('[LinkCore] Security scan stderr:', stderr)
-          }
-          // 在 macOS 上，xattr 返回非 0 表示文件可能有问题
-          // 在 Windows 上，非 0 通常表示发现威胁或错误
-          // 在 Linux 上，clamscan 返回 1 表示发现病毒，2 表示错误
-          if (is.linux() && code === 1) {
-            sendStatus('failed', { reason: 'virus-detected', code })
-          } else if (code !== 0) {
-            sendStatus('failed', { reason: 'scan-error', code })
+        logger.info('[LinkCore] Security scan exited with code:', code, '| stderr:', stderr)
+        if (is.macOS()) {
+          // xattr -p com.apple.quarantine：0 = 文件带隔离标记（外部来源，
+          // 需用户注意），1 = 无隔离标记（本地/安全）
+          if (code === 0) {
+            sendStatus('failed', { reason: 'quarantine-flag', code })
           } else {
             sendStatus('success')
           }
+          return
+        }
+        if (is.windows()) {
+          // MpCmdRun.exe：0 = 干净，2 = 发现威胁，其他 = 扫描错误
+          if (code === 2) {
+            sendStatus('failed', { reason: 'virus-detected', code })
+          } else if (code === 0) {
+            sendStatus('success')
+          } else {
+            sendStatus('failed', { reason: 'scan-error', code })
+          }
+          return
+        }
+        // Linux clamscan：0 = 干净，1 = 发现病毒，其他 = 错误
+        if (code === 0) {
+          sendStatus('success')
+        } else if (code === 1) {
+          sendStatus('failed', { reason: 'virus-detected', code })
+        } else {
+          sendStatus('failed', { reason: 'scan-error', code })
         }
       })
     } catch (error) {
@@ -3174,6 +3221,13 @@ export default class Application extends EventEmitter {
     this.on('application:check-for-updates', () => {
       if (this.updateManager) {
         this.updateManager.autoCheckData.userCheck = true
+        // 正在检查中（自动检查/上一次手动检查未结束）时，不能静默吞掉
+        // 手动点击——先通知前端展示"正在检查更新"状态，让点击有可见
+        // 反馈；当前检查结束后 isChecking 复位，用户再次点击即可发起
+        // 新的检查。
+        if (this.updateManager.isChecking) {
+          this.updateManager._notifyWindows('checking-for-update')
+        }
         this.updateManager.check()
       }
     })
@@ -3857,6 +3911,27 @@ export default class Application extends EventEmitter {
         logger.warn('[LinkCore] Failed to set progress window always on top:', e.message)
       }
       return { success: false }
+    })
+
+    // 剪贴板读写桥：渲染进程直接访问 electron.clipboard 已弃用
+    // （Accessing 'clipboard.readText' from the renderer process is deprecated），
+    // 统一经主进程代理。
+    ipcMain.handle('clipboard:read-text', async () => {
+      try {
+        return clipboard.readText()
+      } catch (e) {
+        logger.warn('[LinkCore] clipboard read failed:', e.message)
+        return ''
+      }
+    })
+    ipcMain.handle('clipboard:write-text', async (event, text) => {
+      try {
+        clipboard.writeText(`${text || ''}`)
+        return true
+      } catch (e) {
+        logger.warn('[LinkCore] clipboard write failed:', e.message)
+        return false
+      }
     })
 
     ipcMain.handle('task-progress:fetch', async (_event, payload = {}) => {

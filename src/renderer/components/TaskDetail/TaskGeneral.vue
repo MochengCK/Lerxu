@@ -276,8 +276,8 @@
         const { task } = this
         const uri = getTaskUri(task)
         try {
-          const { clipboard } = require('electron')
-          clipboard.writeText(uri)
+          // 渲染进程直连 electron.clipboard 已弃用，改经主进程 IPC 桥
+          this.$electron.ipcRenderer.invoke('clipboard:write-text', uri)
           this.$msg.success(this.$t('task.copy-link-success'))
         } catch (e) {
           this.$msg.error(this.$t('preferences.save-fail-message'))

@@ -233,6 +233,7 @@ export default {
   'protocols-thunder': 'Thunder [ thunder:// ]',
   'browser-extensions': 'Extensions',
   'auto-update': 'Mise à jour automatique',
+  'restart-to-apply': 'This setting takes effect after the app restarts',
   'auto-check-update': 'Vérifier automatiquement les mises à jour',
   'last-check-update-time': 'dernière vérification de mise à jour - heure',
   

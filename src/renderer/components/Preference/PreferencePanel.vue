@@ -471,7 +471,7 @@
 .subnav-small-screen .menu > li {
   width: auto;
   height: auto;
-  padding: 4px 10px;
+  padding: 10px 14px;
   cursor: pointer;
   border-radius: 8px;
   transition: background-color 0.25s, border-radius 0.25s;

@@ -545,8 +545,8 @@ v-model="showAdvanced"
       },
       async autofillResourceLink () {
         try {
-          const { clipboard } = require('electron')
-          const content = clipboard.readText()
+          // 渲染进程直连 electron.clipboard 已弃用，改经主进程 IPC 桥
+          const content = await this.$electron.ipcRenderer.invoke('clipboard:read-text')
           const text = (content || '').trim()
           if (!text) {
             return
@@ -570,45 +570,42 @@ v-model="showAdvanced"
         if (this.clipboardTimer) {
           return
         }
-        try {
-          const { clipboard } = require('electron')
-          const checkClipboard = () => {
-            if (!this.visible) {
-              return
-            }
-            if (!this.isUriLikeType(this.taskType)) {
-              return
-            }
-            const content = clipboard.readText()
-            const text = (content || '').trim()
-            if (!text) {
-              return
-            }
-            if (text === this.lastClipboardText) {
-              return
-            }
-            this.lastClipboardText = text
-            const hasResource = detectResource(text)
-            if (!hasResource) {
-              return
-            }
-            const existing = (this.form.uris || '').trim()
-            if (!existing) {
-              this.form.uris = text
-            } else {
-              const lines = existing.split(/\r?\n/).filter(Boolean)
-              if (lines.includes(text)) {
-                return
-              }
-              this.form.uris = `${existing}\n${text}`
-            }
-            this.updateUriPreview(this.form.uris)
-            this.keepTrailingNewline = true
-            this.ensureTrailingNewlineAndCaret()
+        const readClipboard = () => this.$electron.ipcRenderer.invoke('clipboard:read-text')
+        const checkClipboard = async () => {
+          if (!this.visible) {
+            return
           }
-          this.clipboardTimer = setInterval(checkClipboard, 1000)
-        } catch (e) {
+          if (!this.isUriLikeType(this.taskType)) {
+            return
+          }
+          const content = await readClipboard()
+          const text = (content || '').trim()
+          if (!text) {
+            return
+          }
+          if (text === this.lastClipboardText) {
+            return
+          }
+          this.lastClipboardText = text
+          const hasResource = detectResource(text)
+          if (!hasResource) {
+            return
+          }
+          const existing = (this.form.uris || '').trim()
+          if (!existing) {
+            this.form.uris = text
+          } else {
+            const lines = existing.split(/\r?\n/).filter(Boolean)
+            if (lines.includes(text)) {
+              return
+            }
+            this.form.uris = `${existing}\n${text}`
+          }
+          this.updateUriPreview(this.form.uris)
+          this.keepTrailingNewline = true
+          this.ensureTrailingNewlineAndCaret()
         }
+        this.clipboardTimer = setInterval(checkClipboard, 1000)
       },
       stopClipboardWatch () {
         if (this.clipboardTimer) {

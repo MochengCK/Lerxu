@@ -547,9 +547,14 @@ const mutations = {
     state.confirmedFileSelection = { ...(mapping || {}) }
     pendingFileSelectionStore.setConfirmedAll(state.confirmedFileSelection)
   },
-  CONFIRM_FILE_SELECTION (state, gid) {
-    state.confirmedFileSelection = { ...state.confirmedFileSelection, [gid]: true }
-    pendingFileSelectionStore.confirm(gid)
+  CONFIRM_FILE_SELECTION (state, payload) {
+    const gid = payload && typeof payload === 'object' ? payload.gid : payload
+    const infoHash = payload && typeof payload === 'object' ? payload.infoHash : ''
+    if (!gid) {
+      return
+    }
+    state.confirmedFileSelection = { ...state.confirmedFileSelection, [gid]: infoHash || true }
+    pendingFileSelectionStore.confirm(gid, infoHash || '')
   },
   UPDATE_DATA_ACCESS_STATUS (state, payload) {
     const { gid, ...rest } = payload
@@ -1548,8 +1553,8 @@ const actions = {
     commit('LOAD_PENDING_FILE_SELECTION', mapping)
     commit('LOAD_CONFIRMED_FILE_SELECTION', pendingFileSelectionStore.getConfirmedAll())
   },
-  confirmFileSelection ({ commit }, gid) {
-    commit('CONFIRM_FILE_SELECTION', gid)
+  confirmFileSelection ({ commit }, payload) {
+    commit('CONFIRM_FILE_SELECTION', payload)
   },
   syncPendingFileSelection ({ commit, state }, tasks) {
     // 根据当前任务列表校验待选择文件状态:
@@ -1575,16 +1580,25 @@ const actions = {
     })
     const current = state.pendingFileSelection || {}
     const confirmed = state.confirmedFileSelection || {}
+    // 用 infoHash 判断已确认（磁力 follow 后 gid 可能漂移，哈希稳定）
+    const confirmedHashes = new Set(
+      Object.values(confirmed)
+        .filter(v => typeof v === 'string')
+        .map(v => v.trim().toLowerCase())
+    )
     const next = {}
     const nextConfirmed = {}
     Object.keys(current).forEach(gid => {
-      if (validPendingGids.has(gid) && !confirmed[gid]) {
+      const task = list.find(t => `${t.gid || ''}` === gid)
+      const bt = task && task.bittorrent
+      const hash = task ? String(task.infoHash || (bt && bt.info && bt.info.hash) || '').trim().toLowerCase() : ''
+      if (validPendingGids.has(gid) && !confirmed[gid] && !(hash && confirmedHashes.has(hash))) {
         next[gid] = true
       }
     })
     Object.keys(confirmed).forEach(gid => {
       if (existingGids.has(gid)) {
-        nextConfirmed[gid] = true
+        nextConfirmed[gid] = confirmed[gid]
       }
     })
     if (Object.keys(next).length !== Object.keys(current).length) {

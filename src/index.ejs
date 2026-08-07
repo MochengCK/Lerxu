@@ -11,7 +11,9 @@
       padding: 0;
       height: 100%;
       overflow: hidden;
-      background-color: #ffffff;
+      /* 与主题 --lc-bg-main 保持一致（浅色 #f0f4f8 / 深色 #1e2228），
+         避免窗口加载瞬间闪旧背景色 */
+      background-color: #f0f4f8;
     }
 
     #app {
@@ -20,7 +22,7 @@
 
     @media (prefers-color-scheme: dark) {
       html, body {
-        background-color: #262a31;
+        background-color: #1e2228;
       }
     }
   </style>

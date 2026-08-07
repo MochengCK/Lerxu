@@ -240,6 +240,7 @@ export default {
   'protocols-thunder': '썬더 [ thunder:// ]',
   'browser-extensions': '브라우저 확장 프로그램',
   'auto-update': '자동 업데이트',
+  'restart-to-apply': 'This setting takes effect after the app restarts',
   'auto-check-update': '자동으로 업데이트 확인',
   'last-check-update-time': '마지막 업데이트 확인 시간',
   

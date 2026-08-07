@@ -199,6 +199,7 @@ export default {
   'protocols-thunder': 'Thunder [ thunder:// ]',
   'browser-extensions': 'Estensione per browser',
   'auto-update': 'Auto Update',
+  'restart-to-apply': 'This setting takes effect after the app restarts',
   'auto-check-update': 'Verifica automaticamente la disponibilità di aggiornamenti',
   'last-check-update-time': 'Ultima volta quando gli aggiornamenti sono stati verificati',
   'undo-change': 'Annulla modifica',

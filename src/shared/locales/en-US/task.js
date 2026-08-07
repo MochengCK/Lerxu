@@ -349,6 +349,8 @@ export default {
   'delete-selected-task': 'Delete Selected Tasks',
   'security-scan-failed': 'Scan failed',
   'security-scan-running': 'Scanning...',
+'security-scan-quarantine': 'External source file',
+  'security-scan-virus': 'Threat detected',
   'security-scan-skipped': 'Scan skipped',
   'security-scan-success': 'No threats found',
 }

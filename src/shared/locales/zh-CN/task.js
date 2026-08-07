@@ -353,6 +353,8 @@ export default {
   'delete-selected-task': '删除选中的任务',
   'security-scan-failed': '扫描失败',
   'security-scan-running': '扫描中...',
+'security-scan-quarantine': '外部来源文件',
+  'security-scan-virus': '检测到威胁',
   'security-scan-skipped': '已跳过扫描',
   'security-scan-success': '未发现威胁',
 }

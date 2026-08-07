@@ -245,6 +245,7 @@ export default {
   'protocols-thunder': 'Trovão [ thunder:// ]',
   'browser-extensions': 'Extensões',
   'auto-update': 'Atualização automática',
+  'restart-to-apply': 'This setting takes effect after the app restarts',
   'auto-check-update': 'A verificação automática de atualizações',
   'last-check-update-time': 'última verificação do tempo de atualização',
   

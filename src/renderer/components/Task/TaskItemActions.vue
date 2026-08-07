@@ -549,13 +549,21 @@
         return securityScanStatuses[task.gid] || null
       },
       securityScanStatusText () {
-        const status = this.securityScanStatus && this.securityScanStatus.status
+        const scanStatus = this.securityScanStatus
+        const status = scanStatus && scanStatus.status
         switch (status) {
         case 'running':
           return this.$t('task.security-scan-running')
         case 'success':
           return this.$t('task.security-scan-success')
         case 'failed':
+          // quarantine-flag = macOS 外部来源文件警示，不是扫描失败
+          if (scanStatus && scanStatus.reason === 'quarantine-flag') {
+            return this.$t('task.security-scan-quarantine')
+          }
+          if (scanStatus && scanStatus.reason === 'virus-detected') {
+            return this.$t('task.security-scan-virus')
+          }
           return this.$t('task.security-scan-failed')
         case 'skipped':
           return this.$t('task.security-scan-skipped')
@@ -839,7 +847,9 @@
         this.$store.dispatch('task/changeTaskOption', { gid, options }).then(() => {
           this.selectFilesDialogVisible = false
           this.$store.dispatch('task/clearPendingFileSelection', gid)
-          this.$store.dispatch('task/confirmFileSelection', gid)
+          const bt = this.task && this.task.bittorrent
+          const infoHash = bt && bt.info && bt.info.hash ? `${bt.info.hash}` : ''
+          this.$store.dispatch('task/confirmFileSelection', { gid, infoHash })
           return api.resumeTask({ gid })
         }).catch(() => {
           this.$store.dispatch('task/setPendingFileSelection', gid)

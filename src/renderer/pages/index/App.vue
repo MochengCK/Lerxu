@@ -29,14 +29,13 @@
 <script>
   import is from 'electron-is'
   import { mapGetters, mapState } from 'vuex'
-  import { ADD_TASK_TYPE, APP_RUN_MODE } from '@shared/constants'
+  import { APP_RUN_MODE } from '@shared/constants'
   import themeTokens from '@/utils/themeTokens'
   import DynamicTray from '@/components/Native/DynamicTray'
   import EngineClient from '@/components/Native/EngineClient'
   import Ipc from '@/components/Native/Ipc'
   import TitleBar from '@/components/Native/TitleBar'
   import { getLanguage } from '@shared/locales'
-  import { detectResource } from '@shared/utils'
   import { getLocaleManager } from '@/components/Locale'
 
   const UI_FROSTED_BLUR_SCOPES = [
@@ -67,9 +66,6 @@
     },
     data () {
       return {
-        clipboardWatchTimer: null,
-        lastClipboardText: '',
-        lastClipboardTriggerAt: 0,
         downloadMsgInstance: null
       }
     },
@@ -227,10 +223,6 @@
       enableTraySpeedometer () {
         const { isMac, isRenderer, traySpeedometer, runMode } = this
         return isMac && isRenderer && traySpeedometer && runMode !== APP_RUN_MODE.HIDE_TRAY
-      },
-      clipboardAutoPasteEnabled () {
-        if (this.clipboardAutoPaste === undefined) return true
-        return !!this.clipboardAutoPaste
       }
     },
     methods: {
@@ -283,63 +275,6 @@
           return true
         } catch (e) {}
         return false
-      },
-      startClipboardAutoOpenWatch () {
-        if (!this.isRenderer) return
-        if (this.clipboardWatchTimer) return
-        try {
-          const { clipboard } = require('electron')
-          this.lastClipboardText = `${clipboard.readText() || ''}`
-        } catch (e) {
-          this.lastClipboardText = ''
-        }
-
-        this.clipboardWatchTimer = setInterval(() => {
-          this.checkClipboardAndAutoOpenAddTask()
-        }, 800)
-      },
-      stopClipboardAutoOpenWatch () {
-        if (this.clipboardWatchTimer) {
-          clearInterval(this.clipboardWatchTimer)
-          this.clipboardWatchTimer = null
-        }
-      },
-      isDownloadLinkLine (line = '') {
-        const s = `${line}`.trim()
-        if (!s) return false
-        const lower = s.toLowerCase()
-        return lower.startsWith('http://') ||
-          lower.startsWith('https://') ||
-          lower.startsWith('ftp://') ||
-          lower.startsWith('magnet:') ||
-          lower.startsWith('thunder://')
-      },
-      checkClipboardAndAutoOpenAddTask () {
-        if (!this.clipboardAutoPasteEnabled) return
-        if (this.addTaskVisible) return
-        try {
-          const { clipboard } = require('electron')
-          const content = clipboard.readText()
-          const text = `${content || ''}`.trim()
-          if (!text) return
-          if (text === this.lastClipboardText) return
-          this.lastClipboardText = text
-
-          if (!detectResource(text)) return
-
-          const lines = text.split(/\r?\n/).map(v => `${v}`.trim()).filter(Boolean)
-          const uri = lines.find(l => this.isDownloadLinkLine(l))
-          if (!uri) return
-
-          const now = Date.now()
-          if (now - (this.lastClipboardTriggerAt || 0) < 1200) return
-          this.lastClipboardTriggerAt = now
-
-          this.bringMainWindowToFront()
-          this.$store.dispatch('app/updateAddTaskUrl', uri)
-          this.$store.dispatch('app/showAddTaskDialog', ADD_TASK_TYPE.URI)
-        } catch (e) {
-        }
       },
       getUiOpacityForScope (scope) {
         if (scope === 'date-filter' && this.dateFilterFrosted) {
@@ -546,9 +481,6 @@
       if (typeof window !== 'undefined' && this._handleWindowResize) {
         window.removeEventListener('resize', this._handleWindowResize)
         this._handleWindowResize = null
-      }
-      if (typeof this.stopClipboardAutoOpenWatch === 'function') {
-        this.stopClipboardAutoOpenWatch()
       }
       if (this._preferenceCommandHandler) {
         this.$electron.ipcRenderer.removeListener('command', this._preferenceCommandHandler)

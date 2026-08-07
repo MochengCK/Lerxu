@@ -245,6 +245,7 @@ export default {
   'protocols-thunder': 'Thunder [ thunder:// ]',
   'browser-extensions': 'Расширения',
   'auto-update': 'Автоматическое обновление',
+  'restart-to-apply': 'This setting takes effect after the app restarts',
   'auto-check-update': 'Автоматически проверять обновления',
   'last-check-update-time': 'Последняя проверка на обновления прошла в',
   

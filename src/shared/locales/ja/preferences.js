@@ -222,6 +222,7 @@ export default {
   'protocols-thunder': 'サンダー [ thunder:// ]',
   'browser-extensions': 'ブラウザ拡張機能',
   'auto-update': '自動更新',
+  'restart-to-apply': 'This setting takes effect after the app restarts',
   'auto-check-update': '更新を自動で確認する',
   'last-check-update-time': '前回更新確認時間',
   

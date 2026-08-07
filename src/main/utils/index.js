@@ -124,33 +124,6 @@ export const getAria2ConfPath = (platform, arch) => {
 }
 
 /**
- * 解析 aria2.conf 文件为 key-value Map
- * 忽略注释行和空行
- */
-const parseConf = (content) => {
-  const map = new Map()
-  const lines = `${content}`.split(/\r?\n/)
-  for (const line of lines) {
-    const m = /^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*)\s*$/.exec(line)
-    if (m) {
-      map.set(m[1], m[2])
-    }
-  }
-  return map
-}
-
-/**
- * 将 key-value Map 序列化为 aria2.conf 格式文本
- */
-const serializeConf = (map) => {
-  const lines = []
-  for (const [k, v] of map) {
-    lines.push(`${k}=${v}`)
-  }
-  return lines.join('\n')
-}
-
-/**
  * 智能合并 aria2.conf
  * 策略：
  * - 用户未修改的项（值与上一版默认值相同）→ 更新为新版默认值
@@ -158,73 +131,29 @@ const serializeConf = (map) => {
  * - 新版新增的项 → 自动添加
  * - 旧版有但新版删除的项 → 如果用户未修改则删除，如果修改了则保留
  */
+/**
+ * 重新生成 aria2.conf：始终使用最新引擎默认配置覆盖用户目录下的文件，
+ * 不合并历史 conf、不保存旧默认版本。
+ * 用户的设置通过引擎启动参数（--key=value，getStartArgs）传入并覆盖
+ * conf 中的默认值，因此 conf 永远是最新版本，且不会残留旧配置项。
+ */
 export const mergeAria2Conf = (platform, arch) => {
   const fs = require('node:fs')
   const userConfigPath = resolve(getUserDataPath(), './aria2.conf')
   const defaultConfigPath = resolve(getEnginePath(platform, arch), './aria2.conf')
-  const storedDefaultPath = resolve(getUserDataPath(), './aria2.conf.default')
 
-  // 如果用户配置或新默认配置不存在，无法合并
-  if (!existsSync(userConfigPath) || !existsSync(defaultConfigPath)) {
+  if (!existsSync(defaultConfigPath)) {
     return
   }
 
   try {
-    const userContent = fs.readFileSync(userConfigPath, 'utf8')
-    const newDefaultContent = fs.readFileSync(defaultConfigPath, 'utf8')
-    const oldDefaultContent = existsSync(storedDefaultPath)
-      ? fs.readFileSync(storedDefaultPath, 'utf8')
-      : ''
-
-    const userMap = parseConf(userContent)
-    const newDefaultMap = parseConf(newDefaultContent)
-    const oldDefaultMap = parseConf(oldDefaultContent)
-
-    const merged = new Map()
-
-    // 1. 处理新默认配置中的所有键
-    for (const [key, newDefaultVal] of newDefaultMap) {
-      const userVal = userMap.get(key)
-      const oldDefaultVal = oldDefaultMap.get(key)
-
-      if (userVal === undefined) {
-        // 用户配置中没有此键 → 新增的默认项，添加
-        merged.set(key, newDefaultVal)
-      } else if (oldDefaultVal !== undefined && userVal === oldDefaultVal) {
-        // 用户值与旧默认值相同 → 用户未修改，更新为新默认值
-        merged.set(key, newDefaultVal)
-      } else {
-        // 用户值与旧默认值不同，或没有旧默认值可比较 → 用户修改过，保留用户值
-        merged.set(key, userVal)
-      }
-    }
-
-    // 2. 处理用户配置中有但新默认配置中没有的键
-    for (const [key, userVal] of userMap) {
-      if (!newDefaultMap.has(key)) {
-        const oldDefaultVal = oldDefaultMap.get(key)
-        // 如果旧默认配置有此键且用户未修改 → 说明此键已从默认中移除，删除
-        // 如果用户修改过 → 保留用户自定义项
-        if (oldDefaultVal !== undefined && userVal === oldDefaultVal) {
-          // 键已被新版移除且用户未修改 → 不添加到 merged（即删除）
-        } else {
-          // 用户自定义的键 → 保留
-          merged.set(key, userVal)
-        }
-      }
-    }
-
-    // 3. 写入合并后的配置
-    const mergedContent = serializeConf(merged)
-    fs.writeFileSync(userConfigPath, mergedContent, 'utf8')
-
-    // 4. 更新存储的默认配置为当前版本
+    const content = fs.readFileSync(defaultConfigPath, 'utf8')
+    fs.writeFileSync(userConfigPath, content, 'utf8')
     try {
-      copyFileSync(defaultConfigPath, storedDefaultPath)
-      chmodSync(storedDefaultPath, 0o644)
+      chmodSync(userConfigPath, 0o644)
     } catch (_) {}
   } catch (e) {
-    // 合并失败时不影响启动
+    // 重新生成失败不影响启动
   }
 }
 

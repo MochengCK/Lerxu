@@ -302,69 +302,6 @@
           </el-form-item>
         </div>
 
-        <!-- 端口设置卡片 -->
-        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.port') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-upnp') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.enable-upnp-desc') }}</div>
-                </div>
-                <el-switch v-model="form.enableUpnp" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-nat-pmp') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.enable-nat-pmp-desc') }}</div>
-                </div>
-                <el-switch v-model="form.enableNatPmp" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-utp') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.enable-utp-desc') }}</div>
-                </div>
-                <el-switch v-model="form.enableUtp" />
-              </div>
-            </el-col>
-            <el-row style="margin-bottom: 8px;">
-              <el-col class="form-item-sub" :span="24">
-                {{ $t('preferences.bt-port') }}
-                <el-input
-                  placeholder="BT Port"
-                  :maxlength="8"
-                  v-model="form.listenPort"
-                >
-                  <i slot="append" @click.prevent="onBtPortDiceClick">
-                    <mo-icon name="dice" width="12" height="12" />
-                  </i>
-                </el-input>
-              </el-col>
-            </el-row>
-            <el-row>
-              <el-col class="form-item-sub" :span="24">
-                {{ $t('preferences.dht-port') }}
-                <el-input
-                  placeholder="DHT Port"
-                  :maxlength="8"
-                  v-model="form.dhtListenPort"
-                >
-                  <i slot="append" @click.prevent="onDhtPortDiceClick">
-                    <mo-icon name="dice" width="12" height="12" />
-                  </i>
-                </el-input>
-              </el-col>
-            </el-row>
-          </el-form-item>
-        </div>
-
-        <!-- 下载协议设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ $t('preferences.download-protocol') }}</h3>
           <el-form-item size="mini">
@@ -510,16 +447,6 @@
           <h3 class="card-title">{{ $t('preferences.developer') }}</h3>
           <el-form-item size="mini">
             <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.aria2-conf-path') }}
-              <el-input placeholder="" disabled v-model="aria2ConfPath">
-                <mo-show-in-folder
-                  slot="append"
-                  v-if="isRenderer"
-                  :path="aria2ConfPath"
-              />
-            </el-input>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
               {{ $t('preferences.download-session-path') }}
               <el-input placeholder="" disabled v-model="sessionPath">
                 <mo-show-in-folder
@@ -641,13 +568,8 @@
   const initForm = (config) => {
     const {
       autoCheckUpdate,
-      dhtListenPort,
-      enableNatPmp,
-      enableUpnp,
-      enableUtp,
       hideAppMenu,
       lastCheckUpdateTime,
-      listenPort,
       logLevel,
       protocols,
       proxy,
@@ -660,7 +582,11 @@
       githubMirrorUrls
     } = config
     // 兼容 kebab-case 配置键；历史默认值 'latest' 归一为 'stable'
-    const updateChannel = config['update-channel'] === 'latest' ? 'stable' : (config['update-channel'] || 'stable')
+    // 注意：loadConfig 已将配置全部 camelCase 化，优先读 config.updateChannel
+    const rawChannel = config.updateChannel !== undefined
+      ? config.updateChannel
+      : config['update-channel']
+    const updateChannel = rawChannel === 'latest' ? 'stable' : (rawChannel || 'stable')
     // 兼容旧的单个镜像配置
     const githubMirrorUrl = config.githubMirrorUrl || config['github-mirror-url']
     // 兼容 kebab-case 配置键
@@ -687,16 +613,11 @@
     const result = {
       autoCheckUpdate,
       updateChannel,
-      dhtListenPort,
-      enableNatPmp,
-      enableUpnp,
-      enableUtp,
       hideAppMenu,
       lastCheckUpdateTime,
-      listenPort,
       logLevel,
-      proxy: clonedProxy,
       protocols: { ...protocols },
+      proxy: clonedProxy,
       rpcListenPort,
       rpcSecret,
       scheduler: clonedScheduler,
@@ -878,7 +799,6 @@
       },
       ...mapState('preference', {
         config: state => state.config,
-        aria2ConfPath: state => state.config.aria2ConfPath,
         logPath: state => state.config.logPath,
         sessionPath: state => state.config.sessionPath,
         aria2LogPath: state => state.config.aria2LogPath,
@@ -944,8 +864,7 @@
           secret: val
         })
         try {
-          const { clipboard } = require('electron')
-          clipboard.writeText(url)
+          this.$electron.ipcRenderer.invoke('clipboard:write-text', url)
         } catch (e) {
         }
       },
@@ -955,8 +874,7 @@
           secret: val
         })
         try {
-          const { clipboard } = require('electron')
-          clipboard.writeText(url)
+          this.$electron.ipcRenderer.invoke('clipboard:write-text', url)
         } catch (e) {
         }
       }
@@ -977,7 +895,7 @@
       if (this.form.githubMirrorUrls && this.form.githubMirrorUrls.length > 0) {
         // 延迟1秒后开始检测，避免阻塞页面加载
         setTimeout(() => {
-          this.checkSelectedGithubMirrors()
+          this.checkSelectedGithubMirrors().catch(() => {})
         }, 1000)
       }
 
@@ -1197,17 +1115,26 @@
       },
       async checkAllGithubMirrors () {
         this.githubMirrorCheckingAll = true
+        try {
+          // 并发检测所有镜像
+          const checkPromises = this.builtinGithubMirrors.map(async (mirror) => {
+            mirror.checking = true
+            try {
+              const latency = await this.checkGithubMirrorLatency(mirror)
+              mirror.latency = latency
+            } catch (e) {
+              mirror.latency = -1
+            } finally {
+              mirror.checking = false
+            }
+          })
 
-        // 并发检测所有镜像
-        const checkPromises = this.builtinGithubMirrors.map(async (mirror) => {
-          mirror.checking = true
-          const latency = await this.checkGithubMirrorLatency(mirror)
-          mirror.latency = latency
-          mirror.checking = false
-        })
-
-        await Promise.all(checkPromises)
-        this.githubMirrorCheckingAll = false
+          await Promise.all(checkPromises)
+        } catch (e) {
+          console.warn('[GitHub Mirror] checkAll failed:', e && e.message ? e.message : e)
+        } finally {
+          this.githubMirrorCheckingAll = false
+        }
       },
       async checkSelectedGithubMirrors () {
         // 只检测已选择的镜像
@@ -1222,17 +1149,26 @@
         console.log('[GitHub Mirror] Checking selected mirrors:', selectedMirrors.map(m => m.value))
 
         this.githubMirrorCheckingAll = true
+        try {
+          // 并发检测选中的镜像
+          const checkPromises = selectedMirrors.map(async (mirror) => {
+            mirror.checking = true
+            try {
+              const latency = await this.checkGithubMirrorLatency(mirror)
+              mirror.latency = latency
+            } catch (e) {
+              mirror.latency = -1
+            } finally {
+              mirror.checking = false
+            }
+          })
 
-        // 并发检测选中的镜像
-        const checkPromises = selectedMirrors.map(async (mirror) => {
-          mirror.checking = true
-          const latency = await this.checkGithubMirrorLatency(mirror)
-          mirror.latency = latency
-          mirror.checking = false
-        })
-
-        await Promise.all(checkPromises)
-        this.githubMirrorCheckingAll = false
+          await Promise.all(checkPromises)
+        } catch (e) {
+          console.warn('[GitHub Mirror] checkSelected failed:', e && e.message ? e.message : e)
+        } finally {
+          this.githubMirrorCheckingAll = false
+        }
       },
       openGithubMirrorConfigDialog () {
         if (this.githubMirrorConfigVisible) {
@@ -1575,15 +1511,18 @@
           }
         }
       },
-      // 版本项点击处理
+      // 版本项点击处理：每个分支都给出可见反馈，
+      // 避免任何状态下"点击无反应"。
       handleVersionItemClick () {
         if (this.updateDownloaded) {
           this.installUpdate()
         } else if (this.isDownloadingUpdate) {
-          // 正在下载，不做任何操作
+          this.showMessage('info', this.$t('app.downloading-new-version'))
         } else if (this.updateAvailable) {
           this.downloadUpdate()
-        } else if (!this.isCheckingUpdate) {
+        } else if (this.isCheckingUpdate) {
+          this.showMessage('info', this.$t('app.checking-for-updates'))
+        } else {
           this.onCheckUpdateClick()
         }
       },
@@ -1652,6 +1591,13 @@
           console.error('Failed to get engine info:', error)
         }
       },
+      onProtocolsChange (protocol, enabled) {
+        const { protocols } = this.form
+        this.form.protocols = {
+          ...protocols,
+          [protocol]: enabled
+        }
+      },
       autoSaveForm () {
         // Debounce auto-save to avoid too many requests
         if (this.saveTimeout) {
@@ -1670,8 +1616,12 @@
         this.autoSaveForm()
       },
       onCheckUpdateClick () {
-        // 如果正在检查，直接返回
-        if (this.isCheckingUpdate) return
+        // 如果正在检查，给出可见提示而不是静默返回
+        // （否则自动检查进行中时手动点击表现为"没反应"）
+        if (this.isCheckingUpdate) {
+          this.$msg.info(this.$t('app.checking-for-updates'))
+          return
+        }
 
         // 设置检查状态
         this.updateCheckingUpdate(true)
@@ -2040,13 +1990,6 @@
         }
       },
 
-      onProtocolsChange (protocol, enabled) {
-        const { protocols } = this.form
-        this.form.protocols = {
-          ...protocols,
-          [protocol]: enabled
-        }
-      },
       onProxyModeChange (mode) {
         this.form.proxy = {
           ...this.form.proxy,
@@ -2055,7 +1998,18 @@
       },
       onUpdateChannelChange (channel) {
         this.form.updateChannel = channel
-        this.autoSaveForm()
+        // 立即保存（不走 800ms 防抖：防抖期间关闭窗口会导致保存请求
+        // 未发出，重开窗口回退为初始渠道）。失败立即回弹并报错可见。
+        const original = this.formOriginal.updateChannel
+        this.$store.dispatch('preference/save', { updateChannel: channel })
+          .then(() => {
+            this.formOriginal.updateChannel = channel
+            this.$msg.success(this.$t('preferences.save-success-message'))
+          })
+          .catch(() => {
+            this.form.updateChannel = original
+            this.$msg.error(this.$t('preferences.save-fail-message'))
+          })
         // 清除之前的更新状态，以便下次检查使用新渠道
         this.$store.dispatch('preference/updateUpdateAvailable', false)
         this.$store.dispatch('preference/updateNewVersion', '')
@@ -2084,14 +2038,6 @@
           return
         }
         this.form.userAgent = ua
-      },
-      onBtPortDiceClick () {
-        const port = generateRandomInt(20000, 24999)
-        this.form.listenPort = port
-      },
-      onDhtPortDiceClick () {
-        const port = generateRandomInt(25000, 29999)
-        this.form.dhtListenPort = port
       },
       onRpcListenPortChange (value) {
         console.log('onRpcListenPortChange===>', value)
@@ -2232,6 +2178,13 @@
             .then(() => {
               this.$store.dispatch('app/fetchEngineOptions')
               // Don't show success message for auto-save to avoid constant notifications
+
+              // NAT/uTP 开关属于"下次引擎启动生效"的设置：不触发自动重启，
+              // 仅轻提示用户，避免点开关就 relaunch 整个应用。
+              const restartOnNextBootKeys = ['enable-upnp', 'enable-utp', 'enable-nat-pmp']
+              if (restartOnNextBootKeys.some(k => k in data)) {
+                this.$msg.info(this.$t('preferences.restart-to-apply'))
+              }
 
               changedConfig.basic = {}
               changedConfig.advanced = {}
@@ -2842,4 +2795,57 @@
   }
 }
 
+/* 版本条：独立样式（不依赖侧边栏全局 .version-item），
+   点击区域明确、悬停有视觉反馈 */
+.preference-card .version-item {
+  cursor: pointer;
+  border: 1px solid var(--lc-border-color, #dcdfe6);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--lc-text-primary, #303133);
+  transition: border-color 0.2s ease, opacity 0.2s ease;
+
+  &:hover {
+    border-color: #c6e2ff;
+  }
+
+  &.is-checking {
+    color: var(--lc-text-secondary, #909399);
+  }
+
+  &.update-available {
+    color: #67c23a;
+    font-weight: bold;
+    border-color: #c2e7b0;
+  }
+
+  &.downloading {
+    color: #409eff;
+  }
+
+  &.downloaded {
+    color: #67c23a;
+  }
+
+  &.is-disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+}
+
+/* 监听端口卡片三个开关的防御性样式：
+   确保任何主题/状态下都能正常交互（不被遮挡、不被吞掉指针事件），
+   标签文字可选中。 */
+.preference-card .toggle-row {
+  position: relative;
+  pointer-events: auto;
+  z-index: 1;
+
+  .toggle-label,
+  .toggle-desc {
+    user-select: text;
+  }
+}
 </style>

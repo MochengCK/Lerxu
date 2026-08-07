@@ -284,9 +284,9 @@
 }
 
 .theme-light.has-app-background-image .custom-date-picker {
-  background-color: rgba(255, 255, 255, var(--app-ui-opacity-date-filter, var(--app-ui-opacity, 0.9)));
-  backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
-  -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-date-filter, var(--app-ui-frosted-blur, 0px)));
+  /* 非 frosted：实心不透明（与无背景图时一致）。
+     背景图场景不再默认透明——只有开启"日期筛选毛玻璃"才透明模糊。 */
+  background-color: #fff;
 }
 
 .theme-light .custom-date-picker.is-frosted {

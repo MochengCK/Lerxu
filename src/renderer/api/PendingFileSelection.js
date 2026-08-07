@@ -46,11 +46,17 @@ class PendingFileSelection {
     return raw && typeof raw === 'object' ? raw : {}
   }
 
-  confirm (gid) {
+  // 记录"已确认文件选择"的任务。value 存 infoHash（若提供），
+  // 用于应用重启后磁力任务 follow 生成新 gid 时按哈希匹配；
+  // 旧数据 value 为 true，兼容保留。
+  confirm (gid, infoHash) {
     if (!gid) return
     const current = this.getConfirmedAll()
     if (current[`${gid}`]) return
-    pendingFileSelectionStore.set('confirmedGids', { ...current, [`${gid}`]: true })
+    pendingFileSelectionStore.set('confirmedGids', {
+      ...current,
+      [`${gid}`]: infoHash || true
+    })
   }
 
   removeConfirmed (gid) {
@@ -65,7 +71,8 @@ class PendingFileSelection {
   setConfirmedAll (mapping) {
     const obj = {}
     Object.keys(mapping || {}).forEach(k => {
-      obj[`${k}`] = true
+      // 保留 infoHash 值（可能是 true 或 hash 字符串）
+      obj[`${k}`] = mapping[k] || true
     })
     pendingFileSelectionStore.set('confirmedGids', obj)
   }
