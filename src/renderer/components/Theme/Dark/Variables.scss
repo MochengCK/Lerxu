@@ -19,7 +19,7 @@ $--dk-action-color-base: var(--lc-text-primary);
 $--dk-app-background: var(--lc-bg-app) !default;
 $--dk-titlebar-actions-color: var(--lc-text-primary) !default;
 $--dk-titlebar-close-active-color: #fff !default;
-$--dk-titlebar-actions-active-background: var(--lc-bg-active) !default;
+$--dk-titlebar-actions-active-background: rgba(255, 255, 255, 0.1) !default;
 $--dk-titlebar-close-active-background: #fd0007 !default;
 $--dk-app-logo-color: var(--lc-text-primary) !default;
 $--dk-app-version-color: var(--lc-text-secondary) !default;

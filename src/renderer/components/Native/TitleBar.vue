@@ -135,6 +135,12 @@
 .has-custom-titlebar .title-bar .title-bar-dragger {
   margin-left: 0;
 }
+/* Windows/Linux 自定义标题栏下，窗口控制按钮收窄并垂直居中，
+   避免 hover 高亮区域占满整个标题栏高度 */
+.has-custom-titlebar .title-bar .window-actions {
+  height: 32px;
+  align-self: center;
+}
 .has-custom-titlebar .title-bar .title-bar-title {
   margin-left: 16px;
   @media only screen and (min-width: 568px) {

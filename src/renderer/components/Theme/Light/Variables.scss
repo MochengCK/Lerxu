@@ -12,7 +12,9 @@
 -------------------------- */
 $--app-background: var(--lc-bg-app) !default;
 $--titlebar-actions-color: var(--lc-text-primary) !default;
-$--titlebar-actions-active-background: var(--lc-bg-active) !default;
+/* 最小化/最大化按钮 hover 背景：半透明中性灰。
+   原 var(--lc-bg-active)（#eef2f7）与主背景（#f0f4f8）几乎同色，hover 几乎不可见 */
+$--titlebar-actions-active-background: rgba(0, 0, 0, 0.08) !default;
 $--titlebar-close-active-color: #fff !default;
 $--titlebar-close-active-background: #fd0007 !default;
 $--app-logo-color: var(--lc-text-primary) !default;
