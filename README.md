@@ -27,7 +27,7 @@
 
 ## Introduction
 
-A modern download manager powered by the FluxCore engine, optimized for Windows, macOS, and Linux. Supports HTTP, FTP, BitTorrent, and Magnet links with professional-grade features including UPnP/NAT-PMP port mapping, automatic Tracker updates, task prioritization, batch management, and advanced download presets.
+A modern download manager powered by the XferCore engine, optimized for Windows, macOS, and Linux. Supports HTTP, FTP, BitTorrent, and Magnet links with professional-grade features including UPnP/NAT-PMP port mapping, automatic Tracker updates, task prioritization, batch management, and advanced download presets.
 
 ## Screenshots
 
@@ -90,7 +90,6 @@ A modern download manager powered by the FluxCore engine, optimized for Windows,
 - **Task Priority**: Set task priority values to influence download order and resource allocation
 - **Custom Download File Extension**: Customize the file extension for in-progress downloads
 - **Set File Modification Date to Completion Time**: Optionally set downloaded file modification dates to match completion time
-- **Quick Engine Switching**: Quickly switch between different download engines
 - **Advanced Option Presets**: Name, save, apply, and delete presets for advanced options
 - **Link Input Optimization**: Auto-deduplicate links; auto-newline and cursor positioning after paste or autofill
 - **Custom Shortcuts**: Set or reset shortcuts for common commands in the "Preferences > Basic > Shortcuts" card
@@ -204,7 +203,7 @@ Contributions are welcome! Whether you're fixing bugs, adding new features, or i
 - UI Framework: [Vue.js](https://vuejs.org/)
 - Desktop Framework: [Electron](https://www.electronjs.org/)
 - Video Processing: [FFmpeg](https://ffmpeg.org/)
-- Download Engine: [FluxCore](https://github.com/MochengCK/FluxCore)
+- Download Engine: [XferCore](https://github.com/MochengCK/XferCore) (deeply customized from [aria2](https://github.com/aria2/aria2))
 
 ## Support
 
