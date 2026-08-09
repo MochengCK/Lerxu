@@ -142,7 +142,9 @@
           const lastCheckUpdateTime = cfg['last-check-update-time'] || cfg.lastCheckUpdateTime || 0
           const releaseNotes = cfg['release-notes'] || cfg.releaseNotes || ''
 
-          if (updateAvailable && newVersion) {
+          // 校验残留状态仍有效（newVersion 确实比当前版本新），
+          // 避免用户已手动升级后仍显示过期的"下载新版本"按钮
+          if (updateAvailable && newVersion && this.isVersionNewer(newVersion, this.appVersion)) {
             this.updateUpdateAvailable(updateAvailable)
             this.updateNewVersion(newVersion)
             if (lastCheckUpdateTime) {
@@ -254,6 +256,24 @@
         }).catch(err => {
           console.log(err)
         })
+      },
+      // 粗略版本比较（与主进程 stable 渠道的 coerce 语义一致）：
+      // 提取主版本号（忽略 beta 等 pre-release 后缀）后逐段比较。
+      // 用于校验持久化配置中残留的"有新版本"状态是否仍然有效，
+      // 避免用户已手动升级到最新后仍显示过期的下载按钮。
+      isVersionNewer (a, b) {
+        if (!a || !b) return false
+        const coerce = (v) => {
+          const m = String(v).trim().match(/(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
+          return m ? m.slice(1).map(n => parseInt(n || '0', 10)) : null
+        }
+        const pa = coerce(a)
+        const pb = coerce(b)
+        if (!pa || !pb) return false
+        for (let i = 0; i < 3; i++) {
+          if (pa[i] !== pb[i]) return pa[i] > pb[i]
+        }
+        return false
       },
       updateSliderFromDom () {
         if (!this.$el) {
@@ -505,7 +525,8 @@
 
   &.downloading {
     cursor: not-allowed;
-    color: #e6a23c;
+    /* 下载进度文字跟随主题文字色：浅色黑色、深色白色（由 .theme-dark 覆盖） */
+    color: var(--lc-text-primary, #2c3e50);
     font-weight: bold;
     border-color: #f0c78a;
     background-color: transparent;

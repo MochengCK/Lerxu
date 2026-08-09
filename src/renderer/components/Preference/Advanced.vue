@@ -948,7 +948,9 @@
             const lastCheckUpdateTime = configFromStore['last-check-update-time'] || configFromStore.lastCheckUpdateTime || 0
             const releaseNotes = configFromStore['release-notes'] || configFromStore.releaseNotes || ''
 
-            if (updateAvailable && newVersion) {
+            // 校验残留状态仍有效（newVersion 确实比当前版本新），
+            // 避免用户已手动升级后仍显示过期的"下载新版本"按钮
+            if (updateAvailable && newVersion && this.isVersionNewer(newVersion, this.appVersion)) {
               this.$store.dispatch('preference/updateUpdateAvailable', updateAvailable)
               this.$store.dispatch('preference/updateNewVersion', newVersion)
               this.$store.dispatch('preference/updateLastCheckUpdateTime', lastCheckUpdateTime)
@@ -1064,6 +1066,24 @@
       }
     },
     methods: {
+      // 粗略版本比较（与主进程 stable 渠道的 coerce 语义一致）：
+      // 提取主版本号（忽略 beta 等 pre-release 后缀）后逐段比较。
+      // 用于校验持久化配置中残留的"有新版本"状态是否仍然有效，
+      // 避免用户已手动升级到最新后仍显示过期的下载按钮。
+      isVersionNewer (a, b) {
+        if (!a || !b) return false
+        const coerce = (v) => {
+          const m = String(v).trim().match(/(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
+          return m ? m.slice(1).map(n => parseInt(n || '0', 10)) : null
+        }
+        const pa = coerce(a)
+        const pb = coerce(b)
+        if (!pa || !pb) return false
+        for (let i = 0; i < 3; i++) {
+          if (pa[i] !== pb[i]) return pa[i] > pb[i]
+        }
+        return false
+      },
       measureTextWidth (text, font) {
         try {
           const canvas = this.textMeasureCanvas || (this.textMeasureCanvas = document.createElement('canvas'))
@@ -2005,6 +2025,9 @@
           .then(() => {
             this.formOriginal.updateChannel = channel
             this.$msg.success(this.$t('preferences.save-success-message'))
+            // 渠道已保存到配置，立即用新渠道触发一次新版本检测
+            // （保存成功后再检查，确保主进程 check() 能读到新渠道）
+            this.onCheckUpdateClick()
           })
           .catch(() => {
             this.form.updateChannel = original
@@ -2822,7 +2845,9 @@
   }
 
   &.downloading {
-    color: #409eff;
+    /* 下载进度文字：浅色模式黑色、深色模式白色（跟随主题文字色），
+       不固定为 Element 主题蓝，保证两种模式下可读 */
+    color: var(--lc-text-primary, #303133);
   }
 
   &.downloaded {

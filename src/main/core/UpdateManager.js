@@ -317,6 +317,9 @@ export default class UpdateManager extends EventEmitter {
     this._proxyConfig = null
     this._isInstalling = false
     this._beforeInstallCallback = null
+    // 最近一次 check 失败的错误信息（downloadUpdate 重检时用于区分
+    // "检查失败" 与 "已是最新版本"，避免误导性报错）
+    this._lastCheckError = null
 
     // 存储更新信息
     this._updateInfo = null
@@ -366,19 +369,51 @@ export default class UpdateManager extends EventEmitter {
       if (proxy) {
         const { mode, server, port, username, password } = proxy
         if (mode === 'custom' && server) {
-          let proxyHost = server
-          const proxyPort = port || 80
-          proxyHost = proxyHost.replace(/^https?:\/\//, '')
+          // 完整解析 [http://][USER:PASSWORD@]HOST[:PORT] 格式的代理地址。
+          // 之前只剥掉协议头，未处理 host:port，用户按提示填 127.0.0.1:7890
+          // 时 host 会变成 "127.0.0.1:7890" 且端口恒为 80，导致所有请求失败。
+          let raw = `${server}`.trim()
+          let proxyProtocol = 'http'
+          const protocolMatch = raw.match(/^(https?):\/\//i)
+          if (protocolMatch) {
+            proxyProtocol = protocolMatch[1].toLowerCase()
+            raw = raw.slice(protocolMatch[0].length)
+          }
+          let proxyUsername = username
+          let proxyPassword = password || ''
+          const authMatch = raw.match(/^([^:@/]+):([^@/]*)@/)
+          if (authMatch) {
+            try {
+              proxyUsername = proxyUsername || decodeURIComponent(authMatch[1])
+              proxyPassword = proxyPassword || decodeURIComponent(authMatch[2] || '')
+            } catch (_) {
+              proxyUsername = proxyUsername || authMatch[1]
+              proxyPassword = proxyPassword || authMatch[2] || ''
+            }
+            raw = raw.slice(authMatch[0].length)
+          }
+          let proxyHost = raw
+          let proxyPort = port || (proxyProtocol === 'https' ? 443 : 80)
+          const hostPortMatch = raw.match(/^([^:/]+):(\d+)$/)
+          if (hostPortMatch) {
+            proxyHost = hostPortMatch[1]
+            proxyPort = parseInt(hostPortMatch[2], 10)
+          } else if (raw.includes(':')) {
+            // 无法识别的多余端口/异常片段，取第一个冒号前的主机部分
+            proxyHost = raw.split(':')[0]
+          }
           config.proxy = {
+            protocol: proxyProtocol,
             host: proxyHost,
             port: proxyPort
           }
-          if (username) {
+          if (proxyUsername) {
             config.proxy.auth = {
-              username,
-              password: password || ''
+              username: proxyUsername,
+              password: proxyPassword
             }
           }
+          logger.info(`[LinkCore] Using custom proxy: ${proxyProtocol}://${proxyHost}:${proxyPort}`)
         }
         // system 模式由 axios 自动处理
       }
@@ -440,6 +475,7 @@ export default class UpdateManager extends EventEmitter {
   async check () {
     if (this.isChecking) return
     this.isChecking = true
+    this._lastCheckError = null
     this._notifyWindows('checking-for-update')
     this.emit('checking')
 
@@ -503,90 +539,10 @@ export default class UpdateManager extends EventEmitter {
         return
       }
 
-      // 找到适合当前平台和架构的文件
-      const platform = process.platform // darwin, win32, linux
-      const arch = process.arch // x64, arm64
-
-      logger.info(`[LinkCore] Platform: ${platform}/${arch}, available files: ${info.files.map(f => f.url).join(', ')}`)
-
-      let asset = null
-      if (platform === 'darwin') {
-        // macOS: 优先选择 ZIP（支持静默替换），其次是 DMG
-        const allMacFiles = info.files.filter(f => {
-          const name = (f.url || '').toLowerCase()
-          return name.endsWith('.dmg') || name.endsWith('-mac.zip') || name.endsWith('.zip') || name.includes('darwin') || name.includes('mac')
-        })
-
-        // 优先找 ZIP 文件（静默安装），按架构匹配
-        const zipFiles = allMacFiles.filter(f => {
-          const name = (f.url || '').toLowerCase()
-          return name.endsWith('-mac.zip') || name.endsWith('.zip')
-        })
-        const dmgFiles = allMacFiles.filter(f => (f.url || '').toLowerCase().endsWith('.dmg'))
-
-        // 按架构匹配函数
-        const matchArch = (files, targetArch) => {
-          return files.find(f => {
-            const name = (f.url || '').toLowerCase()
-            if (targetArch === 'arm64') return name.includes('arm64') || name.includes('aarch64')
-            if (targetArch === 'x64') return name.includes('x64') || name.includes('amd64') || (!name.includes('arm64') && !name.includes('aarch64'))
-            return false
-          })
-        }
-
-        // 优先使用 ZIP（静默安装）
-        asset = matchArch(zipFiles, arch)
-        if (!asset && zipFiles.length > 0) {
-          asset = zipFiles[0]
-          logger.warn(`[LinkCore] No ${arch} ZIP found, falling back to first ZIP: ${asset.url}`)
-        }
-
-        // 如果没有 ZIP，再尝试 DMG
-        if (!asset) {
-          asset = matchArch(dmgFiles, arch)
-          if (!asset && dmgFiles.length > 0) {
-            asset = dmgFiles[0]
-            logger.warn(`[LinkCore] No ${arch} DMG found, falling back to first DMG: ${asset.url}`)
-          }
-        }
-
-        // 最后回退到任意 macOS 文件
-        if (!asset && allMacFiles.length > 0) {
-          asset = allMacFiles[0]
-          logger.warn(`[LinkCore] No matching mac file found, falling back to: ${asset.url}`)
-        }
-      } else if (platform === 'win32') {
-        asset = info.files.find(f => (f.url || '').toLowerCase().endsWith('.exe'))
-      } else if (platform === 'linux') {
-        asset = info.files.find(f => (f.url || '').toLowerCase().endsWith('.appimage'))
+      // 找到适合当前平台和架构的文件，并设置下载信息
+      if (!this._applyUpdateInfo(info)) {
+        throw new Error(`No matching file found for ${process.platform}/${process.arch} in release v${info.version}`)
       }
-
-      if (!asset) {
-        const errMsg = `No matching file found for ${platform}/${arch} in release v${info.version}`
-        logger.warn(`[LinkCore] ${errMsg}. Files: ${info.files.map(f => f.url).join(', ')}`)
-        throw new Error(errMsg)
-      }
-
-      // YML 中的文件 URL 是相对路径，需要构建为完整的 GitHub 下载 URL
-      const filename = asset.url
-      const downloadBase = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${info.version}`
-      const fullDownloadUrl = filename.startsWith('http') ? filename : `${downloadBase}/${filename}`
-
-      // 检测文件类型
-      const fn = filename.toLowerCase()
-      let fileType = null
-      if (fn.endsWith('.dmg')) fileType = 'dmg'
-      else if (fn.endsWith('.exe')) fileType = 'exe'
-      else if (fn.endsWith('.appimage')) fileType = 'appimage'
-      else if (fn.endsWith('-mac.zip') || fn.endsWith('.zip')) fileType = 'zip'
-
-      this._updateInfo = info
-      this._downloadUrl = fullDownloadUrl
-      this._downloadSha512 = asset.sha512 || info.sha512 || ''
-      this._downloadSize = asset.size || 0
-      this._downloadedFileType = fileType
-
-      logger.info(`[LinkCore] Update available: ${info.version} (current: ${CURRENT_VERSION}), selected: ${filename}`)
 
       // 获取发行说明（latest.yml 中不包含，需从 GitHub API 获取）
       let releaseNotes = info.releaseNotes || ''
@@ -602,6 +558,7 @@ export default class UpdateManager extends EventEmitter {
     } catch (err) {
       this.isChecking = false
       const errMsg = err?.message || `${err}`
+      this._lastCheckError = errMsg
       logger.warn(`[LinkCore] Check failed: ${errMsg}`)
       this._notifyWindows('update-error', errMsg)
       this.emit('update-error', err)
@@ -610,21 +567,126 @@ export default class UpdateManager extends EventEmitter {
 
   // ===== 下载更新 =====
 
+  /**
+   * 根据 update info 选择当前平台/架构的安装包并设置下载状态。
+   * 供 check()（新检查到更新）与 _restoreUpdateInfoFromConfig()（重启后恢复）复用。
+   * @returns {boolean} true 表示已就绪；false 表示没有匹配当前平台的文件
+   */
+  _applyUpdateInfo (info) {
+    const platform = process.platform // darwin, win32, linux
+    const arch = process.arch // x64, arm64
+
+    logger.info(`[LinkCore] Platform: ${platform}/${arch}, available files: ${info.files.map(f => f.url).join(', ')}`)
+
+    let asset = null
+    if (platform === 'darwin') {
+      // macOS: 优先选择 ZIP（支持静默替换），其次是 DMG
+      const allMacFiles = info.files.filter(f => {
+        const name = (f.url || '').toLowerCase()
+        return name.endsWith('.dmg') || name.endsWith('-mac.zip') || name.endsWith('.zip') || name.includes('darwin') || name.includes('mac')
+      })
+
+      // 优先找 ZIP 文件（静默安装），按架构匹配
+      const zipFiles = allMacFiles.filter(f => {
+        const name = (f.url || '').toLowerCase()
+        return name.endsWith('-mac.zip') || name.endsWith('.zip')
+      })
+      const dmgFiles = allMacFiles.filter(f => (f.url || '').toLowerCase().endsWith('.dmg'))
+
+      // 按架构匹配函数
+      const matchArch = (files, targetArch) => {
+        return files.find(f => {
+          const name = (f.url || '').toLowerCase()
+          if (targetArch === 'arm64') return name.includes('arm64') || name.includes('aarch64')
+          if (targetArch === 'x64') return name.includes('x64') || name.includes('amd64') || (!name.includes('arm64') && !name.includes('aarch64'))
+          return false
+        })
+      }
+
+      // 优先使用 ZIP（静默安装）
+      asset = matchArch(zipFiles, arch)
+      if (!asset && zipFiles.length > 0) {
+        asset = zipFiles[0]
+        logger.warn(`[LinkCore] No ${arch} ZIP found, falling back to first ZIP: ${asset.url}`)
+      }
+
+      // 如果没有 ZIP，再尝试 DMG
+      if (!asset) {
+        asset = matchArch(dmgFiles, arch)
+        if (!asset && dmgFiles.length > 0) {
+          asset = dmgFiles[0]
+          logger.warn(`[LinkCore] No ${arch} DMG found, falling back to first DMG: ${asset.url}`)
+        }
+      }
+
+      // 最后回退到任意 macOS 文件
+      if (!asset && allMacFiles.length > 0) {
+        asset = allMacFiles[0]
+        logger.warn(`[LinkCore] No matching mac file found, falling back to: ${asset.url}`)
+      }
+    } else if (platform === 'win32') {
+      asset = info.files.find(f => (f.url || '').toLowerCase().endsWith('.exe'))
+    } else if (platform === 'linux') {
+      asset = info.files.find(f => (f.url || '').toLowerCase().endsWith('.appimage'))
+    }
+
+    if (!asset) {
+      logger.warn(`[LinkCore] No matching file found for ${platform}/${arch} in release v${info.version}. Files: ${info.files.map(f => f.url).join(', ')}`)
+      return false
+    }
+
+    // YML 中的文件 URL 是相对路径，需要构建为完整的 GitHub 下载 URL
+    const filename = asset.url
+    const downloadBase = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/download/v${info.version}`
+    const fullDownloadUrl = filename.startsWith('http') ? filename : `${downloadBase}/${filename}`
+
+    // 检测文件类型
+    const fn = filename.toLowerCase()
+    let fileType = null
+    if (fn.endsWith('.dmg')) fileType = 'dmg'
+    else if (fn.endsWith('.exe')) fileType = 'exe'
+    else if (fn.endsWith('.appimage')) fileType = 'appimage'
+    else if (fn.endsWith('-mac.zip') || fn.endsWith('.zip')) fileType = 'zip'
+
+    this._updateInfo = info
+    this._downloadUrl = fullDownloadUrl
+    this._downloadSha512 = asset.sha512 || info.sha512 || ''
+    this._downloadSize = asset.size || 0
+    this._downloadedFileType = fileType
+
+    logger.info(`[LinkCore] Update available: ${info.version} (current: ${CURRENT_VERSION}), selected: ${filename}`)
+    return true
+  }
+
   async downloadUpdate () {
     if (this.isDownloading) return
 
     if (!this._downloadUrl || !this._updateInfo) {
-      logger.info('[LinkCore] No update info in memory, re-checking for updates before download...')
-      this.autoCheckData.userCheck = true
-      try {
-        await this.check()
-      } catch (err) {
-        this._notifyWindows('update-error', 'Failed to check for updates: ' + err.message)
-        return
-      }
-      if (!this._downloadUrl || !this._updateInfo) {
-        this._notifyWindows('update-error', 'No update info available, please check for updates first')
-        return
+      // 应用重启后内存中的 update info 会丢失，但前端"下载新版本"按钮
+      // 是从持久化配置恢复的。先尝试从配置直接恢复，避免重新联网检查；
+      // 恢复失败再重新检查。
+      if (!this._restoreUpdateInfoFromConfig()) {
+        logger.info('[LinkCore] No persisted update info, re-checking for updates before download...')
+        this.autoCheckData.userCheck = true
+        try {
+          await this.check()
+        } catch (err) {
+          this._notifyWindows('update-error', 'Failed to check for updates: ' + err.message)
+          return
+        }
+        if (!this._downloadUrl || !this._updateInfo) {
+          // check() 失败时已在内部发过 update-error（含真实原因），这里补发
+          // 一条驱动 downloadUpdate 的前端监听器收尾（清理"下载中"状态）。
+          // 若 check 成功但无新版本（_lastCheckError 为空），提示已是最新，
+          // 并同步发 update-not-available 让前端清除过期的"下载新版本"按钮。
+          if (!this._lastCheckError) {
+            this._notifyWindows('update-not-available')
+            this.emit('update-not-available')
+          }
+          const msg = this._lastCheckError || 'You are already on the latest version'
+          this._notifyWindows('update-error', msg)
+          return
+        }
       }
     }
 
@@ -1107,12 +1169,62 @@ export default class UpdateManager extends EventEmitter {
   _saveCheckResult (available, version, releaseNotes) {
     if (global.application?.configManager) {
       // 合并为一次对象写入，避免逐 key set 导致整个 user.json 被重写 4 次
-      global.application.configManager.setUserConfig({
+      const payload = {
         'update-available': available,
         'new-version': version || '',
         'last-check-update-time': Date.now(),
         'release-notes': available && releaseNotes ? releaseNotes : ''
-      })
+      }
+      if (available && this._updateInfo) {
+        // 持久化完整更新信息，供应用重启后直接恢复下载（无需重新联网检查）
+        payload['update-info'] = {
+          version: this._updateInfo.version,
+          path: this._updateInfo.path || '',
+          sha512: this._updateInfo.sha512 || '',
+          releaseDate: this._updateInfo.releaseDate || '',
+          files: (this._updateInfo.files || []).map(f => ({
+            url: f.url || '',
+            sha512: f.sha512 || '',
+            size: f.size || 0
+          }))
+        }
+      } else {
+        // undefined 触发 setUserConfig 删除该 key，避免残留过期更新信息
+        payload['update-info'] = undefined
+      }
+      global.application.configManager.setUserConfig(payload)
+    }
+  }
+
+  /**
+   * 从持久化配置恢复上次检查到的更新信息（应用重启后内存状态丢失时用）。
+   * @returns {boolean} 是否恢复成功
+   */
+  _restoreUpdateInfoFromConfig () {
+    try {
+      const cfg = global.application?.configManager
+      if (!cfg || typeof cfg.getUserConfig !== 'function') return false
+      const saved = cfg.getUserConfig('update-info')
+      if (!saved || !saved.version || !Array.isArray(saved.files) || saved.files.length === 0) {
+        return false
+      }
+      const info = {
+        version: saved.version,
+        path: saved.path || '',
+        sha512: saved.sha512 || '',
+        releaseDate: saved.releaseDate || '',
+        releaseNotes: '',
+        files: saved.files.map(f => ({
+          url: f.url || '',
+          sha512: f.sha512 || '',
+          size: f.size || 0
+        }))
+      }
+      logger.info(`[LinkCore] Restored update info from config: v${info.version}`)
+      return this._applyUpdateInfo(info)
+    } catch (err) {
+      logger.warn(`[LinkCore] Failed to restore update info from config: ${err.message}`)
+      return false
     }
   }
 
