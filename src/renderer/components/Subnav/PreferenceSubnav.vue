@@ -207,11 +207,13 @@
           })
         },
         // 监听下载完成事件
+        // 只同步状态，不弹"下载完成"消息：同一事件会同时触发本页面级监听
+        // 与下载流程的临时监听（还有 Advanced 页面级监听），重复提示；
+        // 统一由下载发起方的临时监听弹一条。
         'update-downloaded': () => {
           this.updateIsDownloadingUpdate(false)
           this.updateUpdateDownloaded(true)
           this.updateUpdateAvailable(false)
-          this.showMessage('success', this.$t('app.update-download-complete-subnav'))
         },
         // 监听下载取消事件
         'update-cancelled': () => {

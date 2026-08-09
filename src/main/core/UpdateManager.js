@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { pipeline } from 'node:stream'
 import { promisify } from 'node:util'
 import { exec } from 'node:child_process'
-import { app } from 'electron'
+import { app, session } from 'electron'
 import axios from 'axios'
 import yaml from 'js-yaml'
 import semver from 'semver'
@@ -188,22 +188,6 @@ async function fetchReleaseNotes (version, axiosConfig = {}, preferExactTag = fa
 }
 
 /**
- * 根据原始 URL 构建镜像 URL 列表
- */
-function buildMirrorUrls (originalUrl) {
-  // 从原始 URL 提取 GitHub 路径
-  const match = originalUrl.match(/github\.com\/(.+)/)
-  const ghPath = match ? match[1] : ''
-  if (!ghPath) return [originalUrl]
-
-  const urls = [originalUrl]
-  for (const host of MIRROR_HOSTS) {
-    urls.push(`https://${host}/https://github.com/${ghPath}`)
-  }
-  return urls
-}
-
-/**
  * 尝试从多个 URL 获取内容，返回最先成功的
  */
 async function fetchFromMirrors (urls, axiosConfig = {}) {
@@ -277,15 +261,25 @@ function isNewerVersion (latest, current) {
  * 保留 pre-release 语义的版本比较（beta/all 渠道用）。
  * coerce 会把 3.0.1-beta.1 折叠成 3.0.1，无法区分 beta 与正式版；
  * 这里用完整 semver（clean 仅去除 v 前缀/空白）。
+ * 注意：GitHub tag 大小写敏感（v3.0.1-Beta），yml version 可能与
+ * package.json 版本大小写不一致，比较前统一小写避免误判。
  */
 function isNewerVersionFull (latest, current) {
   try {
-    const l = semver.clean(latest) || '0.0.0'
-    const c = semver.clean(current) || '0.0.0'
+    const l = (semver.clean(latest) || '0.0.0').toLowerCase()
+    const c = (semver.clean(current) || '0.0.0').toLowerCase()
     return semver.gt(l, c)
   } catch {
     return latest !== current
   }
+}
+
+/**
+ * 判断版本号是否带 pre-release 标识（beta/alpha/rc/pre/test/nightly 等）。
+ * stable 渠道用它硬性排除预发布版本，保证稳定版渠道只提示正式版。
+ */
+function isPrereleaseVersion (version) {
+  return /[-.](beta|alpha|rc|pre|test|nightly)[.-]?\d*$/i.test(String(version || ''))
 }
 
 /**
@@ -304,6 +298,29 @@ function verifySha512 (filePath, expectedSha512) {
   })
 }
 
+/**
+ * 解析 Electron session.resolveProxy() 的返回值，如
+ * "PROXY 127.0.0.1:7890;DIRECT" / "HTTPS proxy.example.com:443" /
+ * "SOCKS5 127.0.0.1:1080" / "DIRECT"。
+ * 返回 { protocol, host, port }；无可用代理（DIRECT/未知）返回 null。
+ */
+function parseProxyString (proxyString) {
+  if (!proxyString || typeof proxyString !== 'string') return null
+  const parts = String(proxyString).split(';')
+  for (const part of parts) {
+    const m = part.trim().match(/^(PROXY|HTTPS|SOCKS4|SOCKS5)\s+([^:\s]+):(\d+)$/i)
+    if (!m) continue
+    const type = m[1].toLowerCase()
+    return {
+      // axios 的 proxy.protocol 支持 http/https/socks4/socks5
+      protocol: type === 'proxy' ? 'http' : type,
+      host: m[2],
+      port: parseInt(m[3], 10)
+    }
+  }
+  return null
+}
+
 export default class UpdateManager extends EventEmitter {
   constructor (options = {}) {
     super()
@@ -315,6 +332,8 @@ export default class UpdateManager extends EventEmitter {
     this._cancelSource = null
     this._currentProgress = null
     this._proxyConfig = null
+    // 系统代理（mode: system）解析结果缓存，由 _refreshSystemProxy() 更新
+    this._systemProxy = null
     this._isInstalling = false
     this._beforeInstallCallback = null
     // 最近一次 check 失败的错误信息（downloadUpdate 重检时用于区分
@@ -414,12 +433,93 @@ export default class UpdateManager extends EventEmitter {
             }
           }
           logger.info(`[LinkCore] Using custom proxy: ${proxyProtocol}://${proxyHost}:${proxyPort}`)
+        } else if (mode === 'system') {
+          // 系统代理：axios 不会自动读取 macOS/Windows 系统偏好设置里的
+          // 代理，必须用 Electron session.resolveProxy() 解析后显式设置。
+          // 开启系统代理时应优先走系统代理，而不是直连。
+          if (this._systemProxy) {
+            if (this._systemProxy.protocol.startsWith('socks')) {
+              // axios 1.x 不支持 socks protocol，需 socks-proxy-agent 自定义 agent
+              try {
+                const SocksProxyAgent = require('socks-proxy-agent').SocksProxyAgent
+                const agent = new SocksProxyAgent(`socks${this._systemProxy.protocol === 'socks4' ? '4' : '5'}://${this._systemProxy.host}:${this._systemProxy.port}`)
+                config.httpAgent = agent
+                config.httpsAgent = agent
+                logger.info(`[LinkCore] Using system SOCKS proxy: ${this._systemProxy.protocol}://${this._systemProxy.host}:${this._systemProxy.port}`)
+              } catch (e) {
+                logger.warn(`[LinkCore] socks-proxy-agent unavailable, system SOCKS proxy skipped: ${e.message}`)
+              }
+            } else {
+              config.proxy = {
+                protocol: this._systemProxy.protocol,
+                host: this._systemProxy.host,
+                port: this._systemProxy.port
+              }
+              logger.info(`[LinkCore] Using system proxy: ${this._systemProxy.protocol}://${this._systemProxy.host}:${this._systemProxy.port}`)
+            }
+          } else {
+            logger.warn('[LinkCore] System proxy not resolved, requests will go direct')
+          }
+        } else if (mode === 'none') {
+          // 显式禁用代理：axios 1.x 默认会读取 HTTP_PROXY/HTTPS_PROXY
+          // 环境变量（代理软件常设置），用户选择"不使用代理"时应强制直连
+          config.proxy = false
         }
-        // system 模式由 axios 自动处理
       }
     } catch (_) {}
 
     return config
+  }
+
+  /**
+   * 解析系统代理（mode: system）并缓存，供 _getAxiosConfig 使用。
+   * 用 Electron session.resolveProxy()（跨平台读取系统代理配置），
+   * 仅当配置的代理模式为 system 时生效。
+   */
+  async _refreshSystemProxy () {
+    try {
+      let proxy = this._proxyConfig
+      if (!proxy) {
+        const cfg = global.application?.configManager
+        if (cfg) {
+          proxy = cfg.getUserConfig('proxy')
+        }
+      }
+      this._systemProxy = null
+      if (!proxy || proxy.mode !== 'system') return
+      const ses = session.defaultSession
+      if (!ses || typeof ses.resolveProxy !== 'function') return
+      const result = await ses.resolveProxy('https://github.com/')
+      this._systemProxy = parseProxyString(result)
+      if (this._systemProxy) {
+        logger.info(`[LinkCore] System proxy resolved: ${result}`)
+      } else {
+        logger.info(`[LinkCore] System proxy resolved as DIRECT/unsupported: ${result}`)
+      }
+    } catch (err) {
+      logger.warn(`[LinkCore] Failed to resolve system proxy: ${err.message}`)
+      this._systemProxy = null
+    }
+  }
+
+  /**
+   * 系统代理是否已解析且当前代理模式为 system。
+   * 用于决定下载 URL 顺序：系统代理生效时 GitHub 直连（走代理）最优先。
+   */
+  _isSystemProxyActive () {
+    if (!this._systemProxy) return false
+    try {
+      let proxy = this._proxyConfig
+      if (!proxy) {
+        const cfg = global.application?.configManager
+        if (cfg) {
+          proxy = cfg.getUserConfig('proxy')
+        }
+      }
+      return !!(proxy && proxy.mode === 'system')
+    } catch (_) {
+      return false
+    }
   }
 
   setAutoCheckEnabled (enabled) {
@@ -474,6 +574,8 @@ export default class UpdateManager extends EventEmitter {
 
   async check () {
     if (this.isChecking) return
+    // 每次检查前刷新系统代理（用户可能随时切换代理模式/代理软件）
+    await this._refreshSystemProxy()
     this.isChecking = true
     this._lastCheckError = null
     this._notifyWindows('checking-for-update')
@@ -499,20 +601,30 @@ export default class UpdateManager extends EventEmitter {
 
       let urls
       let channelPrerelease = false
-      if (channel === 'beta' || channel === 'all') {
-        // beta/all 渠道：先从 Releases API 挑目标 release（GitHub 的
-        // prerelease 标志即官方 Beta 标识），再下载对应 tag 的 latest.yml。
-        try {
-          const releases = await fetchReleaseList(axiosConfig)
+      try {
+        const releases = await fetchReleaseList(axiosConfig)
+        if (channel === 'beta' || channel === 'all') {
+          // beta/all 渠道：先从 Releases API 挑目标 release（GitHub 的
+          // prerelease 标志即官方 Beta 标识），再下载对应 tag 的 latest.yml。
           const pick = pickReleaseByChannel(releases, channel)
           if (pick && pick.tagName) {
             urls = buildTaggedYmlUrls(pick.tagName)
             channelPrerelease = !!pick.prerelease
             logger.info(`[LinkCore] Update channel "${channel}" targeting ${pick.tagName} (prerelease=${pick.prerelease})`)
           }
-        } catch (err) {
-          logger.warn(`[LinkCore] Channel "${channel}" release lookup failed, falling back to stable: ${err.message}`)
+        } else if (channel === 'stable') {
+          // stable 渠道：显式挑选最新正式版（非 pre-release、非草稿），
+          // 与 releases/latest 语义一致；即使 releases/latest 或镜像
+          // 返回了 pre-release 的 yml 也不会被选中。
+          const stableReleases = (releases || []).filter(r => !r.prerelease && !r.draft)
+          const pick = pickReleaseByChannel(stableReleases, 'stable')
+          if (pick && pick.tagName) {
+            urls = buildTaggedYmlUrls(pick.tagName)
+            logger.info(`[LinkCore] Update channel "stable" targeting ${pick.tagName}`)
+          }
         }
+      } catch (err) {
+        logger.warn(`[LinkCore] Channel "${channel}" release lookup failed, falling back to default URLs: ${err.message}`)
       }
       if (!urls) {
         urls = buildLatestYmlUrls()
@@ -523,6 +635,19 @@ export default class UpdateManager extends EventEmitter {
       if (info.version && info.version.toLowerCase().includes('beta') && !channelPrerelease) {
         // 兜底：即使 tag 选择偏差，也记录真实类型供前端展示
         channelPrerelease = true
+      }
+
+      // stable 渠道硬性排除 pre-release：无论 yml 来自哪条 URL
+      // （releases/latest 异常、镜像缓存错乱、tag 大小写偏差），
+      // 只要版本号带 pre-release 标识就不提示更新，
+      // 保证稳定版渠道永远只看到正式版。
+      if (channel === 'stable' && isPrereleaseVersion(info.version)) {
+        logger.info(`[LinkCore] Stable channel ignored pre-release yml version: ${info.version}`)
+        this.isChecking = false
+        this._notifyWindows('update-not-available')
+        this.emit('update-not-available', info)
+        this._saveCheckResult(false, '')
+        return
       }
 
       // 版本比较：stable 用 coerce（兼容旧行为）；beta/all 用完整 semver，
@@ -658,8 +783,60 @@ export default class UpdateManager extends EventEmitter {
     return true
   }
 
+  /**
+   * 构建下载 URL 列表（按可用性排序）：
+   * 1. 系统代理生效时：GitHub 直连（走系统代理）最直接，排最前
+   * 2. 用户配置的 GitHub 镜像（设置页镜像列表）
+   * 3. 内置镜像列表
+   * 4. GitHub 直连兜底（无系统代理时）
+   */
+  _buildDownloadUrls () {
+    const originalUrl = this._downloadUrl || ''
+    const match = originalUrl.match(/github\.com\/(.+)/)
+    const ghPath = match ? match[1] : ''
+    if (!ghPath) {
+      return [originalUrl].filter(Boolean)
+    }
+
+    const useSystemProxy = this._isSystemProxyActive()
+    const urls = []
+    // 系统代理生效时：直连走代理，比镜像更快更稳
+    if (useSystemProxy) {
+      urls.push(originalUrl)
+    }
+    // 用户配置的镜像（Advanced 设置页 GitHub 镜像列表，host 格式如 ghproxy.net）
+    try {
+      const cfg = global.application?.configManager
+      if (cfg && typeof cfg.getUserConfig === 'function') {
+        const userMirrors = cfg.getUserConfig('github-mirror-urls') || cfg.getUserConfig('githubMirrorUrls') || []
+        if (Array.isArray(userMirrors)) {
+          for (const host of userMirrors) {
+            if (host && typeof host === 'string') {
+              const cleanHost = host.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+              if (cleanHost) {
+                urls.push(`https://${cleanHost}/https://github.com/${ghPath}`)
+              }
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    // 内置镜像
+    for (const host of MIRROR_HOSTS) {
+      urls.push(`https://${host}/https://github.com/${ghPath}`)
+    }
+    // 直连兜底（无系统代理时）
+    if (!useSystemProxy) {
+      urls.push(originalUrl)
+    }
+    // 去重
+    return urls.filter((v, i) => urls.indexOf(v) === i)
+  }
+
   async downloadUpdate () {
     if (this.isDownloading) return
+    // 下载前刷新系统代理，保证走最新的系统代理配置
+    await this._refreshSystemProxy()
 
     if (!this._downloadUrl || !this._updateInfo) {
       // 应用重启后内存中的 update info 会丢失，但前端"下载新版本"按钮
@@ -696,9 +873,12 @@ export default class UpdateManager extends EventEmitter {
     this.emit('download-start')
     this._notifyWindows('download-start')
 
-    const urls = buildMirrorUrls(this._downloadUrl)
+    const urls = this._buildDownloadUrls()
     const downloadAxiosConfig = this._getAxiosConfig({
-      timeout: 300000, // 5 分钟超时
+      // 60 秒无数据超时（axios 的 timeout 是 socket 空闲超时，
+      // 大文件持续有数据不会触发；无速度时能尽快切换下一个源，
+      // 避免原 5 分钟超时导致用户长时间"无速度"）
+      timeout: 60000,
       responseType: 'stream'
     })
 
@@ -719,16 +899,24 @@ export default class UpdateManager extends EventEmitter {
           try { unlinkSync(tmpFile) } catch (_) {}
         }
 
+        // 取消上一个请求的 CancelToken（若有残留）。
+        // 注意：axios 1.x 的 `new CancelToken(executor)` 传给 executor 的
+        // 参数是 cancel 函数本身（无 .cancel 属性），之前直接存 executor
+        // 参数导致后续 `_cancelSource.cancel()` 抛
+        // "cancel is not a function" —— 所有镜像 URL 被这个 bug 误杀。
+        // 改用 CancelToken.source() 获取标准 { token, cancel } 结构。
         if (this._cancelSource) {
-          this._cancelSource.cancel('Download canceled')
+          try {
+            this._cancelSource.cancel('Download canceled')
+          } catch (_) {}
+          this._cancelSource = null
         }
-        const cancelToken = new axios.CancelToken(source => {
-          this._cancelSource = source
-        })
+        const cancelSource = axios.CancelToken.source()
+        this._cancelSource = cancelSource
 
         const { data: stream, headers } = await axios.get(url, {
           ...downloadAxiosConfig,
-          cancelToken,
+          cancelToken: cancelSource.token,
           // 不使用压缩传输，确保 content-length 是实际文件大小
           headers: {
             ...(downloadAxiosConfig.headers || {}),
@@ -854,7 +1042,9 @@ export default class UpdateManager extends EventEmitter {
   cancelDownload () {
     this._downloadAborted = true
     if (this._cancelSource) {
-      this._cancelSource.cancel('User canceled')
+      try {
+        this._cancelSource.cancel('User canceled')
+      } catch (_) {}
       this._cancelSource = null
     }
   }

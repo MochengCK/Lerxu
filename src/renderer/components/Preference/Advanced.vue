@@ -1014,7 +1014,8 @@
           this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
           this.$store.dispatch('preference/updateUpdateDownloaded', true)
           this.$store.dispatch('preference/updateUpdateAvailable', false)
-          this.showMessage('success', this.$t('app.update-download-complete-click-restart'))
+          // 不在此弹"下载完成"消息：同一事件会同时触发页面级与下载流程
+          // 的临时监听，重复提示；统一由下载发起方的临时监听弹一条
         },
         onUpdateError: () => {
           this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
@@ -1644,7 +1645,7 @@
         }
 
         // 设置检查状态
-        this.updateCheckingUpdate(true)
+        this.$store.dispatch('app/updateCheckingUpdate', true)
 
         // 显示检查中消息
         this.$msg.info(this.$t('app.checking-for-updates'))
@@ -1653,12 +1654,12 @@
         const onUpdateError = (_event, errMsg) => {
           const msg = errMsg || this.$t('app.update-error-message')
           this.$msg.error(msg)
-          this.updateCheckingUpdate(false)
+          this.$store.dispatch('app/updateCheckingUpdate', false)
         }
 
         const onUpdateNotAvailable = () => {
           this.$msg.success(this.$t('app.update-not-available-message'))
-          this.updateCheckingUpdate(false)
+          this.$store.dispatch('app/updateCheckingUpdate', false)
           this.$store.dispatch('preference/updateUpdateAvailable', false)
           this.$store.dispatch('preference/updateNewVersion', '')
           this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
@@ -1666,7 +1667,7 @@
 
         const onUpdateAvailable = (event, version, releaseNotes) => {
           this.$msg.info(this.$t('app.update-available-message'))
-          this.updateCheckingUpdate(false)
+          this.$store.dispatch('app/updateCheckingUpdate', false)
           this.$store.dispatch('preference/updateUpdateAvailable', true)
           this.$store.dispatch('preference/updateNewVersion', version)
           this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
@@ -1688,7 +1689,7 @@
 
           // 显示超时消息
           this.$msg.error(this.$t('app.update-timeout-message') || '更新检查超时，请稍后重试')
-          this.updateCheckingUpdate(false)
+          this.$store.dispatch('app/updateCheckingUpdate', false)
         }, 30000) // 30秒超时（含镜像回退时间）
 
         // 监听任何更新事件，清除超时
@@ -2019,23 +2020,30 @@
       onUpdateChannelChange (channel) {
         this.form.updateChannel = channel
         // 立即保存（不走 800ms 防抖：防抖期间关闭窗口会导致保存请求
-        // 未发出，重开窗口回退为初始渠道）。失败立即回弹并报错可见。
+        // 未发出，重开窗口回退为初始渠道）。注意：savePreference 经
+        // ipcRenderer.send 是 fire-and-forget（无返回结果），dispatch 的
+        // .then/.catch 与主进程保存是否成功无关——这里乐观更新表单，
+        // 不依赖虚假的 Promise 状态，避免检查逻辑异常被误报为"保存失败"。
         const original = this.formOriginal.updateChannel
-        this.$store.dispatch('preference/save', { updateChannel: channel })
-          .then(() => {
-            this.formOriginal.updateChannel = channel
-            this.$msg.success(this.$t('preferences.save-success-message'))
-            // 渠道已保存到配置，立即用新渠道触发一次新版本检测
-            // （保存成功后再检查，确保主进程 check() 能读到新渠道）
+        try {
+          this.$store.dispatch('preference/save', { updateChannel: channel })
+          this.formOriginal.updateChannel = channel
+          // 清除之前的更新状态，以便下次检查使用新渠道
+          this.$store.dispatch('preference/updateUpdateAvailable', false)
+          this.$store.dispatch('preference/updateNewVersion', '')
+          // 渠道已提交到主进程（IPC 消息有序，check 必然在其后处理），
+          // 立即用新渠道触发一次新版本检测
+          try {
             this.onCheckUpdateClick()
-          })
-          .catch(() => {
-            this.form.updateChannel = original
-            this.$msg.error(this.$t('preferences.save-fail-message'))
-          })
-        // 清除之前的更新状态，以便下次检查使用新渠道
-        this.$store.dispatch('preference/updateUpdateAvailable', false)
-        this.$store.dispatch('preference/updateNewVersion', '')
+          } catch (checkErr) {
+            // 检查流程异常不影响渠道切换本身
+            console.error('[LinkCore] Trigger update check after channel switch failed:', checkErr)
+          }
+        } catch (e) {
+          console.error('[LinkCore] Save update channel failed:', e)
+          this.form.updateChannel = original
+          this.$msg.error(this.$t('preferences.save-fail-message'))
+        }
       },
       onProxyServerChange (server) {
         this.form.proxy = {
@@ -2806,11 +2814,16 @@
 
 .auto-update-footer {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   padding-top: 12px;
-  gap: 6px;
+  gap: 8px;
+
+  /* "预览更新"与"上次检测更新时间"并排，大小一致 */
+  .action-link {
+    font-size: 12px;
+  }
 
   .auto-update-time {
     font-size: 12px;
