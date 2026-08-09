@@ -58,7 +58,18 @@ const SESSION_TOKEN_KEY = 'linkcoreSessionToken'
 const TOKEN_VERSION_KEY = 'linkcoreTokenVersion'
 // 回退到浏览器下载的 URL 集合，防止接管循环（取消→重新下载→取消→...）
 // 使用 Map 记录时间戳，定期清理过期条目
+// 注意:命中后不再立即 delete——回退窗口期内(10s)所有匹配下载项一律放行,
+// 因为一次回退可能并行产生多个下载项(download-interceptor 的 fallbackLink.click()
+// 与 background 的 downloadViaBrowser 同时触发),若一次性消费,其余下载项仍会被
+// 接管→再次发送→再次失败→再次回退,形成发送循环。由下方定时器统一清理。
 const fallbackBrowserUrls = new Map()
+// 最近被扩展尝试接管/发送过的 URL 集合(15s 窗口)。
+// 与 fallbackBrowserUrls 的区别:fallback 只保护"本次主动回退"产生的下载项;
+// recentTakeoverUrls 保护"最近 N 秒内被扩展处理过"的所有同名 URL 下载项——
+// 即使回退下载项因 URL 重定向变化、并行创建等原因没有命中 fallback 标记,
+// 只要该 URL 最近被扩展处理过,浏览器下载项也一律放行,从根上切断
+// "接管→发送失败→回退→再次接管→再次发送"的无限循环。
+const recentTakeoverUrls = new Map()
 // 缓存 autoHijackOverride 状态，避免 onCreated 中的异步 storage 读取延迟
 // 同步读取是让 cancel 在下载项出现前立即执行的关键
 let cachedAutoHijackDisabled = false
@@ -101,6 +112,14 @@ setInterval(() => {
   for (const [url, ts] of fallbackBrowserUrls) {
     if (now - ts > 10000) {
       fallbackBrowserUrls.delete(url)
+    }
+  }
+}, 10000)
+setInterval(() => {
+  const now = Date.now()
+  for (const [url, ts] of recentTakeoverUrls) {
+    if (now - ts > 15000) {
+      recentTakeoverUrls.delete(url)
     }
   }
 }, 10000)
@@ -439,11 +458,11 @@ const httpChannelRequest = async (type, params, timeout) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params)
         }
-        let ok = await tryChannel('/linkcore/add', reqOptions, timeout)
-        if (!ok) {
-          await new Promise(r => setTimeout(r, 150))
-          ok = await tryChannel('/linkcore/add', reqOptions, timeout + 500)
-        }
+        // add 是非幂等操作(创建任务):不做"失败后 150ms 盲重发"——
+        // 服务器可能已处理任务但响应慢/丢包,盲重发会产生重复任务。
+        // 改为延长单次超时 + singleHost(只试一个 host),宁缺毋滥,
+        // 失败由调用方(addUriFromContent/executeTakeover)走回退流程。
+        const ok = await tryChannel('/linkcore/add', { ...reqOptions, singleHost: true }, Math.max(timeout, 3000))
         if (!ok) return { ok: false }
         const data = await ok.resp.json().catch(() => ({}))
         return { ok: !!(data && data.ok), data }
@@ -569,8 +588,13 @@ const tryChannel = async (path, options = {}, timeout = 1000, allowRetry = true)
   }
 
   // 优先使用缓存的 host，失败后再尝试全部
+  // singleHost 模式(add 等非幂等操作专用):只试一个 host,避免同一请求
+  // 先后发往 127.0.0.1 与 localhost 造成重复提交;两个地址本就指向本机同一进程,
+  // 第一个不通时第二个几乎必然不通,单 host 的容错损失可忽略
   const allHosts = ['127.0.0.1', 'localhost']
-  const hosts = cachedHost ? [cachedHost, ...allHosts.filter(h => h !== cachedHost)] : allHosts
+  const hosts = options.singleHost
+    ? [cachedHost || '127.0.0.1']
+    : (cachedHost ? [cachedHost, ...allHosts.filter(h => h !== cachedHost)] : allHosts)
 
   for (const h of hosts) {
     try {
@@ -895,18 +919,38 @@ const mergeHeaderLines = (baseLines, extraLines) => {
   }
 }
 
+// add 请求在途去重:同一 URL+referer 的请求并发时只发一次,复用同一 Promise。
+// 防止以下场景的重复提交:
+//   - WS 发送成功但响应超时(5s)回退 HTTP,服务器两侧都收到
+//   - 多触发源并发(onCreated/onDeterminingFilename、content script 与接管逻辑)
+// add 是非幂等操作,重复提交会创建重复任务,"宁缺毋滥"——请求结束后立即移除,
+// 顺序重发由 recentTakeoverUrls 的窗口放行兜底。
+const inflightAdds = new Map()
+
 const addUri = async (url, referer, suggestedFilename, extraHeaders) => {
   try {
-    const baseHeaders = await getHeadersForUrl(url, referer)
-    const headers = mergeHeaderLines(baseHeaders, extraHeaders)
-    const payload = { url, referer, headers }
-    // 如果有建议的文件名，添加到请求中
-    if (suggestedFilename) {
-      payload.suggestedFilename = suggestedFilename
+    const key = `${url}\n${referer || ''}`
+    if (inflightAdds.has(key)) {
+      return inflightAdds.get(key)
     }
-    // WS 主通道认证在连接层完成,无需 token 校验;HTTP 兜底由 tryChannel 内部处理
-    const result = await channelRequest('add', payload)
-    return !!(result && result.ok)
+    const task = (async () => {
+      const baseHeaders = await getHeadersForUrl(url, referer)
+      const headers = mergeHeaderLines(baseHeaders, extraHeaders)
+      const payload = { url, referer, headers }
+      // 如果有建议的文件名，添加到请求中
+      if (suggestedFilename) {
+        payload.suggestedFilename = suggestedFilename
+      }
+      // WS 主通道认证在连接层完成,无需 token 校验;HTTP 兜底由 tryChannel 内部处理
+      const result = await channelRequest('add', payload)
+      return !!(result && result.ok)
+    })()
+    inflightAdds.set(key, task)
+    try {
+      return await task
+    } finally {
+      inflightAdds.delete(key)
+    }
   } catch (e) {
     return false
   }
@@ -1515,8 +1559,10 @@ const quickTakeoverDecision = (item) => {
   if (!item || typeof item.id !== 'number') return 'skip'
   const url = item.url || ''
   if (!url || !/^https?:/i.test(url)) return 'skip'
-  if (fallbackBrowserUrls.has(url)) {
-    fallbackBrowserUrls.delete(url)
+  if (fallbackBrowserUrls.has(url) || recentTakeoverUrls.has(url)) {
+    // fallbackBrowserUrls: 主动回退窗口内(10s)的下载项一律放行,不一次性消费,
+    // 覆盖并行创建的多个回退下载项,防止"回退下载再次被接管"的循环
+    // recentTakeoverUrls: 最近被扩展接管/发送过的 URL 放行,切断发送循环
     return 'skip'
   }
   if (cachedAutoHijackDisabled) return 'skip'
@@ -1563,8 +1609,13 @@ const decideTakeover = (item) => {
     }
 
     // 我们主动回退给浏览器的下载,跳过接管(防止 取消→重下→取消 循环)
+    // 窗口期内(10s)持续保护,不一次性消费,覆盖并行创建的多个回退下载项
     if (fallbackBrowserUrls.has(url)) {
-      fallbackBrowserUrls.delete(url)
+      return 'skip'
+    }
+
+    // 最近被扩展接管/发送过的 URL:放行,切断"接管→发送失败→回退→再接管"循环
+    if (recentTakeoverUrls.has(url)) {
       return 'skip'
     }
 
@@ -1670,6 +1721,9 @@ const executeTakeover = async (item) => {
 
     const addResult = await addUri(url, item.referrer, item.filename)
     keepSwAlive()
+    // 无论 add 成功与否,标记"最近处理过的 URL":此后窗口期内(15s)浏览器侧
+    // 再出现该 URL 的下载项一律放行,彻底切断"接管→发送→失败→回退→再接管→再发送"循环
+    recentTakeoverUrls.set(url, Date.now())
     if (addResult) {
       console.log('[Background] Takeover success, task sent to client:', url)
       // 接管成功:取消完成后彻底移除浏览器下载记录
@@ -1689,6 +1743,7 @@ const executeTakeover = async (item) => {
     }
   } catch (e) {
     fallbackBrowserUrls.set(url, Date.now())
+    recentTakeoverUrls.set(url, Date.now())
     await downloadViaBrowser(url, item.filename)
   }
 }

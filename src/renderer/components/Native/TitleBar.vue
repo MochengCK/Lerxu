@@ -135,11 +135,19 @@
 .has-custom-titlebar .title-bar .title-bar-dragger {
   margin-left: 0;
 }
-/* Windows/Linux 自定义标题栏下，窗口控制按钮收窄并垂直居中，
-   避免 hover 高亮区域占满整个标题栏高度 */
+/* Windows/Linux 自定义标题栏下，窗口控制按钮收窄为 32px 高并贴顶对齐，
+   顶部不留间距（原生窗口控制按钮观感）；hover 高亮区域仍不占满整个标题栏高度 */
 .has-custom-titlebar .title-bar .window-actions {
   height: 32px;
-  align-self: center;
+  align-self: flex-start;
+}
+
+/* Windows/Linux 关闭自定义标题栏（使用系统原生标题栏/菜单栏）时，
+   系统标题栏已提供拖动能力：禁用透明 title-bar 的拖动层，
+   否则贴顶后的任务面板头部（搜索框/工具栏）会被 42px 拖动层遮挡无法点击 */
+#app:not(.has-custom-titlebar):not(.is-mac) .title-bar .title-bar-dragger {
+  -webkit-app-region: no-drag;
+  pointer-events: none;
 }
 .has-custom-titlebar .title-bar .title-bar-title {
   margin-left: 16px;

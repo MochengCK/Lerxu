@@ -1159,6 +1159,15 @@
   margin: 38px 0 0 0;
 }
 
+/* Windows/Linux 关闭自定义标题栏（使用系统原生标题栏/菜单栏）时，
+   不再需要为自定义标题栏保留 38px 顶部占位：任务面板顶部贴边、左上角直角。
+   macOS 始终使用原生标题栏且布局已适配，保持不变。 */
+#app:not(.has-custom-titlebar):not(.is-mac) .content.panel {
+  height: 100%;
+  margin-top: 0;
+  border-top-left-radius: 0;
+}
+
 .content.panel .panel-header {
   flex-shrink: 0;
 }

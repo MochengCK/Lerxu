@@ -405,6 +405,13 @@
   margin-top: 44px;
 }
 
+/* Windows/Linux 关闭自定义标题栏（使用系统原生标题栏/菜单栏）时，
+   左侧导航与任务面板一致顶部贴边，不留 44px 标题栏占位 */
+#app:not(.has-custom-titlebar):not(.is-mac) .subnav-inner.task-subnav {
+  margin-top: 0;
+  height: 100%;
+}
+
 .subnav-inner {
   li.subnav-divider {
     display: block;
