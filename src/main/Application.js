@@ -3542,14 +3542,26 @@ export default class Application extends EventEmitter {
     })
 
     this.on('task-download-complete', (task, path) => {
-      this.dockManager.openDock(path)
+      // 通知最先展示：后续步骤（安全扫描、最近文档等）即使抛错
+      // 也不能影响系统通知的发出
+      this.showTaskCompleteNativeNotification(task, path)
+
+      try {
+        this.dockManager.openDock(path)
+      } catch (e) {
+        logger.warn('[LinkCore] openDock failed:', e.message)
+      }
       this._taskPlanHasCompletionSinceEnabled = true
 
       // 执行安全扫描
       this.performSecurityScan(task, path)
 
       if (!is.linux()) {
-        app.addRecentDocument(path)
+        try {
+          app.addRecentDocument(path)
+        } catch (e) {
+          logger.warn('[LinkCore] addRecentDocument failed:', e.message)
+        }
       }
       this.scheduleCheckTaskPlan()
     })
@@ -3592,6 +3604,70 @@ export default class Application extends EventEmitter {
     const win = this.windowManager.getWindow('index')
     if (win && !win.isDestroyed()) {
       win.setProgressBar(-1)
+    }
+  }
+
+  // 下载完成系统通知。在主进程创建原生 Notification：
+  // macOS 上渲染进程的 HTML5 Notification 需要系统权限才能显示，
+  // 而主进程的原生通知会在首次展示时自动向系统申请权限（应用需签名，
+  // 打包配置中 mac.type=development 已启用签名）。这里同时负责点击行为。
+  showTaskCompleteNativeNotification (task, path) {
+    try {
+      if (!this.configManager.getUserConfig('task-notification')) {
+        return
+      }
+      const { Notification } = require('electron')
+      if (!Notification || !Notification.isSupported || !Notification.isSupported()) {
+        return
+      }
+
+      let taskName = ''
+      if (path) {
+        taskName = basename(path || '')
+      }
+      if (!taskName && task && task.name) {
+        taskName = `${task.name}`
+      }
+      if (!taskName && task && task.files && task.files[0] && task.files[0].path) {
+        taskName = basename(`${task.files[0].path}`)
+      }
+      if (!taskName) {
+        return
+      }
+
+      const isBT = !!(task && task.bittorrent)
+      const t = this.i18n ? this.i18n.t : null
+      const title = isBT
+        ? (t ? t('task.bt-download-complete-notify') : taskName)
+        : (t ? t('task.download-complete-notify') : taskName)
+
+      const clickAction = this.configManager.getUserConfig('task-complete-notify-click-action') || 'open-folder'
+      const notify = new Notification({
+        title,
+        body: taskName
+      })
+      notify.on('click', () => {
+        try {
+          if (clickAction === 'show-app') {
+            this.emit('application:show', { page: 'index' })
+          } else if (clickAction === 'execute-file') {
+            if (path) {
+              shell.openPath(path).catch((error) => {
+                logger.warn('[LinkCore] Failed to execute file from notification:', error && error.message ? error.message : error)
+                shell.showItemInFolder(path)
+              })
+            }
+          } else if (path) {
+            shell.showItemInFolder(path)
+          }
+        } catch (e) {
+          logger.warn('[LinkCore] Failed to handle notification click:', e.message)
+        }
+      })
+      notify.show()
+      logger.info(`[LinkCore] Task complete notification shown: ${title} / ${taskName}`)
+    } catch (e) {
+      logger.warn('[LinkCore] Failed to show task complete notification:', e.message)
     }
   }
 

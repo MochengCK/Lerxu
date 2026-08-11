@@ -201,6 +201,7 @@ export default {
   'category-images': '이미지',
   'category-documents': '문서',
   'completed-at': '완료 시간',
+  'error-at': '오류 시간',
   'task-detail-general': '기본 정보',
   'task-detail-activity': '활동',
   'task-detail-trackers': '트래커',

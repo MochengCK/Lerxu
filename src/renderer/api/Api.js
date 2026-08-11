@@ -588,6 +588,15 @@ export default class Api {
           stoppedStatuses.has(historyStatus) &&
           Number.isFinite(total) && total > 0 &&
           Number.isFinite(completed) && completed >= total
+        // 应用重启后引擎会从会话文件恢复已失败的任务并重新加入等待队列（重新下载）。
+        // 若历史记录为 error 且任务并未实际下载完成，恢复为 error 显示，
+        // 配合 fixResumedErroredTasks 在轮询中把引擎里的下载移除。
+        const shouldCoerceErroredStatus =
+          !(isSeeding || isBtCompletedActive || (isBtTask && activeStatuses.has(liveStatus))) &&
+          activeStatuses.has(liveStatus) &&
+          historyStatus === TASK_STATUS.ERROR &&
+          !(Number.isFinite(total) && total > 0 &&
+            Number.isFinite(completed) && completed >= total)
         const shouldUseMergedHistory = !!historyTask.dashMerged && historyStatus === TASK_STATUS.COMPLETE
         return {
           ...task,
@@ -602,7 +611,7 @@ export default class Api {
               uploadSpeed: '0'
             }
             : {}),
-          ...(shouldCoerceToHistoryStatus ? { status: historyStatus } : {}),
+          ...((shouldCoerceToHistoryStatus || shouldCoerceErroredStatus) ? { status: historyStatus } : {}),
           ...(savedAt ? { savedAt } : {}),
           ...(startedAt ? { startedAt } : {}),
           ...(createdAt ? { createdAt } : {}),

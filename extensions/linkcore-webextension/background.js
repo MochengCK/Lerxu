@@ -150,7 +150,7 @@ const clearSessionToken = () => {
 const restoreSessionFromStorage = () => {
   return new Promise((resolve) => {
     try {
-      chrome.storage.local.get([SESSION_TOKEN_KEY, TOKEN_VERSION_KEY, 'uiTheme'], (res) => {
+      chrome.storage.local.get([SESSION_TOKEN_KEY, TOKEN_VERSION_KEY, 'uiTheme', CLIENT_OFFLINE_KEY, WS_AUTH_TIME_KEY], (res) => {
         if (res) {
           if (res[SESSION_TOKEN_KEY]) {
             sessionToken = res[SESSION_TOKEN_KEY]
@@ -161,6 +161,18 @@ const restoreSessionFromStorage = () => {
           const t = res.uiTheme ? `${res.uiTheme}`.toLowerCase() : ''
           if (t === 'dark' || t === 'light') {
             lastKnownTheme = t
+          }
+          // 恢复"程序离线开始时间戳":SW 冷启动后仍能判断下载项是否在离线期间创建。
+          // 仅在本次会话尚未确认程序在线时恢复:WS 认证/HTTP 探测成功会清除该值并
+          // 删除 storage 键,若恢复回调晚于清除回调执行(异步竞态),不能把已清除的
+          // 陈旧值再写回内存,否则接管决策会把"离线期间创建"误判到之后的所有下载,
+          // 导致程序明明在线却始终放行浏览器下载。
+          if (res[CLIENT_OFFLINE_KEY] && typeof res[CLIENT_OFFLINE_KEY] === 'number' && lastOnlineAt === 0) {
+            clientOfflineSince = res[CLIENT_OFFLINE_KEY]
+          }
+          // 恢复"程序最近一次启动时间"(WS 认证成功时间)
+          if (res[WS_AUTH_TIME_KEY] && typeof res[WS_AUTH_TIME_KEY] === 'number') {
+            wsAuthTime = res[WS_AUTH_TIME_KEY]
           }
         }
         console.log('[Background] Session restored from storage:', sessionToken ? 'token exists' : 'no token')
@@ -412,6 +424,12 @@ const wsConnect = () => {
         wsAuthenticated = true
         wsConnecting = false
         wsReconnectDelay = 1000
+        // 记录程序本次启动时间(WS 认证成功 = 程序必然已启动并监听端口)
+        // 持久化到 storage:SW 冷启动后仍可判断下载项是否创建于程序启动前
+        wsAuthTime = Date.now()
+        try {
+          chrome.storage.local.set({ [WS_AUTH_TIME_KEY]: wsAuthTime }, () => {})
+        } catch (e) {}
         if (!lastConnectionCheck.connected) {
           notifyConnectionChange(true)
         }
@@ -564,8 +582,35 @@ let lastConnectionCheck = {
 }
 
 // 通知 popup 连接状态变化
+// clientOfflineSince:程序最近一次"变为离线"的时间戳(ms),0 表示从未离线
+// (或从未观察到离线)。持久化到 storage,SW 冷启动后仍可据此判断某个下载项
+// 是否创建于程序离线期间 → 该下载项由浏览器完成,接管会丢失进度,必须放行。
+// 之所以用"离线开始时间"而非"在线时间":程序一直在线时 SW 可能冷启动重启,
+// 内存中的在线时间戳会丢失,而"离线开始时间"在冷启动后仍能从 storage 恢复,
+// 避免误判"程序在线期间创建的下载项"为离线期间创建。
+let clientOfflineSince = 0
+let wsAuthTime = 0 // 最近一次 WS 认证成功的时间戳(ms):程序本次启动的可靠代理
+let lastOnlineAt = 0 // 本 SW 会话内最近一次确认程序在线的时间戳(ms),0 = 尚未确认过
+const CLIENT_OFFLINE_KEY = 'clientOfflineSince'
+const WS_AUTH_TIME_KEY = 'wsAuthTime'
 const notifyConnectionChange = (connected) => {
   console.log('[Background] Connection state changed:', connected ? 'connected' : 'disconnected')
+  if (!connected) {
+    if (!clientOfflineSince) {
+      clientOfflineSince = Date.now()
+      try {
+        chrome.storage.local.set({ [CLIENT_OFFLINE_KEY]: clientOfflineSince }, () => {})
+      } catch (e) {}
+    }
+  } else {
+    lastOnlineAt = Date.now()
+    if (clientOfflineSince) {
+      clientOfflineSince = 0
+      try {
+        chrome.storage.local.remove([CLIENT_OFFLINE_KEY], () => {})
+      } catch (e) {}
+    }
+  }
   chrome.runtime.sendMessage({
     type: 'connectionChanged',
     connected: connected
@@ -629,6 +674,13 @@ const tryChannel = async (path, options = {}, timeout = 1000, allowRetry = true)
       if (resp && resp.ok) {
         // 缓存成功的 host
         cachedHost = h
+        // 记录程序启动时间:WS 不可用但 HTTP 可用时,以 HTTP 认证成功为准
+        if (!wsAuthTime) {
+          wsAuthTime = Date.now()
+          try {
+            chrome.storage.local.set({ [WS_AUTH_TIME_KEY]: wsAuthTime }, () => {})
+          } catch (e) {}
+        }
         // 检测连接状态变化
         if (!lastConnectionCheck.connected) {
           notifyConnectionChange(true)
@@ -847,6 +899,18 @@ const downloadViaBrowser = async (url, suggestedFilename) => {
 }
 
 const isClientAvailable = async () => {
+  // 快路径:WS 已认证连接即视为程序在线(连接层已完成 challenge 认证,零网络开销)
+  if (wsSocket && wsSocket.readyState === WebSocket.OPEN && wsAuthenticated) {
+    // WS 已确认程序在线:若内存中仍残留离线标记(异步恢复竞态/瞬断未清除),
+    // 立即清除,否则陈旧的 clientOfflineSince 会让接管决策永久放行浏览器下载
+    if (!lastConnectionCheck.connected || clientOfflineSince > 0) {
+      notifyConnectionChange(true)
+    }
+    lastConnectionCheck.connected = true
+    lastConnectionCheck.lastCheckTime = Date.now()
+    lastOnlineAt = Date.now()
+    return true
+  }
   const now = Date.now()
   if (now - lastConnectionCheck.lastCheckTime < 1000) {
     return !!lastConnectionCheck.connected
@@ -929,6 +993,14 @@ const inflightAdds = new Map()
 
 const addUri = async (url, referer, suggestedFilename, extraHeaders) => {
   try {
+    // 快速失败:程序不在线(无 WS 且最近 health 探测失败)时不走 HTTP 认证
+    // 兜底(ensureSessionToken→performAuthentication→2 host×1.5s 超时,可达 5~6s),
+    // 立即返回 false,调用方直接回退浏览器下载,避免用户空等。
+    // 注意:isClientAvailable 内部有 1s 缓存,不会给每次调用增加网络开销。
+    if (!(await isClientAvailable())) {
+      console.log('[Background] addUri skipped: client offline, url:', url)
+      return false
+    }
     const key = `${url}\n${referer || ''}`
     if (inflightAdds.has(key)) {
       return inflightAdds.get(key)
@@ -1287,7 +1359,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const referer = msg.referer || ''
       const suggestedFilename = msg.suggestedFilename || ''
       const extraHeaders = Array.isArray(msg.headers) ? msg.headers : []
-      // 直接尝试发送到程序，跳过 isClientAvailable 预检查以减少延迟
+      // addUri 内部已有程序在线预检查(快路径,零网络开销),离线时立即返回
+      // false 走浏览器下载,不会卡在 HTTP 认证兜底上
       const ok = await addUri(url, referer, suggestedFilename, extraHeaders)
       if (ok) {
         sendResponse({ ok: true, via: 'client' })
@@ -1451,7 +1524,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   let url = info.linkUrl || info.srcUrl || info.pageUrl
   const referer = tab && tab.url ? tab.url : ''
   if (url) {
-    // 直接尝试发送到程序，跳过预检查以减少延迟
+    // addUri 内部已有程序在线预检查(快路径),离线时立即返回 false 走浏览器下载
     const ok = await addUri(url, referer)
     if (ok) return
     // 回退浏览器下载前先标记，防止被接管逻辑再次取消
@@ -1624,6 +1697,43 @@ const decideTakeover = (item) => {
       return 'skip'
     }
 
+    // 程序必须在线才接管。程序未启动时,浏览器下载在正常进行,不能取消
+    // (取消 → 任务丢失/进度清零,用户不可接受)。此处直接放行,让浏览器
+    // 完成下载,避免 cancel→resume 的动作颠簸。
+    if (!(await isClientAvailable())) {
+      console.log('[Background] Takeover skipped (client offline) in decideTakeover, keeping browser download, id:', item.id, 'url:', url)
+      return 'skip'
+    }
+    keepSwAlive()
+
+    // 进度保护:若下载项创建于程序离线期间(即程序未启动/离线时浏览器已开始
+    // 下载),接管会取消浏览器下载导致已下载进度丢失。此类下载一律放行让浏览器
+    // 完成,不再抢回应用。
+    // 两个依据,互补覆盖两种场景:
+    //   a) wsAuthTime:程序本次启动时间(WS 认证成功时间)。下载项创建早于它
+    //      → 创建于程序启动前,接管必丢进度 → 放行。覆盖"程序从未在线"场景
+    //      (此时 clientOfflineSince 为 0,无离线记录)。
+    //   b) 离线窗口 [clientOfflineSince, lastOnlineAt):下载项创建于程序离线
+    //      期间(程序已确认在线之前)→ 浏览器正在下载,接管丢进度 → 放行。
+    //      注意:必须同时要求 createdAt < lastOnlineAt —— clientOfflineSince
+    //      可能因异步恢复竞态残留为陈旧值,若只判断 createdAt >= clientOfflineSince,
+    //      程序在线后创建的所有下载都会被误判为"离线期间创建"而永久放行。
+    // 注意:item.startTime 是 ISO 字符串,部分浏览器可能缺失,缺失时跳过该判断
+    if (item.startTime) {
+      try {
+        const createdAt = new Date(item.startTime).getTime()
+        if (!Number.isNaN(createdAt)) {
+          const startedWhileClientOffline =
+            clientOfflineSince > 0 && lastOnlineAt > 0 &&
+            createdAt >= clientOfflineSince && createdAt < lastOnlineAt
+          if ((wsAuthTime > 0 && createdAt < wsAuthTime) || startedWhileClientOffline) {
+            console.log('[Background] Takeover skipped (download started before/while client was offline), keeping browser download, id:', item.id, 'url:', url)
+            return 'skip'
+          }
+        }
+      } catch (e) {}
+    }
+
     // 域名排除(下载域名或来源域名命中即放行)
     try {
       const downloadDomain = new URL(url).hostname.toLowerCase()
@@ -1683,14 +1793,14 @@ const keepSwAlive = () => {
   try { chrome.runtime.getPlatformInfo() } catch (e) {}
 }
 
-// 执行接管:先取消浏览器下载(确认取消成功才转交应用),成功后擦除记录。
-// 原实现串行 cancel→erase→addUri 且取消失败也照常 addUri,导致:
-//   1) 小文件在决策期间已完成,取消失败却仍向应用发任务 → 浏览器与应用重复下载
-//   2) promise 形式的 cancel reject 即使 catch 也会打印 Unchecked runtime.lastError
-// 现实现:
-//   - cancel 用 callback 形式显式检查 lastError(消除 Unchecked 警告,拿到取消结果)
-//   - 取消失败(下载已完成) → 放弃接管并恢复气泡,浏览器保留文件,避免重复下载
-//   - 取消成功 → addUri 转交应用;成功则 erase 清理记录,失败则回退浏览器下载
+// 执行接管:先确认程序在线(不在线绝不 cancel,保留浏览器下载进度),取消成功才转交应用。
+// 接管优先级(从高到低):
+//   1. 程序在线 + cancel 成功 + addUri 成功 → erase 清理浏览器记录,应用下载
+//   2. 程序在线 + cancel 成功 + addUri 失败 → 恢复原浏览器下载项(不重下,进度保留)
+//   3. 程序不在线 → 不 cancel,浏览器下载继续,进度保留
+// 关键点:addUri 失败路径永远不 erase 原下载项,也不重新触发下载,避免
+// "抢过来→发送失败→重下→再抢" 的循环与进度清零。fallbackBrowserUrls 仅用于
+// 保护"我们主动 downloadViaBrowser"的下载项,此处已不再需要。
 const executeTakeover = async (item) => {
   if (handledDownloadIds.has(item.id)) {
     return
@@ -1699,6 +1809,43 @@ const executeTakeover = async (item) => {
 
   const url = item.url || ''
   try {
+    keepSwAlive()
+    // 前置检查:程序必须在线才接管。程序未启动/引擎未就绪时,浏览器下载
+    // 正在正常进行(用户已看到进度),绝不能取消,否则进度直接丢失。
+    if (!(await isClientAvailable())) {
+      console.log('[Background] Takeover skipped: client offline, keeping browser download, id:', item.id, 'url:', url)
+      if (extConfig.interceptAllDownloads && typeof item.id === 'number') {
+        activeBrowserDownloads.add(item.id)
+        setDownloadUiEnabled(true)
+      }
+      return
+    }
+    keepSwAlive()
+    // 复查进度:cancel 前下载可能已接近完成(决策期间的网络消耗),此时
+    // 取消再交给应用 = 进度清零。已下载超过一半就放行,让浏览器完成它。
+    try {
+      const current = await chrome.downloads.search({ id: item.id })
+      const latest = current && current[0]
+      if (latest && latest.state === 'complete') {
+        console.log('[Background] Takeover skipped: download already complete, id:', item.id, 'url:', url)
+        if (extConfig.interceptAllDownloads && typeof item.id === 'number') {
+          activeBrowserDownloads.add(item.id)
+          setDownloadUiEnabled(true)
+        }
+        return
+      }
+      if (latest && latest.state === 'in_progress' && latest.totalBytes > 0) {
+        const ratio = (latest.bytesReceived || 0) / latest.totalBytes
+        if (ratio > 0.5) {
+          console.log(`[Background] Takeover skipped: ${(ratio * 100).toFixed(0)}% already downloaded by browser, id:`, item.id, 'url:', url)
+          if (extConfig.interceptAllDownloads && typeof item.id === 'number') {
+            activeBrowserDownloads.add(item.id)
+            setDownloadUiEnabled(true)
+          }
+          return
+        }
+      }
+    } catch (e) {}
     keepSwAlive()
     // 取消浏览器下载,确认取消成功才继续接管
     const cancelOk = await new Promise((resolve) => {
@@ -1736,15 +1883,37 @@ const executeTakeover = async (item) => {
       })
       keepSwAlive()
     } else {
-      // 发送失败,回退浏览器下载(标记防循环)
-      console.log('[Background] Takeover failed to reach client, falling back to browser download:', url)
-      fallbackBrowserUrls.set(url, Date.now())
-      await downloadViaBrowser(url, item.filename)
+      // 发送失败:恢复原下载项,保留已下载进度,而不是重新下载清零进度。
+      // 浏览器已持有部分文件,resume 会从断点继续,等于回滚到"未接管"状态。
+      console.log('[Background] Takeover addUri failed, resuming original browser download:', url)
+      await new Promise((resolve) => {
+        chrome.downloads.resume(item.id, () => {
+          void chrome.runtime.lastError
+          resolve()
+        })
+      })
+      keepSwAlive()
+      if (extConfig.interceptAllDownloads && typeof item.id === 'number') {
+        activeBrowserDownloads.add(item.id)
+        setDownloadUiEnabled(true)
+      }
     }
   } catch (e) {
-    fallbackBrowserUrls.set(url, Date.now())
-    recentTakeoverUrls.set(url, Date.now())
-    await downloadViaBrowser(url, item.filename)
+    // 任何异常:恢复原下载项,进度保留,绝不重新触发下载
+    console.log('[Background] Takeover failed, restoring browser download:', url, e)
+    try {
+      await new Promise((resolve) => {
+        chrome.downloads.resume(item.id, () => {
+          void chrome.runtime.lastError
+          resolve()
+        })
+      })
+    } catch (e2) {}
+    keepSwAlive()
+    if (extConfig.interceptAllDownloads && typeof item.id === 'number') {
+      activeBrowserDownloads.add(item.id)
+      setDownloadUiEnabled(true)
+    }
   }
 }
 

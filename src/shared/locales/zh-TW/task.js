@@ -211,6 +211,7 @@ export default {
   'category-images': '圖片',
   'category-documents': '文件',
   'completed-at': '完成於',
+  'error-at': '錯誤於',
   'task-detail-general': '基本資訊',
   'task-detail-activity': '活動圖表',
   'task-detail-trackers': '追蹤器',

@@ -4,6 +4,7 @@
     :show-text="false"
     :status="isActive ? 'success' : undefined"
     :color="color"
+    :define-back-color="backColor"
     :class="{ 'is-pending-selection': pendingSelection }">
   </el-progress>
 </template>
@@ -115,6 +116,18 @@
           return '#f0ad4e'
         }
         return colors[this.status]
+      },
+      backColor () {
+        // 进度条轨道（背景）颜色：通过 define-back-color prop 以内联样式生效，
+        // 普通 CSS 无法覆盖。失败任务使用与应用错误色一致的纯红（100% 不透明），
+        // BT 待选择文件使用橙色背景，其余状态返回空串保持 element-ui 默认。
+        if (this.status === TASK_STATUS.ERROR) {
+          return '#FF6157'
+        }
+        if (this.pendingSelection) {
+          return '#F6C46B'
+        }
+        return ''
       }
     },
     mounted () {

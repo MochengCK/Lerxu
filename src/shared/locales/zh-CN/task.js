@@ -203,6 +203,7 @@ export default {
   'get-task-name': '获取任务名中...',
   'remaining-prefix': '剩余',
   'completed-at': '完成于',
+  'error-at': '错误于',
   'merging': '正在合并音视频...',
   'merging-waiting-pair': '等待配对文件下载完成...',
   'select-torrent': '将种子拖到此处，或点击选择',

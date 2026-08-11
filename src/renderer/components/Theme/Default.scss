@@ -108,10 +108,6 @@ iframe {
   transition: all 0.4s cubic-bezier(0.08, 0.82, 0.17, 1) 0s;
 }
 
-.el-progress.is-pending-selection .el-progress-bar__outer {
-  background-color: rgba(240, 173, 78, 0.35);
-}
-
 .el-progress--line.is-text {
   .el-progress-bar__inner::before {
     content: "";

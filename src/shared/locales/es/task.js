@@ -201,6 +201,7 @@ export default {
   'category-images': 'Imágenes',
   'category-documents': 'Documentos',
   'completed-at': 'Completado el',
+  'error-at': 'Error en',
   'task-detail-general': 'Información general',
   'task-detail-activity': 'Actividad',
   'task-detail-trackers': 'Trackers',

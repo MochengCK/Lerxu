@@ -11,7 +11,7 @@
     getTaskFullPath,
     getTaskActualPath,
     getPathCandidates,
-    showItemInFolder
+    showNativeNotification
   } from '@/utils/native'
 
   import { checkTaskIsBT, getTaskName, getTaskUri, isMagnetTask } from '@shared/utils'
@@ -262,10 +262,13 @@
                   const message = this.$t('task.download-start-browser-message')
                   this.$msg.info(message)
                   if (is.windows()) {
-                    const notify = new Notification(message, { body: taskName })
-                    notify.onclick = () => {
-                      this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
-                    }
+                    showNativeNotification({
+                      title: message,
+                      body: taskName,
+                      onClick: () => {
+                        this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
+                      }
+                    })
                   }
                 }
               } else if (!isBilibiliPart) {
@@ -299,10 +302,13 @@
                   const message = this.$t('task.download-start-browser-message')
                   this.$msg.info(message)
                   if (is.windows()) {
-                    const notify = new Notification(message, { body: taskName })
-                    notify.onclick = () => {
-                      this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
-                    }
+                    showNativeNotification({
+                      title: message,
+                      body: taskName,
+                      onClick: () => {
+                        this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
+                      }
+                    })
                   }
                 }
               } else if (!isBilibiliPart) {
@@ -418,6 +424,18 @@
               if (st === TASK_STATUS.ACTIVE || st === TASK_STATUS.WAITING) {
                 this.$store.dispatch('task/pauseTask', task).catch(() => {})
               }
+              // 任务因链接失效被暂停（等待更新链接），暂停任务不会进入 stopped
+              // 列表，历史记录不会保存错误状态；若此时退出应用，引擎会把暂停
+              // 状态写入会话，重启后任务显示为"已暂停"而非"错误"。
+              // 这里把错误状态持久化到历史记录，重启后即可恢复 error 显示。
+              try {
+                taskHistory.updateTask(gid, {
+                  status: TASK_STATUS.ERROR,
+                  errorCode,
+                  errorMessage,
+                  savedAt: Date.now()
+                }, task)
+              } catch (_) {}
               this.$msg.warning(this.$t(rule.notifyKey || 'task.link-update-needed', { taskName }))
             }
 
@@ -2794,47 +2812,8 @@
 
         this.$msg.success(`${message}${tips}`)
 
-        if (!this.taskNotification) {
-          return
-        }
-
-        const notifyMessage = isBT
-          ? this.$t('task.bt-download-complete-notify')
-          : this.$t('task.download-complete-notify')
-
-        /* eslint-disable no-new */
-        const notify = new Notification(notifyMessage, {
-          body: `${taskName}${tips}`
-        })
-        const clickAction = this.taskCompleteNotifyClickAction || 'open-folder'
-        notify.onclick = () => {
-          if (clickAction === 'show-app') {
-            this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
-          } else if (clickAction === 'execute-file') {
-            // 执行文件
-            try {
-              const { shell } = this.$electron
-              shell.openPath(path).catch((error) => {
-                console.error('Failed to execute file:', error)
-                // 如果执行失败，回退到打开文件夹
-                showItemInFolder(path, {
-                  errorMsg: this.$t('task.file-not-exist')
-                })
-              })
-            } catch (error) {
-              console.error('Failed to execute file:', error)
-              // 如果执行失败，回退到打开文件夹
-              showItemInFolder(path, {
-                errorMsg: this.$t('task.file-not-exist')
-              })
-            }
-          } else {
-            // 默认行为：打开文件夹
-            showItemInFolder(path, {
-              errorMsg: this.$t('task.file-not-exist')
-            })
-          }
-        }
+        // 系统通知由主进程展示（task-download-complete 事件），
+        // 渲染进程只负责应用内 toast，避免重复通知
       },
       showTaskErrorNotify (task) {
         const taskName = getTaskName(task)
@@ -2846,8 +2825,8 @@
           return
         }
 
-        /* eslint-disable no-new */
-        new Notification(this.$t('task.download-fail-notify'), {
+        showNativeNotification({
+          title: this.$t('task.download-fail-notify'),
           body: taskName
         })
       },
@@ -2940,6 +2919,7 @@
           this.checkMagnetAlerts()
           this.checkDataAccessStatus()
           this.fixResumedCompletedSuffixTasks().catch(() => {})
+          this.fixResumedErroredTasks().catch(() => {})
           // 首次轮询后校验待选择文件状态，移除已不存在的任务条目
           if (!this.pendingFileSelectionSynced) {
             this.pendingFileSelectionSynced = true
@@ -3301,13 +3281,13 @@
         this.$msg.info(message)
 
         const notifyTitle = this.$t('task.pending-file-selection-notify')
-        /* eslint-disable no-new */
-        const notify = new Notification(notifyTitle, {
-          body: getTaskName(task)
+        showNativeNotification({
+          title: notifyTitle,
+          body: getTaskName(task),
+          onClick: () => {
+            this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
+          }
         })
-        notify.onclick = () => {
-          this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
-        }
       },
       checkDataAccessStatus () {
         const list = this.$store.state.task.taskList || []
@@ -3637,6 +3617,101 @@
         } finally {
           this._resumedCompletedFixing = false
         }
+      },
+      async fixResumedErroredTasks () {
+        // 引擎通过 save-session 保存 error/unfinished 下载，应用重启后
+        // 引擎会把已失败的任务恢复为 waiting 并重新开始下载（或恢复为
+        // paused）。这里把历史记录为 error 且引擎仍在队列中的任务移除，
+        // 保持 error 状态。注意：不能读 taskList——_mergeHistoryToTasks
+        // 已把这类任务强制显示为 error，会漏掉真正的候选。
+        const now = Date.now()
+        if (this._resumedErrorFixing) {
+          return
+        }
+        if (this._resumedErrorLastRun && now - this._resumedErrorLastRun < 5000) {
+          return
+        }
+        this._resumedErrorLastRun = now
+
+        const history = taskHistory.getHistory()
+        if (!Array.isArray(history) || history.length === 0) {
+          return
+        }
+        const errorGidSet = new Set()
+        history.forEach(t => {
+          if (t && t.gid && `${t.status || ''}` === TASK_STATUS.ERROR) {
+            errorGidSet.add(`${t.gid}`)
+          }
+        })
+        if (errorGidSet.size === 0) {
+          return
+        }
+
+        // 直接查询引擎的原始 active/waiting 列表（含 paused）
+        let engineTasks = []
+        try {
+          const [active, waiting] = await Promise.all([
+            api.client.call('tellActive').catch(() => []),
+            api.client.call('tellWaiting', 0, 1000).catch(() => [])
+          ])
+          engineTasks = [
+            ...(Array.isArray(active) ? active : []),
+            ...(Array.isArray(waiting) ? waiting : [])
+          ]
+        } catch (_) {
+          return
+        }
+
+        const candidates = engineTasks.filter(t => {
+          if (!t) return false
+          const gid = t.gid ? `${t.gid}` : ''
+          if (!gid || !errorGidSet.has(gid)) return false
+          // BT 任务有自己的错误恢复机制（handleBtErrorRecovery），
+          // 会话内重试期间任务同样处于 active 但历史为 error，不能移除
+          if (checkTaskIsBT(t)) return false
+          return true
+        })
+
+        if (candidates.length === 0) {
+          return
+        }
+
+        this._resumedErrorFixing = true
+        try {
+          let changed = false
+          for (const task of candidates) {
+            const gid = task.gid ? `${task.gid}` : ''
+            if (!gid) continue
+            if (this._resumedErrorFixedGids && this._resumedErrorFixedGids.has(gid)) {
+              continue
+            }
+            if (!this._resumedErrorFixedGids) {
+              this._resumedErrorFixedGids = new Set()
+            }
+            this._resumedErrorFixedGids.add(gid)
+
+            console.log(`[LinkCore] Stopping auto-resumed errored task ${gid} (engine status: ${task.status || ''})`)
+            // 从引擎队列移除（不删除文件），保留本地历史记录，
+            // 任务将以 error 状态从历史记录中恢复显示
+            try {
+              await api.client.call('forceRemove', gid)
+            } catch (_) {
+              try {
+                await api.client.call('remove', gid)
+              } catch (_) {}
+            }
+            try {
+              await api.client.call('removeDownloadResult', gid)
+            } catch (_) {}
+            changed = true
+          }
+
+          if (changed) {
+            await this.$store.dispatch('task/fetchList')
+          }
+        } finally {
+          this._resumedErrorFixing = false
+        }
       }
     },
     created () {
@@ -3648,9 +3723,23 @@
       this.bindEngineEvents()
       // 监听 WebSocket 重连事件，重连后重新绑定引擎事件并刷新数据
       api.client.on('reconnect', this.onEngineReconnect)
+      // macOS：主动请求通知权限（尽力而为）。部分 Electron 版本
+      // requestPermission 会触发系统权限弹窗；即使不弹窗，主进程的
+      // 原生通知在首次展示时系统也会自动弹出权限申请。
+      if (is.macOS() && typeof Notification !== 'undefined' && typeof Notification.requestPermission === 'function') {
+        try {
+          const p = Notification.requestPermission()
+          if (p && typeof p.catch === 'function') {
+            p.catch(() => {})
+          }
+        } catch (_) {}
+      }
       this._resumedCompletedFixing = false
       this._resumedCompletedLastRun = 0
       this._resumedCompletedFixedGids = new Set()
+      this._resumedErrorFixing = false
+      this._resumedErrorLastRun = 0
+      this._resumedErrorFixedGids = new Set()
       this._bilibiliMergeNotified = new Set()
       this._dashMergeJobs = new Map()
       this._pollingKickAt = 0

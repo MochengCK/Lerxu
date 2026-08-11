@@ -83,7 +83,7 @@
         <span v-else>{{ $t('task.merging') }}</span>
       </div>
       <div class="task-completion-time" v-else-if="isCompleted">
-        <span>{{ $t('task.completed-at') }} {{ completionTime }}</span>
+        <span>{{ isError ? $t('task.error-at') : $t('task.completed-at') }} {{ completionTime }}</span>
       </div>
       <!-- 做种任务显示上传速度 -->
       <div class="task-speed-info" v-else-if="isSeeder">
@@ -208,6 +208,10 @@
       isMerging () {
         const task = this.task || {}
         return task.status === TASK_STATUS.MERGING
+      },
+      isError () {
+        const task = this.task || {}
+        return task.status === TASK_STATUS.ERROR
       },
       mergeProgress () {
         const gid = this.task && this.task.gid ? `${this.task.gid}` : ''

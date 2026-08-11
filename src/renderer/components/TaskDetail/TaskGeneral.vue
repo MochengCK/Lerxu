@@ -30,7 +30,7 @@
         <mo-task-status :theme="currentTheme" :status="taskStatus" />
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.completed-at')}: `" v-if="isCompleted">
+    <el-form-item :label="`${$t(isError ? 'task.error-at' : 'task.completed-at')}: `" v-if="isCompleted">
       <div class="form-static-value">
         {{ completionTime }}
       </div>
@@ -256,6 +256,9 @@
           return false
         }
         return completedStatuses.includes(this.task.status)
+      },
+      isError () {
+        return this.task.status === TASK_STATUS.ERROR
       },
       completionTime () {
         // aria2 的 savedAt 是秒级时间戳，历史记录中则是毫秒级，

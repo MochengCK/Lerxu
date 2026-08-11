@@ -136,6 +136,7 @@ export default {
   'get-task-name': 'タスク名を取得しています...',
   'remaining-prefix': '残り',
   'completed-at': '完了日時',
+  'error-at': 'エラー日時',
   'select-torrent': 'torrentファイルをドラッグ＆ドロップするか、ここをクリック',
   'task-detail-general': '基本情報',
   'task-detail-activity': 'アクティビティ',

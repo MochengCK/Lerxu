@@ -203,6 +203,7 @@ export default {
   'get-task-name': 'Getting task name...',
   'remaining-prefix': 'Remaining',
   'completed-at': 'Completed at',
+  'error-at': 'Errored at',
   'merging': 'Merging audio and video...',
   'merging-waiting-pair': 'Waiting for paired file to download...',
   'select-torrent': 'Drag torrent file here, or click to select',

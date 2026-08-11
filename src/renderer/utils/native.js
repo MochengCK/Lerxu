@@ -267,6 +267,44 @@ export const getSystemTheme = () => {
   return nativeTheme.shouldUseDarkColors ? APP_THEME.DARK : APP_THEME.LIGHT
 }
 
+/**
+ * Show a system notification.
+ *
+ * Prefer Electron's native Notification module (works reliably on macOS /
+ * Windows / Linux) and fall back to the HTML5 Notification API. On macOS the
+ * bare HTML5 `new Notification()` silently does nothing unless permission was
+ * granted first, which is why native notifications are used.
+ */
+export const showNativeNotification = ({ title, body, onClick }) => {
+  try {
+    const { Notification } = require('electron')
+    if (Notification && Notification.isSupported && Notification.isSupported()) {
+      const notify = new Notification({ title, body })
+      if (onClick) {
+        notify.on('click', onClick)
+      }
+      notify.show()
+      return notify
+    }
+  } catch (e) {
+    console.warn('[LinkCore] Native notification unavailable, fallback to HTML5:', e.message)
+  }
+
+  if (typeof window !== 'undefined' && 'Notification' in window) {
+    try {
+      const notify = new window.Notification(title, { body })
+      if (onClick) {
+        notify.onclick = onClick
+      }
+      return notify
+    } catch (e) {
+      console.warn('[LinkCore] HTML5 notification failed:', e.message)
+    }
+  }
+
+  return null
+}
+
 export const delayDeleteTaskFiles = (task, delay, downloadingFileSuffix = '', preferenceConfig = {}) => {
   return new Promise((resolve, reject) => {
     setTimeout(async () => {
