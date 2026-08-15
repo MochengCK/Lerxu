@@ -1067,21 +1067,44 @@
       }
     },
     methods: {
-      // 粗略版本比较（与主进程 stable 渠道的 coerce 语义一致）：
-      // 提取主版本号（忽略 beta 等 pre-release 后缀）后逐段比较。
+      // 完整版本比较（与主进程 UpdateManager 的 semver 语义一致）：
+      // 保留 pre-release 标签（3.0.2-Beta1 < 3.0.2-Beta2 < 3.0.2），
       // 用于校验持久化配置中残留的"有新版本"状态是否仍然有效，
-      // 避免用户已手动升级到最新后仍显示过期的下载按钮。
+      // 避免 Beta 用户已检测到正式版更新却因版本号折叠被误判过期。
       isVersionNewer (a, b) {
         if (!a || !b) return false
-        const coerce = (v) => {
-          const m = String(v).trim().match(/(\d+)(?:\.(\d+))?(?:\.(\d+))?/)
-          return m ? m.slice(1).map(n => parseInt(n || '0', 10)) : null
+        const parse = (v) => {
+          const m = String(v).trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/)
+          if (!m) return null
+          return {
+            major: parseInt(m[1], 10),
+            minor: parseInt(m[2], 10),
+            patch: parseInt(m[3], 10),
+            pre: m[4] ? m[4].toLowerCase().split('.') : null
+          }
         }
-        const pa = coerce(a)
-        const pb = coerce(b)
+        const pa = parse(a)
+        const pb = parse(b)
         if (!pa || !pb) return false
-        for (let i = 0; i < 3; i++) {
-          if (pa[i] !== pb[i]) return pa[i] > pb[i]
+        if (pa.major !== pb.major) return pa.major > pb.major
+        if (pa.minor !== pb.minor) return pa.minor > pb.minor
+        if (pa.patch !== pb.patch) return pa.patch > pb.patch
+        // 正式版大于 pre-release；同为 pre-release 时逐标识符比较（与 semver 规则一致）
+        if (!pa.pre) return !!pb.pre
+        if (!pb.pre) return false
+        const len = Math.max(pa.pre.length, pb.pre.length)
+        for (let i = 0; i < len; i++) {
+          const x = pa.pre[i]
+          const y = pb.pre[i]
+          if (x === undefined) return false
+          if (y === undefined) return true
+          if (x === y) continue
+          const xn = /^\d+$/.test(x)
+          const yn = /^\d+$/.test(y)
+          if (xn && yn) return parseInt(x, 10) > parseInt(y, 10)
+          if (xn) return false // 数字标识符 < 字母标识符
+          if (yn) return true
+          return x > y
         }
         return false
       },

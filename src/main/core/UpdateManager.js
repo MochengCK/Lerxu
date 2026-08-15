@@ -118,9 +118,11 @@ async function fetchReleaseList (axiosConfig = {}) {
 }
 
 /**
- * 按渠道挑选目标 release：beta → 版本最高的 pre-release；all → 版本最高
- * 的任意 release（含 pre-release）。返回 { tagName, prerelease, version }，
- * 无可用 release 时返回 null。
+ * 按渠道挑选目标 release，渠道语义严格隔离：
+ * - stable：只挑正式版（非 pre-release、非草稿）——调用方已先过滤；
+ * - beta：只挑 GitHub 标记为 pre-release 的 release（官方 Beta 标识）；
+ * - all：任意 release（含 pre-release），取版本最高。
+ * 返回 { tagName, prerelease, version }，无可用 release 时返回 null。
  */
 function pickReleaseByChannel (releases, channel) {
   if (!Array.isArray(releases) || releases.length === 0) {
@@ -129,14 +131,21 @@ function pickReleaseByChannel (releases, channel) {
   const clean = (r) => semver.clean(r.tag_name || r.name || '') || '0.0.0'
   let pool = releases
   if (channel === 'beta') {
-    // 只考虑 pre-release（GitHub 官方 Beta 标识），排除草稿
+    // Beta 渠道只认 pre-release（GitHub 官方 Beta 标识）：
+    // 正式版发布后仍只推送最新 Beta，用户想升正式版需切换 stable 渠道
     pool = releases.filter(r => r.prerelease && !r.draft)
   }
   if (pool.length === 0) {
     return null
   }
   pool = pool.filter(r => !r.draft)
-  pool.sort((a, b) => semver.gt(clean(b), clean(a)) ? 1 : -1)
+  // GitHub tag 大小写敏感（v3.0.2-Beta2 与 v3.0.2-beta.1 可能并存），
+  // 排序前统一小写，避免 semver 大小写敏感导致挑错版本
+  pool.sort((a, b) => {
+    const va = clean(a).toLowerCase()
+    const vb = clean(b).toLowerCase()
+    return semver.gt(vb, va) ? 1 : -1
+  })
   const best = pool[0]
   if (!best) {
     return null
@@ -247,28 +256,30 @@ function parseUpdateInfo (ymlContent) {
 }
 
 /**
- * 比较版本号，返回 true 表示有新版本
+ * 版本号规范化：优先完整 semver（clean 保留 pre-release 标签，
+ * 如 3.0.2-Beta1 → 3.0.2-Beta1），clean 失败时退回 coerce（兼容
+ * 非标准写法）。GitHub tag 大小写敏感（v3.0.2-Beta2 与 v3.0.2-beta2
+ * 可能是不同 release），yml version 与 package.json 版本大小写也
+ * 可能不一致，比较前统一小写避免误判。
  */
-function isNewerVersion (latest, current) {
-  try {
-    return semver.gt(semver.coerce(latest) || '0.0.0', semver.coerce(current) || '0.0.0')
-  } catch {
-    return latest !== current
+function normalizeVersion (version) {
+  const cleaned = semver.clean(String(version || '').trim())
+  if (cleaned) {
+    return cleaned.toLowerCase()
   }
+  const coerced = semver.coerce(version)
+  return coerced ? coerced.version : '0.0.0'
 }
 
 /**
- * 保留 pre-release 语义的版本比较（beta/all 渠道用）。
- * coerce 会把 3.0.1-beta.1 折叠成 3.0.1，无法区分 beta 与正式版；
- * 这里用完整 semver（clean 仅去除 v 前缀/空白）。
- * 注意：GitHub tag 大小写敏感（v3.0.1-Beta），yml version 可能与
- * package.json 版本大小写不一致，比较前统一小写避免误判。
+ * 比较版本号，返回 true 表示有新版本。
+ * 保留完整 pre-release 语义：3.0.2-Beta1 < 3.0.2-Beta2 < 3.0.2。
+ * 注意不能用 coerce 比较 —— coerce 会把三个版本全部折叠成 3.0.2，
+ * 导致 Beta1/Beta2 用户永远检测不到正式版 3.0.2 的升级。
  */
-function isNewerVersionFull (latest, current) {
+function isNewerVersion (latest, current) {
   try {
-    const l = (semver.clean(latest) || '0.0.0').toLowerCase()
-    const c = (semver.clean(current) || '0.0.0').toLowerCase()
-    return semver.gt(l, c)
+    return semver.gt(normalizeVersion(latest), normalizeVersion(current))
   } catch {
     return latest !== current
   }
@@ -650,11 +661,26 @@ export default class UpdateManager extends EventEmitter {
         return
       }
 
-      // 版本比较：stable 用 coerce（兼容旧行为）；beta/all 用完整 semver，
-      // 保留 pre-release 标签语义（3.0.1-beta.1 可被 beta 渠道识别）。
-      const newer = channel === 'stable'
-        ? isNewerVersion(info.version, CURRENT_VERSION)
-        : isNewerVersionFull(info.version, CURRENT_VERSION)
+      // beta 渠道对称地只认 pre-release：即使 yml 来自兜底 URL
+      // （如 releases/latest 返回正式版、release 漏勾 Pre-release 标志），
+      // 只要版本号不带 pre-release 标识就不提示更新，
+      // 保证 Beta 渠道永远只看到测试版；想升级正式版请切换 stable 渠道。
+      if (channel === 'beta' && !isPrereleaseVersion(info.version)) {
+        logger.info(`[LinkCore] Beta channel ignored stable yml version: ${info.version}`)
+        this.isChecking = false
+        this._notifyWindows('update-not-available')
+        this.emit('update-not-available', info)
+        this._saveCheckResult(false, '')
+        return
+      }
+
+      // 版本比较：所有渠道统一用完整 semver（保留 pre-release 标签语义）。
+      // stable 渠道同样适用 —— coerce 会把 3.0.2-Beta1 / 3.0.2-Beta2 /
+      // 3.0.2 全部折叠成 3.0.2，导致 Beta 用户检测不到正式版升级；
+      // 且 stable 渠道已在上方用 isPrereleaseVersion 排除了远端 pre-release，
+      // 这里只会拿到正式版 yml，与当前 Beta 版本比较时
+      // semver.gt('3.0.2', '3.0.2-beta1') 为 true，升级可被正确识别。
+      const newer = isNewerVersion(info.version, CURRENT_VERSION)
 
       if (!newer) {
         this.isChecking = false
