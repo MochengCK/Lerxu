@@ -3575,7 +3575,7 @@ export default class Application extends EventEmitter {
   }
 
   handleProgressChange (progress) {
-    if (this.updateManager.isChecking) {
+    if (this.updateManager && this.updateManager.isChecking) {
       return
     }
     if (!is.windows() && progress === 2) {

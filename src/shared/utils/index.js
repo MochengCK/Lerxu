@@ -210,6 +210,9 @@ export const calcRatio = (totalLength, uploadLength) => {
 }
 
 export const timeRemaining = (totalLength, completedLength, downloadSpeed) => {
+  if (!downloadSpeed || downloadSpeed <= 0) {
+    return 0
+  }
   const remainingLength = totalLength - completedLength
   return Math.ceil(remainingLength / downloadSpeed)
 }
@@ -998,7 +1001,7 @@ export const cloneArray = (arr = [], reversed = false) => {
 
 export const pushItemToFixedLengthArray = (arr = [], maxLength, item) => {
   const result = arr.length >= maxLength
-    ? [...arr.slice(1, maxLength - 1), item]
+    ? [...arr.slice(1), item]
     : [...arr, item]
   return result
 }

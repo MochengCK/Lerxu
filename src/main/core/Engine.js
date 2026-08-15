@@ -524,7 +524,12 @@ export default class Engine {
       // 清理可能残留的旧进程
       this.killStaleProcess(getEnginePidPath()).then(() => {
         logger.info('[LinkCore] Starting automatic engine restart')
-        this.start().catch((error) => {
+        this.start().then(() => {
+          // 引擎成功重启后复位计数，使 maxRestartAttempts 仅针对"连续崩溃"生效，
+          // 而非整个应用生命周期的累计崩溃次数，避免恢复后仍因历史计数而停摆
+          Engine.restartAttempts = 0
+          logger.info('[LinkCore] Engine restarted successfully, restart attempts reset')
+        }).catch((error) => {
           logger.error('[LinkCore] Failed to restart engine:', error.message)
           // 如果重启失败，指数退避延迟下一次尝试
           const delay = Math.pow(2, Engine.restartAttempts) * 1000
