@@ -3,12 +3,12 @@
 
 // BT User-Agent used for tracker HTTP and DHT related identity.
 // Must match the XferCore engine version in XferCore/configure.ac (AC_INIT).
-export const LINKCORE_BT_UA = 'XferCore/1.5.1'
+export const LINKCORE_BT_UA = 'XferCore/1.5.2'
 
 // Peer ID prefix: 20-byte BT peer id format, "-XCxxxx-" + 12 random chars.
-// Azureus-style: -XC{major}{minor}{micro}0- (e.g. -XC1510- = XferCore 1.5.1).
+// Azureus-style: -XC{major}{minor}{micro}0- (e.g. -XC1520- = XferCore 1.5.2).
 // Must match LINKCORE_BT_UA version and XferCore/configure.ac.
-export const LINKCORE_PEER_ID_PREFIX = '-XC1510-'
+export const LINKCORE_PEER_ID_PREFIX = '-XC1520-'
 
 // BT client name used in BEP10 extension handshake.
 export const LINKCORE_CLIENT_NAME = 'XferCore (based on aria2)'

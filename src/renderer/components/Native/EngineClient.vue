@@ -329,15 +329,15 @@
           return
         }
 
-        this.fetchTaskItem({ gid })
-          .then((task) => {
-            if (!task) {
-              return
-            }
-            const taskName = getTaskName(task)
-            const message = this.$t('task.download-pause-message', { taskName })
-            this.$msg.info(message)
-          })
+        // 引擎真正确认暂停时立即刷新 UI。
+        // 暂停 RPC 返回时 BT 任务往往还处于 active（等引擎下一轮迭代才真正
+        // 转为 paused），若只依赖轮询（idle 时最长 30s），用户会感觉
+        // "暂停很久才生效"，这里通过事件驱动实现即时反馈。
+        // 注意：不弹 toast，因为引擎侧自动暂停（磁力元数据下载完成后等待
+        // 选择文件、bt-stop-timeout 自动停止等）也会触发本事件。
+        this.$store.dispatch('task/fetchList')
+        this.$store.dispatch('app/resetInterval')
+        this.kickPolling()
       },
       onDownloadStop (event) {
         const [{ gid }] = event
@@ -2920,7 +2920,7 @@
       },
       bindEngineEvents () {
         api.client.on('onDownloadStart', this.onDownloadStart)
-        // api.client.on('onDownloadPause', this.onDownloadPause)
+        api.client.on('onDownloadPause', this.onDownloadPause)
         api.client.on('onDownloadStop', this.onDownloadStop)
         api.client.on('onDownloadComplete', this.onDownloadComplete)
         api.client.on('onDownloadError', this.onDownloadError)
@@ -2928,7 +2928,7 @@
       },
       unbindEngineEvents () {
         api.client.removeListener('onDownloadStart', this.onDownloadStart)
-        // api.client.removeListener('onDownloadPause', this.onDownloadPause)
+        api.client.removeListener('onDownloadPause', this.onDownloadPause)
         api.client.removeListener('onDownloadStop', this.onDownloadStop)
         api.client.removeListener('onDownloadComplete', this.onDownloadComplete)
         api.client.removeListener('onDownloadError', this.onDownloadError)
@@ -3011,10 +3011,17 @@
           // 首次轮询后校验待选择文件状态，移除已不存在的任务条目
           if (!this.pendingFileSelectionSynced) {
             this.pendingFileSelectionSynced = true
-            const list = this.$store.state.task.taskList || []
-            this.$store.dispatch('task/syncPendingFileSelection', list)
-            // 重新扫描任务列表，检测因引擎重启而丢失状态的待选文件 BT 任务
-            this.scanForPendingBtTasks()
+            // 用未过滤的全量列表校验：state.taskList 受当前列表类型
+            // 与日期筛选影响，可能漏掉任务导致已确认记录被误删，
+            // 进而在重启后把已选文件的任务重新标记为待选择。
+            api.fetchTaskList({ type: 'all' }).then((allList) => {
+              this.$store.dispatch('task/syncPendingFileSelection', allList || [])
+              this.scanForPendingBtTasks()
+            }).catch(() => {
+              const list = this.$store.state.task.taskList || []
+              this.$store.dispatch('task/syncPendingFileSelection', list)
+              this.scanForPendingBtTasks()
+            })
           }
         }).catch(() => {
           // 引擎断线时 fetchList 会 reject，静默忽略
@@ -3302,7 +3309,10 @@
         // 用户此前已确认过文件选择的任务（confirmedFileSelection），
         // 应用重启后引擎重新解析元数据时不应再回到"待选择文件"状态，
         // 直接恢复下载即可（select-file 选项已随会话保存）。
-        const confirmed = this.$store.state.task.confirmedFileSelection || {}
+        // 注意：确认记录需在校验时实时读取——磁力重启后 gid 漂移，
+        // syncPendingFileSelection 会按 infoHash 把记录改挂到新 gid，
+        // 早于异步回调取快照会读到过期数据。
+        const getConfirmed = () => this.$store.state.task.confirmedFileSelection || {}
         api.fetchTaskItem({ gid }).then((detail) => {
           const followedBy = detail && detail.followedBy ? detail.followedBy : []
           if (followedBy.length) {
@@ -3310,7 +3320,7 @@
               api.fetchTaskItem({ gid: newGid }).then((newTask) => {
                 const files = Array.isArray(newTask && newTask.files) ? newTask.files : []
                 if (files.length > 1) {
-                  if (isTaskFileSelectionConfirmed(confirmed, newTask || detail)) {
+                  if (isTaskFileSelectionConfirmed(getConfirmed(), newTask || detail)) {
                     api.resumeTask({ gid: newGid }).catch(() => {})
                   } else {
                     this.$store.dispatch('task/setPendingFileSelection', newGid)
@@ -3327,7 +3337,7 @@
             const files = Array.isArray(detail && detail.files) ? detail.files : []
             const bt = detail && detail.bittorrent ? detail.bittorrent : null
             if (bt && bt.info && files.length > 1 && detail.status === TASK_STATUS.PAUSED) {
-              if (isTaskFileSelectionConfirmed(confirmed, detail)) {
+              if (isTaskFileSelectionConfirmed(getConfirmed(), detail)) {
                 api.resumeTask({ gid }).catch(() => {})
               } else {
                 this.$store.dispatch('task/setPendingFileSelection', gid)

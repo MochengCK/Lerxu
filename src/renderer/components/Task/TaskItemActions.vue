@@ -792,6 +792,11 @@
         const gid = task && task.gid ? `${task.gid}` : ''
         if (gid && this.pendingFileSelection && this.pendingFileSelection[gid]) {
           this.$store.dispatch('task/clearPendingFileSelection', gid)
+          // 直接恢复 = 接受当前文件选择，记录确认状态，
+          // 避免应用重启后任务再次退回"待选择文件"状态
+          const bt = task && task.bittorrent
+          const infoHash = bt && bt.info && bt.info.hash ? `${bt.info.hash}` : ''
+          this.$store.dispatch('task/confirmFileSelection', { gid, infoHash })
         }
         commands.emit('resume-task', {
           task,

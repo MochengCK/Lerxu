@@ -12,6 +12,8 @@ const MAX_MAGNET_STATUS_GIDS = 300
 const MAX_DATA_ACCESS_STATUS_GIDS = 300
 const MAX_TASK_LINK_UPDATE_HINT_GIDS = 300
 
+let saveSessionDebounceTimer = null
+
 function normalizeGid (gid) {
   const s = `${gid || ''}`
   return s
@@ -1423,6 +1425,7 @@ const actions = {
     const promise = isBT ? api.forcePauseTask({ gid }) : api.pauseTask({ gid })
     return promise
       .finally(() => {
+        dispatch('app/resetInterval', null, { root: true })
         dispatch('fetchList')
         dispatch('saveSession')
       })
@@ -1495,14 +1498,18 @@ const actions = {
       .then(() => ensureBtResumeOptions())
       .then(() => api.resumeTask({ gid }))
       .finally(() => {
+        dispatch('app/resetInterval', null, { root: true })
         dispatch('fetchList')
         dispatch('saveSession')
       })
   },
   pauseAllTask ({ dispatch }) {
-    return api.pauseAllTask()
+    // 与单个 BT 任务暂停策略一致：优先使用 forcePauseAll。
+    // 普通 pauseAll 对 BT 任务是软停止（等 peer/tracker 命令自然退出），
+    // 用户会感觉"全部暂停很久才生效"。
+    return api.forcePauseAllTask()
       .catch(() => {
-        return api.forcePauseAllTask()
+        return api.pauseAllTask()
       })
       .then(() => {
         // 立即获取任务列表和全局统计以加快UI更新
@@ -1599,12 +1606,34 @@ const actions = {
     Object.keys(confirmed).forEach(gid => {
       if (existingGids.has(gid)) {
         nextConfirmed[gid] = confirmed[gid]
+        return
       }
+      const v = confirmed[gid]
+      if (typeof v === 'string' && v.trim()) {
+        // 磁力任务的 BT 阶段 gid 每次重启都会漂移：会话文件保存的是
+        // 磁力 URI 与元数据任务的 gid，重启后重新 follow 会生成新 gid。
+        // 已确认记录按 infoHash 改挂到当前同哈希任务上；若磁力尚未
+        // 解析完成（列表中暂时没有对应任务），保留原条目等待匹配，
+        // 绝不能直接丢弃——否则重启后任务会退回"待选择文件"状态。
+        const hash = v.trim().toLowerCase()
+        const target = list.find(t => String(
+          (t && (t.infoHash || (t.bittorrent && t.bittorrent.info && t.bittorrent.info.hash))) || ''
+        ).trim().toLowerCase() === hash)
+        if (target && target.gid) {
+          nextConfirmed[`${target.gid}`] = v
+        } else {
+          nextConfirmed[gid] = v
+        }
+      }
+      // 值为 true 的旧格式条目且任务已不存在 → 自然丢弃
     })
     if (Object.keys(next).length !== Object.keys(current).length) {
       commit('REPLACE_PENDING_FILE_SELECTION', next)
     }
-    if (Object.keys(nextConfirmed).length !== Object.keys(confirmed).length) {
+    const confirmedChanged =
+      Object.keys(nextConfirmed).length !== Object.keys(confirmed).length ||
+      Object.keys(nextConfirmed).some(k => nextConfirmed[k] !== confirmed[k])
+    if (confirmedChanged) {
       commit('LOAD_CONFIRMED_FILE_SELECTION', nextConfirmed)
     }
   },
@@ -1768,7 +1797,17 @@ const actions = {
     commit('CLEAR_TASK_CACHES_FOR_GIDS', gids)
   },
   saveSession () {
-    return api.saveSession().catch(() => {})
+    // aria2.saveSession 在引擎主循环内同步写盘（会话文件 + 所有任务控制文件），
+    // 执行期间会阻塞同一连接上的后续 RPC（包括轮询 tellActive 和 pause/unpause），
+    // 用户会感知"开始/暂停很久才生效"。暂停、恢复、删除、任务启动事件等都会触发
+    // saveSession，这里做 trailing 防抖合并，避免引擎被反复阻塞。
+    if (saveSessionDebounceTimer) {
+      clearTimeout(saveSessionDebounceTimer)
+    }
+    saveSessionDebounceTimer = setTimeout(() => {
+      saveSessionDebounceTimer = null
+      api.saveSession().catch(() => {})
+    }, 800)
   },
   purgeTaskRecord ({ dispatch }) {
     return api.purgeTaskRecord()

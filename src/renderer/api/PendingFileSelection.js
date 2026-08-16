@@ -52,10 +52,17 @@ class PendingFileSelection {
   confirm (gid, infoHash) {
     if (!gid) return
     const current = this.getConfirmedAll()
-    if (current[`${gid}`]) return
+    const key = `${gid}`
+    const hash = infoHash ? `${infoHash}` : ''
+    const existing = current[key]
+    if (existing) {
+      // 已有哈希记录，或本次没有更新的哈希 → 无需变更
+      if (typeof existing === 'string' || !hash) return
+      // 旧数据仅存 true：升级为 infoHash，gid 漂移后仍可按哈希匹配
+    }
     pendingFileSelectionStore.set('confirmedGids', {
       ...current,
-      [`${gid}`]: infoHash || true
+      [key]: hash || true
     })
   }
 
