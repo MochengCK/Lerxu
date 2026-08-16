@@ -2,10 +2,13 @@
 // Split identifiers for HTTP and BT traffic.
 
 // BT User-Agent used for tracker HTTP and DHT related identity.
-export const LINKCORE_BT_UA = 'XferCore/1.3.0'
+// Must match the XferCore engine version in XferCore/configure.ac (AC_INIT).
+export const LINKCORE_BT_UA = 'XferCore/1.5.1'
 
 // Peer ID prefix: 20-byte BT peer id format, "-XCxxxx-" + 12 random chars.
-export const LINKCORE_PEER_ID_PREFIX = '-XC1300-'
+// Azureus-style: -XC{major}{minor}{micro}0- (e.g. -XC1510- = XferCore 1.5.1).
+// Must match LINKCORE_BT_UA version and XferCore/configure.ac.
+export const LINKCORE_PEER_ID_PREFIX = '-XC1510-'
 
 // BT client name used in BEP10 extension handshake.
 export const LINKCORE_CLIENT_NAME = 'XferCore (based on aria2)'

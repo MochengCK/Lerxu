@@ -848,7 +848,16 @@
           this.selectFilesDialogVisible = false
           this.$store.dispatch('task/clearPendingFileSelection', gid)
           const bt = this.task && this.task.bittorrent
-          const infoHash = bt && bt.info && bt.info.hash ? `${bt.info.hash}` : ''
+          // infoHash 优先取任务顶层字段（aria2 tellStatus 的 infoHash），
+          // bittorrent.info.hash 仅为兼容兜底。若这里取不到哈希，确认状态
+          // 会被存成 `true`，重启后磁力任务 follow 导致 gid 漂移时无法按
+          // 哈希识别"已确认"，任务会被 scanForPendingBtTasks 重新标记为
+          // "待选择文件"。
+          const infoHash = String(
+            (this.task && this.task.infoHash) ||
+              (bt && bt.info && bt.info.hash) ||
+              ''
+          ).trim()
           this.$store.dispatch('task/confirmFileSelection', { gid, infoHash })
           return api.resumeTask({ gid })
         }).catch(() => {

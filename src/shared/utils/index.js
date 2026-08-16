@@ -137,7 +137,7 @@ export const peerIdParser = (str) => {
 
     // 检查是否是 XferCore 或 LinkCore
     if (decodedStr && (decodedStr.startsWith('XferCore') || decodedStr.startsWith('LinkCore'))) {
-      // 尝试提取版本号，格式如 "XferCore/1.3.0"
+      // 尝试提取版本号，格式如 "XferCore/1.5.1"
       const match = decodedStr.match(/^(XferCore|LinkCore)\/?([\d.]+)?/)
       if (match) {
         const version = match[2]
@@ -147,7 +147,7 @@ export const peerIdParser = (str) => {
     }
 
     // 检查 Peer ID 是否以 -XC 开头（Azureus 风格）
-    // 格式：-XC1300-xxxxxxxxxxxx
+    // 格式：-XC1510-xxxxxxxxxxxx
     if (decodedStr && decodedStr.startsWith('-XC')) {
       const versionMatch = decodedStr.match(/^-XC(\d)(\d)(\d)(\d)-/)
       if (versionMatch) {

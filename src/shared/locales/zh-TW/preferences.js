@@ -301,7 +301,7 @@ export default {
   'enable-nat-pmp': '啟用 NAT-PMP',
   'enable-nat-pmp-desc': 'UPnP 映射失敗時，透過 NAT-PMP 協定自動映射連接埠',
   'enable-utp': '啟用 uTP 傳輸',
-  'enable-utp-desc': '使用 uTP（BEP 29）協定連接 BT 對等方，對低延遲網路更友善，失敗自動回退 TCP',
+  'enable-utp-desc': '接受入站 uTP 連線；僅對已知支援的 peer 主動發起 uTP，其餘 TCP',
   'enable-upnp': '啟用 UPnP',
   'enable-upnp-desc': '在支援 UPnP 的路由器上自動進行連接埠轉發',
   'extension-intercept-all-downloads-desc': '攔截瀏覽器中的所有下載並交給 LinkCore 處理',

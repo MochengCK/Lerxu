@@ -63,7 +63,9 @@
             </template>
             <template v-else>
               <!-- 所有peer都显示IP:Port格式，保持一致 -->
-              <span class="mo-peer-text" :title="`${scope.row.ip}:${scope.row.port}`">{{ `${scope.row.ip}:${scope.row.port}` }}</span>
+              <el-tooltip effect="dark" :content="`${scope.row.ip}:${scope.row.port}`" placement="top" :open-delay="0">
+                <span class="mo-peer-text">{{ `${scope.row.ip}:${scope.row.port}` }}</span>
+              </el-tooltip>
             </template>
           </template>
         </el-table-column>
@@ -73,13 +75,15 @@
           sortable="custom"
           min-width="100">
           <template slot-scope="scope">
-            <span class="mo-peer-location" :title="getPeerLocation(scope.row.ip)">
-              <span
-                v-if="getPeerCountryCode(scope.row.ip)"
-                :class="getPeerCountryClass(scope.row.ip)"
-              ></span>
-              <span class="mo-peer-text">{{ getPeerLocation(scope.row.ip) }}</span>
-            </span>
+            <el-tooltip effect="dark" :content="getPeerLocation(scope.row.ip)" placement="top" :open-delay="0">
+              <span class="mo-peer-location">
+                <span
+                  v-if="getPeerCountryCode(scope.row.ip)"
+                  :class="getPeerCountryClass(scope.row.ip)"
+                ></span>
+                <span class="mo-peer-text">{{ getPeerLocation(scope.row.ip) }}</span>
+              </span>
+            </el-tooltip>
           </template>
         </el-table-column>
         <el-table-column
@@ -88,7 +92,9 @@
           sortable="custom"
           min-width="125">
           <template slot-scope="scope">
-            <span class="mo-peer-text" :title="getPeerClientTooltip(scope.row)">{{ renderPeerClient(scope.row) }}</span>
+            <el-tooltip effect="dark" :content="getPeerClientTooltip(scope.row)" placement="top" :open-delay="0">
+              <span class="mo-peer-text">{{ renderPeerClient(scope.row) }}</span>
+            </el-tooltip>
           </template>
         </el-table-column>
         <el-table-column
@@ -121,7 +127,9 @@
               -
             </template>
             <template v-else-if="scope.row.status === 'disconnected'">
-              <span class="mo-peer-text" :title="getPeerFailureDetailText(scope.row)">{{ getPeerFailureSummaryText(scope.row) }}</span>
+              <el-tooltip effect="dark" :content="getPeerFailureDetailText(scope.row)" placement="top" :open-delay="0">
+                <span class="mo-peer-text">{{ getPeerFailureSummaryText(scope.row) }}</span>
+              </el-tooltip>
             </template>
             <template v-else>
               {{ getPeerStatus(scope.row) }}

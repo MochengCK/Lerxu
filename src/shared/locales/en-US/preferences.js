@@ -295,7 +295,7 @@ export default {
   'enable-nat-pmp': 'NAT-PMP port mapping',
   'enable-nat-pmp-desc': 'Automatically map ports via NAT-PMP when UPnP mapping fails',
   'enable-utp': 'uTP transport',
-  'enable-utp-desc': 'Connect to BT peers over uTP (BEP 29); falls back to TCP automatically',
+  'enable-utp-desc': 'Accept inbound uTP; initiate uTP only to known peers, else TCP',
   'enable-dht': 'DHT (IPv4)',
   'enable-dht-desc': 'Discover peers via the distributed hash table (BEP 5), no tracker required',
   'enable-dht6': 'DHT over IPv6',

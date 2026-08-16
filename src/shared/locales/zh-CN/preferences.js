@@ -295,7 +295,7 @@ export default {
   'enable-nat-pmp': 'NAT-PMP 端口映射',
   'enable-nat-pmp-desc': 'UPnP 映射失败时，通过 NAT-PMP 协议自动映射端口',
   'enable-utp': 'uTP 传输',
-  'enable-utp-desc': '使用 uTP（BEP 29）协议连接 BT 对等方，对低延迟网络更友好，失败自动回退 TCP',
+  'enable-utp-desc': '接受入站 uTP 连接；仅对已知支持的 peer 主动发起 uTP，其余 TCP',
   'enable-dht': 'DHT（IPv4）',
   'enable-dht-desc': '通过分布式哈希表（BEP 5）发现节点，无需 Tracker 也能找到更多源',
   'enable-dht6': 'DHT over IPv6',

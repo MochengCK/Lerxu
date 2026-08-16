@@ -300,7 +300,7 @@ export default {
   'enable-nat-pmp': 'Enable NAT-PMP',
   'enable-nat-pmp-desc': 'Automatically map ports via NAT-PMP when UPnP mapping fails',
   'enable-utp': 'Enable uTP transport',
-  'enable-utp-desc': 'Connect to BT peers over uTP (BEP 29); falls back to TCP automatically',
+  'enable-utp-desc': 'Accept inbound uTP; initiate uTP only to known peers, else TCP',
   'enable-upnp': 'Enable UPnP',
   'enable-upnp-desc': 'Automatically forward ports on routers that support UPnP',
   'extension-intercept-all-downloads-desc': 'Intercept all browser downloads and pass them to LinkCore',
