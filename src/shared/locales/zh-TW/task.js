@@ -252,6 +252,7 @@ export default {
   'task-detail-connections': '連線詳情',
   'task-connections-detail': '連線詳情',
   'download-error-with-reason': '{{taskName}} 下載發生錯誤：{{reason}}',
+  'auto-referer-fallback': '{{taskName}} 的伺服器拒絕帶來源頁的請求，已自動移除 Referer 重試',
   'download-fail-with-reason': '下載失敗：{{reason}}',
   'near-complete-verifying': '下載已接近完成，正在校驗並整理檔案...',
   'waiting-download-data': '無法存取下載資料，正在等待可用連線...',

@@ -392,6 +392,10 @@ export default class Application extends EventEmitter {
     }
 
     let finalHeaders = headerList
+    // 最后防线：剔除 Origin 头。浏览器对跨域 GET 请求不发送 Origin，
+    // 伪造 Origin（与目标 Host 不同源）会被 CDN/WAF 判定为伪造请求，
+    // 导致目标服务器返回 403（旧版扩展曾附带该头）。
+    finalHeaders = finalHeaders.filter(h => !(typeof h === 'string' && /^origin\s*:/i.test(h.trim())))
     if (!finalHeaders.length) {
       finalHeaders = ['X-LinkCore-Source: BrowserExtension']
     } else if (!finalHeaders.some(h => typeof h === 'string' && /^x-linkcore-source\s*:/i.test(h.trim()))) {
@@ -1053,10 +1057,14 @@ export default class Application extends EventEmitter {
       const { platform, arch } = process
       mergeAria2Conf(platform, arch)
 
-      // 每次启动生成随机 RPC secret，防止未授权的外部 RPC 访问。
+      // RPC secret 仅在首次启动时生成一次，防止未授权的外部 RPC 访问，
+      // 后续启动不再重新生成；用户手动修改（包括清空）的值始终保留。
       // secret 通过 systemConfig 传递给 Engine（命令行参数）和 EngineClient。
-      const rpcSecret = randomBytes(16).toString('hex')
-      this.configManager.setSystemConfig('rpc-secret', rpcSecret)
+      if (!this.configManager.getUserConfig('rpc-secret-generated')) {
+        const rpcSecret = randomBytes(16).toString('hex')
+        this.configManager.setSystemConfig('rpc-secret', rpcSecret)
+        this.configManager.setUserConfig('rpc-secret-generated', true)
+      }
 
       this.engine = new Engine({
         systemConfig: this.configManager.getSystemConfig(),

@@ -39,6 +39,7 @@
         taskSpeedSampleBaseMap: {},
         downloadStartNotifiedGids: new Set(),
         segmentErrorRetryMap: {},
+        autoRefererFallbackTriedUris: new Set(),
         engineConnectionStable: true,
         pendingFileSelectionSynced: false
       }
@@ -353,7 +354,7 @@
       onDownloadError (event) {
         const [{ gid }] = event
         this.fetchTaskItem({ gid })
-          .then((task) => {
+          .then(async (task) => {
             if (!task) {
               return
             }
@@ -410,6 +411,16 @@
             const rule = linkUpdateRule(httpStatus)
             const canShowUpdateLink = rule.show && !isBt && !isServerError && !isTimeout && !isDiskIssue && !isHashMismatch
 
+            // 部分视频 CDN（签名直链）拒绝任何带 Referer 的请求（HTTP 403），
+            // 浏览器扩展任务默认携带页面 Referer。这里先自动移除 Referer/Origin
+            // 重试一次，成功则无需用户干预；失败再走"更新链接"提示流程。
+            if (httpStatus === 403 && canShowUpdateLink) {
+              const retried = await this.tryAutoRefererFallback(task)
+              if (retried) {
+                return
+              }
+            }
+
             if (canShowUpdateLink) {
               this.$store.dispatch('task/markTaskNeedUpdateLink', {
                 gid,
@@ -456,6 +467,83 @@
         }
         const path = match[1] ? `${match[1]}` : ''
         return path.replace(/^["']|["']$/g, '')
+      },
+      // 403 自动回退：移除 Referer/Origin 后重建任务重试（每个 URI 仅一次）。
+      // 背景：部分视频 CDN（如签名直链 vdownload.hembed.com）会拒绝任何携带
+      // Referer 的请求，而浏览器扩展任务默认带上页面 Referer，导致 403；
+      // 应用内手动添加因不带 Referer 反而正常。B 站等站点必须携带 Referer，
+      // 移除后重试会再次失败并进入既有的"更新链接"提示流程，无副作用。
+      async tryAutoRefererFallback (task) {
+        try {
+          const gid = task && task.gid ? `${task.gid}` : ''
+          if (!gid || checkTaskIsBT(task) || isMagnetTask(task)) {
+            return false
+          }
+          const uri = getTaskUri(task)
+          if (!uri || !/^https?:/i.test(uri)) {
+            return false
+          }
+          if (this.autoRefererFallbackTriedUris.has(uri)) {
+            return false
+          }
+
+          let opt = null
+          try {
+            opt = await api.getOption({ gid })
+          } catch (_) {
+            return false
+          }
+          const rawHeaders = opt && opt.header ? opt.header : []
+          const headerItems = Array.isArray(rawHeaders) ? rawHeaders : (typeof rawHeaders === 'string' ? [rawHeaders] : [])
+          const lines = []
+          headerItems.filter(Boolean).forEach(h => {
+            `${h}`.split(/\r?\n/).forEach(line => {
+              const s = `${line || ''}`.trim()
+              if (s) lines.push(s)
+            })
+          })
+          const filtered = lines.filter(l => !/^(referer|origin)\s*:/i.test(l))
+          if (filtered.length === lines.length) {
+            // 请求头里本来就没有 Referer/Origin，403 与此无关，不做回退
+            return false
+          }
+
+          this.autoRefererFallbackTriedUris.add(uri)
+
+          const options = {
+            continue: true,
+            header: filtered
+          }
+          if (opt.dir) options.dir = `${opt.dir}`
+          if (opt.out) options.out = `${opt.out}`
+          const proxy = `${(opt.allProxy || opt['all-proxy'] || '').trim()}`
+          if (proxy) options.allProxy = proxy
+          const split = Number(opt.split)
+          if (Number.isFinite(split) && split > 0) options.split = split
+
+          const nextGid = await api.addUriRaw({ uri, options })
+          if (!nextGid) {
+            this.autoRefererFallbackTriedUris.delete(uri)
+            return false
+          }
+
+          const oldStatus = task && task.status ? `${task.status}` : ''
+          if ([TASK_STATUS.ERROR, TASK_STATUS.COMPLETE, TASK_STATUS.REMOVED].includes(oldStatus)) {
+            await this.$store.dispatch('task/removeTaskRecord', { gid, status: oldStatus }).catch(() => {})
+          } else {
+            await this.$store.dispatch('task/removeTask', { gid }).catch(() => {})
+          }
+          await this.$store.dispatch('task/fetchList').catch(() => {})
+          await this.$store.dispatch('app/fetchGlobalStat').catch(() => {})
+
+          const taskName = getTaskName(task)
+          this.$msg.warning(this.$t('task.auto-referer-fallback', { taskName }))
+          console.info(`[LinkCore] 403 auto referer fallback: ${gid} -> ${nextGid} (${uri})`)
+          return true
+        } catch (e) {
+          console.warn('[LinkCore] auto referer fallback failed:', e)
+          return false
+        }
       },
       async tryRepairSegmentFile (task, segmentPath) {
         const gid = task && task.gid ? `${task.gid}` : ''

@@ -548,27 +548,30 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   } catch (e) {}
 
+  // 构造发给下载器的请求头。注意：绝不能附带 Origin ——
+  // 浏览器对跨域 GET 请求不会发送 Origin，伪造 Origin（与目标 Host
+  // 不同源）是 CDN/WAF 判定伪造请求的典型特征，会导致 403。
+  const buildDownloadHeaders = () => {
+    const headers = []
+    try {
+      const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : ''
+      if (ua) headers.push(`User-Agent: ${ua}`)
+    } catch (e) {}
+    try {
+      const langs = (typeof navigator !== 'undefined' && Array.isArray(navigator.languages) ? navigator.languages : [])
+        .map(x => `${x || ''}`.trim()).filter(Boolean)
+      if (langs.length > 0) headers.push(`Accept-Language: ${langs.join(',')}`)
+    } catch (e) {}
+    headers.push('Accept: */*')
+    return headers
+  }
+
   const sendPageToClient = () => {
     try {
       const url = window.location.href || ''
       if (!url || !/^https?:/i.test(url)) return
       const referer = url
-      const headers = []
-      try {
-        const origin = window.location && window.location.origin ? window.location.origin : ''
-        if (origin && /^https?:/i.test(origin)) headers.push(`Origin: ${origin}`)
-      } catch (e) {}
-      try {
-        const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : ''
-        if (ua) headers.push(`User-Agent: ${ua}`)
-      } catch (e) {}
-      try {
-        const langs = (typeof navigator !== 'undefined' && Array.isArray(navigator.languages) ? navigator.languages : [])
-          .map(x => `${x || ''}`.trim()).filter(Boolean)
-        if (langs.length > 0) headers.push(`Accept-Language: ${langs.join(',')}`)
-      } catch (e) {}
-      headers.push('Accept: */*')
-      chrome.runtime.sendMessage({ type: 'addUriFromContent', url, referer, headers }, () => { })
+      chrome.runtime.sendMessage({ type: 'addUriFromContent', url, referer, headers: buildDownloadHeaders() }, () => { })
     } catch (e) {
     }
   }
@@ -576,26 +579,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const sendResourceToClient = (url, referer, suggestedFilename) => {
     try {
       if (!url || !/^https?:/i.test(url)) return
-      const headers = []
-      try {
-        const origin = window.location && window.location.origin ? window.location.origin : ''
-        if (origin && /^https?:/i.test(origin)) headers.push(`Origin: ${origin}`)
-      } catch (e) {}
-      try {
-        const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : ''
-        if (ua) headers.push(`User-Agent: ${ua}`)
-      } catch (e) {}
-      try {
-        const langs = (typeof navigator !== 'undefined' && Array.isArray(navigator.languages) ? navigator.languages : [])
-          .map(x => `${x || ''}`.trim()).filter(Boolean)
-        if (langs.length > 0) headers.push(`Accept-Language: ${langs.join(',')}`)
-      } catch (e) {}
-      headers.push('Accept: */*')
       const message = {
         type: 'addUriFromContent',
         url,
         referer,
-        headers
+        headers: buildDownloadHeaders()
       }
       // 如果有建议的文件名，添加到消息中
       if (suggestedFilename) {
@@ -1102,23 +1090,24 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       const wrapperId = `linkcore-video-sniff-btn-wrapper-${contextId}`
       const existing = document.getElementById(wrapperId)
-      if (existing) return true
-
-      const container = video.parentElement || video
-      if (!container) return false
-
-      const computedPosition = window.getComputedStyle(container).position
-      if (computedPosition === 'static') {
-        container.style.position = 'relative'
+      if (existing) {
+        // 视频元素可能被站点重建，始终引用最新的 video 节点
+        existing._linkcoreVideo = video
+        return true
       }
 
+      // 不向视频容器插入任何节点、不修改容器样式：
+      // 播放器容器（React/Vue 管理、依赖 :nth-child 布局）被注入外来
+      // 节点或改动 position 后可能导致视频层错位/黑屏。按钮统一挂到
+      // body，用 fixed 定位跟随视频可视区域。
       const wrapper = document.createElement('div')
       wrapper.id = wrapperId
       wrapper.className = 'linkcore-video-sniff-btn-wrapper'
+      wrapper._linkcoreVideo = video
       const wStyle = wrapper.style
-      wStyle.position = 'absolute'
-      wStyle.top = '8px'
-      wStyle.right = '8px'
+      wStyle.position = 'fixed'
+      wStyle.top = '0px'
+      wStyle.left = '0px'
       wStyle.zIndex = '2147483647'
       wStyle.pointerEvents = 'auto'
       wStyle.display = 'block'
@@ -1221,12 +1210,50 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       wrapper.appendChild(extend)
       wrapper.appendChild(btn)
-      container.appendChild(wrapper)
+      document.body.appendChild(wrapper)
+      syncPerVideoButtonPosition(wrapper)
       return true
     } catch (e) {
       return false
     }
   }
+
+  // 将 fixed 定位的按钮同步到视频可视区域的右上角。
+  // 视频不可见、被移除或尺寸过小时隐藏按钮，避免遮挡页面。
+  const syncPerVideoButtonPosition = (wrapper) => {
+    try {
+      const video = wrapper && wrapper._linkcoreVideo
+      if (!wrapper || !video) return
+      if (!video.isConnected || !document.contains(wrapper)) {
+        wrapper.style.display = 'none'
+        return
+      }
+      const rect = video.getBoundingClientRect()
+      const visible = rect.width >= 120 && rect.height >= 70 &&
+        rect.bottom > 0 && rect.top < window.innerHeight &&
+        rect.right > 0 && rect.left < window.innerWidth
+      if (!visible) {
+        wrapper.style.display = 'none'
+        return
+      }
+      wrapper.style.display = 'block'
+      // 停在视口内，避免被裁剪
+      const top = Math.min(Math.max(8, rect.top + 8), Math.max(8, window.innerHeight - 40))
+      const left = Math.min(Math.max(8, rect.right - 40), Math.max(8, window.innerWidth - 40))
+      wrapper.style.top = `${top}px`
+      wrapper.style.left = `${left}px`
+    } catch (e) {}
+  }
+
+  // 轻量位置同步循环：页面滚动/布局变化时让按钮跟随视频。
+  // 没有按钮时几乎零开销（一次 querySelectorAll）。
+  setInterval(() => {
+    try {
+      const wrappers = document.querySelectorAll('.linkcore-video-sniff-btn-wrapper')
+      if (!wrappers || wrappers.length === 0) return
+      wrappers.forEach(syncPerVideoButtonPosition)
+    } catch (e) {}
+  }, 300)
 
   const renderPerVideoSniffButtons = () => {
     try {
@@ -2789,45 +2816,16 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     currentContainer = container
     currentContainerSelector = containerSelector
 
-    // 如果没找到专用播放器容器，查找 video 元素
+    // 如果没找到专用播放器容器，查找 video 元素仅用于计算按钮位置。
+    // 绝不移动 video 节点、不修改其父容器样式 —— 移动 DOM 节点会破坏
+    // React/Vue 等框架的 DOM 追踪和播放器的 MSE 挂载，导致视频黑屏。
     let videoElement = null
     if (!container) {
       videoElement = document.querySelector('video')
       if (videoElement) {
-        // 为 video 创建一个包装容器
-        let videoWrapper = videoElement.parentElement
-
-        // 检查 video 是否已经在一个包装容器中
-        if (videoWrapper && videoWrapper.tagName !== 'BODY') {
-          // 检查这个容器是否只包含 video（或者主要是 video）
-          const containerHeight = videoWrapper.offsetHeight
-          const videoHeight = videoElement.offsetHeight
-
-          // 如果容器高度远大于 video（说明容器里有很多其他内容），使用 video 自己的位置
-          if (containerHeight > videoHeight * 1.5) {
-            // 创建一个新的 wrapper 专门包装 video
-            const newWrapper = document.createElement('div')
-            newWrapper.style.position = 'relative'
-            newWrapper.style.display = 'inline-block'
-            newWrapper.style.width = '100%'
-
-            videoWrapper.insertBefore(newWrapper, videoElement)
-            newWrapper.appendChild(videoElement)
-
-            container = newWrapper
-            containerSelector = 'video-wrapper-created'
-            log('Created wrapper for video')
-          } else {
-            // 容器大小合适，直接使用
-            container = videoWrapper
-            containerSelector = 'video-parent'
-            log('Using video parent as container:', videoWrapper.tagName, videoWrapper.className || videoWrapper.id)
-          }
-        } else {
-          // 父元素是 body，使用 fixed 定位
-          container = document.body
-          containerSelector = 'body'
-        }
+        container = videoElement
+        containerSelector = 'video-rect'
+        log('Using video element rect for positioning')
       } else {
         container = document.body
         containerSelector = 'body'
@@ -2840,15 +2838,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     log('Final container:', containerSelector, container)
-    log('Container position:', window.getComputedStyle(container).position)
     log('Container dimensions:', container.offsetWidth, 'x', container.offsetHeight)
-
-    // 为容器设置相对定位
-    const computedPosition = window.getComputedStyle(container).position
-    if (computedPosition === 'static') {
-      container.style.position = 'relative'
-      log('Set container position to relative')
-    }
 
     const wrapper = document.createElement('div')
     wrapper.id = 'linkcore-bilibili-download-btn-wrapper'
@@ -4185,11 +4175,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const oldText = btnTextEl ? btnTextEl.textContent : ''
 
       const referer = window.location.href || ''
+      // 不附带 Origin：伪造 Origin 会导致 CDN/WAF 403（见 buildDownloadHeaders）
       const headers = []
-      try {
-        const origin = window.location.origin
-        if (origin) headers.push(`Origin: ${origin}`)
-      } catch (e) {}
       try {
         const ua = navigator.userAgent
         if (ua) headers.push(`User-Agent: ${ua}`)
@@ -4255,6 +4242,73 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   }
 
   // 创建或更新下载合集按钮
+  // 将合集下载按钮同步到"订阅合集"按钮当前的位置。
+  // 布局变化（展开弹幕列表、窗口缩放、SPA 重渲染）时持续调用即可跟随。
+  const syncCollectionButtonPosition = (downloadBtn, subscribeBtn) => {
+    try {
+      if (!downloadBtn || !downloadBtn.isConnected) return
+      if (!subscribeBtn || !subscribeBtn.isConnected) return
+      const rect = subscribeBtn.getBoundingClientRect()
+      const scrollX = window.scrollX || window.pageXOffset || 0
+      const scrollY = window.scrollY || window.pageYOffset || 0
+      const btnWidth = downloadBtn.offsetWidth || 50
+      downloadBtn.style.top = `${rect.top + scrollY}px`
+      downloadBtn.style.left = `${Math.max(0, rect.left + scrollX - btnWidth - 4)}px`
+      downloadBtn.style.height = `${rect.height - 6}px`
+    } catch (e) {}
+  }
+
+  // 实时跟随循环：rAF 逐帧同步位置（弹幕列表展开动画期间也能跟随），
+  // 位置无变化时跳过写入；锚点被站点重建时节流重新检测；
+  // 按钮被移除时循环自动停止，页面隐藏时 rAF 由浏览器自动暂停。
+  let collectionFollowRaf = 0
+  let collectionFollowLast = null
+  let collectionAnchorNextDetectAt = 0
+  const collectionFollowLoop = () => {
+    try {
+      const btn = document.getElementById('linkcore-collection-download-btn')
+      if (!btn || !btn.isConnected) {
+        collectionFollowRaf = 0
+        collectionFollowLast = null
+        return
+      }
+      let anchor = btn._linkcoreSubscribeBtn
+      if ((!anchor || !anchor.isConnected) && Date.now() >= collectionAnchorNextDetectAt) {
+        const { subscribeBtn } = detectBilibiliCollection()
+        anchor = subscribeBtn
+        btn._linkcoreSubscribeBtn = anchor
+        // detect 失败时节流，避免每帧做全量 DOM 查询
+        collectionAnchorNextDetectAt = Date.now() + (anchor ? 0 : 1000)
+      }
+      if (anchor && anchor.isConnected) {
+        const rect = anchor.getBoundingClientRect()
+        const scrollX = window.scrollX || window.pageXOffset || 0
+        const scrollY = window.scrollY || window.pageYOffset || 0
+        const width = (btn._linkcoreWidth = btn.offsetWidth || btn._linkcoreWidth || 50)
+        const next = {
+          top: rect.top + scrollY,
+          left: Math.max(0, rect.left + scrollX - width - 4),
+          height: rect.height - 6
+        }
+        const last = collectionFollowLast
+        if (!last || last.top !== next.top || last.left !== next.left || last.height !== next.height) {
+          btn.style.top = `${next.top}px`
+          btn.style.left = `${next.left}px`
+          btn.style.height = `${next.height}px`
+          collectionFollowLast = next
+        }
+      }
+    } catch (e) {}
+    if (collectionFollowRaf) {
+      collectionFollowRaf = requestAnimationFrame(collectionFollowLoop)
+    }
+  }
+  const ensureCollectionFollowRunning = () => {
+    if (!collectionFollowRaf) {
+      collectionFollowRaf = requestAnimationFrame(collectionFollowLoop)
+    }
+  }
+
   const ensureCollectionDownloadButton = () => {
     try {
       const { subscribeBtn, videoItems, collectionTitle, exists } = detectBilibiliCollection()
@@ -4270,8 +4324,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         return
       }
 
-      // 如果已经存在且未变化，不重复创建
+      // 如果已经存在且未变化，不重复创建，但仍要同步位置并确保跟随循环在跑
+      // （打开弹幕列表等布局变化会把合集组件顶下去，按钮需跟随）
       if (existingBtn && existingBtn.getAttribute('data-collection-title') === collectionTitle) {
+        existingBtn._linkcoreSubscribeBtn = subscribeBtn
+        syncCollectionButtonPosition(existingBtn, subscribeBtn)
+        ensureCollectionFollowRunning()
         return
       }
 
@@ -4320,16 +4378,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       downloadBtn.style.minWidth = '0'
       document.body.appendChild(downloadBtn)
 
-      // 使用 absolute 定位（跟随页面滚动，不干扰 Vue DOM）
-      if (subscribeBtn && subscribeBtn.isConnected) {
-        const rect = subscribeBtn.getBoundingClientRect()
-        const scrollX = window.scrollX || window.pageXOffset || 0
-        const scrollY = window.scrollY || window.pageYOffset || 0
-        const btnWidth = downloadBtn.offsetWidth || 50
-        downloadBtn.style.top = `${rect.top + scrollY}px`
-        downloadBtn.style.left = `${Math.max(0, rect.left + scrollX - btnWidth - 4)}px`
-        downloadBtn.style.height = `${rect.height - 6}px`
-      }
+      // 使用 absolute 定位（跟随页面滚动，不干扰 Vue DOM），保存锚点
+      // 引用并启动实时跟随循环（弹幕列表展开等布局变化）
+      downloadBtn._linkcoreSubscribeBtn = subscribeBtn
+      syncCollectionButtonPosition(downloadBtn, subscribeBtn)
+      ensureCollectionFollowRunning()
 
       log('Collection download button created (fixed), collection:', collectionTitle)
 

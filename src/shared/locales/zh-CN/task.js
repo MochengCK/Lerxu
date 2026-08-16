@@ -262,6 +262,7 @@ export default {
   'download-stop-message': '{{taskName}} 下载中止',
   'download-error-message': '{{taskName}} 下载发生错误',
   'download-error-with-reason': '{{taskName}} 下载发生错误：{{reason}}',
+  'auto-referer-fallback': '{{taskName}} 的服务器拒绝带来源页的请求，已自动移除 Referer 重试',
   'download-complete-message': '{{taskName}} 下载完成',
   'download-complete-notify': '下载完成',
   'bt-download-complete-message': '{{taskName}} 下载完成，正在做种...',

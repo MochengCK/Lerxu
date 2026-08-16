@@ -189,6 +189,9 @@ export default class ConfigManager {
           'scope': PROXY_SCOPE_OPTIONS
         },
         'resume-all-when-app-launched': false,
+        // RPC 密钥仅在首次启动时生成一次（随后置为 true），
+        // 后续启动不再重新生成，用户手动修改（包括清空）的值始终保留
+        'rpc-secret-generated': false,
         'run-mode': APP_RUN_MODE.STANDARD,
         'show-progress-bar': true,
         'task-notification': true,

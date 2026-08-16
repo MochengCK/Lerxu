@@ -262,6 +262,7 @@ export default {
   'download-stop-message': 'Stopped downloading {{taskName}}',
   'download-error-message': 'Error occurred when downloading {{taskName}}',
   'download-error-with-reason': 'Error downloading {{taskName}}: {{reason}}',
+  'auto-referer-fallback': 'Server rejected the Referer header for {{taskName}}; retrying automatically without Referer',
   'download-complete-message': 'Completed downloading {{taskName}}',
   'download-complete-notify': 'Download Completed',
   'bt-download-complete-message': 'Completed downloading {{taskName}}, seeding',

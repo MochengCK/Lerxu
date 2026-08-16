@@ -932,6 +932,9 @@ const sanitizeHeaderLine = (line) => {
     const k = raw.slice(0, idx).trim()
     const v = raw.slice(idx + 1).trim()
     if (!k || !v) return ''
+    // 禁止透传 Origin：浏览器对跨域 GET 不发送 Origin，伪造 Origin
+    // （与目标 Host 不同源）是 CDN/WAF 判定伪造请求的特征，导致 403。
+    if (/^origin$/i.test(k)) return ''
     return `${k}: ${v}`
   } catch (e) {
     return ''
