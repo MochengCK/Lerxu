@@ -468,6 +468,34 @@
         const path = match[1] ? `${match[1]}` : ''
         return path.replace(/^["']|["']$/g, '')
       },
+      // 从引擎错误信息中提取无法打开/重命名的文件路径，
+      // 如 "Failed to open the file /path/to/file, cause: ..."
+      extractOpenFailedFilePath (text = '') {
+        const raw = `${text || ''}`
+        let match = raw.match(/Failed to open the file\s+(.+?),\s*cause:/i)
+        if (match) {
+          return `${match[1] || ''}`.trim()
+        }
+        match = raw.match(/Failed to rename the file\s+(.+?)\s+->/i)
+        if (match) {
+          return `${match[1] || ''}`.trim()
+        }
+        return ''
+      },
+      // macOS：修复应用更新后旧下载文件因 TCC 来源属性无法打开的问题。
+      // 主进程依次清除 com.apple.provenance、恢复权限、必要时复制重建文件，
+      // 返回是否修复成功。
+      async tryRepairDownloadFilePermission (gid, filePath) {
+        try {
+          const res = await this.$electron.ipcRenderer.invoke('application:repair-download-file-permission', filePath)
+          const ok = !!(res && res.repaired)
+          console.info(`[LinkCore] repair download file permission gid=${gid} path=${filePath}:`, res)
+          return ok
+        } catch (err) {
+          console.warn('[LinkCore] repair download file permission IPC failed:', err)
+          return false
+        }
+      },
       // 403 自动回退：移除 Referer/Origin 后重建任务重试（每个 URI 仅一次）。
       // 背景：部分视频 CDN（如签名直链 vdownload.hembed.com）会拒绝任何携带
       // Referer 的请求，而浏览器扩展任务默认带上页面 Referer，导致 403；
@@ -3603,6 +3631,19 @@
             // 并按 gid 去重提示一次授权指引。
             const isDarwin = process.platform === 'darwin'
             if (isDarwin) {
+              // 先尝试自动修复：清除旧实例文件上的 com.apple.provenance 等
+              // 来源属性（必要时复制重建文件），修复成功后立即重试任务，
+              // 无需用户手动处理。
+              const failedPath = this.extractOpenFailedFilePath(msg)
+              let repaired = false
+              if (failedPath) {
+                repaired = await this.tryRepairDownloadFilePermission(gid, failedPath)
+              }
+              if (repaired) {
+                console.log(`[LinkCore] BT task ${gid} file permission repaired, resuming now`)
+                scheduleRetry(2000)
+                break
+              }
               if (!this._permNotifiedGids) {
                 this._permNotifiedGids = new Set()
               }

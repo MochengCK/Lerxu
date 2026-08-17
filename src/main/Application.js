@@ -4258,6 +4258,163 @@ export default class Application extends EventEmitter {
     ipcMain.handle('ed2k:fetch-servers', async (_event, { source, proxy }) => {
       return fetchEd2kServersFromSource(source, proxy)
     })
+
+    ipcMain.handle('application:repair-download-file-permission', async (event, filePath) => {
+      try {
+        return await this.repairDownloadFilePermission(filePath)
+      } catch (err) {
+        logger.warn('[LinkCore] repair-download-file-permission IPC failed:', err && err.message ? err.message : err)
+        return { repaired: false, reason: 'exception' }
+      }
+    })
+  }
+
+  /**
+   * macOS：修复"应用更新后旧下载文件无法打开"（Operation not permitted）。
+   *
+   * 背景：未签名应用每次更新的代码签名（cdhash）都会变化，macOS TCC
+   * 会把旧实例在受保护目录（如下载文件夹）中创建的文件视为"其他应用
+   * 的文件"，拒绝写入，导致更新前未完成的 BT 任务续传时报
+   * "Failed to open the file ..., cause: Operation not permitted"；
+   * 新建任务不受影响（文件由当前实例创建）。
+   *
+   * 依次尝试：清除 com.apple.provenance 来源属性 → 恢复 posix 权限 →
+   * 复制重建文件（副本由当前实例创建，不受旧来源限制）并替换原文件。
+   * 每步后都用真实的读写打开验证结果（主进程与引擎同属应用的 TCC 身份，
+   * 验证结果与引擎实际行为一致）。
+   *
+   * @param {string} filePath 目标文件绝对路径
+   * @returns {Promise<{repaired: boolean, method?: string, reason?: string, log?: string[]}>}
+   */
+  async repairDownloadFilePermission (filePath) {
+    if (process.platform !== 'darwin' || !filePath) {
+      return { repaired: false, reason: 'unsupported' }
+    }
+    const { resolve, dirname, basename } = require('node:path')
+    const fs = require('node:fs')
+    const fsp = require('node:fs').promises
+    const { spawnSync } = require('node:child_process')
+
+    const target = resolve(`${filePath}`.trim())
+    if (!target) {
+      return { repaired: false, reason: 'invalid-path' }
+    }
+    const log = []
+
+    // 对单个文件执行分层修复，返回 { repaired, method, reason }
+    const repairOne = async (pathToRepair) => {
+      const canWriteOpen = () => {
+        try {
+          const fd = fs.openSync(pathToRepair, 'r+')
+          fs.closeSync(fd)
+          return true
+        } catch (err) {
+          log.push(`open-r+error:${err.code || err.message}`)
+          return false
+        }
+      }
+
+      if (canWriteOpen()) {
+        return { repaired: true, method: 'already-accessible' }
+      }
+
+      // 1) 清除来源属性：TCC 依据 com.apple.provenance 判定文件归属，
+      //    旧实例创建的文件带该属性，当前实例（签名变化）无法写入。
+      try {
+        const result = spawnSync('/usr/bin/xattr', ['-d', 'com.apple.provenance', pathToRepair], { timeout: 5000 })
+        log.push(`xattr-d-provenance:${result.status === null ? 'timeout' : result.status}`)
+      } catch (err) {
+        log.push(`xattr-error:${err.message}`)
+      }
+      if (canWriteOpen()) {
+        return { repaired: true, method: 'xattr-provenance' }
+      }
+
+      // 2) 恢复 posix 写权限（个别场景文件被置为只读）
+      try {
+        fs.chmodSync(pathToRepair, 0o644)
+        log.push('chmod:ok')
+      } catch (err) {
+        log.push(`chmod-error:${err.message}`)
+      }
+      if (canWriteOpen()) {
+        return { repaired: true, method: 'chmod' }
+      }
+
+      // 3) 复制重建：旧文件只读可访问时，克隆内容到新文件（副本由当前
+      //    实例创建，无旧来源限制），再原子替换原文件。替换失败时清理
+      //    临时副本，绝不删除用户数据。
+      let readable = false
+      try {
+        const fd = fs.openSync(pathToRepair, 'r')
+        fs.closeSync(fd)
+        readable = true
+      } catch (err) {
+        log.push(`open-r-error:${err.code || err.message}`)
+      }
+      if (readable) {
+        const tempPath = resolve(dirname(pathToRepair), `.${basename(pathToRepair)}.linkcore-repair`)
+        try { fs.rmSync(tempPath, { force: true }) } catch (_) {}
+        try {
+          // APFS 克隆（瞬时），失败时回退普通复制
+          const cpResult = spawnSync('/bin/cp', ['-c', pathToRepair, tempPath], { timeout: 30000 })
+          if (cpResult.status !== 0 || !fs.existsSync(tempPath)) {
+            await fsp.copyFile(pathToRepair, tempPath)
+            log.push('copy:ok')
+          } else {
+            log.push('clone:ok')
+          }
+        } catch (err) {
+          log.push(`copy-error:${err.message}`)
+          try { fs.rmSync(tempPath, { force: true }) } catch (_) {}
+          return { repaired: false, reason: 'copy-failed' }
+        }
+        // 副本可能继承来源属性，清除后归当前实例所有
+        try {
+          spawnSync('/usr/bin/xattr', ['-d', 'com.apple.provenance', tempPath], { timeout: 5000 })
+          log.push('xattr-d-copy:ok')
+        } catch (_) {}
+        try {
+          fs.renameSync(tempPath, pathToRepair)
+          log.push('rename:ok')
+        } catch (err) {
+          log.push(`rename-error:${err.message}`)
+          try { fs.rmSync(tempPath, { force: true }) } catch (_) {}
+          return { repaired: false, reason: 'replace-failed' }
+        }
+        if (canWriteOpen()) {
+          return { repaired: true, method: 'copy-replace' }
+        }
+      }
+
+      return { repaired: false, reason: 'tcc-denied' }
+    }
+
+    try {
+      const result = await repairOne(target)
+
+      // BT 任务的 .aria2 控制文件同样是旧实例创建，主文件修复成功后
+      // 顺手修复，避免任务恢复时控制文件再次触发同类错误。
+      if (result.repaired) {
+        // 任务文件夹本身也可能带旧来源属性（会阻止在其内新建文件），一并清除
+        try {
+          spawnSync('/usr/bin/xattr', ['-d', 'com.apple.provenance', dirname(target)], { timeout: 5000 })
+          log.push('xattr-d-dir:ok')
+        } catch (_) {}
+        const controlPath = `${target}.aria2`
+        try {
+          if (fs.existsSync(controlPath)) {
+            const controlResult = await repairOne(controlPath)
+            log.push(`aria2-control:${controlResult.repaired ? `repaired(${controlResult.method})` : (controlResult.reason || 'failed')}`)
+          }
+        } catch (_) {}
+      }
+
+      return { repaired: result.repaired, method: result.method, reason: result.reason, log }
+    } catch (err) {
+      logger.warn('[LinkCore] repair download file permission failed:', err && err.message ? err.message : err)
+      return { repaired: false, reason: 'exception', log }
+    }
   }
 
   /**
@@ -4317,14 +4474,19 @@ export default class Application extends EventEmitter {
       const newVersion = this.configManager.getUserConfig('new-version') || ''
       const lastCheckUpdateTime = this.configManager.getUserConfig('last-check-update-time') || 0
 
+      // 校验残留的"有新版本"是否仍有效（保存的版本号确实比当前版本新），
+      // 用户已手动升级后该状态会过期，清除并通知无更新，避免误显示
+      const validUpdate = updateAvailable && !!newVersion && UpdateManager.isNewerVersion(newVersion, app.getVersion())
+
       logger.info('[LinkCore] Loading saved update status:', {
         updateAvailable,
+        validUpdate,
         newVersion,
         lastCheckUpdateTime
       })
 
       // 发送更新状态给所有窗口
-      if (updateAvailable) {
+      if (validUpdate) {
         // 如果检测到有新版本可用，发送update-available事件
         const windows = this.windowManager.getWindowList()
         windows.forEach(window => {
@@ -4335,6 +4497,14 @@ export default class Application extends EventEmitter {
           } catch (_) {}
         })
       } else {
+        if (updateAvailable) {
+          // 残留状态过期，清除配置中的过期更新信息
+          this.configManager.setUserConfig({
+            'update-available': false,
+            'new-version': '',
+            'release-notes': ''
+          })
+        }
         // 如果没有新版本可用，发送update-not-available事件
         const windows = this.windowManager.getWindowList()
         windows.forEach(window => {

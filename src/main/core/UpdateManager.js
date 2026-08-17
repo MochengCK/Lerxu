@@ -87,28 +87,104 @@ function getYmlNames () {
 
 /**
  * 从 GitHub Releases API 拉取 release 列表（含 pre-release 标志），
- * 供 beta/all 渠道挑选目标版本。失败返回 null（调用方降级到稳定渠道）。
+ * 供 beta/all 渠道挑选目标版本。
+ *
+ * api.github.com 未认证限流 60 次/小时（按出口 IP 共享），限流或不可达
+ * 时依次降级：镜像代理的 API、GitHub 官网 releases.atom（含 pre-release、
+ * 不含草稿，仅最近 10 条）、镜像代理的 Atom feed。Atom 不提供 prerelease
+ * 标志，按版本号推断。结果缓存 5 分钟，避免频繁检查快速耗尽 API 配额。
  */
+let _releaseListCache = { data: null, time: 0 }
+const RELEASE_LIST_CACHE_TTL = 5 * 60 * 1000
+
+function decodeXmlEntities (str) {
+  return String(str || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
+/**
+ * 解析 GitHub releases.atom 为与 Releases API 兼容的 release 对象数组。
+ * 解析失败（无有效 entry）返回空数组。
+ */
+function parseReleasesAtom (xml) {
+  const releases = []
+  const blocks = String(xml || '').split('<entry')
+  for (let i = 1; i < blocks.length; i++) {
+    const titleMatch = blocks[i].match(/<title[^>]*>([\s\S]*?)<\/title>/i)
+    const updatedMatch = blocks[i].match(/<updated[^>]*>([\s\S]*?)<\/updated>/i)
+    const contentMatch = blocks[i].match(/<content[^>]*>([\s\S]*?)<\/content>/i)
+    const tagName = titleMatch ? decodeXmlEntities(titleMatch[1].trim()) : ''
+    if (!tagName) continue
+    releases.push({
+      tag_name: tagName,
+      name: tagName,
+      draft: false,
+      // Atom 不提供 prerelease 标志，按版本号推断
+      prerelease: isPrereleaseVersion(tagName),
+      published_at: updatedMatch ? updatedMatch[1].trim() : '',
+      body: contentMatch ? decodeXmlEntities(contentMatch[1]) : '',
+      // 标记来源：Atom 仅含最近 10 条 release，stable 渠道挑 tag 时不
+      // 信任它（可能漏掉更早的正式版），beta/all 只取最新预发布不受影响
+      source: 'atom'
+    })
+  }
+  return releases
+}
+
 async function fetchReleaseList (axiosConfig = {}) {
+  if (_releaseListCache.data && Date.now() - _releaseListCache.time < RELEASE_LIST_CACHE_TTL) {
+    return _releaseListCache.data
+  }
   const apiUrls = [
     `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=50`,
-    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=50&draft=false`
+    ...MIRROR_HOSTS.slice(0, 2).map(host => `https://${host}/https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=50`)
   ]
+  const atomUrls = [
+    `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases.atom`,
+    ...MIRROR_HOSTS.slice(0, 3).map(host => `https://${host}/https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases.atom`)
+  ]
+  const config = {
+    ...axiosConfig,
+    timeout: 8000,
+    maxRedirects: 5
+  }
   let lastError = null
   for (const url of apiUrls) {
     try {
       const response = await axios.get(url, {
-        timeout: 15000,
-        maxRedirects: 5,
-        headers: { Accept: 'application/vnd.github.v3+json', 'User-Agent': 'LinkCore-UpdateCheck' },
-        ...axiosConfig
+        ...config,
+        headers: { Accept: 'application/vnd.github.v3+json', 'User-Agent': 'LinkCore-UpdateCheck' }
       })
-      if (response.status === 200 && Array.isArray(response.data)) {
+      if (response.status === 200 && Array.isArray(response.data) && response.data.length > 0) {
+        _releaseListCache = { data: response.data, time: Date.now() }
         return response.data
       }
     } catch (err) {
       lastError = err
       logger.warn(`[LinkCore] Releases API failed: ${url} - ${err.message}`)
+    }
+  }
+  for (const url of atomUrls) {
+    try {
+      const response = await axios.get(url, {
+        ...config,
+        headers: { Accept: 'application/atom+xml, application/xml, text/xml, */*' }
+      })
+      if (response.status === 200 && typeof response.data === 'string') {
+        const releases = parseReleasesAtom(response.data)
+        if (releases.length > 0) {
+          logger.info(`[LinkCore] Release list fetched via Atom feed: ${url} (${releases.length} entries)`)
+          _releaseListCache = { data: releases, time: Date.now() }
+          return releases
+        }
+      }
+    } catch (err) {
+      lastError = err
+      logger.warn(`[LinkCore] Releases Atom feed failed: ${url} - ${err.message}`)
     }
   }
   if (lastError) {
@@ -192,6 +268,30 @@ async function fetchReleaseNotes (version, axiosConfig = {}, preferExactTag = fa
       continue
     }
   }
+
+  // API 限流/不可达时降级到 releases.atom：按版本号（忽略大小写与
+  // 前导 v）匹配对应 entry 的正文。
+  try {
+    const atomUrls = [
+      `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases.atom`,
+      ...MIRROR_HOSTS.slice(0, 3).map(host => `https://${host}/https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases.atom`)
+    ]
+    const target = String(version || '').trim().toLowerCase().replace(/^v/, '')
+    for (const url of atomUrls) {
+      try {
+        const response = await axios.get(url, { ...config, timeout: 8000 })
+        if (response.status !== 200 || typeof response.data !== 'string') continue
+        const entry = parseReleasesAtom(response.data)
+          .find(e => e.tag_name && e.tag_name.toLowerCase().replace(/^v/, '') === target)
+        if (entry && entry.body) {
+          logger.info(`[LinkCore] Release notes fetched via Atom feed: ${url}`)
+          return entry.body
+        }
+      } catch (err) {
+        logger.warn(`[LinkCore] Release notes Atom feed failed: ${url} - ${err.message}`)
+      }
+    }
+  } catch (_) {}
 
   return `See the full release notes at:\nhttps://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/v${version}`
 }
@@ -557,7 +657,18 @@ export default class UpdateManager extends EventEmitter {
       if (!this.autoCheckData.checkEnable) return
       if (this.isChecking) return
       const cfg = global.application?.configManager
-      if (cfg && cfg.getUserConfig('update-available')) return
+      if (cfg && cfg.getUserConfig('update-available')) {
+        // 持久化的"有新版本"可能已过期（例如用户已手动升级到该版本），
+        // 若保存的新版本号不再大于当前版本则清除残留状态并继续检查；
+        // 否则跳过本次自动检查（已有待下载的新版本，无需反复检查）。
+        const savedVersion = cfg.getUserConfig('new-version')
+        if (!savedVersion || !isNewerVersion(savedVersion, CURRENT_VERSION)) {
+          logger.info(`[LinkCore] Clearing stale update-available state (${savedVersion || 'none'}), resuming auto check`)
+          cfg.setUserConfig({ 'update-available': false, 'new-version': '', 'release-notes': '' })
+        } else {
+          return
+        }
+      }
       this.autoCheckData.userCheck = false
       this.check()
     }, intervalMs)
@@ -612,8 +723,10 @@ export default class UpdateManager extends EventEmitter {
 
       let urls
       let channelPrerelease = false
+      let releaseListAvailable = true
       try {
         const releases = await fetchReleaseList(axiosConfig)
+        releaseListAvailable = Array.isArray(releases) && releases.length > 0
         if (channel === 'beta' || channel === 'all') {
           // beta/all 渠道：先从 Releases API 挑目标 release（GitHub 的
           // prerelease 标志即官方 Beta 标识），再下载对应 tag 的 latest.yml。
@@ -626,8 +739,9 @@ export default class UpdateManager extends EventEmitter {
         } else if (channel === 'stable') {
           // stable 渠道：显式挑选最新正式版（非 pre-release、非草稿），
           // 与 releases/latest 语义一致；即使 releases/latest 或镜像
-          // 返回了 pre-release 的 yml 也不会被选中。
-          const stableReleases = (releases || []).filter(r => !r.prerelease && !r.draft)
+          // 返回了 pre-release 的 yml 也不会被选中。仅信任 API 返回的
+          // 完整列表（Atom 只有最近 10 条，可能漏掉更新的正式版）。
+          const stableReleases = (releases || []).filter(r => r.source !== 'atom' && !r.prerelease && !r.draft)
           const pick = pickReleaseByChannel(stableReleases, 'stable')
           if (pick && pick.tagName) {
             urls = buildTaggedYmlUrls(pick.tagName)
@@ -635,9 +749,17 @@ export default class UpdateManager extends EventEmitter {
           }
         }
       } catch (err) {
+        releaseListAvailable = false
         logger.warn(`[LinkCore] Channel "${channel}" release lookup failed, falling back to default URLs: ${err.message}`)
       }
       if (!urls) {
+        // beta/all 渠道拿不到发布列表时（API 限流/网络异常），回退到
+        // releases/latest 只能拿到正式版 yml，会被下方渠道守卫拒绝并
+        // 误报"已是最新版本"，导致 Beta 用户永远漏掉新 Beta——这里直接
+        // 报错，把真实原因呈现给用户而不是假装没有新版本。
+        if (!releaseListAvailable && (channel === 'beta' || channel === 'all')) {
+          throw new Error('Unable to fetch the GitHub release list (API rate limited or network error), cannot check for updates on this channel')
+        }
         urls = buildLatestYmlUrls()
       }
 
@@ -1456,6 +1578,14 @@ export default class UpdateManager extends EventEmitter {
       downloadTotal: this._currentProgress?.total || this._downloadSize || 0,
       downloadTransferred: this._currentProgress?.transferred || 0
     }
+  }
+
+  /**
+   * 静态版本比较（与模块级 isNewerVersion 同语义），供 Application 等
+   * 外部模块校验持久化更新状态是否仍有效。
+   */
+  static isNewerVersion (latest, current) {
+    return isNewerVersion(latest, current)
   }
 
   _notifyWindows (channel, ...args) {
