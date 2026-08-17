@@ -56,6 +56,7 @@
     "ip2region.js": "^3.1.8",
     "js-yaml": "^4.3.0",
     "lodash": "^4.18.1",
+    "nanoid": "^3.3.18",
     "normalize.css": "^8.0.1",
     "parse-torrent": "^9.1.5",
     "semver": "^7.8.5",
@@ -118,5 +119,8 @@
     "webpack-hot-middleware": "^2.26.1",
     "webpack-merge": "^5.10.0",
     "worker-loader": "^3.0.8"
+  },
+  "overrides": {
+    "nanoid": "3.3.18"
   }
 }
