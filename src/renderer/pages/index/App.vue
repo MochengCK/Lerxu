@@ -66,7 +66,10 @@
     },
     data () {
       return {
-        downloadMsgInstance: null
+        downloadMsgInstance: null,
+        // 偏好设置窗口需等 Vue 渲染出带不透明背景的内容区后再启用
+        // mac-native-transparent 透明样式，否则渲染前窗口完全透明
+        isMounted: false
       }
     },
     computed: {
@@ -141,10 +144,18 @@
         const img = `${this.backgroundImage || ''}`.trim()
         return type === 'image' && img ? 'has-app-background-image' : ''
       },
-      // macOS 原生透明背景：主窗口与偏好设置窗口均生效
+      // macOS 原生透明背景：主窗口与偏好设置窗口均生效。
+      // 偏好设置窗口需等待 Vue mounted（内容区已渲染出不透明背景）
+      // 后才启用透明样式，避免渲染前窗口完全透明。
       nativeTransparentClass () {
         const enabled = this.macNativeTransparent === undefined ? false : !!this.macNativeTransparent
-        return (this.isMac && enabled) ? 'mac-native-transparent' : ''
+        if (!this.isMac || !enabled) {
+          return ''
+        }
+        if (this.isPreferenceWindow && !this.isMounted) {
+          return ''
+        }
+        return 'mac-native-transparent'
       },
       taskDetailTransparentClass () {
         const enabled = this.taskDetailDefaultTransparent === undefined ? false : !!this.taskDetailDefaultTransparent
@@ -343,6 +354,10 @@
     },
     mounted () {
       this._updateMessageShown = false
+      // 偏好设置窗口：Vue 已渲染出带不透明背景的内容区，
+      // 现在可以安全启用 mac-native-transparent 透明样式
+      this.isMounted = true
+      this.updateRootClassName()
       this.updateWindowTitle()
       if (typeof window !== 'undefined') {
         this.handleWindowResize()

@@ -61,7 +61,8 @@ const defaultBrowserOptions = is.macOS()
 /**
  * 主窗口原生透明背景（vibrancy 窗口材质）是否开启。
  * 开启时窗口使用 under-window 材质：整窗背景实时模糊桌面后方内容，
- * 渲染层仅叠加极轻的色调以保证文字对比度。
+ * 渲染层叠加半透明色调 + backdrop-filter 增强模糊与不透明度，
+ * 保证文字对比度。
  */
 function resolveNativeTransparent (userConfig) {
   return is.macOS() && !!userConfig['mac-native-transparent']

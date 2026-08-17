@@ -410,12 +410,22 @@
    后方内容。html/body、标题栏、左侧侧边栏、任务视图顶部
    留白区域透明透出材质；任务视图、任务详情、卡片保持主题
    原有不透明背景。仅 html 根节点带 mac-native-transparent
-   类时生效（macOS 主窗口）。
+   类时生效（macOS 主窗口与偏好设置窗口）。
+
+   半透明色调：透出毛玻璃的区域叠加一层主题色半透明背景，
+   既保留毛玻璃质感又保证文字对比度。偏好设置面板 header、
+   卡片等也使用半透明 + backdrop-filter 增强模糊与不透明度。
    ============================================ */
 html.mac-native-transparent {
-  --lc-bg-subnav: rgba(240, 244, 248, 0.18);
+  /* 侧边栏：从 0.18 提升至 0.42，增加不透明度保证导航文字可读 */
+  --lc-bg-subnav: rgba(240, 244, 248, 0.42);
+  /* 偏好设置面板 header 半透明背景 */
+  --lc-bg-preference-header: rgba(255, 255, 255, 0.55);
+  /* 边框：保持原始不透明值，不覆盖。
+     卡片和内容区为不透明背景，半透明边框会偏色。 */
 }
 
 html.mac-native-transparent.theme-dark {
-  --lc-bg-subnav: rgba(30, 34, 40, 0.18);
+  --lc-bg-subnav: rgba(30, 34, 40, 0.42);
+  --lc-bg-preference-header: rgba(38, 42, 49, 0.55);
 }

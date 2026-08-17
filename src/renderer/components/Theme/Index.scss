@@ -37,3 +37,77 @@ html.mac-native-transparent .main.panel,
 html.mac-native-transparent .main.panel.preference-panel {
   background-color: transparent;
 }
+
+/* macOS 原生透明背景：侧边栏（aside）增加半透明背景 + 模糊，
+   保证导航文字在毛玻璃背景上可读 */
+html.mac-native-transparent .aside {
+  background-color: var(--lc-bg-aside);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+}
+
+/* macOS 原生透明背景：主窗口侧边导航（subnav）增加模糊，
+   --lc-bg-subnav 已在 Tokens.scss 中设为半透明 */
+html.mac-native-transparent .subnav {
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+}
+
+/* macOS 原生透明背景：标题栏增加模糊，保证标题文字可读 */
+html.mac-native-transparent .title-bar {
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+}
+
+/* macOS 原生透明背景：任务详情/添加任务/任务计划抽屉打开时，
+   禁用标题栏 backdrop-filter，避免模糊层遮挡抽屉内容 */
+html.mac-native-transparent .is-task-detail-open .title-bar,
+html.mac-native-transparent .is-add-task-open .title-bar,
+html.mac-native-transparent .is-task-plan-open .title-bar {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* macOS 原生透明背景：将 el-drawer / el-dialog 遮罩层（.v-modal）
+   和弹窗本体提到标题栏之上。标题栏 z-index 为 5000，.v-modal 默认
+   z-index 约 2000+，低于标题栏。这导致标题栏的 backdrop-filter 会
+   模糊到正在淡出的 .v-modal，在关闭抽屉时产生黑色残影。
+   将 .v-modal 和弹窗容器提到 5100+，使其覆盖标题栏，
+   标题栏 backdrop-filter 不会捕获到 .v-modal 的淡出动画。 */
+html.mac-native-transparent .v-modal {
+  z-index: 5100 !important;
+}
+html.mac-native-transparent .el-drawer__wrapper,
+html.mac-native-transparent .el-dialog__wrapper {
+  z-index: 5101 !important;
+}
+
+/* macOS 原生透明背景：偏好设置搜索按钮边框加深，
+   原编译时 #DCDFE6 在毛玻璃上几乎不可见 */
+html.mac-native-transparent .preference-subnav-search .floating-bar-search {
+  border-color: rgba(60, 70, 85, 0.35);
+}
+
+html.mac-native-transparent .preference-subnav-search .floating-bar-search:hover,
+html.mac-native-transparent .preference-subnav-search .floating-bar-search.is-hovered,
+html.mac-native-transparent .preference-subnav-search .floating-bar-search:focus-within {
+  border-color: var(--lc-color-primary);
+}
+
+/* macOS 原生透明背景：侧边栏底部速度显示边框加深，
+   浅色模式下默认边框色在毛玻璃上几乎不可见 */
+html.mac-native-transparent .subnav-inner.task-subnav .subnav-speed-box {
+  border-color: rgba(60, 70, 85, 0.4);
+}
+
+html.mac-native-transparent .subnav-inner.task-subnav .subnav-speed-divider {
+  background: rgba(60, 70, 85, 0.4);
+}
+
+html.mac-native-transparent.theme-dark .subnav-inner.task-subnav .subnav-speed-box {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+html.mac-native-transparent.theme-dark .subnav-inner.task-subnav .subnav-speed-divider {
+  background: rgba(255, 255, 255, 0.25);
+}

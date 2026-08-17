@@ -63,26 +63,6 @@
             <el-col class="form-item-sub" :span="24">
               <div class="toggle-row toggle-row--with-desc">
                 <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.date-filter-frosted') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.date-filter-frosted-desc') }}</div>
-                </div>
-                <el-switch v-model="form.dateFilterFrosted" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col v-if="form.dateFilterFrosted" class="form-item-sub-sub" :span="24">
-              <el-form-item class="background-slider-item" :label="$t('preferences.date-filter-frosted-strength')">
-                <el-slider
-                  v-model="form.dateFilterFrostedBlur"
-                  :min="0"
-                  :max="10"
-                  :step="1"
-                  @change="autoSaveForm"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
                   <span class="toggle-label">{{ $t('preferences.task-detail-default-transparent') }}</span>
                   <div class="toggle-desc">{{ $t('preferences.task-detail-default-transparent-desc') }}</div>
                 </div>

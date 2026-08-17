@@ -551,6 +551,38 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* macOS 原生透明背景开启时：偏好设置面板 header 增加不透明度与模糊，
+   确保标题区域文字在毛玻璃背景上清晰可读 */
+html.mac-native-transparent .preference-panel .panel-header {
+  background-color: var(--lc-bg-preference-header, rgba(255, 255, 255, 0.55));
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+html.mac-native-transparent.theme-dark .preference-panel .panel-header {
+  background-color: var(--lc-bg-preference-header, rgba(38, 42, 49, 0.55));
+}
+
+/* macOS 原生透明背景：偏好设置内容面板不设单独背景，
+   直接透出系统毛玻璃材质 */
+html.mac-native-transparent .preference-panel .content.panel {
+  background-color: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* macOS 原生透明背景：偏好设置卡片百分百不透明，保持纯色背景 */
+html.mac-native-transparent .form-preference .preference-card {
+  background-color: var(--lc-bg-panel, #ffffff);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html.mac-native-transparent.theme-dark .form-preference .preference-card {
+  background-color: var(--lc-bg-panel, #262a31);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
 .preference-panel:not(.preference-standalone) .form-preference {
   margin-top: -84px;
   padding-top: 96px;

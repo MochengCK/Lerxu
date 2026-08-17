@@ -230,6 +230,13 @@
   border-bottom: none;
 }
 
+/* macOS 原生透明背景开启时：偏好设置窗口标题栏恢复模糊效果，
+   覆盖上面的 backdrop-filter: none */
+html.mac-native-transparent .is-preference-window .title-bar {
+  backdrop-filter: blur(12px) saturate(150%);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+}
+
 @media only screen and (min-width: 568px) {
   .title-bar {
     .title-bar-title {

@@ -36,8 +36,9 @@ export default {
       width: 1100,
       height: 750,
       minWidth: 480,
-      minHeight: 420,
-      transparent: is.macOS()
+      minHeight: 420
+      // macOS 透明由 vibrancy + backgroundColor 透明处理，
+      // 不使用 transparent: true（会导致窗口在内容渲染前完全透明）
     },
     bindCloseToHide: true,
     openDevTools: is.dev(),
@@ -52,9 +53,10 @@ export default {
       minHeight: 560,
       resizable: true,
       maximizable: true,
-      minimizable: true,
-      // 原生透明背景开启时整个偏好设置窗口透出系统材质
-      transparent: is.macOS()
+      minimizable: true
+      // macOS 透明由 vibrancy + backgroundColor 透明处理，
+      // 不使用 transparent: true（会导致偏好设置窗口在 Vue 渲染前
+      // 完全透明，背景不可见）
     },
     bindCloseToHide: false,
     openDevTools: is.dev(),
