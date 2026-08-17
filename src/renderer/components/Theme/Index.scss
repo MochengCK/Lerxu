@@ -17,3 +17,23 @@
 /* Theme Dark
 -------------------------- */
 @import './Dark.scss';
+
+/* macOS Native Transparency overrides
+--------------------------
+   必须放在主题样式之后（同特异性时靠源码顺序取胜）：
+   .main.panel 是全窗口容器，其不透明主题背景会铺满整个窗口
+   （包括侧边栏底下），把窗口材质整个盖住。透明化它之后，
+   左侧侧边栏与顶部留白即透出系统毛玻璃，而内层任务视图
+   （.content.panel 白色面板）保持不透明不受影响。
+
+   偏好设置窗口的背景色与内容显示区（白色卡片）保持一致，
+   开启透明背景时整个偏好设置窗口透出系统材质。
+-------------------------- */
+.main.panel.preference-panel {
+  background-color: var(--lc-bg-panel);
+}
+
+html.mac-native-transparent .main.panel,
+html.mac-native-transparent .main.panel.preference-panel {
+  background-color: transparent;
+}

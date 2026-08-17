@@ -402,3 +402,20 @@
   --lc-form-link: #c4cad3;
   --lc-form-link-hover: #dfe3e8;
 }
+
+/* ============================================
+   macOS Native Transparency (vibrancy)
+   --------------------------------------------
+   窗口使用 under-window vibrancy 材质作为底层，实时模糊桌面
+   后方内容。html/body、标题栏、左侧侧边栏、任务视图顶部
+   留白区域透明透出材质；任务视图、任务详情、卡片保持主题
+   原有不透明背景。仅 html 根节点带 mac-native-transparent
+   类时生效（macOS 主窗口）。
+   ============================================ */
+html.mac-native-transparent {
+  --lc-bg-subnav: rgba(240, 244, 248, 0.18);
+}
+
+html.mac-native-transparent.theme-dark {
+  --lc-bg-subnav: rgba(30, 34, 40, 0.18);
+}

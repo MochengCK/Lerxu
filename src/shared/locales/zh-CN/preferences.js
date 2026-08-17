@@ -125,6 +125,8 @@ export default {
   'theme-dark': '深色',
   'background-type-color': '纯色',
   'background-type-image': '图片',
+  'mac-native-transparent': 'macOS 原生透明背景',
+  'mac-native-transparent-tips': '启用后主界面使用系统原生毛玻璃效果，背景将呈现半透明质感',
   'background-image-select': '选择图片',
   'background-image-not-selected': '未选择图片',
   'background-image-opacity': '图片透明度',

@@ -52,7 +52,9 @@ export default {
       minHeight: 560,
       resizable: true,
       maximizable: true,
-      minimizable: true
+      minimizable: true,
+      // 原生透明背景开启时整个偏好设置窗口透出系统材质
+      transparent: is.macOS()
     },
     bindCloseToHide: false,
     openDevTools: is.dev(),

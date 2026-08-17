@@ -109,6 +109,15 @@
                 <el-switch v-model="form.showTaskTypeBadge" @change="autoSaveForm" />
               </div>
             </el-col>
+            <el-col v-if="isMac" class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ $t('preferences.mac-native-transparent') }}</span>
+                  <div class="toggle-desc">{{ $t('preferences.mac-native-transparent-tips') }}</div>
+                </div>
+                <el-switch v-model="form.macNativeTransparent" @change="autoSaveForm" />
+              </div>
+            </el-col>
           </el-form-item>
         </div>
 
@@ -1675,6 +1684,7 @@ placement="top"
       backgroundUiOpacityScope,
       backgroundUiFrostedBlur,
       backgroundUiFrostedBlurScope,
+      macNativeTransparent,
       taskDetailDefaultTransparent,
       taskDetailFrostedBlur,
       autoCategorizeFiles,
@@ -1816,6 +1826,7 @@ placement="top"
           .map(s => `${s}`.trim())
           .filter(s => BACKGROUND_UI_FROSTED_BLUR_SCOPE_OPTIONS.includes(s))
         : [...BACKGROUND_UI_FROSTED_BLUR_SCOPE_OPTIONS],
+      macNativeTransparent: macNativeTransparent === undefined ? false : !!macNativeTransparent,
       taskDetailDefaultTransparent: taskDetailDefaultTransparent === undefined ? false : !!taskDetailDefaultTransparent,
       taskDetailFrostedBlur: (typeof taskDetailFrostedBlur === 'number' && Number.isFinite(taskDetailFrostedBlur))
         ? Math.min(Math.max(taskDetailFrostedBlur, 0), 10)

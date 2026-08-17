@@ -58,6 +58,29 @@ const defaultBrowserOptions = is.macOS()
     ...baseBrowserOptions
   }
 
+/**
+ * 主窗口原生透明背景（vibrancy 窗口材质）是否开启。
+ * 开启时窗口使用 under-window 材质：整窗背景实时模糊桌面后方内容，
+ * 渲染层仅叠加极轻的色调以保证文字对比度。
+ */
+function resolveNativeTransparent (userConfig) {
+  return is.macOS() && !!userConfig['mac-native-transparent']
+}
+
+/**
+ * macOS vibrancy 材质选择：
+ * - 原生透明开启：under-window（系统窗口材质，跟随系统外观）
+ * - 未开启：按主题 ultra-light / ultra-dark（仅侧边栏等半透明区域透出）
+ */
+function resolveVibrancy (userConfig) {
+  if (resolveNativeTransparent(userConfig)) {
+    return 'under-window'
+  }
+  return resolveEffectiveTheme(userConfig) === APP_THEME.DARK
+    ? 'ultra-dark'
+    : 'ultra-light'
+}
+
 export default class WindowManager extends EventEmitter {
   constructor (options = {}) {
     super()
@@ -145,12 +168,11 @@ export default class WindowManager extends EventEmitter {
       ...defaultBrowserOptions,
       ...pageOptions.attrs,
       // macOS 毛玻璃跟随主题：浅色主题用 ultra-light、深色用 ultra-dark，
-      // 避免 UI 未加载时窗口呈现与主题不符的旧背景色
+      // 避免 UI 未加载时窗口呈现与主题不符的旧背景色；
+      // 原生透明背景开启时使用 under-window 系统窗口材质
       ...(is.macOS()
         ? {
-          vibrancy: resolveEffectiveTheme(this.userConfig) === APP_THEME.DARK
-            ? 'ultra-dark'
-            : 'ultra-light'
+          vibrancy: resolveVibrancy(this.userConfig)
         }
         : {}),
       backgroundColor: getInitialBackgroundColor(this.userConfig),
@@ -209,6 +231,48 @@ export default class WindowManager extends EventEmitter {
     }
 
     return window
+  }
+
+  /**
+   * 动态切换原生透明背景（macOS）：
+   * 开启 → under-window vibrancy 窗口材质 + 全透明窗口背景；
+   * 关闭 → 移除 vibrancy 并恢复不透明主题背景色。
+   * 主窗口与偏好设置窗口同时处理，渲染层通过
+   * mac-native-transparent 根类同步半透明内容样式。
+   */
+  applyNativeTransparent (enabled) {
+    if (!is.macOS()) {
+      return
+    }
+    const flag = !!enabled
+    const pages = ['index', 'preference']
+    const opaqueBg = resolveEffectiveTheme(this.userConfig) === APP_THEME.DARK ? '#1e2228' : '#f0f4f8'
+    for (const page of pages) {
+      const window = this.getWindow(page)
+      if (!window || (typeof window.isDestroyed === 'function' && window.isDestroyed())) {
+        continue
+      }
+      try {
+        if (flag) {
+          try {
+            window.setVibrancy('under-window')
+          } catch (e) {
+            // 个别 Electron 版本对 under-window 支持异常时退回跟随系统外观的材质
+            window.setVibrancy('appearance-based')
+          }
+          window.setBackgroundColor('#00000000')
+          if (typeof window.setVisualEffectState === 'function') {
+            window.setVisualEffectState('active')
+          }
+        } else {
+          window.setVibrancy(null)
+          window.setBackgroundColor(opaqueBg)
+        }
+      } catch (err) {
+        logger.warn(`[LinkCore] applyNativeTransparent failed (${page}): ${err && err.message ? err.message : err}`)
+      }
+    }
+    logger.info(`[LinkCore] native transparent window material: ${flag ? 'on' : 'off'}`)
   }
 
   getWindowRecoveryState (page) {

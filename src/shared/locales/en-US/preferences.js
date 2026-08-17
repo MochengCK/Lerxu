@@ -117,6 +117,8 @@ export default {
   'theme-dark': 'Dark',
   'background-type-color': 'Solid',
   'background-type-image': 'Image',
+  'mac-native-transparent': 'macOS Native Transparent Background',
+  'mac-native-transparent-tips': 'Use the system-native vibrancy effect to make the main window background translucent',
   'background-image-select': 'Select Image',
   'background-image-not-selected': 'No image selected',
   'background-image-opacity': 'Image Opacity',

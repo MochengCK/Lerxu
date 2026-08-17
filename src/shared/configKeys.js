@@ -46,6 +46,7 @@ const userKeys = [
   'background-ui-opacity-scope',
   'background-ui-frosted-blur',
   'background-ui-frosted-blur-scope',
+  'mac-native-transparent',
   'tracker-source',
   'tracker-source-discovered',
   'tracker-source-origins',

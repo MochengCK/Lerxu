@@ -841,6 +841,14 @@ iframe {
   background-color: $--app-background;
 }
 
+/* macOS 原生透明背景：html/body 保持透明，让窗口 vibrancy 毛玻璃透出。
+   注意必须同时覆盖 html —— index.ejs 的内联样式给 html 也设置了不透明
+   背景色，只透明 body 会由 html 背景把窗口材质整个盖住 */
+html.mac-native-transparent,
+html.mac-native-transparent body {
+  background-color: transparent;
+}
+
 .has-app-background-image {
   body {
     overflow-y: hidden;

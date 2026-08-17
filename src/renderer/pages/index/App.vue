@@ -115,6 +115,7 @@
         backgroundUiOpacityScope: state => state.config.backgroundUiOpacityScope,
         backgroundUiFrostedBlur: state => state.config.backgroundUiFrostedBlur,
         backgroundUiFrostedBlurScope: state => state.config.backgroundUiFrostedBlurScope,
+        macNativeTransparent: state => state.config.macNativeTransparent,
         taskDetailDefaultTransparent: state => state.config.taskDetailDefaultTransparent,
         taskDetailFrostedBlur: state => state.config.taskDetailFrostedBlur,
         dateFilterFrosted: state => state.config.dateFilterFrosted,
@@ -139,6 +140,11 @@
         const type = `${this.backgroundType || ''}`.trim()
         const img = `${this.backgroundImage || ''}`.trim()
         return type === 'image' && img ? 'has-app-background-image' : ''
+      },
+      // macOS 原生透明背景：主窗口与偏好设置窗口均生效
+      nativeTransparentClass () {
+        const enabled = this.macNativeTransparent === undefined ? false : !!this.macNativeTransparent
+        return (this.isMac && enabled) ? 'mac-native-transparent' : ''
       },
       taskDetailTransparentClass () {
         const enabled = this.taskDetailDefaultTransparent === undefined ? false : !!this.taskDetailDefaultTransparent
@@ -306,8 +312,8 @@
         return scopes.includes(scope) ? this.uiFrostedBlur : 0
       },
       updateRootClassName () {
-        const { themeClass = '', i18nClass = '', directionClass = '', backgroundClass = '', taskDetailTransparentClass = '', layoutClass = '' } = this
-        const className = `${themeClass} ${i18nClass} ${directionClass} ${backgroundClass} ${taskDetailTransparentClass} ${layoutClass}`.trim()
+        const { themeClass = '', i18nClass = '', directionClass = '', backgroundClass = '', nativeTransparentClass = '', taskDetailTransparentClass = '', layoutClass = '' } = this
+        const className = `${themeClass} ${i18nClass} ${directionClass} ${backgroundClass} ${nativeTransparentClass} ${taskDetailTransparentClass} ${layoutClass}`.trim()
         document.documentElement.className = className
       },
       updateRootCssVars () {
@@ -518,6 +524,9 @@
         this.updateWindowTitle()
       },
       backgroundClass () {
+        this.updateRootClassName()
+      },
+      nativeTransparentClass () {
         this.updateRootClassName()
       },
       themeClass () {

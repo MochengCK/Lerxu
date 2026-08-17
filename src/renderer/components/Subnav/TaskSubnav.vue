@@ -52,7 +52,7 @@
     <div class="subnav-section">
       <div
         class="subnav-section-label subnav-section-toggle"
-        @click="typeCollapsed = !typeCollapsed"
+        @click="toggleTypeCollapsed"
       >
         <span>{{ $t('subnav.type-section') }}</span>
         <i class="subnav-chevron" :class="{ 'is-collapsed': typeCollapsed }"></i>
@@ -129,8 +129,13 @@
       }
     },
     data () {
+      // 类型区的折叠状态持久化（localStorage），重启应用后保持上次状态
+      let savedCollapsed = false
+      try {
+        savedCollapsed = typeof window !== 'undefined' && window.localStorage.getItem('taskSubnavTypeCollapsed') === '1'
+      } catch (_) {}
       return {
-        typeCollapsed: false
+        typeCollapsed: savedCollapsed
       }
     },
     computed: {
@@ -158,6 +163,14 @@
       }
     },
     methods: {
+      toggleTypeCollapsed () {
+        this.typeCollapsed = !this.typeCollapsed
+        try {
+          if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem('taskSubnavTypeCollapsed', this.typeCollapsed ? '1' : '0')
+          }
+        } catch (_) {}
+      },
       nav (status = 'active') {
         this.$router.push({
           path: `/task/${status}`

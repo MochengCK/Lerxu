@@ -36,6 +36,22 @@
       </script>
     <% } %>
 
+    <!-- macOS 原生透明背景：UI 加载前同步读取配置，若开启则保持
+         html/body 透明，避免窗口加载瞬间闪现不透明背景色
+         （主窗口与偏好设置窗口均生效） -->
+    <script>
+      try {
+        if (process.platform === 'darwin') {
+          var config = require('electron').ipcRenderer.sendSync('get-app-config')
+          if (config && config['mac-native-transparent']) {
+            document.documentElement.className = 'mac-native-transparent'
+            document.documentElement.style.backgroundColor = 'transparent'
+            document.body.style.backgroundColor = 'transparent'
+          }
+        }
+      } catch (e) {}
+    </script>
+
     <!-- webpack builds are automatically injected -->
   </body>
 </html>

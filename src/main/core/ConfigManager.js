@@ -219,6 +219,8 @@ export default class ConfigManager {
           'aside',
           'subnav'
         ],
+        // macOS 原生透明背景（vibrancy 毛玻璃效果），仅 macOS 生效
+        'mac-native-transparent': false,
         'task-detail-frosted-blur': 4,
         'tracker-source': getDefaultTrackerSources(),
         'tray-theme': APP_THEME.AUTO,

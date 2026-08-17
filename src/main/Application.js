@@ -1443,6 +1443,17 @@ export default class Application extends EventEmitter {
     })
   }
 
+  watchMacNativeTransparentChange () {
+    const { userConfig } = this.configManager
+    const key = 'mac-native-transparent'
+    this.configListeners[key] = userConfig.onDidChange(key, (newValue, oldValue) => {
+      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      if (this.windowManager && typeof this.windowManager.applyNativeTransparent === 'function') {
+        this.windowManager.applyNativeTransparent(!!newValue)
+      }
+    })
+  }
+
   watchAutoCheckUpdateChange () {
     const { userConfig } = this.configManager
     const key = 'auto-check-update'
@@ -3531,6 +3542,7 @@ export default class Application extends EventEmitter {
     this.watchProxyChange()
     this.watchLocaleChange()
     this.watchThemeChange()
+    this.watchMacNativeTransparentChange()
     this.watchAutoCheckUpdateChange()
 
     this.on('download-status-change', (downloading) => {
