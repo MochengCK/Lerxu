@@ -251,6 +251,7 @@ export default {
   'error-reason-not-found': 'Recurso inexistente o enlace no válido',
   'error-reason-disk-full': 'Espacio en disco insuficiente',
   'error-reason-permission': 'Sin permiso para escribir en el directorio de destino',
+  'error-reason-permission-macos': 'El permiso de privacidad de macOS se restableció tras la actualización. Permita que LinkCore acceda a la carpeta Descargas en Ajustes del Sistema > Privacidad y seguridad > Archivos y carpetas; la tarea se reintentará automáticamente',
   'error-reason-disk': 'Fallo al escribir el archivo (problema de disco o permisos)',
   'error-reason-generic': 'Error desconocido',
   'pause': 'Pausar',

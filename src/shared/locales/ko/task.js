@@ -251,6 +251,7 @@ export default {
   'error-reason-not-found': '리소스가 존재하지 않거나 링크가 잘못되었습니다',
   'error-reason-disk-full': '디스크 공간이 부족합니다',
   'error-reason-permission': '대상 디렉터리에 쓸 권한이 없습니다',
+  'error-reason-permission-macos': '앱 업데이트로 macOS 개인정보 권한이 초기화되었습니다. 시스템 설정 > 개인정보 보호 및 보안 > 파일 및 폴더에서 LinkCore의 다운로드 폴더 접근을 허용하면 작업이 자동으로 재시도됩니다',
   'error-reason-disk': '파일 쓰기에 실패했습니다(디스크 또는 권한 문제)',
   'error-reason-generic': '알 수 없는 오류',
   'pause': '일시정지',

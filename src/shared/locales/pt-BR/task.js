@@ -251,6 +251,7 @@ export default {
   'error-reason-not-found': 'Recurso não encontrado ou link inválido',
   'error-reason-disk-full': 'Espaço em disco insuficiente',
   'error-reason-permission': 'Sem permissão para escrever no diretório de destino',
+  'error-reason-permission-macos': 'A permissão de privacidade do macOS foi redefinida pela atualização do aplicativo. Permita que o LinkCore acesse a pasta Downloads em Ajustes do Sistema > Privacidade e Segurança > Arquivos e Pastas; a tarefa será repetida automaticamente',
   'error-reason-disk': 'Falha ao gravar o arquivo (disco ou permissão)',
   'error-reason-generic': 'Erro desconhecido',
   'pause': 'Pausar',

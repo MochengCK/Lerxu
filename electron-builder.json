@@ -153,6 +153,14 @@
     "darkModeSupport": true,
     "hardenedRuntime": false,
     "notarize": false,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist",
+    "extendInfo": {
+      "NSDownloadsFolderUsageDescription": "LinkCore 需要访问下载文件夹以保存和管理下载的文件。",
+      "NSDesktopFolderUsageDescription": "LinkCore 需要访问桌面文件夹以保存下载的文件。",
+      "NSDocumentsFolderUsageDescription": "LinkCore 需要访问文稿文件夹以保存下载的文件。",
+      "NSRemovableVolumesUsageDescription": "LinkCore 需要访问外置磁盘以保存下载的文件。"
+    },
     "extraResources": {
       "from": "./extra/darwin/${arch}/",
       "to": "./",

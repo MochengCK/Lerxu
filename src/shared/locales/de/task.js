@@ -251,6 +251,7 @@ export default {
   'error-reason-not-found': 'Ressource nicht gefunden oder Link ungültig',
   'error-reason-disk-full': 'Speicherplatz auf dem Datenträger ist voll',
   'error-reason-permission': 'Keine Schreibberechtigung für das Zielverzeichnis',
+  'error-reason-permission-macos': 'macOS-Datenschutzberechtigung wurde durch das App-Update zurückgesetzt. Erlauben Sie LinkCore den Zugriff auf den Ordner „Downloads“ unter Systemeinstellungen > Datenschutz & Sicherheit > Dateien und Ordner; die Aufgabe wird automatisch wiederholt',
   'error-reason-disk': 'Dateischreibvorgang fehlgeschlagen (Datenträger- oder Berechtigungsproblem)',
   'error-reason-generic': 'Unbekannter Fehler',
   'pause': 'Pause',

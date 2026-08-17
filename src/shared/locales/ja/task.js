@@ -208,6 +208,7 @@ export default {
   'error-reason-not-found': 'リソースが存在しないか、リンクが無効です',
   'error-reason-disk-full': 'ディスク容量が不足しています',
   'error-reason-permission': '対象ディレクトリへの書き込み権限がありません',
+  'error-reason-permission-macos': 'macOS のプライバシー権限がアップデートによりリセットされました。「システム設定 › プライバシーとセキュリティ › ファイルとフォルダ」で LinkCore のダウンロードフォルダへのアクセスを許可すると、タスクは自動的に再試行されます',
   'error-reason-disk': 'ファイルの書き込みに失敗しました（ディスクまたは権限の問題）',
   'error-reason-generic': '不明なエラーが発生しました',
   'pause': '一時停止',

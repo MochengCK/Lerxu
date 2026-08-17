@@ -3533,6 +3533,15 @@
           }
           return this.$t('task.error-reason-network')
         }
+        if (code === 14 || code === 15) {
+          // 14: 重命名文件失败 / 15: 打开已存在文件失败。
+          // macOS 上应用更新后 TCC 授权失效，引擎打开/重命名下载目录中的
+          // 文件会返回 EPERM (Operation not permitted)，需引导用户重新授权。
+          if (/operation not permitted|permission denied|not permitted/i.test(msg)) {
+            return this.$t('task.error-reason-permission')
+          }
+          return this.$t('task.error-reason-disk')
+        }
         if (code === 16) {
           if (/Permission denied|permission/i.test(msg)) {
             return this.$t('task.error-reason-permission')
@@ -3583,6 +3592,31 @@
             // 连接被拒绝，可能是tracker问题，稍后重试
             console.log(`[LinkCore] BT task ${gid} connection refused, will retry in 30 seconds`)
             scheduleRetry(30000)
+          }
+          break
+
+        case 14: // 重命名文件失败
+        case 15: // 打开已存在文件失败
+          if (/operation not permitted|permission denied|not permitted/i.test(msg)) {
+            // macOS TCC 授权在应用更新（签名变化）后失效，打开下载目录文件
+            // 返回 EPERM。盲目 60s 重试无效，改为低频重试（用户授权后自动恢复），
+            // 并按 gid 去重提示一次授权指引。
+            const isDarwin = process.platform === 'darwin'
+            if (isDarwin) {
+              if (!this._permNotifiedGids) {
+                this._permNotifiedGids = new Set()
+              }
+              if (!this._permNotifiedGids.has(gid)) {
+                this._permNotifiedGids.add(gid)
+                this.$msg.warning(this.$t('task.error-reason-permission-macos'))
+              }
+            } else {
+              this.$msg.warning(this.$t('task.error-reason-permission'))
+            }
+            console.log(`[LinkCore] BT task ${gid} permission denied, will retry in 120 seconds`)
+            scheduleRetry(120000)
+          } else if (/No space left|disk full/i.test(msg)) {
+            this.$msg.warning('磁盘空间不足，请清理磁盘空间后重新开始下载')
           }
           break
 

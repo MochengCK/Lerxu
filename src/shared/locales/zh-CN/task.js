@@ -293,6 +293,7 @@ export default {
   'error-reason-not-found': '资源不存在或链接已失效',
   'error-reason-disk-full': '磁盘空间不足',
   'error-reason-permission': '没有写入目标目录的权限',
+  'error-reason-permission-macos': 'macOS 隐私授权因应用更新而失效：请在「系统设置 › 隐私与安全性 › 文件与文件夹」中允许 LinkCore 访问下载文件夹，授权后任务将自动重试',
   'error-reason-disk': '文件写入失败（磁盘或权限问题）',
   'error-reason-generic': '未知错误',
   'pause': '暂停',

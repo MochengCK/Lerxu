@@ -251,6 +251,7 @@ export default {
   'error-reason-not-found': 'Ressource inexistante ou lien invalide',
   'error-reason-disk-full': 'Espace disque insuffisant',
   'error-reason-permission': 'Aucune permission d\'écriture dans le dossier cible',
+  'error-reason-permission-macos': 'L\'autorisation de confidentialité macOS a été réinitialisée par la mise à jour. Autorisez LinkCore à accéder au dossier Téléchargements dans Réglages Système > Confidentialité et sécurité > Fichiers et dossiers ; la tâche sera relancée automatiquement',
   'error-reason-disk': 'Échec d\'écriture du fichier (problème de disque ou de permissions)',
   'error-reason-generic': 'Erreur inconnue',
   'pause': 'Pause',
