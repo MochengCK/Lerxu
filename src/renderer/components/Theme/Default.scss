@@ -1102,6 +1102,10 @@ html.mac-native-transparent body {
   background-color: transparent !important;
 }
 
+.selected .task-item {
+  border-color: $--task-item-hover-border-color;
+}
+
 .main.panel {
   background-color: $--main-background;
 }

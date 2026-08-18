@@ -140,6 +140,28 @@
         return existsSync(to) && !existsSync(from)
       },
       /**
+       * 清理引擎下载控制文件（<file>.xfer）。
+       * 下载完成后应用会把带后缀的文件重命名为最终文件名，此时引擎的
+       * 控制文件可能因竞态未被引擎自身删除而残留，这里统一清理。
+       */
+      cleanupAria2ControlFiles (paths) {
+        const list = Array.isArray(paths) ? paths : [paths]
+        list.forEach((p) => {
+          if (!p) return
+          ;['.xfer'].forEach((ext) => {
+            const controlPath = `${p}${ext}`
+            try {
+              if (existsSync(controlPath)) {
+                unlinkSync(controlPath)
+                console.log(`[LinkCore] Cleaned up engine control file: ${controlPath}`)
+              }
+            } catch (e) {
+              console.warn(`[LinkCore] Failed to remove engine control file ${controlPath}:`, e && e.message ? e.message : e)
+            }
+          })
+        })
+      },
+      /**
        * 修复带有下载后缀的文件名中的序号位置
        * 例如：/path/to/5EClient-8.2.5.exe (1).vxdv -> /path/to/5EClient-8.2.5 (1).exe.vxdv
        */
@@ -2648,6 +2670,7 @@
             const okFix = await renameWithRetry(currentPath, fixedPath)
             if (okFix) {
               console.log(`[LinkCore] Fixed file name structure: ${currentPath} -> ${fixedPath}`)
+              this.cleanupAria2ControlFiles([currentPath, fixedPath])
               pathToProcess = fixedPath
             }
           }
@@ -2660,9 +2683,11 @@
             const ok = await renameWithRetry(pathToProcess, originalPath)
             if (ok && existsSync(originalPath)) {
               console.log(`[LinkCore] Removed downloading suffix: ${pathToProcess} -> ${originalPath}`)
+              this.cleanupAria2ControlFiles([pathToProcess, originalPath, desiredPath])
               return originalPath
             }
           } else if (existsSync(desiredPath)) {
+            this.cleanupAria2ControlFiles([desiredPath])
             return desiredPath
           }
           return existsSync(desiredPath) ? desiredPath : currentPath
@@ -2678,6 +2703,7 @@
               const ok = await renameWithRetry(suffixedPath, targetPath)
               if (ok && existsSync(targetPath)) {
                 console.log(`[LinkCore] Removed downloading suffix: ${suffixedPath} -> ${targetPath}`)
+                this.cleanupAria2ControlFiles([suffixedPath, targetPath])
                 return targetPath
               }
             }
@@ -2767,6 +2793,7 @@
                     const renameOk = this.renamePreserveTimes(filePath, fixedPath)
                     if (renameOk) {
                       console.log(`[LinkCore] Fixed BT file name structure: ${filePath} -> ${fixedPath}`)
+                      this.cleanupAria2ControlFiles([filePath, fixedPath])
                       pathToProcess = fixedPath
                     } else {
                       console.warn(`[LinkCore] Failed to fix BT file name structure: ${filePath} -> ${fixedPath}`)
@@ -2777,6 +2804,7 @@
                   const ok = this.renamePreserveTimes(pathToProcess, originalPath)
                   if (ok) {
                     console.log(`[LinkCore] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
+                    this.cleanupAria2ControlFiles([pathToProcess, originalPath])
                     filePath = originalPath
                   }
                 }
@@ -2826,6 +2854,7 @@
                   const renameOk = this.renamePreserveTimes(filePath, fixedPath)
                   if (renameOk) {
                     console.log(`[LinkCore] Fixed file name structure before categorize: ${filePath} -> ${fixedPath}`)
+                    this.cleanupAria2ControlFiles([filePath, fixedPath])
                     pathToProcess = fixedPath
                   } else {
                     console.warn(`[LinkCore] Failed to fix file name structure before categorize: ${filePath} -> ${fixedPath}`)
@@ -2836,6 +2865,7 @@
                 const ok = this.renamePreserveTimes(pathToProcess, originalPath)
                 if (ok) {
                   console.log(`[LinkCore] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
+                  this.cleanupAria2ControlFiles([pathToProcess, originalPath])
                   filePath = originalPath
                 }
               } else {
@@ -2849,6 +2879,7 @@
                     const renameOk = this.renamePreserveTimes(suffixedPath, fixedSuffixedPath)
                     if (renameOk) {
                       console.log(`[LinkCore] Fixed suffixed file name structure: ${suffixedPath} -> ${fixedSuffixedPath}`)
+                      this.cleanupAria2ControlFiles([suffixedPath, fixedSuffixedPath])
                       pathToProcess = fixedSuffixedPath
                     }
                   }
@@ -2857,6 +2888,7 @@
                   const ok = this.renamePreserveTimes(pathToProcess, targetPath)
                   if (ok) {
                     console.log(`[LinkCore] Restored downloading suffix before categorize: ${pathToProcess} -> ${targetPath}`)
+                    this.cleanupAria2ControlFiles([pathToProcess, targetPath])
                     filePath = targetPath
                   }
                 }
@@ -3089,6 +3121,7 @@
             const ok = this.renamePreserveTimes(suffixedPath, finalPath)
             if (ok) {
               console.log(`[LinkCore] Restored suffix near completion: ${suffixedPath} -> ${finalPath}`)
+              this.cleanupAria2ControlFiles([suffixedPath, finalPath])
             }
           }
         } catch (_) {}
@@ -3142,6 +3175,7 @@
                   const ok = this.renamePreserveTimes(suffixedPath, finalPath)
                   if (ok) {
                     console.log(`[LinkCore] Restored suffix on startup: ${suffixedPath} -> ${finalPath}`)
+                    this.cleanupAria2ControlFiles([suffixedPath, finalPath])
                   } else {
                     console.warn(`[LinkCore] Failed to restore suffix on startup: ${suffixedPath} -> ${finalPath}`)
                   }
