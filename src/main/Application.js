@@ -1730,7 +1730,12 @@ export default class Application extends EventEmitter {
 
   initWindowManager () {
     this.windowManager = new WindowManager({
-      userConfig: this.configManager.getUserConfig()
+      // userConfig 仅作为兜底快照；WindowManager 通过 getUserConfig
+      // 每次实时读取最新配置（electron-store 的 store getter 每次
+      // 返回新对象，保存旧引用会导致窗口重建后读到过期配置，
+      // 例如 mac-native-transparent 开关丢失 → vibrancy 失效）
+      userConfig: this.configManager.getUserConfig(),
+      getUserConfig: () => this.configManager.getUserConfig()
     })
 
     this.windowManager.on('window-resized', (data) => {

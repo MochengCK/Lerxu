@@ -83,9 +83,17 @@ function resolveVibrancy (userConfig) {
 }
 
 export default class WindowManager extends EventEmitter {
+  /**
+   * userConfig 必须按需实时读取（getter），不能在构造时保存快照引用：
+   * electron-store(conf) 的 store getter 每次都从磁盘重新读取并返回
+   * 全新对象，构造时保存的引用永远停留在启动时的配置。否则用户开启
+   * mac-native-transparent 后，偏好设置窗口销毁重建（bindCloseToHide
+   * 为 false）时 resolveVibrancy 读到旧快照，under-window 透明材质
+   * 丢失。同理影响 hide-app-menu / keep-window-state / auto-hide-window。
+   */
   constructor (options = {}) {
     super()
-    this.userConfig = options.userConfig || {}
+    this.getUserConfig = options.getUserConfig || (() => options.userConfig || {})
 
     this.windows = {}
 
@@ -97,6 +105,13 @@ export default class WindowManager extends EventEmitter {
     this.handleBeforeQuit()
 
     this.handleAllWindowClosed()
+  }
+
+  /**
+   * 每次访问都取最新用户配置，保证窗口销毁重建/显示时读到实时开关值。
+   */
+  get userConfig () {
+    return this.getUserConfig()
   }
 
   setWillQuit (flag) {
@@ -224,6 +239,15 @@ export default class WindowManager extends EventEmitter {
 
     this.handleWindowClose(pageOptions, page, window)
 
+    // macOS：窗口每次显示时重申 vibrancy 材质。部分系统/Electron 版本
+    // 在窗口 hide→show、全屏切换后原生材质会被系统重置，重申一次可
+    // 保证透明效果在窗口重新显示后依然生效（幂等操作，代价极小）。
+    if (is.macOS()) {
+      window.on('show', () => {
+        this.reapplyVibrancy(window)
+      })
+    }
+
     this.bindAfterClosed(page, window)
 
     this.addWindow(page, window)
@@ -274,6 +298,32 @@ export default class WindowManager extends EventEmitter {
       }
     }
     logger.info(`[LinkCore] native transparent window material: ${flag ? 'on' : 'off'}`)
+  }
+
+  /**
+   * 按当前配置重申窗口 vibrancy 材质（仅 macOS）。
+   * 窗口 show / 全屏切换后系统可能重置材质，此处统一恢复；
+   * 仅在原生透明开启时重申 under-window + 透明背景，未开启时
+   * 不动窗口（保持创建时的主题材质 / 关闭开关时的不透明状态），
+   * 与 applyNativeTransparent 的语义保持一致。
+   */
+  reapplyVibrancy (window) {
+    if (!window || (typeof window.isDestroyed === 'function' && window.isDestroyed())) {
+      return
+    }
+    const userConfig = this.userConfig
+    if (!resolveNativeTransparent(userConfig)) {
+      return
+    }
+    try {
+      window.setVibrancy('under-window')
+      window.setBackgroundColor('#00000000')
+      if (typeof window.setVisualEffectState === 'function') {
+        window.setVisualEffectState('active')
+      }
+    } catch (err) {
+      logger.warn(`[LinkCore] reapplyVibrancy failed: ${err && err.message ? err.message : err}`)
+    }
   }
 
   getWindowRecoveryState (page) {
