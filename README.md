@@ -123,7 +123,7 @@ A modern download manager powered by the XferCore engine, optimized for Windows,
 ## Supported Platforms
 
 LinkCore currently supports the following platforms:
-- **Windows** (7, 8, 10, 11)
+- **Windows** (10, 11)
 - **macOS** (Intel, x64; Apple Silicon, arm64)
 - **Linux** (x64, arm64)
 
