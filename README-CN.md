@@ -132,7 +132,7 @@
 
 LinkCore 目前支持以下平台：
 
-- **Windows** (7, 8, 10, 11)
+- **Windows** (10, 11)
 - **macOS**（Intel，x64；Apple Silicon，arm64）
 - **Linux** (x64, arm64)
 
