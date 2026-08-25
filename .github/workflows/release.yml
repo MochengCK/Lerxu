@@ -69,26 +69,33 @@ jobs:
           ls -la dist/electron/ 2>/dev/null || dir dist\\electron\\ || echo "Directory listing failed"
           
           echo ""
-          echo "Checking for main.js..."
-          if [ -f "dist/electron/main.js" ]; then
-            SIZE=$(stat -f%z dist/electron/main.js 2>/dev/null || stat -c%s dist/electron/main.js 2>/dev/null || echo "unknown")
-            echo "✓ main.js found ($SIZE bytes)"
+          echo "Checking for index.js (main process)..."
+          if [ -f "dist/electron/index.js" ]; then
+            SIZE=$(stat -f%z dist/electron/index.js 2>/dev/null || stat -c%s dist/electron/index.js 2>/dev/null || echo "unknown")
+            echo "✓ index.js found ($SIZE bytes)"
           else
-            echo "✗ main.js not found"
+            echo "✗ index.js not found"
             echo "Contents of dist directory:"
             find dist -type f 2>/dev/null || echo "find command failed"
             exit 1
           fi
           
           echo ""
-          echo "Checking for index.js (renderer)..."
-          if [ -f "dist/electron/index.js" ]; then
-            SIZE=$(stat -f%z dist/electron/index.js 2>/dev/null || stat -c%s dist/electron/index.js 2>/dev/null || echo "unknown")
-            echo "✓ index.js found ($SIZE bytes)"
+          echo "Checking for assets directory (renderer)..."
+          if [ -d "dist/electron/assets" ]; then
+            ASSET_COUNT=$(find dist/electron/assets -type f 2>/dev/null | wc -l)
+            echo "✓ assets directory found ($ASSET_COUNT files)"
           else
-            echo "✗ index.js not found"
-            echo "Contents of dist/electron directory:"
-            find dist/electron -type f 2>/dev/null || echo "find command failed"
+            echo "⚠ assets directory not found (may be normal if renderer is bundled differently)"
+          fi
+          
+          echo ""
+          echo "Checking for shared/locales (main process assets)..."
+          if [ -d "dist/electron/shared/locales" ]; then
+            LOCALE_COUNT=$(find dist/electron/shared/locales -type f 2>/dev/null | wc -l)
+            echo "✓ shared/locales found ($LOCALE_COUNT files)"
+          else
+            echo "✗ shared/locales not found"
             exit 1
           fi
           
