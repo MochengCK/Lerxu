@@ -132,7 +132,7 @@
 
 LinkCore 目前支持以下平台：
 
-- **Windows** (7, 8, 10, 11)
+- **Windows** (10, 11)
 - **macOS**（Intel，x64；Apple Silicon，arm64）
 - **Linux** (x64, arm64)
 
@@ -237,7 +237,6 @@ LinkCore/
 - 本项目基于 agalwood 开源项目 [Motrix](https://github.com/agalwood/Motrix) 开发，并在其基础上进行了大量修改和功能扩展
 - UI 框架：[Vue.js](https://vuejs.org/)
 - 桌面框架：[Electron](https://www.electronjs.org/)
-- 视频处理：[FFmpeg](https://ffmpeg.org/)
 - 下载引擎：[XferCore](https://github.com/MochengCK/XferCore)（基于 [aria2](https://github.com/aria2/aria2) 深度定制）
 
 ## 支持

@@ -123,7 +123,7 @@ A modern download manager powered by the XferCore engine, optimized for Windows,
 ## Supported Platforms
 
 LinkCore currently supports the following platforms:
-- **Windows** (7, 8, 10, 11)
+- **Windows** (10, 11)
 - **macOS** (Intel, x64; Apple Silicon, arm64)
 - **Linux** (x64, arm64)
 
@@ -228,7 +228,6 @@ Contributions are welcome! Whether you're fixing bugs, adding new features, or i
 - This project is based on the agalwood open-source project [Motrix](https://github.com/agalwood/Motrix), with extensive modifications and feature extensions
 - UI Framework: [Vue.js](https://vuejs.org/)
 - Desktop Framework: [Electron](https://www.electronjs.org/)
-- Video Processing: [FFmpeg](https://ffmpeg.org/)
 - Download Engine: [XferCore](https://github.com/MochengCK/XferCore) (deeply customized from [aria2](https://github.com/aria2/aria2))
 
 ## Support
