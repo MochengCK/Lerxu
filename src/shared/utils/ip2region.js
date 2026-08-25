@@ -7,6 +7,7 @@
 import { IPv4, IPv6, newWithBuffer, parseIP, HeaderInfoLength, VectorIndexCols, VectorIndexSize } from 'ip2region.js'
 import path from 'path'
 import fs from 'fs'
+import { gunzipSync } from 'zlib'
 
 let v4Searcher = null
 let v6Searcher = null
@@ -26,8 +27,14 @@ function resolveXdbPath (filename) {
     candidates.push(path.join(__dirname, 'shared', 'data', filename))
   } catch (_) {}
 
+  // 开发模式: __dirname 通常是 src/shared/utils，向上一级到 src/shared，再进 data/
   try {
-    candidates.push(path.resolve(__dirname, '..', 'src', 'shared', 'data', filename))
+    candidates.push(path.resolve(__dirname, '..', 'data', filename))
+  } catch (_) {}
+
+  // 打包模式: __dirname 通常是 dist/electron
+  try {
+    candidates.push(path.join(__dirname, 'shared', 'data', filename))
   } catch (_) {}
 
   try {
@@ -48,14 +55,30 @@ function resolveXdbPath (filename) {
   }) || ''
 }
 
+// 构建期 xdb 以 gzip 落盘以减小打包体积（47MB -> 11MB），
+// 优先加载 .gz 并在内存中解压，回退到未压缩版本
+function readXdbBuffer (filename) {
+  const gzPath = resolveXdbPath(`${filename}.gz`)
+  if (gzPath) {
+    return gunzipSync(fs.readFileSync(gzPath))
+  }
+
+  const rawPath = resolveXdbPath(filename)
+  if (rawPath) {
+    return fs.readFileSync(rawPath)
+  }
+
+  return null
+}
+
 function ensureInitialized () {
   if (initialized) return
   initialized = true
 
   try {
-    const v4Path = resolveXdbPath('ip2region_v4.xdb')
-    if (v4Path) {
-      v4Searcher = newWithBuffer(IPv4, fs.readFileSync(v4Path))
+    const v4Buffer = readXdbBuffer('ip2region_v4.xdb')
+    if (v4Buffer) {
+      v4Searcher = newWithBuffer(IPv4, v4Buffer)
     } else {
       console.warn('[ip2region] ip2region_v4.xdb not found')
     }
@@ -64,9 +87,9 @@ function ensureInitialized () {
   }
 
   try {
-    const v6Path = resolveXdbPath('ip2region_v6.xdb')
-    if (v6Path) {
-      v6Searcher = newWithBuffer(IPv6, fs.readFileSync(v6Path))
+    const v6Buffer = readXdbBuffer('ip2region_v6.xdb')
+    if (v6Buffer) {
+      v6Searcher = newWithBuffer(IPv6, v6Buffer)
     } else {
       console.warn('[ip2region] ip2region_v6.xdb not found')
     }

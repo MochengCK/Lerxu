@@ -6,17 +6,41 @@ import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { resolve } from 'node:path'
-import { cpSync } from 'node:fs'
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { gzipSync } from 'node:zlib'
 
 /* 主进程直接 file:// 加载的独立 HTML 页面与多语言文件不经打包器处理，
    每次构建/启动 dev 时同步到 dist/electron（与主进程产物同目录），
-   供 page.js 以 path.join(__dirname, 'pages/...') 解析加载 */
+   供 page.js 以 path.join(__dirname, 'pages/...') 解析加载。
+   ip2region xdb 原始体积约 47MB 且高度可压缩，以 gzip 落盘可减至约 11MB，
+   运行时由 shared/utils/ip2region.js 透明解压 */
 const copyMainAssets = () => ({
   name: 'copy-main-assets',
   buildStart () {
     const outDir = resolve('dist/electron')
     cpSync(resolve('src/main/pages'), resolve(outDir, 'pages'), { recursive: true })
     cpSync(resolve('src/shared/locales'), resolve(outDir, 'shared/locales'), { recursive: true })
+    const dataOutDir = resolve(outDir, 'shared/data')
+    // 先清空再写入，避免历史版本的明文 .xdb 残留在构建产物中
+    rmSync(dataOutDir, { recursive: true, force: true })
+    mkdirSync(dataOutDir, { recursive: true })
+    for (const file of readdirSync(resolve('src/shared/data'))) {
+      if (!file.endsWith('.xdb')) continue
+      writeFileSync(
+        resolve(dataOutDir, `${file}.gz`),
+        gzipSync(readFileSync(resolve('src/shared/data', file)), { level: 9 })
+      )
+    }
+  }
+})
+
+/* 渲染层产物（带内容哈希）与主进程产物共用 dist/electron，emptyOutDir 必须为 false
+   以免误删主进程文件；因此构建前单独清空 assets/，避免多次构建的哈希文件无限累积 */
+const cleanRendererOutput = () => ({
+  name: 'clean-renderer-output',
+  apply: 'build',
+  buildStart () {
+    rmSync(resolve('dist/electron/assets'), { recursive: true, force: true })
   }
 })
 
@@ -38,6 +62,7 @@ export default defineConfig(({ command }) => {
     plugins: [
       vue(),
       copyMainAssets(),
+      cleanRendererOutput(),
       AutoImport({
         imports: ['vue', 'vue-router', 'pinia'],
         resolvers: [ElementPlusResolver()],
