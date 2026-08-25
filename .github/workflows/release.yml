@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Delete existing release by tag
         uses: actions/github-script@v7
         env:
@@ -39,10 +39,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -103,8 +103,13 @@ jobs:
           DEBUG: 'electron-builder'
         run: |
           echo "Starting electron-builder..."
+          # 确保日志文件存在，即使 electron-builder 崩溃前没有任何输出
+          touch electron-builder.log
+          # 使用 set -o pipefail 确保管道中 electron-builder 的非零退出码被捕获
+          set -o pipefail
           npx electron-builder --publish onTagOrDraft 2>&1 | tee electron-builder.log
-          EXIT_CODE=${PIPESTATUS[0]}
+          EXIT_CODE=$?
+          set +o pipefail
           if [ $EXIT_CODE -ne 0 ]; then
             echo ""
             echo "❌ electron-builder failed with exit code $EXIT_CODE"
@@ -124,17 +129,19 @@ jobs:
             fi
             echo ""
             echo "Last 50 lines of output:"
-            tail -n 50 electron-builder.log
+            tail -n 50 electron-builder.log || echo "(no log content)"
             exit $EXIT_CODE
           fi
         shell: bash
 
       - name: Upload build logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: build-logs-${{ matrix.os }}
           path: |
             electron-builder.log
             *.log
+            release/*.yml
+          if-no-files-found: 'ignore'
           retention-days: 7
