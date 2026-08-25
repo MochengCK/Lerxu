@@ -45,7 +45,8 @@
     "semver": "^7.8.5",
     "ws": "^8.21.1",
     "socks-proxy-agent": "^7.0.0",
-    "i18next": "^22.5.1"
+    "i18next": "^22.5.1",
+    "ip2region.js": "^3.1.8"
   },
   "devDependencies": {
     "@bany/curl-to-json": "^1.2.10",
