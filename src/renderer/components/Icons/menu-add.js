@@ -4,13 +4,9 @@ Icon.register({
   'menu-add': {
     'width': 24,
     'height': 24,
-    'raw': `<line fill="none" stroke-miterlimit="10" x1="12" y1="2" x2="12" y2="22" />
-      <line fill="none" stroke-miterlimit="10" x1="22" y1="12" x2="2" y2="12" />`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 12h14"/>
+      <path d="M12 5v14"/>
+    </g>`
   }
 })

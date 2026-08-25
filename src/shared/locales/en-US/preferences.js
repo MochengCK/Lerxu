@@ -197,6 +197,7 @@ export default {
   'configure-tracker-prompt-title': 'Configure Tracker Sources',
   'configure-tracker-prompt-message': 'Enter GitHub link (file page or raw link)',
   'extract': 'Extract',
+  'extract-progress': 'Extracting tracker sources, please wait…',
   'extract-success': '{{count}} trackers extracted',
   'extract-failed': 'Extraction failed',
   'extract-empty-repo': 'No valid trackers extracted from repository',

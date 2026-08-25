@@ -5,9 +5,10 @@ Icon.register({
     'width': 24,
     'height': 24,
     'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/>
-      <path d="M14 3v5h5"/>
-      <path d="M9 13h6M9 17h4"/>
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/>
+      <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+      <path d="M16 13H8"/>
+      <path d="M16 17H8"/>
     </g>`
   }
 })

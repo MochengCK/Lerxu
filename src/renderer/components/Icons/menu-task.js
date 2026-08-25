@@ -4,12 +4,13 @@ Icon.register({
   'menu-task': {
     'width': 24,
     'height': 24,
-    'paths': [{
-      'd': 'M14,13H1c-0.6,0-1-0.4-1-1s0.4-1,1-1h13c0.6,0,1,0.4,1,1S14.6,13,14,13z'
-    }, {
-      'd': 'M23,6H1C0.4,6,0,5.6,0,5s0.4-1,1-1h22c0.6,0,1,0.4,1,1S23.6,6,23,6z'
-    }, {
-      'd': 'M23,20H1c-0.6,0-1-0.4-1-1s0.4-1,1-1h22c0.6,0,1,0.4,1,1S23.6,20,23,20z'
-    }]
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="8" y="2" width="8" height="4" rx="1"/>
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+      <path d="M12 11h4"/>
+      <path d="M12 16h4"/>
+      <path d="M8 11h.01"/>
+      <path d="M8 16h.01"/>
+    </g>`
   }
 })

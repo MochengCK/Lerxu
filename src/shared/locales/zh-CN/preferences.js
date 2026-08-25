@@ -205,6 +205,7 @@ export default {
   'configure-tracker-prompt-title': '配置Tracker服务器源',
   'configure-tracker-prompt-message': '输入GitHub链接（支持文件页或raw链接）',
   'extract': '提取',
+  'extract-progress': '正在提取 Tracker 源，请稍候…',
   'extract-success': '已提取 {{count}} 个 Tracker',
   'extract-failed': '提取失败',
   'extract-empty-repo': '未从仓库中提取到有效 Tracker',

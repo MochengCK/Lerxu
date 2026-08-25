@@ -1,1534 +1,2285 @@
 <template>
   <el-main class="panel-content">
     <el-form
-      class="form-preference"
       ref="basicForm"
+      class="form-preference"
       label-position="right"
-      size="mini"
+      size="small"
       :model="form"
       :rules="rules"
     >
-        <div v-if="activeCategory === 'appearance'" class="preference-card" data-category="appearance">
-          <h3 class="card-title">{{ $t('preferences.theme') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <mo-theme-switcher
-                v-model="form.theme"
-                @change="handleThemeChange"
-                ref="themeSwitcher"
-              />
-            </el-col>
-          </el-form-item>
-        </div>
+      <div
+        v-if="activeCategory === 'appearance'"
+        class="preference-card"
+        data-category="appearance"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.theme') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <mo-theme-switcher
+              ref="themeSwitcher"
+              v-model="form.theme"
+              @change="handleThemeChange"
+            />
+          </el-col>
+        </el-form-item>
+      </div>
 
-        <div v-if="activeCategory === 'appearance'" class="preference-card" data-category="appearance">
-          <h3 class="card-title">{{ $t('preferences.ui') }}</h3>
-          <el-form-item size="mini">
-            <el-col v-if="showHideAppMenuOption" class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.hide-app-menu') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.hide-app-menu-desc') }}</div>
+      <div
+        v-if="activeCategory === 'appearance'"
+        class="preference-card"
+        data-category="appearance"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.ui') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            v-if="showHideAppMenuOption"
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.hide-app-menu') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.hide-app-menu-desc') }}
                 </div>
-                <el-switch v-model="form.hideAppMenu" @change="autoSaveForm" />
               </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.auto-hide-window') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.auto-hide-window-desc') }}</div>
-                </div>
-                <el-switch v-model="form.autoHideWindow" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col v-if="isMac" class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.tray-speedometer') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.tray-speedometer-desc') }}</div>
-                </div>
-                <el-switch v-model="form.traySpeedometer" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.show-progress-bar') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.show-progress-bar-desc') }}</div>
-                </div>
-                <el-switch v-model="form.showProgressBar" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.task-detail-default-transparent') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.task-detail-default-transparent-desc') }}</div>
-                </div>
-                <el-switch v-model="form.taskDetailDefaultTransparent" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col v-if="form.taskDetailDefaultTransparent" class="form-item-sub-sub" :span="24">
-              <el-form-item class="background-slider-item" :label="$t('preferences.task-detail-frosted-strength')">
-                <el-slider
-                  v-model="form.taskDetailFrostedBlur"
-                  :min="0"
-                  :max="10"
-                  :step="1"
-                  @change="autoSaveForm"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.show-task-type-badge') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.show-task-type-badge-tips') }}</div>
-                </div>
-                <el-switch v-model="form.showTaskTypeBadge" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col v-if="isMac" class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.mac-native-transparent') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.mac-native-transparent-tips') }}</div>
-                </div>
-                <el-switch v-model="form.macNativeTransparent" @change="autoSaveForm" />
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 背景设置卡片 -->
-        <div v-if="activeCategory === 'appearance'" class="preference-card" data-category="appearance">
-          <div class="card-title background-type-nav">
-            <div class="background-type-nav__left">
-              <mo-segmented-slider
-                ref="backgroundTypeSegmented"
-                :value="form.backgroundType"
-                :options="backgroundTypeOptions"
-                size="mini"
-                @change="onBackgroundTypeChange"
+              <el-switch
+                v-model="form.hideAppMenu"
+                @change="autoSaveForm"
               />
             </div>
-            <div class="background-type-nav__right">
-              <el-button type="primary" size="mini" @click.stop="selectBackgroundImage">
-                {{ $t('preferences.background-image-select') }}
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.auto-hide-window') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.auto-hide-window-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.autoHideWindow"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            v-if="isMac"
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.tray-speedometer') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.tray-speedometer-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.traySpeedometer"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.show-progress-bar') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.show-progress-bar-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.showProgressBar"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.task-detail-default-transparent') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.task-detail-default-transparent-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.taskDetailDefaultTransparent"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            v-if="form.taskDetailDefaultTransparent"
+            class="form-item-sub-sub"
+            :span="24"
+          >
+            <el-form-item
+              class="background-slider-item"
+              :label="t('preferences.task-detail-frosted-strength')"
+            >
+              <el-slider
+                v-model="form.taskDetailFrostedBlur"
+                :min="0"
+                :max="10"
+                :step="1"
+                @change="autoSaveForm"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.show-task-type-badge') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.show-task-type-badge-tips') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.showTaskTypeBadge"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            v-if="isMac"
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.mac-native-transparent') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.mac-native-transparent-tips') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.macNativeTransparent"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 背景设置卡片 -->
+      <div
+        v-if="activeCategory === 'appearance'"
+        class="preference-card"
+        data-category="appearance"
+      >
+        <div class="card-title background-type-nav">
+          <div class="background-type-nav__left">
+            <mo-segmented-slider
+              ref="backgroundTypeSegmented"
+              :value="form.backgroundType"
+              :options="backgroundTypeOptions"
+              size="mini"
+              @change="onBackgroundTypeChange"
+            />
+          </div>
+          <div class="background-type-nav__right">
+            <el-button
+              type="primary"
+              size="small"
+              @click.stop="selectBackgroundImage"
+            >
+              {{ t('preferences.background-image-select') }}
+            </el-button>
+          </div>
+        </div>
+        <el-form-item size="small">
+          <el-col
+            v-if="form.backgroundType === 'image'"
+            class="form-item-sub"
+            :span="24"
+          >
+            <el-form-item
+              class="background-slider-item"
+              :label="t('preferences.background-image-opacity')"
+            >
+              <el-slider
+                v-model="backgroundImageOpacityPercent"
+                :min="30"
+                :max="100"
+                :step="1"
+                @change="autoSaveForm"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col
+            v-if="form.backgroundType === 'image'"
+            class="form-item-sub"
+            :span="24"
+          >
+            <el-form-item
+              class="background-slider-item"
+              :label="t('preferences.background-image-frosted-strength')"
+            >
+              <el-slider
+                v-model="form.backgroundImageFrostedBlur"
+                :min="0"
+                :max="10"
+                :step="1"
+                @change="autoSaveForm"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col
+            v-if="form.backgroundType === 'image'"
+            class="form-item-sub"
+            :span="24"
+          >
+            <el-form-item
+              class="background-slider-item"
+              :label="t('preferences.background-ui-opacity')"
+            >
+              <el-slider
+                v-model="backgroundUiOpacityPercent"
+                :min="40"
+                :max="100"
+                :step="1"
+                @change="autoSaveForm"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col
+            v-if="form.backgroundType === 'image'"
+            class="form-item-sub"
+            :span="24"
+          >
+            <el-form-item
+              class="background-slider-item"
+              :label="t('preferences.background-ui-opacity-scope')"
+            >
+              <el-select
+                ref="backgroundUiOpacityScopeSelect"
+                v-model="form.backgroundUiOpacityScope"
+                filterable
+                multiple
+                :collapse-tags="collapseTagsBackgroundUiOpacityScope"
+                style="width: 100%;"
+                @change="autoSaveForm"
+              >
+                <el-option
+                  v-for="item in backgroundUiOpacityScopeOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col
+            v-if="form.backgroundType === 'image'"
+            class="form-item-sub"
+            :span="24"
+          >
+            <el-form-item
+              class="background-slider-item"
+              :label="t('preferences.background-ui-frosted-strength')"
+            >
+              <el-slider
+                v-model="form.backgroundUiFrostedBlur"
+                :min="0"
+                :max="10"
+                :step="1"
+                @change="autoSaveForm"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col
+            v-if="form.backgroundType === 'image'"
+            class="form-item-sub"
+            :span="24"
+          >
+            <el-form-item
+              class="background-slider-item"
+              :label="t('preferences.background-ui-frosted-scope')"
+            >
+              <el-select
+                ref="backgroundUiFrostedBlurScopeSelect"
+                v-model="form.backgroundUiFrostedBlurScope"
+                filterable
+                multiple
+                :collapse-tags="collapseTagsBackgroundUiFrostedBlurScope"
+                style="width: 100%;"
+                @change="autoSaveForm"
+              >
+                <el-option
+                  v-for="item in backgroundUiFrostedBlurScopeOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 运行模式卡片 (仅Mac) -->
+      <div
+        v-if="isMac && activeCategory === 'basic'"
+        class="preference-card"
+        data-category="basic"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.run-mode') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <mo-extend-select
+              v-model="form.runMode"
+              :options="runModes"
+              @change="autoSaveForm"
+            />
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 语言设置卡片 -->
+      <div
+        v-if="activeCategory === 'basic'"
+        class="preference-card"
+        data-category="basic"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.language') }}
+        </h3>
+        <div class="language-container">
+          <!-- 语言选择框 -->
+          <mo-extend-select
+            v-model="form.locale"
+            :options="locales.map(item => ({ label: item.value === 'auto' ? `${item.label} (${systemLocaleName})` : item.label, value: item.value }))"
+            :placeholder="t('preferences.change-language')"
+            class="language-select"
+            @change="handleLocaleChange(form.locale)"
+          />
+        </div>
+      </div>
+
+      <!-- 快捷键卡片 -->
+      <div
+        v-if="activeCategory === 'basic'"
+        class="preference-card"
+        data-category="basic"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.shortcuts') }}
+        </h3>
+        <el-form-item size="small">
+          <el-row
+            :gutter="8"
+            style="margin-bottom: 8px;"
+          >
+            <el-col :span="12">
+              {{ t('preferences.shortcut-command') }}
+            </el-col>
+            <el-col :span="12">
+              {{ t('preferences.shortcut-keystroke') }}
+            </el-col>
+          </el-row>
+          <el-row
+            v-for="command in getShortcutCommands()"
+            :key="command"
+            :gutter="8"
+            style="margin-bottom: 8px;"
+          >
+            <el-col :span="12">
+              <el-input
+                :value="getCommandLabel(command)"
+                readonly
+              />
+            </el-col>
+            <el-col :span="12">
+              <el-input
+                :value="formatKeystrokeForDisplay(getKeystrokeByCommand(command))"
+                :placeholder="t('preferences.shortcut-placeholder')"
+                @keydown="handleShortcutKeydown(command, $event)"
+              />
+            </el-col>
+          </el-row>
+          <el-button
+            type="warning"
+            size="small"
+            style="width: 100%;"
+            @click="resetShortcuts"
+          >
+            {{ t('preferences.shortcut-reset-default') }}
+          </el-button>
+        </el-form-item>
+      </div>
+
+      <!-- 启动设置卡片 -->
+      <div
+        v-if="activeCategory === 'basic'"
+        class="preference-card"
+        data-category="basic"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.startup') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            v-if="!isLinux"
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.open-at-login') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.open-at-login-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.openAtLogin"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.keep-window-state') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.keep-window-state-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.keepWindowState"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.auto-resume-all') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.auto-resume-all-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.resumeAllWhenAppLaunched"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 扩展卡片 -->
+      <div
+        v-if="activeCategory === 'basic'"
+        class="preference-card"
+        data-category="basic"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.browser-extensions') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="form-item-sub">
+              {{ t('preferences.extension-channel') }}
+              <el-input
+                :value="appChannelUrl"
+                readonly
+              >
+                <template #append>
+                  <el-button
+                    class="extension-copy-btn"
+                    @click="copyChannelUrl"
+                  >
+                    <el-icon><DocumentCopy /></el-icon>
+                    {{ t('preferences.extension-copy-channel') }}
+                  </el-button>
+                </template>
+              </el-input>
+            </div>
+            <div
+              class="form-item-sub"
+              style="margin-top: 16px;"
+            >
+              <span
+                class="text-link"
+                style="color: #409EFF; cursor: pointer; text-decoration: underline;"
+                @click="downloadExtension"
+              >
+                Chrome
+              </span>
+            </div>
+            <div
+              class="form-item-sub"
+              style="margin-top: 12px;"
+            >
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.extension-intercept-all-downloads') }}</span>
+                  <div class="toggle-desc">
+                    {{ t('preferences.extension-intercept-all-downloads-desc') }}
+                  </div>
+                </div>
+                <el-switch
+                  v-model="form.extensionInterceptAllDownloads"
+                  @change="autoSaveForm"
+                />
+              </div>
+            </div>
+            <div
+              class="form-item-sub"
+              style="margin-top: 4px;"
+            >
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.extension-silent-download') }}</span>
+                  <div class="toggle-desc">
+                    {{ t('preferences.extension-silent-download-desc') }}
+                  </div>
+                </div>
+                <el-switch
+                  v-model="form.extensionSilentDownload"
+                  @change="autoSaveForm"
+                />
+              </div>
+            </div>
+            <div
+              class="form-item-sub"
+              style="margin-top: 4px;"
+            >
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.extension-shift-toggle-enabled') }}</span>
+                  <div class="toggle-desc">
+                    {{ t('preferences.extension-shift-toggle-enabled-desc') }}
+                  </div>
+                </div>
+                <el-switch
+                  v-model="form.extensionShiftToggleEnabled"
+                  @change="autoSaveForm"
+                />
+              </div>
+            </div>
+            <div
+              class="settings-divider"
+              style="margin-top: 16px; margin-bottom: 8px;"
+            />
+            <div
+              class="form-item-sub"
+              style="margin-top: 8px;"
+            >
+              {{ t('preferences.extension-skip-file-extensions') }}
+              <div
+                class="extension-tag-input"
+                @click="focusExtensionInput"
+              >
+                <transition-group
+                  name="tag-fade"
+                  tag="div"
+                  class="tags-container"
+                >
+                  <el-tag
+                    v-for="ext in extensionTags"
+                    :key="ext"
+                    closable
+                    size="small"
+                    class="extension-tag"
+                    @close="removeExtension(ext)"
+                  >
+                    {{ ext }}
+                  </el-tag>
+                </transition-group>
+                <input
+                  ref="extensionInputRef"
+                  v-model="extensionInput"
+                  type="text"
+                  class="extension-input"
+                  :placeholder="extensionTags.length === 0 ? t('preferences.extension-skip-file-extensions-tips') : ''"
+                  @keydown.enter="addExtension"
+                  @keydown.delete="handleDeleteKey"
+                  @blur="addExtension"
+                >
+              </div>
+            </div>
+            <div
+              class="form-item-sub"
+              style="margin-top: 16px;"
+            >
+              {{ t('preferences.extension-exclude-domains') }}
+              <div
+                class="extension-tag-input"
+                @click="focusDomainInput"
+              >
+                <transition-group
+                  name="tag-fade"
+                  tag="div"
+                  class="tags-container"
+                >
+                  <el-tag
+                    v-for="domain in domainTags"
+                    :key="domain"
+                    closable
+                    size="small"
+                    class="extension-tag"
+                    @close="removeDomain(domain)"
+                  >
+                    {{ domain }}
+                  </el-tag>
+                </transition-group>
+                <input
+                  ref="domainInputRef"
+                  v-model="domainInput"
+                  type="text"
+                  class="extension-input"
+                  :placeholder="domainTags.length === 0 ? t('preferences.extension-exclude-domains-tips') : ''"
+                  @keydown.enter="addDomain"
+                  @keydown.delete="handleDomainDeleteKey"
+                  @blur="addDomain"
+                >
+              </div>
+            </div>
+            <div
+              class="form-item-sub"
+              style="margin-top: 16px;"
+            >
+              {{ t('preferences.extension-min-file-size') }}
+              <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                <el-input-number
+                  v-model="form.extensionMinFileSize"
+                  controls-position="right"
+                  :min="0"
+                  :max="10240"
+                  :step="1"
+                  :precision="0"
+                  size="small"
+                  style="flex: 1; max-width: 150px;"
+                />
+                <span style="color: var(--text-secondary);">MB</span>
+              </div>
+            </div>
+            <div
+              class="form-item-sub"
+              style="margin-top: 16px;"
+            >
+              <el-button
+                type="primary"
+                size="small"
+                class="video-detection-settings-btn"
+                style="width: 100%;"
+                @click="openVideoDetectionSettings"
+              >
+                {{ t('preferences.video-detection-settings') }}
               </el-button>
             </div>
-          </div>
-          <el-form-item size="mini">
-            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
-              <el-form-item class="background-slider-item" :label="$t('preferences.background-image-opacity')">
-                <el-slider
-                  v-model="backgroundImageOpacityPercent"
-                  :min="30"
-                  :max="100"
-                  :step="1"
-                  @change="autoSaveForm"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
-              <el-form-item class="background-slider-item" :label="$t('preferences.background-image-frosted-strength')">
-                <el-slider
-                  v-model="form.backgroundImageFrostedBlur"
-                  :min="0"
-                  :max="10"
-                  :step="1"
-                  @change="autoSaveForm"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
-              <el-form-item class="background-slider-item" :label="$t('preferences.background-ui-opacity')">
-                <el-slider
-                  v-model="backgroundUiOpacityPercent"
-                  :min="40"
-                  :max="100"
-                  :step="1"
-                  @change="autoSaveForm"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
-              <el-form-item class="background-slider-item" :label="$t('preferences.background-ui-opacity-scope')">
-                <el-select
-                  ref="backgroundUiOpacityScopeSelect"
-                  v-model="form.backgroundUiOpacityScope"
-                  filterable
-                  multiple
-                  :collapse-tags="collapseTagsBackgroundUiOpacityScope"
-                  style="width: 100%;"
-                  @change="autoSaveForm"
-                >
-                  <el-option
-                    v-for="item in backgroundUiOpacityScopeOptions"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
-                  />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
-              <el-form-item class="background-slider-item" :label="$t('preferences.background-ui-frosted-strength')">
-                <el-slider
-                  v-model="form.backgroundUiFrostedBlur"
-                  :min="0"
-                  :max="10"
-                  :step="1"
-                  @change="autoSaveForm"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col v-if="form.backgroundType === 'image'" class="form-item-sub" :span="24">
-              <el-form-item class="background-slider-item" :label="$t('preferences.background-ui-frosted-scope')">
-                <el-select
-                  ref="backgroundUiFrostedBlurScopeSelect"
-                  v-model="form.backgroundUiFrostedBlurScope"
-                  filterable
-                  multiple
-                  :collapse-tags="collapseTagsBackgroundUiFrostedBlurScope"
-                  style="width: 100%;"
-                  @change="autoSaveForm"
-                >
-                  <el-option
-                    v-for="item in backgroundUiFrostedBlurScopeOptions"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
-                  />
-                </el-select>
-              </el-form-item>
-            </el-col>
-          </el-form-item>
-        </div>
+          </el-col>
+        </el-form-item>
+      </div>
 
-        <!-- 运行模式卡片 (仅Mac) -->
-        <div v-if="isMac && activeCategory === 'basic'" class="preference-card" data-category="basic">
-          <h3 class="card-title">{{ $t('preferences.run-mode') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <el-select v-model="form.runMode" @change="autoSaveForm">
-                <el-option
-                  v-for="item in runModes"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value">
-                </el-option>
-              </el-select>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 语言设置卡片 -->
-        <div v-if="activeCategory === 'basic'" class="preference-card" data-category="basic">
-          <h3 class="card-title">{{ $t('preferences.language') }}</h3>
-          <div class="language-container">
-            <!-- 语言选择框 -->
-            <el-select
-              v-model="form.locale"
-              @change="handleLocaleChange(form.locale)"
-              :placeholder="$t('preferences.change-language')"
-              class="language-select"
-            >
-              <el-option
-                v-for="item in locales"
-                :key="item.value"
-                :label="item.value === 'auto' ? `${item.label} (${systemLocaleName})` : item.label"
-                :value="item.value">
-              </el-option>
-            </el-select>
-            <!-- 撤回更改按钮 - 使用visibility而非v-if，避免调整卡片大小 -->
-            <el-button
-              type="danger"
-              size="mini"
-              @click="undoLocaleChange"
-              class="undo-change-btn"
-              :style="{ visibility: localeChanged ? 'visible' : 'hidden' }"
-            >
-              {{ originalLanguageText }}
-            </el-button>
-          </div>
-        </div>
-
-        <!-- 快捷键卡片 -->
-        <div v-if="activeCategory === 'basic'" class="preference-card" data-category="basic">
-          <h3 class="card-title">{{ $t('preferences.shortcuts') }}</h3>
-          <el-form-item size="mini">
-            <el-row :gutter="8" style="margin-bottom: 8px;">
-              <el-col :span="12">{{ $t('preferences.shortcut-command') }}</el-col>
-              <el-col :span="12">{{ $t('preferences.shortcut-keystroke') }}</el-col>
-            </el-row>
-            <el-row v-for="command in getShortcutCommands()" :key="command" :gutter="8" style="margin-bottom: 8px;">
-              <el-col :span="12">
-                <el-input :value="getCommandLabel(command)" readonly />
-              </el-col>
-              <el-col :span="12">
-                <el-input
-                  :value="formatKeystrokeForDisplay(getKeystrokeByCommand(command))"
-                  @keydown.native="handleShortcutKeydown(command, $event)"
-                  :placeholder="$t('preferences.shortcut-placeholder')"
-                />
-              </el-col>
-            </el-row>
-            <el-button type="warning" size="mini" style="width: 100%;" @click="resetShortcuts">
-              {{ $t('preferences.shortcut-reset-default') }}
-            </el-button>
-          </el-form-item>
-        </div>
-
-        <!-- 启动设置卡片 -->
-        <div v-if="activeCategory === 'basic'" class="preference-card" data-category="basic">
-          <h3 class="card-title">{{ $t('preferences.startup') }}</h3>
-          <el-form-item size="mini">
-            <el-col
-              class="form-item-sub"
-              :span="24"
-              v-if="!isLinux"
-            >
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.open-at-login') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.open-at-login-desc') }}</div>
-                </div>
-                <el-switch v-model="form.openAtLogin" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.keep-window-state') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.keep-window-state-desc') }}</div>
-                </div>
-                <el-switch v-model="form.keepWindowState" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.auto-resume-all') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.auto-resume-all-desc') }}</div>
-                </div>
-                <el-switch v-model="form.resumeAllWhenAppLaunched" @change="autoSaveForm" />
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 扩展卡片 -->
-        <div v-if="activeCategory === 'basic'" class="preference-card" data-category="basic">
-          <h3 class="card-title">{{ $t('preferences.browser-extensions') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="form-item-sub">
-                {{ $t('preferences.extension-channel') }}
-                <el-input :value="appChannelUrl" readonly>
-                  <el-button
-                    slot="append"
-                    icon="el-icon-document-copy"
-                    @click="copyChannelUrl">
-                    {{ $t('preferences.extension-copy-channel') }}
-                  </el-button>
-                </el-input>
-              </div>
-              <div class="form-item-sub" style="margin-top: 16px;">
-                <span
-                  class="text-link"
-                  style="color: #409EFF; cursor: pointer; text-decoration: underline;"
-                  @click="downloadExtension">
-                  Chrome
-                </span>
-              </div>
-              <div class="form-item-sub" style="margin-top: 12px;">
-<div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.extension-intercept-all-downloads') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.extension-intercept-all-downloads-desc') }}</div>
-                </div>
-                <el-switch v-model="form.extensionInterceptAllDownloads" @change="autoSaveForm" />
-                </div>
-              </div>
-              <div class="form-item-sub" style="margin-top: 4px;">
-<div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.extension-silent-download') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.extension-silent-download-desc') }}</div>
-                </div>
-                <el-switch v-model="form.extensionSilentDownload" @change="autoSaveForm" />
-                </div>
-              </div>
-              <div class="form-item-sub" style="margin-top: 4px;">
-<div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.extension-shift-toggle-enabled') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.extension-shift-toggle-enabled-desc') }}</div>
-                </div>
-                <el-switch v-model="form.extensionShiftToggleEnabled" @change="autoSaveForm" />
-                </div>
-              </div>
-              <div class="settings-divider" style="margin-top: 16px; margin-bottom: 8px;"></div>
-              <div class="form-item-sub" style="margin-top: 8px;">
-                {{ $t('preferences.extension-skip-file-extensions') }}
-                <div class="extension-tag-input" @click="focusExtensionInput">
-                  <transition-group name="tag-fade" tag="div" class="tags-container">
-                    <el-tag
-                      v-for="ext in extensionTags"
-                      :key="ext"
-                      closable
-                      size="small"
-                      @close="removeExtension(ext)"
-                      class="extension-tag">
-                      {{ ext }}
-                    </el-tag>
-                  </transition-group>
-                  <input
-                    ref="extensionInput"
-                    v-model="extensionInput"
-                    type="text"
-                    class="extension-input"
-                    :placeholder="extensionTags.length === 0 ? $t('preferences.extension-skip-file-extensions-tips') : ''"
-                    @keydown.enter="addExtension"
-                    @keydown.delete="handleDeleteKey"
-                    @blur="addExtension"
-                  />
-                </div>
-              </div>
-              <div class="form-item-sub" style="margin-top: 16px;">
-                {{ $t('preferences.extension-exclude-domains') }}
-                <div class="extension-tag-input" @click="focusDomainInput">
-                  <transition-group name="tag-fade" tag="div" class="tags-container">
-                    <el-tag
-                      v-for="domain in domainTags"
-                      :key="domain"
-                      closable
-                      size="small"
-                      @close="removeDomain(domain)"
-                      class="extension-tag">
-                      {{ domain }}
-                    </el-tag>
-                  </transition-group>
-                  <input
-                    ref="domainInput"
-                    v-model="domainInput"
-                    type="text"
-                    class="extension-input"
-                    :placeholder="domainTags.length === 0 ? $t('preferences.extension-exclude-domains-tips') : ''"
-                    @keydown.enter="addDomain"
-                    @keydown.delete="handleDomainDeleteKey"
-                    @blur="addDomain"
-                  />
-                </div>
-              </div>
-              <div class="form-item-sub" style="margin-top: 16px;">
-                {{ $t('preferences.extension-min-file-size') }}
-                <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
-                  <el-input-number
-                    v-model="form.extensionMinFileSize"
-                    controls-position="right"
-                    :min="0"
-                    :max="10240"
-                    :step="1"
-                    :precision="0"
-                    size="small"
-                    style="flex: 1; max-width: 150px;"
-                  />
-                  <span style="color: var(--text-secondary);">MB</span>
-                </div>
-              </div>
-              <div class="form-item-sub" style="margin-top: 16px;">
-                <el-button
-                  type="primary"
-                  size="small"
-                  class="video-detection-settings-btn"
-                  @click="openVideoDetectionSettings"
-                  style="width: 100%;">
-                  {{ $t('preferences.video-detection-settings') }}
-                </el-button>
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 下载目录卡片 -->
-        <div v-if="activeCategory === 'transfer'" class="preference-card" data-category="transfer">
-          <h3 class="card-title">{{ $t('preferences.default-dir') }}</h3>
-          <el-form-item size="mini">
-            <el-input placeholder="" v-model="form.dir" :readonly="isMas">
+      <!-- 下载目录卡片 -->
+      <div
+        v-if="activeCategory === 'transfer'"
+        class="preference-card"
+        data-category="transfer"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.default-dir') }}
+        </h3>
+        <el-form-item size="small">
+          <el-input
+            v-model="form.dir"
+            placeholder=""
+            :readonly="isMas"
+          >
+            <template #prepend>
               <mo-history-directory
-                slot="prepend"
                 @selected="handleHistoryDirectorySelected"
               />
+            </template>
+            <template #append>
               <mo-select-directory
                 v-if="isRenderer"
-                slot="append"
                 @selected="handleNativeDirectorySelected"
               />
-            </el-input>
-            <div class="el-form-item__info" v-if="isMas" style="margin-top: 8px;">
-              {{ $t('preferences.mas-default-dir-tips') }}
+            </template>
+          </el-input>
+          <div
+            v-if="isMas"
+            class="el-form-item__info"
+            style="margin-top: 8px;"
+          >
+            {{ t('preferences.mas-default-dir-tips') }}
+          </div>
+        </el-form-item>
+      </div>
+
+      <!-- 传输设置卡片 -->
+      <div
+        v-if="activeCategory === 'transfer'"
+        class="preference-card"
+        data-category="transfer"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.speed-limit') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub speed-limit-row"
+            :span="24"
+          >
+            {{ t('preferences.transfer-speed-upload') }}
+            <el-input-number
+              v-model="maxOverallUploadLimitParsed"
+              controls-position="right"
+              :min="0"
+              :max="65535"
+              :step="1"
+              :label="t('preferences.transfer-speed-download')"
+            />
+            <el-select
+              v-model="uploadUnit"
+              style="width: 100px;"
+              popper-class="speed-unit-popper"
+              @change="handleUploadChange"
+            >
+              <el-option
+                v-for="item in speedUnits"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-col>
+          <el-col
+            class="form-item-sub speed-limit-row"
+            :span="24"
+          >
+            {{ t('preferences.transfer-speed-download') }}
+            <el-input-number
+              v-model="maxOverallDownloadLimitParsed"
+              controls-position="right"
+              :min="0"
+              :max="65535"
+              :step="1"
+              :label="t('preferences.transfer-speed-download')"
+            />
+            <el-select
+              v-model="downloadUnit"
+              style="width: 100px;"
+              popper-class="speed-unit-popper"
+              @change="handleDownloadChange"
+            >
+              <el-option
+                v-for="item in speedUnits"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
+            </el-select>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- BT设置卡片 -->
+      <div
+        v-if="activeCategory === 'bt'"
+        class="preference-card"
+        data-category="bt"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.bt-options') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.bt-save-metadata') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.bt-save-metadata-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.btSaveMetadata"
+                @change="autoSaveForm"
+              />
             </div>
-          </el-form-item>
-        </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.bt-auto-download-content') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.bt-auto-download-content-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.btAutoDownloadContent"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="bt-encryption-row">
+              <mo-segmented-slider
+                ref="btEncryptionSegmented"
+                :value="form.btEncryptionMode"
+                :options="btEncryptionOptions"
+                size="mini"
+                @change="onBtEncryptionModeChange"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div
+              class="settings-divider"
+              style="margin: 8px 0;"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
+              {{ t('preferences.bt-ip-ban-list') }}
+            </div>
+            <el-input
+              v-model="btIpBanListText"
+              type="textarea"
+              :rows="3"
+              :placeholder="t('preferences.bt-ip-ban-placeholder')"
+            />
+            <div
+              class="el-form-item__info"
+              style="margin-top: 8px;"
+            >
+              {{ t('preferences.bt-ip-ban-tips') }}
+            </div>
+          </el-col>
+        </el-form-item>
+      </div>
 
-        <!-- 传输设置卡片 -->
-        <div v-if="activeCategory === 'transfer'" class="preference-card" data-category="transfer">
-          <h3 class="card-title">{{ $t('preferences.speed-limit') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub speed-limit-row" :span="24">
-              {{ $t('preferences.transfer-speed-upload') }}
-              <el-input-number
-                v-model="maxOverallUploadLimitParsed"
-                controls-position="right"
-                :min="0"
-                :max="65535"
-                :step="1"
-                :label="$t('preferences.transfer-speed-download')"
+      <!-- 做种设置卡片 -->
+      <div
+        v-if="activeCategory === 'bt'"
+        class="preference-card"
+        data-category="bt"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.bt-seeding-settings') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.keep-seeding') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.keep-seeding-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.keepSeeding"
+                @change="onKeepSeedingChange"
+              />
+            </div>
+          </el-col>
+          <el-col
+            v-if="!form.keepSeeding"
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.seed-ratio') }}
+            <el-input-number
+              v-model="form.seedRatio"
+              controls-position="right"
+              :min="1"
+              :max="100"
+              :step="0.1"
+              :label="t('preferences.seed-ratio')"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            v-if="!form.keepSeeding"
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.seed-time') }}
+            ({{ t('preferences.seed-time-unit') }})
+            <el-input-number
+              v-model="form.seedTime"
+              controls-position="right"
+              :min="60"
+              :max="525600"
+              :step="1"
+              :label="t('preferences.seed-time')"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.stop-seeding-action') }}
+            <el-radio-group
+              v-model="form.stopSeedingAction"
+              @change="autoSaveForm"
+            >
+              <el-radio value="pause">
+                {{ t('preferences.stop-seeding-action-pause') }}
+              </el-radio>
+              <el-radio value="complete">
+                {{ t('preferences.stop-seeding-action-complete') }}
+              </el-radio>
+            </el-radio-group>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- BT Tracker设置卡片 -->
+      <div
+        v-if="activeCategory === 'bt'"
+        class="preference-card"
+        data-category="bt"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.bt-tracker') }}
+        </h3>
+        <el-form-item size="small">
+          <div class="form-item-sub bt-tracker">
+            <el-row :gutter="4">
+              <el-col :span="24">
+                <div
+                  class="tracker-row"
+                  style="display:flex; align-items:stretch;"
                 >
-              </el-input-number>
-              <el-select
-                style="width: 100px;"
-                v-model="uploadUnit"
-                @change="handleUploadChange">
-                <el-option
-                  v-for="item in speedUnits"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value">
-                </el-option>
-              </el-select>
-            </el-col>
-            <el-col class="form-item-sub speed-limit-row" :span="24">
-              {{ $t('preferences.transfer-speed-download') }}
-              <el-input-number
-                v-model="maxOverallDownloadLimitParsed"
-                controls-position="right"
-                :min="0"
-                :max="65535"
-                :step="1"
-                :label="$t('preferences.transfer-speed-download')">
-              </el-input-number>
-              <el-select
-                style="width: 100px;"
-                v-model="downloadUnit"
-                @change="handleDownloadChange">
-                <el-option
-                  v-for="item in speedUnits"
-                  :key="item.value"
-                  :label="item.label"
-                  :value="item.value">
-                </el-option>
-              </el-select>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- BT设置卡片 -->
-        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
-          <h3 class="card-title">{{ $t('preferences.bt-options') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.bt-save-metadata') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.bt-save-metadata-desc') }}</div>
-                </div>
-                <el-switch v-model="form.btSaveMetadata" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.bt-auto-download-content') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.bt-auto-download-content-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.btAutoDownloadContent"
-                  @change="autoSaveForm"
-                />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="bt-encryption-row">
-                <mo-segmented-slider
-                  ref="btEncryptionSegmented"
-                  :value="form.btEncryptionMode"
-                  :options="btEncryptionOptions"
-                  size="mini"
-                  @change="onBtEncryptionModeChange"
-                />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="settings-divider" style="margin: 8px 0;"></div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
-                {{ $t('preferences.bt-ip-ban-list') }}
-              </div>
-              <el-input
-                type="textarea"
-                :rows="3"
-                v-model="btIpBanListText"
-                :placeholder="$t('preferences.bt-ip-ban-placeholder')"
-              >
-              </el-input>
-              <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.bt-ip-ban-tips') }}
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 做种设置卡片 -->
-        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
-          <h3 class="card-title">{{ $t('preferences.bt-seeding-settings') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.keep-seeding') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.keep-seeding-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.keepSeeding"
-                  @change="onKeepSeedingChange"
-                />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24" v-if="!form.keepSeeding">
-              {{ $t('preferences.seed-ratio') }}
-              <el-input-number
-                v-model="form.seedRatio"
-                @change="autoSaveForm"
-                controls-position="right"
-                :min="1"
-                :max="100"
-                :step="0.1"
-                :label="$t('preferences.seed-ratio')">
-              </el-input-number>
-            </el-col>
-            <el-col class="form-item-sub" :span="24" v-if="!form.keepSeeding">
-              {{ $t('preferences.seed-time') }}
-              ({{ $t('preferences.seed-time-unit') }})
-              <el-input-number
-                v-model="form.seedTime"
-                @change="autoSaveForm"
-                controls-position="right"
-                :min="60"
-                :max="525600"
-                :step="1"
-                :label="$t('preferences.seed-time')">
-              </el-input-number>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.stop-seeding-action') }}
-              <el-radio-group v-model="form.stopSeedingAction" @change="autoSaveForm">
-                <el-radio label="pause">{{ $t('preferences.stop-seeding-action-pause') }}</el-radio>
-                <el-radio label="complete">{{ $t('preferences.stop-seeding-action-complete') }}</el-radio>
-              </el-radio-group>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- BT Tracker设置卡片 -->
-        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
-          <h3 class="card-title">{{ $t('preferences.bt-tracker') }}</h3>
-          <el-form-item size="mini">
-            <div class="form-item-sub bt-tracker">
-              <el-row :gutter="4">
-                <el-col :span="24">
-                  <div class="tracker-row" style="display:flex; align-items:stretch;">
-                    <div class="tracker-left">
-                      <el-tooltip
-                        class="item"
-                        effect="dark"
-                        :content="isAllTrackerSourcesSelected ? $t('preferences.deselect-all-tracker-sources') : $t('preferences.select-all-tracker-sources')"
-                        placement="bottom"
+                  <div class="tracker-left">
+                    <mo-hover-tip
+                      effect="dark"
+                      :content="isAllTrackerSourcesSelected ? t('preferences.deselect-all-tracker-sources') : t('preferences.select-all-tracker-sources')"
+                      placement="bottom"
+                    >
+                      <el-button
+                        size="small"
+                        class="sync-tracker-btn"
+                        @click="toggleAllTrackerSources"
                       >
-                        <el-button
-                          size="mini"
-                          @click="toggleAllTrackerSources"
-                          class="sync-tracker-btn"
-                        >
-                          <mo-icon :name="isAllTrackerSourcesSelected ? 'deselect-all' : 'select-all'" width="12" height="12" />
-                        </el-button>
-                      </el-tooltip>
-                    </div>
-                    <div class="track-source" style="flex:1;">
-                      <el-select
-                        ref="trackerSelectRef"
-                        class="select-track-source"
-                        v-model="form.trackerSource"
-                        allow-create
-                        filterable
-                        multiple
-                        collapse-tags
-                        popper-class="tracker-source-popper"
-                        style="width:100%;"
-                        @change="onTrackerSourceChange"
+                        <mo-icon
+                          :name="isAllTrackerSourcesSelected ? 'deselect-all' : 'select-all'"
+                          width="12"
+                          height="12"
+                        />
+                      </el-button>
+                    </mo-hover-tip>
+                  </div>
+                  <div
+                    class="track-source"
+                    style="flex:1;"
+                  >
+                    <el-select
+                      ref="trackerSelectRef"
+                      v-model="form.trackerSource"
+                      class="select-track-source"
+                      allow-create
+                      filterable
+                      multiple
+                      collapse-tags
+                      popper-class="tracker-source-popper"
+                      style="width:100%;"
+                      @change="onTrackerSourceChange"
+                    >
+                      <el-option-group
+                        v-for="group in trackerSourceOptions"
+                        :key="group.label"
+                        :label="group.label"
                       >
-                        <el-option-group
-                          v-for="group in trackerSourceOptions"
-                          :key="group.label"
-                          :label="group.label"
+                        <el-option
+                          v-for="item in group.options"
+                          :key="item.value"
+                          :label="item.label"
+                          :value="item.value"
                         >
-                          <el-option
-                            v-for="item in group.options"
-                            :key="item.value"
-                            :label="item.label"
-                            :value="item.value"
+                          <span style="float: left">{{ item.label }}</span>
+                          <span
+                            v-if="item.cdn"
+                            style="float: right; margin-right: 24px; color: var(--lc-color-primary);"
                           >
-                            <span style="float: left">{{ item.label }}</span>
-                            <span style="float: right; margin-right: 24px; color: var(--lc-color-primary);" v-if="item.cdn">
-                              CDN
-                            </span>
-                          </el-option>
-                        </el-option-group>
-                      </el-select>
-                    </div>
-                    <div class="tracker-right sync-tracker">
-                      <el-tooltip
-                        class="item"
+                            CDN
+                          </span>
+                        </el-option>
+                      </el-option-group>
+                    </el-select>
+                  </div>
+                  <div class="tracker-right sync-tracker">
+                    <mo-hover-tip
+                      effect="dark"
+                      :content="t('preferences.sync-tracker-tips')"
+                      placement="bottom"
+                    >
+                      <el-button
+                        size="small"
+                        class="sync-tracker-btn"
+                        @click="syncTrackerFromSource"
+                      >
+                        <mo-icon
+                          v-if="trackerSyncing"
+                          name="refresh"
+                          width="12"
+                          height="12"
+                          :spin="true"
+                        />
+                        <mo-icon
+                          v-else
+                          name="sync"
+                          width="12"
+                          height="12"
+                        />
+                      </el-button>
+                    </mo-hover-tip>
+                    <div class="tracker-source-popup-wrapper">
+                      <mo-hover-tip
                         effect="dark"
-                        :content="$t('preferences.sync-tracker-tips')"
+                        :content="t('preferences.add-source')"
                         placement="bottom"
+                        :disabled="trackerSourceConfigVisible"
                       >
                         <el-button
-                          size="mini"
-                          @click="syncTrackerFromSource"
+                          size="small"
                           class="sync-tracker-btn"
+                          @click="openTrackerSourceConfigDialog"
                         >
                           <mo-icon
-                            name="refresh"
+                            name="link"
                             width="12"
                             height="12"
-                            :spin="true"
-                            v-if="trackerSyncing"
                           />
-                          <mo-icon name="sync" width="12" height="12" v-else />
                         </el-button>
-                      </el-tooltip>
-                      <div class="tracker-source-popup-wrapper">
-                        <el-tooltip
-                          class="item"
-                          effect="dark"
-                          :content="$t('preferences.add-source')"
-                          placement="bottom"
-                          :disabled="trackerSourceConfigVisible"
-                        >
-                          <el-button
-                            size="mini"
-                            @click="openTrackerSourceConfigDialog"
-                            class="sync-tracker-btn"
-                          >
-                            <mo-icon name="link" width="12" height="12" />
-                          </el-button>
-                        </el-tooltip>
-                        <transition name="popup-scale">
+                      </mo-hover-tip>
+                      <transition name="popup-scale">
                         <div
-                          class="tracker-source-popup"
                           v-if="trackerSourceConfigVisible"
+                          class="tracker-source-popup"
                           @click.stop
                         >
                           <div class="tracker-source-popup__header">
-                            <span>{{ $t('preferences.add-source') }}</span>
+                            <span>{{ t('preferences.add-source') }}</span>
                           </div>
                           <div class="tracker-source-popup__body">
                             <el-input
                               v-model="trackerSourceInput"
-                              :placeholder="$t('preferences.tracker-source-input-placeholder')"
+                              :placeholder="t('preferences.tracker-source-input-placeholder')"
                               clearable
                               size="small"
-                              @keydown.enter.native="addTrackerSourceFromInput"
-                            >
-                            </el-input>
+                              @keydown.enter="addTrackerSourceFromInput"
+                            />
                           </div>
                           <div class="tracker-source-popup__footer">
-                            <el-button size="mini" type="primary" @click="addTrackerSourceFromInput">{{ $t('app.submit') }}</el-button>
+                            <el-button
+                              size="small"
+                              type="primary"
+                              :loading="trackerSourceConfigLoading"
+                              :disabled="trackerSourceConfigLoading"
+                              @click="addTrackerSourceFromInput"
+                            >
+                              {{ t('app.submit') }}
+                            </el-button>
                           </div>
                         </div>
                       </transition>
-                      </div>
                     </div>
                   </div>
-                </el-col>
-              </el-row>
-              <el-input
-                type="textarea"
-                :autosize="{ minRows: 3, maxRows: 10 }"
-                auto-complete="off"
-                :placeholder="`${$t('preferences.bt-tracker-input-tips')}`"
-                v-model="form.btTracker">
-              </el-input>
-              <div class="el-form-item__info tracker-origins-info" style="margin-top: 8px;">
-                <template v-if="!(originListForDisplay && originListForDisplay.length)">
-                  {{ $t('preferences.bt-tracker-tips') }}
-                </template>
-                <template v-else>
-                  {{ $t('preferences.added-origins') }}
-                  <span v-for="o in originListForDisplay" :key="o" style="margin-right: 12px;">
-                    <el-tooltip class="item" effect="dark" :content="$t('preferences.long-press-to-delete')" placement="top">
-                      <a
-                        href="javascript:;"
-                        @mousedown="(e) => onOriginMouseDown(o, e)"
-                        @mouseup="() => onOriginMouseUp(o)"
-                        @mouseleave="() => onOriginMouseLeave(o)"
-                        @click.prevent="() => onOriginClick(o)"
-                      >
-                        {{ deriveOriginLabel(o) }}
-                        <mo-icon name="link" width="12" height="12" />
-                      </a>
-                    </el-tooltip>
-                  </span>
-                </template>
-              </div>
-            </div>
-            <div class="form-item-sub">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.auto-sync-tracker') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.auto-sync-tracker-desc') }}</div>
                 </div>
-                <el-switch v-model="form.autoSyncTracker" />
-              </div>
-            </div>
-            <div class="form-item-sub" v-if="form.autoSyncTracker" style="margin-top: 12px;">
-              <div class="sync-time-setting" style="display: flex; align-items: center; margin-bottom: 12px;">
-                <el-time-picker
-                  v-model="form.autoSyncTrackerTime"
-                  placeholder="选择时间"
-                  format="HH:mm"
-                  value-format="HH:mm"
-                  size="mini"
-                  style="width: 100%;"
-                  @change="autoSaveForm"
-                />
-              </div>
-            </div>
-          </el-form-item>
-          <div class="form-item-sub" style="margin-top: 16px; text-align: center;" v-if="form.lastSyncTrackerTime > 0">
-            <div class="el-form-item__info">
-              {{ $t('preferences.last-sync-tracker-time') }}: {{ new Date(form.lastSyncTrackerTime).toLocaleString() }}
+              </el-col>
+            </el-row>
+            <el-input
+              v-model="form.btTracker"
+              type="textarea"
+              :autosize="{ minRows: 3, maxRows: 10 }"
+              auto-complete="off"
+              :placeholder="`${t('preferences.bt-tracker-input-tips')}`"
+            />
+            <div
+              class="el-form-item__info tracker-origins-info"
+              style="margin-top: 8px;"
+            >
+              <template v-if="!(originListForDisplay && originListForDisplay.length)">
+                {{ t('preferences.bt-tracker-tips') }}
+              </template>
+              <template v-else>
+                {{ t('preferences.added-origins') }}
+                <span
+                  v-for="o in originListForDisplay"
+                  :key="o"
+                  style="margin-right: 12px;"
+                >
+                  <mo-hover-tip
+                    effect="dark"
+                    :content="t('preferences.long-press-to-delete')"
+                    placement="top"
+                  >
+                    <a
+                      href="javascript:;"
+                      @mousedown="(e) => onOriginMouseDown(o, e)"
+                      @mouseup="() => onOriginMouseUp(o)"
+                      @mouseleave="() => onOriginMouseLeave(o)"
+                      @click.prevent="() => onOriginClick(o)"
+                    >
+                      {{ deriveOriginLabel(o) }}
+                      <mo-icon
+                        name="link"
+                        width="12"
+                        height="12"
+                      />
+                    </a>
+                  </mo-hover-tip>
+                </span>
+              </template>
             </div>
           </div>
-        </div>
-
-<!-- 传输协议卡片 -->
-        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
-          <h3 class="card-title">{{ $t('preferences.bt-transport-protocol') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-utp') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.enable-utp-desc') }}</div>
+          <div class="form-item-sub">
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.auto-sync-tracker') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.auto-sync-tracker-desc') }}
                 </div>
-                <el-switch
-                  v-model="form.enableUtp"
-                  @change="(val) => onNatToggleChange('enableUtp', val)"
-                />
               </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-peer-exchange') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.enable-peer-exchange-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.enablePeerExchange"
-                  @change="(val) => onNatToggleChange('enablePeerExchange', val)"
-                />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-lpd') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.enable-lpd-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.btEnableLpd"
-                  @change="(val) => onNatToggleChange('btEnableLpd', val)"
-                />
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 网络发现卡片 -->
-        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
-          <h3 class="card-title">{{ $t('preferences.bt-network-discovery') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-dht') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.enable-dht-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.enableDht"
-                  @change="(val) => onNatToggleChange('enableDht', val)"
-                />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-dht6') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.enable-dht6-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.enableDht6"
-                  @change="(val) => onNatToggleChange('enableDht6', val)"
-                />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-upnp') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.enable-upnp-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.enableUpnp"
-                  @change="(val) => onNatToggleChange('enableUpnp', val)"
-                />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-nat-pmp') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.enable-nat-pmp-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.enableNatPmp"
-                  @change="(val) => onNatToggleChange('enableNatPmp', val)"
-                />
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 监听端口卡片 -->
-        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
-          <h3 class="card-title">{{ $t('preferences.bt-port-settings') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.bt-port') }}
-              <el-input
-                placeholder="BT Port"
-                :maxlength="8"
-                v-model="form.listenPort"
-              >
-                <i slot="append" @click.prevent="onBtPortDiceClick">
-                  <mo-icon name="dice" width="12" height="12" />
-                </i>
-              </el-input>
-            </el-col>
-            <el-col class="form-item-sub" :span="24" style="margin-top: 8px;">
-              {{ $t('preferences.dht-port') }}
-              <el-input
-                placeholder="DHT Port"
-                :maxlength="8"
-                v-model="form.dhtListenPort"
-              >
-                <i slot="append" @click.prevent="onDhtPortDiceClick">
-                  <mo-icon name="dice" width="12" height="12" />
-                </i>
-              </el-input>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 连接与缓存卡片 -->
-        <div v-if="activeCategory === 'bt'" class="preference-card" data-category="bt">
-          <h3 class="card-title">{{ $t('preferences.bt-connections') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.bt-max-peers') }}
-              <el-input
-                :maxlength="5"
-                v-model="form.btMaxPeers"
+              <el-switch v-model="form.autoSyncTracker" />
+            </div>
+          </div>
+          <div
+            v-if="form.autoSyncTracker"
+            class="form-item-sub"
+            style="margin-top: 12px;"
+          >
+            <div
+              class="sync-time-setting"
+              style="display: flex; align-items: center; margin-bottom: 12px;"
+            >
+              <el-time-picker
+                v-model="form.autoSyncTrackerTime"
+                placeholder="选择时间"
+                format="HH:mm"
+                value-format="HH:mm"
+                size="small"
+                style="width: 100%;"
                 @change="autoSaveForm"
               />
-            </el-col>
-            <el-col class="form-item-sub" :span="24" style="margin-top: 8px;">
-              {{ $t('preferences.disk-cache') }}
-              <el-input
-                :maxlength="16"
-                v-model="form.diskCache"
-                @change="autoSaveForm"
-              />
-            </el-col>
-          </el-form-item>
-        </div>
-
-<!-- ED2K设置卡片 -->
-        <div v-if="activeCategory === 'ed2k'" class="preference-card" data-category="ed2k">
-          <h3 class="card-title">{{ $t('preferences.ed2k-options') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.ed2k-listen-port') }}
-              <el-input-number
-                v-model="form.ed2kListenPort"
-                @change="autoSaveForm"
-                controls-position="right"
-                :min="1024"
-                :max="65535"
-                :step="1"
-                :label="$t('preferences.ed2k-listen-port')">
-              </el-input-number>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.ed2k-max-connections') }}
-              <el-input-number
-                v-model="form.ed2kMaxConnections"
-                @change="autoSaveForm"
-                controls-position="right"
-                :min="1"
-                :max="1000"
-                :step="1"
-                :label="$t('preferences.ed2k-max-connections')">
-              </el-input-number>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.ed2k-connection-timeout') }}
-              <el-input-number
-                v-model="form.ed2kConnectionTimeout"
-                @change="autoSaveForm"
-                controls-position="right"
-                :min="5"
-                :max="300"
-                :step="5"
-                :label="$t('preferences.ed2k-connection-timeout')">
-              </el-input-number>
-              <span style="margin-left: 8px;">{{ $t('preferences.ed2k-seconds') }}</span>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.ed2k-max-sources') }}
-              <el-input-number
-                v-model="form.ed2kMaxSourcesPerFile"
-                @change="autoSaveForm"
-                controls-position="right"
-                :min="1"
-                :max="500"
-                :step="1"
-                :label="$t('preferences.ed2k-max-sources')">
-              </el-input-number>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <div v-if="activeCategory === 'ed2k'" class="preference-card" data-category="ed2k">
-          <h3 class="card-title">{{ $t('preferences.ed2k-source-discovery') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="el-form-item__info" style="margin-bottom: 8px;">
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.ed2k-server-source') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.ed2k-server-source-tips') }}</div>
-                </div>
-                <el-switch v-model="form.ed2kServerSourceEnabled" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.ed2k-source-exchange') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.ed2k-source-exchange-tips') }}</div>
-                </div>
-                <el-switch v-model="form.ed2kSourceExchangeEnabled" @change="autoSaveForm" />
-              </div>
-              <div v-if="form.ed2kSourceExchangeEnabled" style="margin-left: 24px; margin-top: 4px;">
-                {{ $t('preferences.ed2k-source-exchange-interval') }}
-                <el-input-number
-                  v-model="form.ed2kSourceExchangeInterval"
-                  @change="autoSaveForm"
-                  controls-position="right"
-                  :min="30"
-                  :max="3600"
-                  :step="30"
-                  size="mini"
-                  :label="$t('preferences.ed2k-source-exchange-interval')">
-                </el-input-number>
-                <span style="margin-left: 4px;">{{ $t('preferences.ed2k-seconds') }}</span>
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.ed2k-kad') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.ed2k-kad-tips') }}</div>
-                </div>
-                <el-switch v-model="form.ed2kKadEnabled" @change="autoSaveForm" />
-              </div>
-              <div v-if="form.ed2kKadEnabled" style="margin-left: 24px; margin-top: 8px;">
-                <div style="margin-bottom: 4px;">
-                  {{ $t('preferences.ed2k-kad-bootstrap-nodes') }}
-                </div>
-                <el-input
-                  v-model="form.ed2kKadBootstrapNodes"
-                  size="mini"
-                  :placeholder="$t('preferences.ed2k-kad-bootstrap-nodes-placeholder')"
-                  @change="autoSaveForm">
-                </el-input>
-                <div class="el-form-item__info" style="margin-top: 4px;">
-                  {{ $t('preferences.ed2k-kad-bootstrap-nodes-tips') }}
-                </div>
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <div v-if="activeCategory === 'ed2k'" class="preference-card" data-category="ed2k">
-          <h3 class="card-title">{{ $t('preferences.ed2k-server-subscription') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="el-form-item__info" style="margin-bottom: 8px;">
-                {{ $t('preferences.ed2k-server-subscription-tips') }}
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="extension-tag-input" @click="focusEd2kSubscriptionInput">
-                <transition-group name="tag-fade" tag="div" class="tags-container">
-                  <el-tag
-                    v-for="url in form.ed2kServerSource"
-                    :key="url"
-                    closable
-                    size="small"
-                    @close="removeEd2kSubscription(url)"
-                    class="extension-tag">
-                    {{ url }}
-                  </el-tag>
-                </transition-group>
-                <input
-                  ref="ed2kSubscriptionInput"
-                  v-model="ed2kSubscriptionInput"
-                  type="text"
-                  class="extension-input"
-                  :placeholder="form.ed2kServerSource.length === 0 ? $t('preferences.ed2k-server-source-placeholder') : ''"
-                  @keydown.enter="addEd2kSubscription"
-                  @keydown.delete="handleEd2kSubscriptionDeleteKey"
-                  @blur="addEd2kSubscription"
-                />
-              </div>
-              <div v-if="ed2kPresetSubscriptions.length > 0" class="ed2k-preset-sources">
-                <span class="ed2k-preset-label">{{ $t('preferences.ed2k-preset-sources') }}:</span>
-                <el-button
-                  v-for="item in ed2kPresetSubscriptions"
-                  :key="item.value"
-                  size="mini"
-                  type="text"
-                  class="ed2k-preset-btn"
-                  @click="addPresetSubscription(item.value)"
-                >
-                  + {{ item.label }}
-                </el-button>
-              </div>
-              <div style="margin-top: 8px;">
-                <el-button
-                  size="mini"
-                  icon="el-icon-refresh"
-                  :loading="ed2kSyncing"
-                  :disabled="form.ed2kServerSource.length === 0"
-                  @click="syncEd2kServersFromSource"
-                >
-                  {{ $t('preferences.ed2k-sync-now') }}
-                </el-button>
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.ed2k-auto-sync-server') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.ed2k-auto-sync-server-desc') }}</div>
-                </div>
-                <el-switch v-model="form.ed2kAutoSyncServer" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col v-if="form.ed2kAutoSyncServer" class="form-item-sub-sub" :span="24">
-              <div class="sub-row-reverse">
-                <el-time-picker
-                  v-model="form.ed2kAutoSyncServerTime"
-                  size="mini"
-                  format="HH:mm"
-                  value-format="HH:mm"
-                  :placeholder="$t('preferences.ed2k-auto-sync-server-time')"
-                  style="width: 120px;"
-                  @change="autoSaveForm"
-                />
-                <el-input-number
-                  v-model="form.ed2kAutoSyncServerInterval"
-                  size="mini"
-                  :min="1"
-                  :max="168"
-                  :step="1"
-                  :label="$t('preferences.ed2k-auto-sync-server-interval')"
-                  style="width: 110px; margin-right: 8px;"
-                  @change="autoSaveForm"
-                />
-                <span class="sub-row-label">{{ $t('preferences.ed2k-auto-sync-server-interval') }}</span>
-              </div>
-              <div v-if="form.ed2kLastSyncServerTime > 0" class="el-form-item__info" style="margin-top: 4px;">
-                {{ $t('preferences.ed2k-last-sync-server-time') }}: {{ formatSyncTime(form.ed2kLastSyncServerTime) }}
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.ed2k-default-servers') }}
-              <div class="extension-tag-input" @click="focusEd2kServerInput">
-                <transition-group name="tag-fade" tag="div" class="tags-container">
-                  <el-tag
-                    v-for="server in ed2kServerTags"
-                    :key="server"
-                    closable
-                    size="small"
-                    @close="removeEd2kServer(server)"
-                    class="extension-tag">
-                    {{ server }}
-                  </el-tag>
-                </transition-group>
-                <input
-                  ref="ed2kServerInput"
-                  v-model="ed2kServerInput"
-                  type="text"
-                  class="extension-input"
-                  :placeholder="ed2kServerTags.length === 0 ? $t('preferences.ed2k-default-servers-placeholder') : ''"
-                  @keydown.enter="addEd2kServer"
-                  @keydown.delete="handleEd2kServerDeleteKey"
-                  @blur="addEd2kServer"
-                />
-              </div>
-              <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.ed2k-default-servers-tips') }}
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 任务行为卡片 -->
-        <div v-if="activeCategory === 'task'" class="preference-card" data-category="task">
-          <h3 class="card-title">{{ $t('preferences.task-behavior') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.max-concurrent-downloads') }}
-              <el-input-number
-                v-model="form.maxConcurrentDownloads"
-                @change="autoSaveForm"
-                controls-position="right"
-                :min="1"
-                :max="maxConcurrentDownloads"
-                :step="1"
-                :label="$t('preferences.max-concurrent-downloads')">
-              </el-input-number>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.max-connection-per-server') }}
-              <el-input-number
-                v-model="form.maxConnectionPerServer"
-                @change="autoSaveForm"
-                controls-position="right"
-                :min="0"
-                :max="form.engineMaxConnectionPerServer"
-                :step="1"
-                :label="$t('preferences.max-connection-per-server')">
-              </el-input-number>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.continue') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.continue-desc') }}</div>
-                </div>
-                <el-switch v-model="form.continue" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.no-confirm-before-delete-task') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.no-confirm-before-delete-task-desc') }}</div>
-                </div>
-                <el-switch v-model="form.noConfirmBeforeDeleteTask" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.auto-purge-record') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.auto-purge-record-desc') }}</div>
-                </div>
-                <el-switch v-model="form.autoPurgeRecord" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.auto-open-task-progress-window') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.auto-open-task-progress-window-desc') }}</div>
-                </div>
-                <el-switch v-model="form.autoOpenTaskProgressWindow" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col v-if="form.autoOpenTaskProgressWindow" class="form-item-sub-sub" :span="24">
-              <el-radio-group v-model="form.taskProgressWindowMode" @change="autoSaveForm">
-                <el-radio label="first">{{ $t('preferences.task-progress-window-first-only') }}</el-radio>
-                <el-radio label="all">{{ $t('preferences.task-progress-window-all') }}</el-radio>
-              </el-radio-group>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.new-task-show-downloading') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.new-task-show-downloading-desc') }}</div>
-                </div>
-                <el-switch v-model="form.newTaskShowDownloading" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col v-if="form.newTaskShowDownloading" class="form-item-sub-sub" :span="24">
-              <el-tooltip
-                effect="dark"
-                :content="$t('preferences.new-task-jump-target')"
-                placement="top"
-                :open-delay="400"
-              >
-                <el-radio-group v-model="form.newTaskJumpTarget" @change="autoSaveForm">
-                  <el-radio label="all">
-                    {{ $t('preferences.new-task-jump-target-all') }}
-                  </el-radio>
-                  <el-radio label="downloading">
-                    {{ $t('preferences.new-task-jump-target-downloading') }}
-                  </el-radio>
-                </el-radio-group>
-              </el-tooltip>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.show-task-completed-window') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.show-task-completed-window-desc') }}</div>
-                </div>
-                <el-switch v-model="form.showTaskCompletedWindow" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.task-completed-notify') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.task-completed-notify-desc') }}</div>
-                </div>
-                <el-switch v-model="form.taskNotification" @change="autoSaveForm" />
-              </div>
-            </el-col>
-<el-col v-if="form.taskNotification" class="form-item-sub-sub" :span="24">
-<el-tooltip
-effect="dark"
-:content="$t('preferences.task-complete-notify-click-action-tips')"
-placement="top"
-:open-delay="400"
->
-<el-radio-group v-model="form.taskCompleteNotifyClickAction" @change="autoSaveForm">
-<el-radio label="open-folder">
-{{ $t('preferences.task-complete-notify-click-action-open-folder') }}
-</el-radio>
-<el-radio label="show-app">
-{{ $t('preferences.task-complete-notify-click-action-show-app') }}
-</el-radio>
-<el-radio label="execute-file">
-{{ $t('preferences.task-complete-notify-click-action-execute-file') }}
-</el-radio>
-</el-radio-group>
-</el-tooltip>
-</el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 文件管理卡片 -->
-        <div v-if="activeCategory === 'file'" class="preference-card" data-category="file">
-          <h3 class="card-title">{{ $t('preferences.file-handling') }}</h3>
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <el-input
-                v-model="form.downloadingFileSuffix"
-                @change="autoSaveForm"
-                :placeholder="$t('preferences.downloading-file-suffix-tips')"
-                :label="$t('preferences.downloading-file-suffix')">
-                <template slot="prepend">
-                  {{ $t('preferences.downloading-file-suffix') }}
-                </template>
-              </el-input>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.set-file-mtime-on-complete') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.set-file-mtime-on-complete-desc') }}</div>
-                </div>
-                <el-switch v-model="form.setFileMtimeOnComplete" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="settings-divider" style="margin: 8px 0;"></div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.auto-categorize-files') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.auto-categorize-files-tips') }}</div>
-                </div>
-                <el-switch v-model="form.autoCategorizeFiles" @change="autoSaveForm" />
-              </div>
-              <div style="margin-top: 8px;">
-                <el-button
-                  type="primary"
-                  size="mini"
-                  @click="openFileCategoriesSettings"
-                  class="edit-rules-btn"
-                  icon="el-icon-edit">
-                  {{ $t('preferences.file-categories-edit') }}
-                </el-button>
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 安全卡片 -->
-        <div v-if="activeCategory === 'file'" class="preference-card" data-category="file">
-          <h3 class="card-title">{{ $t('preferences.security') }}</h3>
-          <div class="card-content">
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.enable-security-scan') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.security-scan-tips') }}</div>
-                </div>
-                <el-switch v-model="form.enableSecurityScan" @change="autoSaveForm" />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24" v-if="form.enableSecurityScan">
-              <el-form-item :label="$t('preferences.security-scan-tool')">
-                <el-select
-                  v-model="form.securityScanTool"
-                  size="mini"
-                  @change="autoSaveForm"
-                >
-                  <el-option
-                    :label="$t('preferences.security-scan-tool-system')"
-                    value="system"
-                  />
-                  <el-option
-                    :label="$t('preferences.security-scan-tool-custom')"
-                    value="custom"
-                  />
-                </el-select>
-              </el-form-item>
-            </el-col>
-            <el-col class="form-item-sub" :span="24" v-if="form.enableSecurityScan && form.securityScanTool === 'custom'">
-              <el-form-item :label="$t('preferences.custom-security-scan-path')">
-                <el-input
-                  v-model="form.customSecurityScanPath"
-                  @change="autoSaveForm"
-                  :placeholder="$t('preferences.custom-security-scan-path-tips')">
-                  <mo-select-directory
-                    v-if="isRenderer"
-                    slot="append"
-                    type="file"
-                    @selected="handleSecurityScanPathSelected"
-                  />
-                </el-input>
-              </el-form-item>
-            </el-col>
-          </el-form-item>
+            </div>
           </div>
-        </div>
-
-        <!-- 剪贴板卡片 -->
-        <div v-if="activeCategory === 'task'" class="preference-card" data-category="task">
-          <h3 class="card-title">{{ $t('preferences.clipboard-settings') }}</h3>
-          <div class="card-content">
-          <el-form-item size="mini">
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.clipboard-auto-paste') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.clipboard-auto-paste-desc') }}</div>
-                </div>
-<el-switch v-model="form.clipboardAutoPaste" @change="autoSaveForm" />
-</div>
-</el-col>
-            <el-col class="form-item-sub" :span="24" v-if="form.clipboardAutoPaste">
-              <div class="form-item-sub-sub">
-<div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.clipboard-auto-open-add-task') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.clipboard-auto-open-add-task-desc') }}</div>
-                </div>
-<el-switch v-model="form.clipboardAutoOpenAddTask" @change="autoSaveForm" />
-</div>
-</div>
-</el-col>
-          </el-form-item>
+        </el-form-item>
+        <div
+          v-if="form.lastSyncTrackerTime > 0"
+          class="form-item-sub"
+          style="margin-top: 16px; text-align: center;"
+        >
+          <div class="el-form-item__info">
+            {{ t('preferences.last-sync-tracker-time') }}: {{ new Date(form.lastSyncTrackerTime).toLocaleString() }}
           </div>
-        </div>
-      </el-form>
-
-      <div v-if="hasNoResults" class="no-results">
-        <div class="no-results-inner">
-          {{ $t('preferences.no-settings-found') }}
         </div>
       </div>
 
+      <!-- 传输协议卡片 -->
+      <div
+        v-if="activeCategory === 'bt'"
+        class="preference-card"
+        data-category="bt"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.bt-transport-protocol') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.enable-utp') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.enable-utp-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.enableUtp"
+                @change="(val) => onNatToggleChange('enableUtp', val)"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.enable-peer-exchange') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.enable-peer-exchange-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.enablePeerExchange"
+                @change="(val) => onNatToggleChange('enablePeerExchange', val)"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.enable-lpd') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.enable-lpd-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.btEnableLpd"
+                @change="(val) => onNatToggleChange('btEnableLpd', val)"
+              />
+            </div>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 网络发现卡片 -->
+      <div
+        v-if="activeCategory === 'bt'"
+        class="preference-card"
+        data-category="bt"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.bt-network-discovery') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.enable-dht') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.enable-dht-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.enableDht"
+                @change="(val) => onNatToggleChange('enableDht', val)"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.enable-dht6') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.enable-dht6-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.enableDht6"
+                @change="(val) => onNatToggleChange('enableDht6', val)"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.enable-upnp') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.enable-upnp-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.enableUpnp"
+                @change="(val) => onNatToggleChange('enableUpnp', val)"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.enable-nat-pmp') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.enable-nat-pmp-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.enableNatPmp"
+                @change="(val) => onNatToggleChange('enableNatPmp', val)"
+              />
+            </div>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 监听端口卡片 -->
+      <div
+        v-if="activeCategory === 'bt'"
+        class="preference-card"
+        data-category="bt"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.bt-port-settings') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.bt-port') }}
+            <el-input
+              v-model="form.listenPort"
+              placeholder="BT Port"
+              :maxlength="8"
+            >
+              <template #append>
+                <i
+                  class="rpc-dice-btn"
+                  @click.prevent="onBtPortDiceClick"
+                >
+                  <mo-icon
+                    name="dice"
+                    width="12"
+                    height="12"
+                  />
+                </i>
+              </template>
+            </el-input>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+            style="margin-top: 8px;"
+          >
+            {{ t('preferences.dht-port') }}
+            <el-input
+              v-model="form.dhtListenPort"
+              placeholder="DHT Port"
+              :maxlength="8"
+            >
+              <template #append>
+                <i
+                  class="rpc-dice-btn"
+                  @click.prevent="onDhtPortDiceClick"
+                >
+                  <mo-icon
+                    name="dice"
+                    width="12"
+                    height="12"
+                  />
+                </i>
+              </template>
+            </el-input>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 连接与缓存卡片 -->
+      <div
+        v-if="activeCategory === 'bt'"
+        class="preference-card"
+        data-category="bt"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.bt-connections') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.bt-max-peers') }}
+            <el-input
+              v-model="form.btMaxPeers"
+              :maxlength="5"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+            style="margin-top: 8px;"
+          >
+            {{ t('preferences.disk-cache') }}
+            <el-input
+              v-model="form.diskCache"
+              :maxlength="16"
+              @change="autoSaveForm"
+            />
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- ED2K设置卡片 -->
+      <div
+        v-if="activeCategory === 'ed2k'"
+        class="preference-card"
+        data-category="ed2k"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.ed2k-options') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.ed2k-listen-port') }}
+            <el-input-number
+              v-model="form.ed2kListenPort"
+              controls-position="right"
+              :min="1024"
+              :max="65535"
+              :step="1"
+              :label="t('preferences.ed2k-listen-port')"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.ed2k-max-connections') }}
+            <el-input-number
+              v-model="form.ed2kMaxConnections"
+              controls-position="right"
+              :min="1"
+              :max="1000"
+              :step="1"
+              :label="t('preferences.ed2k-max-connections')"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.ed2k-connection-timeout') }}
+            <el-input-number
+              v-model="form.ed2kConnectionTimeout"
+              controls-position="right"
+              :min="5"
+              :max="300"
+              :step="5"
+              :label="t('preferences.ed2k-connection-timeout')"
+              @change="autoSaveForm"
+            />
+            <span style="margin-left: 8px;">{{ t('preferences.ed2k-seconds') }}</span>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.ed2k-max-sources') }}
+            <el-input-number
+              v-model="form.ed2kMaxSourcesPerFile"
+              controls-position="right"
+              :min="1"
+              :max="500"
+              :step="1"
+              :label="t('preferences.ed2k-max-sources')"
+              @change="autoSaveForm"
+            />
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <div
+        v-if="activeCategory === 'ed2k'"
+        class="preference-card"
+        data-category="ed2k"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.ed2k-source-discovery') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div
+              class="el-form-item__info"
+              style="margin-bottom: 8px;"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.ed2k-server-source') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.ed2k-server-source-tips') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.ed2kServerSourceEnabled"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.ed2k-source-exchange') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.ed2k-source-exchange-tips') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.ed2kSourceExchangeEnabled"
+                @change="autoSaveForm"
+              />
+            </div>
+            <div
+              v-if="form.ed2kSourceExchangeEnabled"
+              style="margin-left: 24px; margin-top: 4px;"
+            >
+              {{ t('preferences.ed2k-source-exchange-interval') }}
+              <el-input-number
+                v-model="form.ed2kSourceExchangeInterval"
+                controls-position="right"
+                :min="30"
+                :max="3600"
+                :step="30"
+                size="small"
+                :label="t('preferences.ed2k-source-exchange-interval')"
+                @change="autoSaveForm"
+              />
+              <span style="margin-left: 4px;">{{ t('preferences.ed2k-seconds') }}</span>
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.ed2k-kad') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.ed2k-kad-tips') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.ed2kKadEnabled"
+                @change="autoSaveForm"
+              />
+            </div>
+            <div
+              v-if="form.ed2kKadEnabled"
+              style="margin-left: 24px; margin-top: 8px;"
+            >
+              <div style="margin-bottom: 4px;">
+                {{ t('preferences.ed2k-kad-bootstrap-nodes') }}
+              </div>
+              <el-input
+                v-model="form.ed2kKadBootstrapNodes"
+                size="small"
+                :placeholder="t('preferences.ed2k-kad-bootstrap-nodes-placeholder')"
+                @change="autoSaveForm"
+              />
+              <div
+                class="el-form-item__info"
+                style="margin-top: 4px;"
+              >
+                {{ t('preferences.ed2k-kad-bootstrap-nodes-tips') }}
+              </div>
+            </div>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <div
+        v-if="activeCategory === 'ed2k'"
+        class="preference-card"
+        data-category="ed2k"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.ed2k-server-subscription') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div
+              class="el-form-item__info"
+              style="margin-bottom: 8px;"
+            >
+              {{ t('preferences.ed2k-server-subscription-tips') }}
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div
+              class="extension-tag-input"
+              @click="focusEd2kSubscriptionInput"
+            >
+              <transition-group
+                name="tag-fade"
+                tag="div"
+                class="tags-container"
+              >
+                <el-tag
+                  v-for="url in form.ed2kServerSource"
+                  :key="url"
+                  closable
+                  size="small"
+                  class="extension-tag"
+                  @close="removeEd2kSubscription(url)"
+                >
+                  {{ url }}
+                </el-tag>
+              </transition-group>
+              <input
+                ref="ed2kSubscriptionInputRef"
+                v-model="ed2kSubscriptionInput"
+                type="text"
+                class="extension-input"
+                :placeholder="form.ed2kServerSource.length === 0 ? t('preferences.ed2k-server-source-placeholder') : ''"
+                @keydown.enter="addEd2kSubscription"
+                @keydown.delete="handleEd2kSubscriptionDeleteKey"
+                @blur="addEd2kSubscription"
+              >
+            </div>
+            <div
+              v-if="ed2kPresetSubscriptions.length > 0"
+              class="ed2k-preset-sources"
+            >
+              <span class="ed2k-preset-label">{{ t('preferences.ed2k-preset-sources') }}:</span>
+              <el-button
+                v-for="item in ed2kPresetSubscriptions"
+                :key="item.value"
+                size="small"
+                type="text"
+                class="ed2k-preset-btn"
+                @click="addPresetSubscription(item.value)"
+              >
+                + {{ item.label }}
+              </el-button>
+            </div>
+            <div style="margin-top: 8px;">
+              <el-button
+                size="small"
+                :loading="ed2kSyncing"
+                :disabled="form.ed2kServerSource.length === 0"
+                @click="syncEd2kServersFromSource"
+              >
+                <el-icon><Refresh /></el-icon>
+                {{ t('preferences.ed2k-sync-now') }}
+              </el-button>
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.ed2k-auto-sync-server') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.ed2k-auto-sync-server-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.ed2kAutoSyncServer"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            v-if="form.ed2kAutoSyncServer"
+            class="form-item-sub-sub"
+            :span="24"
+          >
+            <div class="sub-row-reverse">
+              <el-time-picker
+                v-model="form.ed2kAutoSyncServerTime"
+                size="small"
+                format="HH:mm"
+                value-format="HH:mm"
+                :placeholder="t('preferences.ed2k-auto-sync-server-time')"
+                style="width: 120px;"
+                @change="autoSaveForm"
+              />
+              <el-input-number
+                v-model="form.ed2kAutoSyncServerInterval"
+                size="small"
+                :min="1"
+                :max="168"
+                :step="1"
+                :label="t('preferences.ed2k-auto-sync-server-interval')"
+                style="width: 110px; margin-right: 8px;"
+                @change="autoSaveForm"
+              />
+              <span class="sub-row-label">{{ t('preferences.ed2k-auto-sync-server-interval') }}</span>
+            </div>
+            <div
+              v-if="form.ed2kLastSyncServerTime > 0"
+              class="el-form-item__info"
+              style="margin-top: 4px;"
+            >
+              {{ t('preferences.ed2k-last-sync-server-time') }}: {{ formatSyncTime(form.ed2kLastSyncServerTime) }}
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.ed2k-default-servers') }}
+            <div
+              class="extension-tag-input"
+              @click="focusEd2kServerInput"
+            >
+              <transition-group
+                name="tag-fade"
+                tag="div"
+                class="tags-container"
+              >
+                <el-tag
+                  v-for="server in ed2kServerTags"
+                  :key="server"
+                  closable
+                  size="small"
+                  class="extension-tag"
+                  @close="removeEd2kServer(server)"
+                >
+                  {{ server }}
+                </el-tag>
+              </transition-group>
+              <input
+                ref="ed2kServerInputRef"
+                v-model="ed2kServerInput"
+                type="text"
+                class="extension-input"
+                :placeholder="ed2kServerTags.length === 0 ? t('preferences.ed2k-default-servers-placeholder') : ''"
+                @keydown.enter="addEd2kServer"
+                @keydown.delete="handleEd2kServerDeleteKey"
+                @blur="addEd2kServer"
+              >
+            </div>
+            <div
+              class="el-form-item__info"
+              style="margin-top: 8px;"
+            >
+              {{ t('preferences.ed2k-default-servers-tips') }}
+            </div>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 任务行为卡片 -->
+      <div
+        v-if="activeCategory === 'task'"
+        class="preference-card"
+        data-category="task"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.task-behavior') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.max-concurrent-downloads') }}
+            <el-input-number
+              v-model="form.maxConcurrentDownloads"
+              controls-position="right"
+              :min="1"
+              :max="maxConcurrentDownloads"
+              :step="1"
+              :label="t('preferences.max-concurrent-downloads')"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.max-connection-per-server') }}
+            <el-input-number
+              v-model="form.maxConnectionPerServer"
+              controls-position="right"
+              :min="0"
+              :max="form.engineMaxConnectionPerServer"
+              :step="1"
+              :label="t('preferences.max-connection-per-server')"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.continue') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.continue-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.continue"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.no-confirm-before-delete-task') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.no-confirm-before-delete-task-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.noConfirmBeforeDeleteTask"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.auto-purge-record') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.auto-purge-record-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.autoPurgeRecord"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.auto-open-task-progress-window') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.auto-open-task-progress-window-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.autoOpenTaskProgressWindow"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            v-if="form.autoOpenTaskProgressWindow"
+            class="form-item-sub-sub"
+            :span="24"
+          >
+            <el-radio-group
+              v-model="form.taskProgressWindowMode"
+              @change="autoSaveForm"
+            >
+              <el-radio value="first">
+                {{ t('preferences.task-progress-window-first-only') }}
+              </el-radio>
+              <el-radio value="all">
+                {{ t('preferences.task-progress-window-all') }}
+              </el-radio>
+            </el-radio-group>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.new-task-show-downloading') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.new-task-show-downloading-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.newTaskShowDownloading"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            v-if="form.newTaskShowDownloading"
+            class="form-item-sub-sub"
+            :span="24"
+          >
+            <mo-hover-tip
+              effect="dark"
+              :content="t('preferences.new-task-jump-target')"
+              placement="top"
+              :open-delay="400"
+            >
+              <el-radio-group
+                v-model="form.newTaskJumpTarget"
+                @change="autoSaveForm"
+              >
+                <el-radio value="all">
+                  {{ t('preferences.new-task-jump-target-all') }}
+                </el-radio>
+                <el-radio value="downloading">
+                  {{ t('preferences.new-task-jump-target-downloading') }}
+                </el-radio>
+              </el-radio-group>
+            </mo-hover-tip>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.show-task-completed-window') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.show-task-completed-window-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.showTaskCompletedWindow"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.task-completed-notify') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.task-completed-notify-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.taskNotification"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            v-if="form.taskNotification"
+            class="form-item-sub-sub"
+            :span="24"
+          >
+            <mo-hover-tip
+              effect="dark"
+              :content="t('preferences.task-complete-notify-click-action-tips')"
+              placement="top"
+              :open-delay="400"
+            >
+              <el-radio-group
+                v-model="form.taskCompleteNotifyClickAction"
+                @change="autoSaveForm"
+              >
+                <el-radio value="open-folder">
+                  {{ t('preferences.task-complete-notify-click-action-open-folder') }}
+                </el-radio>
+                <el-radio value="show-app">
+                  {{ t('preferences.task-complete-notify-click-action-show-app') }}
+                </el-radio>
+                <el-radio value="execute-file">
+                  {{ t('preferences.task-complete-notify-click-action-execute-file') }}
+                </el-radio>
+              </el-radio-group>
+            </mo-hover-tip>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 文件管理卡片 -->
+      <div
+        v-if="activeCategory === 'file'"
+        class="preference-card"
+        data-category="file"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.file-handling') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <el-input
+              v-model="form.downloadingFileSuffix"
+              :placeholder="t('preferences.downloading-file-suffix-tips')"
+              :label="t('preferences.downloading-file-suffix')"
+              @change="autoSaveForm"
+            >
+              <template #prepend>
+                {{ t('preferences.downloading-file-suffix') }}
+              </template>
+            </el-input>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.set-file-mtime-on-complete') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.set-file-mtime-on-complete-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.setFileMtimeOnComplete"
+                @change="autoSaveForm"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div
+              class="settings-divider"
+              style="margin: 8px 0;"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.auto-categorize-files') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.auto-categorize-files-tips') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.autoCategorizeFiles"
+                @change="autoSaveForm"
+              />
+            </div>
+            <div style="margin-top: 8px;">
+              <el-button
+                type="primary"
+                size="small"
+                class="edit-rules-btn"
+                @click="openFileCategoriesSettings"
+              >
+                <el-icon><Edit /></el-icon>
+                {{ t('preferences.file-categories-edit') }}
+              </el-button>
+            </div>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 安全卡片 -->
+      <div
+        v-if="activeCategory === 'file'"
+        class="preference-card"
+        data-category="file"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.security') }}
+        </h3>
+        <div class="card-content">
+          <el-form-item size="small">
+            <el-col
+              class="form-item-sub"
+              :span="24"
+            >
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.enable-security-scan') }}</span>
+                  <div class="toggle-desc">
+                    {{ t('preferences.security-scan-tips') }}
+                  </div>
+                </div>
+                <el-switch
+                  v-model="form.enableSecurityScan"
+                  @change="autoSaveForm"
+                />
+              </div>
+            </el-col>
+            <el-col
+              v-if="form.enableSecurityScan"
+              class="form-item-sub"
+              :span="24"
+            >
+              <el-form-item :label="t('preferences.security-scan-tool')">
+                <mo-extend-select
+                  v-model="form.securityScanTool"
+                  :options="[
+                    { label: t('preferences.security-scan-tool-system'), value: 'system' },
+                    { label: t('preferences.security-scan-tool-custom'), value: 'custom' }
+                  ]"
+                  @change="autoSaveForm"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col
+              v-if="form.enableSecurityScan && form.securityScanTool === 'custom'"
+              class="form-item-sub"
+              :span="24"
+            >
+              <el-form-item :label="t('preferences.custom-security-scan-path')">
+                <el-input
+                  v-model="form.customSecurityScanPath"
+                  :placeholder="t('preferences.custom-security-scan-path-tips')"
+                  @change="autoSaveForm"
+                >
+                  <template #append>
+                    <mo-select-directory
+                      v-if="isRenderer"
+                      type="file"
+                      @selected="handleSecurityScanPathSelected"
+                    />
+                  </template>
+                </el-input>
+              </el-form-item>
+            </el-col>
+          </el-form-item>
+        </div>
+      </div>
+
+      <!-- 剪贴板卡片 -->
+      <div
+        v-if="activeCategory === 'task'"
+        class="preference-card"
+        data-category="task"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.clipboard-settings') }}
+        </h3>
+        <div class="card-content">
+          <el-form-item size="small">
+            <el-col
+              class="form-item-sub"
+              :span="24"
+            >
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.clipboard-auto-paste') }}</span>
+                  <div class="toggle-desc">
+                    {{ t('preferences.clipboard-auto-paste-desc') }}
+                  </div>
+                </div>
+                <el-switch
+                  v-model="form.clipboardAutoPaste"
+                  @change="autoSaveForm"
+                />
+              </div>
+            </el-col>
+            <el-col
+              v-if="form.clipboardAutoPaste"
+              class="form-item-sub"
+              :span="24"
+            >
+              <div class="form-item-sub-sub">
+                <div class="toggle-row toggle-row--with-desc">
+                  <div class="toggle-row__text">
+                    <span class="toggle-label">{{ t('preferences.clipboard-auto-open-add-task') }}</span>
+                    <div class="toggle-desc">
+                      {{ t('preferences.clipboard-auto-open-add-task-desc') }}
+                    </div>
+                  </div>
+                  <el-switch
+                    v-model="form.clipboardAutoOpenAddTask"
+                    @change="autoSaveForm"
+                  />
+                </div>
+              </div>
+            </el-col>
+          </el-form-item>
+        </div>
+      </div>
+    </el-form>
+
+    <div
+      v-if="hasNoResults"
+      class="no-results"
+    >
+      <div class="no-results-inner">
+        {{ t('preferences.no-settings-found') }}
+      </div>
+    </div>
   </el-main>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import { mapState } from 'vuex'
-  import { cloneDeep, isEmpty } from 'lodash'
-  import HistoryDirectory from '@/components/Preference/HistoryDirectory'
-  import SelectDirectory from '@/components/Native/SelectDirectory'
-  import ThemeSwitcher from '@/components/Preference/ThemeSwitcher'
-  import SegmentedSlider from '@/components/SegmentedSlider/SegmentedSlider'
-  import { availableLanguages, getLanguage, getSystemLocaleName } from '@shared/locales'
-  import { getLocaleManager } from '@/components/Locale'
-  import {
-    calcFormLabelWidth,
-    changedConfig,
-    checkIsNeedRestart,
-    convertLineToComma,
-    convertCommaToLine,
-    diffConfig,
-    extractSpeedUnit,
-    generateRandomInt
-  } from '@shared/utils'
-  import {
-    APP_HTTP_PORT,
-    APP_RUN_MODE,
-    BUILTIN_ED2K_SERVERS,
-    ED2K_SERVER_SOURCE_OPTIONS,
-    EMPTY_STRING,
-    ENGINE_MAX_CONCURRENT_DOWNLOADS,
-    TRACKER_SOURCE_OPTIONS
-  } from '@shared/constants'
-  import { reduceTrackerString } from '@shared/utils/tracker'
-  import axios from 'axios'
-  import keymap from '@shared/keymap'
-  import '@/components/Icons/dice'
-  import '@/components/Icons/sync'
-  import '@/components/Icons/select-all'
-  import '@/components/Icons/deselect-all'
+<script setup>
 
-  const normalizeTaskMultiSelectModifier = (value) => {
+const normalizeTaskMultiSelectModifier = (value) => {
     const raw = `${value || ''}`.trim().toLowerCase()
     if (!raw) return 'ctrl'
 
@@ -1833,7 +2584,7 @@ placement="top"
       enableSecurityScan: enableSecurityScan || false,
       securityScanTool: securityScanTool || 'system',
       customSecurityScanPath: customSecurityScanPath || '',
-      showTaskTypeBadge: showTaskTypeBadge === undefined ? true : !!showTaskTypeBadge,
+      showTaskTypeBadge: showTaskTypeBadge === undefined ? false : !!showTaskTypeBadge,
       ed2kListenPort: ed2kListenPort || 4662,
       ed2kMaxConnections: ed2kMaxConnections || 200,
       ed2kConnectionTimeout: ed2kConnectionTimeout || 30,
@@ -1862,101 +2613,152 @@ placement="top"
     return result
   }
 
-  export default {
-    name: 'mo-preference-basic',
-    components: {
-      [HistoryDirectory.name]: HistoryDirectory,
-      [SelectDirectory.name]: SelectDirectory,
-      [ThemeSwitcher.name]: ThemeSwitcher,
-      [SegmentedSlider.name]: SegmentedSlider
-    },
-    props: {
-      category: {
-        type: String,
-        default: 'basic'
-      }
-    },
-    data () {
-      const { locale } = this.$store.state.preference.config
-      const formOriginal = initForm(this.$store.state.preference.config)
-      let form = {}
-      // 直接从store中获取配置，不依赖changedConfig
-      form = initForm(this.$store.state.preference.config)
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import is from 'electron-is'
+import { nativeImage, clipboard, ipcRenderer } from 'electron'
+import { app, dialog, shell } from '@electron/remote'
+import path from 'node:path'
+import fs from 'node:fs'
+import crypto from 'node:crypto'
+import os from 'node:os'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import 'element-plus/es/components/message-box/style/css'
+import { cloneDeep, isEmpty } from 'lodash'
+// mo-history-directory, mo-select-directory, mo-theme-switcher,
+// mo-segmented-slider are globally registered in main.js
+import { availableLanguages, getLanguage, getSystemLocaleName } from '@shared/locales'
+import { getLocaleManager } from '@/components/Locale'
+import i18n from '@/plugins/i18n'
+import { createMsg } from '@/components/Msg'
+import { useAppStore } from '@/store/app'
+import { usePreferenceStore } from '@/store/preference'
+import { useTaskStore } from '@/store/task'
+import { storeToRefs } from 'pinia'
+import {
+  calcFormLabelWidth,
+  changedConfig,
+  checkIsNeedRestart,
+  convertLineToComma,
+  convertCommaToLine,
+  diffConfig,
+  extractSpeedUnit,
+  generateRandomInt
+} from '@shared/utils'
+import {
+  APP_HTTP_PORT,
+  APP_RUN_MODE,
+  BUILTIN_ED2K_SERVERS,
+  ED2K_SERVER_SOURCE_OPTIONS,
+  EMPTY_STRING,
+  ENGINE_MAX_CONCURRENT_DOWNLOADS,
+  TRACKER_SOURCE_OPTIONS
+} from '@shared/constants'
+import { reduceTrackerString } from '@shared/utils/tracker'
+import keymap from '@shared/keymap'
+import '@/components/Icons/dice'
+import '@/components/Icons/sync'
+import '@/components/Icons/select-all'
+import '@/components/Icons/deselect-all'
 
-      // 确保新字段存在并且是响应式的
-      if (!('taskProgressWindowMode' in form)) {
-        this.$set(form, 'taskProgressWindowMode', 'first')
-      }
-      if (!('taskProgressWindowMode' in formOriginal)) {
-        this.$set(formOriginal, 'taskProgressWindowMode', 'first')
-      }
-      if (!('btIpBanList' in form)) {
-        this.$set(form, 'btIpBanList', [])
-      }
-      if (!('btIpBanList' in formOriginal)) {
-        this.$set(formOriginal, 'btIpBanList', [])
-      }
+defineOptions({ name: 'MoPreferenceBasic' })
 
-      return {
-        form,
-        formLabelWidth: calcFormLabelWidth(locale),
-        formOriginal,
-        locales: availableLanguages,
-        rules: {},
-        saveTimeout: null,
-        originalLocale: locale,
-        localeChanged: false,
-        originalLanguageText: this.$t('preferences.undo-change'),
-        hasNoResults: false,
-        collapseTagsBackgroundUiOpacityScope: false,
-        collapseTagsBackgroundUiFrostedBlurScope: false,
-        textMeasureCanvas: null,
-        extensionInput: '',
-        domainInput: '',
-        ed2kServersText: '',
-        ed2kServerInput: '',
-        ed2kSubscriptionInput: '',
-        ed2kUpdatingForm: false,
-        ed2kSyncing: false,
-        trackerSourceOptions: [],
-        trackerSyncing: false,
-        trackerSourceConfigVisible: false,
-        trackerSourceInput: ''
-      }
-    },
-    computed: {
-      isRenderer: () => is.renderer(),
-      isMac: () => is.macOS(),
-      isMas: () => is.mas(),
-      isLinux () { return is.linux() },
-      btEncryptionOptions () {
+const { t } = i18n.global
+const msg = createMsg(ElMessage, { showClose: true })
+const route = useRoute()
+const router = useRouter()
+
+const props = defineProps({
+  category: {
+    type: String,
+    default: 'basic'
+  }
+})
+
+const appStore = useAppStore()
+const preferenceStore = usePreferenceStore()
+const taskStore = useTaskStore()
+const { config: preferenceConfig } = storeToRefs(preferenceStore)
+const { searchKeyword } = storeToRefs(preferenceStore)
+
+// --- Data ---
+const form = ref(initForm(preferenceConfig.value))
+// 限速单位独立存储：不再从 form 值推导（'0' 表示不限速时单位会丢失，
+// 且 computed setter 无法写回状态导致下拉选择无效），由 v-model 直接写入
+const downloadUnit = ref(extractSpeedUnit(form.value.maxOverallDownloadLimit))
+const uploadUnit = ref(extractSpeedUnit(form.value.maxOverallUploadLimit))
+const formLabelWidth = ref(calcFormLabelWidth(preferenceConfig.value.locale))
+const formOriginal = ref(initForm(preferenceConfig.value))
+const locales = ref(availableLanguages)
+const rules = ref({})
+let saveTimeout = null
+const originalLocale = ref(preferenceConfig.value.locale)
+const hasNoResults = ref(false)
+const collapseTagsBackgroundUiOpacityScope = ref(false)
+const collapseTagsBackgroundUiFrostedBlurScope = ref(false)
+let textMeasureCanvas = null
+const extensionInput = ref('')
+const domainInput = ref('')
+const ed2kServersText = ref('')
+const ed2kServerInput = ref('')
+const ed2kSubscriptionInput = ref('')
+const ed2kUpdatingForm = ref(false)
+const ed2kSyncing = ref(false)
+const trackerSourceOptions = ref([])
+const trackerSyncing = ref(false)
+const trackerSourceConfigVisible = ref(false)
+const trackerSourceInput = ref('')
+const trackerSourceConfigLoading = ref(false)
+let _filterTimer = null
+let _extensionUpdateHandler = null
+let originHoldTimers = {}
+let originHoldActivated = false
+const trackerDropdownVisible = ref(false)
+const backgroundUiOpacityScopeSelectRef = ref(null)
+const backgroundUiFrostedBlurScopeSelectRef = ref(null)
+const extensionInputRef = ref(null)
+const domainInputRef = ref(null)
+const ed2kServerInputRef = ref(null)
+const ed2kSubscriptionInputRef = ref(null)
+const trackerSelectRef = ref(null)
+// 模板 ref="basicForm" 由 setup 中同名 ref 自动绑定（Options API 迁移遗留的 formRefs 映射未实现注册）
+const basicForm = ref(null)
+const formRefs = {}
+
+// --- Computed ---
+
+      const isRenderer = computed(() => is.renderer())
+      const isMac = computed(() => is.macOS())
+      const isMas = computed(() => is.mas())
+      const isLinux = computed(() => is.linux())
+      const btEncryptionOptions = computed(() => {
         return [
-          { value: 'none', label: this.$t('preferences.bt-encryption-none') },
-          { value: 'adaptive', label: this.$t('preferences.bt-encryption-adaptive') },
-          { value: 'force', label: this.$t('preferences.bt-encryption-force') }
+          { value: 'none', label: t('preferences.bt-encryption-none') },
+          { value: 'adaptive', label: t('preferences.bt-encryption-adaptive') },
+          { value: 'force', label: t('preferences.bt-encryption-force') }
         ]
-      },
-      backgroundTypeOptions () {
+      })
+      const backgroundTypeOptions = computed(() => {
         return [
-          { value: 'color', label: this.$t('preferences.background-type-color') },
-          { value: 'image', label: this.$t('preferences.background-type-image') }
+          { value: 'color', label: t('preferences.background-type-color') },
+          { value: 'image', label: t('preferences.background-type-image') }
         ]
-      },
-      systemLocaleName () {
+      })
+      const systemLocaleName = computed(() => {
         return getSystemLocaleName()
-      },
-      activeCategory () {
-        return this.category || 'basic'
-      },
-      title () {
-        const subnav = this.subnavs.find(item => item.key === this.activeCategory)
-        return subnav ? subnav.title : this.$t('preferences.basic')
-      },
-      maxConcurrentDownloads () {
+      })
+      const activeCategory = computed(() => {
+        return props.category || 'basic'
+      })
+      const title = computed(() => {
+        const subnav = subnavs.value.find(item => item.key === activeCategory.value)
+        return subnav ? subnav.title : t('preferences.basic')
+      })
+      const maxConcurrentDownloads = computed(() => {
         return ENGINE_MAX_CONCURRENT_DOWNLOADS
-      },
-      extensionTags () {
-        const value = this.form.extensionSkipFileExtensions || ''
+      })
+      const extensionTags = computed(() => {
+        const value = form.value.extensionSkipFileExtensions || ''
         if (!value.trim()) return []
 
         // 支持逗号和换行符分隔
@@ -1964,9 +2766,9 @@ placement="top"
           .split(/[\n,]+/)
           .map(ext => ext.trim())
           .filter(ext => ext.length > 0)
-      },
-      domainTags () {
-        const value = this.form.extensionExcludeDomains || ''
+      })
+      const domainTags = computed(() => {
+        const value = form.value.extensionExcludeDomains || ''
         if (!value.trim()) return []
 
         // 支持逗号和换行符分隔
@@ -1974,9 +2776,9 @@ placement="top"
           .split(/[\n,]+/)
           .map(domain => domain.trim())
           .filter(domain => domain.length > 0)
-      },
-      ed2kServerTags () {
-        const value = this.ed2kServersText || ''
+      })
+      const ed2kServerTags = computed(() => {
+        const value = ed2kServersText.value || ''
         if (!value.trim()) return BUILTIN_ED2K_SERVERS
 
         // 支持换行符和逗号分隔
@@ -1984,9 +2786,9 @@ placement="top"
           .split(/[\n,]+/)
           .map(s => s.trim())
           .filter(s => s.length > 0)
-      },
-      ed2kPresetSubscriptions () {
-        const current = Array.isArray(this.form.ed2kServerSource) ? this.form.ed2kServerSource : []
+      })
+      const ed2kPresetSubscriptions = computed(() => {
+        const current = Array.isArray(form.value.ed2kServerSource) ? form.value.ed2kServerSource : []
         const result = []
         ED2K_SERVER_SOURCE_OPTIONS.forEach(group => {
           group.options.forEach(opt => {
@@ -1996,78 +2798,60 @@ placement="top"
           })
         })
         return result
-      },
-      maxOverallDownloadLimitParsed: {
+      })
+      const maxOverallDownloadLimitParsed = computed({
         get () {
-          return parseInt(this.form.maxOverallDownloadLimit)
+          return parseInt(form.value.maxOverallDownloadLimit)
         },
         set (value) {
-          const limit = value > 0 ? `${value}${this.downloadUnit}` : 0
-          this.form.maxOverallDownloadLimit = limit
+          const limit = value > 0 ? `${value}${downloadUnit.value}` : 0
+          form.value.maxOverallDownloadLimit = limit
         }
-      },
-      maxOverallUploadLimitParsed: {
+      })
+      const maxOverallUploadLimitParsed = computed({
         get () {
-          return parseInt(this.form.maxOverallUploadLimit)
+          return parseInt(form.value.maxOverallUploadLimit)
         },
         set (value) {
-          const limit = value > 0 ? `${value}${this.uploadUnit}` : 0
-          this.form.maxOverallUploadLimit = limit
+          const limit = value > 0 ? `${value}${uploadUnit.value}` : 0
+          form.value.maxOverallUploadLimit = limit
         }
-      },
-      downloadUnit: {
+      })
+      const btIpBanListText = computed({
         get () {
-          const { maxOverallDownloadLimit } = this.form
-          return extractSpeedUnit(maxOverallDownloadLimit)
-        },
-        set (value) {
-          return value
-        }
-      },
-      uploadUnit: {
-        get () {
-          const { maxOverallUploadLimit } = this.form
-          return extractSpeedUnit(maxOverallUploadLimit)
-        },
-        set (value) {
-          return value
-        }
-      },
-      btIpBanListText: {
-        get () {
-          const list = Array.isArray(this.form.btIpBanList) ? this.form.btIpBanList : []
+          const list = Array.isArray(form.value.btIpBanList) ? form.value.btIpBanList : []
           return list.join('\n')
         },
         set (value) {
-          this.form.btIpBanList = normalizeBtIpBanList(value)
-          this.autoSaveForm()
+          form.value.btIpBanList = normalizeBtIpBanList(value)
+          autoSaveForm()
         }
-      },
-      runModes () {
+      })
+      const runModes = computed(() => {
         let result = [
           {
-            label: this.$t('preferences.run-mode-standard'),
+            label: t('preferences.run-mode-standard'),
             value: APP_RUN_MODE.STANDARD
           },
           {
-            label: this.$t('preferences.run-mode-tray'),
+            label: t('preferences.run-mode-tray'),
             value: APP_RUN_MODE.TRAY
           }
         ]
 
-        if (this.isMac) {
+        if (isMac) {
           result = [
             ...result,
             {
-              label: this.$t('preferences.run-mode-hide-tray'),
+              label: t('preferences.run-mode-hide-tray'),
               value: APP_RUN_MODE.HIDE_TRAY
             }
           ]
         }
 
         return result
-      },
-      speedUnits () {
+      })
+      const speedUnits = computed(() => {
         return [
           {
             label: 'KB/s',
@@ -2078,123 +2862,118 @@ placement="top"
             value: 'M'
           }
         ]
-      },
-      preferenceBasePath () {
-        const path = `${this.$route.path || ''}`
+      })
+      const preferenceBasePath = computed(() => {
+        const path = `${route.path || ''}`
         return path.startsWith('/preference-window') ? '/preference-window' : '/preference'
-      },
-      subnavs () {
-        const base = this.preferenceBasePath
+      })
+      const subnavs = computed(() => {
+        const base = preferenceBasePath.value
         return [
           {
             key: 'basic',
-            title: this.$t('preferences.basic'),
+            title: t('preferences.basic'),
             route: `${base}/basic`
           },
           {
             key: 'appearance',
-            title: this.$t('preferences.appearance'),
+            title: t('preferences.appearance'),
             route: `${base}/appearance`
           },
           {
             key: 'transfer',
-            title: this.$t('preferences.transfer-settings'),
+            title: t('preferences.transfer-settings'),
             route: `${base}/transfer`
           },
           {
             key: 'bt',
-            title: this.$t('preferences.bt-settings'),
+            title: t('preferences.bt-settings'),
             route: `${base}/bt`
           },
           {
             key: 'task',
-            title: this.$t('preferences.task-manage'),
+            title: t('preferences.task-manage'),
             route: `${base}/task`
           },
           {
             key: 'file',
-            title: this.$t('preferences.file-manage'),
+            title: t('preferences.file-manage'),
             route: `${base}/file`
           },
           {
             key: 'advanced',
-            title: this.$t('preferences.advanced'),
+            title: t('preferences.advanced'),
             route: `${base}/advanced`
           },
           {
             key: 'lab',
-            title: this.$t('preferences.lab'),
+            title: t('preferences.lab'),
             route: `${base}/lab`
           }
         ]
-      },
-      showHideAppMenuOption () {
+      })
+      const showHideAppMenuOption = computed(() => {
         return is.windows() || is.linux()
-      },
-      backgroundImageOpacityPercent: {
+      })
+      const backgroundImageOpacityPercent = computed({
         get () {
-          const o = Number(this.form.backgroundImageOpacity)
+          const o = Number(form.value.backgroundImageOpacity)
           const clamped = Number.isFinite(o) ? Math.min(Math.max(o, 0.3), 1) : 0.4
           return Math.round(clamped * 100)
         },
         set (value) {
           const n = Number(value)
           const percent = Number.isFinite(n) ? Math.min(Math.max(n, 30), 100) : 40
-          this.form.backgroundImageOpacity = percent / 100
+          form.value.backgroundImageOpacity = percent / 100
         }
-      },
-      backgroundUiOpacityPercent: {
+      })
+      const backgroundUiOpacityPercent = computed({
         get () {
-          const o = Number(this.form.backgroundUiOpacity)
+          const o = Number(form.value.backgroundUiOpacity)
           const clamped = Number.isFinite(o) ? Math.min(Math.max(o, 0.4), 1) : 0.9
           return Math.round(clamped * 100)
         },
         set (value) {
           const n = Number(value)
           const percent = Number.isFinite(n) ? Math.min(Math.max(n, 40), 100) : 90
-          this.form.backgroundUiOpacity = percent / 100
+          form.value.backgroundUiOpacity = percent / 100
         }
-      },
-      backgroundUiFrostedBlurScopeOptions () {
+      })
+      const backgroundUiFrostedBlurScopeOptions = computed(() => {
         return [
-          { value: 'date-filter', label: this.$t('preferences.background-ui-frosted-scope-date-filter') },
-          { value: 'task-category-select', label: this.$t('preferences.background-ui-frosted-scope-task-category-select') },
-          { value: 'task-item', label: this.$t('preferences.background-ui-frosted-scope-task-item') },
-          { value: 'preference-card', label: this.$t('preferences.background-ui-frosted-scope-preference-card') },
-          { value: 'aside', label: this.$t('preferences.background-ui-frosted-scope-aside') },
-          { value: 'subnav', label: this.$t('preferences.background-ui-frosted-scope-subnav') }
+          { value: 'date-filter', label: t('preferences.background-ui-frosted-scope-date-filter') },
+          { value: 'task-category-select', label: t('preferences.background-ui-frosted-scope-task-category-select') },
+          { value: 'task-item', label: t('preferences.background-ui-frosted-scope-task-item') },
+          { value: 'preference-card', label: t('preferences.background-ui-frosted-scope-preference-card') },
+          { value: 'aside', label: t('preferences.background-ui-frosted-scope-aside') },
+          { value: 'subnav', label: t('preferences.background-ui-frosted-scope-subnav') }
         ]
-      },
-      backgroundUiOpacityScopeOptions () {
+      })
+      const backgroundUiOpacityScopeOptions = computed(() => {
         return [
-          { value: 'date-filter', label: this.$t('preferences.background-ui-opacity-scope-date-filter') },
-          { value: 'task-category-select', label: this.$t('preferences.background-ui-opacity-scope-task-category-select') },
-          { value: 'task-item', label: this.$t('preferences.background-ui-opacity-scope-task-item') },
-          { value: 'preference-card', label: this.$t('preferences.background-ui-opacity-scope-preference-card') },
-          { value: 'aside', label: this.$t('preferences.background-ui-opacity-scope-aside') },
-          { value: 'subnav', label: this.$t('preferences.background-ui-opacity-scope-subnav') }
+          { value: 'date-filter', label: t('preferences.background-ui-opacity-scope-date-filter') },
+          { value: 'task-category-select', label: t('preferences.background-ui-opacity-scope-task-category-select') },
+          { value: 'task-item', label: t('preferences.background-ui-opacity-scope-task-item') },
+          { value: 'preference-card', label: t('preferences.background-ui-opacity-scope-preference-card') },
+          { value: 'aside', label: t('preferences.background-ui-opacity-scope-aside') },
+          { value: 'subnav', label: t('preferences.background-ui-opacity-scope-subnav') }
         ]
-      },
-      backgroundImageDisplay () {
-        const p = this.form.backgroundImage
-        if (!p) return this.$t('preferences.background-image-not-selected')
+      })
+      const backgroundImageDisplay = computed(() => {
+        const p = form.value.backgroundImage
+        if (!p) return t('preferences.background-image-not-selected')
         try {
-          const path = require('path')
           return path.basename(p)
         } catch (_) {
           return p
         }
-      },
-      appChannelUrl () {
+      })
+      const appChannelUrl = computed(() => {
         return `ws://127.0.0.1:${APP_HTTP_PORT}/ws`
-      },
-      ...mapState('preference', {
-        config: state => state.config,
-        searchKeyword: state => state.searchKeyword
-      }),
-      // 本地化文件分类名称
-      localizedFileCategories () {
-        const categories = { ...this.form.fileCategories }
+      })
+            // 本地化文件分类名称
+      const localizedFileCategories = computed(() => {
+        const categories = { ...form.value.fileCategories }
 
         // 遍历所有分类，将名称键值转换为本地化文本
         Object.keys(categories).forEach(key => {
@@ -2203,28 +2982,28 @@ placement="top"
           if (category.name && category.name.includes('-files')) {
             categories[key] = {
               ...category,
-              name: this.$t(`preferences.${category.name}`)
+              name: t(`preferences.${category.name}`)
             }
           }
         })
 
         return categories
-      },
-      originListForDisplay () {
+      })
+      const originListForDisplay = computed(() => {
         const builtin = (TRACKER_SOURCE_OPTIONS || [])
           .map(g => g && g.label ? g.label : '')
           .filter(Boolean)
           .filter(l => l.includes('/'))
           .map(l => `https://github.com/${l}`)
-        const saved = Array.isArray(this.form.trackerSourceOrigins) ? this.form.trackerSourceOrigins : []
-        const normalizedSaved = saved.map(o => this.normalizeOriginUrl(o))
-        return Array.from(new Set([...builtin.map(this.normalizeOriginUrl), ...normalizedSaved]))
-      },
-      isAllTrackerSourcesSelected () {
+        const saved = Array.isArray(form.value.trackerSourceOrigins) ? form.value.trackerSourceOrigins : []
+        const normalizedSaved = saved.map(o => normalizeOriginUrl(o))
+        return Array.from(new Set([...builtin.map(normalizeOriginUrl), ...normalizedSaved]))
+      })
+      const isAllTrackerSourcesSelected = computed(() => {
         // 获取所有可用的源
         const allSources = []
-        ;(this.trackerSourceOptions || []).forEach(group => {
-          ;(group.options || []).forEach(opt => {
+        ;(trackerSourceOptions.value || []).forEach(group => {
+          (group.options || []).forEach(opt => {
             if (opt.value && !allSources.includes(opt.value)) {
               allSources.push(opt.value)
             }
@@ -2237,149 +3016,97 @@ placement="top"
         }
 
         // 获取当前选中的源
-        const selectedSources = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
+        const selectedSources = Array.isArray(form.value.trackerSource) ? form.value.trackerSource : []
 
         // 检查是否所有源都被选中
         return allSources.length === selectedSources.length &&
           allSources.every(source => selectedSources.includes(source))
-      }
-    },
-    watch: {
-      searchKeyword: {
-        handler (val) {
-          this.applyFilters(val)
-        },
-        immediate: true
-      },
-      category: {
-        handler () {
-          // 切换分类时立即同步过滤，不走 120ms 防抖。
-          // 否则组件重建瞬间所有卡片都可见，appearance 卡片排在前 4 个，
-          // 会闪烁显示外观分类内容，120ms 后才被隐藏。
-          this.filterCards(this.searchKeyword, this.activeCategory)
-        },
-        immediate: true
-      },
-      'form.extensionExcludeDomains' (newVal) {
-        // 当配置变化时，更新表单显示
-        // 这个 watcher 确保从浏览器扩展添加的域名能实时显示在界面上
-      },
-      'form.ed2kDefaultServers' (val) {
-        if (this.ed2kUpdatingForm) return
-        if (val) {
-          this.ed2kServersText = val
-        } else {
-          // 没有用户自定义服务器时，使用内置服务器列表
-          this.ed2kServersText = BUILTIN_ED2K_SERVERS.join('\n')
-        }
-      },
-      form: {
-        handler () {
-          // autoSaveForm already debounces and checks diffConfig internally,
-          // so we avoid a redundant synchronous diffConfig pass here.
-          this.autoSaveForm()
-        },
-        deep: true
-      },
-      'config.engineMaxConnectionPerServer' (val) {
-        if (val === undefined || val === null) {
-          return
-        }
-        this.form.engineMaxConnectionPerServer = val
-        this.formOriginal.engineMaxConnectionPerServer = val
-        if (this.form.maxConnectionPerServer > val) {
-          this.form.maxConnectionPerServer = val
-          this.formOriginal.maxConnectionPerServer = val
-        }
-      },
-      'config.extensionExcludeDomains' (newVal) {
-        // Update form when extension exclude domains changes externally
-        if (newVal !== undefined && newVal !== this.form.extensionExcludeDomains) {
-          this.form.extensionExcludeDomains = newVal
-          this.formOriginal.extensionExcludeDomains = newVal
-        }
-      },
-      'config.extensionSkipFileExtensions' (newVal) {
-        // Update form when extension skip file extensions changes externally
-        if (newVal !== undefined && newVal !== this.form.extensionSkipFileExtensions) {
-          // 将逗号分隔格式转换为换行符格式
-          this.form.extensionSkipFileExtensions = convertCommaToLine(newVal)
-          this.formOriginal.extensionSkipFileExtensions = convertCommaToLine(newVal)
-        }
-      },
-      // 监控语言变化，更新localeChanged状态
-      'form.locale' (newLocale, oldLocale) {
-        this.localeChanged = newLocale !== this.originalLocale
-      },
-      'form.backgroundType' () {
-        this.updateUiScopeSelectCollapse()
-      },
-      'form.backgroundUiOpacityScope': {
-        handler () {
-          this.updateUiScopeSelectCollapse()
-        },
-        deep: true
-      },
-      'form.backgroundUiFrostedBlurScope': {
-        handler () {
-          this.updateUiScopeSelectCollapse()
-        },
-        deep: true
-      },
-      trackerSourceConfigVisible (visible) {
-        if (!visible) {
-          document.removeEventListener('mousedown', this.handleTrackerSourceOutsideClick)
-        }
-      }
-    },
-    mounted () {
-      this.rebuildTrackerSourceOptions()
-      window.addEventListener('resize', this.updateUiScopeSelectCollapse)
-      this.updateUiScopeSelectCollapse()
-      // 立即同步过滤卡片，避免组件首次挂载时所有分类卡片都可见
-      // 导致 appearance 卡片（排在前 4 个）闪烁显示。
-      this.filterCards(this.searchKeyword, this.activeCategory)
-      // 使用 ipcRenderer 直接监听从浏览器扩展更新配置的命令
-      if (this.form.ed2kDefaultServers) {
-        this.ed2kServersText = this.form.ed2kDefaultServers
-      } else {
-        this.ed2kServersText = BUILTIN_ED2K_SERVERS.join('\n')
-      }
-      if (this.$electron && this.$electron.ipcRenderer) {
-        this._extensionUpdateHandler = (event, command) => {
-          if (command === 'preference:update-from-extension') {
-            console.log('[Basic] Received preference:update-from-extension, syncing config...')
-            this.syncFormConfig()
-          }
-        }
-        this.$electron.ipcRenderer.on('command', this._extensionUpdateHandler)
-      }
-    },
-    beforeDestroy () {
-      document.removeEventListener('mousedown', this.handleTrackerSourceOutsideClick)
-      window.removeEventListener('resize', this.updateUiScopeSelectCollapse)
-      if (this._filterTimer) {
-        clearTimeout(this._filterTimer)
-      }
-      if (this.saveTimeout) {
-        clearTimeout(this.saveTimeout)
-        this.saveTimeout = null
-      }
-      if (this.originHoldTimers) {
-        Object.keys(this.originHoldTimers).forEach((key) => {
-          clearTimeout(this.originHoldTimers[key])
-        })
-        this.originHoldTimers = {}
-      }
-      // 移除 ipcRenderer 监听
-      if (this.$electron && this.$electron.ipcRenderer && this._extensionUpdateHandler) {
-        this.$electron.ipcRenderer.removeListener('command', this._extensionUpdateHandler)
-      }
-    },
-    methods: {
-      measureTextWidth (text, font) {
+      })
+
+// --- Watchers ---
+watch(searchKeyword, (val) => {
+  applyFilters(val)
+}, { immediate: true })
+
+watch(() => props.category, () => {
+  // 切换分类时立即同步过滤，不走 120ms 防抖。
+  filterCards(searchKeyword.value, activeCategory.value)
+}, { immediate: true })
+
+watch(() => form.value.extensionExcludeDomains, () => {
+  // 当配置变化时，更新表单显示
+  // 这个 watcher 确保从浏览器扩展添加的域名能实时显示在界面上
+})
+
+watch(() => form.value.ed2kDefaultServers, (val) => {
+  if (ed2kUpdatingForm.value) return
+  if (val) {
+    ed2kServersText.value = val
+  } else {
+    ed2kServersText.value = BUILTIN_ED2K_SERVERS.join('\n')
+  }
+})
+
+let _syncingFromStore = false
+
+watch(form, () => {
+  if (_syncingFromStore) return
+  autoSaveForm()
+}, { deep: true })
+
+watch(() => preferenceConfig.value.engineMaxConnectionPerServer, (val) => {
+  if (val === undefined || val === null) return
+  _syncingFromStore = true
+  form.value.engineMaxConnectionPerServer = val
+  formOriginal.value.engineMaxConnectionPerServer = val
+  if (form.value.maxConnectionPerServer > val) {
+    form.value.maxConnectionPerServer = val
+    formOriginal.value.maxConnectionPerServer = val
+  }
+  nextTick(() => { _syncingFromStore = false })
+})
+
+watch(() => preferenceConfig.value.extensionExcludeDomains, (newVal) => {
+  if (newVal !== undefined && newVal !== form.value.extensionExcludeDomains) {
+    _syncingFromStore = true
+    form.value.extensionExcludeDomains = newVal
+    formOriginal.value.extensionExcludeDomains = newVal
+    nextTick(() => { _syncingFromStore = false })
+  }
+})
+
+watch(() => preferenceConfig.value.extensionSkipFileExtensions, (newVal) => {
+  if (newVal !== undefined && newVal !== form.value.extensionSkipFileExtensions) {
+    _syncingFromStore = true
+    form.value.extensionSkipFileExtensions = convertCommaToLine(newVal)
+    formOriginal.value.extensionSkipFileExtensions = convertCommaToLine(newVal)
+    nextTick(() => { _syncingFromStore = false })
+  }
+})
+
+watch(() => form.value.backgroundType, () => {
+  updateUiScopeSelectCollapse()
+})
+
+watch(() => form.value.backgroundUiOpacityScope, () => {
+  updateUiScopeSelectCollapse()
+}, { deep: true })
+
+watch(() => form.value.backgroundUiFrostedBlurScope, () => {
+  updateUiScopeSelectCollapse()
+}, { deep: true })
+
+watch(trackerSourceConfigVisible, (visible) => {
+  if (!visible) {
+    document.removeEventListener('mousedown', handleTrackerSourceOutsideClick)
+  }
+})
+
+// --- Methods ---
+
+      function measureTextWidth(text, font) {
         try {
-          const canvas = this.textMeasureCanvas || (this.textMeasureCanvas = document.createElement('canvas'))
+          const canvas = textMeasureCanvas.value || (textMeasureCanvas.value = document.createElement('canvas'))
           const ctx = canvas.getContext('2d')
           if (!ctx) return `${text || ''}`.length * 10
           ctx.font = font || '12px sans-serif'
@@ -2387,14 +3114,14 @@ placement="top"
         } catch (_) {
           return `${text || ''}`.length * 10
         }
-      },
-      onBackgroundTypeChange (value) {
-        if (this.form.backgroundType !== value) {
-          this.form.backgroundType = value
-          this.autoSaveForm()
+      }
+      function onBackgroundTypeChange(value) {
+        if (form.value.backgroundType !== value) {
+          form.value.backgroundType = value
+          autoSaveForm()
         }
-      },
-      computeScopeSelectCollapse (selectRef, values, options) {
+      }
+      function computeScopeSelectCollapse(selectRef, values, options) {
         const el = selectRef && selectRef.$el
         if (!el) return false
         const v = Array.isArray(values) ? values : []
@@ -2410,41 +3137,41 @@ placement="top"
         let total = 0
         v.forEach(val => {
           const label = map.get(val) || `${val}`
-          total += this.measureTextWidth(label, font) + 46
+          total += measureTextWidth(label, font) + 46
         })
         return total > available
-      },
-      updateUiScopeSelectCollapse () {
-        if (!this.form || this.form.backgroundType !== 'image') {
-          this.collapseTagsBackgroundUiOpacityScope = false
-          this.collapseTagsBackgroundUiFrostedBlurScope = false
+      }
+      function updateUiScopeSelectCollapse() {
+        if (!form.value || form.value.backgroundType !== 'image') {
+          collapseTagsBackgroundUiOpacityScope.value = false
+          collapseTagsBackgroundUiFrostedBlurScope.value = false
           return
         }
-        this.$nextTick(() => {
-          this.collapseTagsBackgroundUiOpacityScope = this.computeScopeSelectCollapse(
-            this.$refs.backgroundUiOpacityScopeSelect,
-            this.form.backgroundUiOpacityScope,
-            this.backgroundUiOpacityScopeOptions
+        nextTick(() => {
+          collapseTagsBackgroundUiOpacityScope.value = computeScopeSelectCollapse(
+            backgroundUiOpacityScopeSelectRef.value,
+            form.value.backgroundUiOpacityScope,
+            backgroundUiOpacityScopeOptions.value
           )
-          this.collapseTagsBackgroundUiFrostedBlurScope = this.computeScopeSelectCollapse(
-            this.$refs.backgroundUiFrostedBlurScopeSelect,
-            this.form.backgroundUiFrostedBlurScope,
-            this.backgroundUiFrostedBlurScopeOptions
+          collapseTagsBackgroundUiFrostedBlurScope.value = computeScopeSelectCollapse(
+            backgroundUiFrostedBlurScopeSelectRef.value,
+            form.value.backgroundUiFrostedBlurScope,
+            backgroundUiFrostedBlurScopeOptions.value
           )
         })
-      },
-      applyFilters (keyword) {
-        if (this._filterTimer) {
-          clearTimeout(this._filterTimer)
+      }
+      function applyFilters(keyword) {
+        if (_filterTimer) {
+          clearTimeout(_filterTimer)
         }
-        this._filterTimer = setTimeout(() => {
-          this.filterCards(keyword, this.activeCategory)
+        _filterTimer = setTimeout(() => {
+          filterCards(keyword, activeCategory.value)
         }, 120)
-      },
-      filterCards (keyword, category) {
-        this.$nextTick(() => {
-          if (!this.$el) return
-          const cards = this.$el.querySelectorAll('.preference-card, .preference-bottom-actions')
+      }
+      function filterCards(keyword, category) {
+        nextTick(() => {
+          if (!document) return
+          const cards = document.querySelectorAll('.preference-card, .preference-bottom-actions')
           const k = (keyword || '').toLowerCase()
           let visibleCount = 0
           cards.forEach(card => {
@@ -2461,12 +3188,12 @@ placement="top"
               card.style.display = 'none'
             }
           })
-          this.hasNoResults = visibleCount === 0 && k !== ''
+          hasNoResults.value = visibleCount === 0 && k !== ''
         })
-      },
-      getShortcutCommands () {
+      }
+      function getShortcutCommands() {
         const baseCommands = Object.values(keymap)
-        const customCommands = Object.values(this.form.customKeymap || {})
+        const customCommands = Object.values(form.value.customKeymap || {})
         const set = new Set([...baseCommands, ...customCommands, 'task:multi-select'])
         const list = Array.from(set)
         const idx = list.indexOf('task:multi-select')
@@ -2475,12 +3202,12 @@ placement="top"
         }
         list.push('task:multi-select')
         return list
-      },
-      getKeystrokeByCommand (command) {
+      }
+      function getKeystrokeByCommand(command) {
         if (command === 'task:multi-select') {
-          return this.form.taskMultiSelectModifier || ''
+          return form.value.taskMultiSelectModifier || ''
         }
-        const custom = this.form.customKeymap || {}
+        const custom = form.value.customKeymap || {}
         const customEntries = Object.entries(custom)
         for (const [ks, cmd] of customEntries) {
           if (cmd === command) return ks
@@ -2490,8 +3217,8 @@ placement="top"
           if (cmd === command) return ks
         }
         return ''
-      },
-      normalizeKeystroke (event) {
+      }
+      function normalizeKeystroke(event) {
         event.preventDefault()
         const parts = []
         if (event.ctrlKey || event.metaKey) parts.push('cmdctrl')
@@ -2509,8 +3236,8 @@ placement="top"
         if (key === 'escape') key = 'esc'
         const result = [...parts, key].filter(Boolean).join('-')
         return result
-      },
-      normalizeModifierKeystroke (event) {
+      }
+      function normalizeModifierKeystroke(event) {
         event.preventDefault()
         const parts = []
         if (event.ctrlKey) parts.push('ctrl')
@@ -2518,15 +3245,15 @@ placement="top"
         if (event.shiftKey) parts.push('shift')
         if (event.altKey) parts.push('alt')
         return parts.join('-')
-      },
-      normalizeTaskMultiSelectKeystroke (event) {
+      }
+      function normalizeTaskMultiSelectKeystroke(event) {
         const key = `${event && event.key ? event.key : ''}`.toLowerCase()
         if (['control', 'meta', 'shift', 'alt'].includes(key)) {
-          return this.normalizeModifierKeystroke(event)
+          return normalizeModifierKeystroke(event)
         }
-        return this.normalizeKeystroke(event)
-      },
-      formatKeystrokeForDisplay (keystroke) {
+        return normalizeKeystroke(event)
+      }
+      function formatKeystrokeForDisplay(keystroke) {
         if (!keystroke) return ''
         const parts = keystroke.split('-').filter(Boolean)
         if (parts.length === 0) return ''
@@ -2563,19 +3290,19 @@ placement="top"
         }
         const displayKey = specials[key] || (key.length === 1 ? key.toUpperCase() : key)
         return [...modifiers, displayKey].filter(Boolean).join(' + ')
-      },
-      setTaskMultiSelectModifier (keystroke) {
+      }
+      function setTaskMultiSelectModifier(keystroke) {
         if (!keystroke) return
-        if (keystroke === this.form.taskMultiSelectModifier) return
-        const existingCommand = this.getCommandByKeystroke(keystroke)
+        if (keystroke === form.value.taskMultiSelectModifier) return
+        const existingCommand = getCommandByKeystroke(keystroke)
         if (existingCommand) {
-          const existingCommandLabel = this.getCommandLabel(existingCommand)
-          const keystrokeDisplay = this.formatKeystrokeForDisplay(keystroke)
-          const message = this.$t('preferences.shortcut-duplicate-message', {
+          const existingCommandLabel = getCommandLabel(existingCommand)
+          const keystrokeDisplay = formatKeystrokeForDisplay(keystroke)
+          const message = t('preferences.shortcut-duplicate-message', {
             keystroke: keystrokeDisplay,
             command: existingCommandLabel
           })
-          this.$message({
+          ElMessage({
             type: 'warning',
             message: message,
             duration: 4000,
@@ -2584,48 +3311,48 @@ placement="top"
           })
           return
         }
-        this.form.taskMultiSelectModifier = keystroke
-        this.autoSaveForm()
-      },
-      resetShortcuts () {
-        this.form.customKeymap = {}
-        this.form.taskMultiSelectModifier = 'ctrl'
-        this.autoSaveForm()
-      },
-      handleShortcutKeydown (command, event) {
+        form.value.taskMultiSelectModifier = keystroke
+        autoSaveForm()
+      }
+      function resetShortcuts() {
+        form.value.customKeymap = {}
+        form.value.taskMultiSelectModifier = 'ctrl'
+        autoSaveForm()
+      }
+      function handleShortcutKeydown(command, event) {
         if (command === 'task:multi-select') {
-          this.setTaskMultiSelectModifier(this.normalizeTaskMultiSelectKeystroke(event))
+          setTaskMultiSelectModifier(normalizeTaskMultiSelectKeystroke(event))
           return
         }
-        this.setCommandKeystroke(command, this.normalizeKeystroke(event))
-      },
-      setCommandKeystroke (command, keystroke) {
+        setCommandKeystroke(command, normalizeKeystroke(event))
+      }
+      function setCommandKeystroke(command, keystroke) {
         if (!keystroke) {
           // 如果没有按键，只是清除当前命令的快捷键
-          const custom = { ...(this.form.customKeymap || {}) }
+          const custom = { ...(form.value.customKeymap || {}) }
           Object.keys(custom).forEach(k => {
             if (custom[k] === command) {
               delete custom[k]
             }
           })
-          this.form.customKeymap = custom
-          this.autoSaveForm()
+          form.value.customKeymap = custom
+          autoSaveForm()
           return
         }
 
         // 检查快捷键是否已被其他命令使用
-        const existingCommand = this.getCommandByKeystroke(keystroke)
+        const existingCommand = getCommandByKeystroke(keystroke)
         if (existingCommand && existingCommand !== command) {
           // 显示错误通知，不允许设置重复快捷键
-          const existingCommandLabel = this.getCommandLabel(existingCommand)
-          const keystrokeDisplay = this.formatKeystrokeForDisplay(keystroke)
+          const existingCommandLabel = getCommandLabel(existingCommand)
+          const keystrokeDisplay = formatKeystrokeForDisplay(keystroke)
 
           // 使用多语言本地化提示
-          const message = this.$t('preferences.shortcut-duplicate-message', {
+          const message = t('preferences.shortcut-duplicate-message', {
             keystroke: keystrokeDisplay,
             command: existingCommandLabel
           })
-          this.$message({
+          ElMessage({
             type: 'warning',
             message: message,
             duration: 4000,
@@ -2636,7 +3363,7 @@ placement="top"
         }
 
         // 没有冲突，直接应用
-        const custom = { ...(this.form.customKeymap || {}) }
+        const custom = { ...(form.value.customKeymap || {}) }
 
         // 删除当前命令的旧快捷键
         Object.keys(custom).forEach(k => {
@@ -2648,20 +3375,20 @@ placement="top"
         // 设置新的快捷键
         custom[keystroke] = command
 
-        this.form.customKeymap = custom
-        this.autoSaveForm()
-      },
+        form.value.customKeymap = custom
+        autoSaveForm()
+      }
 
-      getCommandByKeystroke (keystroke) {
+      function getCommandByKeystroke(keystroke) {
         // 构建完整的当前快捷键映射
-        const currentKeymap = this.getCurrentKeymap()
+        const currentKeymap = getCurrentKeymap()
         return currentKeymap[keystroke] || null
-      },
+      }
 
-      getCurrentKeymap () {
+      function getCurrentKeymap() {
         // 从默认快捷键开始
         const current = { ...keymap }
-        const custom = this.form.customKeymap || {}
+        const custom = form.value.customKeymap || {}
 
         // 首先移除被自定义快捷键覆盖的默认快捷键
         Object.values(custom).forEach(command => {
@@ -2678,19 +3405,19 @@ placement="top"
           current[key] = custom[key]
         })
 
-        const multi = this.form.taskMultiSelectModifier || ''
+        const multi = form.value.taskMultiSelectModifier || ''
         if (multi) {
           current[multi] = 'task:multi-select'
         }
 
         return current
-      },
-      getCommandLabel (command) {
+      }
+      function getCommandLabel(command) {
         const map = {
           'application:quit': 'app.quit',
           'application:new-task': 'task.new-task',
           'application:new-bt-task': 'task.new-bt-task',
-          'application:open-file': 'task.open-file',
+          'application:open-file': 'task.open-torrent-file',
           'application:task-list': 'app.task-list',
           'application:preferences': 'app.preferences',
           'application:pause-all-task': 'task.pause-all-task',
@@ -2699,26 +3426,26 @@ placement="top"
           'task:multi-select': null
         }
         if (command === 'task:multi-select') {
-          return this.$t('preferences.multi-select-task')
+          return t('preferences.multi-select-task')
         }
         const key = map[command]
-        return key ? this.$t(key) : command
-      },
-      autoSaveForm () {
+        return key ? t(key) : command
+      }
+      function autoSaveForm() {
         // Debounce auto-save to avoid too many requests
-        if (this.saveTimeout) {
-          clearTimeout(this.saveTimeout)
+        if (saveTimeout) {
+          clearTimeout(saveTimeout)
         }
-        this.saveTimeout = setTimeout(() => {
+        saveTimeout = setTimeout(() => {
           // 验证下载中文件后缀格式
-          this.validateDownloadingFileSuffix()
+          validateDownloadingFileSuffix()
 
           // Double-check there are actual changes before submitting
-          if (!isEmpty(diffConfig(this.formOriginal, this.form))) {
-            this.submitForm('basicForm')
+          if (!isEmpty(diffConfig(formOriginal.value, form.value))) {
+            submitForm('basicForm')
           }
         }, 300)
-      },
+      }
       // BT 协议开关/选项的专用保存：点击立即保存、失败立即回弹并弹错误
       // 提示。任何异常都必须可见，不能静默失败（否则用户看到的就是
       // "点了没反应"）。
@@ -2729,59 +3456,53 @@ placement="top"
       // - enable-peer-exchange / enable-lpd：立即生效
       // - enable-upnp / enable-nat-pmp：端口映射在引擎启动时执行，
       //   下次引擎启动生效
-      onNatToggleChange (key, value) {
+      function onNatToggleChange(key, value) {
         const data = {}
         data[key] = value
-        const original = this.formOriginal[key]
-        this.$store.dispatch('preference/save', data)
+        const original = formOriginal.value[key]
+        preferenceStore.save(data)
           .then(() => {
-            this.$store.dispatch('app/fetchEngineOptions')
-            this.formOriginal[key] = value
+            appStore.fetchEngineOptions()
+            formOriginal.value[key] = value
             const restartOnNextBootKeys = ['enableUpnp', 'enableNatPmp']
             if (restartOnNextBootKeys.includes(key)) {
-              this.$msg.info(this.$t('preferences.restart-to-apply'))
+              msg.info(t('preferences.restart-to-apply'))
             }
           })
           .catch(() => {
             // 保存失败：回弹开关，让 UI 与实际配置保持一致，并明确报错
-            this.form[key] = original
-            this.$msg.error(this.$t('preferences.save-fail-message'))
+            form.value[key] = original
+            msg.error(t('preferences.save-fail-message'))
           })
-      },
-      onBtPortDiceClick () {
+      }
+      function onBtPortDiceClick() {
         const port = generateRandomInt(20000, 24999)
-        this.form.listenPort = port
-      },
-      onDhtPortDiceClick () {
+        form.value.listenPort = port
+      }
+      function onDhtPortDiceClick() {
         const port = generateRandomInt(25000, 29999)
-        this.form.dhtListenPort = port
-      },
-      validateDownloadingFileSuffix () {
-        const suffix = this.form.downloadingFileSuffix
+        form.value.dhtListenPort = port
+      }
+      function validateDownloadingFileSuffix() {
+        const suffix = form.value.downloadingFileSuffix
         if (suffix && suffix.trim() !== '' && !suffix.startsWith('.')) {
           // 如果用户输入的后缀不以"."开头，自动添加"."
-          this.form.downloadingFileSuffix = '.' + suffix
-          this.$msg.warning(this.$t('preferences.downloading-file-suffix-format-warning'))
+          form.value.downloadingFileSuffix = '.' + suffix
+          msg.warning(t('preferences.downloading-file-suffix-format-warning'))
         }
-      },
-      handleLocaleChange (locale) {
+      }
+      function handleLocaleChange(locale) {
         const lng = getLanguage(locale)
         getLocaleManager().changeLanguage(lng)
-        this.autoSaveForm()
-        // 更新语言已更改状态
-        this.localeChanged = this.form.locale !== this.originalLocale
-      },
-      // 撤回语言更改
-      undoLocaleChange () {
-        this.form.locale = this.originalLocale
-        this.handleLocaleChange(this.originalLocale)
-        this.localeChanged = false
-      },
-      handleThemeChange (theme) {
-        this.form.theme = theme
-        this.autoSaveForm()
-      },
-      normalizeUiScopeValues (values, allowedOptions) {
+        // 同步更新 vue-i18n 的 locale，使 t() 实时切换语言（composition 模式用 .value）
+        i18n.global.locale.value = lng
+        autoSaveForm()
+      }
+      function handleThemeChange(theme) {
+        form.value.theme = theme
+        autoSaveForm()
+      }
+      function normalizeUiScopeValues(values, allowedOptions) {
         const opts = Array.isArray(allowedOptions) ? allowedOptions : []
         const set = new Set(opts.map(s => `${s}`))
         const v = Array.isArray(values) ? values : null
@@ -2790,26 +3511,23 @@ placement="top"
           .map(s => `${s}`.trim())
           .filter(s => set.has(s))
         return filtered.length > 0 ? filtered : [...opts]
-      },
-      normalizeUiNumber (value, min, max, fallback) {
+      }
+      function normalizeUiNumber(value, min, max, fallback) {
         const n = Number(value)
         if (!Number.isFinite(n)) return fallback
         return Math.min(Math.max(n, min), max)
-      },
-      getBackgroundImageCacheDir () {
+      }
+      function getBackgroundImageCacheDir() {
         try {
-          const { app } = require('@electron/remote')
-          const path = require('path')
           const userData = app.getPath('userData')
           return path.join(userData, 'background-images')
         } catch (e) {
           return ''
         }
-      },
-      isCachedBackgroundImagePath (p) {
+      }
+      function isCachedBackgroundImagePath(p) {
         try {
-          const path = require('path')
-          const cacheDir = this.getBackgroundImageCacheDir()
+          const cacheDir = getBackgroundImageCacheDir()
           if (!cacheDir) return false
           const resolvedCache = path.resolve(cacheDir)
           const resolvedPath = path.resolve(p || '')
@@ -2818,18 +3536,14 @@ placement="top"
         } catch (e) {
           return false
         }
-      },
-      async cacheBackgroundImageToAppDir (sourcePath) {
+      }
+      async function cacheBackgroundImageToAppDir(sourcePath) {
         const src = `${sourcePath || ''}`.trim()
         if (!src) return ''
-        if (this.isCachedBackgroundImagePath(src)) return src
+        if (isCachedBackgroundImagePath(src)) return src
 
-        const cacheDir = this.getBackgroundImageCacheDir()
+        const cacheDir = getBackgroundImageCacheDir()
         if (!cacheDir) return ''
-
-        const fs = require('fs')
-        const path = require('path')
-        const crypto = require('crypto')
 
         try {
           fs.mkdirSync(cacheDir, { recursive: true })
@@ -2845,7 +3559,6 @@ placement="top"
 
         try {
           if (lowerExt !== '.gif' && lowerExt !== '.svg') {
-            const { nativeImage } = require('electron')
             const img = nativeImage.createFromPath(src)
             if (img && !img.isEmpty()) {
               const size = img.getSize()
@@ -2877,21 +3590,19 @@ placement="top"
           await fs.promises.copyFile(src, dest)
         }
         return dest
-      },
-      async deleteCachedBackgroundImageIfNeeded (p) {
+      }
+      async function deleteCachedBackgroundImageIfNeeded(p) {
         const target = `${p || ''}`.trim()
         if (!target) return
-        if (!this.isCachedBackgroundImagePath(target)) return
+        if (!isCachedBackgroundImagePath(target)) return
         try {
-          const fs = require('fs')
           await fs.promises.unlink(target)
         } catch (e) {}
-      },
-      async selectBackgroundImage () {
+      }
+      async function selectBackgroundImage() {
         try {
-          const { dialog } = require('@electron/remote')
           const result = await dialog.showOpenDialog({
-            title: this.$t('preferences.background-image-select'),
+            title: t('preferences.background-image-select'),
             properties: ['openFile'],
             filters: [
               { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] }
@@ -2901,65 +3612,66 @@ placement="top"
             return
           }
           const selected = result.filePaths[0]
-          const oldPath = this.form.backgroundImage
-          const cached = await this.cacheBackgroundImageToAppDir(selected)
+          const oldPath = form.value.backgroundImage
+          const cached = await cacheBackgroundImageToAppDir(selected)
           if (!cached) {
             throw new Error('cache background image failed')
           }
-          this.form.backgroundImage = cached
-          this.form.backgroundType = 'image'
-          this.autoSaveForm()
+          form.value.backgroundImage = cached
+          form.value.backgroundType = 'image'
+          autoSaveForm()
           if (oldPath && oldPath !== cached) {
-            await this.deleteCachedBackgroundImageIfNeeded(oldPath)
+            await deleteCachedBackgroundImageIfNeeded(oldPath)
           }
         } catch (e) {
-          this.$msg.error(this.$t('preferences.save-fail-message'))
+          msg.error(t('preferences.save-fail-message'))
         }
-      },
-      clearBackgroundImage () {
-        const oldPath = this.form.backgroundImage
-        this.form.backgroundImage = ''
-        this.form.backgroundType = 'color'
-        this.autoSaveForm()
-        this.deleteCachedBackgroundImageIfNeeded(oldPath)
-      },
-      handleDownloadChange (value) {
-        const speedLimit = parseInt(this.form.maxOverallDownloadLimit, 10)
-        this.downloadUnit = value
-        const limit = speedLimit > 0 ? `${speedLimit}${value}` : 0
-        this.form.maxOverallDownloadLimit = limit
-        this.autoSaveForm()
-      },
-      handleUploadChange (value) {
-        const speedLimit = parseInt(this.form.maxOverallUploadLimit, 10)
-        this.uploadUnit = value
-        const limit = speedLimit > 0 ? `${speedLimit}${value}` : 0
-        this.form.maxOverallUploadLimit = limit
-        this.autoSaveForm()
-      },
-      onKeepSeedingChange (enable) {
-        this.form.seedRatio = enable ? 0 : 1
-        this.form.seedTime = enable ? 525600 : 60
-        this.autoSaveForm()
-      },
-      onBtEncryptionModeChange (mode) {
+      }
+      function clearBackgroundImage() {
+        const oldPath = form.value.backgroundImage
+        form.value.backgroundImage = ''
+        form.value.backgroundType = 'color'
+        autoSaveForm()
+        deleteCachedBackgroundImageIfNeeded(oldPath)
+      }
+      function handleDownloadChange(value) {
+        // v-model 已把新单位写入 downloadUnit ref，此处仅重算形如 "1024M" 的引擎配置值
+        const rawLimit = form.value.maxOverallDownloadLimit
+        const match = String(rawLimit).match(/^(\d+\.?\d*)/)
+        const num = match ? match[1] : '0'
+        form.value.maxOverallDownloadLimit = parseFloat(rawLimit) > 0 ? `${num}${value}` : 0
+        autoSaveForm()
+      }
+      function handleUploadChange(value) {
+        const rawLimit = form.value.maxOverallUploadLimit
+        const match = String(rawLimit).match(/^(\d+\.?\d*)/)
+        const num = match ? match[1] : '0'
+        form.value.maxOverallUploadLimit = parseFloat(rawLimit) > 0 ? `${num}${value}` : 0
+        autoSaveForm()
+      }
+      function onKeepSeedingChange(enable) {
+        form.value.seedRatio = enable ? 0 : 1
+        form.value.seedTime = enable ? 525600 : 60
+        autoSaveForm()
+      }
+      function onBtEncryptionModeChange(mode) {
         const modeConfig = {
           none: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'plain' },
           adaptive: { 'bt-require-crypto': false, 'bt-min-crypto-level': 'arc4' },
           force: { 'bt-require-crypto': true, 'bt-min-crypto-level': 'arc4' }
         }
         const cfg = modeConfig[mode] || modeConfig.adaptive
-        this.form.btEncryptionMode = mode
-        this.form.btRequireCrypto = cfg['bt-require-crypto']
-        this.form.btMinCryptoLevel = cfg['bt-min-crypto-level']
-        this.autoSaveForm()
-      },
-      handleHistoryDirectorySelected (dir) {
-        this.form.dir = dir
-        this.autoSaveForm()
-      },
-      addExtension () {
-        const input = this.extensionInput.trim()
+        form.value.btEncryptionMode = mode
+        form.value.btRequireCrypto = cfg['bt-require-crypto']
+        form.value.btMinCryptoLevel = cfg['bt-min-crypto-level']
+        autoSaveForm()
+      }
+      function handleHistoryDirectorySelected(dir) {
+        form.value.dir = dir
+        autoSaveForm()
+      }
+      function addExtension() {
+        const input = extensionInput.value.trim()
         if (!input) return
 
         // 分割扩展名（支持多种分隔符：逗号、分号、空格）
@@ -2969,54 +3681,54 @@ placement="top"
           .filter(ext => ext.length > 0)
 
         if (newExtensions.length === 0) {
-          this.extensionInput = ''
+          extensionInput.value = ''
           return
         }
 
         // 获取现有扩展名
-        const existingExtensions = this.extensionTags
+        const existingExtensions = extensionTags.value
 
         // 合并并去重
         const allExtensions = [...existingExtensions, ...newExtensions]
         const uniqueExtensions = Array.from(new Set(allExtensions))
 
         // 更新表单（使用换行符分隔）
-        this.form.extensionSkipFileExtensions = uniqueExtensions.join('\n')
+        form.value.extensionSkipFileExtensions = uniqueExtensions.join('\n')
 
         // 清空输入框
-        this.extensionInput = ''
+        extensionInput.value = ''
 
         // 保存
-        this.autoSaveForm()
-      },
-      removeExtension (ext) {
+        autoSaveForm()
+      }
+      function removeExtension(ext) {
         // 从列表中移除指定扩展名
-        const extensions = this.extensionTags.filter(e => e !== ext)
+        const extensions = extensionTags.value.filter(e => e !== ext)
 
         // 更新表单（使用换行符分隔）
-        this.form.extensionSkipFileExtensions = extensions.join('\n')
+        form.value.extensionSkipFileExtensions = extensions.join('\n')
 
         // 保存
-        this.autoSaveForm()
-      },
-      focusExtensionInput () {
+        autoSaveForm()
+      }
+      function focusExtensionInput() {
         // 点击容器时聚焦到输入框
-        this.$nextTick(() => {
-          if (this.$refs.extensionInput) {
-            this.$refs.extensionInput.focus()
+        nextTick(() => {
+          if (extensionInputRef.value) {
+            extensionInputRef.value.focus()
           }
         })
-      },
-      handleDeleteKey (event) {
+      }
+      function handleDeleteKey(event) {
         // 当输入框为空且按下删除键时，删除最后一个标签
-        if (this.extensionInput === '' && this.extensionTags.length > 0) {
+        if (extensionInput.value === '' && extensionTags.value.length > 0) {
           event.preventDefault()
-          const lastExt = this.extensionTags[this.extensionTags.length - 1]
-          this.removeExtension(lastExt)
+          const lastExt = extensionTags.value[extensionTags.value.length - 1]
+          removeExtension(lastExt)
         }
-      },
-      addDomain () {
-        const input = this.domainInput.trim()
+      }
+      function addDomain() {
+        const input = domainInput.value.trim()
         if (!input) return
 
         // 分割域名（支持多种分隔符：逗号、分号、空格）
@@ -3026,54 +3738,54 @@ placement="top"
           .filter(domain => domain.length > 0)
 
         if (newDomains.length === 0) {
-          this.domainInput = ''
+          domainInput.value = ''
           return
         }
 
         // 获取现有域名
-        const existingDomains = this.domainTags
+        const existingDomains = domainTags.value
 
         // 合并并去重
         const allDomains = [...existingDomains, ...newDomains]
         const uniqueDomains = Array.from(new Set(allDomains))
 
         // 更新表单（使用换行符分隔）
-        this.form.extensionExcludeDomains = uniqueDomains.join('\n')
+        form.value.extensionExcludeDomains = uniqueDomains.join('\n')
 
         // 清空输入框
-        this.domainInput = ''
+        domainInput.value = ''
 
         // 保存
-        this.autoSaveForm()
-      },
-      removeDomain (domain) {
+        autoSaveForm()
+      }
+      function removeDomain(domain) {
         // 从列表中移除指定域名
-        const domains = this.domainTags.filter(d => d !== domain)
+        const domains = domainTags.value.filter(d => d !== domain)
 
         // 更新表单（使用换行符分隔）
-        this.form.extensionExcludeDomains = domains.join('\n')
+        form.value.extensionExcludeDomains = domains.join('\n')
 
         // 保存
-        this.autoSaveForm()
-      },
-      focusDomainInput () {
+        autoSaveForm()
+      }
+      function focusDomainInput() {
         // 点击容器时聚焦到输入框
-        this.$nextTick(() => {
-          if (this.$refs.domainInput) {
-            this.$refs.domainInput.focus()
+        nextTick(() => {
+          if (domainInputRef.value) {
+            domainInputRef.value.focus()
           }
         })
-      },
-      handleDomainDeleteKey (event) {
+      }
+      function handleDomainDeleteKey(event) {
         // 当输入框为空且按下删除键时，删除最后一个标签
-        if (this.domainInput === '' && this.domainTags.length > 0) {
+        if (domainInput.value === '' && domainTags.value.length > 0) {
           event.preventDefault()
-          const lastDomain = this.domainTags[this.domainTags.length - 1]
-          this.removeDomain(lastDomain)
+          const lastDomain = domainTags.value[domainTags.value.length - 1]
+          removeDomain(lastDomain)
         }
-      },
-      addEd2kServer () {
-        const input = this.ed2kServerInput.trim()
+      }
+      function addEd2kServer() {
+        const input = ed2kServerInput.value.trim()
         if (!input) return
 
         // 分割输入（支持逗号、分号、空格等分隔符）
@@ -3083,7 +3795,7 @@ placement="top"
           .filter(s => s.length > 0)
 
         if (newServers.length === 0) {
-          this.ed2kServerInput = ''
+          ed2kServerInput.value = ''
           return
         }
 
@@ -3096,7 +3808,7 @@ placement="top"
         })
 
         // 获取现有服务器列表
-        const existingServers = this.ed2kServerTags
+        const existingServers = ed2kServerTags.value
 
         // 合并并去重
         const allServers = [...existingServers, ...normalizedServers]
@@ -3104,151 +3816,147 @@ placement="top"
         const serverStr = uniqueServers.join('\n')
 
         // 更新显示
-        this.ed2kServersText = serverStr
+        ed2kServersText.value = serverStr
 
         // 同步到表单，以便 autoSaveForm 能检测到变更
-        this.ed2kUpdatingForm = true
-        this.form.ed2kDefaultServers = convertLineToComma(serverStr)
-        this.ed2kUpdatingForm = false
+        ed2kUpdatingForm.value = true
+        form.value.ed2kDefaultServers = convertLineToComma(serverStr)
+        ed2kUpdatingForm.value = false
 
         // 清空输入框
-        this.ed2kServerInput = ''
+        ed2kServerInput.value = ''
 
         // 保存
-        this.autoSaveForm()
-      },
-      removeEd2kServer (server) {
+        autoSaveForm()
+      }
+      function removeEd2kServer(server) {
         // 从列表中移除指定服务器
-        const servers = this.ed2kServerTags.filter(s => s !== server)
+        const servers = ed2kServerTags.value.filter(s => s !== server)
         const serverStr = servers.join('\n')
 
         // 更新显示
-        this.ed2kServersText = serverStr
+        ed2kServersText.value = serverStr
 
         // 同步到表单，以便 autoSaveForm 能检测到变更
-        this.ed2kUpdatingForm = true
-        this.form.ed2kDefaultServers = convertLineToComma(serverStr)
-        this.ed2kUpdatingForm = false
+        ed2kUpdatingForm.value = true
+        form.value.ed2kDefaultServers = convertLineToComma(serverStr)
+        ed2kUpdatingForm.value = false
 
         // 保存
-        this.autoSaveForm()
-      },
-      focusEd2kServerInput () {
+        autoSaveForm()
+      }
+      function focusEd2kServerInput() {
         // 点击容器时聚焦到输入框
-        this.$nextTick(() => {
-          if (this.$refs.ed2kServerInput) {
-            this.$refs.ed2kServerInput.focus()
+        nextTick(() => {
+          if (ed2kServerInputRef.value) {
+            ed2kServerInputRef.value.focus()
           }
         })
-      },
-      handleEd2kServerDeleteKey (event) {
+      }
+      function handleEd2kServerDeleteKey(event) {
         // 当输入框为空且按下删除键时，删除最后一个标签
-        if (this.ed2kServerInput === '' && this.ed2kServerTags.length > 0) {
+        if (ed2kServerInput.value === '' && ed2kServerTags.value.length > 0) {
           event.preventDefault()
-          const lastServer = this.ed2kServerTags[this.ed2kServerTags.length - 1]
-          this.removeEd2kServer(lastServer)
+          const lastServer = ed2kServerTags.value[ed2kServerTags.value.length - 1]
+          removeEd2kServer(lastServer)
         }
-      },
-      addEd2kSubscription () {
-        const input = this.ed2kSubscriptionInput.trim()
+      }
+      function addEd2kSubscription() {
+        const input = ed2kSubscriptionInput.value.trim()
         if (!input) return
 
-        const current = Array.isArray(this.form.ed2kServerSource) ? this.form.ed2kServerSource : []
+        const current = Array.isArray(form.value.ed2kServerSource) ? form.value.ed2kServerSource : []
         if (!current.includes(input)) {
-          this.form.ed2kServerSource = [...current, input]
-          this.autoSaveForm()
+          form.value.ed2kServerSource = [...current, input]
+          autoSaveForm()
         }
-        this.ed2kSubscriptionInput = ''
-      },
-      addPresetSubscription (url) {
-        const current = Array.isArray(this.form.ed2kServerSource) ? this.form.ed2kServerSource : []
+        ed2kSubscriptionInput.value = ''
+      }
+      function addPresetSubscription(url) {
+        const current = Array.isArray(form.value.ed2kServerSource) ? form.value.ed2kServerSource : []
         if (!current.includes(url)) {
-          this.form.ed2kServerSource = [...current, url]
-          this.autoSaveForm()
+          form.value.ed2kServerSource = [...current, url]
+          autoSaveForm()
         }
-      },
-      removeEd2kSubscription (url) {
-        const current = Array.isArray(this.form.ed2kServerSource) ? this.form.ed2kServerSource : []
-        this.form.ed2kServerSource = current.filter(s => s !== url)
-        this.autoSaveForm()
-      },
-      focusEd2kSubscriptionInput () {
-        this.$nextTick(() => {
-          if (this.$refs.ed2kSubscriptionInput) {
-            this.$refs.ed2kSubscriptionInput.focus()
+      }
+      function removeEd2kSubscription(url) {
+        const current = Array.isArray(form.value.ed2kServerSource) ? form.value.ed2kServerSource : []
+        form.value.ed2kServerSource = current.filter(s => s !== url)
+        autoSaveForm()
+      }
+      function focusEd2kSubscriptionInput() {
+        nextTick(() => {
+          if (ed2kSubscriptionInputRef.value) {
+            ed2kSubscriptionInputRef.value.focus()
           }
         })
-      },
-      handleEd2kSubscriptionDeleteKey (event) {
-        const current = Array.isArray(this.form.ed2kServerSource) ? this.form.ed2kServerSource : []
-        if (this.ed2kSubscriptionInput === '' && current.length > 0) {
+      }
+      function handleEd2kSubscriptionDeleteKey(event) {
+        const current = Array.isArray(form.value.ed2kServerSource) ? form.value.ed2kServerSource : []
+        if (ed2kSubscriptionInput.value === '' && current.length > 0) {
           event.preventDefault()
           const last = current[current.length - 1]
-          this.removeEd2kSubscription(last)
+          removeEd2kSubscription(last)
         }
-      },
-      async syncEd2kServersFromSource () {
-        const source = this.form.ed2kServerSource
+      }
+      async function syncEd2kServersFromSource() {
+        const source = form.value.ed2kServerSource
         if (!source || source.length === 0) {
           return
         }
 
-        this.ed2kSyncing = true
+        ed2kSyncing.value = true
         try {
-          const servers = await this.$store.dispatch('preference/fetchEd2kServers', source)
+          const servers = await preferenceStore.fetchEd2kServers(source)
           if (servers && servers.length > 0) {
             // Merge with builtin servers and dedupe
             const merged = [...new Set([...servers, ...BUILTIN_ED2K_SERVERS])]
             const serverStr = merged.join(',')
 
-            this.ed2kUpdatingForm = true
-            this.form.ed2kDefaultServers = serverStr
-            this.form.ed2kLastSyncServerTime = Date.now()
-            this.ed2kUpdatingForm = false
+            ed2kUpdatingForm.value = true
+            form.value.ed2kDefaultServers = serverStr
+            form.value.ed2kLastSyncServerTime = Date.now()
+            ed2kUpdatingForm.value = false
 
-            this.ed2kServersText = convertCommaToLine(serverStr)
-            this.autoSaveForm()
-            this.$msg.success(this.$t('preferences.ed2k-sync-success'))
+            ed2kServersText.value = convertCommaToLine(serverStr)
+            autoSaveForm()
+            msg.success(t('preferences.ed2k-sync-success'))
           } else {
-            this.$msg.warning(this.$t('preferences.ed2k-sync-empty'))
+            msg.warning(t('preferences.ed2k-sync-empty'))
           }
         } catch (error) {
           console.error('[ED2K] sync servers failed:', error)
-          this.$msg.error(this.$t('preferences.ed2k-sync-fail'))
+          msg.error(t('preferences.ed2k-sync-fail'))
         } finally {
-          this.ed2kSyncing = false
+          ed2kSyncing.value = false
         }
-      },
-      formatSyncTime (timestamp) {
+      }
+      function formatSyncTime(timestamp) {
         if (!timestamp) return ''
         const d = new Date(timestamp)
         const pad = (n) => String(n).padStart(2, '0')
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-      },
-      handleNativeDirectorySelected (dir) {
-        this.form.dir = dir
-        this.$store.dispatch('preference/recordHistoryDirectory', dir)
-        this.autoSaveForm()
-      },
-      handleSecurityScanPathSelected (path) {
-        this.form.customSecurityScanPath = path
-        this.autoSaveForm()
-      },
-      copyChannelUrl () {
-        const text = this.appChannelUrl
+      }
+      function handleNativeDirectorySelected(dir) {
+        form.value.dir = dir
+        preferenceStore.recordHistoryDirectory(dir)
+        autoSaveForm()
+      }
+      function handleSecurityScanPathSelected(path) {
+        form.value.customSecurityScanPath = path
+        autoSaveForm()
+      }
+      function copyChannelUrl() {
+        const text = appChannelUrl.value
         if (!text) return
         try {
-          const { clipboard } = require('electron')
           clipboard.writeText(text)
-          this.$msg.success(this.$t('preferences.save-success-message'))
+          msg.success(t('preferences.save-success-message'))
         } catch (e) {
-          this.$msg.error(this.$t('preferences.save-fail-message'))
+          msg.error(t('preferences.save-fail-message'))
         }
-      },
-      async downloadExtension () {
-        const { dialog, app } = require('@electron/remote')
-        const fs = require('fs')
-        const path = require('path')
+      }
+      async function downloadExtension() {
 
         // 扩展文件路径 - 指向目录（支持开发和生产环境）
         const appPath = app.getAppPath()
@@ -3256,14 +3964,14 @@ placement="top"
 
         // 检查目录是否存在
         if (!fs.existsSync(extensionDir)) {
-          this.$msg.error(this.$t('preferences.extension-file-not-found'))
+          msg.error(t('preferences.extension-file-not-found'))
           return
         }
 
         // 弹出文件夹选择对话框
         const result = await dialog.showOpenDialog({
-          title: this.$t('preferences.select-extension-file-path'),
-          defaultPath: require('os').homedir() + '/Desktop',
+          title: t('preferences.select-extension-file-path'),
+          defaultPath: os.homedir() + '/Desktop',
           properties: ['openDirectory', 'createDirectory']
         })
 
@@ -3277,50 +3985,57 @@ placement="top"
 
         try {
           // 复制整个目录到用户选择的位置
-          this.copyDirectory(extensionDir, destinationDir)
+          copyDirectory(extensionDir, destinationDir)
 
           // 显示成功消息
-          this.$msg.success(this.$t('preferences.extension-download-success'))
+          msg.success(t('preferences.extension-download-success'))
         } catch (error) {
           console.error('下载扩展失败:', error)
-          this.$msg.error(this.$t('preferences.extension-download-failed'))
+          msg.error(t('preferences.extension-download-failed'))
         }
-      },
-      openVideoDetectionSettings () {
-        this.$electron.ipcRenderer.send('open-video-detection-settings')
-      },
-      openFileCategoriesSettings () {
-        this.$electron.ipcRenderer.send('open-file-categories-settings')
-      },
-      onDirectorySelected (dir) {
-        this.form.dir = dir
-        this.autoSaveForm()
-      },
-      syncFormConfig () {
+      }
+      function openVideoDetectionSettings() {
+        ipcRenderer.send('open-video-detection-settings')
+      }
+      function openFileCategoriesSettings() {
+        ipcRenderer.send('open-file-categories-settings')
+      }
+      function onDirectorySelected(dir) {
+        form.value.dir = dir
+        autoSaveForm()
+      }
+      function syncFormConfig() {
         console.log('[Basic] syncFormConfig called')
 
-        this.$store.dispatch('preference/fetchPreference')
+        preferenceStore.fetchPreference()
           .then((config) => {
             console.log('[Basic] Fetched config:', config)
-            this.form = initForm(config)
-            this.formOriginal = cloneDeep(this.form)
-            console.log('[Basic] Form updated:', this.form)
+            form.value = initForm(config)
+            formOriginal.value = cloneDeep(form.value)
+            downloadUnit.value = extractSpeedUnit(config.maxOverallDownloadLimit)
+            uploadUnit.value = extractSpeedUnit(config.maxOverallUploadLimit)
+            console.log('[Basic] Form updated:', form.value)
           })
-      },
-      submitForm (formName) {
-        const form = this.$refs[formName]
-        if (!form) {
+      }
+      function submitForm(formName) {
+        const formRef = formName === 'basicForm' ? basicForm.value : formRefs[formName]
+        if (!formRef) {
           console.error('[LinkCore] form ref not found:', formName)
           return false
         }
-        form.validate((valid) => {
+        formRef.validate((valid) => {
           if (!valid) {
             console.error('[LinkCore] preference form valid:', valid)
             return false
           }
 
+          const diffResult = diffConfig(formOriginal.value, form.value)
+          if (!isEmpty(diffResult)) {
+            console.log('[LinkCore] diffConfig result:', JSON.stringify(diffResult))
+          }
+
           const data = {
-            ...diffConfig(this.formOriginal, this.form),
+            ...diffResult,
             ...changedConfig.advanced
           }
 
@@ -3370,200 +4085,202 @@ placement="top"
             data.extensionExcludeDomains = convertLineToComma(extensionExcludeDomains)
           }
 
-          // 如果服务器列表与内置列表不同，则保存用户自定义列表
-          const currentServers = this.ed2kServerTags
+          // 仅在 ed2kDefaultServers 实际发生变化时才加入 data，
+          // 避免切换语言等无关操作触发不必要的 ed2k 配置写入
+          const currentServers = ed2kServerTags.value
           const builtinStr = BUILTIN_ED2K_SERVERS.join(',')
           const currentStr = currentServers.join(',')
-          if (currentStr !== builtinStr) {
-            data.ed2kDefaultServers = convertLineToComma(this.ed2kServersText)
-          } else {
-            // 与内置列表一致，清空配置以使用内置默认值
-            data.ed2kDefaultServers = ''
+          const newEd2kServers = currentStr !== builtinStr
+            ? convertLineToComma(ed2kServersText.value)
+            : ''
+          if (newEd2kServers !== (formOriginal.value.ed2kDefaultServers || '')) {
+            data.ed2kDefaultServers = newEd2kServers
           }
 
           if (rpcListenPort === EMPTY_STRING) {
-            data.rpcListenPort = this.rpcDefaultPort
+            data.rpcListenPort = rpcDefaultPort.value
           }
 
           console.log('[LinkCore] preference changed data:', data)
 
-          this.$store.dispatch('preference/save', data)
+          preferenceStore.save(data)
             .then(() => {
-              this.$store.dispatch('app/fetchEngineOptions')
+              appStore.fetchEngineOptions()
               // 只更新 formOriginal，保持 form 不变
-              this.formOriginal = cloneDeep(this.form)
+              formOriginal.value = cloneDeep(form.value)
               // Don't show success message for auto-save to avoid constant notifications
             })
             .catch(() => {
-              this.$msg.error(this.$t('preferences.save-fail-message'))
+              msg.error(t('preferences.save-fail-message'))
             })
 
           changedConfig.basic = {}
           changedConfig.advanced = {}
 
-          if (this.isRenderer) {
+          if (isRenderer) {
             if ('autoHideWindow' in data) {
-              this.$electron.ipcRenderer.send('command',
+              ipcRenderer.send('command',
                                               'application:auto-hide-window', autoHideWindow)
             }
 
             if (checkIsNeedRestart(data)) {
-              this.$electron.ipcRenderer.send('command', 'application:relaunch')
+              console.warn('[LinkCore] preference change requires restart, data:', data)
+              ipcRenderer.send('command', 'application:relaunch')
             }
           }
         })
-      },
+      }
 
       // ---- Tracker Methods ----
-      extractTrackerLines (text) {
+      function extractTrackerLines(text) {
         const raw = `${text}`
         const tokens = raw.split(/\r?\n|,/)
         return tokens.map(t => `${t}`.trim()).filter(Boolean).filter(t => /^(udp|http|https):\/\//i.test(t))
-      },
-      getBuiltinOrigins () {
+      }
+      function getBuiltinOrigins() {
         return (TRACKER_SOURCE_OPTIONS || [])
           .map(g => g && g.label ? g.label : '')
           .filter(Boolean)
           .filter(l => l.includes('/'))
           .map(l => `https://github.com/${l}`)
-      },
-      onOriginMouseDown (o, e) {
+      }
+      function onOriginMouseDown(o, e) {
         if (!e || e.button !== 0) return
-        if (!this.originHoldTimers) this.originHoldTimers = {}
-        this.originHoldActivated = false
+        if (!originHoldTimers) originHoldTimers = {}
+        originHoldActivated = false
         const tid = setTimeout(() => {
-          this.originHoldActivated = true
-          this.deleteOrigin(o)
+          originHoldActivated = true
+          deleteOrigin(o)
         }, 800)
-        this.originHoldTimers[o] = tid
-      },
-      onOriginMouseUp (o) {
-        this.cancelOriginHold(o)
-      },
-      onOriginMouseLeave (o) {
-        this.cancelOriginHold(o)
-      },
-      cancelOriginHold (o) {
-        if (this.originHoldTimers && this.originHoldTimers[o]) {
-          clearTimeout(this.originHoldTimers[o])
-          delete this.originHoldTimers[o]
+        originHoldTimers[o] = tid
+      }
+      function onOriginMouseUp(o) {
+        cancelOriginHold(o)
+      }
+      function onOriginMouseLeave(o) {
+        cancelOriginHold(o)
+      }
+      function cancelOriginHold(o) {
+        if (originHoldTimers && originHoldTimers[o]) {
+          clearTimeout(originHoldTimers[o])
+          delete originHoldTimers[o]
         }
-      },
-      onOriginClick (o) {
-        if (this.originHoldActivated) return
+      }
+      function onOriginClick(o) {
+        if (originHoldActivated) return
         try {
           window.open(o, '_blank')
         } catch (_) {}
-      },
-      deleteOrigin (o) {
-        const builtin = this.getBuiltinOrigins()
+      }
+      function deleteOrigin(o) {
+        const builtin = getBuiltinOrigins()
         if (builtin.includes(o)) {
-          this.$msg.warning(this.$t('preferences.builtin-origin-undeletable'))
+          msg.warning(t('preferences.builtin-origin-undeletable'))
           return
         }
-        const origins = Array.isArray(this.form.trackerSourceOrigins) ? [...this.form.trackerSourceOrigins] : []
+        const origins = Array.isArray(form.value.trackerSourceOrigins) ? [...form.value.trackerSourceOrigins] : []
         const idx = origins.indexOf(o)
         if (idx >= 0) origins.splice(idx, 1)
-        this.form.trackerSourceOrigins = origins
-        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
-        const map = typeof this.form.trackerSourceMap === 'object' && this.form.trackerSourceMap ? { ...this.form.trackerSourceMap } : {}
+        form.value.trackerSourceOrigins = origins
+        const discovered = Array.isArray(form.value.trackerSourceDiscovered) ? [...form.value.trackerSourceDiscovered] : []
+        const map = typeof form.value.trackerSourceMap === 'object' && form.value.trackerSourceMap ? { ...form.value.trackerSourceMap } : {}
         const filtered = discovered.filter(u => {
-          const origin = map[u] || this.deriveOriginSite(u)
+          const origin = map[u] || deriveOriginSite(u)
           return origin !== o
         })
-        this.form.trackerSourceDiscovered = filtered
+        form.value.trackerSourceDiscovered = filtered
         Object.keys(map).forEach(k => { if (map[k] === o) delete map[k] })
-        this.form.trackerSourceMap = map
-        const selected = Array.isArray(this.form.trackerSource) ? [...this.form.trackerSource] : []
+        form.value.trackerSourceMap = map
+        const selected = Array.isArray(form.value.trackerSource) ? [...form.value.trackerSource] : []
         const selectedFiltered = selected.filter(u => {
-          const origin = map[u] || this.deriveOriginSite(u)
+          const origin = map[u] || deriveOriginSite(u)
           return origin !== o
         })
-        this.form.trackerSource = selectedFiltered
-        this.rebuildTrackerSourceOptions()
-        this.sanitizeSelectedSources()
-        this.autoSaveForm()
-        this.recomputeBtTrackerFromSelected()
-        this.$msg.success(this.$t('preferences.origin-removed'))
-      },
-      recomputeBtTrackerFromSelected () {
-        const selected = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
+        form.value.trackerSource = selectedFiltered
+        rebuildTrackerSourceOptions()
+        sanitizeSelectedSources()
+        autoSaveForm()
+        recomputeBtTrackerFromSelected()
+        msg.success(t('preferences.origin-removed'))
+      }
+      function recomputeBtTrackerFromSelected() {
+        const selected = Array.isArray(form.value.trackerSource) ? form.value.trackerSource : []
         if (!selected.length) {
-          this.form.btTracker = ''
-          this.form.lastSyncTrackerTime = Date.now()
+          form.value.btTracker = ''
+          form.value.lastSyncTrackerTime = Date.now()
           return
         }
-        this.trackerSyncing = true
-        this.$store.dispatch('preference/fetchBtTracker', selected)
+        trackerSyncing.value = true
+        preferenceStore.fetchBtTracker(selected)
           .then((data) => {
             const texts = Array.isArray(data) ? data : []
             const lines = []
             texts.forEach(t => {
-              const ls = this.extractTrackerLines(t)
+              const ls = extractTrackerLines(t)
               if (ls && ls.length) lines.push(...ls)
             })
             const uniq = Array.from(new Set(lines))
             const tracker = uniq.join('\n')
-            this.form.lastSyncTrackerTime = Date.now()
-            this.form.btTracker = tracker
-            this.trackerSyncing = false
+            form.value.lastSyncTrackerTime = Date.now()
+            form.value.btTracker = tracker
+            trackerSyncing.value = false
           })
           .catch((_) => {
-            this.trackerSyncing = false
+            trackerSyncing.value = false
           })
-      },
-      sanitizeSelectedSources () {
+      }
+      function sanitizeSelectedSources() {
         const allowed = new Set()
-        ;(this.trackerSourceOptions || []).forEach(group => {
-          ;(group.options || []).forEach(opt => allowed.add(opt.value))
+        ;(trackerSourceOptions.value || []).forEach(group => {
+          (group.options || []).forEach(opt => allowed.add(opt.value))
         })
-        const current = Array.isArray(this.form.trackerSource) ? this.form.trackerSource : []
+        const current = Array.isArray(form.value.trackerSource) ? form.value.trackerSource : []
         const filtered = current.filter(v => allowed.has(v))
         if (filtered.length !== current.length) {
-          this.form.trackerSource = filtered
+          form.value.trackerSource = filtered
         }
-      },
-      applyTrackerResult (lines, usedUrls = [], originSite = '') {
+      }
+      function applyTrackerResult(lines, usedUrls = [], originSite = '') {
         const uniq = Array.from(new Set(lines))
-        this.form.btTracker = uniq.join('\n')
-        this.form.lastSyncTrackerTime = Date.now()
-        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
+        form.value.btTracker = uniq.join('\n')
+        form.value.lastSyncTrackerTime = Date.now()
+        const discovered = Array.isArray(form.value.trackerSourceDiscovered) ? [...form.value.trackerSourceDiscovered] : []
         usedUrls.forEach(u => { if (!discovered.includes(u)) discovered.push(u) })
-        this.form.trackerSourceDiscovered = discovered
-        const origins = Array.isArray(this.form.trackerSourceOrigins) ? [...this.form.trackerSourceOrigins] : []
-        const normalizedOrigin = originSite ? this.normalizeOriginUrl(originSite) : ''
-        if (normalizedOrigin && !origins.map(o => this.normalizeOriginUrl(o)).includes(normalizedOrigin)) origins.push(normalizedOrigin)
-        this.form.trackerSourceOrigins = origins
-        const map = typeof this.form.trackerSourceMap === 'object' && this.form.trackerSourceMap ? { ...this.form.trackerSourceMap } : {}
+        form.value.trackerSourceDiscovered = discovered
+        const origins = Array.isArray(form.value.trackerSourceOrigins) ? [...form.value.trackerSourceOrigins] : []
+        const normalizedOrigin = originSite ? normalizeOriginUrl(originSite) : ''
+        if (normalizedOrigin && !origins.map(o => normalizeOriginUrl(o)).includes(normalizedOrigin)) origins.push(normalizedOrigin)
+        form.value.trackerSourceOrigins = origins
+        const map = typeof form.value.trackerSourceMap === 'object' && form.value.trackerSourceMap ? { ...form.value.trackerSourceMap } : {}
         usedUrls.forEach(u => { if (originSite) map[u] = originSite })
-        this.form.trackerSourceMap = map
-        this.rebuildTrackerSourceOptions()
-        this.autoSaveForm()
-        this.$msg.success(this.$t('preferences.extract-success', { count: uniq.length }))
-      },
-      applySourceDiscovery (usedUrls = [], originSite = '') {
-        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
+        form.value.trackerSourceMap = map
+        rebuildTrackerSourceOptions()
+        autoSaveForm()
+        msg.success(t('preferences.extract-success', { count: uniq.length }))
+      }
+      function applySourceDiscovery(usedUrls = [], originSite = '') {
+        const discovered = Array.isArray(form.value.trackerSourceDiscovered) ? [...form.value.trackerSourceDiscovered] : []
         usedUrls.forEach(u => { if (!discovered.includes(u)) discovered.push(u) })
-        this.form.trackerSourceDiscovered = discovered
-        const origins = Array.isArray(this.form.trackerSourceOrigins) ? [...this.form.trackerSourceOrigins] : []
-        const normalizedOrigin = originSite ? this.normalizeOriginUrl(originSite) : ''
-        if (normalizedOrigin && !origins.map(o => this.normalizeOriginUrl(o)).includes(normalizedOrigin)) origins.push(normalizedOrigin)
-        this.form.trackerSourceOrigins = origins
-        const map = typeof this.form.trackerSourceMap === 'object' && this.form.trackerSourceMap ? { ...this.form.trackerSourceMap } : {}
+        form.value.trackerSourceDiscovered = discovered
+        const origins = Array.isArray(form.value.trackerSourceOrigins) ? [...form.value.trackerSourceOrigins] : []
+        const normalizedOrigin = originSite ? normalizeOriginUrl(originSite) : ''
+        if (normalizedOrigin && !origins.map(o => normalizeOriginUrl(o)).includes(normalizedOrigin)) origins.push(normalizedOrigin)
+        form.value.trackerSourceOrigins = origins
+        const map = typeof form.value.trackerSourceMap === 'object' && form.value.trackerSourceMap ? { ...form.value.trackerSourceMap } : {}
         usedUrls.forEach(u => { if (originSite) map[u] = originSite })
-        this.form.trackerSourceMap = map
-        this.rebuildTrackerSourceOptions()
-        this.sanitizeSelectedSources()
-        this.autoSaveForm()
-        this.$msg.success(this.$t('preferences.added-origin-files-success', { count: usedUrls.length }))
-      },
-      rebuildTrackerSourceOptions () {
+        form.value.trackerSourceMap = map
+        rebuildTrackerSourceOptions()
+        sanitizeSelectedSources()
+        autoSaveForm()
+        msg.success(t('preferences.added-origin-files-success', { count: usedUrls.length }))
+      }
+      function rebuildTrackerSourceOptions() {
         const base = structuredClone(TRACKER_SOURCE_OPTIONS)
-        const srcs = Array.isArray(this.form.trackerSourceDiscovered) ? this.form.trackerSourceDiscovered : []
+        const srcs = Array.isArray(form.value.trackerSourceDiscovered) ? form.value.trackerSourceDiscovered : []
         const groups = {}
         srcs.forEach(u => {
-          const groupLabel = this.deriveTrackerGroup(u) || this.deriveTrackerGroupByHost(u)
-          const opt = { value: u, label: this.deriveTrackerLabel(u), cdn: false }
+          const groupLabel = deriveTrackerGroup(u) || deriveTrackerGroupByHost(u)
+          const opt = { value: u, label: deriveTrackerLabel(u), cdn: false }
           if (!groupLabel) return
           if (!groups[groupLabel]) groups[groupLabel] = []
           groups[groupLabel].push(opt)
@@ -3581,15 +4298,15 @@ placement="top"
             base.push({ label, options: groups[label] })
           }
         })
-        this.trackerSourceOptions = base
-        this.sanitizeSelectedSources()
-      },
-      deriveTrackerLabel (u) {
+        trackerSourceOptions.value = base
+        sanitizeSelectedSources()
+      }
+      function deriveTrackerLabel(u) {
         const m = /([^/]+\.txt)(?:\?.*)?$/i.exec(`${u}`)
         if (m) return m[1]
         return u
-      },
-      deriveTrackerGroup (u) {
+      }
+      function deriveTrackerGroup(u) {
         const s = `${u}`
         const m1 = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//i.exec(s)
         if (m1) return `${m1[1]}/${m1[2]}`
@@ -3599,30 +4316,30 @@ placement="top"
         if (m3) return `${m3[1]}/${m3[2]}`
         if (/down\.adysec\.com/i.test(s)) return 'adysec/tracker'
         return ''
-      },
-      deriveTrackerGroupByHost (u) {
+      }
+      function deriveTrackerGroupByHost(u) {
         try {
           const { host } = new URL(u)
           return host
         } catch (_) {
           return ''
         }
-      },
-      openTrackerSourceConfigDialog () {
-        if (this.trackerSourceConfigVisible) {
-          this.closeTrackerSourcePopup()
+      }
+      function openTrackerSourceConfigDialog() {
+        if (trackerSourceConfigVisible.value) {
+          closeTrackerSourcePopup()
           return
         }
-        this.trackerSourceInput = ''
-        this.trackerSourceConfigVisible = true
-        this.$nextTick(() => {
-          this.adjustTrackerPopupPosition()
-          document.addEventListener('mousedown', this.handleTrackerSourceOutsideClick)
+        trackerSourceInput.value = ''
+        trackerSourceConfigVisible.value = true
+        nextTick(() => {
+          adjustTrackerPopupPosition()
+          document.addEventListener('mousedown', handleTrackerSourceOutsideClick)
         })
-      },
-      adjustTrackerPopupPosition () {
-        const popup = this.$el.querySelector('.tracker-source-popup')
-        const wrapper = this.$el.querySelector('.tracker-source-popup-wrapper')
+      }
+      function adjustTrackerPopupPosition() {
+        const popup = document.querySelector('.tracker-source-popup')
+        const wrapper = document.querySelector('.tracker-source-popup-wrapper')
         if (!popup || !wrapper) return
         const popupRect = popup.getBoundingClientRect()
         const viewportW = window.innerWidth
@@ -3656,15 +4373,15 @@ placement="top"
             popup.style.transformOrigin = 'bottom right'
           }
         }
-      },
-      handleTrackerSourceOutsideClick (e) {
-        const popup = this.$el.querySelector('.tracker-source-popup-wrapper')
+      }
+      function handleTrackerSourceOutsideClick(e) {
+        const popup = document.querySelector('.tracker-source-popup-wrapper')
         if (popup && !popup.contains(e.target)) {
-          this.closeTrackerSourcePopup()
+          closeTrackerSourcePopup()
         }
-      },
-      closeTrackerSourcePopup () {
-        const popup = this.$el.querySelector('.tracker-source-popup')
+      }
+      function closeTrackerSourcePopup() {
+        const popup = document.querySelector('.tracker-source-popup')
         if (popup) {
           popup.style.left = ''
           popup.style.right = ''
@@ -3674,195 +4391,218 @@ placement="top"
           popup.style.marginBottom = ''
           popup.style.transformOrigin = ''
         }
-        this.trackerSourceConfigVisible = false
-        document.removeEventListener('mousedown', this.handleTrackerSourceOutsideClick)
-      },
-      onTrackerDropdownVisibleChange (visible) {
-        this.trackerDropdownVisible = visible
-      },
-      onTrackerSourceChange () {
-        this.autoSaveForm()
-        this.recomputeBtTrackerFromSelected()
-      },
-      toggleTrackerDropdown () {
-        const selectRef = this.$refs.trackerSelectRef
+        trackerSourceConfigVisible.value = false
+        document.removeEventListener('mousedown', handleTrackerSourceOutsideClick)
+      }
+      function onTrackerDropdownVisibleChange(visible) {
+        trackerDropdownVisible = visible
+      }
+      function onTrackerSourceChange() {
+        autoSaveForm()
+        recomputeBtTrackerFromSelected()
+      }
+      function toggleTrackerDropdown() {
+        const selectRef = trackerSelectRef.value
         if (selectRef) {
-          if (this.trackerDropdownVisible) {
+          if (trackerDropdownVisible) {
             selectRef.blur()
           } else {
             selectRef.focus()
           }
         }
-      },
-      async addTrackerSourceFromInput () {
-        const url = `${this.trackerSourceInput}`.trim()
+      }
+      async function addTrackerSourceFromInput() {
+        const url = `${trackerSourceInput.value}`.trim()
         if (!url) return
-        await this.configureTrackerFromGithubWithUrl(url)
-        this.trackerSourceInput = ''
-        this.closeTrackerSourcePopup()
-      },
-      removeDiscoveredSource (u) {
-        const list = Array.isArray(this.form.trackerSourceDiscovered) ? [...this.form.trackerSourceDiscovered] : []
+        if (trackerSourceConfigLoading.value) return
+        trackerSourceConfigLoading.value = true
+        // 提取可能较慢（遍历仓库 README/候选文件），先给出进度提示
+        const loadingMsg = ElMessage({ message: t('preferences.extract-progress'), type: 'info', duration: 0 })
+        try {
+          await configureTrackerFromGithubWithUrl(url)
+        } finally {
+          trackerSourceConfigLoading.value = false
+          try {
+            loadingMsg.close()
+          } catch (_) {
+            ElMessage.closeAll()
+          }
+        }
+        trackerSourceInput.value = ''
+        closeTrackerSourcePopup()
+      }
+      function removeDiscoveredSource(u) {
+        const list = Array.isArray(form.value.trackerSourceDiscovered) ? [...form.value.trackerSourceDiscovered] : []
         const idx = list.indexOf(u)
         if (idx >= 0) {
           list.splice(idx, 1)
-          this.form.trackerSourceDiscovered = list
-          this.rebuildTrackerSourceOptions()
-          this.autoSaveForm()
+          form.value.trackerSourceDiscovered = list
+          rebuildTrackerSourceOptions()
+          autoSaveForm()
         }
-      },
-      resetTrackerSelectBoxSources () {
-        this.form.trackerSource = []
-        this.form.trackerSourceDiscovered = []
-        this.form.trackerSourceMap = {}
-        this.rebuildTrackerSourceOptions()
-        this.sanitizeSelectedSources()
-        this.autoSaveForm()
-        this.$msg.success(this.$t('preferences.reset-select-sources-success'))
-      },
-      toggleAllTrackerSources () {
+      }
+      function resetTrackerSelectBoxSources() {
+        form.value.trackerSource = []
+        form.value.trackerSourceDiscovered = []
+        form.value.trackerSourceMap = {}
+        rebuildTrackerSourceOptions()
+        sanitizeSelectedSources()
+        autoSaveForm()
+        msg.success(t('preferences.reset-select-sources-success'))
+      }
+      function toggleAllTrackerSources() {
         // 判断当前是否全选
-        if (this.isAllTrackerSourcesSelected) {
+        if (isAllTrackerSourcesSelected.value) {
           // 如果已全选，则取消全选
-          this.form.trackerSource = []
-          this.$msg.success(this.$t('preferences.deselect-all-tracker-sources-success'))
+          form.value.trackerSource = []
+          msg.success(t('preferences.deselect-all-tracker-sources-success'))
 
           // 清除输入框里的Tracker服务器内容
-          this.recomputeBtTrackerFromSelected()
+          recomputeBtTrackerFromSelected()
         } else {
           // 否则全选
           const allSources = []
-          ;(this.trackerSourceOptions || []).forEach(group => {
-            ;(group.options || []).forEach(opt => {
+          ;(trackerSourceOptions.value || []).forEach(group => {
+            (group.options || []).forEach(opt => {
               if (opt.value && !allSources.includes(opt.value)) {
                 allSources.push(opt.value)
               }
             })
           })
 
-          this.form.trackerSource = allSources
-          this.$msg.success(this.$t('preferences.select-all-tracker-sources-success', { count: allSources.length }))
+          form.value.trackerSource = allSources
+          msg.success(t('preferences.select-all-tracker-sources-success', { count: allSources.length }))
 
           // 自动同步Tracker
-          this.recomputeBtTrackerFromSelected()
+          recomputeBtTrackerFromSelected()
         }
 
         // 自动保存配置
-        this.autoSaveForm()
-      },
-      syncTrackerFromSource () {
-        this.trackerSyncing = true
-        const { trackerSource } = this.form
-        this.$store.dispatch('preference/fetchBtTracker', trackerSource)
+        autoSaveForm()
+      }
+      function syncTrackerFromSource() {
+        trackerSyncing.value = true
+        const { trackerSource } = form.value
+        preferenceStore.fetchBtTracker(trackerSource)
           .then((data) => {
             const texts = Array.isArray(data) ? data : []
             const lines = []
             texts.forEach(t => {
-              const ls = this.extractTrackerLines(t)
+              const ls = extractTrackerLines(t)
               if (ls && ls.length) lines.push(...ls)
             })
             const uniq = Array.from(new Set(lines))
             const tracker = uniq.join('\n')
-            this.form.lastSyncTrackerTime = Date.now()
-            this.form.btTracker = tracker
-            this.trackerSyncing = false
+            form.value.lastSyncTrackerTime = Date.now()
+            form.value.btTracker = tracker
+            trackerSyncing.value = false
             if (!uniq.length) {
-              this.$msg.warning(this.$t('preferences.sync-none'))
+              msg.warning(t('preferences.sync-none'))
             } else {
-              this.$msg.success(this.$t('preferences.sync-success', { count: uniq.length }))
+              msg.success(t('preferences.sync-success', { count: uniq.length }))
             }
           })
           .catch((_) => {
-            this.trackerSyncing = false
-            this.$msg.error(this.$t('preferences.sync-failed'))
+            trackerSyncing.value = false
+            msg.error(t('preferences.sync-failed'))
           })
-      },
-      async configureTrackerFromGithub () {
+      }
+      // 渲染层 axios 使用 XHR adapter，proxy 选项不生效；改为走主进程请求，
+      // 使「使用系统代理/自定义代理」配置真正作用于 Tracker 源提取
+      function getTrackerProxyConfig() {
+        const cfg = preferenceConfig.value || {}
+        return cfg && typeof cfg.proxy === 'object' && cfg.proxy ? cfg.proxy : {}
+      }
+      async function fetchTrackerText(url) {
+        const text = await ipcRenderer.invoke('tracker-source:fetch', { url: `${url}`, proxy: getTrackerProxyConfig() })
+        return `${text || ''}`
+      }
+      async function configureTrackerFromGithub() {
         try {
-          const r = await this.$prompt(
-            this.$t('preferences.configure-tracker-prompt-message'),
-            this.$t('preferences.configure-tracker-prompt-title'),
+          const r = await ElMessageBox.prompt(
+            t('preferences.configure-tracker-prompt-message'),
+            t('preferences.configure-tracker-prompt-title'),
             {
-              confirmButtonText: this.$t('preferences.extract'),
-              cancelButtonText: this.$t('app.cancel'),
-              inputPlaceholder: this.$t('preferences.tracker-source-input-placeholder')
+              confirmButtonText: t('preferences.extract'),
+              cancelButtonText: t('app.cancel'),
+              inputPlaceholder: t('preferences.tracker-source-input-placeholder')
             }
           )
           const url = `${r.value}`.trim()
           if (!url) return
-          await this.configureTrackerFromGithubWithUrl(url)
+          await configureTrackerFromGithubWithUrl(url)
         } catch (e) {
           if (e && e === 'cancel') return
-          this.$msg.error(this.$t('preferences.extract-failed'))
+          msg.error(t('preferences.extract-failed'))
         }
-      },
-      async configureTrackerFromGithubWithUrl (url) {
+      }
+      async function configureTrackerFromGithubWithUrl(url) {
         try {
-          const origin = this.deriveOriginSite(url)
-          if (origin && this.isOriginDuplicated(origin)) {
-            this.$msg.warning(this.$t('preferences.origin-exists'))
+          const origin = deriveOriginSite(url)
+          if (origin && isOriginDuplicated(origin)) {
+            msg.warning(t('preferences.origin-exists'))
             return
           }
-          if (this.isGithubRepoUrl(url)) {
-            const result = await this.resolveGithubRepo(url)
+          if (isGithubRepoUrl(url)) {
+            const result = await resolveGithubRepo(url)
             const lines = result.trackers || []
             if (!lines.length) {
-              this.$msg.error(this.$t('preferences.extract-empty-repo'))
+              msg.error(t('preferences.extract-empty-repo'))
               return
             }
-            this.applySourceDiscovery(result.usedUrls || [], origin)
+            applySourceDiscovery(result.usedUrls || [], origin)
             return
           }
-          const raw = this.toRawUrl(url)
-          if (this.isSourceDuplicated(raw)) {
-            this.$msg.warning(this.$t('preferences.source-exists'))
+          const raw = toRawUrl(url)
+          if (isSourceDuplicated(raw)) {
+            msg.warning(t('preferences.source-exists'))
             return
           }
-          const resp = await axios.get(raw, { responseType: 'text' })
-          const text = `${resp && resp.data ? resp.data : ''}`
-          const trackers = this.extractTrackerLines(text)
+          const resp = await fetchTrackerText(raw)
+          const text = `${resp || ''}`
+          const trackers = extractTrackerLines(text)
           if (!trackers.length) {
-            this.$msg.error(this.$t('preferences.extract-empty-link'))
+            msg.error(t('preferences.extract-empty-link'))
             return
           }
-          this.applySourceDiscovery([raw], this.deriveOriginSite(url))
+          applySourceDiscovery([raw], deriveOriginSite(url))
         } catch (e) {
-          this.$msg.error(this.$t('preferences.extract-failed'))
+          msg.error(t('preferences.extract-failed'))
         }
-      },
-      isOriginDuplicated (origin) {
-        const n = this.normalizeOriginUrl(origin)
-        const builtin = this.getBuiltinOrigins().map(o => this.normalizeOriginUrl(o))
-        const saved = (Array.isArray(this.form.trackerSourceOrigins) ? this.form.trackerSourceOrigins : []).map(o => this.normalizeOriginUrl(o))
+      }
+      function isOriginDuplicated(origin) {
+        const n = normalizeOriginUrl(origin)
+        const builtin = getBuiltinOrigins().map(o => normalizeOriginUrl(o))
+        const saved = (Array.isArray(form.value.trackerSourceOrigins) ? form.value.trackerSourceOrigins : []).map(o => normalizeOriginUrl(o))
         return builtin.includes(n) || saved.includes(n)
-      },
-      isSourceDuplicated (rawUrl) {
-        const discovered = Array.isArray(this.form.trackerSourceDiscovered) ? this.form.trackerSourceDiscovered : []
+      }
+      function isSourceDuplicated(rawUrl) {
+        const discovered = Array.isArray(form.value.trackerSourceDiscovered) ? form.value.trackerSourceDiscovered : []
         if (discovered.includes(rawUrl)) return true
         const allOptionValues = []
-        ;(this.trackerSourceOptions || []).forEach(g => {
-          ;(g.options || []).forEach(opt => allOptionValues.push(opt.value))
+        ;(trackerSourceOptions.value || []).forEach(g => {
+          (g.options || []).forEach(opt => allOptionValues.push(opt.value))
         })
         return allOptionValues.includes(rawUrl)
-      },
-      deriveOriginSite (url) {
+      }
+      function deriveOriginSite(url) {
         const s = `${url}`
         const repo = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(s)
-        if (repo) return this.normalizeOriginUrl(`https://github.com/${repo[1]}/${repo[2]}`)
+        if (repo) return normalizeOriginUrl(`https://github.com/${repo[1]}/${repo[2]}`)
         let m = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//i.exec(s)
-        if (m) return this.normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
+        if (m) return normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
         m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\//i.exec(s)
-        if (m) return this.normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
+        if (m) return normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
         m = /^https:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/]+)\//i.exec(s)
-        if (m) return this.normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
+        if (m) return normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
         try {
           const u = new URL(s)
-          return this.normalizeOriginUrl(`${u.protocol}//${u.host}`)
+          return normalizeOriginUrl(`${u.protocol}//${u.host}`)
         } catch (_) {
-          return this.normalizeOriginUrl(s)
+          return normalizeOriginUrl(s)
         }
-      },
-      normalizeOriginUrl (url) {
+      }
+      function normalizeOriginUrl(url) {
         try {
           const s = `${url}`.trim()
           const repo = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(s)
@@ -3878,8 +4618,8 @@ placement="top"
         } catch (_) {
           return url.replace(/\/+$/, '')
         }
-      },
-      deriveOriginLabel (url) {
+      }
+      function deriveOriginLabel(url) {
         const s = `${url}`
         const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(s)
         if (m) return `${m[1]}/${m[2]}`
@@ -3889,11 +4629,11 @@ placement="top"
         } catch (_) {
           return s
         }
-      },
-      isGithubRepoUrl (url) {
+      }
+      function isGithubRepoUrl(url) {
         return /^https:\/\/github\.com\/[^/]+\/[^/]+\/?$/i.test(`${url}`)
-      },
-      async resolveGithubRepo (url) {
+      }
+      async function resolveGithubRepo(url) {
         const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/?$/i.exec(`${url}`)
         if (!m) return { trackers: [], usedUrls: [] }
         const owner = m[1]
@@ -3918,14 +4658,14 @@ placement="top"
         for (let i = 0; i < readmeCandidates.length; i++) {
           const u = readmeCandidates[i]
           try {
-            const r = await axios.get(u, { responseType: 'text' })
-            const text = `${r && r.data ? r.data : ''}`
-            const linkUrls = this.extractTxtLinksFromReadme(text)
-            const rawUrls = linkUrls.map(this.toRawUrl)
+            const r = await fetchTrackerText(u)
+            const text = `${r || ''}`
+            const linkUrls = extractTxtLinksFromReadme(text)
+            const rawUrls = linkUrls.map(toRawUrl)
             const rawSet = Array.from(new Set(rawUrls))
-            const fetched = await this.fetchTrackersFromUrls(rawSet)
+            const fetched = await fetchTrackersFromUrls(rawSet)
             if (fetched.lines && fetched.lines.length) {
-              const preferred = this.preferCanonicalSources(fetched.usedUrls)
+              const preferred = preferCanonicalSources(fetched.usedUrls)
               used.push(...preferred)
               lines = fetched.lines
               break
@@ -3933,18 +4673,18 @@ placement="top"
           } catch (_) {}
         }
         if (!lines.length) {
-          const fetched = await this.fetchTrackersFromUrls(fileCandidates)
+          const fetched = await fetchTrackersFromUrls(fileCandidates)
           if (fetched.lines && fetched.lines.length) {
-            const preferred = this.preferCanonicalSources(fetched.usedUrls)
+            const preferred = preferCanonicalSources(fetched.usedUrls)
             used.push(...preferred)
             lines = fetched.lines
           }
         }
         if (!lines.length && owner.toLowerCase() === 'adysec' && repo.toLowerCase() === 'tracker') {
           try {
-            const r = await axios.get('https://down.adysec.com/trackers_best.txt', { responseType: 'text' })
-            const text = `${r && r.data ? r.data : ''}`
-            const fetched = this.extractTrackerLines(text)
+            const r = await fetchTrackerText('https://down.adysec.com/trackers_best.txt')
+            const text = `${r || ''}`
+            const fetched = extractTrackerLines(text)
             if (fetched.length) {
               used.push('https://down.adysec.com/trackers_best.txt')
               lines = fetched
@@ -3952,8 +4692,8 @@ placement="top"
           } catch (_) {}
         }
         return { trackers: lines, usedUrls: used }
-      },
-      extractTxtLinksFromReadme (text) {
+      }
+      function extractTxtLinksFromReadme(text) {
         const raw = `${text}`
         const urls = []
         const regex = /(https?:\/\/[^\s)]+?trackers[^\s)]*?\.txt|https?:\/\/[^\s)]+?best\.txt)/ig
@@ -3967,16 +4707,16 @@ placement="top"
           urls.push(mb[0])
         }
         return Array.from(new Set(urls))
-      },
-      async fetchTrackersFromUrls (urls) {
+      }
+      async function fetchTrackersFromUrls(urls) {
         const allLines = []
         const usedUrls = []
         for (let i = 0; i < urls.length; i++) {
           const u = urls[i]
           try {
-            const r = await axios.get(u, { responseType: 'text' })
-            const text = `${r && r.data ? r.data : ''}`
-            const lines = this.extractTrackerLines(text)
+            const r = await fetchTrackerText(u)
+            const text = `${r || ''}`
+            const lines = extractTrackerLines(text)
             if (lines.length) {
               usedUrls.push(u)
               allLines.push(...lines)
@@ -3984,8 +4724,8 @@ placement="top"
           } catch (_) {}
         }
         return { lines: Array.from(new Set(allLines)), usedUrls: Array.from(new Set(usedUrls)) }
-      },
-      toRawUrl (url) {
+      }
+      function toRawUrl(url) {
         const u = `${url}`
         if (/^https:\/\/raw\.githubusercontent\.com\//i.test(u)) return u
         if (/^https:\/\/github\.com\//i.test(u)) {
@@ -4000,9 +4740,9 @@ placement="top"
           return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`
         }
         return u
-      },
-      preferCanonicalSources (urls) {
-        const items = (urls || []).map(u => ({ url: u, label: this.deriveTrackerLabel(u), rank: this.getSourceRank(u) }))
+      }
+      function preferCanonicalSources(urls) {
+        const items = (urls || []).map(u => ({ url: u, label: deriveTrackerLabel(u), rank: getSourceRank(u) }))
         const byLabel = {}
         items.forEach(it => {
           if (!byLabel[it.label]) byLabel[it.label] = []
@@ -4015,8 +4755,8 @@ placement="top"
           result.push(arr[0].url)
         })
         return Array.from(new Set(result))
-      },
-      getSourceRank (u) {
+      }
+      function getSourceRank(u) {
         try {
           const url = new URL(u)
           const host = url.host
@@ -4036,12 +4776,10 @@ placement="top"
         } catch (_) {
           return 999
         }
-      },
+      }
 
       // 复制目录
-      copyDirectory (sourceDir, destinationDir) {
-        const fs = require('fs')
-        const path = require('path')
+      function copyDirectory(sourceDir, destinationDir) {
 
         // 创建目标目录
         if (!fs.existsSync(destinationDir)) {
@@ -4059,21 +4797,59 @@ placement="top"
 
           if (stat.isDirectory()) {
             // 如果是目录，递归复制
-            this.copyDirectory(sourcePath, destinationPath)
+            copyDirectory(sourcePath, destinationPath)
           } else {
             // 如果是文件，复制文件
             fs.copyFileSync(sourcePath, destinationPath)
           }
         }
       }
-    },
-    beforeRouteLeave (to, from, next) {
-      // Since we now use auto-save on changes, there's no need to check for unsaved changes
-      changedConfig.basic = {}
-      changedConfig.advanced = {}
-      next()
-    }
-  }
+// --- Lifecycle ---
+onMounted(() => {
+      rebuildTrackerSourceOptions()
+      window.addEventListener('resize', updateUiScopeSelectCollapse)
+      updateUiScopeSelectCollapse()
+      // 立即同步过滤卡片，避免组件首次挂载时所有分类卡片都可见
+      // 导致 appearance 卡片（排在前 4 个）闪烁显示。
+      filterCards(searchKeyword.value, activeCategory.value)
+      // 使用 ipcRenderer 直接监听从浏览器扩展更新配置的命令
+      if (form.value.ed2kDefaultServers) {
+        ed2kServersText.value = form.value.ed2kDefaultServers
+      } else {
+        ed2kServersText.value = BUILTIN_ED2K_SERVERS.join('\n')
+      }
+      _extensionUpdateHandler = (event, command) => {
+        if (command === 'preference:update-from-extension') {
+          console.log('[Basic] Received preference:update-from-extension, syncing config...')
+          syncFormConfig()
+        }
+      }
+      ipcRenderer.on('command', _extensionUpdateHandler)
+})
+
+onBeforeUnmount(() => {
+
+      document.removeEventListener('mousedown', handleTrackerSourceOutsideClick)
+      window.removeEventListener('resize', updateUiScopeSelectCollapse)
+      if (_filterTimer) {
+        clearTimeout(_filterTimer)
+      }
+      if (saveTimeout) {
+        clearTimeout(saveTimeout)
+        saveTimeout = null
+      }
+      if (originHoldTimers) {
+        Object.keys(originHoldTimers).forEach((key) => {
+          clearTimeout(originHoldTimers[key])
+        })
+        originHoldTimers = {}
+      }
+      // 移除 ipcRenderer 监听
+      if (ipcRenderer && _extensionUpdateHandler) {
+        ipcRenderer.removeListener('command', _extensionUpdateHandler)
+      }
+})
+
 </script>
 
 <style lang="scss" scoped>
@@ -4174,7 +4950,7 @@ placement="top"
     top: -2px;
   }
 
-  :deep(.el-icon-close) {
+  :deep(.add-task-type-floating__close-icon) {
     color: var(--lc-text-secondary) !important;
     transition: color 0.2s;
     margin-left: 4px !important;
@@ -4349,7 +5125,7 @@ placement="top"
 .no-results-inner {
   width: 100%;
   padding-top: 280px;
-  background: transparent url('~@/assets/no-settings.svg') top center no-repeat;
+  background: transparent url('@/assets/no-settings.svg') top center no-repeat;
   background-size: 400px auto;
   text-align: center;
   font-size: 14px;
@@ -4366,6 +5142,11 @@ placement="top"
    border: 1px solid transparent;
   background: var(--primary-color, #409eff);
   color: #fff;
+}
+
+/* 扩展通道地址输入框右侧复制按钮：修正视觉偏上，略微下移 */
+.extension-copy-btn {
+  transform: translateY(1px);
 }
 
  /* 白天模式适配 */
@@ -4388,7 +5169,7 @@ placement="top"
   border-color: var(--primary-color-light-1, #66b1ff);
 }
 
- .edit-rules-btn .el-icon-edit {
+ .edit-rules-btn .el-icon {
    margin-right: 4px;
    font-size: 12px;
  }
@@ -4504,12 +5285,16 @@ placement="top"
   padding: 4px 8px 12px;
 }
 
-:deep(.tracker-source-popup__footer .el-button--primary) {
-  border-radius: 8px;
-  padding: 6px 20px;
-  background-color: var(--lc-color-primary) !important;
-  border-color: var(--lc-color-primary) !important;
-  color: #fff !important;
+/* 特异性必须高于 :deep(.tracker-row) .tracker-right .el-button（:global 同类
+     padding: 0 5px !important / height: 100% !important）。相同特异性时后写的
+     规则胜出，而本规则位于其前，故用重复类提高特异性并加 !important 防再被压小 */
+  :deep(.tracker-source-popup .tracker-source-popup__footer.tracker-source-popup__footer .el-button.el-button--primary) {
+    border-radius: 8px;
+    padding: 6px 20px !important;
+    height: auto !important;
+    background-color: var(--lc-color-primary) !important;
+    border-color: var(--lc-color-primary) !important;
+    color: #fff !important;
 
   &:hover,
   &:focus {
@@ -4520,16 +5305,132 @@ placement="top"
   }
 }
 
-/* 上传/下载限速行：输入框与单位选择框融为一体 */
-:deep(.speed-limit-row .el-input-number.is-controls-right .el-input__inner) {
-  border-right: none;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
+/* Tracker 按钮与输入框等高：按钮容器和按钮拉伸填满 */
+:deep(.tracker-row) {
+  .tracker-left,
+  .tracker-right {
+    display: flex;
+    align-items: stretch;
+
+    .lc-hover-tip__trigger {
+      display: flex !important;
+      align-items: stretch !important;
+      height: 100%;
+    }
+
+    .el-button {
+      height: 100% !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      vertical-align: top !important;
+      /* 图标在按钮内垂直居中 */
+      padding: 0 5px !important;
+      line-height: 1;
+    }
+  }
+
+  /* Tracker 多选标签圆角与 GitHub 镜像卡片一致 */
+  .el-select .el-tag {
+    border-radius: 6px;
+  }
 }
 
-:deep(.speed-limit-row .el-select .el-input__inner) {
-  border-left: none;
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
+/* 上传/下载限速行：输入框与单位选择框等高对齐、边缘贴合融为一体 */
+:deep(.speed-limit-row) {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  width: 100%;
+
+  // 统一的控件高度，输入框与选择框都继承该变量，
+  // 避免 Element Plus 各自尺寸规则（如 select 默认 min-height: 32px）产生错位
+  --lc-speed-control-height: 28px;
+
+  /* 输入框：占满剩余宽度，内容锁定统一高度 */
+  .el-input-number {
+    flex: 1;
+    min-width: 0;
+    /* 覆盖 Element Plus 内置的 width: 150px */
+    width: auto !important;
+    --el-component-size: var(--lc-speed-control-height);
+    --el-input-height: var(--lc-speed-control-height);
+  }
+
+  .el-input-number .el-input__wrapper {
+    box-sizing: border-box;
+    min-height: var(--lc-speed-control-height);
+    height: var(--lc-speed-control-height);
+  }
+
+  .el-input-number .el-input__inner {
+    height: var(--lc-speed-control-height);
+    line-height: var(--lc-speed-control-height);
+    text-align: center;
+  }
+
+  /* 单位选择框：固定宽度，与输入框严格等高，圆角与光影与输入框一致 */
+  .el-select {
+    flex-shrink: 0;
+    width: 100px;
+    --el-select-width: 100px;
+    margin-left: -6px;
+  }
+
+  .el-select .el-select__wrapper {
+    box-sizing: border-box;
+    min-height: var(--lc-speed-control-height);
+    height: var(--lc-speed-control-height);
+    padding: 0 8px;
+    line-height: 20px;
+    box-shadow: 0 0 0 1px var(--el-border-color) inset;
+  }
+
+  /* 下拉面板（teleport 到 body，需 :global，且无法继承 .speed-limit-row 上的变量，
+     故此处用字面值）中 KB/s、MB/s 选项保持与选择框等高，去掉文字上下的多余间距 */
+  :global(.speed-unit-popper.el-select__popper .el-select-dropdown__item) {
+    height: 28px;
+    line-height: 28px;
+    padding: 0 12px;
+  }
+
+  /* Tracker 多选下拉面板（teleport 到 body，须为整条 :global 平铺选择器，
+     否则内部子选择器会被拼接 [data-v] 而无法命中 body 下的面板）：
+     列表容器默认 padding: 6px 0，使内容与面板上/下边缘产生比左右更大的间隙，
+     清零使四周间隙一致 */
+  :global(.tracker-source-popper.el-select__popper .el-select-dropdown__list) {
+    padding: 0;
+  }
+
+  :global(.tracker-source-popper.el-select__popper .el-select-dropdown__item) {
+    height: 28px;
+    line-height: 28px;
+    padding: 0 12px;
+  }
+
+  :global(.tracker-source-popper.el-select__popper .el-select-group__title) {
+    line-height: 20px;
+    padding: 4px 12px;
+  }
+
+  /* 限速单位下拉面板同样清零列表容器的上下 padding */
+  :global(.speed-unit-popper.el-select__popper .el-select-dropdown__list) {
+    padding: 0;
+  }
+
+  /* 一体式圆角：输入框去掉右侧圆角，选择框去掉左侧圆角 */
+  .el-input-number.is-controls-right .el-input__wrapper {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    box-shadow: inset 0 1px 0 0 var(--el-border-color, var(--lc-border-base)),
+                inset 0 -1px 0 0 var(--el-border-color, var(--lc-border-base)),
+                inset 1px 0 0 0 var(--el-border-color, var(--lc-border-base));
+  }
+
+  .el-select .el-select__wrapper {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
 }
 </style>

@@ -1,90 +1,31 @@
-import eleLocaleDe from 'element-ui/lib/locale/lang/de'
-import eleLocaleEn from 'element-ui/lib/locale/lang/en'
-import eleLocaleEs from 'element-ui/lib/locale/lang/es'
-import eleLocaleFr from 'element-ui/lib/locale/lang/fr'
-import elelocaleIt from 'element-ui/lib/locale/lang/it'
-import eleLocaleJa from 'element-ui/lib/locale/lang/ja'
-import eleLocaleKo from 'element-ui/lib/locale/lang/ko'
-import eleLocalePtBR from 'element-ui/lib/locale/lang/pt-br'
-import eleLocaleRu from 'element-ui/lib/locale/lang/ru-RU'
-import eleLocaleZhCN from 'element-ui/lib/locale/lang/zh-CN'
-import eleLocaleZhTW from 'element-ui/lib/locale/lang/zh-TW'
-import appLocaleDe from '@shared/locales/de'
 import appLocaleEnUS from '@shared/locales/en-US'
-import appLocaleEs from '@shared/locales/es'
-import appLocaleFr from '@shared/locales/fr'
-import applocaleIt from '@shared/locales/it'
-import appLocaleJa from '@shared/locales/ja'
-import appLocaleKo from '@shared/locales/ko'
-import appLocalePtBR from '@shared/locales/pt-BR'
-import appLocaleRu from '@shared/locales/ru'
 import appLocaleZhCN from '@shared/locales/zh-CN'
 import appLocaleZhTW from '@shared/locales/zh-TW'
 
+/**
+ * Application locale resources.
+ *
+ * Element UI locale imports have been removed. Element Plus locale management
+ * is now handled separately via ElConfigProvider in App.vue and the
+ * elementPlusLocaleMap in src/renderer/plugins/i18n.js.
+ *
+ * The structure is kept as { locale: { translation: { ... } } } for backward
+ * compatibility with LocaleManager (i18next). The vue-i18n plugin
+ * (src/renderer/plugins/i18n.js) flattens this to { locale: { ... } }.
+ */
 const resources = {
-  de: {
-    translation: {
-      ...eleLocaleDe,
-      ...appLocaleDe
-    }
-  },
   'en-US': {
     translation: {
-      ...eleLocaleEn,
       ...appLocaleEnUS
-    }
-  },
-  es: {
-    translation: {
-      ...eleLocaleEs,
-      ...appLocaleEs
-    }
-  },
-  fr: {
-    translation: {
-      ...eleLocaleFr,
-      ...appLocaleFr
-    }
-  },
-  it: {
-    translation: {
-      ...elelocaleIt,
-      ...applocaleIt
-    }
-  },
-  ja: {
-    translation: {
-      ...eleLocaleJa,
-      ...appLocaleJa
-    }
-  },
-  ko: {
-    translation: {
-      ...eleLocaleKo,
-      ...appLocaleKo
-    }
-  },
-  'pt-BR': {
-    translation: {
-      ...eleLocalePtBR,
-      ...appLocalePtBR
-    }
-  },
-  ru: {
-    translation: {
-      ...eleLocaleRu,
-      ...appLocaleRu
     }
   },
   'zh-CN': {
     translation: {
-      ...eleLocaleZhCN,
       ...appLocaleZhCN
     }
   },
   'zh-TW': {
     translation: {
-      ...eleLocaleZhTW,
       ...appLocaleZhTW
     }
   }

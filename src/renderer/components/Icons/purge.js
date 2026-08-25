@@ -4,17 +4,12 @@ Icon.register({
   'purge': {
     'width': 24,
     'height': 24,
-    'raw': `<line fill="none" stroke-miterlimit="10" x1="1" y1="9" x2="23" y2="9"/>
-      <line fill="none" stroke-miterlimit="10" x1="1" y1="3" x2="23" y2="3"/>
-      <line fill="none" stroke-miterlimit="10" x1="1" y1="15" x2="11" y2="15"/>
-      <line fill="none" stroke-miterlimit="10" x1="1" y1="21" x2="11" y2="21"/>
-      <line fill="none" stroke-miterlimit="10" x1="16" y1="15" x2="22" y2="21"/>
-      <line fill="none" stroke-miterlimit="10" x1="22" y1="15" x2="16" y2="21"/>`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6h18"/>
+      <path d="M3 12h9"/>
+      <path d="M3 18h9"/>
+      <path d="m14 15 6 6"/>
+      <path d="m20 15-6 6"/>
+    </g>`
   }
 })

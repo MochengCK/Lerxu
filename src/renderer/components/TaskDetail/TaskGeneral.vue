@@ -1,62 +1,62 @@
 <template>
   <el-form
     class="mo-task-general"
-    ref="form"
-    :model="form"
+    ref="formRef"
+    :model="formData"
     :label-width="formLabelWidth"
     v-if="task"
   >
-    <el-form-item :label="`${$t('task.task-gid')}: `">
+    <el-form-item :label="`${t('task.task-gid')}: `">
       <div class="form-static-value">
         {{ task.gid }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-name')}: `">
+    <el-form-item :label="`${t('task.task-name')}: `">
       <div class="form-static-value">
         {{ taskFullName }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-dir')}: `">
+    <el-form-item :label="`${t('task.task-dir')}: `">
       <el-input placeholder="" readonly v-model="path">
         <mo-show-in-folder
-          slot="append"
+          #append
           v-if="isRenderer"
           :path="path"
         />
       </el-input>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-status')}: `">
+    <el-form-item :label="`${t('task.task-status')}: `">
       <div class="form-static-value">
         <mo-task-status :theme="currentTheme" :status="taskStatus" />
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t(isError ? 'task.error-at' : 'task.completed-at')}: `" v-if="isCompleted">
+    <el-form-item :label="`${t(isError ? 'task.error-at' : 'task.completed-at')}: `" v-if="isCompleted">
       <div class="form-static-value">
         {{ completionTime }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-priority')}: `">
+    <el-form-item :label="`${t('task.task-priority')}: `">
       <div class="form-static-value">
         {{ taskPriority }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-error-info')}: `" v-if="task.errorCode && task.errorCode !== '0'">
+    <el-form-item :label="`${t('task.task-error-info')}: `" v-if="task.errorCode && task.errorCode !== '0'">
       <div class="form-static-value">
         {{ task.errorCode }} {{ task.errorMessage }}
       </div>
     </el-form-item>
 
     <el-divider v-if="isBT">
-      <i class="el-icon-attract"></i>
-      {{ $t('task.task-bittorrent-info') }}
+      <el-icon><MagicStick /></el-icon>
+      {{ t('task.task-bittorrent-info') }}
     </el-divider>
 
-    <el-form-item :label="`${$t('task.task-info-hash')}: `" v-if="isBT">
+    <el-form-item :label="`${t('task.task-info-hash')}: `" v-if="isBT">
       <div class="form-static-value">
         {{ task.infoHash }}
-        <el-tooltip
+        <mo-hover-tip
           effect="dark"
-          :content="$t('task.copy-link')"
+          :content="t('task.copy-link')"
           placement="top"
           :open-delay="500"
         >
@@ -67,41 +67,41 @@
               height="12"
             />
           </i>
-        </el-tooltip>
+        </mo-hover-tip>
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-piece-length')}: `" v-if="isBT">
+    <el-form-item :label="`${t('task.task-piece-length')}: `" v-if="isBT">
       <div class="form-static-value">
-        {{ task.pieceLength | bytesToSize }}
+        {{ bytesToSize(task.pieceLength) }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-num-pieces')}: `" v-if="isBT">
+    <el-form-item :label="`${t('task.task-num-pieces')}: `" v-if="isBT">
       <div class="form-static-value">
         {{ task.numPieces }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-bittorrent-creation-date')}: `" v-if="isBT && task.bittorrent">
+    <el-form-item :label="`${t('task.task-bittorrent-creation-date')}: `" v-if="isBT && task.bittorrent">
       <div class="form-static-value">
-        {{ task.bittorrent.creationDate | localeDateTimeFormat(locale) }}
+        {{ localeDateTimeFormat(task.bittorrent.creationDate, locale) }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-bittorrent-comment')}: `" v-if="isBT && task.bittorrent">
+    <el-form-item :label="`${t('task.task-bittorrent-comment')}: `" v-if="isBT && task.bittorrent">
       <div class="form-static-value">
         {{ task.bittorrent.comment }}
       </div>
     </el-form-item>
 
     <el-divider v-if="isEd2k">
-      <i class="el-icon-connection"></i>
-      {{ $t('task.task-ed2k-info') }}
+      <el-icon><Connection /></el-icon>
+      {{ t('task.task-ed2k-info') }}
     </el-divider>
 
-    <el-form-item :label="`${$t('task.task-ed2k-file-hash')}: `" v-if="isEd2k">
+    <el-form-item :label="`${t('task.task-ed2k-file-hash')}: `" v-if="isEd2k">
       <div class="form-static-value">
         {{ ed2kFileHash }}
-        <el-tooltip
+        <mo-hover-tip
           effect="dark"
-          :content="$t('task.copy-link')"
+          :content="t('task.copy-link')"
           placement="top"
           :open-delay="500"
         >
@@ -112,15 +112,15 @@
               height="12"
             />
           </i>
-        </el-tooltip>
+        </mo-hover-tip>
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-piece-length')}: `" v-if="isEd2k">
+    <el-form-item :label="`${t('task.task-piece-length')}: `" v-if="isEd2k">
       <div class="form-static-value">
-        {{ task.pieceLength | bytesToSize }}
+        {{ bytesToSize(task.pieceLength) }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-num-pieces')}: `" v-if="isEd2k">
+    <el-form-item :label="`${t('task.task-num-pieces')}: `" v-if="isEd2k">
       <div class="form-static-value">
         {{ task.numPieces }}
       </div>
@@ -128,166 +128,127 @@
   </el-form>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import { mapState } from 'vuex'
-  import { basename } from 'node:path'
-  import {
-    bytesToSize,
-    calcFormLabelWidth,
-    checkTaskIsBT,
-    checkTaskIsSeeder,
-    getTaskName,
-    getTaskUri,
-    isEd2kTask,
-    getEd2kFileHash,
-    localeDateTimeFormat
-  } from '@shared/utils'
-  import { APP_THEME, TASK_STATUS } from '@shared/constants'
-  import { getTaskActualPath } from '@/utils/native'
-  import ShowInFolder from '@/components/Native/ShowInFolder'
-  import TaskStatus from '@/components/Task/TaskStatus'
-  import '@/components/Icons/folder'
-  import '@/components/Icons/link'
+<script setup>
+import { computed, getCurrentInstance } from 'vue'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
+import is from 'electron-is'
+import { ipcRenderer } from 'electron'
+import { basename } from 'node:path'
+import {
+  bytesToSize,
+  calcFormLabelWidth,
+  checkTaskIsBT,
+  checkTaskIsSeeder,
+  getTaskName,
+  getTaskUri,
+  isEd2kTask,
+  getEd2kFileHash,
+  localeDateTimeFormat
+} from '@shared/utils'
+import { APP_THEME, TASK_STATUS } from '@shared/constants'
+import { getTaskActualPath } from '@/utils/native'
+// mo-show-in-folder, mo-task-status are globally registered in main.js
+import { useAppStore, usePreferenceStore, useTaskStore } from '@/store'
+import { storeToRefs } from 'pinia'
+import '@/components/Icons/folder'
+import '@/components/Icons/link'
+import { MagicStick, Connection } from '@element-plus/icons-vue'
 
-  export default {
-    name: 'mo-task-general',
-    components: {
-      [ShowInFolder.name]: ShowInFolder,
-      [TaskStatus.name]: TaskStatus
-    },
-    props: {
-      task: {
-        type: Object
-      }
-    },
-    data () {
-      const { locale } = this.$store.state.preference.config
-      return {
-        form: {},
-        formLabelWidth: calcFormLabelWidth(locale),
-        locale
-      }
-    },
-    computed: {
-      isRenderer: () => is.renderer(),
-      ...mapState('app', {
-        systemTheme: state => state.systemTheme
-      }),
-      ...mapState('preference', {
-        theme: state => state.config.theme,
-        preferenceConfig: state => state.config
-      }),
-      currentTheme () {
-        if (this.theme === APP_THEME.AUTO) {
-          return this.systemTheme
-        } else {
-          return this.theme
-        }
-      },
-      taskFullName () {
-        const task = this.task || {}
-        const config = this.preferenceConfig || {}
-        const suffix = config.downloadingFileSuffix || ''
-        if (task.status === TASK_STATUS.COMPLETE && !this.isBT) {
-          const p = getTaskActualPath(task, config)
-          const base = basename(p || '')
-          if (suffix && base.endsWith(suffix)) {
-            return base.slice(0, -suffix.length)
-          }
-          return base
-        }
-
-        return getTaskName(task, {
-          defaultName: this.$t('task.get-task-name'),
-          maxLen: -1
-        })
-      },
-      taskName () {
-        const task = this.task || {}
-        const config = this.preferenceConfig || {}
-        const suffix = config.downloadingFileSuffix || ''
-        if (task.status === TASK_STATUS.COMPLETE && !this.isBT) {
-          const p = getTaskActualPath(task, config)
-          const base = basename(p || '')
-          if (suffix && base.endsWith(suffix)) {
-            return base.slice(0, -suffix.length)
-          }
-          return base
-        }
-
-        return getTaskName(task, {
-          defaultName: this.$t('task.get-task-name'),
-          maxLen: 32
-        })
-      },
-      isSeeder () {
-        return checkTaskIsSeeder(this.task)
-      },
-      taskStatus () {
-        const { task, isSeeder } = this
-        if (isSeeder) {
-          return TASK_STATUS.SEEDING
-        } else {
-          return task.status
-        }
-      },
-      path () {
-        return getTaskActualPath(this.task, this.preferenceConfig)
-      },
-      isBT () {
-        return checkTaskIsBT(this.task)
-      },
-      isEd2k () {
-        return isEd2kTask(this.task)
-      },
-      ed2kFileHash () {
-        return getEd2kFileHash(this.task)
-      },
-      taskPriority () {
-        const gid = this.task && this.task.gid
-        const map = this.$store.state.task.taskPriorities || {}
-        return (gid && map[gid]) ? Number(map[gid]) : 0
-      },
-      isCompleted () {
-        const completedStatuses = ['complete', 'error', 'removed']
-        // 做种中的任务不算已完成，不显示完成时间
-        if (this.task.status === 'complete' && checkTaskIsSeeder(this.task)) {
-          return false
-        }
-        return completedStatuses.includes(this.task.status)
-      },
-      isError () {
-        return this.task.status === TASK_STATUS.ERROR
-      },
-      completionTime () {
-        // aria2 的 savedAt 是秒级时间戳，历史记录中则是毫秒级，
-        // 需要归一化为毫秒后再构造 Date，否则会渲染成 1970 年
-        let timestamp = this.task.savedAt || Date.now()
-        if (timestamp < 1000000000000) {
-          timestamp *= 1000
-        }
-        return new Date(timestamp).toLocaleString()
-      }
-    },
-    filters: {
-      bytesToSize,
-      localeDateTimeFormat
-    },
-    methods: {
-      handleCopyClick () {
-        const { task } = this
-        const uri = getTaskUri(task)
-        try {
-          // 渲染进程直连 electron.clipboard 已弃用，改经主进程 IPC 桥
-          this.$electron.ipcRenderer.invoke('clipboard:write-text', uri)
-          this.$msg.success(this.$t('task.copy-link-success'))
-        } catch (e) {
-          this.$msg.error(this.$t('preferences.save-fail-message'))
-        }
-      }
-    }
+const props = defineProps({
+  task: {
+    type: Object
   }
+})
+
+defineOptions({
+  name: 'mo-task-general'
+})
+
+const { t } = i18n.global
+const instance = getCurrentInstance()
+
+const appStore = useAppStore()
+const preferenceStore = usePreferenceStore()
+const taskStore = useTaskStore()
+const { systemTheme } = storeToRefs(appStore)
+const { config: preferenceConfig } = storeToRefs(preferenceStore)
+
+const locale = preferenceStore.config?.locale || 'en-US'
+const formRef = ref(null)
+const formData = {}
+const formLabelWidth = calcFormLabelWidth(locale)
+
+const isRenderer = is.renderer()
+
+const currentTheme = computed(() => {
+  const theme = preferenceConfig.value?.theme
+  if (theme === APP_THEME.AUTO) return systemTheme.value
+  return theme
+})
+
+const isBT = computed(() => checkTaskIsBT(props.task))
+const isEd2k = computed(() => isEd2kTask(props.task))
+const ed2kFileHash = computed(() => getEd2kFileHash(props.task))
+const isSeeder = computed(() => checkTaskIsSeeder(props.task))
+
+const taskStatus = computed(() => {
+  if (isSeeder.value) return TASK_STATUS.SEEDING
+  return props.task.status
+})
+
+const path = computed(() => getTaskActualPath(props.task, preferenceConfig.value))
+
+const taskFullName = computed(() => {
+  const task = props.task || {}
+  const config = preferenceConfig.value || {}
+  const suffix = config.downloadingFileSuffix || ''
+  if (task.status === TASK_STATUS.COMPLETE && !isBT.value) {
+    const p = getTaskActualPath(task, config)
+    const base = basename(p || '')
+    if (suffix && base.endsWith(suffix)) {
+      return base.slice(0, -suffix.length)
+    }
+    return base
+  }
+  return getTaskName(task, {
+    defaultName: t('task.get-task-name'),
+    maxLen: -1
+  })
+})
+
+const taskPriority = computed(() => {
+  const gid = props.task?.gid
+  const map = taskStore.taskPriorities || {}
+  return (gid && map[gid]) ? Number(map[gid]) : 0
+})
+
+const isCompleted = computed(() => {
+  const completedStatuses = ['complete', 'error', 'removed']
+  if (props.task.status === 'complete' && checkTaskIsSeeder(props.task)) {
+    return false
+  }
+  return completedStatuses.includes(props.task.status)
+})
+
+const isError = computed(() => props.task.status === TASK_STATUS.ERROR)
+
+const completionTime = computed(() => {
+  let timestamp = props.task.savedAt || Date.now()
+  if (timestamp < 1000000000000) {
+    timestamp *= 1000
+  }
+  return new Date(timestamp).toLocaleString()
+})
+
+function handleCopyClick () {
+  const uri = getTaskUri(props.task)
+  try {
+    ipcRenderer.invoke('clipboard:write-text', uri)
+    instance.proxy.$msg.success(t('task.copy-link-success'))
+  } catch (e) {
+    instance.proxy.$msg.error(t('preferences.save-fail-message'))
+  }
+}
 </script>
 
 <style lang="scss">

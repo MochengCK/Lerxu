@@ -1417,145 +1417,67 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       'clearResourceList': {
         'en': 'Clear resource list',
         'zh_CN': '清空资源列表',
-        'zh_TW': '清空資源列表',
-        'ja': 'リソースリストをクリア',
-        'ko': '리소스 목록 지우기',
-        'es': 'Limpiar lista de recursos',
-        'fr': 'Effacer la liste des ressources',
-        'de': 'Ressourcenliste löschen',
-        'ru': 'Очистить список ресурсов'
+        'zh_TW': '清空資源列表'
       },
       'dashCompleteVideo': {
         'en': 'DASH Complete Video (Video+Audio)',
         'zh_CN': 'DASH 完整视频 (视频+音频)',
-        'zh_TW': 'DASH 完整視頻 (視頻+音頻)',
-        'ja': 'DASH 完全動画 (動画+音声)',
-        'ko': 'DASH 완전 비디오 (비디오+오디오)',
-        'es': 'Video completo DASH (Video+Audio)',
-        'fr': 'Vidéo complète DASH (Vidéo+Audio)',
-        'de': 'DASH Vollständiges Video (Video+Audio)',
-        'ru': 'DASH Полное видео (Видео+Аудио)'
+        'zh_TW': 'DASH 完整視頻 (視頻+音頻)'
       },
       'dashSeparateStreams': {
         'en': 'DASH Separate Streams',
         'zh_CN': 'DASH 单独流',
-        'zh_TW': 'DASH 單獨流',
-        'ja': 'DASH 個別ストリーム',
-        'ko': 'DASH 개별 스트림',
-        'es': 'Flujos separados DASH',
-        'fr': 'Flux séparés DASH',
-        'de': 'DASH Separate Streams',
-        'ru': 'DASH Отдельные потоки'
+        'zh_TW': 'DASH 單獨流'
       },
       'videoResources': {
         'en': 'Video Resources',
         'zh_CN': '视频资源',
-        'zh_TW': '視頻資源',
-        'ja': '動画リソース',
-        'ko': '비디오 리소스',
-        'es': 'Recursos de video',
-        'fr': 'Ressources vidéo',
-        'de': 'Video-Ressourcen',
-        'ru': 'Видео ресурсы'
+        'zh_TW': '視頻資源'
       },
       'audioResources': {
         'en': 'Audio Resources',
         'zh_CN': '音频资源',
-        'zh_TW': '音頻資源',
-        'ja': '音声リソース',
-        'ko': '오디오 리소스',
-        'es': 'Recursos de audio',
-        'fr': 'Ressources audio',
-        'de': 'Audio-Ressourcen',
-        'ru': 'Аудио ресурсы'
+        'zh_TW': '音頻資源'
       },
       'noVideoResourcesDetected': {
         'en': 'No video resources detected',
         'zh_CN': '未检测到视频资源',
-        'zh_TW': '未檢測到視頻資源',
-        'ja': '動画リソースが検出されませんでした',
-        'ko': '비디오 리소스가 감지되지 않음',
-        'es': 'No se detectaron recursos de video',
-        'fr': 'Aucune ressource vidéo détectée',
-        'de': 'Keine Video-Ressourcen erkannt',
-        'ru': 'Видео ресурсы не обнаружены'
+        'zh_TW': '未檢測到視頻資源'
       },
       'rightClickTip': {
         'en': 'Tip: Right-click on links and select "Download with LinkCore"',
         'zh_CN': '提示：右键点击页面上的链接，选择"使用 LinkCore 下载"',
-        'zh_TW': '提示：右鍵點擊頁面上的鏈接，選擇"使用 LinkCore 下載"',
-        'ja': 'ヒント：リンクを右クリックして「LinkCore でダウンロード」を選択',
-        'ko': '팁: 링크를 마우스 오른쪽 버튼으로 클릭하고 "LinkCore로 다운로드"를 선택',
-        'es': 'Consejo: Haz clic derecho en los enlaces y selecciona "Descargar con LinkCore"',
-        'fr': 'Astuce : Cliquez avec le bouton droit sur les liens et sélectionnez "Télécharger avec LinkCore"',
-        'de': 'Tipp: Rechtsklick auf Links und "Mit LinkCore herunterladen" auswählen',
-        'ru': 'Совет: Щелкните правой кнопкой мыши по ссылкам и выберите "Скачать с LinkCore"'
+        'zh_TW': '提示：右鍵點擊頁面上的鏈接，選擇"使用 LinkCore 下載"'
       },
       'complete': {
         'en': 'Complete',
         'zh_CN': '完整',
-        'zh_TW': '完整',
-        'ja': '完全',
-        'ko': '완전',
-        'es': 'Completo',
-        'fr': 'Complet',
-        'de': 'Vollständig',
-        'ru': 'Полный'
+        'zh_TW': '完整'
       },
       'completeVideo': {
         'en': 'Complete Video',
         'zh_CN': '完整视频',
-        'zh_TW': '完整視頻',
-        'ja': '完全動画',
-        'ko': '완전 비디오',
-        'es': 'Video completo',
-        'fr': 'Vidéo complète',
-        'de': 'Vollständiges Video',
-        'ru': 'Полное видео'
+        'zh_TW': '完整視頻'
       },
       'videoStream': {
         'en': 'Video stream',
         'zh_CN': '视频流',
-        'zh_TW': '視頻流',
-        'ja': '動画ストリーム',
-        'ko': '비디오 스트림',
-        'es': 'Flujo de video',
-        'fr': 'Flux vidéo',
-        'de': 'Video-Stream',
-        'ru': 'Видео поток'
+        'zh_TW': '視頻流'
       },
       'audioStream': {
         'en': 'Audio stream',
         'zh_CN': '音频流',
-        'zh_TW': '音頻流',
-        'ja': '音声ストリーム',
-        'ko': '오디오 스트림',
-        'es': 'Flujo de audio',
-        'fr': 'Flux audio',
-        'de': 'Audio-Stream',
-        'ru': 'Аудио поток'
+        'zh_TW': '音頻流'
       },
       'file': {
         'en': 'file',
         'zh_CN': '文件',
-        'zh_TW': '文件',
-        'ja': 'ファイル',
-        'ko': '파일',
-        'es': 'archivo',
-        'fr': 'fichier',
-        'de': 'Datei',
-        'ru': 'файл'
+        'zh_TW': '文件'
       },
       'downloadAll': {
         'en': 'Download all',
         'zh_CN': '下载全部',
-        'zh_TW': '下載全部',
-        'ja': 'すべてダウンロード',
-        'ko': '모두 다운로드',
-        'es': 'Descargar todo',
-        'fr': 'Tout télécharger',
-        'de': 'Alle herunterladen',
-        'ru': 'Скачать все'
+        'zh_TW': '下載全部'
       }
     }
     

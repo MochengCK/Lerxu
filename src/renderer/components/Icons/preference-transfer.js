@@ -4,10 +4,11 @@ Icon.register({
   'preference-transfer': {
     'width': 24,
     'height': 24,
-    'paths': [{
-      'd': 'M8,2L3,8h3v9h4V8h3L8,2z'
-    }, {
-      'd': 'M16,22l5-6h-3V7h-4v9h-3L16,22z'
-    }]
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m3 16 4 4 4-4"/>
+      <path d="M7 20V4"/>
+      <path d="m21 8-4-4-4 4"/>
+      <path d="M17 4v16"/>
+    </g>`
   }
 })

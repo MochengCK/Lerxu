@@ -73,114 +73,6 @@ const translations = {
     connected: "已連接",
     disconnected: "未連接",
     contextMenuDownload: "使用 LinkCore 下載"
-  },
-  ja: {
-    extensionName: "LinkCore",
-    extensionDescription: "LinkCore と深く統合されたブラウザー拡張機能",
-    actionTitle: "LinkCore",
-    popupTitle: "LinkCore",
-    rpcAddress: "RPC アドレス",
-    connectionStatus: "接続状態",
-    clientVersion: "クライアントバージョン",
-    downloadSpeed: "ダウンロード速度",
-    uploadSpeed: "アップロード速度",
-    totalSpeed: "合計ダウンロード速度",
-    downloadTasks: "ダウンロードタスク",
-    noTasks: "ダウンロードタスクはありません",
-    autoHijack: "ブラウザのダウンロードを自動的にハイジャック",
-    connected: "接続済み",
-    disconnected: "未接続",
-    contextMenuDownload: "LinkCore でダウンロード"
-  },
-  ko: {
-    extensionName: "LinkCore",
-    extensionDescription: "LinkCore와 깊이 통합된 브라우저 확장 프로그램",
-    actionTitle: "LinkCore",
-    popupTitle: "LinkCore",
-    rpcAddress: "RPC 주소",
-    connectionStatus: "연결 상태",
-    clientVersion: "클라이언트 버전",
-    downloadSpeed: "다운로드 속도",
-    uploadSpeed: "업로드 속도",
-    totalSpeed: "총 다운로드 속도",
-    downloadTasks: "다운로드 작업",
-    noTasks: "다운로드 작업 없음",
-    autoHijack: "브라우저 다운로드 자동 가로채기",
-    connected: "연결됨",
-    disconnected: "연결 안 됨",
-    contextMenuDownload: "LinkCore로 다운로드"
-  },
-  es: {
-    extensionName: "LinkCore",
-    extensionDescription: "Extensión de navegador profundamente integrada para LinkCore",
-    actionTitle: "LinkCore",
-    popupTitle: "LinkCore",
-    rpcAddress: "Dirección RPC",
-    connectionStatus: "Estado de conexión",
-    clientVersion: "Versión del cliente",
-    downloadSpeed: "Velocidad de descarga",
-    uploadSpeed: "Velocidad de subida",
-    totalSpeed: "Velocidad total de descarga",
-    downloadTasks: "Tareas de descarga",
-    noTasks: "Sin tareas de descarga",
-    autoHijack: "Secuestrar automáticamente las descargas del navegador",
-    connected: "Conectado",
-    disconnected: "Desconectado",
-    contextMenuDownload: "Descargar con LinkCore"
-  },
-  fr: {
-    extensionName: "LinkCore",
-    extensionDescription: "Extension de navigateur profondément intégrée pour LinkCore",
-    actionTitle: "LinkCore",
-    popupTitle: "LinkCore",
-    rpcAddress: "Adresse RPC",
-    connectionStatus: "État de la connexion",
-    clientVersion: "Version du client",
-    downloadSpeed: "Vitesse de téléchargement",
-    uploadSpeed: "Vitesse de téléversement",
-    totalSpeed: "Vitesse totale de téléchargement",
-    downloadTasks: "Tâches de téléchargement",
-    noTasks: "Aucune tâche de téléchargement",
-    autoHijack: "Détournement automatique des téléchargements du navigateur",
-    connected: "Connecté",
-    disconnected: "Déconnecté",
-    contextMenuDownload: "Télécharger avec LinkCore"
-  },
-  de: {
-    extensionName: "LinkCore",
-    extensionDescription: "Tief integrierte Browser-Erweiterung für LinkCore",
-    actionTitle: "LinkCore",
-    popupTitle: "LinkCore",
-    rpcAddress: "RPC-Adresse",
-    connectionStatus: "Verbindungsstatus",
-    clientVersion: "Client-Version",
-    downloadSpeed: "Download-Geschwindigkeit",
-    uploadSpeed: "Upload-Geschwindigkeit",
-    totalSpeed: "Gesamtgeschwindigkeit herunterladen",
-    downloadTasks: "Download-Aufgaben",
-    noTasks: "Keine Download-Aufgaben",
-    autoHijack: "Browser-Downloads automatisch abfangen",
-    connected: "Verbunden",
-    disconnected: "Getrennt",
-    contextMenuDownload: "Mit LinkCore herunterladen"
-  },
-  ru: {
-    extensionName: "LinkCore",
-    extensionDescription: "Глубоко интегрированное расширение браузера для LinkCore",
-    actionTitle: "LinkCore",
-    popupTitle: "LinkCore",
-    rpcAddress: "Адрес RPC",
-    connectionStatus: "Состояние подключения",
-    clientVersion: "Версия клиента",
-    downloadSpeed: "Скорость загрузки",
-    uploadSpeed: "Скорость выгрузки",
-    totalSpeed: "Общая скорость загрузки",
-    downloadTasks: "Задачи загрузки",
-    noTasks: "Нет задач загрузки",
-    autoHijack: "Автоматически перехватывать загрузки браузера",
-    connected: "Подключено",
-    disconnected: "Отключено",
-    contextMenuDownload: "Скачать с LinkCore"
   }
 }
 
@@ -210,18 +102,6 @@ const initLocale = async () => {
         currentLocale = 'zh_CN'
       } else if (browserLang.startsWith('zh-TW') || browserLang.startsWith('zh_TW')) {
         currentLocale = 'zh_TW'
-      } else if (browserLang.startsWith('ja')) {
-        currentLocale = 'ja'
-      } else if (browserLang.startsWith('ko')) {
-        currentLocale = 'ko'
-      } else if (browserLang.startsWith('es')) {
-        currentLocale = 'es'
-      } else if (browserLang.startsWith('fr')) {
-        currentLocale = 'fr'
-      } else if (browserLang.startsWith('de')) {
-        currentLocale = 'de'
-      } else if (browserLang.startsWith('ru')) {
-        currentLocale = 'ru'
       } else {
         currentLocale = 'en'
       }

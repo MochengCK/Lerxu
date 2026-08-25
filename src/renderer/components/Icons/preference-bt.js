@@ -4,12 +4,12 @@ Icon.register({
   'preference-bt': {
     'width': 24,
     'height': 24,
-    'raw': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="5.5" cy="13" r="2.5" fill="currentColor" stroke="none"/>
-  <circle cx="18.5" cy="6.5" r="2.5" fill="currentColor" stroke="none"/>
-  <circle cx="18.5" cy="17.5" r="2.5" fill="currentColor" stroke="none"/>
-  <line x1="7.8" y1="12" x2="16.2" y2="8.1"/>
-  <line x1="7.8" y1="14" x2="16.2" y2="15.9"/>
-</svg>`
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="18" cy="5" r="3"/>
+      <circle cx="6" cy="12" r="3"/>
+      <circle cx="18" cy="19" r="3"/>
+      <path d="m8.59 13.51 6.83 3.98"/>
+      <path d="m15.41 6.51-6.82 3.98"/>
+    </g>`
   }
 })

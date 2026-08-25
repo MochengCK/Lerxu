@@ -14,7 +14,7 @@ try {
     electron.app.whenReady().then(() => {
       try {
         let installExtension = require('electron-devtools-installer')
-        installExtension.default(installExtension.VUEJS_DEVTOOLS)
+        installExtension.default(installExtension.VUEJS3_DEVTOOLS)
           .then(() => {})
           .catch(err => {
             console.log('Unable to install `vue-devtools`: \n', err)

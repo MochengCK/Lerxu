@@ -14,17 +14,17 @@
           width="42">
         </el-table-column>
         <el-table-column
-          :label="$t('task.file-name')"
+          :label="t('task.file-name')"
           min-width="200"
           show-overflow-tooltip>
-          <template slot-scope="scope">{{ scope.row.name }}</template>
+          <template #default="scope">{{ scope.row.name }}</template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.file-extension')"
+          :label="t('task.file-extension')"
           width="80"
           class-name="task-file-extension"
           show-overflow-tooltip>
-          <template slot-scope="scope">{{ scope.row.extension | removeExtensionDot }}</template>
+          <template #default="scope">{{ removeExtensionDot(scope.row.extension) }}</template>
         </el-table-column>
         <el-table-column
           v-if="mode === 'DETAIL'"
@@ -32,20 +32,20 @@
           align="right"
           width="60"
           :show-overflow-tooltip="false">
-          <template slot-scope="scope">{{ calcProgress(scope.row.length, scope.row.completedLength, 1) }}</template>
+          <template #default="scope">{{ calcProgress(scope.row.length, scope.row.completedLength, 1) }}</template>
         </el-table-column>
         <el-table-column
           v-if="mode === 'DETAIL'"
           :label="`✓`"
           align="right"
           width="100">
-          <template slot-scope="scope">{{ scope.row.completedLength | bytesToSize }}</template>
+          <template #default="scope">{{ bytesToSize(scope.row.completedLength) }}</template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.file-size')"
+          :label="t('task.file-size')"
           align="right"
           width="100">
-          <template slot-scope="scope">{{ scope.row.length | bytesToSize }}</template>
+          <template #default="scope">{{ bytesToSize(scope.row.length) }}</template>
         </el-table-column>
       </el-table>
     </div>
@@ -74,203 +74,191 @@
           class="slider-confirm-btn"
           @click="confirmSelection"
         >
-          {{ $t('app.save') }}
+          {{ t('app.save') }}
         </button>
       </div>
       <div class="files-summary">
-        {{ $t('task.selected-files-sum', { selectedFilesCount, selectedFilesTotalSize }) }}
+        {{ t('task.selected-files-sum', { selectedFilesCount, selectedFilesTotalSize }) }}
       </div>
     </div>
   </div>
 </template>
 
-<script>
-  import { isEmpty } from 'lodash'
-  import '@/components/Icons/video'
-  import '@/components/Icons/audio'
-  import '@/components/Icons/image'
-  import '@/components/Icons/document'
-  import '@/components/Icons/select-all'
-  import {
-    NONE_SELECTED_FILES,
-    SELECTED_ALL_FILES
-  } from '@shared/constants'
-  import {
-    bytesToSize,
-    calcProgress,
-    filterAudioFiles,
-    filterDocumentFiles,
-    filterImageFiles,
-    filterVideoFiles,
-    removeExtensionDot
-  } from '@shared/utils'
+<script setup>
+import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
+import { isEmpty } from 'lodash'
+import '@/components/Icons/video'
+import '@/components/Icons/audio'
+import '@/components/Icons/image'
+import '@/components/Icons/document'
+import '@/components/Icons/select-all'
+import {
+  NONE_SELECTED_FILES,
+  SELECTED_ALL_FILES
+} from '@shared/constants'
+import {
+  bytesToSize,
+  calcProgress,
+  filterAudioFiles,
+  filterDocumentFiles,
+  filterImageFiles,
+  filterVideoFiles,
+  removeExtensionDot
+} from '@shared/utils'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 
-  export default {
-    name: 'mo-task-files',
-    filters: {
-      bytesToSize,
-      removeExtensionDot
-    },
-    props: {
-      mode: {
-        type: String,
-        default: 'ADD',
-        validator: function (value) {
-          return ['ADD', 'DETAIL'].includes(value)
-        }
-      },
-      height: {
-        type: [Number, String]
-      },
-      tableHeight: {
-        type: [Number, String],
-        default: '100%'
-      },
-      files: {
-        type: Array,
-        default: function () {
-          return []
-        }
-      }
-    },
-    data () {
-      return {
-        selectedFiles: [],
-        activeType: 'all',
-        showConfirm: false,
-        initialSelectedFileIndex: null,
-        fileTypes: [
-          { key: 'all', icon: 'select-all' },
-          { key: 'video', icon: 'video', filter: filterVideoFiles },
-          { key: 'audio', icon: 'audio', filter: filterAudioFiles },
-          { key: 'image', icon: 'image', filter: filterImageFiles },
-          { key: 'document', icon: 'document', filter: filterDocumentFiles }
-        ]
-      }
-    },
-    computed: {
-      computedTableHeight () {
-        if (this.height !== undefined && this.height !== null) {
-          return this.height
-        }
-        return this.mode === 'DETAIL' ? this.tableHeight : undefined
-      },
-      selectedFilesCount () {
-        return this.selectedFiles.length
-      },
-      selectedFilesTotalSize () {
-        const result = this.selectedFiles.reduce((acc, cur) => {
-          return acc + parseInt(cur.length, 10)
-        }, 0)
-        return bytesToSize(result)
-      },
-      selectedFileIndex () {
-        const { files, selectedFiles } = this
-        if (files.length === 0 || selectedFiles.length === 0) {
-          return NONE_SELECTED_FILES
-        }
-        if (files.length === selectedFiles.length) {
-          return SELECTED_ALL_FILES
-        }
-        const indexArr = this.selectedFiles.map((item) => item.idx)
-        const result = indexArr.join(',')
-        return result
-      },
-      indicatorStyle () {
-        if (!this.activeType) {
-          return { opacity: 0 }
-        }
-        const idx = this.fileTypes.findIndex(t => t.key === this.activeType)
-        if (idx < 0) {
-          return { opacity: 0 }
-        }
-        return {
-          transform: `translateX(${idx * 100}%)`,
-          opacity: 1
-        }
-      }
-    },
-    watch: {
-      selectedFileIndex (val) {
-        if (this.initialSelectedFileIndex === null) {
-          this.initialSelectedFileIndex = val
-          this.showConfirm = false
-        } else {
-          this.showConfirm = val !== this.initialSelectedFileIndex
-        }
-        this.$emit('selection-change', val)
-      },
-      files: {
-        immediate: true,
-        handler () {
-          this.initialSelectedFileIndex = null
-          this.showConfirm = false
-        }
-      }
-    },
-    methods: {
-      calcProgress,
-      toggleAllSelection () {
-        if (!this.$refs.torrentTable) {
-          return
-        }
-        this.$refs.torrentTable.toggleAllSelection()
-      },
-      clearSelection () {
-        if (!this.$refs.torrentTable) {
-          return
-        }
-        this.$refs.torrentTable.clearSelection()
-        this.activeType = 'all'
-        this.$nextTick(() => {
-          this.initialSelectedFileIndex = this.selectedFileIndex
-          this.showConfirm = false
-        })
-      },
-      toggleSelection (rows) {
-        if (isEmpty(rows)) {
-          this.$refs.torrentTable.clearSelection()
-        } else {
-          this.$refs.torrentTable.clearSelection()
-          rows.forEach(row => {
-            this.$refs.torrentTable.toggleRowSelection(row, true)
-          })
-        }
-      },
-      toggleTypeSelection (type) {
-        this.activeType = type
-        if (type === 'all') {
-          this.toggleSelection(this.files)
-        } else {
-          const item = this.fileTypes.find(t => t.key === type)
-          if (!item) {
-            return
-          }
-          const filtered = item.filter(this.files)
-          this.toggleSelection(filtered)
-        }
-      },
-      confirmSelection () {
-        this.initialSelectedFileIndex = this.selectedFileIndex
-        this.showConfirm = false
-        this.$emit('confirm-selection')
-      },
-      hideConfirm () {
-        this.showConfirm = false
-      },
-      handleRowDbClick (row, column, event) {
-        this.$refs.torrentTable.toggleRowSelection(row)
-      },
-      handleSelectionChange (val) {
-        this.selectedFiles = val
-      }
+const { t } = i18n.global
+const instance = getCurrentInstance()
+
+const props = defineProps({
+  mode: {
+    type: String,
+    default: 'ADD',
+    validator: function (value) {
+      return ['ADD', 'DETAIL'].includes(value)
+    }
+  },
+  height: {
+    type: [Number, String]
+  },
+  tableHeight: {
+    type: [Number, String],
+    default: '100%'
+  },
+  files: {
+    type: Array,
+    default: function () {
+      return []
     }
   }
+})
+
+const emit = defineEmits(['selection-change', 'confirm-selection'])
+
+defineOptions({ name: 'mo-task-files' })
+
+const torrentTable = ref(null)
+const selectedFiles = ref([])
+const activeType = ref('all')
+const showConfirm = ref(false)
+const initialSelectedFileIndex = ref(null)
+
+const fileTypes = [
+  { key: 'all', icon: 'select-all' },
+  { key: 'video', icon: 'video', filter: filterVideoFiles },
+  { key: 'audio', icon: 'audio', filter: filterAudioFiles },
+  { key: 'image', icon: 'image', filter: filterImageFiles },
+  { key: 'document', icon: 'document', filter: filterDocumentFiles }
+]
+
+const computedTableHeight = computed(() => {
+  if (props.height !== undefined && props.height !== null) return props.height
+  return props.mode === 'DETAIL' ? props.tableHeight : undefined
+})
+
+const selectedFilesCount = computed(() => selectedFiles.value.length)
+
+const selectedFilesTotalSize = computed(() => {
+  const result = selectedFiles.value.reduce((acc, cur) => acc + parseInt(cur.length, 10), 0)
+  return bytesToSize(result)
+})
+
+const selectedFileIndex = computed(() => {
+  if (props.files.length === 0 || selectedFiles.value.length === 0) return NONE_SELECTED_FILES
+  if (props.files.length === selectedFiles.value.length) return SELECTED_ALL_FILES
+  const indexArr = selectedFiles.value.map((item) => item.idx)
+  return indexArr.join(',')
+})
+
+const indicatorStyle = computed(() => {
+  if (!activeType.value) return { opacity: 0 }
+  const idx = fileTypes.findIndex(t => t.key === activeType.value)
+  if (idx < 0) return { opacity: 0 }
+  return { transform: `translateX(${idx * 100}%)`, opacity: 1 }
+})
+
+function toggleAllSelection () {
+  if (!torrentTable.value) return
+  torrentTable.value.toggleAllSelection()
+}
+
+function clearSelection () {
+  if (!torrentTable.value) return
+  torrentTable.value.clearSelection()
+  activeType.value = 'all'
+  nextTick(() => {
+    initialSelectedFileIndex.value = selectedFileIndex.value
+    showConfirm.value = false
+  })
+}
+
+function toggleSelection (rows) {
+  if (isEmpty(rows)) {
+    torrentTable.value.clearSelection()
+  } else {
+    torrentTable.value.clearSelection()
+    rows.forEach(row => {
+      torrentTable.value.toggleRowSelection(row, true)
+    })
+  }
+}
+
+function toggleTypeSelection (type) {
+  activeType.value = type
+  if (type === 'all') {
+    toggleSelection(props.files)
+  } else {
+    const item = fileTypes.find(t => t.key === type)
+    if (!item) return
+    const filtered = item.filter(props.files)
+    toggleSelection(filtered)
+  }
+}
+
+function confirmSelection () {
+  initialSelectedFileIndex.value = selectedFileIndex.value
+  showConfirm.value = false
+  emit('confirm-selection')
+}
+
+function hideConfirm () {
+  showConfirm.value = false
+}
+
+function handleRowDbClick (row) {
+  torrentTable.value.toggleRowSelection(row)
+}
+
+function handleSelectionChange (val) {
+  selectedFiles.value = val
+}
+
+watch(selectedFileIndex, (val) => {
+  if (initialSelectedFileIndex.value === null) {
+    initialSelectedFileIndex.value = val
+    showConfirm.value = false
+  } else {
+    showConfirm.value = val !== initialSelectedFileIndex.value
+  }
+  emit('selection-change', val)
+})
+
+watch(() => props.files, () => {
+  initialSelectedFileIndex.value = null
+  showConfirm.value = false
+}, { immediate: true })
+
+defineExpose({
+  selectedFileIndex,
+  toggleSelection,
+  toggleAllSelection,
+  clearSelection
+})
 </script>
 
 <style lang="scss">
-@import '~@/components/Theme/Variables';
-@import '~@/components/Theme/Light/Variables';
+@import '@/components/Theme/Variables';
+@import '@/components/Theme/Light/Variables';
 
 .mo-task-files {
   .mo-table-wrapper {
@@ -330,10 +318,41 @@
         padding: 8px 0;
         .cell {
           padding: 0 10px;
-          font-size: $--font-size-base;
+          font-size: var(--el-font-size-base);
           line-height: 1.5;
         }
       }
+    }
+
+    /* 勾选框样式与新建任务弹窗左下角「高级选项」一致：16px + 4px 圆角 + 居中对勾。
+     用 !important 防止详情抽屉异步加载的 EP checkbox 样式（默认 14px）后写覆盖 */
+    .el-checkbox__inner {
+      width: 16px !important;
+      height: 16px !important;
+      border-radius: 4px !important;
+      background-color: var(--lc-bg-input) !important;
+      border-color: var(--lc-border-base) !important;
+
+      &::after {
+        width: 4px;
+        height: 8px;
+        left: 50%;
+        top: 44%;
+        transform: translate(-50%, -50%) rotate(45deg) scaleY(0);
+        transform-origin: center;
+      }
+    }
+
+    .el-checkbox__input.is-checked .el-checkbox__inner::after {
+      transform: translate(-50%, -50%) rotate(45deg) scaleY(1);
+    }
+
+    /* 勾选/半选状态背景用主题色，避免被上面的灰色内框压成「灰底白勾」，
+       浅色模式下几乎不可见而误以为未勾选（本规则特异性高于灰色内框规则） */
+    .el-checkbox__input.is-checked .el-checkbox__inner,
+    .el-checkbox__input.is-indeterminate .el-checkbox__inner {
+      background-color: var(--el-checkbox-checked-bg-color, var(--lc-color-primary)) !important;
+      border-color: var(--el-checkbox-checked-border-color, var(--lc-color-primary)) !important;
     }
   }
 }
@@ -392,18 +411,18 @@
         cursor: pointer;
         outline: none !important;
         box-shadow: none !important;
-        color: $--color-text-secondary;
+        color: var(--el-text-color-secondary);
         display: inline-flex;
         align-items: center;
         justify-content: center;
         transition: color 0.2s ease;
 
         &:hover {
-          color: $--color-text-primary;
+          color: var(--el-text-color-primary);
         }
 
         &.active {
-          color: $--color-primary;
+          color: var(--el-color-primary);
         }
       }
     }
@@ -442,7 +461,7 @@
     align-items: center;
     height: 30px;
     font-size: 12px;
-    color: $--color-text-regular;
+    color: var(--el-text-color-regular);
     padding: 0 12px;
     background: transparent !important;
     border: 1px solid var(--lc-border-base) !important;
@@ -471,7 +490,7 @@
         }
 
         &.active {
-          color: $--color-primary;
+          color: var(--el-color-primary);
         }
       }
     }

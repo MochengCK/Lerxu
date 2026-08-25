@@ -25,10 +25,10 @@
             </span>
             <mo-icon name="verify-file" width="14" height="14" />
           </span>
-          <el-tooltip
+          <mo-hover-tip
             v-else
             effect="dark"
-            :content="$t('task.update-link')"
+            :content="t('task.update-link')"
             placement="top"
             :open-delay="500"
           >
@@ -39,7 +39,7 @@
             >
               <mo-icon name="link" width="14" height="14" />
             </span>
-          </el-tooltip>
+          </mo-hover-tip>
           <transition name="verify-panel">
             <div
               v-if="verifyBarMode === 'verify' && verifyPanelVisible"
@@ -69,9 +69,9 @@
         class="task-item-actions task-item-actions--verify"
       >
         <li class="task-item-action is-verify task-item-action--verify-trigger">
-          <el-tooltip
+          <mo-hover-tip
             effect="dark"
-            :content="$t('task.select-files')"
+            :content="t('task.select-files')"
             placement="top"
             :open-delay="500"
           >
@@ -81,7 +81,7 @@
             >
               <mo-icon name="select-files" width="14" height="14" />
             </span>
-          </el-tooltip>
+          </mo-hover-tip>
         </li>
       </ul>
     </transition>
@@ -96,7 +96,7 @@
         @mouseenter="action === 'VERIFY' && onVerifyTriggerEnter()"
         @mouseleave="action === 'VERIFY' && onVerifyTriggerLeave()"
       >
-        <el-tooltip
+        <mo-hover-tip
           effect="dark"
           :content="getActionLabel(action)"
           placement="top"
@@ -105,32 +105,32 @@
           <i v-if="action ==='PAUSE'" @click.stop="onPauseClick">
             <mo-icon name="task-pause-line" width="14" height="14" />
           </i>
-          <i v-if="action ==='STOP'" @click.stop="onStopClick">
+          <i v-else-if="action ==='STOP'" @click.stop="onStopClick">
             <mo-icon name="task-stop-line" width="14" height="14" />
           </i>
-          <i v-if="action === 'RESUME'" @click.stop="onResumeClick">
+          <i v-else-if="action === 'RESUME'" @click.stop="onResumeClick">
             <mo-icon name="task-start-line" width="14" height="14" />
           </i>
-          <i v-if="action === 'RESTART'" @click.stop="onRestartClick">
+          <i v-else-if="action === 'RESTART'" @click.stop="onRestartClick">
             <mo-icon name="task-restart" width="14" height="14" />
           </i>
-          <i v-if="action === 'DELETE'" @click.stop="onDeleteClick">
+          <i v-else-if="action === 'DELETE'" @click.stop="onDeleteClick">
             <mo-icon name="delete" width="14" height="14" />
           </i>
-          <i v-if="action === 'TRASH'" @click.stop="onTrashClick">
+          <i v-else-if="action === 'TRASH'" @click.stop="onTrashClick">
             <mo-icon name="trash" width="14" height="14" />
           </i>
-          <i v-if="action ==='FOLDER'" @click.stop="onFolderClick">
+          <i v-else-if="action ==='FOLDER'" @click.stop="onFolderClick">
             <mo-icon name="folder" width="14" height="14" />
           </i>
-          <i v-if="action ==='LINK'" @click.stop="onLinkClick">
+          <i v-else-if="action ==='LINK'" @click.stop="onLinkClick">
             <mo-icon name="link" width="14" height="14" />
           </i>
-          <i v-if="action ==='INFO'" @click.stop="onInfoClick">
+          <i v-else-if="action ==='INFO'" @click.stop="onInfoClick">
             <mo-icon name="info-circle" width="14" height="14" />
           </i>
           <span
-            v-if="action ==='VERIFY'"
+            v-else-if="action ==='VERIFY'"
             class="task-verify-dropdown-ref"
             ref="verifyTrigger"
             @click.stop="onVerifyDefaultClick"
@@ -143,104 +143,106 @@
             </span>
             <mo-icon name="verify-file" width="14" height="14" />
           </span>
-          <transition name="verify-panel">
-            <div
-              v-if="action === 'VERIFY' && verifyPanelVisible"
-              :class="['task-verify-panel', { 'task-verify-panel--top': verifyPlacementTop }]"
-              @mouseenter="onVerifyPanelEnter"
-              @mouseleave="onVerifyPanelLeave"
-            >
-              <ul class="task-verify-panel__list">
-                <li
-                  v-for="item in verifyMenuItems"
-                  :key="item.value"
-                  class="task-verify-panel__item"
-                  @click.stop="onVerifyCommand(item.value)"
-                >
-                  {{ item.label }}
-                </li>
-              </ul>
-            </div>
-          </transition>
-        </el-tooltip>
+        </mo-hover-tip>
+        <transition name="verify-panel">
+          <div
+            v-if="action === 'VERIFY' && verifyPanelVisible"
+            :class="['task-verify-panel', { 'task-verify-panel--top': verifyPlacementTop }]"
+            @mouseenter="onVerifyPanelEnter"
+            @mouseleave="onVerifyPanelLeave"
+          >
+            <ul class="task-verify-panel__list">
+              <li
+                v-for="item in verifyMenuItems"
+                :key="item.value"
+                class="task-verify-panel__item"
+                @click.stop="onVerifyCommand(item.value)"
+              >
+                {{ item.label }}
+              </li>
+            </ul>
+          </div>
+        </transition>
       </li>
     </ul>
 
     <el-dialog
-      :title="$t('task.update-link')"
-      :visible.sync="updateLinkDialogVisible"
+      :title="t('task.update-link')"
+      v-model="updateLinkDialogVisible"
       width="620px"
       :close-on-click-modal="false"
       :close-on-press-escape="false"
-      custom-class="update-link-dialog"
+      class="update-link-dialog"
       append-to-body
       @open="onUpdateLinkDialogOpen"
     >
       <el-form label-position="left">
-        <el-form-item :label="`${$t('task.uri-task')}: `" :label-width="formLabelWidth">
+        <el-form-item :label="`${t('task.uri-task')}: `" :label-width="formLabelWidth">
           <el-input
             v-model="updateLinkValue"
             type="textarea"
             auto-complete="off"
             :autosize="{ minRows: 2, maxRows: 4 }"
-            :placeholder="$t('task.update-link-placeholder')"
+            :placeholder="t('task.update-link-placeholder')"
           />
         </el-form-item>
 
         <div class="task-advanced-options" v-if="showUpdateAdvanced">
           <el-row :gutter="8" style="margin-bottom: 8px; align-items:center;">
             <el-col :span="16" :xs="14">
-              <el-form-item :label="`${$t('task.advanced-presets')}: `" :label-width="formLabelWidth">
-                <el-select v-model="selectedAdvancedPresetId" placeholder="" @change="onAdvancedPresetChange">
-                  <el-option :label="$t('task.empty-preset')" value="" />
-                  <el-option v-for="p in advancedPresets" :key="p.id" :label="p.name" :value="p.id" />
-                </el-select>
+              <el-form-item :label="`${t('task.advanced-presets')}: `" :label-width="formLabelWidth">
+                <mo-extend-select
+                  v-model="selectedAdvancedPresetId"
+                  placeholder=""
+                  :options="[{ label: t('task.empty-preset'), value: '' }, ...advancedPresets.map(p => ({ label: p.name, value: p.id }))]"
+                  @change="onAdvancedPresetChange"
+                />
               </el-form-item>
             </el-col>
             <el-col :span="8" :xs="10" style="text-align:right;">
               <div class="preset-actions">
-                <el-button type="primary" size="mini" @click="saveOrUpdateAdvancedPreset">{{ selectedAdvancedPresetId ? $t('task.update-advanced-preset') : $t('task.save-advanced-preset') }}</el-button>
-                <el-button type="danger" size="mini" :disabled="!selectedAdvancedPresetId" @click="deleteAdvancedPreset">{{ $t('task.delete-advanced-preset') }}</el-button>
+                <el-button type="primary" size="small" @click="saveOrUpdateAdvancedPreset">{{ selectedAdvancedPresetId ? t('task.update-advanced-preset') : t('task.save-advanced-preset') }}</el-button>
+                <el-button type="danger" size="small" :disabled="!selectedAdvancedPresetId" @click="deleteAdvancedPreset">{{ t('task.delete-advanced-preset') }}</el-button>
               </div>
             </el-col>
           </el-row>
 
-          <el-form-item :label="`${$t('task.task-user-agent')}: `" :label-width="formLabelWidth">
+          <el-form-item :label="`${t('task.task-user-agent')}: `" :label-width="formLabelWidth">
             <el-input
               type="textarea"
               auto-complete="off"
               :autosize="{ minRows: 2, maxRows: 3 }"
-              :placeholder="$t('task.task-user-agent')"
+              :placeholder="t('task.task-user-agent')"
               v-model="updateHeadersUA"
             />
           </el-form-item>
 
-          <el-form-item :label="`${$t('task.task-authorization')}: `" :label-width="formLabelWidth">
+          <el-form-item :label="`${t('task.task-authorization')}: `" :label-width="formLabelWidth">
             <el-input
               type="textarea"
               auto-complete="off"
               :autosize="{ minRows: 2, maxRows: 3 }"
-              :placeholder="$t('task.task-authorization')"
+              :placeholder="t('task.task-authorization')"
               v-model="updateHeadersAuthorization"
             />
           </el-form-item>
 
-          <el-form-item :label="`${$t('task.task-referer')}: `" :label-width="formLabelWidth">
+          <el-form-item :label="`${t('task.task-referer')}: `" :label-width="formLabelWidth">
             <el-input
               type="textarea"
               auto-complete="off"
               :autosize="{ minRows: 2, maxRows: 3 }"
-              :placeholder="$t('task.task-referer')"
+              :placeholder="t('task.task-referer')"
               v-model="updateHeadersReferer"
             />
           </el-form-item>
 
-          <el-form-item :label="`${$t('task.task-cookie')}: `" :label-width="formLabelWidth">
+          <el-form-item :label="`${t('task.task-cookie')}: `" :label-width="formLabelWidth">
             <el-input
               type="textarea"
               auto-complete="off"
               :autosize="{ minRows: 2, maxRows: 3 }"
-              :placeholder="$t('task.task-cookie')"
+              :placeholder="t('task.task-cookie')"
               v-model="updateHeadersCookie"
             />
           </el-form-item>
@@ -248,7 +250,7 @@
           <el-row :gutter="12">
             <el-col :span="16" :xs="24">
               <el-form-item
-                :label="`${$t('task.task-proxy')}: `"
+                :label="`${t('task.task-proxy')}: `"
                 :label-width="formLabelWidth"
               >
                 <el-input
@@ -260,7 +262,7 @@
             <el-col :span="8" :xs="24">
               <div class="help-link">
                 <a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Proxy" rel="noopener noreferrer">
-                  {{ $t('preferences.proxy-tips') }}
+                  {{ t('preferences.proxy-tips') }}
                   <mo-icon name="link" width="12" height="12" />
                 </a>
               </div>
@@ -271,42 +273,46 @@
       <div class="update-link-warning-tip">
         {{ updateLinkWarningTip }}
       </div>
-      <div slot="footer" class="dialog-footer">
-        <el-checkbox class="chk" v-model="showUpdateAdvanced">
-          {{$t('task.show-advanced-options')}}
-        </el-checkbox>
-        <div class="dialog-footer-actions">
-          <el-button @click="updateLinkDialogVisible = false">{{ $t('app.cancel') }}</el-button>
-          <el-button type="primary" class="dialog-submit-btn" :loading="updateLinkSubmitting" @click="onUpdateLinkConfirm">{{ $t('app.submit') }}</el-button>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-checkbox class="chk" v-model="showUpdateAdvanced">
+            {{t('task.show-advanced-options')}}
+          </el-checkbox>
+          <div class="dialog-footer-actions">
+            <el-button @click="updateLinkDialogVisible = false">{{ t('app.cancel') }}</el-button>
+            <el-button type="primary" class="dialog-submit-btn" :loading="updateLinkSubmitting" @click="onUpdateLinkConfirm">{{ t('app.submit') }}</el-button>
+          </div>
         </div>
-      </div>
+      </template>
     </el-dialog>
 
     <el-dialog
-      custom-class="save-advanced-preset-dialog"
+      class="save-advanced-preset-dialog"
       width="400px"
-      :visible.sync="savePresetDialogVisible"
+      v-model="savePresetDialogVisible"
       :append-to-body="true"
     >
       <div>
         <el-form label-position="left">
-          <el-form-item :label="`${$t('task.preset-name')}: `" :label-width="formLabelWidth">
+          <el-form-item :label="`${t('task.preset-name')}: `" :label-width="formLabelWidth">
             <el-input v-model="savePresetName" />
           </el-form-item>
         </el-form>
       </div>
-      <div slot="footer" class="dialog-footer">
-        <el-button @click="savePresetDialogVisible=false">{{ $t('app.cancel') }}</el-button>
-        <el-button type="primary" @click="saveAdvancedPreset">{{ $t('app.save') }}</el-button>
-      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="savePresetDialogVisible=false">{{ t('app.cancel') }}</el-button>
+          <el-button type="primary" @click="saveAdvancedPreset">{{ t('app.save') }}</el-button>
+        </div>
+      </template>
     </el-dialog>
     <el-dialog
-      :visible.sync="selectFilesDialogVisible"
-      :title="$t('task.select-files')"
+      v-model="selectFilesDialogVisible"
+      :title="t('task.select-files')"
       width="600px"
       append-to-body
       :close-on-click-modal="false"
-      custom-class="select-files-dialog"
+      class="select-files-dialog"
     >
       <mo-task-files
         ref="selectFilesTable"
@@ -315,835 +321,767 @@
         :height="360"
         @confirm-selection="onConfirmFileSelection"
       />
-      <div slot="footer" class="dialog-footer">
-        <el-button @click="selectFilesDialogVisible = false">{{ $t('app.cancel') }}</el-button>
-        <el-button type="primary" @click="onConfirmFileSelection">{{ $t('app.save') }}</el-button>
-      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="selectFilesDialogVisible = false">{{ t('app.cancel') }}</el-button>
+          <el-button type="primary" @click="onConfirmFileSelection">{{ t('app.save') }}</el-button>
+        </div>
+      </template>
     </el-dialog>
   </div>
 </template>
 
-<script>
-  import { mapState } from 'vuex'
-  import is from 'electron-is'
-  import { createReadStream, existsSync } from 'node:fs'
-  import { createHash } from 'node:crypto'
-  import { isAbsolute, resolve, basename } from 'node:path'
+<script setup>
+import { ref, computed, getCurrentInstance, onBeforeUnmount, nextTick } from 'vue'
+import is from 'electron-is'
+import { createReadStream, existsSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { isAbsolute, resolve, basename } from 'node:path'
+import { clipboard } from 'electron'
 
-  import { commands } from '@/components/CommandManager/instance'
-  import api from '@/api'
-  import {
-    TASK_STATUS,
-    NONE_SELECTED_FILES,
-    SELECTED_ALL_FILES,
-    EMPTY_STRING
-  } from '@shared/constants'
-  import {
-    checkTaskIsSeeder,
-    getTaskName,
-    getFileName,
-    getFileExtension
-  } from '@shared/utils'
-  import { getTaskActualPath, getPathCandidates } from '@/utils/native'
-  import '@/components/Icons/task-start-line'
-  import '@/components/Icons/task-pause-line'
-  import '@/components/Icons/task-stop-line'
-  import '@/components/Icons/task-restart'
-  import '@/components/Icons/delete'
-  import '@/components/Icons/folder'
-  import '@/components/Icons/link'
-  import '@/components/Icons/info-circle'
-  import '@/components/Icons/verify-file'
-  import '@/components/Icons/trash'
-  import '@/components/Icons/select-files'
-  import TaskFiles from '@/components/TaskDetail/TaskFiles'
+import { commands } from '@/components/CommandManager/instance'
+import api from '@/api'
+import {
+  TASK_STATUS,
+  NONE_SELECTED_FILES,
+  SELECTED_ALL_FILES,
+  EMPTY_STRING
+} from '@shared/constants'
+import {
+  checkTaskIsSeeder,
+  getTaskName,
+  getFileName,
+  getFileExtension
+} from '@shared/utils'
+import { getTaskActualPath, getPathCandidates } from '@/utils/native'
+import '@/components/Icons/task-start-line'
+import '@/components/Icons/task-pause-line'
+import '@/components/Icons/task-stop-line'
+import '@/components/Icons/task-restart'
+import '@/components/Icons/delete'
+import '@/components/Icons/folder'
+import '@/components/Icons/link'
+import '@/components/Icons/info-circle'
+import '@/components/Icons/verify-file'
+import '@/components/Icons/trash'
+import '@/components/Icons/select-files'
+import TaskFiles from '@/components/TaskDetail/TaskFiles'
+import { useTaskStore } from '@/store/task'
+import { usePreferenceStore } from '@/store/preference'
+import { storeToRefs } from 'pinia'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 
-  const taskActionsMap = {
-    [TASK_STATUS.ACTIVE]: ['PAUSE', 'DELETE'],
-    [TASK_STATUS.PAUSED]: ['RESUME', 'DELETE'],
-    [TASK_STATUS.WAITING]: ['RESUME', 'DELETE'],
-    [TASK_STATUS.ERROR]: ['RESTART', 'TRASH'],
-    [TASK_STATUS.COMPLETE]: ['VERIFY', 'RESTART', 'TRASH'],
-    [TASK_STATUS.REMOVED]: ['RESTART', 'TRASH'],
-    [TASK_STATUS.SEEDING]: ['VERIFY', 'STOP', 'DELETE']
+const { t } = i18n.global
+const instance = getCurrentInstance()
+
+const taskStore = useTaskStore()
+const preferenceStore = usePreferenceStore()
+const { taskSecurityScanStatuses, taskLinkUpdateHints, pendingFileSelection } = storeToRefs(taskStore)
+const { config: preferenceConfig } = storeToRefs(preferenceStore)
+
+const taskActionsMap = {
+  [TASK_STATUS.ACTIVE]: ['PAUSE', 'DELETE'],
+  [TASK_STATUS.PAUSED]: ['RESUME', 'DELETE'],
+  [TASK_STATUS.WAITING]: ['RESUME', 'DELETE'],
+  [TASK_STATUS.ERROR]: ['RESTART', 'TRASH'],
+  [TASK_STATUS.COMPLETE]: ['VERIFY', 'RESTART', 'TRASH'],
+  [TASK_STATUS.REMOVED]: ['RESTART', 'TRASH'],
+  [TASK_STATUS.SEEDING]: ['VERIFY', 'STOP', 'DELETE']
+}
+
+const props = defineProps({
+  mode: {
+    type: String,
+    default: 'LIST',
+    validator: function (value) {
+      return ['LIST', 'DETAIL'].includes(value)
+    }
+  },
+  task: {
+    type: Object,
+    required: true
+  }
+})
+
+defineOptions({ name: 'mo-task-item-actions' })
+
+const formLabelWidth = '110px'
+const verifyTrigger = ref(null)
+const selectFilesTable = ref(null)
+const verifyTriggerHover = ref(false)
+const verifyPanelHover = ref(false)
+const verifyPanelVisibleInternal = ref(false)
+let verifyHideTimer = null
+const verifyPlacementTop = ref(false)
+const updateLinkDialogVisible = ref(false)
+const updateLinkValue = ref('')
+const showUpdateAdvanced = ref(false)
+const advancedPresets = ref([])
+const selectedAdvancedPresetId = ref('')
+const savePresetDialogVisible = ref(false)
+const savePresetName = ref('')
+const updateHeadersUA = ref('')
+const updateHeadersReferer = ref('')
+const updateHeadersCookie = ref('')
+const updateHeadersAuthorization = ref('')
+const updateAllProxy = ref('')
+const updateLinkSubmitting = ref(false)
+const selectFilesDialogVisible = ref(false)
+const selectFilesData = ref([])
+
+const noConfirmBeforeDelete = computed(() => preferenceConfig.value.noConfirmBeforeDeleteTask)
+
+const needUpdateLink = computed(() => {
+  const { task } = props
+  const gid = task && task.gid ? `${task.gid}` : ''
+  return !!(gid && taskLinkUpdateHints.value && taskLinkUpdateHints.value[gid])
+})
+
+const verifyBarMode = computed(() => needUpdateLink.value ? 'update-link' : 'verify')
+const verifyPanelVisible = computed(() => verifyPanelVisibleInternal.value)
+
+const updateLinkWarningTip = computed(() => {
+  const key = 'task.update-link-warning-tip'
+  const v = t(key)
+  if (v && v !== key) return v
+  return '更新链接后，若新链接指向不同文件，可能导致下载文件损坏。建议仅在确认是相同文件时使用'
+})
+
+const verifyMenuItems = computed(() => [
+  { value: 'sha256', label: 'SHA-256' },
+  { value: 'sha1', label: 'SHA-1' },
+  { value: 'md5', label: 'MD5' },
+  { value: 'sha512', label: 'SHA-512' },
+  { value: 'size', label: t('task.verify-by-size') }
+])
+
+const taskName = computed(() => {
+  const task = props.task || {}
+  const cfg = preferenceConfig.value || {}
+  const suffix = cfg.downloadingFileSuffix || ''
+  const { COMPLETE, ERROR, REMOVED } = TASK_STATUS
+  const isStopped = [COMPLETE, ERROR, REMOVED].includes(task.status)
+  if (isStopped) {
+    try {
+      const p = getTaskActualPath(task, cfg)
+      const base = basename(p || '')
+      if (base) {
+        if (suffix && base.endsWith(suffix)) return base.slice(0, -suffix.length)
+        return base
+      }
+    } catch (_) {}
+  }
+  return getTaskName(task)
+})
+
+const path = computed(() => getTaskActualPath(props.task, preferenceConfig.value))
+
+const isSeeder = computed(() => checkTaskIsSeeder(props.task))
+
+const taskStatus = computed(() => {
+  const { task } = props
+  if (isSeeder.value && task.status === TASK_STATUS.ACTIVE) return TASK_STATUS.SEEDING
+  return task.status
+})
+
+const taskCommonActions = computed(() => {
+  const result = is.renderer() ? ['FOLDER'] : []
+  switch (props.mode) {
+  case 'LIST':
+    result.push('LINK', 'INFO')
+    break
+  case 'DETAIL':
+    result.push('LINK')
+    break
+  }
+  return result
+})
+
+function resolveTaskFilePath (filePath) {
+  const { task } = props
+  const dir = task && task.dir ? `${task.dir}` : ''
+  const raw = filePath ? `${filePath}` : ''
+  if (!raw) return ''
+  if (isAbsolute(raw)) return resolve(raw)
+  if (!dir) return resolve(raw)
+  return resolve(dir, raw)
+}
+
+function getActualFilePath (filePath) {
+  const target = resolveTaskFilePath(filePath)
+  if (!target) return target
+  const config = preferenceConfig.value || {}
+  const suffix = config.downloadingFileSuffix
+  const candidates = getPathCandidates(target, suffix, config)
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  return target
+}
+
+const hasExistingTaskFile = computed(() => {
+  const { task } = props
+  const files = Array.isArray(task && task.files) ? task.files : []
+  if (!files.length) return false
+  return files.some(file => {
+    const filePath = getActualFilePath(file && file.path ? file.path : '')
+    return !!(filePath && existsSync(filePath))
+  })
+})
+
+const taskActions = computed(() => {
+  const actions = taskActionsMap[taskStatus.value] || []
+  const result = [...actions, ...taskCommonActions.value]
+    .filter(action => (is.renderer() ? true : action !== 'VERIFY'))
+    .filter(action => (action === 'VERIFY' ? hasExistingTaskFile.value : true))
+    .reverse()
+  return result
+})
+
+const showVerifyBar = computed(() => {
+  if (needUpdateLink.value) return true
+  const canVerify = taskActions.value.includes('VERIFY')
+  if (!canVerify) return false
+  return !!(path.value && existsSync(path.value))
+})
+
+const showSelectFilesBar = computed(() => {
+  const { task } = props
+  const gid = task && task.gid ? `${task.gid}` : ''
+  if (!gid) return false
+  return !!(pendingFileSelection.value && pendingFileSelection.value[gid])
+})
+
+const verifyCanSlideOut = computed(() => !!(path.value && existsSync(path.value)))
+
+const primaryActions = computed(() => {
+  return taskActions.value.filter(action => action !== 'VERIFY' || !showVerifyBar.value)
+})
+
+const securityScanStatus = computed(() => {
+  if (!taskSecurityScanStatuses.value || !props.task || !props.task.gid) return null
+  return taskSecurityScanStatuses.value[props.task.gid] || null
+})
+
+const securityScanStatusText = computed(() => {
+  const scanStatus = securityScanStatus.value
+  const status = scanStatus && scanStatus.status
+  switch (status) {
+  case 'running':
+    return t('task.security-scan-running')
+  case 'success':
+    return t('task.security-scan-success')
+  case 'failed':
+    if (scanStatus && scanStatus.reason === 'quarantine-flag') return t('task.security-scan-quarantine')
+    if (scanStatus && scanStatus.reason === 'virus-detected') return t('task.security-scan-virus')
+    return t('task.security-scan-failed')
+  case 'skipped':
+    return t('task.security-scan-skipped')
+  default:
+    return ''
+  }
+})
+
+function getActionLabel (action) {
+  const labelMap = {
+    VERIFY: t('task.verify-file'),
+    PAUSE: t('task.pause'),
+    STOP: t('task.stop'),
+    RESUME: t('task.resume'),
+    RESTART: t('task.restart'),
+    DELETE: t('task.delete'),
+    TRASH: t('task.trash'),
+    FOLDER: t('task.reveal-in-folder'),
+    LINK: t('task.copy-link'),
+    INFO: t('task.info')
+  }
+  return labelMap[action] || action
+}
+
+function calculateHash (filePath, algorithm) {
+  return new Promise((resolve, reject) => {
+    const hash = createHash(algorithm)
+    const stream = createReadStream(filePath)
+    stream.on('error', reject)
+    stream.on('data', (chunk) => { hash.update(chunk) })
+    stream.on('end', () => { resolve(hash.digest('hex')) })
+  })
+}
+
+function clearVerifyHideTimer () {
+  if (verifyHideTimer) {
+    clearTimeout(verifyHideTimer)
+    verifyHideTimer = null
+  }
+}
+
+function ensureVerifyPanelVisible () {
+  verifyPanelVisibleInternal.value = true
+  nextTick(() => { updateVerifyPlacement() })
+}
+
+function updateVerifyPlacement () {
+  const triggerEl = verifyTrigger.value
+  if (!triggerEl || typeof window === 'undefined') {
+    verifyPlacementTop.value = false
+    return
+  }
+  const rect = triggerEl.getBoundingClientRect()
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0
+  const estimatedPanelHeight = 120
+  const spaceBelow = viewportHeight - rect.bottom
+  const spaceAbove = rect.top
+  verifyPlacementTop.value = spaceBelow < estimatedPanelHeight && spaceAbove > spaceBelow
+}
+
+function scheduleVerifyPanelHide () {
+  clearVerifyHideTimer()
+  if (verifyTriggerHover.value || verifyPanelHover.value) return
+  verifyHideTimer = setTimeout(() => {
+    if (verifyTriggerHover.value || verifyPanelHover.value) return
+    verifyPanelVisibleInternal.value = false
+  }, 120)
+}
+
+function onVerifyTriggerEnter () {
+  clearVerifyHideTimer()
+  verifyTriggerHover.value = true
+  ensureVerifyPanelVisible()
+}
+
+function onVerifyTriggerLeave () {
+  verifyTriggerHover.value = false
+  scheduleVerifyPanelHide()
+}
+
+function onVerifyPanelEnter () {
+  clearVerifyHideTimer()
+  verifyPanelHover.value = true
+  ensureVerifyPanelVisible()
+}
+
+function onVerifyPanelLeave () {
+  verifyPanelHover.value = false
+  scheduleVerifyPanelHide()
+}
+
+function onVerifyDefaultClick () {
+  onVerify('sha256')
+}
+
+function onVerifyCommand (command) {
+  onVerify(command)
+}
+
+async function onVerify (verifyType) {
+  const { task } = props
+  if (![TASK_STATUS.COMPLETE, TASK_STATUS.SEEDING].includes(taskStatus.value)) return
+
+  const files = Array.isArray(task.files) ? task.files : []
+  if (!files.length) {
+    instance.proxy.$msg.error(t('task.verify-no-files'))
+    return
   }
 
-  export default {
-    name: 'mo-task-item-actions',
-    components: {
-      [TaskFiles.name]: TaskFiles
-    },
-    props: {
-      mode: {
-        type: String,
-        default: 'LIST',
-        validator: function (value) {
-          return ['LIST', 'DETAIL'].includes(value)
+  instance.proxy.$msg.info(t('task.verify-start'))
+
+  const missing = []
+  const mismatched = []
+  const resolvedFiles = []
+
+  for (const file of files) {
+    const filePath = getActualFilePath(file && file.path ? file.path : '')
+    if (!filePath || !existsSync(filePath)) {
+      missing.push(filePath || '')
+      continue
+    }
+    resolvedFiles.push({ file, filePath })
+
+    const expected = Number(file && file.length ? file.length : 0)
+    if (expected > 0) {
+      try {
+        const st = statSync(filePath)
+        if (st && st.isFile && st.isFile() && Number.isFinite(st.size) && st.size !== expected) {
+          mismatched.push(filePath)
         }
-      },
-      task: {
-        type: Object,
-        required: true
+      } catch (_) {
+        mismatched.push(filePath)
       }
-    },
-    data () {
-      return {
-        formLabelWidth: '110px',
-        verifyTriggerHover: false,
-        verifyPanelHover: false,
-        verifyPanelVisibleInternal: false,
-        verifyHideTimer: null,
-        verifyPlacementTop: false,
-        updateLinkDialogVisible: false,
-        updateLinkValue: '',
-        showUpdateAdvanced: false,
-        advancedPresets: [],
-        selectedAdvancedPresetId: '',
-        savePresetDialogVisible: false,
-        savePresetName: '',
-        updateHeadersUA: '',
-        updateHeadersReferer: '',
-        updateHeadersCookie: '',
-        updateHeadersAuthorization: '',
-        updateAllProxy: '',
-        updateLinkSubmitting: false,
-        selectFilesDialogVisible: false,
-        selectFilesData: []
-      }
-    },
-    computed: {
-      ...mapState('preference', {
-        noConfirmBeforeDelete: state => state.config.noConfirmBeforeDeleteTask,
-        preferenceConfig: state => state.config
-      }),
-      ...mapState('task', {
-        securityScanStatuses: state => state.taskSecurityScanStatuses || {},
-        taskLinkUpdateHints: state => state.taskLinkUpdateHints || {},
-        pendingFileSelection: state => state.pendingFileSelection || {}
-      }),
-      needUpdateLink () {
-        const { task, taskLinkUpdateHints } = this
-        const gid = task && task.gid ? `${task.gid}` : ''
-        return !!(gid && taskLinkUpdateHints && taskLinkUpdateHints[gid])
-      },
-      verifyBarMode () {
-        return this.needUpdateLink ? 'update-link' : 'verify'
-      },
-      verifyPanelVisible () {
-        return this.verifyPanelVisibleInternal
-      },
-      updateLinkWarningTip () {
-        const key = 'task.update-link-warning-tip'
-        const v = this.$t(key)
-        if (v && v !== key) {
-          return v
-        }
-        return '更新链接后，若新链接指向不同文件，可能导致下载文件损坏。建议仅在确认是相同文件时使用'
-      },
-      verifyMenuItems () {
-        return [
-          { value: 'sha256', label: 'SHA-256' },
-          { value: 'sha1', label: 'SHA-1' },
-          { value: 'md5', label: 'MD5' },
-          { value: 'sha512', label: 'SHA-512' },
-          { value: 'size', label: this.$t('task.verify-by-size') }
-        ]
-      },
-      taskName () {
-        const task = this.task || {}
-        const cfg = this.preferenceConfig || {}
-        const suffix = cfg.downloadingFileSuffix || ''
-        const { COMPLETE, ERROR, REMOVED } = TASK_STATUS
-        const isStopped = [COMPLETE, ERROR, REMOVED].includes(task.status)
-        if (isStopped) {
-          try {
-            const p = getTaskActualPath(task, cfg)
-            const base = basename(p || '')
-            if (base) {
-              if (suffix && base.endsWith(suffix)) {
-                return base.slice(0, -suffix.length)
-              }
-              return base
-            }
-          } catch (_) {}
-        }
-        return getTaskName(task)
-      },
-      path () {
-        return getTaskActualPath(this.task, this.preferenceConfig)
-      },
-      isSeeder () {
-        return checkTaskIsSeeder(this.task)
-      },
-      taskStatus () {
-        const { task, isSeeder } = this
-        if (isSeeder && task.status === TASK_STATUS.ACTIVE) {
-          return TASK_STATUS.SEEDING
-        } else {
-          return task.status
-        }
-      },
-      taskCommonActions () {
-        const { mode } = this
-        const result = is.renderer() ? ['FOLDER'] : []
-
-        switch (mode) {
-        case 'LIST':
-          result.push('LINK', 'INFO')
-          break
-        case 'DETAIL':
-          result.push('LINK')
-          break
-        }
-
-        return result
-      },
-      taskActions () {
-        const { taskStatus, taskCommonActions, hasExistingTaskFile } = this
-        const actions = taskActionsMap[taskStatus] || []
-        const result = [...actions, ...taskCommonActions]
-          .filter(action => (is.renderer() ? true : action !== 'VERIFY'))
-          .filter(action => (action === 'VERIFY' ? hasExistingTaskFile : true))
-          .reverse()
-        return result
-      },
-      showVerifyBar () {
-        if (this.needUpdateLink) {
-          return true
-        }
-        const { taskActions, path } = this
-        const canVerify = taskActions.includes('VERIFY')
-        if (!canVerify) {
-          return false
-        }
-        return !!(path && existsSync(path))
-      },
-      showSelectFilesBar () {
-        const { task, pendingFileSelection } = this
-        const gid = task && task.gid ? `${task.gid}` : ''
-        if (!gid) return false
-        return !!(pendingFileSelection && pendingFileSelection[gid])
-      },
-      verifyCanSlideOut () {
-        const { path } = this
-        return !!(path && existsSync(path))
-      },
-      hasExistingTaskFile () {
-        const { task } = this
-        const files = Array.isArray(task && task.files) ? task.files : []
-        if (!files.length) return false
-        return files.some(file => {
-          const filePath = this.getActualFilePath(file && file.path ? file.path : '')
-          return !!(filePath && existsSync(filePath))
-        })
-      },
-      primaryActions () {
-        const { taskActions, showVerifyBar } = this
-        return taskActions.filter(action => action !== 'VERIFY' || !showVerifyBar)
-      },
-      securityScanStatus () {
-        const { securityScanStatuses, task } = this
-        if (!securityScanStatuses || !task || !task.gid) {
-          return null
-        }
-        return securityScanStatuses[task.gid] || null
-      },
-      securityScanStatusText () {
-        const scanStatus = this.securityScanStatus
-        const status = scanStatus && scanStatus.status
-        switch (status) {
-        case 'running':
-          return this.$t('task.security-scan-running')
-        case 'success':
-          return this.$t('task.security-scan-success')
-        case 'failed':
-          // quarantine-flag = macOS 外部来源文件警示，不是扫描失败
-          if (scanStatus && scanStatus.reason === 'quarantine-flag') {
-            return this.$t('task.security-scan-quarantine')
-          }
-          if (scanStatus && scanStatus.reason === 'virus-detected') {
-            return this.$t('task.security-scan-virus')
-          }
-          return this.$t('task.security-scan-failed')
-        case 'skipped':
-          return this.$t('task.security-scan-skipped')
-        default:
-          return ''
-        }
-      }
-    },
-    methods: {
-      getActionLabel (action) {
-        const labelMap = {
-          VERIFY: this.$t('task.verify-file'),
-          PAUSE: this.$t('task.pause'),
-          STOP: this.$t('task.stop'),
-          RESUME: this.$t('task.resume'),
-          RESTART: this.$t('task.restart'),
-          DELETE: this.$t('task.delete'),
-          TRASH: this.$t('task.trash'),
-          FOLDER: this.$t('task.reveal-in-folder'),
-          LINK: this.$t('task.copy-link'),
-          INFO: this.$t('task.info')
-        }
-        return labelMap[action] || action
-      },
-      resolveTaskFilePath (filePath) {
-        const { task } = this
-        const dir = task && task.dir ? `${task.dir}` : ''
-        const raw = filePath ? `${filePath}` : ''
-        if (!raw) return ''
-        if (isAbsolute(raw)) return resolve(raw)
-        if (!dir) return resolve(raw)
-        return resolve(dir, raw)
-      },
-      getActualFilePath (filePath) {
-        const target = this.resolveTaskFilePath(filePath)
-        if (!target) return target
-
-        const config = this.preferenceConfig || {}
-        const suffix = config.downloadingFileSuffix
-        const candidates = getPathCandidates(target, suffix, config)
-
-        for (const p of candidates) {
-          if (existsSync(p)) {
-            return p
-          }
-        }
-
-        return target
-      },
-      calculateHash (filePath, algorithm) {
-        return new Promise((resolve, reject) => {
-          const hash = createHash(algorithm)
-          const stream = createReadStream(filePath)
-          stream.on('error', reject)
-          stream.on('data', (chunk) => {
-            hash.update(chunk)
-          })
-          stream.on('end', () => {
-            resolve(hash.digest('hex'))
-          })
-        })
-      },
-      clearVerifyHideTimer () {
-        if (this.verifyHideTimer) {
-          clearTimeout(this.verifyHideTimer)
-          this.verifyHideTimer = null
-        }
-      },
-      ensureVerifyPanelVisible () {
-        this.verifyPanelVisibleInternal = true
-        this.$nextTick(() => {
-          this.updateVerifyPlacement()
-        })
-      },
-      updateVerifyPlacement () {
-        const triggerRef = this.$refs.verifyTrigger
-        const triggerEl = Array.isArray(triggerRef) ? triggerRef[0] : triggerRef
-        if (!triggerEl || typeof window === 'undefined') {
-          this.verifyPlacementTop = false
-          return
-        }
-        const rect = triggerEl.getBoundingClientRect()
-        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0
-        const estimatedPanelHeight = 120
-        const spaceBelow = viewportHeight - rect.bottom
-        const spaceAbove = rect.top
-        if (spaceBelow < estimatedPanelHeight && spaceAbove > spaceBelow) {
-          this.verifyPlacementTop = true
-        } else {
-          this.verifyPlacementTop = false
-        }
-      },
-      scheduleVerifyPanelHide () {
-        this.clearVerifyHideTimer()
-        if (this.verifyTriggerHover || this.verifyPanelHover) {
-          return
-        }
-        this.verifyHideTimer = setTimeout(() => {
-          if (this.verifyTriggerHover || this.verifyPanelHover) {
-            return
-          }
-          this.verifyPanelVisibleInternal = false
-        }, 120)
-      },
-      onVerifyTriggerEnter () {
-        this.clearVerifyHideTimer()
-        this.verifyTriggerHover = true
-        this.ensureVerifyPanelVisible()
-      },
-      onVerifyTriggerLeave () {
-        this.verifyTriggerHover = false
-        this.scheduleVerifyPanelHide()
-      },
-      onVerifyPanelEnter () {
-        this.clearVerifyHideTimer()
-        this.verifyPanelHover = true
-        this.ensureVerifyPanelVisible()
-      },
-      onVerifyPanelLeave () {
-        this.verifyPanelHover = false
-        this.scheduleVerifyPanelHide()
-      },
-      onVerifyDefaultClick () {
-        this.onVerify('sha256')
-      },
-      onVerifyCommand (command) {
-        this.onVerify(command)
-      },
-      async onVerifyClick () {
-        this.onVerifyDefaultClick()
-      },
-      async onVerify (verifyType) {
-        const { task, taskStatus } = this
-        if (![TASK_STATUS.COMPLETE, TASK_STATUS.SEEDING].includes(taskStatus)) {
-          return
-        }
-
-        const files = Array.isArray(task.files) ? task.files : []
-        if (!files.length) {
-          this.$msg.error(this.$t('task.verify-no-files'))
-          return
-        }
-
-        this.$msg.info(this.$t('task.verify-start'))
-
-        const missing = []
-        const mismatched = []
-        const resolvedFiles = []
-
-        for (const file of files) {
-          const filePath = this.getActualFilePath(file && file.path ? file.path : '')
-          if (!filePath || !existsSync(filePath)) {
-            missing.push(filePath || '')
-            continue
-          }
-          resolvedFiles.push({ file, filePath })
-
-          const expected = Number(file && file.length ? file.length : 0)
-          if (expected > 0) {
-            try {
-              const { statSync } = require('node:fs')
-              const st = statSync(filePath)
-              if (st && st.isFile && st.isFile() && Number.isFinite(st.size) && st.size !== expected) {
-                mismatched.push(filePath)
-              }
-            } catch (_) {
-              mismatched.push(filePath)
-            }
-          }
-        }
-
-        if (missing.length) {
-          this.$msg.error(this.$t('task.verify-missing-files', { count: missing.length }))
-          return
-        }
-
-        if (mismatched.length) {
-          this.$msg.error(this.$t('task.verify-size-mismatch', { count: mismatched.length }))
-          return
-        }
-
-        if (verifyType === 'size') {
-          this.$msg.success(this.$t('task.verify-success-multi', { count: files.length }))
-          return
-        }
-
-        const algorithm = typeof verifyType === 'string' && verifyType ? verifyType : 'sha256'
-        const algorithmLabel = `${algorithm}`.toUpperCase()
-
-        if (resolvedFiles.length === 1) {
-          const singlePath = resolvedFiles[0].filePath
-          try {
-            const digest = await this.calculateHash(singlePath, algorithm)
-            try {
-              const { clipboard } = require('electron')
-              clipboard.writeText(digest)
-            } catch (_) {}
-            this.$msg.success(this.$t('task.verify-success-hash', { algorithm: algorithmLabel, hash: digest }))
-          } catch (_) {
-            this.$msg.error(this.$t('task.verify-hash-fail', { algorithm: algorithmLabel }))
-          }
-          return
-        }
-
-        const lines = []
-        try {
-          for (const it of resolvedFiles) {
-            const digest = await this.calculateHash(it.filePath, algorithm)
-            const label = (it.file && it.file.path ? `${it.file.path}` : basename(it.filePath)).replace(/\\/g, '/')
-            lines.push(`${digest}  ${label}`)
-          }
-        } catch (_) {
-          this.$msg.error(this.$t('task.verify-hash-fail', { algorithm: algorithmLabel }))
-          return
-        }
-
-        try {
-          const { clipboard } = require('electron')
-          clipboard.writeText(lines.join('\n'))
-        } catch (_) {}
-
-        this.$msg.success(this.$t('task.verify-success-hash-list', { algorithm: algorithmLabel, count: resolvedFiles.length }))
-      },
-      onResumeClick () {
-        const { task, taskName } = this
-        const gid = task && task.gid ? `${task.gid}` : ''
-        if (gid && this.pendingFileSelection && this.pendingFileSelection[gid]) {
-          this.$store.dispatch('task/clearPendingFileSelection', gid)
-          // 直接恢复 = 接受当前文件选择，记录确认状态，
-          // 避免应用重启后任务再次退回"待选择文件"状态
-          const bt = task && task.bittorrent
-          const infoHash = bt && bt.info && bt.info.hash ? `${bt.info.hash}` : ''
-          this.$store.dispatch('task/confirmFileSelection', { gid, infoHash })
-        }
-        commands.emit('resume-task', {
-          task,
-          taskName
-        })
-      },
-      onSelectFilesClick () {
-        this.selectFilesDialogVisible = true
-        const rawFiles = Array.isArray(this.task.files) ? this.task.files : []
-        // 映射文件列表，确保包含 name/extension/idx 等字段（aria2 仅返回 path）
-        this.selectFilesData = rawFiles.map((item, index) => {
-          const rawName = getFileName(item.path || '')
-          const extension = getFileExtension(rawName)
-          return {
-            idx: Number(item.index) || (index + 1),
-            selected: item.selected === 'true' || item.selected === true,
-            path: item.path || '',
-            name: item.name || rawName,
-            extension: extension ? `.${extension}` : '',
-            length: parseInt(item.length, 10) || 0,
-            completedLength: item.completedLength || '0'
-          }
-        })
-        // 使用双 rAF 确保弹窗和表格完成渲染后再勾选
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            const table = this.$refs.selectFilesTable
-            if (!table) return
-            const files = this.selectFilesData
-            const selected = files.filter(f => f.selected)
-            if (selected.length > 0) {
-              table.toggleSelection(selected)
-            } else {
-              // 默认勾选全部文件
-              table.toggleSelection(files)
-            }
-          })
-        })
-      },
-      onConfirmFileSelection () {
-        const table = this.$refs.selectFilesTable
-        if (!table) return
-        const fileIndex = table.selectedFileIndex
-        if (fileIndex === NONE_SELECTED_FILES) {
-          this.$msg.warning(this.$t('task.select-at-least-one'))
-          return
-        }
-        const gid = this.task && this.task.gid ? `${this.task.gid}` : ''
-        if (!gid) return
-        const options = {
-          selectFile: fileIndex !== SELECTED_ALL_FILES ? fileIndex : EMPTY_STRING
-        }
-        this.$store.dispatch('task/changeTaskOption', { gid, options }).then(() => {
-          this.selectFilesDialogVisible = false
-          this.$store.dispatch('task/clearPendingFileSelection', gid)
-          const bt = this.task && this.task.bittorrent
-          // infoHash 优先取任务顶层字段（aria2 tellStatus 的 infoHash），
-          // bittorrent.info.hash 仅为兼容兜底。若这里取不到哈希，确认状态
-          // 会被存成 `true`，重启后磁力任务 follow 导致 gid 漂移时无法按
-          // 哈希识别"已确认"，任务会被 scanForPendingBtTasks 重新标记为
-          // "待选择文件"。
-          const infoHash = String(
-            (this.task && this.task.infoHash) ||
-              (bt && bt.info && bt.info.hash) ||
-              ''
-          ).trim()
-          this.$store.dispatch('task/confirmFileSelection', { gid, infoHash })
-          return api.resumeTask({ gid })
-        }).catch(() => {
-          this.$store.dispatch('task/setPendingFileSelection', gid)
-          this.$msg.error(this.$t('task.select-files-fail'))
-        })
-      },
-      onRestartClick (event) {
-        const { task, taskName } = this
-        const { status } = task
-        const showDialog = status === TASK_STATUS.COMPLETE || !!event.altKey
-        commands.emit('restart-task', {
-          task,
-          taskName,
-          showDialog
-        })
-      },
-      onPauseClick () {
-        const { task, taskName } = this
-        commands.emit('pause-task', {
-          task,
-          taskName
-        })
-      },
-      onStopClick () {
-        if (!this.isSeeder) {
-          return
-        }
-
-        const { task } = this
-        commands.emit('stop-task-seeding', { task })
-      },
-      onDeleteClick (event) {
-        const { task, taskName } = this
-        const deleteWithFiles = !!event.shiftKey
-        commands.emit('delete-task', {
-          task,
-          taskName,
-          deleteWithFiles
-        })
-      },
-      onTrashClick (event) {
-        const { task, taskName } = this
-        const deleteWithFiles = !!event.shiftKey
-        commands.emit('delete-task-record', {
-          task,
-          taskName,
-          deleteWithFiles
-        })
-      },
-      onFolderClick () {
-        const { path } = this
-        commands.emit('reveal-in-folder', { path })
-      },
-      onLinkClick () {
-        const { task } = this
-        commands.emit('copy-task-link', { task })
-      },
-      onInfoClick () {
-        const { task } = this
-        commands.emit('show-task-info', { task })
-      },
-      onUpdateLinkClick () {
-        this.updateLinkDialogVisible = true
-      },
-      async onUpdateLinkDialogOpen () {
-        try {
-          const cfg = this.preferenceConfig || {}
-          const { advancedOptionPresets = [] } = cfg || {}
-          this.advancedPresets = Array.isArray(advancedOptionPresets) ? advancedOptionPresets : []
-        } catch (_) {
-          this.advancedPresets = []
-        }
-        this.selectedAdvancedPresetId = ''
-        this.showUpdateAdvanced = false
-
-        const { task } = this
-        const files = Array.isArray(task && task.files) ? task.files : []
-        const first = files.length > 0 ? files[0] : null
-        const uris = Array.isArray(first && first.uris)
-          ? first.uris.map(u => u && u.uri ? `${u.uri}` : '').filter(Boolean)
-          : []
-        this.updateLinkValue = uris.length > 0 ? uris[0] : ''
-
-        const gid = task && task.gid ? `${task.gid}` : ''
-        if (!gid) {
-          this.updateHeadersUA = ''
-          this.updateHeadersReferer = ''
-          this.updateHeadersCookie = ''
-          this.updateHeadersAuthorization = ''
-          this.updateAllProxy = ''
-          return
-        }
-        try {
-          const opt = await api.getOption({ gid })
-          const hs = opt && opt.header ? opt.header : []
-          const headerItems = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
-          const headers = []
-          headerItems.filter(Boolean).forEach(h => {
-            `${h}`.split(/\r?\n/).forEach(line => {
-              const s = `${line || ''}`.trim()
-              if (s) headers.push(s)
-            })
-          })
-          const map = {}
-          headers.forEach(h => {
-            const s = `${h}`
-            const i = s.indexOf(':')
-            if (i > 0) {
-              const k = s.slice(0, i).trim().toLowerCase()
-              const v = s.slice(i + 1).trim()
-              map[k] = v
-            }
-          })
-          this.updateHeadersUA = map['user-agent'] || ''
-          this.updateHeadersReferer = map.referer || ''
-          this.updateHeadersCookie = map.cookie || ''
-          this.updateHeadersAuthorization = map.authorization || ''
-          this.updateAllProxy = (opt && (opt.allProxy || opt['all-proxy'])) ? `${opt.allProxy || opt['all-proxy']}` : ''
-        } catch (e) {
-          this.updateHeadersUA = ''
-          this.updateHeadersReferer = ''
-          this.updateHeadersCookie = ''
-          this.updateHeadersAuthorization = ''
-          this.updateAllProxy = ''
-        }
-      },
-      async onUpdateLinkConfirm () {
-        const { task } = this
-        const newUri = `${this.updateLinkValue || ''}`.trim()
-        if (!newUri) {
-          this.$msg.error(this.$t('task.update-link-empty'))
-          return
-        }
-        if (this.updateLinkSubmitting) {
-          return
-        }
-        this.updateLinkSubmitting = true
-        try {
-          await this.$store.dispatch('task/updateTaskLink', {
-            task,
-            newUri,
-            headersUA: this.updateHeadersUA,
-            headersReferer: this.updateHeadersReferer,
-            headersCookie: this.updateHeadersCookie,
-            headersAuthorization: this.updateHeadersAuthorization,
-            allProxy: this.updateAllProxy
-          })
-          this.$msg.success(this.$t('task.update-link-success'))
-          this.updateLinkDialogVisible = false
-          this.updateLinkValue = ''
-          this.updateHeadersUA = ''
-          this.updateHeadersReferer = ''
-          this.updateHeadersCookie = ''
-          this.updateHeadersAuthorization = ''
-          this.updateAllProxy = ''
-        } catch (e) {
-          const code = e && e.message ? `${e.message}` : `${e}`
-          if (/^HTTP_\d+$/.test(code)) {
-            const httpCode = Number(code.replace('HTTP_', '')) || 0
-            this.$msg.error(this.$t('task.update-link-http-fail', { code: httpCode || code }))
-            return
-          }
-          const map = {
-            INVALID_PAYLOAD: this.$t('task.update-link-fail'),
-            NO_ORIGINAL_URI: this.$t('task.update-link-no-original'),
-            LINK_MISMATCH: this.$t('task.update-link-mismatch'),
-            CONTENT_LENGTH_MISMATCH: this.$t('task.update-link-mismatch'),
-            UNABLE_TO_VERIFY: this.$t('task.update-link-unverifiable')
-          }
-          this.$msg.error(map[code] || (code ? `${this.$t('task.update-link-fail')}（${code}）` : this.$t('task.update-link-fail')))
-        } finally {
-          this.updateLinkSubmitting = false
-        }
-      },
-      openSavePresetDialog () {
-        const data = {
-          userAgent: this.updateHeadersUA || '',
-          authorization: this.updateHeadersAuthorization || '',
-          referer: this.updateHeadersReferer || '',
-          cookie: this.updateHeadersCookie || '',
-          allProxy: this.updateAllProxy || ''
-        }
-        const allEmpty = [
-          data.userAgent,
-          data.authorization,
-          data.referer,
-          data.cookie,
-          data.allProxy
-        ].every(v => !v || !String(v).trim())
-        if (allEmpty) {
-          this.$msg.warning(this.$t('task.empty-advanced-options-tips'))
-          return
-        }
-        this.savePresetName = ''
-        this.savePresetDialogVisible = true
-      },
-      saveAdvancedPreset () {
-        const name = (this.savePresetName || '').trim() || `Preset ${new Date().toLocaleString()}`
-        const data = {
-          userAgent: this.updateHeadersUA || '',
-          authorization: this.updateHeadersAuthorization || '',
-          referer: this.updateHeadersReferer || '',
-          cookie: this.updateHeadersCookie || '',
-          allProxy: this.updateAllProxy || '',
-          newTaskShowDownloading: false
-        }
-        const preset = { id: Date.now().toString(), name, data }
-        const next = [...(this.advancedPresets || []), preset]
-        this.advancedPresets = next
-        this.$store.dispatch('preference/save', { advancedOptionPresets: next })
-        this.$msg.success(this.$t('task.save-preset-success'))
-        this.savePresetDialogVisible = false
-        this.selectedAdvancedPresetId = preset.id
-      },
-      onAdvancedPresetChange (id) {
-        if (!id) {
-          this.updateHeadersUA = ''
-          this.updateHeadersAuthorization = ''
-          this.updateHeadersReferer = ''
-          this.updateHeadersCookie = ''
-          this.updateAllProxy = ''
-          return
-        }
-        const preset = (this.advancedPresets || []).find(p => p.id === id)
-        if (!preset) return
-        const d = preset.data || {}
-        this.updateHeadersUA = d.userAgent || ''
-        this.updateHeadersAuthorization = d.authorization || ''
-        this.updateHeadersReferer = d.referer || ''
-        this.updateHeadersCookie = d.cookie || ''
-        this.updateAllProxy = d.allProxy || ''
-        this.$msg.success(this.$t('task.apply-preset-success'))
-      },
-      deleteAdvancedPreset () {
-        const id = this.selectedAdvancedPresetId
-        if (!id) return
-        const next = (this.advancedPresets || []).filter(p => p.id !== id)
-        this.advancedPresets = next
-        this.selectedAdvancedPresetId = ''
-        this.onAdvancedPresetChange('')
-        this.$store.dispatch('preference/save', { advancedOptionPresets: next })
-        this.$msg.success(this.$t('task.delete-preset-success'))
-      },
-      updateAdvancedPreset () {
-        const id = this.selectedAdvancedPresetId
-        if (!id) return
-        const presetIndex = (this.advancedPresets || []).findIndex(p => p.id === id)
-        if (presetIndex === -1) return
-
-        const data = {
-          userAgent: this.updateHeadersUA || '',
-          authorization: this.updateHeadersAuthorization || '',
-          referer: this.updateHeadersReferer || '',
-          cookie: this.updateHeadersCookie || '',
-          allProxy: this.updateAllProxy || '',
-          newTaskShowDownloading: false
-        }
-
-        const updatedPresets = [...this.advancedPresets]
-        updatedPresets[presetIndex] = {
-          ...updatedPresets[presetIndex],
-          data
-        }
-
-        this.advancedPresets = updatedPresets
-        this.$store.dispatch('preference/save', { advancedOptionPresets: updatedPresets })
-        this.$msg.success(this.$t('task.update-preset-success'))
-      },
-      saveOrUpdateAdvancedPreset () {
-        if (this.selectedAdvancedPresetId) {
-          this.updateAdvancedPreset()
-        } else {
-          this.openSavePresetDialog()
-        }
-      }
-    },
-    beforeDestroy () {
-      this.clearVerifyHideTimer()
     }
   }
+
+  if (missing.length) {
+    instance.proxy.$msg.error(t('task.verify-missing-files', { count: missing.length }))
+    return
+  }
+
+  if (mismatched.length) {
+    instance.proxy.$msg.error(t('task.verify-size-mismatch', { count: mismatched.length }))
+    return
+  }
+
+  if (verifyType === 'size') {
+    instance.proxy.$msg.success(t('task.verify-success-multi', { count: files.length }))
+    return
+  }
+
+  const algorithm = typeof verifyType === 'string' && verifyType ? verifyType : 'sha256'
+  const algorithmLabel = `${algorithm}`.toUpperCase()
+
+  if (resolvedFiles.length === 1) {
+    const singlePath = resolvedFiles[0].filePath
+    try {
+      const digest = await calculateHash(singlePath, algorithm)
+      try { clipboard.writeText(digest) } catch (_) {}
+      instance.proxy.$msg.success(t('task.verify-success-hash', { algorithm: algorithmLabel, hash: digest }))
+    } catch (_) {
+      instance.proxy.$msg.error(t('task.verify-hash-fail', { algorithm: algorithmLabel }))
+    }
+    return
+  }
+
+  const lines = []
+  try {
+    for (const it of resolvedFiles) {
+      const digest = await calculateHash(it.filePath, algorithm)
+      const label = (it.file && it.file.path ? `${it.file.path}` : basename(it.filePath)).replace(/\\/g, '/')
+      lines.push(`${digest}  ${label}`)
+    }
+  } catch (_) {
+    instance.proxy.$msg.error(t('task.verify-hash-fail', { algorithm: algorithmLabel }))
+    return
+  }
+
+  try { clipboard.writeText(lines.join('\n')) } catch (_) {}
+  instance.proxy.$msg.success(t('task.verify-success-hash-list', { algorithm: algorithmLabel, count: resolvedFiles.length }))
+}
+
+function onResumeClick () {
+  const { task } = props
+  const gid = task && task.gid ? `${task.gid}` : ''
+  if (gid && pendingFileSelection.value && pendingFileSelection.value[gid]) {
+    taskStore.clearPendingFileSelection(gid)
+    const bt = task && task.bittorrent
+    const infoHash = bt && bt.info && bt.info.hash ? `${bt.info.hash}` : ''
+    taskStore.confirmFileSelection({ gid, infoHash })
+  }
+  commands.emit('resume-task', { task, taskName: taskName.value })
+}
+
+function onSelectFilesClick () {
+  selectFilesDialogVisible.value = true
+  const rawFiles = Array.isArray(props.task.files) ? props.task.files : []
+  selectFilesData.value = rawFiles.map((item, index) => {
+    const rawName = getFileName(item.path || '')
+    const extension = getFileExtension(rawName)
+    return {
+      idx: Number(item.index) || (index + 1),
+      selected: item.selected === 'true' || item.selected === true,
+      path: item.path || '',
+      name: item.name || rawName,
+      extension: extension ? `.${extension}` : '',
+      length: parseInt(item.length, 10) || 0,
+      completedLength: item.completedLength || '0'
+    }
+  })
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const table = selectFilesTable.value
+      if (!table) return
+      const files = selectFilesData.value
+      const selected = files.filter(f => f.selected)
+      if (selected.length > 0) {
+        table.toggleSelection(selected)
+      } else {
+        table.toggleSelection(files)
+      }
+    })
+  })
+}
+
+function onConfirmFileSelection () {
+  const table = selectFilesTable.value
+  if (!table) return
+  const fileIndex = table.selectedFileIndex
+  if (fileIndex === NONE_SELECTED_FILES) {
+    instance.proxy.$msg.warning(t('task.select-at-least-one'))
+    return
+  }
+  const gid = props.task && props.task.gid ? `${props.task.gid}` : ''
+  if (!gid) return
+  const options = {
+    selectFile: fileIndex !== SELECTED_ALL_FILES ? fileIndex : EMPTY_STRING
+  }
+  taskStore.changeTaskOption({ gid, options }).then(() => {
+    selectFilesDialogVisible.value = false
+    taskStore.clearPendingFileSelection(gid)
+    const bt = props.task && props.task.bittorrent
+    const infoHash = String(
+      (props.task && props.task.infoHash) ||
+        (bt && bt.info && bt.info.hash) ||
+        ''
+    ).trim()
+    taskStore.confirmFileSelection({ gid, infoHash })
+    return api.resumeTask({ gid })
+  }).catch(() => {
+    taskStore.setPendingFileSelection(gid)
+    instance.proxy.$msg.error(t('task.select-files-fail'))
+  })
+}
+
+function onRestartClick (event) {
+  const { task } = props
+  const { status } = task
+  const showDialog = status === TASK_STATUS.COMPLETE || !!event.altKey
+  commands.emit('restart-task', { task, taskName: taskName.value, showDialog })
+}
+
+function onPauseClick () {
+  commands.emit('pause-task', { task: props.task, taskName: taskName.value })
+}
+
+function onStopClick () {
+  if (!isSeeder.value) return
+  commands.emit('stop-task-seeding', { task: props.task })
+}
+
+function onDeleteClick (event) {
+  const deleteWithFiles = !!event.shiftKey
+  commands.emit('delete-task', { task: props.task, taskName: taskName.value, deleteWithFiles })
+}
+
+function onTrashClick (event) {
+  const deleteWithFiles = !!event.shiftKey
+  commands.emit('delete-task-record', { task: props.task, taskName: taskName.value, deleteWithFiles })
+}
+
+function onFolderClick () {
+  commands.emit('reveal-in-folder', { path: path.value })
+}
+
+function onLinkClick () {
+  commands.emit('copy-task-link', { task: props.task })
+}
+
+function onInfoClick () {
+  commands.emit('show-task-info', { task: props.task })
+}
+
+function onUpdateLinkClick () {
+  updateLinkDialogVisible.value = true
+}
+
+async function onUpdateLinkDialogOpen () {
+  try {
+    const cfg = preferenceConfig.value || {}
+    const { advancedOptionPresets = [] } = cfg || {}
+    advancedPresets.value = Array.isArray(advancedOptionPresets) ? advancedOptionPresets : []
+  } catch (_) {
+    advancedPresets.value = []
+  }
+  selectedAdvancedPresetId.value = ''
+  showUpdateAdvanced.value = false
+
+  const { task } = props
+  const files = Array.isArray(task && task.files) ? task.files : []
+  const first = files.length > 0 ? files[0] : null
+  const uris = Array.isArray(first && first.uris)
+    ? first.uris.map(u => u && u.uri ? `${u.uri}` : '').filter(Boolean)
+    : []
+  updateLinkValue.value = uris.length > 0 ? uris[0] : ''
+
+  const gid = task && task.gid ? `${task.gid}` : ''
+  if (!gid) {
+    updateHeadersUA.value = ''
+    updateHeadersReferer.value = ''
+    updateHeadersCookie.value = ''
+    updateHeadersAuthorization.value = ''
+    updateAllProxy.value = ''
+    return
+  }
+  try {
+    const opt = await api.getOption({ gid })
+    const hs = opt && opt.header ? opt.header : []
+    const headerItems = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
+    const headers = []
+    headerItems.filter(Boolean).forEach(h => {
+      `${h}`.split(/\r?\n/).forEach(line => {
+        const s = `${line || ''}`.trim()
+        if (s) headers.push(s)
+      })
+    })
+    const map = {}
+    headers.forEach(h => {
+      const s = `${h}`
+      const i = s.indexOf(':')
+      if (i > 0) {
+        const k = s.slice(0, i).trim().toLowerCase()
+        const v = s.slice(i + 1).trim()
+        map[k] = v
+      }
+    })
+    updateHeadersUA.value = map['user-agent'] || ''
+    updateHeadersReferer.value = map.referer || ''
+    updateHeadersCookie.value = map.cookie || ''
+    updateHeadersAuthorization.value = map.authorization || ''
+    updateAllProxy.value = (opt && (opt.allProxy || opt['all-proxy'])) ? `${opt.allProxy || opt['all-proxy']}` : ''
+  } catch (e) {
+    updateHeadersUA.value = ''
+    updateHeadersReferer.value = ''
+    updateHeadersCookie.value = ''
+    updateHeadersAuthorization.value = ''
+    updateAllProxy.value = ''
+  }
+}
+
+async function onUpdateLinkConfirm () {
+  const { task } = props
+  const newUri = `${updateLinkValue.value || ''}`.trim()
+  if (!newUri) {
+    instance.proxy.$msg.error(t('task.update-link-empty'))
+    return
+  }
+  if (updateLinkSubmitting.value) return
+  updateLinkSubmitting.value = true
+  try {
+    await taskStore.updateTaskLink({
+      task,
+      newUri,
+      headersUA: updateHeadersUA.value,
+      headersReferer: updateHeadersReferer.value,
+      headersCookie: updateHeadersCookie.value,
+      headersAuthorization: updateHeadersAuthorization.value,
+      allProxy: updateAllProxy.value
+    })
+    instance.proxy.$msg.success(t('task.update-link-success'))
+    updateLinkDialogVisible.value = false
+    updateLinkValue.value = ''
+    updateHeadersUA.value = ''
+    updateHeadersReferer.value = ''
+    updateHeadersCookie.value = ''
+    updateHeadersAuthorization.value = ''
+    updateAllProxy.value = ''
+  } catch (e) {
+    const code = e && e.message ? `${e.message}` : `${e}`
+    if (/^HTTP_\d+$/.test(code)) {
+      const httpCode = Number(code.replace('HTTP_', '')) || 0
+      instance.proxy.$msg.error(t('task.update-link-http-fail', { code: httpCode || code }))
+      return
+    }
+    const map = {
+      INVALID_PAYLOAD: t('task.update-link-fail'),
+      NO_ORIGINAL_URI: t('task.update-link-no-original'),
+      LINK_MISMATCH: t('task.update-link-mismatch'),
+      CONTENT_LENGTH_MISMATCH: t('task.update-link-mismatch'),
+      UNABLE_TO_VERIFY: t('task.update-link-unverifiable')
+    }
+    instance.proxy.$msg.error(map[code] || (code ? `${t('task.update-link-fail')}（${code}）` : t('task.update-link-fail')))
+  } finally {
+    updateLinkSubmitting.value = false
+  }
+}
+
+function openSavePresetDialog () {
+  const data = {
+    userAgent: updateHeadersUA.value || '',
+    authorization: updateHeadersAuthorization.value || '',
+    referer: updateHeadersReferer.value || '',
+    cookie: updateHeadersCookie.value || '',
+    allProxy: updateAllProxy.value || ''
+  }
+  const allEmpty = [data.userAgent, data.authorization, data.referer, data.cookie, data.allProxy].every(v => !v || !String(v).trim())
+  if (allEmpty) {
+    instance.proxy.$msg.warning(t('task.empty-advanced-options-tips'))
+    return
+  }
+  savePresetName.value = ''
+  savePresetDialogVisible.value = true
+}
+
+function saveAdvancedPreset () {
+  const name = (savePresetName.value || '').trim() || `Preset ${new Date().toLocaleString()}`
+  const data = {
+    userAgent: updateHeadersUA.value || '',
+    authorization: updateHeadersAuthorization.value || '',
+    referer: updateHeadersReferer.value || '',
+    cookie: updateHeadersCookie.value || '',
+    allProxy: updateAllProxy.value || '',
+    newTaskShowDownloading: false
+  }
+  const preset = { id: Date.now().toString(), name, data }
+  const next = [...(advancedPresets.value || []), preset]
+  advancedPresets.value = next
+  preferenceStore.save({ advancedOptionPresets: next })
+  instance.proxy.$msg.success(t('task.save-preset-success'))
+  savePresetDialogVisible.value = false
+  selectedAdvancedPresetId.value = preset.id
+}
+
+function onAdvancedPresetChange (id) {
+  if (!id) {
+    updateHeadersUA.value = ''
+    updateHeadersAuthorization.value = ''
+    updateHeadersReferer.value = ''
+    updateHeadersCookie.value = ''
+    updateAllProxy.value = ''
+    return
+  }
+  const preset = (advancedPresets.value || []).find(p => p.id === id)
+  if (!preset) return
+  const d = preset.data || {}
+  updateHeadersUA.value = d.userAgent || ''
+  updateHeadersAuthorization.value = d.authorization || ''
+  updateHeadersReferer.value = d.referer || ''
+  updateHeadersCookie.value = d.cookie || ''
+  updateAllProxy.value = d.allProxy || ''
+  instance.proxy.$msg.success(t('task.apply-preset-success'))
+}
+
+function deleteAdvancedPreset () {
+  const id = selectedAdvancedPresetId.value
+  if (!id) return
+  const next = (advancedPresets.value || []).filter(p => p.id !== id)
+  advancedPresets.value = next
+  selectedAdvancedPresetId.value = ''
+  onAdvancedPresetChange('')
+  preferenceStore.save({ advancedOptionPresets: next })
+  instance.proxy.$msg.success(t('task.delete-preset-success'))
+}
+
+function updateAdvancedPreset () {
+  const id = selectedAdvancedPresetId.value
+  if (!id) return
+  const presetIndex = (advancedPresets.value || []).findIndex(p => p.id === id)
+  if (presetIndex === -1) return
+
+  const data = {
+    userAgent: updateHeadersUA.value || '',
+    authorization: updateHeadersAuthorization.value || '',
+    referer: updateHeadersReferer.value || '',
+    cookie: updateHeadersCookie.value || '',
+    allProxy: updateAllProxy.value || '',
+    newTaskShowDownloading: false
+  }
+
+  const updatedPresets = [...advancedPresets.value]
+  updatedPresets[presetIndex] = { ...updatedPresets[presetIndex], data }
+
+  advancedPresets.value = updatedPresets
+  preferenceStore.save({ advancedOptionPresets: updatedPresets })
+  instance.proxy.$msg.success(t('task.update-preset-success'))
+}
+
+function saveOrUpdateAdvancedPreset () {
+  if (selectedAdvancedPresetId.value) {
+    updateAdvancedPreset()
+  } else {
+    openSavePresetDialog()
+  }
+}
+
+onBeforeUnmount(() => {
+  clearVerifyHideTimer()
+})
 </script>
 
 <style lang="scss">
@@ -1164,8 +1102,8 @@
   cursor: default;
   text-align: right;
   direction: rtl;
-  color: $--task-item-action-color;
-  transition: $--all-transition, opacity 0.2s ease;
+  color: var(--lc-text-placeholder);
+  transition: all 0.25s cubic-bezier(.645,.045,.355,1), opacity 0.2s ease;
   /* 明确删除背景和边框 */
   background: none !important;
   background-color: transparent !important;
@@ -1173,7 +1111,7 @@
   box-shadow: none !important;
   opacity: 0.6;
   &:hover {
-    color: $--task-item-action-hover-color;
+    color: var(--lc-task-action-hover);
     opacity: 1;
     width: auto;
     background: none !important;
@@ -1359,7 +1297,7 @@
   transition: transform 0.25s ease-out, opacity 0.25s ease-out;
 }
 
-.verify-slide-enter {
+.verify-slide-enter-from {
   transform: translateX(24px);
   opacity: 0;
 }
@@ -1388,7 +1326,7 @@
   transition: opacity 0.12s ease-out;
 }
 
-.verify-panel-enter {
+.verify-panel-enter-from {
   opacity: 0;
 }
 
@@ -1408,7 +1346,7 @@
   padding: 4px 0;
   border-radius: 4px;
   background-color: #fff;
-  border: 1px solid $--border-color-light;
+  border: 1px solid var(--el-border-color-light);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
@@ -1449,13 +1387,13 @@
 .task-verify-panel__item {
   padding: 4px 6px 4px 8px;
   font-size: 12px;
-  color: $--color-text-regular;
+  color: var(--el-text-color-regular);
   white-space: nowrap;
   cursor: pointer;
 }
 
 .task-verify-panel__item:hover {
-  background-color: $--color-primary;
+  background-color: var(--el-color-primary);
   color: #fff;
 }
 
@@ -1467,21 +1405,21 @@
     }
   }
   .task-verify-panel {
-    background-color: $--dk-popover-background;
-    border-color: $--dk-popover-border-color;
+    background-color: var(--lc-bg-popover);
+    border-color: var(--lc-border-base);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
   }
   .task-verify-panel::before {
-    border-color: transparent transparent $--dk-popover-background transparent;
+    border-color: transparent transparent var(--lc-bg-popover) transparent;
   }
   .task-verify-panel--top::before {
-    border-color: $--dk-popover-background transparent transparent transparent;
+    border-color: var(--lc-bg-popover) transparent transparent transparent;
   }
   .task-verify-panel__item {
-    color: $--dk-font-color-base;
+    color: var(--lc-text-primary);
   }
   .task-verify-panel__item:hover {
-    background-color: $--color-primary;
+    background-color: var(--el-color-primary);
     color: #fff;
   }
   .task-verify-dropdown-ref svg {

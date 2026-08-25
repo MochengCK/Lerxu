@@ -4,19 +4,19 @@
         class="form-preference"
         ref="advancedForm"
         label-position="right"
-        size="mini"
+        size="small"
         :model="form"
         :rules="rules"
       >
         <!-- 自动更新设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.auto-update') }}</h3>
-          <el-form-item size="mini">
+          <h3 class="card-title">{{ t('preferences.auto-update') }}</h3>
+          <el-form-item size="small">
             <el-col class="form-item-sub" :span="24">
               <div class="toggle-row toggle-row--with-desc">
                 <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.auto-check-update') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.auto-check-update-desc') }}</div>
+                  <span class="toggle-label">{{ t('preferences.auto-check-update') }}</span>
+                  <div class="toggle-desc">{{ t('preferences.auto-check-update-desc') }}</div>
                 </div>
                 <el-switch v-model="form.autoCheckUpdate" @change="autoSaveForm" />
               </div>
@@ -24,8 +24,8 @@
             <el-col class="form-item-sub" :span="24">
               <div class="toggle-row toggle-row--with-desc">
                 <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.update-channel') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.update-channel-desc') }}</div>
+                  <span class="toggle-label">{{ t('preferences.update-channel') }}</span>
+                  <div class="toggle-desc">{{ t('preferences.update-channel-desc') }}</div>
                 </div>
                 <mo-segmented-slider
                   :value="form.updateChannel"
@@ -55,7 +55,7 @@
             v-if="lastCheckUpdateTime !== 0 || (updateAvailable || isDownloadingUpdate || updateDownloaded)"
           >
             <span class="auto-update-time" v-if="lastCheckUpdateTime !== 0">
-              {{ $t('preferences.last-check-update-time') + ': ' +
+              {{ t('preferences.last-check-update-time') + ': ' +
                 (lastCheckUpdateTime !== 0 ?
                   new Date(lastCheckUpdateTime).toLocaleString() :
                   new Date().toLocaleString())
@@ -70,33 +70,33 @@
               v-if="updateAvailable || isDownloadingUpdate || updateDownloaded"
               @click.prevent="isCheckingUpdate ? null : onPreviewUpdateClick()"
             >
-              {{ $t('app.preview-update') }}
+              {{ t('app.preview-update') }}
             </span>
           </div>
         </div>
 
         <!-- 代理设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.proxy') }}</h3>
-          <el-form-item size="mini">
+          <h3 class="card-title">{{ t('preferences.proxy') }}</h3>
+          <el-form-item size="small">
             <el-radio-group
               v-model="form.proxy.mode"
               @change="(val) => { onProxyModeChange(val); autoSaveForm(); }"
             >
-              <el-radio label="none">{{ $t('preferences.proxy-mode-none') }}</el-radio>
-              <el-radio label="system">{{ $t('preferences.proxy-mode-system') }}</el-radio>
-              <el-radio label="custom">{{ $t('preferences.proxy-mode-custom') }}</el-radio>
+<el-radio value="none">{{ t('preferences.proxy-mode-none') }}</el-radio>
+<el-radio value="system">{{ t('preferences.proxy-mode-system') }}</el-radio>
+<el-radio value="custom">{{ t('preferences.proxy-mode-custom') }}</el-radio>
             </el-radio-group>
           </el-form-item>
-          <el-form-item size="mini" v-if="form.proxy.mode === 'system'" style="margin-top: -8px;">
+          <el-form-item size="small" v-if="form.proxy.mode === 'system'" style="margin-top: -8px;">
             <el-col class="form-item-sub" :span="24">
               <div class="el-form-item__info proxy-system-info">
-                <i class="el-icon-info"></i>
-                {{ $t('preferences.proxy-system-tips') }}
+                <el-icon><InfoFilled /></el-icon>
+                {{ t('preferences.proxy-system-tips') }}
               </div>
             </el-col>
           </el-form-item>
-          <el-form-item size="mini" v-if="form.proxy.mode === 'custom'" style="margin-top: -8px;">
+          <el-form-item size="small" v-if="form.proxy.mode === 'custom'" style="margin-top: -8px;">
             <el-col
               class="form-item-sub"
               :xs="24"
@@ -119,10 +119,10 @@
             >
               <el-input
                 type="textarea"
-                rows="2"
+                :rows="2"
                 auto-complete="off"
                 @change="handleProxyBypassChange"
-                :placeholder="`${$t('preferences.proxy-bypass-input-tips')}`"
+                :placeholder="`${t('preferences.proxy-bypass-input-tips')}`"
                 v-model="form.proxy.bypass">
               </el-input>
             </el-col>
@@ -141,13 +141,13 @@
                 <el-option
                   v-for="item in proxyScopeOptions"
                   :key="item"
-                  :label="$t(`preferences.proxy-scope-${item}`)"
+                  :label="t(`preferences.proxy-scope-${item}`)"
                   :value="item"
                 />
               </el-select>
               <div class="el-form-item__info" style="margin-top: 8px;">
                 <a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Proxy" rel="noopener noreferrer">
-                  {{ $t('preferences.proxy-tips') }}
+                  {{ t('preferences.proxy-tips') }}
                   <mo-icon name="link" width="12" height="12" />
                 </a>
               </div>
@@ -157,8 +157,8 @@
 
         <!-- GitHub 镜像设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.github-mirror') }}</h3>
-          <el-form-item size="mini">
+          <h3 class="card-title">{{ t('preferences.github-mirror') }}</h3>
+          <el-form-item size="small">
             <el-col class="form-item-sub" :span="24">
               <div class="github-mirror-row" style="display: flex; align-items: center; margin-bottom: 8px;">
                 <div style="flex: 1;">
@@ -166,11 +166,11 @@
                     v-model="form.githubMirrorUrls"
                     multiple
                     filterable
-                    :placeholder="$t('preferences.github-mirror-select-placeholder')"
+                    :placeholder="t('preferences.github-mirror-select-placeholder')"
                     @change="onGithubMirrorChange"
                     style="width: 100%;"
                   >
-                    <el-option-group :label="$t('preferences.github-mirror-builtin')">
+                    <el-option-group :label="t('preferences.github-mirror-builtin')">
                       <el-option
                         v-for="mirror in builtinGithubMirrors"
                         :key="mirror.value"
@@ -180,7 +180,7 @@
                         <span style="float: left">{{ mirror.label }}</span>
                         <span style="float: right; font-size: 13px; margin-right: 8px;">
                           <span v-if="mirror.checking" style="color: #909399;">
-                            <i class="el-icon-loading"></i> {{ $t('preferences.checking') }}
+                            <el-icon class="is-loading"><Loading /></el-icon> {{ t('preferences.checking') }}
                           </span>
                           <span v-else-if="mirror.latency !== null" :style="{ color: getLatencyColor(mirror.latency), fontWeight: '500' }">
                             {{ formatLatency(mirror.latency) }}
@@ -191,10 +191,9 @@
                   </el-select>
                 </div>
                 <div class="github-mirror-actions" style="display:flex; align-items:center;">
-                  <el-tooltip
-                    class="item"
+                  <mo-hover-tip
                     effect="dark"
-                    :content="$t('preferences.check-github-mirror-latency')"
+                    :content="t('preferences.check-github-mirror-latency')"
                     placement="bottom"
                   >
                     <el-button
@@ -209,12 +208,11 @@
                         :spin="githubMirrorCheckingAll"
                       />
                     </el-button>
-                  </el-tooltip>
+                  </mo-hover-tip>
                   <div class="github-mirror-popup-wrapper">
-                    <el-tooltip
-                      class="item"
+                    <mo-hover-tip
                       effect="dark"
-                      :content="$t('preferences.add-mirror')"
+                      :content="t('preferences.add-mirror')"
                       placement="bottom"
                       :disabled="githubMirrorConfigVisible"
                     >
@@ -224,7 +222,7 @@
                       >
                         <mo-icon name="link" width="12" height="12" />
                       </el-button>
-                    </el-tooltip>
+                    </mo-hover-tip>
                     <transition name="popup-scale">
                       <div
                         class="github-mirror-popup"
@@ -232,20 +230,20 @@
                         @click.stop
                       >
                         <div class="github-mirror-popup__header">
-                          <span>{{ $t('preferences.add-mirror') }}</span>
+                          <span>{{ t('preferences.add-mirror') }}</span>
                         </div>
                         <div class="github-mirror-popup__body">
                           <el-input
                             v-model="githubMirrorInput"
-                            :placeholder="$t('preferences.github-mirror-input-placeholder')"
+                            :placeholder="t('preferences.github-mirror-input-placeholder')"
                             clearable
                             size="small"
-                            @keydown.enter.native="addGithubMirrorFromInput"
+                            @keydown.enter="addGithubMirrorFromInput"
                           >
                           </el-input>
                         </div>
                         <div class="github-mirror-popup__footer">
-                          <el-button size="mini" type="primary" @click="addGithubMirrorFromInput">{{ $t('app.submit') }}</el-button>
+                          <el-button size="small" type="primary" @click="addGithubMirrorFromInput">{{ t('app.submit') }}</el-button>
                         </div>
                       </div>
                     </transition>
@@ -253,7 +251,7 @@
                 </div>
               </div>
               <div class="el-form-item__info" style="margin-top: 8px;">
-                {{ $t('preferences.github-mirror-tips') }}
+                {{ t('preferences.github-mirror-tips') }}
               </div>
             </el-col>
           </el-form-item>
@@ -261,39 +259,43 @@
 
         <!-- RPC设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.rpc') }}</h3>
-          <el-form-item size="mini">
+          <h3 class="card-title">{{ t('preferences.rpc') }}</h3>
+          <el-form-item size="small">
             <el-row style="margin-bottom: 8px;">
               <el-col class="form-item-sub" :span="24">
-                {{ $t('preferences.rpc-listen-port') }}
+                {{ t('preferences.rpc-listen-port') }}
                 <el-input
-                  :placeholder="rpcDefaultPort"
+                  :placeholder="`${rpcDefaultPort}`"
                   :maxlength="8"
                   v-model="form.rpcListenPort"
                   @change="onRpcListenPortChange"
                 >
-                  <i slot="append" @click.prevent="onRpcPortDiceClick">
-                    <mo-icon name="dice" width="12" height="12" />
-                  </i>
+                  <template #append>
+                    <i class="rpc-dice-btn" @click.prevent="onRpcPortDiceClick">
+                      <mo-icon name="dice" width="12" height="12" />
+                    </i>
+                  </template>
                 </el-input>
               </el-col>
             </el-row>
             <el-row style="margin-bottom: 8px;">
               <el-col class="form-item-sub" :span="24">
-                {{ $t('preferences.rpc-secret') }}
+                {{ t('preferences.rpc-secret') }}
                 <el-input
                   :show-password="hideRpcSecret"
                   placeholder="RPC Secret"
                   :maxlength="64"
                   v-model="form.rpcSecret"
                 >
-                  <i slot="append" @click.prevent="onRpcSecretDiceClick">
-                    <mo-icon name="dice" width="12" height="12" />
-                  </i>
+                  <template #append>
+                    <i class="rpc-dice-btn" @click.prevent="onRpcSecretDiceClick">
+                      <mo-icon name="dice" width="12" height="12" />
+                    </i>
+                  </template>
                 </el-input>
                 <div class="el-form-item__info" style="margin-top: 8px;">
                   <a target="_blank" href="https://github.com/agalwood/Motrix/wiki/RPC" rel="noopener noreferrer">
-                    {{ $t('preferences.rpc-secret-tips') }}
+                    {{ t('preferences.rpc-secret-tips') }}
                     <mo-icon name="link" width="12" height="12" />
                   </a>
                 </div>
@@ -303,13 +305,13 @@
         </div>
 
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.download-protocol') }}</h3>
-          <el-form-item size="mini">
+          <h3 class="card-title">{{ t('preferences.download-protocol') }}</h3>
+          <el-form-item size="small">
             <el-col class="form-item-sub" :span="24">
               <div class="toggle-row toggle-row--with-desc">
                 <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.protocols-magnet') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.protocols-magnet-desc') }}</div>
+                  <span class="toggle-label">{{ t('preferences.protocols-magnet') }}</span>
+                  <div class="toggle-desc">{{ t('preferences.protocols-magnet-desc') }}</div>
                 </div>
                 <el-switch
                   v-model="form.protocols.magnet"
@@ -320,8 +322,8 @@
             <el-col class="form-item-sub" :span="24">
               <div class="toggle-row toggle-row--with-desc">
                 <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.protocols-thunder') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.protocols-thunder-desc') }}</div>
+                  <span class="toggle-label">{{ t('preferences.protocols-thunder') }}</span>
+                  <div class="toggle-desc">{{ t('preferences.protocols-thunder-desc') }}</div>
                 </div>
                 <el-switch
                   v-model="form.protocols.thunder"
@@ -332,8 +334,8 @@
             <el-col class="form-item-sub" :span="24">
               <div class="toggle-row toggle-row--with-desc">
                 <div class="toggle-row__text">
-                  <span class="toggle-label">{{ $t('preferences.protocols-ed2k') }}</span>
-                  <div class="toggle-desc">{{ $t('preferences.protocols-ed2k-desc') }}</div>
+                  <span class="toggle-label">{{ t('preferences.protocols-ed2k') }}</span>
+                  <div class="toggle-desc">{{ t('preferences.protocols-ed2k-desc') }}</div>
                 </div>
                 <el-switch
                   v-model="form.protocols.ed2k"
@@ -346,45 +348,41 @@
 
         <!-- 引擎信息卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.engine') }}</h3>
-          <el-form-item size="mini">
+          <h3 class="card-title">{{ t('preferences.engine') }}</h3>
+          <el-form-item size="small">
             <el-col class="form-item-sub" :span="24">
               <el-row :gutter="16" style="margin-bottom: 12px;">
                 <el-col :span="24">
-                  <strong>{{ $t('preferences.engine-select') }}:</strong>
-                  <el-select
+                  <strong>{{ t('preferences.engine-select') }}:</strong>
+                  <mo-extend-select
                     v-model="activeEngineBinary"
                     disabled
+                    :options="[{ label: activeEngineBinary || '--', value: activeEngineBinary || '' }]"
                     style="width: 100%; margin-top: 8px;"
-                  >
-                    <el-option
-                      :label="activeEngineBinary || '--'"
-                      :value="activeEngineBinary || ''"
-                    />
-                  </el-select>
+                  />
                 </el-col>
               </el-row>
               <el-row :gutter="16" style="margin-bottom: 12px;">
                 <el-col :span="8">
-                  <strong>{{ $t('preferences.engine-version') }}:</strong>
+                  <strong>{{ t('preferences.engine-version') }}:</strong>
                   <div>{{ storeEngineInfo.version || '--' }}</div>
                 </el-col>
                 <el-col :span="8">
-                  <strong>{{ $t('preferences.engine-architecture') }}:</strong>
+                  <strong>{{ t('preferences.engine-architecture') }}:</strong>
                   <div>{{ storeEngineInfo.architecture || '--' }}</div>
                 </el-col>
                 <el-col :span="8">
-                  <strong>{{ $t('preferences.engine-features') }}:</strong>
+                  <strong>{{ t('preferences.engine-features') }}:</strong>
                   <div>{{ storeEngineInfo.features ? storeEngineInfo.features.join(', ') : '--' }}</div>
                 </el-col>
               </el-row>
               <el-row :gutter="16" style="margin-bottom: 12px;">
                 <el-col :span="12">
-                  <strong>{{ $t('preferences.engine-dependencies') }}:</strong>
+                  <strong>{{ t('preferences.engine-dependencies') }}:</strong>
                   <div>{{ storeEngineInfo.dependencies ? storeEngineInfo.dependencies.join(', ') : '--' }}</div>
                 </el-col>
                 <el-col :span="12">
-                  <strong>{{ $t('preferences.engine-compile-info') }}:</strong>
+                  <strong>{{ t('preferences.engine-compile-info') }}:</strong>
                   <div>{{ storeEngineInfo.compileInfo || '--' }}</div>
                 </el-col>
               </el-row>
@@ -394,24 +392,24 @@
 
         <!-- 视频合并设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.video-merge') }}</h3>
-          <el-form-item size="mini">
+          <h3 class="card-title">{{ t('preferences.video-merge') }}</h3>
+          <el-form-item size="small">
             <el-col class="form-item-sub" :span="24">
               <div style="margin-bottom: 12px;">
-                <strong>{{ $t('preferences.ffmpeg-status') }}：</strong>
+                <strong>{{ t('preferences.ffmpeg-status') }}：</strong>
                 <span :style="{ color: ffmpegStatus.installed ? '#67c23a' : '#f56c6c' }">
-                  {{ ffmpegStatus.installed ? $t('preferences.ffmpeg-installed') : $t('preferences.ffmpeg-not-installed') }}
+                  {{ ffmpegStatus.installed ? t('preferences.ffmpeg-installed') : t('preferences.ffmpeg-not-installed') }}
                 </span>
               </div>
               <div v-if="ffmpegStatus.installed && ffmpegStatus.path" style="margin-bottom: 12px;">
-                <strong>{{ $t('preferences.ffmpeg-path') }}：</strong>
+                <strong>{{ t('preferences.ffmpeg-path') }}：</strong>
                 <span style="word-break: break-all;">{{ ffmpegStatus.path }}</span>
               </div>
             </el-col>
             <el-col class="form-item-sub" :span="24" v-if="ffmpegStatus.installed && ffmpegStatus.path">
-              <el-button size="mini" @click="openFfmpegFolder">
-                <i class="el-icon-folder-opened"></i>
-                {{ $t('preferences.ffmpeg-open-folder') }}
+              <el-button size="small" @click="openFfmpegFolder">
+                <el-icon><FolderOpened /></el-icon>
+                {{ t('preferences.ffmpeg-open-folder') }}
               </el-button>
             </el-col>
           </el-form-item>
@@ -419,13 +417,13 @@
 
         <!-- 用户代理设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.user-agent') }}</h3>
-          <el-form-item size="mini">
+          <h3 class="card-title">{{ t('preferences.user-agent') }}</h3>
+          <el-form-item size="small">
             <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.mock-user-agent') }}
+              {{ t('preferences.mock-user-agent') }}
               <el-input
                 type="textarea"
-                rows="2"
+                :rows="2"
                 auto-complete="off"
                 placeholder="User-Agent"
                 v-model="form.userAgent">
@@ -444,64 +442,63 @@
 
         <!-- 开发者选项卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ $t('preferences.developer') }}</h3>
-          <el-form-item size="mini">
+          <h3 class="card-title">{{ t('preferences.developer') }}</h3>
+          <el-form-item size="small">
             <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.download-session-path') }}
+              {{ t('preferences.download-session-path') }}
               <el-input placeholder="" disabled v-model="sessionPath">
-                <mo-show-in-folder
-                  slot="append"
-                  v-if="isRenderer"
-                  :path="sessionPath"
-                />
+                <template #append>
+                  <mo-show-in-folder
+                    v-if="isRenderer"
+                    :path="sessionPath"
+                  />
+                </template>
               </el-input>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.app-log-path') }}
+              {{ t('preferences.app-log-path') }}
               <el-row :gutter="16">
                 <el-col :span="18">
                   <el-input placeholder="" disabled v-model="logPath">
-                    <mo-show-in-folder
-                    slot="append"
-                    v-if="isRenderer"
-                    :path="logPath"
-                    />
+                    <template #append>
+                      <mo-show-in-folder
+                        v-if="isRenderer"
+                        :path="logPath"
+                      />
+                    </template>
                   </el-input>
                 </el-col>
                 <el-col :span="6">
-                  <el-select v-model="form.logLevel">
-                    <el-option
-                      v-for="item in logLevels"
-                      :key="item"
-                      :label="item"
-                      :value="item">
-                    </el-option>
-                  </el-select>
+                  <mo-extend-select
+                    v-model="form.logLevel"
+                    :options="logLevels.map(item => ({ label: item, value: item }))"
+                  />
                 </el-col>
               </el-row>
             </el-col>
             <el-col class="form-item-sub" :span="24">
-              {{ $t('preferences.aria2-log-path') }}
+              {{ t('preferences.aria2-log-path') }}
               <el-input placeholder="" disabled v-model="aria2LogPath">
-                <el-tooltip
-                  slot="append"
-                  effect="dark"
-                  :content="$t('task.reveal-in-folder')"
-                  placement="top"
-                  :open-delay="500"
-                >
-                  <i v-if="isRenderer" @click="openAria2LogFolder" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: pointer;">
-                    <mo-icon name="folder" width="10" height="10" />
-                  </i>
-                </el-tooltip>
+                <template #append>
+                  <mo-hover-tip
+                    effect="dark"
+                    :content="t('task.reveal-in-folder')"
+                    placement="top"
+                    :open-delay="500"
+                  >
+                    <i v-if="isRenderer" @click="openAria2LogFolder" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: pointer;">
+                      <mo-icon name="folder" width="12" height="12" />
+                    </i>
+                  </mo-hover-tip>
+                </template>
               </el-input>
             </el-col>
             <el-col class="form-item-sub" :span="24">
               <el-button plain type="warning" @click="() => onSessionResetClick()">
-                {{ $t('preferences.session-reset') }}
+                {{ t('preferences.session-reset') }}
               </el-button>
               <el-button plain type="danger" @click="() => onFactoryResetClick()">
-                {{ $t('preferences.factory-reset') }}
+                {{ t('preferences.factory-reset') }}
               </el-button>
               </el-col>
           </el-form-item>
@@ -510,7 +507,7 @@
 
       <div v-if="hasNoResults" class="no-results">
         <div class="no-results-inner">
-          {{ $t('preferences.no-settings-found') }}
+          {{ t('preferences.no-settings-found') }}
         </div>
       </div>
 
@@ -525,47 +522,85 @@
     </div>
     <div v-if="updatePreviewVisible" class="update-preview-confirm">
       <el-button type="primary" @click="closeUpdatePreview">
-        {{ $t('app.yes') || 'OK' }}
+        {{ t('app.yes') || 'OK' }}
       </el-button>
     </div>
 
   </el-main>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import { dialog } from '@electron/remote'
-  import { mapState } from 'vuex'
-  import { cloneDeep, isEmpty } from 'lodash'
-  import randomize from 'randomatic'
-  import ShowInFolder from '@/components/Native/ShowInFolder'
-  import SegmentedSlider from '@/components/SegmentedSlider/SegmentedSlider'
-  import userAgentMap from '@shared/ua'
-  import {
-    EMPTY_STRING,
-    ENGINE_RPC_PORT,
-    ENGINE_MAX_CONNECTION_PER_SERVER,
-    LOG_LEVELS,
-    PROXY_SCOPE_OPTIONS
-  } from '@shared/constants'
-  import {
-    buildRpcUrl,
-    calcFormLabelWidth,
-    changedConfig,
-    checkIsNeedRestart,
-    convertLineToComma,
-    diffConfig,
-    generateRandomInt,
-    getEngineConnectionPolicy
-  } from '@shared/utils'
-  import { reduceTrackerString } from '@shared/utils/tracker'
-  import '@/components/Icons/dice'
-  import '@/components/Icons/refresh'
-  import '@/components/Icons/folder'
-  import { getLanguage } from '@shared/locales'
-  import { getLocaleManager } from '@/components/Locale'
+<script setup>
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import is from 'electron-is'
+import { app, dialog, shell } from '@electron/remote'
+import { existsSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { spawn } from 'node:child_process'
+import { ipcRenderer } from 'electron'
+import { ElMessage } from 'element-plus'
+import { cloneDeep, isEmpty } from 'lodash'
+import randomize from 'randomatic'
+// mo-show-in-folder, mo-segmented-slider are globally registered in main.js
+import userAgentMap from '@shared/ua'
+import {
+  EMPTY_STRING,
+  ENGINE_RPC_PORT,
+  ENGINE_MAX_CONNECTION_PER_SERVER,
+  LOG_LEVELS,
+  PROXY_SCOPE_OPTIONS
+} from '@shared/constants'
+import {
+  buildRpcUrl,
+  calcFormLabelWidth,
+  changedConfig,
+  checkIsNeedRestart,
+  convertLineToComma,
+  diffConfig,
+  generateRandomInt,
+  getEngineConnectionPolicy
+} from '@shared/utils'
+import { reduceTrackerString } from '@shared/utils/tracker'
+import i18n from '@/plugins/i18n'
+import { createMsg } from '@/components/Msg'
+import { useAppStore } from '@/store/app'
+import { usePreferenceStore } from '@/store/preference'
+import { useTaskStore } from '@/store/task'
+import { storeToRefs } from 'pinia'
+import '@/components/Icons/dice'
+import '@/components/Icons/refresh'
+import '@/components/Icons/folder'
+import { getLanguage } from '@shared/locales'
+import { getLocaleManager } from '@/components/Locale'
 
-  const initForm = (config) => {
+defineOptions({ name: 'mo-preference-advanced' })
+
+let textMeasureCanvas = null
+let _filterTimer = null
+
+const { t } = i18n.global
+const msg = createMsg(ElMessage, { showClose: true })
+const route = useRoute()
+const router = useRouter()
+
+const props = defineProps({
+  category: {
+    type: String,
+    default: 'advanced'
+  }
+})
+
+const appStore = useAppStore()
+const preferenceStore = usePreferenceStore()
+const taskStore = useTaskStore()
+const { config: preferenceConfig } = storeToRefs(preferenceStore)
+const { isCheckingUpdate } = storeToRefs(appStore)
+const { updateAvailable, newVersion, updateIsPrerelease, isDownloadingUpdate, updateDownloaded, downloadProgress, downloadTotal, downloadTransferred, releaseNotes, lastCheckUpdateTime, searchKeyword } = storeToRefs(preferenceStore)
+const { engineInfo: storeEngineInfo } = storeToRefs(appStore)
+
+
+
+const initForm = (config) => {
     const {
       autoCheckUpdate,
       hideAppMenu,
@@ -631,447 +666,205 @@
     return result
   }
 
-  export default {
-    name: 'mo-preference-advanced',
-    components: {
-      [ShowInFolder.name]: ShowInFolder,
-      [SegmentedSlider.name]: SegmentedSlider
-    },
-    props: {
-      category: {
-        type: String,
-        default: 'advanced'
-      }
-    },
-    data () {
-      const { locale } = this.$store.state.preference.config
-      const formOriginal = initForm(this.$store.state.preference.config)
-      let form = {}
-      // 直接从store中获取配置，不依赖changedConfig
-      form = initForm(this.$store.state.preference.config)
+// --- Data ---
+// Initialize from store
+const form = ref(initForm(preferenceConfig.value))
+const formLabelWidth = ref(calcFormLabelWidth(preferenceConfig.value.locale))
+const formOriginal = ref(initForm(preferenceConfig.value))
+const advancedForm = ref(null)
+const hideRpcSecret = ref(true)
+const proxyScopeOptions = ref(PROXY_SCOPE_OPTIONS)
+const rules = ref({})
+const builtinGithubMirrors = ref([
+  { value: 'ghproxy.net', label: 'ghproxy.net', latency: null, checking: false }
+])
+const githubMirrorCheckingAll = ref(false)
+let mirrorCheckTimeout = null
+const previousGithubMirrorUrls = ref([])
+const githubMirrorConfigVisible = ref(false)
+const githubMirrorInput = ref('')
+let saveTimeout = null
+const appVersion = ref('')
+const updatePreviewVisible = ref(false)
+const updatePreviewContent = ref('')
+const hasNoResults = ref(false)
+const ffmpegStatus = ref({ installed: false, path: '' })
+const uaOptions = ref([
+  { value: 'aria2', label: 'Aria2' },
+  { value: 'transmission', label: 'Transmission' },
+  { value: 'chrome', label: 'Chrome' },
+  { value: 'du', label: 'du' }
+])
 
-      return {
-        form,
-        formLabelWidth: calcFormLabelWidth(locale),
-        formOriginal,
-        hideRpcSecret: true,
-        proxyScopeOptions: PROXY_SCOPE_OPTIONS,
-        rules: {},
-        builtinGithubMirrors: [
-          { value: 'ghproxy.net', label: 'ghproxy.net', latency: null, checking: false }
-        ],
-        githubMirrorCheckingAll: false,
-        mirrorCheckTimeout: null,
-        previousGithubMirrorUrls: [], // 保存上一次选择的镜像列表
-        githubMirrorConfigVisible: false,
-        githubMirrorInput: '',
-        saveTimeout: null,
-        appVersion: '',
-        updatePreviewVisible: false,
-        updatePreviewContent: '',
-        hasNoResults: false,
-        ffmpegStatus: {
-          installed: false,
-          path: ''
-        },
-        uaOptions: [
-          { value: 'aria2', label: 'Aria2' },
-          { value: 'transmission', label: 'Transmission' },
-          { value: 'chrome', label: 'Chrome' },
-          { value: 'du', label: 'du' }
-        ]
-      }
-    },
-    computed: {
-      ...mapState('app', ['isCheckingUpdate']),
-      ...mapState('preference', ['updateAvailable', 'newVersion', 'updateIsPrerelease', 'isDownloadingUpdate', 'updateDownloaded', 'downloadProgress', 'downloadTotal', 'downloadTransferred', 'releaseNotes', 'lastCheckUpdateTime', 'searchKeyword']),
-      ...mapState('app', {
-        storeEngineInfo: state => state.engineInfo
-      }),
-      updateChannelOptions () {
-        return [
-          { value: 'stable', label: this.$t('preferences.update-channel-stable') },
-          { value: 'beta', label: this.$t('preferences.update-channel-beta') },
-          { value: 'all', label: this.$t('preferences.update-channel-all') }
-        ]
-      },
-      versionText () {
-        const bytesToSize = (this.$options && this.$options.filters && this.$options.filters.bytesToSize)
-          ? this.$options.filters.bytesToSize
-          : (bytes, decimals = 2) => {
-              if (!bytes || bytes === 0) return '0 B'
-              const k = 1024
-              const sizes = ['B', 'KB', 'MB', 'GB']
-              const i = Math.floor(Math.log(bytes) / Math.log(k))
-              return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i]
-            }
-        if (this.updateDownloaded) {
-          return this.$t('app.restart-to-install')
-        } else if (this.isDownloadingUpdate) {
-          const transferred = bytesToSize(this.downloadTransferred, 2)
-          const total = bytesToSize(this.downloadTotal, 2)
-          if (this.downloadTotal > 0) {
-            return `下载中 ${this.downloadProgress}% (${transferred} / ${total})`
-          }
-          return `下载中 ${this.downloadProgress}%`
-        } else if (this.updateAvailable) {
-          const betaTag = this.updateIsPrerelease ? ' (Beta)' : ''
-          return `下载新版本 ${this.newVersion}${betaTag}`
-        } else {
-          return this.appVersion
-        }
-      },
-      configEngineBinary () {
-        const { config = {} } = this.$store.state.preference
-        return config.engineBinary || config['engine-binary']
-      },
-      activeEngineBinary () {
-        // Show the actually running engine path (from engine info) instead of
-        // the configured value, which may differ when the engine was auto-detected
-        // or fell back to a different binary.
-        return this.storeEngineInfo.binPath || this.configEngineBinary || ''
-      },
-      engineInfo () {
-        return this.storeEngineInfo
-      },
-      isRenderer: () => is.renderer(),
-      activeCategory () {
-        return this.category || 'advanced'
-      },
-      title () {
-        const subnav = this.subnavs.find(item => item.key === this.activeCategory)
-        return subnav ? subnav.title : this.$t('preferences.advanced')
-      },
-      preferenceBasePath () {
-        const path = `${this.$route.path || ''}`
-        return path.startsWith('/preference-window') ? '/preference-window' : '/preference'
-      },
-      subnavs () {
-        const base = this.preferenceBasePath
-        return [
-          {
-            key: 'basic',
-            title: this.$t('preferences.basic'),
-            route: `${base}/basic`
-          },
-          {
-            key: 'appearance',
-            title: this.$t('preferences.appearance'),
-            route: `${base}/appearance`
-          },
-          {
-            key: 'transfer',
-            title: this.$t('preferences.transfer-settings'),
-            route: `${base}/transfer`
-          },
-          {
-            key: 'bt',
-            title: this.$t('preferences.bt-settings'),
-            route: `${base}/bt`
-          },
-          {
-            key: 'task',
-            title: this.$t('preferences.task-manage'),
-            route: `${base}/task`
-          },
-          {
-            key: 'file',
-            title: this.$t('preferences.file-manage'),
-            route: `${base}/file`
-          },
-          {
-            key: 'advanced',
-            title: this.$t('preferences.advanced'),
-            route: `${base}/advanced`
-          },
-          {
-            key: 'lab',
-            title: this.$t('preferences.lab'),
-            route: `${base}/lab`
-          }
-        ]
-      },
-      rpcDefaultPort () {
-        return ENGINE_RPC_PORT
-      },
-      logLevels () {
-        return LOG_LEVELS
-      },
-      ...mapState('preference', {
-        config: state => state.config,
-        logPath: state => state.config.logPath,
-        sessionPath: state => state.config.sessionPath,
-        aria2LogPath: state => state.config.aria2LogPath,
-        aria2LogDir: state => state.config.aria2LogDir
-      }),
-      // 速度单位选项
-      schedulerSpeedUnits () {
-        return [
-          { label: 'KB/s', value: 'K' },
-          { label: 'MB/s', value: 'M' }
-        ]
-      },
-      // 文件大小单位选项
-      schedulerSizeUnits () {
-        return [
-          { label: 'MB', value: 'M' },
-          { label: 'GB', value: 'G' }
-        ]
-      },
-      activeUAValue () {
-        const map = userAgentMap
-        const current = this.form && this.form.userAgent
-        const hit = this.uaOptions.find(opt => map[opt.value] === current)
-        return hit ? hit.value : ''
-      }
-    },
-    watch: {
-      'form.autoCheckUpdate' (newValue) {
-        // 当关闭自动检查更新时，清除更新状态
-        if (!newValue) {
-          this.$store.dispatch('preference/updateUpdateAvailable', false)
-          this.$store.dispatch('preference/updateNewVersion', '')
-        }
-      },
-      githubMirrorConfigVisible (visible) {
-        if (!visible) {
-          document.removeEventListener('mousedown', this.handleGithubMirrorOutsideClick)
-        }
-      },
-      searchKeyword: {
-        immediate: true,
-        handler (val) {
-          this.applyFilters(val)
-        }
-      },
-      category: {
-        handler () {
-          this.applyFilters(this.searchKeyword)
-        },
-        immediate: true
-      },
-      form: {
-        handler () {
-          // autoSaveForm already debounces and checks diffConfig internally,
-          // so we avoid a redundant synchronous diffConfig pass here.
-          this.autoSaveForm()
-        },
-        deep: true
-      },
-      'form.rpcListenPort' (val) {
-        const url = buildRpcUrl({
-          port: this.form.rpcListenPort,
-          secret: val
-        })
-        try {
-          this.$electron.ipcRenderer.invoke('clipboard:write-text', url)
-        } catch (e) {
-        }
-      },
-      'form.rpcSecret' (val) {
-        const url = buildRpcUrl({
-          port: this.form.rpcListenPort,
-          secret: val
-        })
-        try {
-          this.$electron.ipcRenderer.invoke('clipboard:write-text', url)
-        } catch (e) {
+// --- Computed ---
+const updateChannelOptions = computed(() => [
+  { value: 'stable', label: t('preferences.update-channel-stable') },
+  { value: 'beta', label: t('preferences.update-channel-beta') },
+  { value: 'all', label: t('preferences.update-channel-all') }
+])
+const versionText = computed(() => {
+  const bytesToSizeFn = (bytes, decimals = 2) => {
+    if (!bytes || bytes === 0) return '0 B'
+    const k = 1024
+    const sizes = ['B', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i]
+  }
+  if (updateDownloaded.value) return t('app.restart-to-install')
+  if (isDownloadingUpdate.value) {
+    const transferred = bytesToSizeFn(downloadTransferred.value, 2)
+    const total = bytesToSizeFn(downloadTotal.value, 2)
+    if (downloadTotal.value > 0) return `下载中 ${downloadProgress.value}% (${transferred} / ${total})`
+    return `下载中 ${downloadProgress.value}%`
+  }
+  if (updateAvailable.value) {
+    const betaTag = updateIsPrerelease.value ? ' (Beta)' : ''
+    return `下载新版本 ${newVersion.value}${betaTag}`
+  }
+  return appVersion.value
+})
+const configEngineBinary = computed(() => {
+  const config = preferenceConfig.value || {}
+  return config.engineBinary || config['engine-binary']
+})
+const activeEngineBinary = computed(() => storeEngineInfo.value.binPath || configEngineBinary.value || '')
+const engineInfo = computed(() => storeEngineInfo.value)
+const isRenderer = is.renderer()
+const activeCategory = computed(() => props.category || 'advanced')
+const title = computed(() => {
+  const subnav = subnavs.value.find(item => item.key === activeCategory.value)
+  return subnav ? subnav.title : t('preferences.advanced')
+})
+const preferenceBasePath = computed(() => {
+  const p = `${route.path || ''}`
+  return p.startsWith('/preference-window') ? '/preference-window' : '/preference'
+})
+const subnavs = computed(() => {
+  const base = preferenceBasePath.value
+  return [
+    { key: 'basic', title: t('preferences.basic'), route: `${base}/basic` },
+    { key: 'appearance', title: t('preferences.appearance'), route: `${base}/appearance` },
+    { key: 'transfer', title: t('preferences.transfer-settings'), route: `${base}/transfer` },
+    { key: 'bt', title: t('preferences.bt-settings'), route: `${base}/bt` },
+    { key: 'task', title: t('preferences.task-manage'), route: `${base}/task` },
+    { key: 'file', title: t('preferences.file-manage'), route: `${base}/file` },
+    { key: 'advanced', title: t('preferences.advanced'), route: `${base}/advanced` },
+    { key: 'lab', title: t('preferences.lab'), route: `${base}/lab` }
+  ]
+})
+const rpcDefaultPort = computed(() => ENGINE_RPC_PORT)
+const logLevels = computed(() => LOG_LEVELS)
+const logPath = computed(() => preferenceConfig.value.logPath)
+const sessionPath = computed(() => preferenceConfig.value.sessionPath)
+const aria2LogPath = computed(() => preferenceConfig.value.aria2LogPath)
+const aria2LogDir = computed(() => preferenceConfig.value.aria2LogDir)
+const schedulerSpeedUnits = computed(() => [
+  { label: 'KB/s', value: 'K' },
+  { label: 'MB/s', value: 'M' }
+])
+const schedulerSizeUnits = computed(() => [
+  { label: 'MB', value: 'M' },
+  { label: 'GB', value: 'G' }
+])
+const activeUAValue = computed(() => {
+  const map = userAgentMap
+  const current = form.value && form.value.userAgent
+  const hit = uaOptions.value.find(opt => map[opt.value] === current)
+  return hit ? hit.value : ''
+})
+
+// --- Watchers ---
+watch(() => form.value.autoCheckUpdate, (newValue) => {
+  if (!newValue) {
+    preferenceStore.updateUpdateAvailable(false)
+    preferenceStore.updateNewVersion('')
+  }
+})
+watch(githubMirrorConfigVisible, (visible) => {
+  if (!visible) {
+    document.removeEventListener('mousedown', handleGithubMirrorOutsideClick)
+  }
+})
+watch(searchKeyword, (val) => {
+  applyFilters(val)
+}, { immediate: true })
+watch(() => props.category, () => {
+  applyFilters(searchKeyword.value)
+}, { immediate: true })
+watch(form, () => {
+  autoSaveForm()
+}, { deep: true })
+watch(() => form.value.rpcListenPort, (val) => {
+  const url = buildRpcUrl({ port: form.value.rpcListenPort, secret: val })
+  try { ipcRenderer.invoke('clipboard:write-text', url) } catch (e) {}
+})
+watch(() => form.value.rpcSecret, (val) => {
+  const url = buildRpcUrl({ port: form.value.rpcListenPort, secret: val })
+  try { ipcRenderer.invoke('clipboard:write-text', url) } catch (e) {}
+})
+
+// --- Lifecycle ---
+onMounted(async () => {
+  await fetchEngineList()
+  await fetchEngineInfo()
+  checkFfmpegStatus()
+  previousGithubMirrorUrls.value = [...(form.value.githubMirrorUrls || [])]
+  if (form.value.githubMirrorUrls && form.value.githubMirrorUrls.length > 0) {
+    setTimeout(() => {
+      checkSelectedGithubMirrors().catch(() => {})
+    }, 1000)
+  }
+  try {
+    const appConfig = await ipcRenderer.invoke('get-app-config')
+    appVersion.value = appConfig.version
+    const updateStatus = await ipcRenderer.invoke('get-update-status')
+    if (updateStatus.isChecking) {
+      appStore.updateCheckingUpdate(true)
+    } else {
+      appStore.updateCheckingUpdate(false)
+    }
+    preferenceStore.updateIsDownloadingUpdate(updateStatus.isDownloading)
+    preferenceStore.updateUpdateDownloaded(updateStatus.updateDownloaded)
+    if (updateStatus.isDownloading) {
+      preferenceStore.updateDownloadProgress(updateStatus.downloadProgress || 0)
+      preferenceStore.updateDownloadSize({
+        total: updateStatus.downloadTotal || 0,
+        transferred: updateStatus.downloadTransferred || 0
+      })
+      if (updateStatus.newVersion) preferenceStore.updateNewVersion(updateStatus.newVersion)
+      if (updateStatus.releaseNotes) preferenceStore.updateReleaseNotes(updateStatus.releaseNotes)
+      preferenceStore.updateUpdateAvailable(false)
+    } else if (updateStatus.updateDownloaded) {
+      preferenceStore.updateUpdateAvailable(false)
+      if (updateStatus.newVersion) preferenceStore.updateNewVersion(updateStatus.newVersion)
+      if (updateStatus.releaseNotes) preferenceStore.updateReleaseNotes(updateStatus.releaseNotes)
+    } else {
+      const configFromStore = preferenceConfig.value
+      if (configFromStore) {
+        const ua = configFromStore['update-available'] || configFromStore.updateAvailable || false
+        const nv = configFromStore['new-version'] || configFromStore.newVersion || ''
+        const lct = configFromStore['last-check-update-time'] || configFromStore.lastCheckUpdateTime || 0
+        const rn = configFromStore['release-notes'] || configFromStore.releaseNotes || ''
+        if (ua && nv && isVersionNewer(nv, appVersion.value)) {
+          preferenceStore.updateUpdateAvailable(ua)
+          preferenceStore.updateNewVersion(nv)
+          preferenceStore.updateLastCheckUpdateTime(lct)
+          if (rn) preferenceStore.updateReleaseNotes(rn)
         }
       }
-    },
-    async created () {
-      // 获取引擎列表
-      await this.fetchEngineList()
-    },
-    async mounted () {
-      await this.fetchEngineList()
-      await this.fetchEngineInfo()
-      this.checkFfmpegStatus()
+    }
+  } catch (e) {
+    console.warn('[LinkCore] Failed to get update status:', e)
+  }
+})
 
-      // 初始化 previousGithubMirrorUrls
-      this.previousGithubMirrorUrls = [...(this.form.githubMirrorUrls || [])]
+// --- Methods ---
 
-      // 自动检测已选择的 GitHub 镜像延迟
-      if (this.form.githubMirrorUrls && this.form.githubMirrorUrls.length > 0) {
-        // 延迟1秒后开始检测，避免阻塞页面加载
-        setTimeout(() => {
-          this.checkSelectedGithubMirrors().catch(() => {})
-        }, 1000)
-      }
-
-      try {
-        const appConfig = await this.$electron.ipcRenderer.invoke('get-app-config')
-        this.appVersion = appConfig.version
-
-        // 从主进程获取当前实时更新状态
-        const updateStatus = await this.$electron.ipcRenderer.invoke('get-update-status')
-        const prefState = this.$store.state.preference
-
-        // 同步检查状态
-        if (updateStatus.isChecking) {
-          this.$store.dispatch('app/updateCheckingUpdate', true)
-        } else {
-          this.$store.dispatch('app/updateCheckingUpdate', false)
-        }
-
-        // 同步下载状态
-        this.$store.dispatch('preference/updateIsDownloadingUpdate', updateStatus.isDownloading)
-        this.$store.dispatch('preference/updateUpdateDownloaded', updateStatus.updateDownloaded)
-
-        if (updateStatus.isDownloading) {
-          this.$store.dispatch('preference/updateDownloadProgress', updateStatus.downloadProgress || 0)
-          this.$store.dispatch('preference/updateDownloadSize', {
-            total: updateStatus.downloadTotal || 0,
-            transferred: updateStatus.downloadTransferred || 0
-          })
-          if (updateStatus.newVersion) {
-            this.$store.dispatch('preference/updateNewVersion', updateStatus.newVersion)
-          }
-          if (updateStatus.releaseNotes) {
-            this.$store.dispatch('preference/updateReleaseNotes', updateStatus.releaseNotes)
-          }
-          this.$store.dispatch('preference/updateUpdateAvailable', false)
-        } else if (updateStatus.updateDownloaded) {
-          this.$store.dispatch('preference/updateUpdateAvailable', false)
-          if (updateStatus.newVersion) {
-            this.$store.dispatch('preference/updateNewVersion', updateStatus.newVersion)
-          }
-          if (updateStatus.releaseNotes) {
-            this.$store.dispatch('preference/updateReleaseNotes', updateStatus.releaseNotes)
-          }
-        } else {
-          // 没有正在进行的下载或已完成，从配置恢复
-          const configFromStore = this.$store.state.preference.config
-          if (configFromStore) {
-            const updateAvailable = configFromStore['update-available'] || configFromStore.updateAvailable || false
-            const newVersion = configFromStore['new-version'] || configFromStore.newVersion || ''
-            const lastCheckUpdateTime = configFromStore['last-check-update-time'] || configFromStore.lastCheckUpdateTime || 0
-            const releaseNotes = configFromStore['release-notes'] || configFromStore.releaseNotes || ''
-
-            // 校验残留状态仍有效（newVersion 确实比当前版本新），
-            // 避免用户已手动升级后仍显示过期的"下载新版本"按钮
-            if (updateAvailable && newVersion && this.isVersionNewer(newVersion, this.appVersion)) {
-              this.$store.dispatch('preference/updateUpdateAvailable', updateAvailable)
-              this.$store.dispatch('preference/updateNewVersion', newVersion)
-              this.$store.dispatch('preference/updateLastCheckUpdateTime', lastCheckUpdateTime)
-              if (releaseNotes) {
-                this.$store.dispatch('preference/updateReleaseNotes', releaseNotes)
-              }
-            }
-          }
-        }
-
-        // 同步最后检查时间（总是从配置同步，确保预览按钮显示）
-        const configForTime = this.$store.state.preference.config
-        let timeToSet = Date.now() // 默认用当前时间，确保下载中时预览按钮能显示
-        if (configForTime) {
-          const configTime = configForTime['last-check-update-time'] || configForTime.lastCheckUpdateTime || 0
-          if (configTime && configTime > 0) {
-            timeToSet = configTime
-          }
-        }
-        if (timeToSet && (!prefState.lastCheckUpdateTime || timeToSet > prefState.lastCheckUpdateTime)) {
-          this.$store.dispatch('preference/updateLastCheckUpdateTime', timeToSet)
-        }
-      } catch (error) {
-        console.error('[LinkCore] Failed to get app version:', error)
-      }
-
-      // 注册更新事件全局监听器
-      this._updateEventListeners = {
-        onCheckingForUpdate: () => {
-          this.$store.dispatch('app/updateCheckingUpdate', true)
-        },
-        onUpdateAvailable: (event, version, releaseNotes, isPrerelease) => {
-          this.$store.dispatch('app/updateCheckingUpdate', false)
-          this.$store.dispatch('preference/updateUpdateAvailable', true)
-          this.$store.dispatch('preference/updateNewVersion', version)
-          this.$store.dispatch('preference/updateUpdateIsPrerelease', !!isPrerelease)
-          this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
-          this.$store.dispatch('preference/updateReleaseNotes', releaseNotes || '')
-        },
-        onUpdateNotAvailable: () => {
-          this.$store.dispatch('app/updateCheckingUpdate', false)
-          this.$store.dispatch('preference/updateUpdateAvailable', false)
-          this.$store.dispatch('preference/updateNewVersion', '')
-          this.$store.dispatch('preference/updateUpdateIsPrerelease', false)
-          this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
-        },
-        onDownloadStart: () => {
-          this.$store.dispatch('preference/updateIsDownloadingUpdate', true)
-          this.$store.dispatch('preference/updateUpdateDownloaded', false)
-          this.$store.dispatch('preference/updateDownloadProgress', 0)
-          this.$store.dispatch('preference/updateDownloadSize', { total: 0, transferred: 0 })
-        },
-        onDownloadProgress: (event, progress) => {
-          this.$store.dispatch('preference/updateDownloadProgress', Math.round(progress.percent))
-          this.$store.dispatch('preference/updateDownloadSize', {
-            total: progress.total || 0,
-            transferred: progress.transferred || 0
-          })
-        },
-        onUpdateDownloaded: () => {
-          this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
-          this.$store.dispatch('preference/updateUpdateDownloaded', true)
-          this.$store.dispatch('preference/updateUpdateAvailable', false)
-          // 不在此弹"下载完成"消息：同一事件会同时触发页面级与下载流程
-          // 的临时监听，重复提示；统一由下载发起方的临时监听弹一条
-        },
-        onUpdateError: () => {
-          this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
-          this.$store.dispatch('preference/updateUpdateDownloaded', false)
-          this.$store.dispatch('app/updateCheckingUpdate', false)
-        },
-        onUpdateCancelled: () => {
-          this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
-          this.$store.dispatch('preference/updateUpdateDownloaded', false)
-          this.$store.dispatch('preference/updateDownloadProgress', 0)
-          this.$store.dispatch('preference/updateDownloadSize', { total: 0, transferred: 0 })
-        }
-      }
-
-      this.$electron.ipcRenderer.on('checking-for-update', this._updateEventListeners.onCheckingForUpdate)
-      this.$electron.ipcRenderer.on('update-available', this._updateEventListeners.onUpdateAvailable)
-      this.$electron.ipcRenderer.on('update-not-available', this._updateEventListeners.onUpdateNotAvailable)
-      this.$electron.ipcRenderer.on('download-start', this._updateEventListeners.onDownloadStart)
-      this.$electron.ipcRenderer.on('download-progress', this._updateEventListeners.onDownloadProgress)
-      this.$electron.ipcRenderer.on('update-downloaded', this._updateEventListeners.onUpdateDownloaded)
-      this.$electron.ipcRenderer.on('update-error', this._updateEventListeners.onUpdateError)
-      this.$electron.ipcRenderer.on('update-cancelled', this._updateEventListeners.onUpdateCancelled)
-    },
-    beforeDestroy () {
-      if (this._filterTimer) {
-        clearTimeout(this._filterTimer)
-      }
-      if (this.saveTimeout) {
-        clearTimeout(this.saveTimeout)
-        this.saveTimeout = null
-      }
-      if (this.mirrorCheckTimeout) {
-        clearTimeout(this.mirrorCheckTimeout)
-        this.mirrorCheckTimeout = null
-      }
-      // 清理 GitHub 镜像弹窗外部点击监听
-      document.removeEventListener('mousedown', this.handleGithubMirrorOutsideClick)
-      // 清理更新事件监听器
-      if (this._updateEventListeners) {
-        this.$electron.ipcRenderer.removeListener('checking-for-update', this._updateEventListeners.onCheckingForUpdate)
-        this.$electron.ipcRenderer.removeListener('update-available', this._updateEventListeners.onUpdateAvailable)
-        this.$electron.ipcRenderer.removeListener('update-not-available', this._updateEventListeners.onUpdateNotAvailable)
-        this.$electron.ipcRenderer.removeListener('download-start', this._updateEventListeners.onDownloadStart)
-        this.$electron.ipcRenderer.removeListener('download-progress', this._updateEventListeners.onDownloadProgress)
-        this.$electron.ipcRenderer.removeListener('update-downloaded', this._updateEventListeners.onUpdateDownloaded)
-        this.$electron.ipcRenderer.removeListener('update-error', this._updateEventListeners.onUpdateError)
-        this.$electron.ipcRenderer.removeListener('update-cancelled', this._updateEventListeners.onUpdateCancelled)
-        this._updateEventListeners = null
-      }
-    },
-    methods: {
       // 完整版本比较（与主进程 UpdateManager 的 semver 语义一致）：
       // 保留 pre-release 标签（3.0.2-Beta1 < 3.0.2-Beta2 < 3.0.2），
       // 用于校验持久化配置中残留的"有新版本"状态是否仍然有效，
       // 避免 Beta 用户已检测到正式版更新却因版本号折叠被误判过期。
-      isVersionNewer (a, b) {
+      function isVersionNewer(a, b) {
         if (!a || !b) return false
         const parse = (v) => {
           const m = String(v).trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/)
@@ -1107,10 +900,10 @@
           return x > y
         }
         return false
-      },
-      measureTextWidth (text, font) {
+      }
+      function measureTextWidth(text, font) {
         try {
-          const canvas = this.textMeasureCanvas || (this.textMeasureCanvas = document.createElement('canvas'))
+          const canvas = textMeasureCanvas || (textMeasureCanvas = document.createElement('canvas'))
           const ctx = canvas.getContext('2d')
           if (!ctx) return `${text || ''}`.length * 10
           ctx.font = font || '12px sans-serif'
@@ -1118,10 +911,10 @@
         } catch (_) {
           return `${text || ''}`.length * 10
         }
-      },
+      }
 
       // GitHub 镜像延迟检测
-      async checkGithubMirrorLatency (mirror) {
+      async function checkGithubMirrorLatency(mirror) {
         // 使用一个小的测试文件来检测延迟
         // 使用 GitHub 的 favicon 或其他小文件
         const testUrl = `https://${mirror.value}/https://raw.githubusercontent.com/github/explore/main/README.md`
@@ -1156,15 +949,15 @@
           console.warn(`[GitHub Mirror] Check ${mirror.value} failed after ${latency}ms:`, error.message)
           return -1
         }
-      },
-      async checkAllGithubMirrors () {
-        this.githubMirrorCheckingAll = true
+      }
+      async function checkAllGithubMirrors() {
+        githubMirrorCheckingAll.value = true
         try {
           // 并发检测所有镜像
-          const checkPromises = this.builtinGithubMirrors.map(async (mirror) => {
+          const checkPromises = builtinGithubMirrors.value.map(async (mirror) => {
             mirror.checking = true
             try {
-              const latency = await this.checkGithubMirrorLatency(mirror)
+              const latency = await checkGithubMirrorLatency(mirror)
               mirror.latency = latency
             } catch (e) {
               mirror.latency = -1
@@ -1177,13 +970,13 @@
         } catch (e) {
           console.warn('[GitHub Mirror] checkAll failed:', e && e.message ? e.message : e)
         } finally {
-          this.githubMirrorCheckingAll = false
+          githubMirrorCheckingAll.value = false
         }
-      },
-      async checkSelectedGithubMirrors () {
+      }
+      async function checkSelectedGithubMirrors() {
         // 只检测已选择的镜像
-        const selectedMirrors = this.builtinGithubMirrors.filter(mirror =>
-          this.form.githubMirrorUrls && this.form.githubMirrorUrls.includes(mirror.value)
+        const selectedMirrors = builtinGithubMirrors.value.filter(mirror =>
+          form.value.githubMirrorUrls && form.value.githubMirrorUrls.includes(mirror.value)
         )
 
         if (selectedMirrors.length === 0) {
@@ -1192,13 +985,13 @@
 
         console.log('[GitHub Mirror] Checking selected mirrors:', selectedMirrors.map(m => m.value))
 
-        this.githubMirrorCheckingAll = true
+        githubMirrorCheckingAll.value = true
         try {
           // 并发检测选中的镜像
           const checkPromises = selectedMirrors.map(async (mirror) => {
             mirror.checking = true
             try {
-              const latency = await this.checkGithubMirrorLatency(mirror)
+              const latency = await checkGithubMirrorLatency(mirror)
               mirror.latency = latency
             } catch (e) {
               mirror.latency = -1
@@ -1211,24 +1004,24 @@
         } catch (e) {
           console.warn('[GitHub Mirror] checkSelected failed:', e && e.message ? e.message : e)
         } finally {
-          this.githubMirrorCheckingAll = false
+          githubMirrorCheckingAll.value = false
         }
-      },
-      openGithubMirrorConfigDialog () {
-        if (this.githubMirrorConfigVisible) {
-          this.closeGithubMirrorPopup()
+      }
+      function openGithubMirrorConfigDialog() {
+        if (githubMirrorConfigVisible.value) {
+          closeGithubMirrorPopup()
           return
         }
-        this.githubMirrorInput = ''
-        this.githubMirrorConfigVisible = true
-        this.$nextTick(() => {
-          this.adjustGithubMirrorPopupPosition()
-          document.addEventListener('mousedown', this.handleGithubMirrorOutsideClick)
+        githubMirrorInput.value = ''
+        githubMirrorConfigVisible.value = true
+        nextTick(() => {
+          adjustGithubMirrorPopupPosition()
+          document.addEventListener('mousedown', handleGithubMirrorOutsideClick)
         })
-      },
-      adjustGithubMirrorPopupPosition () {
-        const popup = this.$el.querySelector('.github-mirror-popup')
-        const wrapper = this.$el.querySelector('.github-mirror-popup-wrapper')
+      }
+      function adjustGithubMirrorPopupPosition() {
+        const popup = document.querySelector('.github-mirror-popup')
+        const wrapper = document.querySelector('.github-mirror-popup-wrapper')
         if (!popup || !wrapper) return
         const popupRect = popup.getBoundingClientRect()
         const viewportW = window.innerWidth
@@ -1261,15 +1054,15 @@
             popup.style.transformOrigin = 'bottom right'
           }
         }
-      },
-      handleGithubMirrorOutsideClick (e) {
-        const wrapper = this.$el.querySelector('.github-mirror-popup-wrapper')
+      }
+      function handleGithubMirrorOutsideClick(e) {
+        const wrapper = document.querySelector('.github-mirror-popup-wrapper')
         if (wrapper && !wrapper.contains(e.target)) {
-          this.closeGithubMirrorPopup()
+          closeGithubMirrorPopup()
         }
-      },
-      closeGithubMirrorPopup () {
-        const popup = this.$el.querySelector('.github-mirror-popup')
+      }
+      function closeGithubMirrorPopup() {
+        const popup = document.querySelector('.github-mirror-popup')
         if (popup) {
           popup.style.left = ''
           popup.style.right = ''
@@ -1279,13 +1072,13 @@
           popup.style.marginBottom = ''
           popup.style.transformOrigin = ''
         }
-        this.githubMirrorConfigVisible = false
-        document.removeEventListener('mousedown', this.handleGithubMirrorOutsideClick)
-      },
-      addGithubMirrorFromInput () {
-        const input = (this.githubMirrorInput || '').trim()
+        githubMirrorConfigVisible.value = false
+        document.removeEventListener('mousedown', handleGithubMirrorOutsideClick)
+      }
+      function addGithubMirrorFromInput() {
+        const input = (githubMirrorInput.value || '').trim()
         if (!input) {
-          this.$msg.error(this.$t('preferences.github-mirror-input-empty'))
+          msg.error(t('preferences.github-mirror-input-empty'))
           return
         }
 
@@ -1293,54 +1086,54 @@
         const mirrorUrl = input.replace(/^https?:\/\//, '')
 
         // 检查是否已存在
-        if (this.form.githubMirrorUrls && this.form.githubMirrorUrls.includes(mirrorUrl)) {
-          this.$msg.warning(this.$t('preferences.github-mirror-already-exists'))
-          this.closeGithubMirrorPopup()
+        if (form.value.githubMirrorUrls && form.value.githubMirrorUrls.includes(mirrorUrl)) {
+          msg.warning(t('preferences.github-mirror-already-exists'))
+          closeGithubMirrorPopup()
           return
         }
 
         // 添加到列表
-        const currentUrls = this.form.githubMirrorUrls || []
-        this.form.githubMirrorUrls = [...currentUrls, mirrorUrl]
+        const currentUrls = form.value.githubMirrorUrls || []
+        form.value.githubMirrorUrls = [...currentUrls, mirrorUrl]
 
         // 保存配置
-        this.autoSaveForm()
+        autoSaveForm()
 
         // 关闭弹窗
-        this.closeGithubMirrorPopup()
+        closeGithubMirrorPopup()
 
         // 提示添加成功
-        this.$msg.success(this.$t('preferences.github-mirror-add-success'))
-      },
-      onGithubMirrorChange (newValue) {
+        msg.success(t('preferences.github-mirror-add-success'))
+      }
+      function onGithubMirrorChange(newValue) {
         // 保存配置
-        this.autoSaveForm()
+        autoSaveForm()
 
         // 找出新添加的镜像（在新列表中但不在旧列表中的）
-        const previousUrls = this.previousGithubMirrorUrls || []
+        const previousUrls = previousGithubMirrorUrls.value || []
         const currentUrls = newValue || []
         const newlyAddedUrls = currentUrls.filter(url => !previousUrls.includes(url))
 
         // 更新保存的列表
-        this.previousGithubMirrorUrls = [...currentUrls]
+        previousGithubMirrorUrls.value = [...currentUrls]
 
         // 如果有新添加的镜像，自动检测它们
         if (newlyAddedUrls.length > 0) {
           console.log('[GitHub Mirror] Newly added mirrors:', newlyAddedUrls)
 
           // 延迟一小段时间，避免频繁切换时重复检测
-          if (this.mirrorCheckTimeout) {
-            clearTimeout(this.mirrorCheckTimeout)
+          if (mirrorCheckTimeout) {
+            clearTimeout(mirrorCheckTimeout)
           }
 
-          this.mirrorCheckTimeout = setTimeout(() => {
-            this.checkSpecificMirrors(newlyAddedUrls)
+          mirrorCheckTimeout = setTimeout(() => {
+            checkSpecificMirrors(newlyAddedUrls)
           }, 500)
         }
-      },
-      async checkSpecificMirrors (mirrorUrls) {
+      }
+      async function checkSpecificMirrors(mirrorUrls) {
         // 检测指定的镜像
-        const mirrorsToCheck = this.builtinGithubMirrors.filter(mirror =>
+        const mirrorsToCheck = builtinGithubMirrors.value.filter(mirror =>
           mirrorUrls.includes(mirror.value)
         )
 
@@ -1353,26 +1146,26 @@
         // 并发检测指定的镜像
         const checkPromises = mirrorsToCheck.map(async (mirror) => {
           mirror.checking = true
-          const latency = await this.checkGithubMirrorLatency(mirror)
+          const latency = await checkGithubMirrorLatency(mirror)
           mirror.latency = latency
           mirror.checking = false
         })
 
         await Promise.all(checkPromises)
-      },
-      formatLatency (latency) {
+      }
+      function formatLatency(latency) {
         if (latency === null) {
           return ''
         }
         if (latency < 0) {
-          return this.$t('preferences.github-mirror-timeout')
+          return t('preferences.github-mirror-timeout')
         }
         if (latency < 1000) {
           return `${latency}ms`
         }
         return `${(latency / 1000).toFixed(2)}s`
-      },
-      getLatencyColor (latency) {
+      }
+      function getLatencyColor(latency) {
         if (latency < 0) {
           return '#F56C6C' // 红色 - 失败
         }
@@ -1383,40 +1176,36 @@
           return '#E6A23C' // 橙色 - 中等
         }
         return '#F56C6C' // 红色 - 慢
-      },
-      checkFfmpegStatus () {
+      }
+      function checkFfmpegStatus() {
         // 异步检测，避免阻塞 UI
         setTimeout(() => {
-          this.doCheckFfmpegStatus()
+          doCheckFfmpegStatus()
         }, 0)
-      },
-      doCheckFfmpegStatus () {
-        const { existsSync } = require('node:fs')
-        const { resolve, dirname } = require('node:path')
-        const ffmpegExeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+      }
+function doCheckFfmpegStatus() {
+const ffmpegExeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
 
-        // 检查用户数据目录
-        try {
-          const { app } = require('@electron/remote')
-          const userDataPath = app.getPath('userData')
+// 检查用户数据目录
+try {
+const userDataPath = app.getPath('userData')
           const userFfmpegPath = resolve(userDataPath, 'ffmpeg', ffmpegExeName)
           if (existsSync(userFfmpegPath)) {
-            this.ffmpegStatus = { installed: true, path: userFfmpegPath }
+            ffmpegStatus.value = { installed: true, path: userFfmpegPath }
             return
           }
         } catch (e) {
           console.warn('[FFmpeg] Check userData failed:', e)
         }
 
-        // 检查应用安装目录（通过 exe 路径获取）
-        try {
-          const { app } = require('@electron/remote')
-          const exePath = app.getPath('exe')
+// 检查应用安装目录（通过 exe 路径获取）
+try {
+const exePath = app.getPath('exe')
           const appDir = dirname(exePath)
           const appFfmpegPath = resolve(appDir, ffmpegExeName)
           console.log('[FFmpeg] Checking app dir:', appFfmpegPath)
           if (existsSync(appFfmpegPath)) {
-            this.ffmpegStatus = { installed: true, path: appFfmpegPath }
+            ffmpegStatus.value = { installed: true, path: appFfmpegPath }
             return
           }
         } catch (e) {
@@ -1434,7 +1223,7 @@
             ]
             for (const p of candidates) {
               if (existsSync(p)) {
-                this.ffmpegStatus = { installed: true, path: p }
+                ffmpegStatus.value = { installed: true, path: p }
                 return
               }
             }
@@ -1443,18 +1232,17 @@
           console.warn('[FFmpeg] Check resourcesPath failed:', e)
         }
 
-        // 检查系统 PATH（使用异步 spawn 避免阻塞）
-        try {
-          const { spawn } = require('node:child_process')
-          const child = spawn('ffmpeg', ['-version'], { windowsHide: true })
+// 检查系统 PATH（使用异步 spawn 避免阻塞）
+try {
+const child = spawn('ffmpeg', ['-version'], { windowsHide: true })
           child.on('error', () => {
-            this.ffmpegStatus = { installed: false, path: '' }
+            ffmpegStatus.value = { installed: false, path: '' }
           })
           child.on('close', (code) => {
             if (code === 0) {
-              this.ffmpegStatus = { installed: true, path: '' }
+              ffmpegStatus.value = { installed: true, path: '' }
             } else {
-              this.ffmpegStatus = { installed: false, path: '' }
+              ffmpegStatus.value = { installed: false, path: '' }
             }
           })
           // 设置超时
@@ -1464,29 +1252,26 @@
             } catch (_) {}
           }, 3000)
         } catch (_) {
-          this.ffmpegStatus = { installed: false, path: '' }
+          ffmpegStatus.value = { installed: false, path: '' }
         }
-      },
-      openFfmpegFolder () {
-        if (!this.ffmpegStatus.path) return
-        const { dirname } = require('node:path')
-        const path = this.ffmpegStatus.path
+      }
+function openFfmpegFolder() {
+if (!ffmpegStatus.value.path) return
+const path = ffmpegStatus.value.path
         // 打开文件所在目录
         try {
           const folderPath = dirname(path)
-          this.$electron.shell.openPath(folderPath)
+          shell.openPath(folderPath)
         } catch (e) {
           console.warn('[FFmpeg] Open folder failed:', e)
         }
-      },
-      openAria2LogFolder () {
-        const { existsSync } = require('node:fs')
-        const { dirname } = require('node:path')
+      }
+function openAria2LogFolder() {
 
-        // 优先尝试打开日志文件
-        if (this.aria2LogPath && existsSync(this.aria2LogPath)) {
+// 优先尝试打开日志文件
+if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
           try {
-            this.$electron.shell.showItemInFolder(this.aria2LogPath)
+            shell.showItemInFolder(aria2LogPath.value)
             return
           } catch (e) {
             console.warn('[Aria2] Show log file failed:', e)
@@ -1494,34 +1279,34 @@
         }
 
         // 如果文件不存在，打开日志目录
-        if (this.aria2LogDir) {
+        if (aria2LogDir.value) {
           try {
-            this.$electron.shell.openPath(this.aria2LogDir)
+            shell.openPath(aria2LogDir.value)
           } catch (e) {
             console.warn('[Aria2] Open log directory failed:', e)
           }
-        } else if (this.aria2LogPath) {
+        } else if (aria2LogPath.value) {
           // 降级：从日志路径提取目录
           try {
-            const folderPath = dirname(this.aria2LogPath)
-            this.$electron.shell.openPath(folderPath)
+            const folderPath = dirname(aria2LogPath.value)
+            shell.openPath(folderPath)
           } catch (e) {
             console.warn('[Aria2] Open log folder failed:', e)
           }
         }
-      },
-      applyFilters (keyword) {
-        if (this._filterTimer) {
-          clearTimeout(this._filterTimer)
+      }
+      function applyFilters(keyword) {
+        if (_filterTimer) {
+          clearTimeout(_filterTimer)
         }
-        this._filterTimer = setTimeout(() => {
-          this.filterCards(keyword, this.activeCategory)
+        _filterTimer = setTimeout(() => {
+          filterCards(keyword, activeCategory.value)
         }, 120)
-      },
-      filterCards (keyword, category) {
-        this.$nextTick(() => {
-          if (!this.$el) return
-          const cards = this.$el.querySelectorAll('.preference-card')
+      }
+      function filterCards(keyword, category) {
+        nextTick(() => {
+          if (!document.querySelector('.preference-panel')) return
+          const cards = document.querySelectorAll('.preference-card')
           const k = (keyword || '').toLowerCase()
           let visibleCount = 0
           cards.forEach(card => {
@@ -1538,181 +1323,414 @@
               card.style.display = 'none'
             }
           })
-          this.hasNoResults = visibleCount === 0 && k !== ''
+          hasNoResults.value = visibleCount === 0 && k !== ''
         })
-      },
+      }
 
-      hasMsgSupport () {
-        return typeof this.$msg !== 'undefined' && this.$msg !== null
-      },
-      showMessage (type, message) {
-        if (this.hasMsgSupport()) {
-          this.$msg[type](message)
+      function hasMsgSupport() {
+        return typeof msg !== 'undefined' && msg !== null
+      }
+      function showMessage(type, message) {
+        if (hasMsgSupport()) {
+          msg[type](message)
         } else {
           console.log(`[LinkCore] Update message: ${type} - ${message}`)
           if (type === 'error') {
             alert(message)
           }
         }
-      },
+      }
       // 版本项点击处理：每个分支都给出可见反馈，
       // 避免任何状态下"点击无反应"。
-      handleVersionItemClick () {
-        if (this.updateDownloaded) {
-          this.installUpdate()
-        } else if (this.isDownloadingUpdate) {
-          this.showMessage('info', this.$t('app.downloading-new-version'))
-        } else if (this.updateAvailable) {
-          this.downloadUpdate()
-        } else if (this.isCheckingUpdate) {
-          this.showMessage('info', this.$t('app.checking-for-updates'))
+      function handleVersionItemClick() {
+        if (updateDownloaded.value) {
+          installUpdate()
+        } else if (isDownloadingUpdate.value) {
+          showMessage('info', t('app.downloading-new-version'))
+        } else if (updateAvailable.value) {
+          downloadUpdate()
+        } else if (isCheckingUpdate.value) {
+          showMessage('info', t('app.checking-for-updates'))
         } else {
-          this.onCheckUpdateClick()
+          onCheckUpdateClick()
         }
-      },
+      }
       // 安装更新
-      installUpdate () {
-        this.showMessage('info', this.$t('app.preparing-update-restart'))
-        this.$electron.ipcRenderer.send('command', 'application:quit-and-install-update')
-      },
-      downloadUpdate () {
-        if (this.isDownloadingUpdate) return
-        this.$store.dispatch('preference/updateIsDownloadingUpdate', true)
-        this.$store.dispatch('preference/updateUpdateDownloaded', false)
-        this.$store.dispatch('preference/updateDownloadProgress', 0)
-        this.$store.dispatch('preference/updateDownloadSize', { total: 0, transferred: 0 })
-        this.showMessage('info', this.$t('app.downloading-new-version'))
+      function installUpdate() {
+        showMessage('info', t('app.preparing-update-restart'))
+        ipcRenderer.send('command', 'application:quit-and-install-update')
+      }
+      function downloadUpdate() {
+        if (isDownloadingUpdate.value) return
+        preferenceStore.updateIsDownloadingUpdate(true)
+        preferenceStore.updateUpdateDownloaded(false)
+        preferenceStore.updateDownloadProgress(0)
+        preferenceStore.updateDownloadSize({ total: 0, transferred: 0 })
+        showMessage('info', t('app.downloading-new-version'))
         const cleanupListeners = () => {
-          this.$electron.ipcRenderer.removeListener('download-progress', onDownloadProgress)
-          this.$electron.ipcRenderer.removeListener('update-downloaded', onDownloaded)
-          this.$electron.ipcRenderer.removeListener('update-error', onDownloadError)
-          this.$electron.ipcRenderer.removeListener('update-cancelled', onDownloadCancelled)
+          ipcRenderer.removeListener('download-progress', onDownloadProgress)
+          ipcRenderer.removeListener('update-downloaded', onDownloaded)
+          ipcRenderer.removeListener('update-error', onDownloadError)
+          ipcRenderer.removeListener('update-cancelled', onDownloadCancelled)
         }
         const onDownloadProgress = (event, progress) => {
-          this.$store.dispatch('preference/updateDownloadProgress', Math.round(progress.percent))
-          this.$store.dispatch('preference/updateDownloadSize', {
+          preferenceStore.updateDownloadProgress(Math.round(progress.percent))
+          preferenceStore.updateDownloadSize({
             total: progress.total || 0,
             transferred: progress.transferred || 0
           })
         }
         const onDownloaded = () => {
-          this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
-          this.$store.dispatch('preference/updateUpdateAvailable', false)
-          this.showMessage('success', this.$t('app.update-download-complete-restart'))
+          preferenceStore.updateIsDownloadingUpdate(false)
+          preferenceStore.updateUpdateAvailable(false)
+          showMessage('success', t('app.update-download-complete-restart'))
           cleanupListeners()
         }
         const onDownloadError = (_event, errMsg) => {
-          this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
-          const msg = errMsg ? this.$t('app.update-download-failed', { message: errMsg }) : this.$t('app.update-download-failed-network')
-          this.showMessage('error', msg)
+          preferenceStore.updateIsDownloadingUpdate(false)
+          const msg = errMsg ? t('app.update-download-failed', { message: errMsg }) : t('app.update-download-failed-network')
+          showMessage('error', msg)
           cleanupListeners()
         }
         const onDownloadCancelled = () => {
-          this.$store.dispatch('preference/updateIsDownloadingUpdate', false)
-          this.showMessage('info', this.$t('app.update-download-cancelled'))
+          preferenceStore.updateIsDownloadingUpdate(false)
+          showMessage('info', t('app.update-download-cancelled'))
           cleanupListeners()
         }
-        this.$electron.ipcRenderer.on('download-progress', onDownloadProgress)
-        this.$electron.ipcRenderer.on('update-downloaded', onDownloaded)
-        this.$electron.ipcRenderer.on('update-error', onDownloadError)
-        this.$electron.ipcRenderer.on('update-cancelled', onDownloadCancelled)
-        this.$electron.ipcRenderer.send('command', 'application:download-update')
-      },
+        ipcRenderer.on('download-progress', onDownloadProgress)
+        ipcRenderer.on('update-downloaded', onDownloaded)
+        ipcRenderer.on('update-error', onDownloadError)
+        ipcRenderer.on('update-cancelled', onDownloadCancelled)
+        ipcRenderer.send('command', 'application:download-update')
+      }
 
       // 获取引擎列表方法
-      async fetchEngineList () {
+      async function fetchEngineList() {
         try {
-          await this.$store.dispatch('app/fetchEngineList')
+          await appStore.fetchEngineList()
         } catch (error) {
           console.error('Failed to get engine list:', error)
-          this.$msg.error(this.$t('preferences.engine-list-fetch-error') || 'Failed to fetch engine list')
+          msg.error(t('preferences.engine-list-fetch-error') || 'Failed to fetch engine list')
         }
-      },
-      async fetchEngineInfo () {
+      }
+      async function fetchEngineInfo() {
         try {
-          await this.$store.dispatch('app/fetchEngineInfo')
+          await appStore.fetchEngineInfo()
         } catch (error) {
           console.error('Failed to get engine info:', error)
         }
-      },
-      onProtocolsChange (protocol, enabled) {
-        const { protocols } = this.form
-        this.form.protocols = {
+      }
+      function onProtocolsChange(protocol, enabled) {
+        const { protocols } = form.value
+        form.value.protocols = {
           ...protocols,
           [protocol]: enabled
         }
-      },
-      autoSaveForm () {
+      }
+      function autoSaveForm() {
         // Debounce auto-save to avoid too many requests
-        if (this.saveTimeout) {
-          clearTimeout(this.saveTimeout)
+        if (saveTimeout) {
+          clearTimeout(saveTimeout)
         }
-        this.saveTimeout = setTimeout(() => {
+        saveTimeout = setTimeout(() => {
           // Double-check there are actual changes before submitting
-          if (!isEmpty(diffConfig(this.formOriginal, this.form))) {
-            this.submitForm('advancedForm')
+          if (!isEmpty(diffConfig(formOriginal.value, form.value))) {
+            submitForm('advancedForm')
           }
         }, 800)
-      },
-      handleLocaleChange (locale) {
+      }
+      function onProxyModeChange(mode) {
+        form.value.proxy = {
+          ...form.value.proxy,
+          mode
+        }
+      }
+      function onProxyServerChange(server) {
+        form.value.proxy = {
+          ...form.value.proxy,
+          server
+        }
+      }
+      function handleProxyBypassChange(bypass) {
+        form.value.proxy = {
+          ...form.value.proxy,
+          bypass: convertLineToComma(bypass)
+        }
+      }
+      function onUpdateChannelChange(channel) {
+        form.value.updateChannel = channel
+        // 立即保存（不走 800ms 防抖：防抖期间关闭窗口会导致保存请求
+        // 未发出，重开窗口回退为初始渠道）。
+        const original = formOriginal.value.updateChannel
+        try {
+          preferenceStore.save({ 'update-channel': channel })
+          formOriginal.value.updateChannel = channel
+          // 清除之前的更新状态，以便下次检查使用新渠道
+          preferenceStore.updateUpdateAvailable(false)
+          preferenceStore.updateNewVersion('')
+          // 渠道已提交到主进程（IPC 消息有序，check 必然在其后处理），
+          // 立即用新渠道触发一次新版本检测
+          try {
+            onCheckUpdateClick()
+          } catch (checkErr) {
+            // 检查流程异常不影响渠道切换本身
+            console.error('[LinkCore] Trigger update check after channel switch failed:', checkErr)
+          }
+        } catch (e) {
+          console.error('[LinkCore] Save update channel failed:', e)
+          form.value.updateChannel = original
+          msg.error(t('preferences.save-fail-message'))
+        }
+      }
+      function changeUA(type) {
+        const ua = userAgentMap[type]
+        if (!ua) {
+          return
+        }
+        form.value.userAgent = ua
+      }
+      function onRpcListenPortChange(value) {
+        if (EMPTY_STRING === value) {
+          form.value.rpcListenPort = rpcDefaultPort.value
+        }
+      }
+      function onRpcPortDiceClick() {
+        const port = generateRandomInt(ENGINE_RPC_PORT, 20000)
+        form.value.rpcListenPort = port
+      }
+      function onRpcSecretDiceClick() {
+        hideRpcSecret.value = false
+        const rpcSecret = randomize('Aa0', 16)
+        form.value.rpcSecret = rpcSecret
+
+        setTimeout(() => {
+          hideRpcSecret.value = true
+        }, 2000)
+      }
+      function onSessionResetClick() {
+        dialog.showMessageBox({
+          type: 'warning',
+          title: t('preferences.session-reset'),
+          message: t('preferences.session-reset-confirm'),
+          buttons: [t('app.yes'), t('app.no')],
+          cancelId: 1
+        }).then(({ response }) => {
+          if (response === 0) {
+            taskStore.purgeTaskRecord()
+            taskStore.pauseAllTask()
+              .then(() => {
+                ipcRenderer.send('command', 'application:reset-session')
+              })
+          }
+        })
+      }
+      function onFactoryResetClick() {
+        dialog.showMessageBox({
+          type: 'warning',
+          title: t('preferences.factory-reset'),
+          message: t('preferences.factory-reset-confirm'),
+          buttons: [t('app.yes'), t('app.no')],
+          cancelId: 1
+        }).then(({ response }) => {
+          if (response === 0) {
+            ipcRenderer.send('command', 'application:factory-reset')
+          }
+        })
+      }
+      function closeUpdatePreview() {
+        updatePreviewVisible.value = false
+      }
+      function handleUpdatePreviewClick(event) {
+        const root = event.currentTarget
+        let el = event.target
+        while (el && el !== root) {
+          if (el.tagName && el.tagName.toLowerCase() === 'a') {
+            break
+          }
+          el = el.parentNode
+        }
+        if (!el || el === root) {
+          return
+        }
+        const href = el.getAttribute('href') || ''
+        if (!href || href.charAt(0) === '#') {
+          return
+        }
+        event.preventDefault()
+        event.stopPropagation()
+        if (!/^https?:\/\//i.test(href)) {
+          return
+        }
+        try {
+          ipcRenderer.send('command', 'application:open-external', href)
+        } catch (e) {
+          console.error('[LinkCore] open external url failed:', href, e)
+        }
+      }
+      function getEngineMaxConnection(engineBinary) {
+        const policy = getEngineConnectionPolicy(engineBinary)
+        return Number(policy && policy.max) || ENGINE_MAX_CONNECTION_PER_SERVER
+      }
+      function getEngineDefaultConnection(engineBinary) {
+        const policy = getEngineConnectionPolicy(engineBinary)
+        return Number(policy && policy.defaultMax) || ENGINE_MAX_CONNECTION_PER_SERVER
+      }
+      function submitForm(formName) {
+        const formRef = advancedForm.value
+        if (!formRef) {
+          console.error('[LinkCore] form ref not found:', formName)
+          return false
+        }
+        formRef.validate((valid) => {
+          if (!valid) {
+            console.error('[LinkCore] preference form valid:', valid)
+            return false
+          }
+
+          const data = {
+            ...diffConfig(formOriginal.value, form.value),
+            ...changedConfig.advanced
+          }
+
+          if ('engineBinary' in data) {
+            const engineBinary = data.engineBinary
+            const engineMaxConnectionPerServer = getEngineMaxConnection(engineBinary)
+            const engineDefaultConnectionPerServer = getEngineDefaultConnection(engineBinary)
+            data['engine-binary'] = engineBinary
+            data['engine-max-connection-per-server'] = engineMaxConnectionPerServer
+            data['max-connection-per-server'] = engineDefaultConnectionPerServer
+            delete data.engineBinary
+          }
+
+          // 显式处理 GitHub 镜像字段，转换为 kebab-case
+          if ('useGithubMirror' in data) {
+            data['use-github-mirror'] = data.useGithubMirror
+            delete data.useGithubMirror
+          }
+          if ('githubMirrorUrls' in data) {
+            data['github-mirror-urls'] = data.githubMirrorUrls
+            delete data.githubMirrorUrls
+          }
+
+          // 显式处理 updateChannel 字段，转换为 kebab-case
+          if ('updateChannel' in data) {
+            data['update-channel'] = data.updateChannel
+            delete data.updateChannel
+          }
+
+          const { autoHideWindow, rpcListenPort } = data
+
+          if (rpcListenPort === EMPTY_STRING) {
+            data.rpcListenPort = rpcDefaultPort.value
+          }
+
+          console.log('[LinkCore] preference changed data:', data)
+
+          // 检查是否需要重启
+          const needRelaunch = isRenderer && (
+            ('engine-binary' in data && data['engine-binary'] !== formOriginal.value.engineBinary) ||
+            checkIsNeedRestart(data)
+          )
+
+          preferenceStore.save(data)
+            .then(() => {
+              appStore.fetchEngineOptions()
+
+              // NAT/uTP 开关属于"下次引擎启动生效"的设置：不触发自动重启，
+              // 仅轻提示用户，避免点开关就 relaunch 整个应用。
+              const restartOnNextBootKeys = ['enable-upnp', 'enable-utp', 'enable-nat-pmp']
+              if (restartOnNextBootKeys.some(k => k in data)) {
+                msg.info(t('preferences.restart-to-apply'))
+              }
+
+              changedConfig.advanced = {}
+              changedConfig.basic = {}
+
+              if (isRenderer) {
+                if ('autoHideWindow' in data) {
+                  ipcRenderer.send('command', 'application:auto-hide-window', autoHideWindow)
+                }
+
+                // 只有在配置保存成功后才发送重启命令
+                if (needRelaunch) {
+                  ipcRenderer.send('command', 'application:relaunch')
+                  // 发送重启命令后立即返回，不再执行后续的同步表单配置
+                  return
+                }
+
+                // 不需要重启时，才同步表单配置
+                formOriginal.value = cloneDeep(form.value)
+              }
+            })
+            .catch((e) => {
+              console.error('[LinkCore] Save preference failed:', e)
+              msg.error(t('preferences.save-fail-message'))
+              changedConfig.advanced = {}
+              changedConfig.basic = {}
+            })
+        })
+      }
+      function handleLocaleChange(locale) {
         const lng = getLanguage(locale)
         getLocaleManager().changeLanguage(lng)
-        this.autoSaveForm()
-      },
-      onCheckUpdateClick () {
+        // 同步更新 vue-i18n 的 locale，使 t() 实时切换语言（composition 模式用 .value）
+        i18n.global.locale.value = lng
+        autoSaveForm()
+      }
+      function onCheckUpdateClick() {
         // 如果正在检查，给出可见提示而不是静默返回
         // （否则自动检查进行中时手动点击表现为"没反应"）
-        if (this.isCheckingUpdate) {
-          this.$msg.info(this.$t('app.checking-for-updates'))
+        if (isCheckingUpdate.value) {
+          msg.info(t('app.checking-for-updates'))
           return
         }
 
         // 设置检查状态
-        this.$store.dispatch('app/updateCheckingUpdate', true)
+        appStore.updateCheckingUpdate(true)
 
         // 显示检查中消息
-        this.$msg.info(this.$t('app.checking-for-updates'))
+        msg.info(t('app.checking-for-updates'))
 
         // 创建临时事件监听器，使用once确保只触发一次
         const onUpdateError = (_event, errMsg) => {
-          const msg = errMsg || this.$t('app.update-error-message')
-          this.$msg.error(msg)
-          this.$store.dispatch('app/updateCheckingUpdate', false)
+          const msg = errMsg || t('app.update-error-message')
+          msg.error(msg)
+          appStore.updateCheckingUpdate(false)
         }
 
         const onUpdateNotAvailable = () => {
-          this.$msg.success(this.$t('app.update-not-available-message'))
-          this.$store.dispatch('app/updateCheckingUpdate', false)
-          this.$store.dispatch('preference/updateUpdateAvailable', false)
-          this.$store.dispatch('preference/updateNewVersion', '')
-          this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
+          msg.success(t('app.update-not-available-message'))
+          appStore.updateCheckingUpdate(false)
+          preferenceStore.updateUpdateAvailable(false)
+          preferenceStore.updateNewVersion('')
+          preferenceStore.updateLastCheckUpdateTime(Date.now())
         }
 
         const onUpdateAvailable = (event, version, releaseNotes) => {
-          this.$msg.info(this.$t('app.update-available-message'))
-          this.$store.dispatch('app/updateCheckingUpdate', false)
-          this.$store.dispatch('preference/updateUpdateAvailable', true)
-          this.$store.dispatch('preference/updateNewVersion', version)
-          this.$store.dispatch('preference/updateLastCheckUpdateTime', Date.now())
-          this.$store.dispatch('preference/updateReleaseNotes', releaseNotes || '')
+          msg.info(t('app.update-available-message'))
+          appStore.updateCheckingUpdate(false)
+          preferenceStore.updateUpdateAvailable(true)
+          preferenceStore.updateNewVersion(version)
+          preferenceStore.updateLastCheckUpdateTime(Date.now())
+          preferenceStore.updateReleaseNotes(releaseNotes || '')
         }
 
         // 使用once监听事件，确保事件只处理一次
-        this.$electron.ipcRenderer.once('update-error', onUpdateError)
-        this.$electron.ipcRenderer.once('update-not-available', onUpdateNotAvailable)
-        this.$electron.ipcRenderer.once('update-available', onUpdateAvailable)
+        ipcRenderer.once('update-error', onUpdateError)
+        ipcRenderer.once('update-not-available', onUpdateNotAvailable)
+        ipcRenderer.once('update-available', onUpdateAvailable)
 
         // 设置超时处理，防止无限期等待
         const timeout = setTimeout(() => {
           console.log('[LinkCore] Update check timed out')
           // 移除所有临时事件监听器
-          this.$electron.ipcRenderer.removeListener('update-error', onUpdateError)
-          this.$electron.ipcRenderer.removeListener('update-not-available', onUpdateNotAvailable)
-          this.$electron.ipcRenderer.removeListener('update-available', onUpdateAvailable)
+          ipcRenderer.removeListener('update-error', onUpdateError)
+          ipcRenderer.removeListener('update-not-available', onUpdateNotAvailable)
+          ipcRenderer.removeListener('update-available', onUpdateAvailable)
 
           // 显示超时消息
-          this.$msg.error(this.$t('app.update-timeout-message') || '更新检查超时，请稍后重试')
-          this.$store.dispatch('app/updateCheckingUpdate', false)
+          msg.error(t('app.update-timeout-message') || '更新检查超时，请稍后重试')
+          appStore.updateCheckingUpdate(false)
         }, 30000) // 30秒超时（含镜像回退时间）
 
         // 监听任何更新事件，清除超时
@@ -1720,26 +1738,26 @@
           clearTimeout(timeout)
           console.log('[LinkCore] Update check completed, clearing timeout')
           // 移除清除超时的监听器
-          this.$electron.ipcRenderer.removeListener('update-error', clearTimeoutListener)
-          this.$electron.ipcRenderer.removeListener('update-not-available', clearTimeoutListener)
-          this.$electron.ipcRenderer.removeListener('update-available', clearTimeoutListener)
+          ipcRenderer.removeListener('update-error', clearTimeoutListener)
+          ipcRenderer.removeListener('update-not-available', clearTimeoutListener)
+          ipcRenderer.removeListener('update-available', clearTimeoutListener)
         }
-        this.$electron.ipcRenderer.once('update-error', clearTimeoutListener)
-        this.$electron.ipcRenderer.once('update-not-available', clearTimeoutListener)
-        this.$electron.ipcRenderer.once('update-available', clearTimeoutListener)
+        ipcRenderer.once('update-error', clearTimeoutListener)
+        ipcRenderer.once('update-not-available', clearTimeoutListener)
+        ipcRenderer.once('update-available', clearTimeoutListener)
 
         // 发送检查更新命令
         console.log('[LinkCore] Sending check for updates command')
-        this.$electron.ipcRenderer.send('command', 'application:check-for-updates')
+        ipcRenderer.send('command', 'application:check-for-updates')
 
         // 更新最后检查时间
-        this.$store.dispatch('preference/fetchPreference')
+        preferenceStore.fetchPreference()
           .then((config) => {
             const { lastCheckUpdateTime } = config
-            this.form.lastCheckUpdateTime = lastCheckUpdateTime
+            form.value.lastCheckUpdateTime = lastCheckUpdateTime
           })
-      },
-      async onPreviewUpdateClick () {
+      }
+      async function onPreviewUpdateClick() {
         try {
           const buildReleaseNotesHtml = (raw) => {
             if (!raw || typeof raw !== 'string') {
@@ -1797,488 +1815,93 @@
                   }
                   if (!allowedTags.has(tag)) {
                     const frag = outDoc.createDocumentFragment()
-                    Array.from(node.childNodes || []).forEach(child => {
-                      const cleaned = sanitizeNode(child, outDoc)
-                      if (cleaned) frag.appendChild(cleaned)
-                    })
-                    return frag
+                    while (node.firstChild) {
+                      frag.appendChild(node.firstChild)
+                    }
+                    node.parentNode.replaceChild(frag, node)
+                    return null
                   }
-
-                  const el = outDoc.createElement(tag)
-
-                  if (tag === 'a') {
-                    const href = normalizeUrlAttr(node.getAttribute('href'))
-                    if (!href) {
-                      el.setAttribute('href', '#')
-                    } else {
-                      el.setAttribute('href', href)
-                    }
-                    el.setAttribute('target', '_blank')
-                    el.setAttribute('rel', 'noopener noreferrer')
-                  } else if (tag === 'img') {
-                    const src = normalizeUrlAttr(node.getAttribute('src'))
-                    if (!src) {
-                      return null
-                    }
-                    el.setAttribute('src', src)
-                    const alt = node.getAttribute('alt')
-                    if (alt) {
-                      el.setAttribute('alt', `${alt}`)
-                    }
-                  }
-
-                  Array.from(node.childNodes || []).forEach(child => {
-                    const cleaned = sanitizeNode(child, outDoc)
-                    if (cleaned) el.appendChild(cleaned)
-                  })
-                  return el
+                  return node
                 }
 
-                const outDoc = document.implementation.createHTMLDocument('')
-                const container = outDoc.createElement('div')
-                Array.from(root.childNodes || []).forEach(child => {
-                  const cleaned = sanitizeNode(child, outDoc)
-                  if (cleaned) container.appendChild(cleaned)
-                })
-                return container.innerHTML
-              } catch (_) {
-                return ''
+                // Walk the tree and sanitize all nodes
+                const walkAndSanitize = (rootNode, outDoc) => {
+                  const stack = []
+                  let child = rootNode.firstChild
+                  while (child) {
+                    const next = child.nextSibling
+                    const result = sanitizeNode(child, outDoc)
+                    if (result && result.nodeType === Node.ELEMENT_NODE) {
+                      stack.push(result)
+                    }
+                    child = next
+                  }
+                  while (stack.length) {
+                    const el = stack.pop()
+                    let c = el.firstChild
+                    while (c) {
+                      const n = c.nextSibling
+                      const r = sanitizeNode(c, outDoc)
+                      if (r && r.nodeType === Node.ELEMENT_NODE) {
+                        stack.push(r)
+                      }
+                      c = n
+                    }
+                  }
+                }
+
+                const sanitizedDoc = new DOMParser().parseFromString('<div></div>', 'text/html')
+                const sanitizedRoot = sanitizedDoc.body.firstElementChild || sanitizedDoc.body
+                walkAndSanitize(root, sanitizedDoc)
+                return sanitizedRoot.innerHTML
+              } catch (e) {
+                console.warn('[LinkCore] Failed to sanitize clipboard HTML:', e)
+                return dirtyHtml
               }
             }
-            const looksLikeHtml = /<\/?(p|h[1-6]|ul|ol|li|pre|code|strong|em|a|table|thead|tbody|tr|td|th)[\s>]/i.test(s) || /<br\s*\/?>/i.test(s)
-            let html = ''
-            if (looksLikeHtml) {
-              html = sanitizeHtml(s)
-            } else {
-              s = s.replace(/\r\n/g, '\n')
-              const escapeHtml = (text) => {
-                return `${text}`
-                  .replace(/&/g, '&amp;')
-                  .replace(/</g, '&lt;')
-                  .replace(/>/g, '&gt;')
-              }
-              const escapeAttr = (text) => {
-                return `${text}`
-                  .replace(/&/g, '&amp;')
-                  .replace(/"/g, '&quot;')
-                  .replace(/</g, '&lt;')
-                  .replace(/>/g, '&gt;')
-              }
 
-              // 预处理：处理代码块
-              const codeBlocks = []
-              s = s.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-                const placeholder = `__CODE_BLOCK_${codeBlocks.length}__`
-                codeBlocks.push({ lang, code: code.trim() })
-                return `\n\n${placeholder}\n\n`
-              })
-
-              // 按段落分割
-              const blocks = s.split(/\n{2,}/)
-              html = blocks.map(block => {
-                // 检查是否是代码块占位符
-                const codeMatch = /^__CODE_BLOCK_(\d+)__$/.exec(block.trim())
-                if (codeMatch) {
-                  const index = parseInt(codeMatch[1])
-                  const codeBlock = codeBlocks[index]
-                  if (codeBlock) {
-                    return `<pre><code>${escapeHtml(codeBlock.code)}</code></pre>`
-                  }
-                }
-
-                const lines = block.split('\n')
-                const trimmedLines = lines.map(l => l.trim()).filter(l => l.length > 0)
-                if (!trimmedLines.length) {
-                  return ''
-                }
-
-                // 处理标题
-                const headingMatch = /^(#{1,6})\s+(.+)$/.exec(trimmedLines[0])
-                if (headingMatch && trimmedLines.length === 1) {
-                  const level = headingMatch[1].length
-                  const text = headingMatch[2]
-                  return `<h${level}>${escapeHtml(text)}</h${level}>`
-                }
-
-                // 处理水平线
-                if (/^[-*_]{3,}$/.test(trimmedLines[0]) && trimmedLines.length === 1) {
-                  return '<hr>'
-                }
-
-                // 处理图片
-                if (trimmedLines.length === 1) {
-                  const imgMatch = /^!\[([^\]]*)\]\(([^)]+)\)/.exec(trimmedLines[0])
-                  if (imgMatch) {
-                    const altRaw = imgMatch[1] || ''
-                    const srcRaw = imgMatch[2] || ''
-                    const srcTrimmed = `${srcRaw}`.trim()
-                    const safeSrc = /^https?:\/\//i.test(srcTrimmed) ? srcTrimmed : ''
-                    if (!safeSrc) {
-                      return `<p>${escapeHtml(trimmedLines[0])}</p>`
-                    }
-                    return `<p><img src="${escapeAttr(safeSrc)}" alt="${escapeAttr(altRaw)}"></p>`
-                  }
-                }
-
-                // 处理列表
-                const allBullet = trimmedLines.every(l => /^[-*+]\s+/.test(l))
-                const allNumbered = trimmedLines.every(l => /^\d+\.\s+/.test(l))
-                if (allBullet) {
-                  const items = trimmedLines.map(l => {
-                    const text = l.replace(/^[-*+]\s+/, '')
-                    return `<li>${this.parseInlineMarkdown(text)}</li>`
-                  }).join('')
-                  return `<ul>${items}</ul>`
-                }
-                if (allNumbered) {
-                  const items = trimmedLines.map(l => {
-                    const text = l.replace(/^\d+\.\s+/, '')
-                    return `<li>${this.parseInlineMarkdown(text)}</li>`
-                  }).join('')
-                  return `<ol>${items}</ol>`
-                }
-
-                // 处理引用
-                if (trimmedLines.every(l => l.startsWith('>'))) {
-                  const content = trimmedLines.map(l => l.replace(/^>\s*/, '')).join('<br>')
-                  return `<blockquote>${this.parseInlineMarkdown(content)}</blockquote>`
-                }
-
-                // 普通段落
-                const inner = trimmedLines.map(line => this.parseInlineMarkdown(line)).join('<br>')
-                return `<p>${inner}</p>`
-              }).filter(Boolean).join('')
-            }
-            if (!looksLikeHtml) {
-              // 处理纯文本中的URL（避免重复处理HTML中的URL）
-              html = html.replace(
-                /(?<!href="|src="|<a[^>]*>)(https?:\/\/[^\s<"']+?)(?=<|$|\s)/gi,
-                '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-              )
-            }
-            html = sanitizeHtml(html)
-            return html.trim()
+            const sanitized = sanitizeHtml(s)
+            return sanitized
           }
 
-          // 内联 markdown 解析辅助函数
-          this.parseInlineMarkdown = (text) => {
-            const escapeHtml = (t) => {
-              return `${t}`
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-            }
-
-            let result = escapeHtml(text)
-
-            // 处理行内代码 `code`
-            result = result.replace(/`([^`]+)`/g, '<code>$1</code>')
-
-            // 处理粗体 **text** 或 __text__
-            result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            result = result.replace(/__(.+?)__/g, '<strong>$1</strong>')
-
-            // 处理斜体 *text* 或 _text_ (避免与粗体冲突)
-            result = result.replace(/(?<!\*)\*(?!\*)(.+?)\*(?!\*)/g, '<em>$1</em>')
-            result = result.replace(/(?<!_)_(?!_)(.+?)_(?!_)/g, '<em>$1</em>')
-
-            // 处理删除线 ~~text~~
-            result = result.replace(/~~(.+?)~~/g, '<del>$1</del>')
-
-            // 处理链接 [text](url)
-            result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-
-            return result
-          }
-
-          const raw = this.releaseNotes
-          const html = raw ? buildReleaseNotesHtml(raw) : ''
-          const displayContent = html || `<p>${this.$t('app.release-notes-not-found')}</p>`
-          this.updatePreviewContent = displayContent
-          this.updatePreviewVisible = true
+          // Show preview dialog with release notes
+          dialog.showMessageBox({
+            type: 'info',
+            title: 'Update Preview',
+            message: buildReleaseNotesHtml(rawReleaseNotes) || 'No release notes available.'
+          })
         } catch (e) {
-          console.error('[LinkCore] Preview update failed', e)
-          if (this.$msg) {
-            this.$msg.error(this.$t('app.update-error-message'))
-          }
+          console.error('[LinkCore] Failed to preview update:', e)
+          msg.error(t('preferences.update-preview-fail'))
         }
-      },
-      closeUpdatePreview () {
-        this.updatePreviewVisible = false
-      },
-      handleUpdatePreviewClick (event) {
-        const root = event.currentTarget
-        let el = event.target
-        while (el && el !== root) {
-          if (el.tagName && el.tagName.toLowerCase() === 'a') {
-            break
-          }
-          el = el.parentNode
-        }
-        if (!el || el === root) {
-          return
-        }
-        const href = el.getAttribute('href') || ''
-        if (!href || href.charAt(0) === '#') {
-          return
-        }
-        event.preventDefault()
-        event.stopPropagation()
-        if (!/^https?:\/\//i.test(href)) {
-          return
-        }
-        try {
-          this.$electron.ipcRenderer.send('command', 'application:open-external', href)
-        } catch (e) {
-          console.error('[LinkCore] open external url failed:', href, e)
-        }
-      },
-
-      onProxyModeChange (mode) {
-        this.form.proxy = {
-          ...this.form.proxy,
-          mode
-        }
-      },
-      onUpdateChannelChange (channel) {
-        this.form.updateChannel = channel
-        // 立即保存（不走 800ms 防抖：防抖期间关闭窗口会导致保存请求
-        // 未发出，重开窗口回退为初始渠道）。注意：savePreference 经
-        // ipcRenderer.send 是 fire-and-forget（无返回结果），dispatch 的
-        // .then/.catch 与主进程保存是否成功无关——这里乐观更新表单，
-        // 不依赖虚假的 Promise 状态，避免检查逻辑异常被误报为"保存失败"。
-        const original = this.formOriginal.updateChannel
-        try {
-          this.$store.dispatch('preference/save', { updateChannel: channel })
-          this.formOriginal.updateChannel = channel
-          // 清除之前的更新状态，以便下次检查使用新渠道
-          this.$store.dispatch('preference/updateUpdateAvailable', false)
-          this.$store.dispatch('preference/updateNewVersion', '')
-          // 渠道已提交到主进程（IPC 消息有序，check 必然在其后处理），
-          // 立即用新渠道触发一次新版本检测
-          try {
-            this.onCheckUpdateClick()
-          } catch (checkErr) {
-            // 检查流程异常不影响渠道切换本身
-            console.error('[LinkCore] Trigger update check after channel switch failed:', checkErr)
-          }
-        } catch (e) {
-          console.error('[LinkCore] Save update channel failed:', e)
-          this.form.updateChannel = original
-          this.$msg.error(this.$t('preferences.save-fail-message'))
-        }
-      },
-      onProxyServerChange (server) {
-        this.form.proxy = {
-          ...this.form.proxy,
-          server
-        }
-      },
-      handleProxyBypassChange (bypass) {
-        this.form.proxy = {
-          ...this.form.proxy,
-          bypass: convertLineToComma(bypass)
-        }
-      },
-      onProxyScopeChange (scope) {
-        this.form.proxy = {
-          ...this.form.proxy,
-          scope: [...scope]
-        }
-      },
-      changeUA (type) {
-        const ua = userAgentMap[type]
-        if (!ua) {
-          return
-        }
-        this.form.userAgent = ua
-      },
-      onRpcListenPortChange (value) {
-        console.log('onRpcListenPortChange===>', value)
-        if (EMPTY_STRING === value) {
-          this.form.rpcListenPort = this.rpcDefaultPort
-        }
-      },
-      onRpcPortDiceClick () {
-        const port = generateRandomInt(ENGINE_RPC_PORT, 20000)
-        this.form.rpcListenPort = port
-      },
-      onRpcSecretDiceClick () {
-        this.hideRpcSecret = false
-        const rpcSecret = randomize('Aa0', 16)
-        this.form.rpcSecret = rpcSecret
-
-        setTimeout(() => {
-          this.hideRpcSecret = true
-        }, 2000)
-      },
-      onSessionResetClick () {
-        dialog.showMessageBox({
-          type: 'warning',
-          title: this.$t('preferences.session-reset'),
-          message: this.$t('preferences.session-reset-confirm'),
-          buttons: [this.$t('app.yes'), this.$t('app.no')],
-          cancelId: 1
-        }).then(({ response }) => {
-          if (response === 0) {
-            this.$store.dispatch('task/purgeTaskRecord')
-            this.$store.dispatch('task/pauseAllTask')
-              .then(() => {
-                this.$electron.ipcRenderer.send('command', 'application:reset-session')
-              })
-          }
-        })
-      },
-
-      onFactoryResetClick () {
-        dialog.showMessageBox({
-          type: 'warning',
-          title: this.$t('preferences.factory-reset'),
-          message: this.$t('preferences.factory-reset-confirm'),
-          buttons: [this.$t('app.yes'), this.$t('app.no')],
-          cancelId: 1
-        }).then(({ response }) => {
-          if (response === 0) {
-            this.$electron.ipcRenderer.send('command', 'application:factory-reset')
-          }
-        })
-      },
-      syncFormConfig () {
-        // 保存成功后，直接使用当前表单数据更新 formOriginal
-        // 而不是从后端重新获取，避免竞态条件导致配置被重置
-        this.formOriginal = cloneDeep(this.form)
-      },
-      getEngineMaxConnection (engineBinary) {
-        const policy = getEngineConnectionPolicy(engineBinary)
-        return Number(policy && policy.max) || ENGINE_MAX_CONNECTION_PER_SERVER
-      },
-      getEngineDefaultConnection (engineBinary) {
-        const policy = getEngineConnectionPolicy(engineBinary)
-        return Number(policy && policy.defaultMax) || ENGINE_MAX_CONNECTION_PER_SERVER
-      },
-      submitForm (formName) {
-        this.$refs[formName].validate((valid) => {
-          if (!valid) {
-            console.error('[LinkCore] preference form valid:', valid)
-            return false
-          }
-
-          const data = {
-            ...diffConfig(this.formOriginal, this.form)
-          }
-
-          if ('engineBinary' in data) {
-            const engineBinary = data.engineBinary
-            const engineMaxConnectionPerServer = this.getEngineMaxConnection(engineBinary)
-            const engineDefaultConnectionPerServer = this.getEngineDefaultConnection(engineBinary)
-            data['engine-binary'] = data.engineBinary
-            data['engine-max-connection-per-server'] = engineMaxConnectionPerServer
-            data['max-connection-per-server'] = engineDefaultConnectionPerServer
-            delete data.engineBinary
-          }
-
-          // 显式处理autoSyncTrackerTime字段，转换为kebab-case
-          if ('autoSyncTrackerTime' in data) {
-            data['auto-sync-tracker-time'] = data.autoSyncTrackerTime
-            delete data.autoSyncTrackerTime
-          }
-
-          // 显式处理 GitHub 镜像字段，转换为kebab-case
-          if ('useGithubMirror' in data) {
-            data['use-github-mirror'] = data.useGithubMirror
-            delete data.useGithubMirror
-          }
-          if ('githubMirrorUrls' in data) {
-            data['github-mirror-urls'] = data.githubMirrorUrls
-            delete data.githubMirrorUrls
-          }
-
-          // 显式处理 updateChannel 字段，转换为 kebab-case
-          if ('updateChannel' in data) {
-            data['update-channel'] = data.updateChannel
-            delete data.updateChannel
-          }
-
-          const {
-            autoHideWindow,
-            btAutoDownloadContent,
-            btTracker,
-            rpcListenPort
-          } = data
-
-          if ('btAutoDownloadContent' in data) {
-            data.followTorrent = btAutoDownloadContent
-            data.followMetalink = btAutoDownloadContent
-            data.pauseMetadata = !btAutoDownloadContent
-          }
-
-          if (btTracker) {
-            data.btTracker = reduceTrackerString(convertLineToComma(btTracker))
-          }
-
-          if (rpcListenPort === EMPTY_STRING) {
-            data.rpcListenPort = this.rpcDefaultPort
-          }
-
-          console.log('[LinkCore] preference changed data:', data)
-
-          // 检查是否需要重启
-          const needRelaunch = this.isRenderer && (
-            ('engine-binary' in data && data['engine-binary'] !== this.formOriginal.engineBinary) ||
-            checkIsNeedRestart(data)
-          )
-
-          this.$store.dispatch('preference/save', data)
-            .then(() => {
-              this.$store.dispatch('app/fetchEngineOptions')
-              // Don't show success message for auto-save to avoid constant notifications
-
-              // NAT/uTP 开关属于"下次引擎启动生效"的设置：不触发自动重启，
-              // 仅轻提示用户，避免点开关就 relaunch 整个应用。
-              const restartOnNextBootKeys = ['enable-upnp', 'enable-utp', 'enable-nat-pmp']
-              if (restartOnNextBootKeys.some(k => k in data)) {
-                this.$msg.info(this.$t('preferences.restart-to-apply'))
-              }
-
-              changedConfig.basic = {}
-              changedConfig.advanced = {}
-
-              if (this.isRenderer) {
-                if ('autoHideWindow' in data) {
-                  this.$electron.ipcRenderer.send('command',
-                                                  'application:auto-hide-window', autoHideWindow)
-                }
-
-                // 只有在配置保存成功后才发送重启命令
-                if (needRelaunch) {
-                  this.$electron.ipcRenderer.send('command', 'application:relaunch')
-                  // 发送重启命令后立即返回，不再执行后续的syncFormConfig()
-                  return
-                }
-
-                // 不需要重启时，才同步表单配置
-                this.syncFormConfig()
-              }
-            })
-            .catch((e) => {
-              this.$msg.error(this.$t('preferences.save-fail-message'))
-              changedConfig.basic = {}
-              changedConfig.advanced = {}
-            })
-        })
       }
-    },
 
-    beforeRouteLeave (to, from, next) {
-      // Since we now use auto-save on changes, there's no need to check for unsaved changes
-      changedConfig.advanced = {}
-      changedConfig.basic = {}
-      next()
-    }
-  }
 </script>
 
 <style lang="scss">
+/* RPC 端口/密钥输入框右侧随机按钮：flex 居中 */
+.rpc-dice-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  cursor: pointer;
+
+  svg {
+    display: block;
+  }
+}
+
+/* RPC 端口/密钥输入框 append 区域：分割线右移、内边距加大，
+   让按钮与输入框之间有更好的视觉间距 */
+.el-input-group__append:has(.rpc-dice-btn) {
+  padding: 0 12px 0 16px;
+
+  &::before {
+    left: 6px !important;
+  }
+}
+
 .proxy-scope {
   width: 100%;
 }
@@ -2323,7 +1946,7 @@
 .no-results-inner {
   width: 100%;
   padding-top: 280px;
-  background: transparent url('~@/assets/no-settings.svg') top center no-repeat;
+  background: transparent url('@/assets/no-settings.svg') top center no-repeat;
   background-size: 400px auto;
   text-align: center;
   font-size: 14px;
@@ -2407,7 +2030,7 @@
 .popup-scale-leave-active {
   transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1), opacity 0.14s cubic-bezier(0.4, 0, 1, 1);
 }
-.popup-scale-enter,
+.popup-scale-enter-from,
 .popup-scale-leave-to {
   transform: scale(0.92);
   opacity: 0;
@@ -2559,7 +2182,7 @@
 }
 
 .theme-dark .update-preview-body {
-  background: $--dk-panel-background;
+  background: var(--lc-bg-panel);
   color: #f2f2f2;
 }
 
@@ -2579,22 +2202,54 @@
   align-items: stretch !important;
 }
 
-.github-mirror-row .el-select .el-input__inner {
-  border-right: none;
+/* Element Plus: .el-select__wrapper 使用 box-shadow 作为边框，
+   去掉右侧圆角和右侧边线（仅画上/下/左边），
+   右侧分割线由 .github-mirror-actions::before 提供（带上下间距） */
+.github-mirror-row .el-select .el-select__wrapper {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
-  border-color: var(--lc-border-base);
-  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  /* 只画上、下、左三边的 inset shadow，不画右边 */
+  box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+              inset 0 -1px 0 0 var(--lc-border-base),
+              inset 1px 0 0 0 var(--lc-border-base) !important;
+  transition: box-shadow 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 
 // 悬停整个选择框（含标签区域）即触发边框高亮，而非仅悬停边框线
-.github-mirror-row .el-select:hover:not(:focus-within) .el-input__inner {
-  border-color: var(--lc-border-hover);
+.github-mirror-row .el-select:hover:not(:focus-within) .el-select__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+              inset 0 -1px 0 0 var(--lc-border-hover),
+              inset 1px 0 0 0 var(--lc-border-hover) !important;
 }
 
-.github-mirror-row .el-select .el-input__inner:focus,
-.github-mirror-row .el-select .el-input.is-focus .el-input__inner {
-  border-color: var(--lc-color-primary);
+.github-mirror-row .el-select .el-select__wrapper.is-focused,
+.github-mirror-row .el-select:focus-within .el-select__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+              inset 0 -1px 0 0 var(--lc-color-primary),
+              inset 1px 0 0 0 var(--lc-color-primary) !important;
+}
+
+/* 缩小 GitHub 镜像多选标签的大小，圆角适当减小，并增大标签间距 */
+.github-mirror-row .el-select .el-tag {
+  height: 20px;
+  padding: 0 6px;
+  font-size: 12px;
+  line-height: 18px;
+  border-radius: 6px;
+  margin-right: 8px;
+
+  &:last-of-type {
+    margin-right: 0;
+  }
+
+  .el-tag__close {
+    transform: scale(0.85);
+  }
+}
+
+/* 增大标签与选择框左边缘的间距 */
+.github-mirror-row .el-select .el-select__wrapper {
+  padding-left: 8px;
 }
 
 .github-mirror-actions {
@@ -2609,6 +2264,7 @@
   box-sizing: border-box;
   transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 
+  /* 选择框与按钮之间的分割线：上方留 6px，下方留 6px */
   &::before {
     content: '';
     position: absolute;
@@ -2662,7 +2318,8 @@
 }
 
 // 选择框聚焦时，相邻按钮容器边框与分割线高亮（主题色）
-.github-mirror-row:has(.el-select .el-input.is-focus) .github-mirror-actions {
+.github-mirror-row:has(.el-select .el-select__wrapper.is-focused) .github-mirror-actions,
+.github-mirror-row:has(.el-select:focus-within) .github-mirror-actions {
   border-color: var(--lc-color-primary);
 
   &::before {
@@ -2681,7 +2338,8 @@
   }
 }
 
-.bt-tracker .tracker-row:has(.el-select .el-input.is-focus) {
+.bt-tracker .tracker-row:has(.el-select .el-select__wrapper.is-focused),
+.bt-tracker .tracker-row:has(.el-select:focus-within) {
   .tracker-left,
   .tracker-right {
     border-color: var(--lc-color-primary);
@@ -2694,23 +2352,26 @@
 
 .bt-tracker .tracker-row {
   .el-select {
-    .el-input__inner {
-      border-left: none;
-      border-right: none;
+    /* Element Plus: .el-select__wrapper 使用 box-shadow 作为边框,
+       仅画上/下两边, 左右分割线由 .tracker-left::after 和 .tracker-right::before 提供 */
+    .el-select__wrapper {
       border-radius: 0;
       font-size: 12px;
-      border-color: var(--lc-border-base);
-      transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+      box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+                  inset 0 -1px 0 0 var(--lc-border-base) !important;
+      transition: box-shadow 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
     }
 
     // 悬停整个选择框（含标签区域）即触发边框高亮，而非仅悬停边框线
-    &:hover:not(:focus-within) .el-input__inner {
-      border-color: var(--lc-border-hover);
+    &:hover:not(:focus-within) .el-select__wrapper {
+      box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+                  inset 0 -1px 0 0 var(--lc-border-hover) !important;
     }
 
-    .el-input__inner:focus,
-    .el-input.is-focus .el-input__inner {
-      border-color: var(--lc-color-primary);
+    .el-select__wrapper.is-focused,
+    &:focus-within .el-select__wrapper {
+      box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+                  inset 0 -1px 0 0 var(--lc-color-primary) !important;
     }
   }
 }
@@ -2744,6 +2405,7 @@
   box-sizing: border-box;
   transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 
+  /* 与选择框之间的分割线：上方留 6px，下方留 6px */
   &::after {
     content: '';
     position: absolute;
@@ -2790,6 +2452,7 @@
   box-sizing: border-box;
   transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 
+  /* 与选择框之间的分割线：上方留 6px，下方留 6px */
   &::before {
     content: '';
     position: absolute;
@@ -2908,5 +2571,35 @@
   .toggle-desc {
     user-select: text;
   }
+}
+
+/* 开发者卡片三个输入框 append 区域：分割线右移、内边距加大，
+   图标垂直居中、缩小到 12px，观感更协调 */
+.preference-card[data-category="advanced"] .el-input-group__append:has(.lc-hover-tip__trigger) {
+  padding: 0 12px 0 16px !important;
+
+  &::before {
+    left: 6px !important;
+  }
+
+  .lc-hover-tip__trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+
+    i {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+  }
+}
+
+/* 开发者卡片 folder 图标缩小到 12px */
+.preference-card[data-category="advanced"] .el-input-group__append .lc-hover-tip__trigger i svg {
+  width: 12px;
+  height: 12px;
 }
 </style>

@@ -2,30 +2,35 @@
   <div v-if="false"></div>
 </template>
 
-<script>
-  import { commands } from '@/components/CommandManager/instance'
+<script setup>
+// Options API 父组件通过 [Ipc.name]: Ipc 注册，必须有 name
+defineOptions({ name: 'mo-ipc' })
 
-  export default {
-    name: 'mo-ipc',
-    methods: {
-      bindIpcEvents () {
-        this._commandHandler = (event, command, ...args) => {
-          commands.execute(command, ...args)
-        }
-        this.$electron.ipcRenderer.on('command', this._commandHandler)
-      },
-      unbindIpcEvents () {
-        if (this._commandHandler) {
-          this.$electron.ipcRenderer.removeListener('command', this._commandHandler)
-          this._commandHandler = null
-        }
-      }
-    },
-    created () {
-      this.bindIpcEvents()
-    },
-    destroyed () {
-      this.unbindIpcEvents()
-    }
+import { onMounted, onBeforeUnmount } from 'vue'
+import { ipcRenderer } from 'electron'
+import { commands } from '@/components/CommandManager/instance'
+
+let _commandHandler = null
+
+const bindIpcEvents = () => {
+  _commandHandler = (event, command, ...args) => {
+    commands.execute(command, ...args)
   }
+  ipcRenderer.on('command', _commandHandler)
+}
+
+const unbindIpcEvents = () => {
+  if (_commandHandler) {
+    ipcRenderer.removeListener('command', _commandHandler)
+    _commandHandler = null
+  }
+}
+
+onMounted(() => {
+  bindIpcEvents()
+})
+
+onBeforeUnmount(() => {
+  unbindIpcEvents()
+})
 </script>

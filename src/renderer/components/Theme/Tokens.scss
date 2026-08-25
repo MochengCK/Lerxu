@@ -68,6 +68,33 @@
   /* 全局下拉框/局部弹窗统一圆角，所有 dropdown / popover / popup 复用 */
   --lc-radius-dropdown: 8px;
 
+  /* Element Plus 圆角变量覆盖
+     确保所有 EP 组件（select dropdown、button、input 等）使用一致的圆角 */
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 20px;
+  --el-border-radius-circle: 100%;
+  --el-popover-border-radius: 8px;
+
+  /* Element Plus 颜色变量覆盖（浅色模式）
+     输入框/选择框只显示边框，不显示背景（透出底层容器底色） */
+  --el-fill-color-blank: transparent;
+  --el-fill-color-light: transparent;
+  --el-fill-color-lighter: var(--lc-bg-main);
+  --el-fill-color-extra-light: var(--lc-bg-input-disabled);
+  --el-input-bg-color: transparent;
+  --el-bg-color: var(--lc-bg-panel);
+  --el-bg-color-page: var(--lc-bg-main);
+  --el-bg-color-overlay: var(--lc-bg-dropdown);
+
+  /* Element Plus 输入框边框颜色覆盖
+     确保独立输入框/选择框的默认/悬停/聚焦边框颜色与项目一致 */
+  --el-input-border-color: var(--lc-border-base);
+  --el-input-hover-border-color: var(--lc-border-hover);
+  --el-input-focus-border-color: var(--lc-color-primary);
+  --el-border-color: var(--lc-border-base);
+  --el-border-color-hover: var(--lc-border-hover);
+
   /* Border Colors
   -------------------------- */
   --lc-border-base: #d3dde6;
@@ -258,6 +285,14 @@
   -------------------------- */
   /* 全局下拉框/局部弹窗统一圆角，所有 dropdown / popover / popup 复用 */
   --lc-radius-dropdown: 8px;
+
+  /* Element Plus 圆角变量覆盖
+     确保所有 EP 组件（select dropdown、button、input 等）使用一致的圆角 */
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 4px;
+  --el-border-radius-round: 20px;
+  --el-border-radius-circle: 100%;
+  --el-popover-border-radius: 8px;
 
   /* Border Colors
   -------------------------- */

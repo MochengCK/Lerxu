@@ -8,86 +8,85 @@
   </div>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import { webContents } from '@electron/remote'
-  import { Loading } from 'element-ui'
+<script setup>
+defineOptions({ name: 'mo-browser' }) // 供父组件 [X.name]: X 注册
+import { ref, computed, onMounted, onBeforeUnmount, getCurrentInstance } from 'vue'
+import is from 'electron-is'
+import { webContents } from '@electron/remote'
+import { ElLoading } from 'element-plus'
+import { ipcRenderer } from 'electron'
 
-  export default {
-    name: 'mo-browser',
-    components: {
-    },
-    props: {
-      src: {
-        type: String,
-        default: ''
-      }
-    },
-    data () {
-      return {
-        loading: null,
-        boundListeners: null
-      }
-    },
-    computed: {
-      isRenderer: () => is.renderer()
-    },
-    mounted () {
-      const { webview } = this.$refs
-      if (!webview) return
-
-      this.boundListeners = {
-        loadStart: this.loadStart.bind(this),
-        loadStop: this.loadStop.bind(this),
-        ready: this.ready.bind(this)
-      }
-
-      webview.addEventListener('did-start-loading', this.boundListeners.loadStart)
-      webview.addEventListener('did-stop-loading', this.boundListeners.loadStop)
-      webview.addEventListener('dom-ready', this.boundListeners.ready)
-    },
-    beforeDestroy () {
-      const { webview } = this.$refs
-      const listeners = this.boundListeners
-      if (webview && listeners) {
-        webview.removeEventListener('did-start-loading', listeners.loadStart)
-        webview.removeEventListener('did-stop-loading', listeners.loadStop)
-        webview.removeEventListener('dom-ready', listeners.ready)
-      }
-      if (this.loading) {
-        try {
-          this.loading.close()
-        } catch (_) {}
-      }
-    },
-    methods: {
-      loadStart () {
-        const { webviewViewport } = this.$refs
-        this.loading = Loading.service({
-          target: webviewViewport
-        })
-      },
-      loadStop () {
-        this.$nextTick(() => {
-          if (this.loading) {
-            this.loading.close()
-          }
-        })
-      },
-      ready () {
-        const { webview } = this.$refs
-        if (!webview) return
-
-        try {
-          const wc = webContents.fromId(webview.getWebContentsId())
-          wc.setWindowOpenHandler(({ url }) => {
-            this.$electron.ipcRenderer.send('command', 'application:open-external', url)
-            return { action: 'deny' }
-          })
-        } catch (_) {}
-      }
-    }
+const props = defineProps({
+  src: {
+    type: String,
+    default: ''
   }
+})
+
+const webviewViewport = ref(null)
+const webview = ref(null)
+const loadingInstance = ref(null)
+const boundListeners = ref(null)
+
+const isRenderer = computed(() => is.renderer())
+
+function loadStart () {
+  loadingInstance.value = ElLoading.service({
+    target: webviewViewport.value
+  })
+}
+
+function loadStop () {
+  if (loadingInstance.value) {
+    try {
+      loadingInstance.value.close()
+    } catch (_) {}
+    loadingInstance.value = null
+  }
+}
+
+function ready () {
+  const wv = webview.value
+  if (!wv) return
+
+  try {
+    const wc = webContents.fromId(wv.getWebContentsId())
+    wc.setWindowOpenHandler(({ url }) => {
+      ipcRenderer.send('command', 'application:open-external', url)
+      return { action: 'deny' }
+    })
+  } catch (_) {}
+}
+
+onMounted(() => {
+  const wv = webview.value
+  if (!wv) return
+
+  boundListeners.value = {
+    loadStart,
+    loadStop,
+    ready
+  }
+
+  wv.addEventListener('did-start-loading', loadStart)
+  wv.addEventListener('did-stop-loading', loadStop)
+  wv.addEventListener('dom-ready', ready)
+})
+
+onBeforeUnmount(() => {
+  const wv = webview.value
+  const listeners = boundListeners.value
+  if (wv && listeners) {
+    wv.removeEventListener('did-start-loading', listeners.loadStart)
+    wv.removeEventListener('did-stop-loading', listeners.loadStop)
+    wv.removeEventListener('dom-ready', listeners.ready)
+  }
+  if (loadingInstance.value) {
+    try {
+      loadingInstance.value.close()
+    } catch (_) {}
+  }
+})
 </script>
 
 <style lang="scss">

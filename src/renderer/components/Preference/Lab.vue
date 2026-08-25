@@ -8,48 +8,37 @@
   </el-main>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import { mapState } from 'vuex'
+<script setup>
+import { computed } from 'vue'
+import { storeToRefs } from 'pinia'
+import is from 'electron-is'
+import { APP_THEME } from '@shared/constants'
+import Browser from '@/components/Browser/Browser'
+import { useAppStore } from '@/store/app'
+import { usePreferenceStore } from '@/store/preference'
+import '@/components/Icons/info-square'
 
-  import { APP_THEME } from '@shared/constants'
-  import Browser from '@/components/Browser/Browser'
-  import '@/components/Icons/info-square'
+const appStore = useAppStore()
+const preferenceStore = usePreferenceStore()
 
-  export default {
-    name: 'mo-preference-lab',
-    components: {
-      [Browser.name]: Browser
-    },
-    data () {
-      const { locale } = this.$store.state.preference.config
-      return {
-        locale
-      }
-    },
-    computed: {
-      isRenderer: () => is.renderer(),
-      ...mapState('app', {
-        systemTheme: state => state.systemTheme
-      }),
-      ...mapState('preference', {
-        config: state => state.config,
-        theme: state => state.config.theme
-      }),
-      currentTheme () {
-        if (this.theme === APP_THEME.AUTO) {
-          return this.systemTheme
-        } else {
-          return this.theme
-        }
-      },
-      url () {
-        const { currentTheme, locale } = this
-        const result = `https://motrix.app/lab?lite=true&theme=${currentTheme}&lang=${locale}`
-        return result
-      }
-    }
+const { systemTheme } = storeToRefs(appStore)
+const { config } = storeToRefs(preferenceStore)
+
+const isRenderer = computed(() => is.renderer())
+
+const locale = computed(() => config.value.locale || 'en-US')
+const theme = computed(() => config.value.theme)
+
+const currentTheme = computed(() => {
+  if (theme.value === APP_THEME.AUTO) {
+    return systemTheme.value
   }
+  return theme.value
+})
+
+const url = computed(() => {
+  return `https://motrix.app/lab?lite=true&theme=${currentTheme.value}&lang=${locale.value}`
+})
 </script>
 
 <style lang="scss">

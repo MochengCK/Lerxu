@@ -1,13 +1,14 @@
+import { ElMessage } from 'element-plus'
+
 const instances = []
 const maxLength = 5
 
 /**
- * 将 onClick 精确绑定到消息实例自身的 DOM。
+ * Bind onClick precisely to the message instance's own DOM.
  *
- * 旧实现用 document.querySelectorAll('.el-message') 取"最后一个"节点，
- * 在同时弹出多条通知时会错位：每条消息的点击都绑到同一个/错误的 DOM 上，
- * 点击一条会触发多条回调并关闭错误的通知。这里改为优先使用
- * element-ui Message 实例的 $el（.el-message 根节点），一对一绑定。
+ * Element Plus ElMessage returns a handler instance that exposes
+ * a `close()` method. The DOM node is accessible via the handler's
+ * internal `proxy?.$el` or by querying `.el-message` as a fallback.
  */
 const bindClickToMessage = (handler, arg) => {
   if (typeof arg.onClick !== 'function' || typeof document === 'undefined') {
@@ -17,10 +18,16 @@ const bindClickToMessage = (handler, arg) => {
   let tried = 0
   const attach = () => {
     try {
-      // 优先消息实例自身 DOM；消息关闭后 isConnected 为 false，不会误绑
-      let el = handler && handler.$el && handler.$el.isConnected ? handler.$el : null
+      // Element Plus message handler exposes the DOM via proxy?.$el or directly
+      let el = null
+      if (handler) {
+        // Element Plus MessageHandler is a component instance
+        el = (handler.proxy && handler.proxy.$el && handler.proxy.$el.isConnected)
+          ? handler.proxy.$el
+          : (handler.$el && handler.$el.isConnected ? handler.$el : null)
+      }
       if (!el) {
-        // 兜底：取容器内最后一条 .el-message
+        // Fallback: grab the last .el-message in the DOM
         const list = document.querySelectorAll('.el-message')
         el = list && list.length ? list[list.length - 1] : null
       }
@@ -38,7 +45,7 @@ const bindClickToMessage = (handler, arg) => {
         if (isClose) {
           return
         }
-        // 先解绑再触发，保证每条消息的点击只触发一次
+        // Unbind before triggering to ensure single-fire
         try {
           target.removeEventListener('click', onTap)
         } catch (e2) {}
@@ -54,9 +61,12 @@ const bindClickToMessage = (handler, arg) => {
     } catch (e) {}
   }
 
-  // element-ui Message 在 mounted 后才把 DOM 插入容器，轮询等待就绪
+  // Element Plus Message inserts DOM after mount; poll for readiness
   const waitDom = () => {
-    const el = handler && handler.$el
+    let el = null
+    if (handler) {
+      el = (handler.proxy && handler.proxy.$el) || handler.$el
+    }
     if (el && el.isConnected) {
       attach()
       return
@@ -69,56 +79,66 @@ const bindClickToMessage = (handler, arg) => {
   waitDom()
 }
 
-export default {
-  install: function (Vue, Message, defaultOption = {}) {
-    const show = (createHandler, arg) => {
-      if (!(arg instanceof Object)) {
-        arg = { message: arg }
-      }
-
-      if (instances.length >= maxLength) {
-        const oldest = instances[0]
-        try {
-          oldest && typeof oldest.close === 'function' && oldest.close()
-        } catch (e) {}
-      }
-
-      const handler = createHandler({
-        ...defaultOption,
-        ...arg,
-        onClose: (...data) => {
-          const idx = instances.indexOf(handler)
-          if (idx >= 0) {
-            instances.splice(idx, 1)
-          }
-          if (typeof arg.onClose === 'function') {
-            arg.onClose(...data)
-          }
-        }
-      })
-
-      if (handler) {
-        instances.push(handler)
-        bindClickToMessage(handler, arg)
-      }
-
-      return handler
+/**
+ * Create a message service instance.
+ *
+ * This replaces the old Vue 2 plugin pattern (`Vue.prototype.$msg = msg`).
+ * In Vue 3, the returned `msg` object is assigned to
+ * `app.config.globalProperties.$msg` and `$message` in main.js.
+ *
+ * @param {Function} Message - ElMessage function from element-plus
+ * @param {Object} defaultOption - Default options merged into every call
+ * @returns {Proxy} A Proxy around ElMessage that supports
+ *                   `msg(options)`, `msg.error(text)`, `msg.success(text)`, etc.
+ */
+export function createMsg (Message = ElMessage, defaultOption = {}) {
+  const show = (createHandler, arg) => {
+    if (!(arg instanceof Object)) {
+      arg = { message: arg }
     }
 
-    const msg = new Proxy(Message, {
-      apply (obj, thisArg, args) {
-        const arg = args && args.length ? args[0] : undefined
-        return show((options) => obj(options), arg)
-      },
-      get (obj, prop) {
-        return (arg) => {
-          return show((options) => obj[prop](options), arg)
+    if (instances.length >= maxLength) {
+      const oldest = instances[0]
+      try {
+        oldest && typeof oldest.close === 'function' && oldest.close()
+      } catch (e) {}
+    }
+
+    const handler = createHandler({
+      ...defaultOption,
+      ...arg,
+      onClose: (...data) => {
+        const idx = instances.indexOf(handler)
+        if (idx >= 0) {
+          instances.splice(idx, 1)
+        }
+        if (typeof arg.onClose === 'function') {
+          arg.onClose(...data)
         }
       }
     })
 
-    // Vue 2 compatibility
-    Vue.prototype.$msg = msg
-    Vue.prototype.$message = msg
+    if (handler) {
+      instances.push(handler)
+      bindClickToMessage(handler, arg)
+    }
+
+    return handler
   }
+
+  const msg = new Proxy(Message, {
+    apply (obj, thisArg, args) {
+      const arg = args && args.length ? args[0] : undefined
+      return show((options) => obj(options), arg)
+    },
+    get (obj, prop) {
+      return (arg) => {
+        return show((options) => obj[prop](options), arg)
+      }
+    }
+  })
+
+  return msg
 }
+
+export default { createMsg }

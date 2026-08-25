@@ -13,7 +13,7 @@
     :show-file-list="false">
     <i class="upload-inbox-icon"><mo-icon name="inbox" width="24" height="24" /></i>
     <div class="el-upload__text">
-      {{ $t('task.select-torrent') }}
+      {{ t('task.select-torrent') }}
       <div class="torrent-name" v-if="name">{{ name }}</div>
     </div>
   </el-upload>
@@ -23,9 +23,9 @@
   >
     <el-row class="torrent-info" :gutter="12">
       <el-col class="torrent-name" :span="20">
-        <el-tooltip class="item" effect="dark" :content="name" placement="top">
+        <mo-hover-tip effect="dark" :content="name" placement="top">
           <span>{{ name }}</span>
-        </el-tooltip>
+        </mo-hover-tip>
       </el-col>
       <el-col class="torrent-actions" :span="4">
         <span @click="handleTrashClick">
@@ -43,106 +43,97 @@
   </div>
 </template>
 
-<script>
-  import { mapState } from 'vuex'
-  import { remote } from 'parse-torrent'
-  import TaskFiles from '@/components/TaskDetail/TaskFiles'
-  import '@/components/Icons/inbox'
-  import {
-    EMPTY_STRING,
-    NONE_SELECTED_FILES,
-    SELECTED_ALL_FILES
-  } from '@shared/constants'
-  import {
-    buildFileList,
-    listTorrentFiles,
-    bytesToSize,
-    getAsBase64,
-    removeExtensionDot
-  } from '@shared/utils'
+<script setup>
+import { ref, computed, watch, getCurrentInstance } from 'vue'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
+import { remote } from 'parse-torrent'
+// mo-task-files is globally registered in main.js
+import '@/components/Icons/inbox'
+import {
+  EMPTY_STRING,
+  NONE_SELECTED_FILES,
+  SELECTED_ALL_FILES
+} from '@shared/constants'
+import {
+  buildFileList,
+  listTorrentFiles,
+  bytesToSize,
+  getAsBase64,
+  removeExtensionDot
+} from '@shared/utils'
+import { useAppStore, usePreferenceStore } from '@/store'
+import { storeToRefs } from 'pinia'
 
-  export default {
-    name: 'mo-select-torrent',
-    components: {
-      [TaskFiles.name]: TaskFiles
-    },
-    filters: {
-      bytesToSize,
-      removeExtensionDot
-    },
-    props: {
-    },
-    data () {
-      return {
-        name: EMPTY_STRING,
-        currentTorrent: EMPTY_STRING,
-        files: [],
-        selectedFiles: []
-      }
-    },
-    computed: {
-      ...mapState('app', {
-        torrents: state => state.addTaskTorrents
-      }),
-      ...mapState('preference', {
-        config: state => state.config
-      }),
-      isTorrentsEmpty () {
-        return this.torrents.length === 0
-      }
-    },
-    watch: {
-      torrents (fileList) {
-        if (fileList.length === 0) {
-          this.reset()
-          return
-        }
+defineOptions({
+  name: 'mo-select-torrent'
+})
 
-        const file = fileList[0]
-        if (!file.raw) {
-          return
-        }
+const emit = defineEmits(['change'])
+const { t } = i18n.global
+const instance = getCurrentInstance()
 
-        remote(file.raw, { timeout: 60 * 1000 }, (err, parsedTorrent) => {
-          if (err) throw err
-          console.log('[LinkCore] parsed torrent: ', parsedTorrent)
-          this.files = listTorrentFiles(parsedTorrent.files)
-          this.$refs.torrentFileList.toggleAllSelection()
+const appStore = useAppStore()
+const preferenceStore = usePreferenceStore()
+const { addTaskTorrents: torrents } = storeToRefs(appStore)
+const { config } = storeToRefs(preferenceStore)
 
-          getAsBase64(file.raw).then((torrent) => {
-            this.name = file.name
-            this.currentTorrent = torrent
-            this.$emit('change', torrent, SELECTED_ALL_FILES, this.files)
-          })
-        })
-      }
-    },
-    methods: {
-      reset () {
-        this.name = EMPTY_STRING
-        this.currentTorrent = EMPTY_STRING
-        this.files = []
-        if (this.$refs.torrentFileList) {
-          this.$refs.torrentFileList.clearSelection()
-        }
-        this.$emit('change', EMPTY_STRING, NONE_SELECTED_FILES)
-      },
-      handleChange (file, fileList) {
-        this.$store.dispatch('app/addTaskAddTorrents', { fileList })
-      },
-      handleExceed (files) {
-        const fileList = buildFileList(files[0])
-        this.$store.dispatch('app/addTaskAddTorrents', { fileList })
-      },
-      handleTrashClick () {
-        this.$store.dispatch('app/addTaskAddTorrents', { fileList: [] })
-      },
-      handleSelectionChange (val) {
-        const { currentTorrent } = this
-        this.$emit('change', currentTorrent, val, this.files)
-      }
-    }
+const name = ref(EMPTY_STRING)
+const currentTorrent = ref(EMPTY_STRING)
+const files = ref([])
+const selectedFiles = ref([])
+const torrentFileList = ref(null)
+
+const isTorrentsEmpty = computed(() => torrents.value.length === 0)
+
+watch(torrents, (fileList) => {
+  if (fileList.length === 0) {
+    reset()
+    return
   }
+
+  const file = fileList[0]
+  if (!file.raw) return
+
+  remote(file.raw, { timeout: 60 * 1000 }, (err, parsedTorrent) => {
+    if (err) throw err
+    console.log('[LinkCore] parsed torrent: ', parsedTorrent)
+    files.value = listTorrentFiles(parsedTorrent.files)
+    torrentFileList.value?.toggleAllSelection()
+
+    getAsBase64(file.raw).then((torrent) => {
+      name.value = file.name
+      currentTorrent.value = torrent
+      emit('change', torrent, SELECTED_ALL_FILES, files.value)
+    })
+  })
+})
+
+function reset () {
+  name.value = EMPTY_STRING
+  currentTorrent.value = EMPTY_STRING
+  files.value = []
+  if (torrentFileList.value) {
+    torrentFileList.value.clearSelection()
+  }
+  emit('change', EMPTY_STRING, NONE_SELECTED_FILES)
+}
+
+function handleChange (file, fileList) {
+  appStore.addTaskAddTorrents({ fileList })
+}
+
+function handleExceed (files) {
+  const fileList = buildFileList(files[0])
+  appStore.addTaskAddTorrents({ fileList })
+}
+
+function handleTrashClick () {
+  appStore.addTaskAddTorrents({ fileList: [] })
+}
+
+function handleSelectionChange (val) {
+  emit('change', currentTorrent.value, val, files.value)
+}
 </script>
 
 <style lang="scss">
@@ -160,7 +151,7 @@
   .el-upload-dragger {
     padding: 16px 24px;
     height: auto;
-    border-radius: 12px;
+    border-radius: 8px;
     min-height: 0;
   }
   .upload-inbox-icon {
@@ -169,8 +160,8 @@
   }
   .torrent-name {
     margin-top: 4px;
-    font-size: $--font-size-small;
-    color: $--color-text-secondary;
+    font-size: var(--el-font-size-small);
+    color: var(--el-text-color-secondary);
     line-height: 16px;
   }
 }

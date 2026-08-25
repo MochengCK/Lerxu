@@ -44,6 +44,25 @@ export const convertToAxiosProxy = (proxyServer = '') => {
   }
 }
 
+/**
+ * 以「主进程 Node adapter」方式获取单个 URL 文本，使 axios proxy 配置真正生效
+ * （renderer 的 XHR adapter 会忽略 proxy 选项，导致 Tracker 源请求直连）。
+ * 供 main 进程 ipc handler 调用。
+ */
+export const fetchTrackerSourceText = async (url, proxyConfig = {}) => {
+  const { enable, mode, server, scope = [] } = proxyConfig
+  const proxyEnabled = enable !== undefined ? enable : (mode === 'custom')
+  const proxy = proxyEnabled && server && scope.includes(PROXY_SCOPES.UPDATE_TRACKERS)
+    ? convertToAxiosProxy(server)
+    : undefined
+  const response = await axios.get(url, {
+    responseType: 'text',
+    timeout: 15 * ONE_SECOND,
+    proxy
+  })
+  return `${response && response.data ? response.data : ''}`
+}
+
 export const fetchBtTrackerFromSource = async (source, proxyConfig = {}, githubMirrorConfig = {}) => {
   if (isEmpty(source)) {
     return []

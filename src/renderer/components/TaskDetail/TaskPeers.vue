@@ -1,14 +1,14 @@
 <template>
   <div class="mo-task-peers">
     <div class="mo-best-peer" v-if="bestPeer">
-      <div class="best-peer-label">{{ $t('task.best-peer') }}</div>
+      <div class="best-peer-label">{{ t('task.best-peer') }}</div>
       <div class="best-peer-info">
         <div class="best-peer-item">
-          <span class="best-peer-key">{{ $t('task.task-peer-host') }}:</span>
+          <span class="best-peer-key">{{ t('task.task-peer-host') }}:</span>
           <span class="best-peer-value">{{ bestPeer.ip }}:{{ bestPeer.port }}</span>
         </div>
         <div class="best-peer-item">
-          <span class="best-peer-key">{{ $t('task.task-peer-location') }}:</span>
+          <span class="best-peer-key">{{ t('task.task-peer-location') }}:</span>
           <span class="best-peer-value">
             <span
               v-if="getPeerCountryCode(bestPeer.ip)"
@@ -18,20 +18,20 @@
           </span>
         </div>
         <div class="best-peer-item">
-          <span class="best-peer-key">{{ $t('task.task-peer-client') }}:</span>
+          <span class="best-peer-key">{{ t('task.task-peer-client') }}:</span>
           <span class="best-peer-value">{{ renderPeerClient(bestPeer) }}</span>
         </div>
         <div class="best-peer-item">
-          <span class="best-peer-key">{{ $t('task.task-peer-progress') }}:</span>
-          <span class="best-peer-value">{{ bestPeer.bitfield | bitfieldToPercent }}%</span>
+          <span class="best-peer-key">{{ t('task.task-peer-progress') }}:</span>
+          <span class="best-peer-value">{{ bitfieldToPercent(bestPeer.bitfield) }}%</span>
         </div>
         <div class="best-peer-item">
-          <span class="best-peer-key">{{ $t('task.task-peer-upload-speed') }}:</span>
-          <span class="best-peer-value">{{ bestPeer.uploadSpeed | bytesToSize }}/s</span>
+          <span class="best-peer-key">{{ t('task.task-peer-upload-speed') }}:</span>
+          <span class="best-peer-value">{{ bytesToSize(bestPeer.uploadSpeed) }}/s</span>
         </div>
         <div class="best-peer-item">
-          <span class="best-peer-key">{{ $t('task.task-peer-download-speed') }}:</span>
-          <span class="best-peer-value">{{ bestPeer.downloadSpeed | bytesToSize }}/s</span>
+          <span class="best-peer-key">{{ t('task.task-peer-download-speed') }}:</span>
+          <span class="best-peer-value">{{ bytesToSize(bestPeer.downloadSpeed) }}/s</span>
         </div>
       </div>
     </div>
@@ -39,7 +39,7 @@
       <el-table
         ref="peerTable"
         class="mo-peer-table"
-        size="mini"
+        size="small"
         :data="groupedPeers"
         :height="tableHeight"
         row-key="id"
@@ -53,29 +53,29 @@
         @row-contextmenu="handleRowContextMenu"
       >
         <el-table-column
-          :label="$t('task.task-peer-host')"
+          :label="t('task.task-peer-host')"
           prop="ip"
           sortable="custom"
           min-width="140">
-          <template slot-scope="scope">
+          <template #default="scope">
             <template v-if="scope.row.isGroup">
               <span class="mo-peer-group-label">{{ scope.row.groupLabel }}</span>
             </template>
             <template v-else>
               <!-- 所有peer都显示IP:Port格式，保持一致 -->
-              <el-tooltip effect="dark" :content="`${scope.row.ip}:${scope.row.port}`" placement="top" :open-delay="0">
+              <mo-hover-tip effect="dark" :content="`${scope.row.ip}:${scope.row.port}`" placement="top" :open-delay="0">
                 <span class="mo-peer-text">{{ `${scope.row.ip}:${scope.row.port}` }}</span>
-              </el-tooltip>
+              </mo-hover-tip>
             </template>
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-location')"
+          :label="t('task.task-peer-location')"
           prop="ip"
           sortable="custom"
           min-width="100">
-          <template slot-scope="scope">
-            <el-tooltip effect="dark" :content="getPeerLocation(scope.row.ip)" placement="top" :open-delay="0">
+          <template #default="scope">
+            <mo-hover-tip effect="dark" :content="getPeerLocation(scope.row.ip)" placement="top" :open-delay="0">
               <span class="mo-peer-location">
                 <span
                   v-if="getPeerCountryCode(scope.row.ip)"
@@ -83,31 +83,31 @@
                 ></span>
                 <span class="mo-peer-text">{{ getPeerLocation(scope.row.ip) }}</span>
               </span>
-            </el-tooltip>
+            </mo-hover-tip>
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-client')"
+          :label="t('task.task-peer-client')"
           prop="peerId"
           sortable="custom"
           min-width="125">
-          <template slot-scope="scope">
-            <el-tooltip effect="dark" :content="getPeerClientTooltip(scope.row)" placement="top" :open-delay="0">
+          <template #default="scope">
+            <mo-hover-tip effect="dark" :content="getPeerClientTooltip(scope.row)" placement="top" :open-delay="0">
               <span class="mo-peer-text">{{ renderPeerClient(scope.row) }}</span>
-            </el-tooltip>
+            </mo-hover-tip>
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-connection-time')"
+          :label="t('task.task-peer-connection-time')"
           prop="connectionTime"
           sortable="custom"
           min-width="120">
-          <template slot-scope="scope">
+          <template #default="scope">
             <template v-if="scope.row.status === 'banned'">
               <span style="color: #f56c6c;">{{ formatDuration(scope.row.remainingTime) }}</span>
             </template>
             <template v-else-if="scope.row.status === 'attempting'">
-              <span style="color: #909399;">{{ $t('task.peer-status-attempting') }}</span>
+              <span style="color: #909399;">{{ t('task.peer-status-attempting') }}</span>
             </template>
             <template v-else-if="scope.row.status === 'disconnected'">
               -
@@ -118,18 +118,18 @@
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-status')"
+          :label="t('task.task-peer-status')"
           prop="status"
           sortable="custom"
           min-width="120">
-          <template slot-scope="scope">
+          <template #default="scope">
             <template v-if="scope.row.isGroup">
               -
             </template>
             <template v-else-if="scope.row.status === 'disconnected'">
-              <el-tooltip effect="dark" :content="getPeerFailureDetailText(scope.row)" placement="top" :open-delay="0">
+              <mo-hover-tip effect="dark" :content="getPeerFailureDetailText(scope.row)" placement="top" :open-delay="0">
                 <span class="mo-peer-text">{{ getPeerFailureSummaryText(scope.row) }}</span>
-              </el-tooltip>
+              </mo-hover-tip>
             </template>
             <template v-else>
               {{ getPeerStatus(scope.row) }}
@@ -137,20 +137,20 @@
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-protocol')"
+          :label="t('task.task-peer-protocol')"
           prop="protocol"
           sortable="custom"
           width="110">
-          <template slot-scope="scope">
+          <template #default="scope">
             {{ getPeerProtocol(scope.row) }}
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-encryption')"
+          :label="t('task.task-peer-encryption')"
           prop="encrypted"
           sortable="custom"
           width="90">
-          <template slot-scope="scope">
+          <template #default="scope">
             <template v-if="scope.row.isGroup">
               -
             </template>
@@ -160,52 +160,52 @@
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-source')"
+          :label="t('task.task-peer-source')"
           prop="source"
           sortable="custom"
           width="90">
-          <template slot-scope="scope">
+          <template #default="scope">
             {{ getPeerSource(scope.row) }}
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-downloaded')"
+          :label="t('task.task-peer-downloaded')"
           prop="downloadLength"
           sortable="custom"
           align="right"
           width="110">
-          <template slot-scope="scope">
-            {{ scope.row.downloadLength | bytesToSize }}
+          <template #default="scope">
+            {{ bytesToSize(scope.row.downloadLength) }}
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-progress')"
+          :label="t('task.task-peer-progress')"
           prop="bitfield"
           sortable="custom"
           align="right"
           width="90">
-          <template slot-scope="scope">
-            {{ scope.row.bitfield | bitfieldToPercent(true) }}%
+          <template #default="scope">
+            {{ bitfieldToPercent(scope.row.bitfield, true) }}%
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-upload-speed')"
+          :label="t('task.task-peer-upload-speed')"
           prop="uploadSpeed"
           sortable="custom"
           align="right"
           width="110">
-          <template slot-scope="scope">
-            {{ scope.row.uploadSpeed | bytesToSize }}/s
+          <template #default="scope">
+            {{ bytesToSize(scope.row.uploadSpeed) }}/s
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-download-speed')"
+          :label="t('task.task-peer-download-speed')"
           prop="downloadSpeed"
           sortable="custom"
           align="right"
           width="110">
-          <template slot-scope="scope">
-            {{ scope.row.downloadSpeed | bytesToSize }}/s
+          <template #default="scope">
+            {{ bytesToSize(scope.row.downloadSpeed) }}/s
           </template>
         </el-table-column>
       </el-table>
@@ -218,84 +218,95 @@
     >
       <template v-if="contextMenuType === 'blank'">
         <div class="context-menu-item" @click="resetPeerGroupVisibility">
-          <i class="el-icon-refresh"></i>
-          {{ $t('task.peers-group-show-all') }}
+          <el-icon><Refresh /></el-icon>
+          {{ t('task.peers-group-show-all') }}
         </div>
         <div class="context-menu-divider"></div>
         <div class="context-menu-item" @click="togglePeerGroupVisibility('connected')">
-          <i class="el-icon-check" :style="{ opacity: peerGroupVisibility.connected ? 1 : 0 }"></i>
-          {{ $t('task.peers-group-connected') }}
+          <el-icon :style="{ opacity: peerGroupVisibility.connected ? 1 : 0 }"><Check /></el-icon>
+          {{ t('task.peers-group-connected') }}
         </div>
         <div class="context-menu-item" @click="togglePeerGroupVisibility('attempting')">
-          <i class="el-icon-check" :style="{ opacity: peerGroupVisibility.attempting ? 1 : 0 }"></i>
-          {{ $t('task.peers-group-attempting') }}
+          <el-icon :style="{ opacity: peerGroupVisibility.attempting ? 1 : 0 }"><Check /></el-icon>
+          {{ t('task.peers-group-attempting') }}
         </div>
         <div class="context-menu-item" @click="togglePeerGroupVisibility('banned')">
-          <i class="el-icon-check" :style="{ opacity: peerGroupVisibility.banned ? 1 : 0 }"></i>
-          {{ $t('task.peers-group-banned') }}
+          <el-icon :style="{ opacity: peerGroupVisibility.banned ? 1 : 0 }"><Check /></el-icon>
+          {{ t('task.peers-group-banned') }}
         </div>
         <div class="context-menu-item" @click="togglePeerGroupVisibility('disconnected')">
-          <i class="el-icon-check" :style="{ opacity: peerGroupVisibility.disconnected ? 1 : 0 }"></i>
-          {{ $t('task.peers-group-disconnected') }}
+          <el-icon :style="{ opacity: peerGroupVisibility.disconnected ? 1 : 0 }"><Check /></el-icon>
+          {{ t('task.peers-group-disconnected') }}
         </div>
       </template>
       <template v-else-if="contextMenuPeer && contextMenuPeer.status === 'banned'">
         <div class="context-menu-item" @click="banPeer(300)">
-          <i class="el-icon-circle-plus-outline"></i>
-          {{ $t('task.extend-ban-5min') }}
+          <el-icon><CirclePlus /></el-icon>
+          {{ t('task.extend-ban-5min') }}
         </div>
         <div class="context-menu-item" @click="banPeer(3600)">
-          <i class="el-icon-circle-plus-outline"></i>
-          {{ $t('task.extend-ban-1hour') }}
+          <el-icon><CirclePlus /></el-icon>
+          {{ t('task.extend-ban-1hour') }}
         </div>
         <div class="context-menu-item" @click="banPeer(86400)">
-          <i class="el-icon-circle-plus-outline"></i>
-          {{ $t('task.extend-ban-1day') }}
+          <el-icon><CirclePlus /></el-icon>
+          {{ t('task.extend-ban-1day') }}
         </div>
         <div class="context-menu-item" @click="banPeer(-1)">
-          <i class="el-icon-circle-plus-outline"></i>
-          {{ $t('task.extend-ban-forever') }}
+          <el-icon><CirclePlus /></el-icon>
+          {{ t('task.extend-ban-forever') }}
         </div>
         <div class="context-menu-divider"></div>
         <div class="context-menu-item" @click="unbanPeer">
-          <i class="el-icon-circle-check"></i>
-          {{ $t('task.unban-peer') }}
+          <el-icon><CircleCheckFilled /></el-icon>
+          {{ t('task.unban-peer') }}
         </div>
       </template>
       <template v-else>
         <div class="context-menu-item" @click="banPeer(300)">
-          <i class="el-icon-circle-close"></i>
-          {{ $t('task.ban-peer-5min') }}
+          <el-icon><CircleCloseFilled /></el-icon>
+          {{ t('task.ban-peer-5min') }}
         </div>
         <div class="context-menu-item" @click="banPeer(3600)">
-          <i class="el-icon-circle-close"></i>
-          {{ $t('task.ban-peer-1hour') }}
+          <el-icon><CircleCloseFilled /></el-icon>
+          {{ t('task.ban-peer-1hour') }}
         </div>
         <div class="context-menu-item" @click="banPeer(86400)">
-          <i class="el-icon-circle-close"></i>
-          {{ $t('task.ban-peer-1day') }}
+          <el-icon><CircleCloseFilled /></el-icon>
+          {{ t('task.ban-peer-1day') }}
         </div>
         <div class="context-menu-item" @click="banPeer(-1)">
-          <i class="el-icon-circle-close"></i>
-          {{ $t('task.ban-peer-forever') }}
+          <el-icon><CircleCloseFilled /></el-icon>
+          {{ t('task.ban-peer-forever') }}
         </div>
       </template>
     </div>
   </div>
 </template>
 
-<script>
-  import {
-    bitfieldToPercent,
-    bytesToSize,
-    peerIdParser,
-    timeFormat
-  } from '@shared/utils'
-  import { searchInfoSync } from '@shared/utils/ip2region'
-  import 'flag-icons/css/flag-icons.min.css'
+<script setup>
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import {
+  bitfieldToPercent,
+  bytesToSize,
+  peerIdParser,
+  timeFormat
+} from '@shared/utils'
+import { searchInfoSync } from '@shared/utils/ip2region'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import i18n from '@/plugins/i18n'
+import { usePreferenceStore } from '@/store/preference'
+import { useTaskStore } from '@/store/task'
+import { storeToRefs } from 'pinia'
+import { createMsg } from '@/components/Msg'
+import 'flag-icons/css/flag-icons.min.css'
 
-  // Module-level country name -> ISO code map (built once, not per call).
-  const COUNTRY_NAME_TO_CODE = {
+const { t } = i18n.global
+
+const msg = createMsg(ElMessage, { showClose: true })
+
+// Module-level country name -> ISO code map (built once, not per call).
+const COUNTRY_NAME_TO_CODE = {
     // 亚洲
     中国: 'CN',
     日本: 'JP',
@@ -577,111 +588,103 @@
     也门: 'YE'
   }
 
-  export default {
-    name: 'mo-task-peers',
-    filters: {
-      bitfieldToPercent,
-      bytesToSize,
-      peerIdParser
-    },
-    props: {
-      peers: {
-        type: [Object, Array],
-        default: function () {
-          return { connected: [], attempting: [], banned: [], disconnected: [] }
-        }
-      },
-      searchText: {
-        type: String,
-        default: function () {
-          return ''
-        }
-      },
-      task: {
-        type: Object,
-        default: function () {
-          return {}
-        }
-      }
-    },
-    data () {
-      return {
-        filterMode: 'all',
-        search: '',
-        sortProp: 'downloadSpeed',
-        sortOrder: 'descending',
-        tableHeight: '100%',
-        expandedGroupKeys: ['group-connected'],
-        contextMenuVisible: false,
-        contextMenuX: 0,
-        contextMenuY: 0,
-        contextMenuPeer: null,
-        attemptStats: {},
-        disconnectedMap: {},
-        lastAttemptingMap: {},
-        lastConnectedMap: {},
-        peerOrderMap: {},
-        peerOrderSeed: 1,
-        ipInfoCache: {},
-        contextMenuType: '',
-        contextMenuCloseHandler: null,
-        contextMenuTimer: null
-      }
-    },
-    computed: {
-      peerGroupVisibility () {
-        const config = (this.$store && this.$store.state && this.$store.state.preference && this.$store.state.preference.config) || {}
-        const raw = config.peerGroupVisibility || {}
-        return {
-          connected: raw.connected !== false,
-          attempting: raw.attempting !== false,
-          banned: raw.banned !== false,
-          disconnected: raw.disconnected !== false
-        }
-      },
-      rowClassNameFn () {
-        const contextMenuVisible = this.contextMenuVisible
-        const contextMenuPeerId = this.contextMenuPeer ? this.contextMenuPeer.id : null
-        return ({ row }) => {
-          if (row.isGroup) {
-            const groupId = row.id || ''
-            const groupType = groupId.replace('group-', '')
-            return `mo-peer-group-row mo-peer-group-${groupType}`
-          }
-          if (contextMenuVisible && contextMenuPeerId && row.id === contextMenuPeerId) {
-            return 'mo-peer-row-active'
-          }
-          return ''
-        }
-      },
-      bestPeer () {
-        let peers = this.peers || {}
-        // 兼容旧格式
-        if (Array.isArray(peers)) {
-          peers = { connected: peers }
-        }
-        const connected = Array.isArray(peers.connected) ? peers.connected : []
-        if (connected.length === 0) return null
-        // 找到下载速度最快的 peer
-        return connected.reduce((best, current) => {
-          const bestSpeed = Number(best.downloadSpeed) || 0
-          const currentSpeed = Number(current.downloadSpeed) || 0
-          return currentSpeed > bestSpeed ? current : best
-        }, connected[0])
-      },
-      countAll () {
-        const peers = this.peers || {}
-        if (Array.isArray(peers)) {
-          return peers.length
-        }
-        const connected = Array.isArray(peers.connected) ? peers.connected : []
-        const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
-        const banned = Array.isArray(peers.banned) ? peers.banned : []
-        const mergedDisconnected = this.getMergedDisconnectedPeers(peers)
-        return connected.length + attempting.length + banned.length + mergedDisconnected.length
-      },
-      groupedPeers () {
-        let peers = this.peers || {}
+const props = defineProps({
+  peers: {
+    type: [Object, Array],
+    default: () => ({ connected: [], attempting: [], banned: [], disconnected: [] })
+  },
+  searchText: {
+    type: String,
+    default: () => ''
+  },
+  task: {
+    type: Object,
+    default: () => ({})
+  }
+})
+
+defineOptions({ name: 'mo-task-peers' })
+
+const preferenceStore = usePreferenceStore()
+const taskStore = useTaskStore()
+const { config: preferenceConfig } = storeToRefs(preferenceStore)
+
+const filterMode = ref('all')
+const search = ref('')
+const sortProp = ref('downloadSpeed')
+const sortOrder = ref('descending')
+const tableHeight = ref('100%')
+const expandedGroupKeys = ref(['group-connected'])
+const contextMenuVisible = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuPeer = ref(null)
+const attemptStats = ref({})
+const disconnectedMap = ref({})
+const lastAttemptingMap = ref({})
+const lastConnectedMap = ref({})
+const peerOrderMap = ref({})
+const peerOrderSeed = ref(1)
+const ipInfoCache = ref({})
+const contextMenuType = ref('')
+let contextMenuCloseHandler = null
+let contextMenuTimer = null
+
+const peerTable = ref(null)
+
+const peerGroupVisibility = computed(() => {
+  const config = preferenceConfig.value || {}
+  const raw = config.peerGroupVisibility || {}
+  return {
+    connected: raw.connected !== false,
+    attempting: raw.attempting !== false,
+    banned: raw.banned !== false,
+    disconnected: raw.disconnected !== false
+  }
+})
+
+const rowClassNameFn = computed(() => {
+  const cmVisible = contextMenuVisible.value
+  const cmPeerId = contextMenuPeer.value ? contextMenuPeer.value.id : null
+  return ({ row }) => {
+    if (row.isGroup) {
+      const groupId = row.id || ''
+      const groupType = groupId.replace('group-', '')
+      return `mo-peer-group-row mo-peer-group-${groupType}`
+    }
+    if (cmVisible && cmPeerId && row.id === cmPeerId) {
+      return 'mo-peer-row-active'
+    }
+    return ''
+  }
+})
+
+const bestPeer = computed(() => {
+  let peers = props.peers || {}
+  if (Array.isArray(peers)) {
+    peers = { connected: peers }
+  }
+  const connected = Array.isArray(peers.connected) ? peers.connected : []
+  if (connected.length === 0) return null
+  return connected.reduce((best, current) => {
+    const bestSpeed = Number(best.downloadSpeed) || 0
+    const currentSpeed = Number(current.downloadSpeed) || 0
+    return currentSpeed > bestSpeed ? current : best
+  }, connected[0])
+})
+
+const countAll = computed(() => {
+  const peers = props.peers || {}
+  if (Array.isArray(peers)) return peers.length
+  const connected = Array.isArray(peers.connected) ? peers.connected : []
+  const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
+  const banned = Array.isArray(peers.banned) ? peers.banned : []
+  const mergedDisconnected = getMergedDisconnectedPeers(peers)
+  return connected.length + attempting.length + banned.length + mergedDisconnected.length
+})
+
+const groupedPeers = computed(() => {
+        let peers = props.peers || {}
 
         // 兼容旧格式：如果peers是数组，转换为新格式
         if (Array.isArray(peers)) {
@@ -697,7 +700,7 @@
         const connected = Array.isArray(peers.connected) ? peers.connected : []
         const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
         const banned = Array.isArray(peers.banned) ? peers.banned : []
-        let disconnected = this.getMergedDisconnectedPeers(peers)
+        let disconnected = getMergedDisconnectedPeers(peers)
 
         // 限制“已断开”分类只显示最新100行
         disconnected.sort((a, b) => (b.lastDisconnectedAt || 0) - (a.lastDisconnectedAt || 0))
@@ -735,7 +738,7 @@
         })
 
         // 应用过滤和搜索 - 优化：减少重复计算
-        const q = this.search.trim().toLowerCase()
+        const q = search.value.trim().toLowerCase()
         const hasSearch = q.length > 0
 
         const filterAndSearch = (peerList) => {
@@ -756,7 +759,7 @@
               const up = Number(p.uploadSpeed) || 0
               const down = Number(p.downloadSpeed) || 0
               const percent = bitfieldToPercent(p.bitfield)
-              switch (this.filterMode) {
+              switch (filterMode.value) {
               case 'downloading':
                 return down > 0
               case 'uploading':
@@ -772,7 +775,7 @@
         }
 
         const allPeers = connected.concat(attempting, banned, disconnected)
-        allPeers.forEach(p => this.ensurePeerOrder(p))
+        allPeers.forEach(p => ensurePeerOrder(p))
 
         const filteredConnected = filterAndSearch(connected)
         const filteredAttempting = filterAndSearch(attempting)
@@ -780,17 +783,17 @@
 
         // 排序 - 优化：使用浅拷贝，减少条件判断
         const sortPeers = (peerList) => {
-          if (!this.sortProp || peerList.length === 0) return peerList
+          if (!sortProp.value || peerList.length === 0) return peerList
 
           const sorted = peerList.slice() // 浅拷贝
-          const prop = this.sortProp
-          const isAsc = this.sortOrder === 'ascending'
+          const prop = sortProp.value
+          const isAsc = sortOrder.value === 'ascending'
 
           sorted.sort((a, b) => {
             let valA = a[prop]
             let valB = b[prop]
-            const orderA = this.getPeerOrder(a)
-            const orderB = this.getPeerOrder(b)
+            const orderA = getPeerOrder(a)
+            const orderB = getPeerOrder(b)
 
             if (prop === 'bitfield') {
               valA = bitfieldToPercent(valA)
@@ -798,8 +801,8 @@
             }
 
             if (prop === 'ip') {
-              valA = this.getLocationFromIp(valA)
-              valB = this.getLocationFromIp(valB)
+              valA = getLocationFromIp(valA)
+              valB = getLocationFromIp(valB)
               const compare = isAsc
                 ? valA.localeCompare(valB, 'zh-CN')
                 : valB.localeCompare(valA, 'zh-CN')
@@ -807,13 +810,13 @@
             }
 
             if (prop === 'peerId') {
-              const aUnknown = this.isPeerClientUnknown(a)
-              const bUnknown = this.isPeerClientUnknown(b)
+              const aUnknown = isPeerClientUnknown(a)
+              const bUnknown = isPeerClientUnknown(b)
               if (!isAsc && aUnknown !== bUnknown) {
                 return aUnknown ? 1 : -1
               }
-              valA = this.renderPeerClient(a)
-              valB = this.renderPeerClient(b)
+              valA = renderPeerClient(a)
+              valB = renderPeerClient(b)
               const compare = isAsc
                 ? valA.localeCompare(valB, 'zh-CN')
                 : valB.localeCompare(valA, 'zh-CN')
@@ -822,8 +825,8 @@
 
             if (prop === 'status') {
               const getText = (p) => {
-                if (p.status === 'disconnected') return this.getPeerFailureSummaryText(p)
-                return this.getPeerStatus(p)
+                if (p.status === 'disconnected') return getPeerFailureSummaryText(p)
+                return getPeerStatus(p)
               }
               valA = getText(a)
               valB = getText(b)
@@ -850,11 +853,11 @@
 
         // 构建分组结构 - 返回新对象，避免在 computed 中修改源 peer 对象
         const result = []
-        if (sortedConnected.length > 0 && this.peerGroupVisibility.connected) {
+        if (sortedConnected.length > 0 && peerGroupVisibility.value.connected) {
           result.push({
             id: 'group-connected',
             isGroup: true,
-            groupLabel: `${this.$t('task.peers-connected')} (${sortedConnected.length})`,
+            groupLabel: `${t('task.peers-connected')} (${sortedConnected.length})`,
             children: sortedConnected.map(p => ({
               ...p,
               status: 'connected',
@@ -862,11 +865,11 @@
             }))
           })
         }
-        if (sortedDisconnected.length > 0 && this.peerGroupVisibility.disconnected) {
+        if (sortedDisconnected.length > 0 && peerGroupVisibility.value.disconnected) {
           result.push({
             id: 'group-disconnected',
             isGroup: true,
-            groupLabel: `${this.$t('task.peers-disconnected')} (${sortedDisconnected.length})`,
+            groupLabel: `${t('task.peers-disconnected')} (${sortedDisconnected.length})`,
             children: sortedDisconnected.map(p => ({
               ...p,
               status: 'disconnected',
@@ -874,11 +877,11 @@
             }))
           })
         }
-        if (sortedAttempting.length > 0 && this.peerGroupVisibility.attempting) {
+        if (sortedAttempting.length > 0 && peerGroupVisibility.value.attempting) {
           result.push({
             id: 'group-attempting',
             isGroup: true,
-            groupLabel: `${this.$t('task.peers-attempting')} (${sortedAttempting.length})`,
+            groupLabel: `${t('task.peers-attempting')} (${sortedAttempting.length})`,
             children: sortedAttempting.map(p => ({
               ...p,
               status: 'attempting',
@@ -886,11 +889,11 @@
             }))
           })
         }
-        if (sortedBanned.length > 0 && this.peerGroupVisibility.banned) {
+        if (sortedBanned.length > 0 && peerGroupVisibility.value.banned) {
           result.push({
             id: 'group-banned',
             isGroup: true,
-            groupLabel: `${this.$t('task.peers-banned')} (${sortedBanned.length})`,
+            groupLabel: `${t('task.peers-banned')} (${sortedBanned.length})`,
             children: sortedBanned.map(p => ({
               ...p,
               status: 'banned',
@@ -900,624 +903,649 @@
         }
 
         return result
-      }
-    },
-    beforeDestroy () {
-      // 清理可能仍在等待注册的右键菜单关闭监听，防止组件销毁后再注册
-      if (this.contextMenuTimer) {
-        clearTimeout(this.contextMenuTimer)
-        this.contextMenuTimer = null
-      }
-      if (this.contextMenuCloseHandler) {
-        document.removeEventListener('click', this.contextMenuCloseHandler)
-        this.contextMenuCloseHandler = null
-      }
-    },
-    watch: {
-      searchText: {
-        handler (value) {
-          this.search = value || ''
-        },
-        immediate: true
-      },
-      peers: {
-        handler (peers) {
-          this.updateAttemptStats(peers)
-        },
-        immediate: true
-      }
-    },
-    methods: {
-      normalizePeers (peers) {
-        if (Array.isArray(peers)) {
-          return { connected: peers, attempting: [], banned: [], disconnected: [] }
-        }
-        return {
-          connected: Array.isArray(peers.connected) ? peers.connected : [],
-          attempting: Array.isArray(peers.attempting) ? peers.attempting : [],
-          banned: Array.isArray(peers.banned) ? peers.banned : [],
-          disconnected: Array.isArray(peers.disconnected) ? peers.disconnected : []
-        }
-      },
-      peerKey (peer) {
-        if (!peer) return ''
-        const ip = peer.ip || ''
-        const port = peer.port || ''
-        return port ? `${ip}:${port}` : `${ip}`
-      },
-      ensurePeerOrder (peer) {
-        const key = this.peerKey(peer)
-        if (!key) return
-        if (!Object.prototype.hasOwnProperty.call(this.peerOrderMap, key)) {
-          this.$set(this.peerOrderMap, key, this.peerOrderSeed)
-          this.peerOrderSeed += 1
-        }
-      },
-      getPeerOrder (peer) {
-        const key = this.peerKey(peer)
-        if (!key) return Number.MAX_SAFE_INTEGER
-        return this.peerOrderMap[key] || Number.MAX_SAFE_INTEGER
-      },
-      getMergedDisconnectedPeers (peers) {
-        const normalized = this.normalizePeers(peers || {})
-        const merged = {}
-        normalized.disconnected.forEach(p => {
-          const key = this.peerKey(p)
-          if (key) {
-            merged[key] = p
-          }
-        })
-        Object.keys(this.disconnectedMap || {}).forEach(key => {
-          if (!merged[key]) {
-            merged[key] = this.disconnectedMap[key]
-          }
-        })
-        return Object.values(merged)
-      },
-      updateAttemptStats (peers) {
-        const normalized = this.normalizePeers(peers || {})
-        const currentAttemptingMap = {}
-        const currentConnectedMap = {}
+      })
 
-        normalized.attempting.forEach(p => {
-          const key = this.peerKey(p)
-          if (key) {
-            currentAttemptingMap[key] = p
-          }
-        })
+// Lifecycle
+onBeforeUnmount(() => {
+  if (contextMenuTimer) {
+    clearTimeout(contextMenuTimer)
+    contextMenuTimer = null
+  }
+  if (contextMenuCloseHandler) {
+    document.removeEventListener('click', contextMenuCloseHandler)
+    contextMenuCloseHandler = null
+  }
+})
 
-        normalized.connected.forEach(p => {
-          const key = this.peerKey(p)
-          if (key) {
-            currentConnectedMap[key] = p
-          }
-        })
+// Watchers
+watch(() => props.searchText, (value) => {
+  search.value = value || ''
+}, { immediate: true })
 
-        Object.keys(currentAttemptingMap).forEach(key => {
-          if (!this.lastAttemptingMap[key]) {
-            const prev = this.attemptStats[key] || { attempts: 0, fails: 0, tcpFails: 0, utpFails: 0, udpFails: 0 }
-            const next = { ...prev, attempts: prev.attempts + 1 }
-            this.$set(this.attemptStats, key, next)
-          }
-        })
+watch(() => props.peers, (peers) => {
+  updateAttemptStats(peers)
+}, { immediate: true })
 
-        Object.keys(this.lastAttemptingMap).forEach(key => {
-          if (!currentAttemptingMap[key] && !currentConnectedMap[key]) {
-            const lastPeer = this.lastAttemptingMap[key]
-            const prev = this.attemptStats[key] || { attempts: 0, fails: 0, tcpFails: 0, utpFails: 0, udpFails: 0 }
-            const type = this.classifyFailType(lastPeer)
-            const next = { ...prev, fails: prev.fails + 1 }
-            if (type === 'utp') next.utpFails = (next.utpFails || 0) + 1
-            else if (type === 'udp') next.udpFails = (next.udpFails || 0) + 1
-            else next.tcpFails = (next.tcpFails || 0) + 1
-            this.$set(this.attemptStats, key, next)
-            if (lastPeer) {
-              this.$set(this.disconnectedMap, key, {
-                ...lastPeer,
-                status: 'disconnected',
-                lastDisconnectedAt: Date.now()
-              })
-            }
-          }
-        })
+// Methods
+function normalizePeers (peers) {
+  if (Array.isArray(peers)) {
+    return { connected: peers, attempting: [], banned: [], disconnected: [] }
+  }
+  return {
+    connected: Array.isArray(peers.connected) ? peers.connected : [],
+    attempting: Array.isArray(peers.attempting) ? peers.attempting : [],
+    banned: Array.isArray(peers.banned) ? peers.banned : [],
+    disconnected: Array.isArray(peers.disconnected) ? peers.disconnected : []
+  }
+}
 
-        normalized.disconnected.forEach(p => {
-          const key = this.peerKey(p)
-          if (key) {
-            this.$set(this.disconnectedMap, key, {
-              ...p,
-              status: 'disconnected',
-              lastDisconnectedAt: Date.now()
-            })
-          }
-        })
+function peerKey (peer) {
+  if (!peer) return ''
+  const ip = peer.ip || ''
+  const port = peer.port || ''
+  return port ? `${ip}:${port}` : `${ip}`
+}
 
-        Object.keys(currentConnectedMap).forEach(key => {
-          if (this.disconnectedMap[key]) {
-            this.$delete(this.disconnectedMap, key)
-          }
-        })
+function ensurePeerOrder (peer) {
+  const key = peerKey(peer)
+  if (!key) return
+  if (!Object.prototype.hasOwnProperty.call(peerOrderMap.value, key)) {
+    peerOrderMap.value[key] = peerOrderSeed.value
+    peerOrderSeed.value += 1
+  }
+}
 
-        this.lastAttemptingMap = currentAttemptingMap
-        this.lastConnectedMap = currentConnectedMap
-      },
-      classifyFailType (peer) {
-        let errorText = ''
-        if (peer) {
-          errorText = `${peer.error || peer.errorMessage || peer.failureReason || peer.disconnectReason || peer.reason || ''}`.toLowerCase()
-        }
-        if (!peer) return 'tcp'
-        if (peer.utp === true || peer.protocol === 'utp' || peer.protocol === 'UTP' || errorText.includes('utp')) {
-          return 'utp'
-        }
-        if (peer.udpHolePunch === true || peer.udpHolePunching === true || peer.holePunch === true || peer.holePunching === true || peer.udpPunching === true || errorText.includes('punch') || errorText.includes('hole') || errorText.includes('udp')) {
-          return 'udp'
-        }
-        return 'tcp'
-      },
-      getPeerFailureCounts (peer) {
-        if (peer) {
-          const hasTcp = Object.prototype.hasOwnProperty.call(peer, 'tcpFails')
-          const hasUtp = Object.prototype.hasOwnProperty.call(peer, 'utpFails')
-          const hasUdp = Object.prototype.hasOwnProperty.call(peer, 'udpFails')
-          if (hasTcp || hasUtp || hasUdp) {
-            return {
-              tcp: Number(peer.tcpFails) || 0,
-              utp: Number(peer.utpFails) || 0,
-              udp: Number(peer.udpFails) || 0
-            }
-          }
-        }
-        const key = this.peerKey(peer)
-        if (!key) return { tcp: 0, utp: 0, udp: 0 }
-        const stat = this.attemptStats[key] || {}
-        return {
-          tcp: Number(stat.tcpFails) || 0,
-          utp: Number(stat.utpFails) || 0,
-          udp: Number(stat.udpFails) || 0
-        }
-      },
-      getPeerFailureSummaryText (peer) {
-        const { tcp, utp, udp } = this.getPeerFailureCounts(peer)
-        const tcpLabel = this.$t('task.peer-failure-short-tcp')
-        const utpLabel = this.$t('task.peer-failure-short-utp')
-        const udpLabel = this.$t('task.peer-failure-short-udp')
-        const parts = []
-        if (tcp > 0) parts.push(`${tcpLabel} ${tcp}`)
-        if (utp > 0) parts.push(`${utpLabel} ${utp}`)
-        if (udp > 0) parts.push(`${udpLabel} ${udp}`)
-        return parts.length > 0 ? parts.join(' ') : `${tcpLabel} 0`
-      },
-      getPeerFailureDetailText (peer) {
-        const { tcp, utp, udp } = this.getPeerFailureCounts(peer)
-        const parts = []
-        if (tcp > 0) parts.push(`${this.$t('task.peer-status-tcp-failed')} ${tcp}`)
-        if (utp > 0) parts.push(`${this.$t('task.peer-status-utp-failed')} ${utp}`)
-        if (udp > 0) parts.push(`${this.$t('task.peer-status-udp-punch-failed')} ${udp}`)
-        return parts.length > 0 ? parts.join(' ') : ''
-      },
-      getPeerInfo (ip) {
-        if (!ip) return null
-        const key = `${ip}`
-        if (Object.prototype.hasOwnProperty.call(this.ipInfoCache, key)) {
-          return this.ipInfoCache[key]
-        }
-        let info = null
-        if (this.isPrivateIp(ip)) {
-          info = { location: '-', countryCode: 'local' }
-        } else {
-          const result = searchInfoSync(ip)
-          if (result && result.region) {
-            let location = '-'
-            if (result.country) location = result.country
-            else if (result.province) location = result.province
-            else if (result.city) location = result.city
-            let code = result.countryCode || null
-            if (!code) {
-              const candidates = [result.country, result.province, result.city]
-              for (const value of candidates) {
-                code = this.countryNameToCode(value)
-                if (code) break
-              }
-            }
-            info = { location, countryCode: code }
-          }
-        }
-        if (!info) info = { location: '-', countryCode: null }
-        this.$set(this.ipInfoCache, key, info)
-        return info
-      },
-      getPeerCountryCode (ip) {
-        const info = this.getPeerInfo(ip)
-        return info ? info.countryCode : null
-      },
-      getPeerCountryClass (ip) {
-        const code = this.getPeerCountryCode(ip)
-        if (!code) return ''
-        if (code === 'local') {
-          return ['mo-peer-flag', 'mo-peer-flag-local']
-        }
-        return ['fi', `fi-${code.toLowerCase()}`, 'mo-peer-flag']
-      },
-      isPrivateIp (ip) {
-        const value = `${ip || ''}`.trim()
-        if (!value) return false
-        const lower = value.toLowerCase()
-        if (lower === 'localhost') return true
-        if (lower === '::1') return true
-        if (lower.startsWith('fc') || lower.startsWith('fd')) return true
-        if (lower.startsWith('fe80:')) return true
-        const parts = value.split('.').map(p => Number(p))
-        if (parts.length !== 4 || parts.some(n => Number.isNaN(n))) return false
-        const [a, b] = parts
-        if (a === 10) return true
-        if (a === 127) return true
-        if (a === 192 && b === 168) return true
-        if (a === 169 && b === 254) return true
-        if (a === 172 && b >= 16 && b <= 31) return true
-        return false
-      },
-      getPeerLocation (ip) {
-        const info = this.getPeerInfo(ip)
-        return info ? info.location : '-'
-      },
-      getPeerIdPrefix (peer) {
-        const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
-        if (!peerId) return ''
-        let decoded = ''
-        try {
-          decoded = unescape(peerId)
-        } catch (e) {
-          decoded = `${peerId}`
-        }
-        const value = `${decoded || peerId}`.trim()
-        if (!value) return ''
-        return value.length >= 8 ? value.slice(0, 8) : value
-      },
-      getSafePeerIdPrefix (peer) {
-        const prefix = this.getPeerIdPrefix(peer)
-        if (!prefix) return ''
-        if (!/^[A-Za-z0-9-]+$/.test(prefix)) {
-          return ''
-        }
-        return prefix
-      },
-      isPeerClientUnknown (peer) {
-        const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
-        const result = peerIdParser(peerId)
-        if (result !== 'task.peer-client-unknown') {
-          return false
-        }
-        const clientName = typeof peer === 'object' && peer
-          ? (peer.clientName || peer.client || peer.client_name || peer.userAgent || peer.agent || peer.name || '')
-          : ''
-        return !`${clientName}`.trim()
-      },
-      getPeerClientTooltip (peer) {
-        if (this.isPeerClientUnknown(peer)) {
-          return ''
-        }
-        const clientText = this.renderPeerClient(peer)
-        const prefix = this.getPeerIdPrefix(peer)
-        if (!prefix) return clientText
-        return `${clientText} / ${prefix}`
-      },
-      renderPeerClient (peer) {
-        const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
-        const result = peerIdParser(peerId)
-        if (result === 'task.peer-client-unknown') {
-          const clientName = typeof peer === 'object' && peer
-            ? (peer.clientName || peer.client || peer.client_name || peer.userAgent || peer.agent || peer.name || '')
-            : ''
-          const normalizedName = `${clientName}`.trim()
-          if (normalizedName) {
-            return `${normalizedName} / N/A`
-          }
-          const prefix = this.getSafePeerIdPrefix(peer)
-          return prefix || '-'
-        }
-        return result
-      },
-      formatDuration (seconds) {
-        const s = Number(seconds) || 0
-        if (s <= 0) return '0s'
-        const i18n = {
-          hour: this.$t('app.hour') || 'h',
-          minute: this.$t('app.minute') || 'm',
-          second: this.$t('app.second') || 's'
-        }
-        return timeFormat(s, { i18n })
-      },
-      updateTableHeight () {
-        // height="100%" handled by CSS
-      },
-      handleSortChange ({ prop, order }) {
-        this.sortProp = prop || 'downloadSpeed'
-        this.sortOrder = order || 'descending'
-      },
-      getLocationFromIp (ip) {
-        const info = this.getPeerInfo(ip)
-        return info ? info.location : '-'
-      },
-      countryNameToCode (countryName) {
-        const name = `${countryName || ''}`.trim()
-        if (!name) return null
-        return COUNTRY_NAME_TO_CODE[name] || null
-      },
-      getPeerSource (peer) {
-        if (!peer) return '-'
-        const source = `${peer.source || ''}`.toLowerCase()
-        if (source === 'lsd') return this.$t('task.peer-source-lsd')
-        if (source === 'dht') return this.$t('task.peer-source-dht')
-        if (source === 'pex') return this.$t('task.peer-source-pex')
-        if (source === 'tracker') return this.$t('task.peer-source-tracker')
-        if (source === 'manual') return this.$t('task.peer-source-manual')
-        if (peer.localPeer === 'true' || peer.localPeer === true) return this.$t('task.peer-source-lsd')
-        if (peer.fromDHT === 'true' || peer.fromDHT === true) return this.$t('task.peer-source-dht')
-        if (peer.fromPEX === 'true' || peer.fromPEX === true) return this.$t('task.peer-source-pex')
-        return '-'
-      },
-      getPeerProtocol (peer) {
-        if (!peer) return '-'
-        const protocol = `${peer.protocol || ''}`.toLowerCase()
-        if (protocol === 'tcp') return this.$t('task.peer-protocol-tcp')
-        if (protocol === 'utp') return this.$t('task.peer-protocol-utp')
-        if (protocol === 'tcp-ext') return this.$t('task.peer-protocol-tcp-ext')
-        if (protocol === 'utp-ext') return this.$t('task.peer-protocol-utp-ext')
-        return protocol || '-'
-      },
-      getPeerEncryption (peer) {
-        if (!peer) return '-'
-        const encrypted = peer.encrypted
-        // 引擎对无活跃连接的节点（attempting/disconnected/banned）返回 null，
-        // 前端显示空值而非"明文"，避免误导用户这些节点是明文连接。
-        if (encrypted === null || encrypted === undefined) return '-'
-        if (encrypted === true || encrypted === 'true' || encrypted === '1' || encrypted === 1) {
-          return this.$t('task.peer-encryption-mse')
-        }
-        return this.$t('task.peer-encryption-plaintext')
-      },
-      getPeerStatus (peer) {
-        if (!peer) return '-'
-        const status = `${peer.engineStatus || ''}`.toLowerCase()
-        if (status === 'banned') return this.$t('task.peer-status-banned')
-        if (status === 'attempting') return this.$t('task.peer-status-attempting')
-        if (status === 'downloading') return this.$t('task.peer-status-downloading')
-        if (status === 'uploading') return this.$t('task.peer-status-uploading')
-        if (status === 'seeding') return this.$t('task.peer-status-seeding')
-        if (status === 'idle') return this.$t('task.peer-status-idle')
-        return '-'
-      },
-      handleExpandChange (row, expanded) {
-        if (row.isGroup) {
-          if (expanded) {
-            if (!this.expandedGroupKeys.includes(row.id)) {
-              this.expandedGroupKeys.push(row.id)
-            }
-          } else {
-            this.expandedGroupKeys = this.expandedGroupKeys.filter(k => k !== row.id)
-          }
-        }
-      },
-      handleSpanMethod ({ row, column, rowIndex, columnIndex }) {
-        if (row.isGroup) {
-          if (columnIndex === 0) {
-            return [1, 12]
-          } else {
-            return [0, 0]
-          }
-        }
-      },
-      handleRowClick (row) {
-        if (row.isGroup) {
-          this.$refs.peerTable.toggleRowExpansion(row)
-        }
-      },
-      handleRowContextMenu (row, column, event) {
-        // 只对非分组行显示右键菜单
-        if (!row.isGroup) {
-          event.preventDefault()
-          this.contextMenuPeer = row
-          this.contextMenuType = 'peer'
+function getPeerOrder (peer) {
+  const key = peerKey(peer)
+  if (!key) return Number.MAX_SAFE_INTEGER
+  return peerOrderMap.value[key] || Number.MAX_SAFE_INTEGER
+}
 
-          const isBanned = row && row.status === 'banned'
-          const menuWidth = 160
-          const menuItems = isBanned ? 5 : 4
-          const menuHeight = menuItems * 36 + 10
-          this.openContextMenu(event, menuWidth, menuHeight)
-        }
-      },
-      handleTableContextMenu (event) {
-        const target = event && event.target
-        if (target && (target.closest('.el-table__row') || target.closest('.el-table__header-wrapper'))) {
-          return
-        }
-        this.contextMenuPeer = null
-        this.contextMenuType = 'blank'
-        const menuWidth = 180
-        const menuItems = 5
-        const menuHeight = menuItems * 36 + 10
-        this.openContextMenu(event, menuWidth, menuHeight)
-      },
-      openContextMenu (event, menuWidth, menuHeight) {
-        const windowWidth = window.innerWidth
-        const windowHeight = window.innerHeight
-        let x = event.clientX
-        let y = event.clientY
+function getMergedDisconnectedPeers (peers) {
+  const normalized = normalizePeers(peers || {})
+  const merged = {}
+  normalized.disconnected.forEach(p => {
+    const key = peerKey(p)
+    if (key) {
+      merged[key] = p
+    }
+  })
+  Object.keys(disconnectedMap.value || {}).forEach(key => {
+    if (!merged[key]) {
+      merged[key] = disconnectedMap.value[key]
+    }
+  })
+  return Object.values(merged)
+}
 
-        if (x + menuWidth > windowWidth) {
-          x = windowWidth - menuWidth - 5
-        }
+function updateAttemptStats (peers) {
+  const normalized = normalizePeers(peers || {})
+  const currentAttemptingMap = {}
+  const currentConnectedMap = {}
 
-        if (y + menuHeight > windowHeight) {
-          y = windowHeight - menuHeight - 5
-        }
+  normalized.attempting.forEach(p => {
+    const key = peerKey(p)
+    if (key) {
+      currentAttemptingMap[key] = p
+    }
+  })
 
-        if (x < 5) x = 5
-        if (y < 5) y = 5
+  normalized.connected.forEach(p => {
+    const key = peerKey(p)
+    if (key) {
+      currentConnectedMap[key] = p
+    }
+  })
 
-        this.contextMenuX = x
-        this.contextMenuY = y
-        this.contextMenuVisible = true
+  Object.keys(currentAttemptingMap).forEach(key => {
+    if (!lastAttemptingMap.value[key]) {
+      const prev = attemptStats.value[key] || { attempts: 0, fails: 0, tcpFails: 0, utpFails: 0, udpFails: 0 }
+      const next = { ...prev, attempts: prev.attempts + 1 }
+      attemptStats.value[key] = next
+    }
+  })
 
-        if (this.contextMenuCloseHandler) {
-          document.removeEventListener('click', this.contextMenuCloseHandler)
-        }
-        this.contextMenuCloseHandler = (e) => {
-          const target = e && e.target
-          if (target && target.closest && target.closest('.mo-peer-context-menu')) {
-            return
-          }
-          this.closeContextMenu()
-        }
-        // 延迟注册点击关闭监听，避免本次触发右键的 click 立即关闭菜单
-        if (this.contextMenuTimer) {
-          clearTimeout(this.contextMenuTimer)
-        }
-        this.contextMenuTimer = setTimeout(() => {
-          this.contextMenuTimer = null
-          document.addEventListener('click', this.contextMenuCloseHandler)
-        }, 100)
-      },
-      closeContextMenu () {
-        this.contextMenuVisible = false
-        this.contextMenuPeer = null
-        this.contextMenuType = ''
-        if (this.contextMenuCloseHandler) {
-          document.removeEventListener('click', this.contextMenuCloseHandler)
-          this.contextMenuCloseHandler = null
-        }
-      },
-      togglePeerGroupVisibility (key) {
-        const current = this.peerGroupVisibility
-        const next = {
-          connected: current.connected,
-          attempting: current.attempting,
-          banned: current.banned,
-          disconnected: current.disconnected
-        }
-        if (Object.prototype.hasOwnProperty.call(next, key)) {
-          next[key] = !next[key]
-          this.savePeerGroupVisibility(next)
-        }
-        this.closeContextMenu()
-      },
-      resetPeerGroupVisibility () {
-        const next = {
-          connected: true,
-          attempting: true,
-          banned: true,
-          disconnected: true
-        }
-        this.savePeerGroupVisibility(next)
-        this.closeContextMenu()
-      },
-      savePeerGroupVisibility (next) {
-        this.$store.dispatch('preference/save', {
-          peerGroupVisibility: next
-        })
-      },
-      async banPeer (duration) {
-        const peer = this.contextMenuPeer
-        this.closeContextMenu()
-
-        if (!peer) {
-          return
-        }
-        const ip = String(peer.ip || '')
-        const isBanned = peer.status === 'banned'
-
-        if (!ip) {
-          this.$message.error('Invalid IP address')
-          return
-        }
-
-        try {
-          let durationText = ''
-          if (duration === 300) {
-            durationText = this.$t('task.ban-duration-5min')
-          } else if (duration === 3600) {
-            durationText = this.$t('task.ban-duration-1hour')
-          } else if (duration === 86400) {
-            durationText = this.$t('task.ban-duration-1day')
-          } else {
-            durationText = this.$t('task.ban-duration-forever')
-          }
-
-          // 根据节点状态显示不同的确认对话框
-          const confirmMessage = isBanned
-            ? this.$t('task.extend-ban-confirm', { ip, duration: durationText })
-            : this.$t('task.ban-peer-confirm', { ip, duration: durationText })
-          const confirmTitle = isBanned
-            ? this.$t('task.extend-ban-title')
-            : this.$t('task.ban-peer-title')
-
-          await this.$confirm(
-            confirmMessage,
-            confirmTitle,
-            {
-              confirmButtonText: this.$t('app.yes'),
-              cancelButtonText: this.$t('app.no'),
-              type: 'warning'
-            }
-          )
-
-          // 调用API封禁IP
-          await this.$store.dispatch('task/banPeer', {
-            gid: this.task.gid,
-            ip: ip,
-            duration: duration
-          })
-
-          this.$message.success(this.$t('task.ban-peer-success', { ip }))
-        } catch (err) {
-          if (err !== 'cancel') {
-            console.error('[TaskPeers] Ban peer failed:', err)
-            this.$message.error(this.$t('task.ban-peer-failed'))
-          }
-        }
-      },
-      async unbanPeer () {
-        const peer = this.contextMenuPeer
-        this.closeContextMenu()
-
-        if (!peer) {
-          return
-        }
-        const ip = String(peer.ip || '')
-
-        if (!ip) {
-          this.$message.error('Invalid IP address')
-          return
-        }
-
-        try {
-          await this.$confirm(
-            this.$t('task.unban-peer-confirm', { ip }),
-            this.$t('task.unban-peer-title'),
-            {
-              confirmButtonText: this.$t('app.yes'),
-              cancelButtonText: this.$t('app.no'),
-              type: 'info'
-            }
-          )
-
-          // 调用API解除封禁
-          await this.$store.dispatch('task/unbanPeer', {
-            gid: this.task.gid,
-            ip: ip
-          })
-
-          this.$message.success(this.$t('task.unban-peer-success', { ip }))
-        } catch (err) {
-          if (err !== 'cancel') {
-            console.error('[TaskPeers] Unban peer failed:', err)
-            this.$message.error(this.$t('task.unban-peer-failed'))
-          }
+  Object.keys(lastAttemptingMap.value).forEach(key => {
+    if (!currentAttemptingMap[key] && !currentConnectedMap[key]) {
+      const lastPeer = lastAttemptingMap.value[key]
+      const prev = attemptStats.value[key] || { attempts: 0, fails: 0, tcpFails: 0, utpFails: 0, udpFails: 0 }
+      const type = classifyFailType(lastPeer)
+      const next = { ...prev, fails: prev.fails + 1 }
+      if (type === 'utp') next.utpFails = (next.utpFails || 0) + 1
+      else if (type === 'udp') next.udpFails = (next.udpFails || 0) + 1
+      else next.tcpFails = (next.tcpFails || 0) + 1
+      attemptStats.value[key] = next
+      if (lastPeer) {
+        disconnectedMap.value[key] = {
+          ...lastPeer,
+          status: 'disconnected',
+          lastDisconnectedAt: Date.now()
         }
       }
     }
+  })
+
+  normalized.disconnected.forEach(p => {
+    const key = peerKey(p)
+    if (key) {
+      disconnectedMap.value[key] = {
+        ...p,
+        status: 'disconnected',
+        lastDisconnectedAt: Date.now()
+      }
+    }
+  })
+
+  Object.keys(currentConnectedMap).forEach(key => {
+    if (disconnectedMap.value[key]) {
+      delete disconnectedMap.value[key]
+    }
+  })
+
+  lastAttemptingMap.value = currentAttemptingMap
+  lastConnectedMap.value = currentConnectedMap
+}
+
+function classifyFailType (peer) {
+  let errorText = ''
+  if (peer) {
+    errorText = `${peer.error || peer.errorMessage || peer.failureReason || peer.disconnectReason || peer.reason || ''}`.toLowerCase()
   }
+  if (!peer) return 'tcp'
+  if (peer.utp === true || peer.protocol === 'utp' || peer.protocol === 'UTP' || errorText.includes('utp')) {
+    return 'utp'
+  }
+  if (peer.udpHolePunch === true || peer.udpHolePunching === true || peer.holePunch === true || peer.holePunching === true || peer.udpPunching === true || errorText.includes('punch') || errorText.includes('hole') || errorText.includes('udp')) {
+    return 'udp'
+  }
+  return 'tcp'
+}
+
+function getPeerFailureCounts (peer) {
+  if (peer) {
+    const hasTcp = Object.prototype.hasOwnProperty.call(peer, 'tcpFails')
+    const hasUtp = Object.prototype.hasOwnProperty.call(peer, 'utpFails')
+    const hasUdp = Object.prototype.hasOwnProperty.call(peer, 'udpFails')
+    if (hasTcp || hasUtp || hasUdp) {
+      return {
+        tcp: Number(peer.tcpFails) || 0,
+        utp: Number(peer.utpFails) || 0,
+        udp: Number(peer.udpFails) || 0
+      }
+    }
+  }
+  const key = peerKey(peer)
+  if (!key) return { tcp: 0, utp: 0, udp: 0 }
+  const stat = attemptStats.value[key] || {}
+  return {
+    tcp: Number(stat.tcpFails) || 0,
+    utp: Number(stat.utpFails) || 0,
+    udp: Number(stat.udpFails) || 0
+  }
+}
+
+function getPeerFailureSummaryText (peer) {
+  const { tcp, utp, udp } = getPeerFailureCounts(peer)
+  const tcpLabel = t('task.peer-failure-short-tcp')
+  const utpLabel = t('task.peer-failure-short-utp')
+  const udpLabel = t('task.peer-failure-short-udp')
+  const parts = []
+  if (tcp > 0) parts.push(`${tcpLabel} ${tcp}`)
+  if (utp > 0) parts.push(`${utpLabel} ${utp}`)
+  if (udp > 0) parts.push(`${udpLabel} ${udp}`)
+  return parts.length > 0 ? parts.join(' ') : `${tcpLabel} 0`
+}
+
+function getPeerFailureDetailText (peer) {
+  const { tcp, utp, udp } = getPeerFailureCounts(peer)
+  const parts = []
+  if (tcp > 0) parts.push(`${t('task.peer-status-tcp-failed')} ${tcp}`)
+  if (utp > 0) parts.push(`${t('task.peer-status-utp-failed')} ${utp}`)
+  if (udp > 0) parts.push(`${t('task.peer-status-udp-punch-failed')} ${udp}`)
+  return parts.length > 0 ? parts.join(' ') : ''
+}
+
+function getPeerInfo (ip) {
+  if (!ip) return null
+  const key = `${ip}`
+  if (Object.prototype.hasOwnProperty.call(ipInfoCache.value, key)) {
+    return ipInfoCache.value[key]
+  }
+  let info = null
+  if (isPrivateIp(ip)) {
+    info = { location: '-', countryCode: 'local' }
+  } else {
+    const result = searchInfoSync(ip)
+    if (result && result.region) {
+      let location = '-'
+      if (result.country) location = result.country
+      else if (result.province) location = result.province
+      else if (result.city) location = result.city
+      let code = result.countryCode || null
+      if (!code) {
+        const candidates = [result.country, result.province, result.city]
+        for (const value of candidates) {
+          code = countryNameToCode(value)
+          if (code) break
+        }
+      }
+      info = { location, countryCode: code }
+    }
+  }
+  if (!info) info = { location: '-', countryCode: null }
+  ipInfoCache.value[key] = info
+  return info
+}
+
+function getPeerCountryCode (ip) {
+  const info = getPeerInfo(ip)
+  return info ? info.countryCode : null
+}
+
+function getPeerCountryClass (ip) {
+  const code = getPeerCountryCode(ip)
+  if (!code) return ''
+  if (code === 'local') {
+    return ['mo-peer-flag', 'mo-peer-flag-local']
+  }
+  return ['fi', `fi-${code.toLowerCase()}`, 'mo-peer-flag']
+}
+
+function isPrivateIp (ip) {
+  const value = `${ip || ''}`.trim()
+  if (!value) return false
+  const lower = value.toLowerCase()
+  if (lower === 'localhost') return true
+  if (lower === '::1') return true
+  if (lower.startsWith('fc') || lower.startsWith('fd')) return true
+  if (lower.startsWith('fe80:')) return true
+  const parts = value.split('.').map(p => Number(p))
+  if (parts.length !== 4 || parts.some(n => Number.isNaN(n))) return false
+  const [a, b] = parts
+  if (a === 10) return true
+  if (a === 127) return true
+  if (a === 192 && b === 168) return true
+  if (a === 169 && b === 254) return true
+  if (a === 172 && b >= 16 && b <= 31) return true
+  return false
+}
+
+function getPeerLocation (ip) {
+  const info = getPeerInfo(ip)
+  return info ? info.location : '-'
+}
+
+function getPeerIdPrefix (peer) {
+  const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
+  if (!peerId) return ''
+  let decoded = ''
+  try {
+    decoded = unescape(peerId)
+  } catch (e) {
+    decoded = `${peerId}`
+  }
+  const value = `${decoded || peerId}`.trim()
+  if (!value) return ''
+  return value.length >= 8 ? value.slice(0, 8) : value
+}
+
+function getSafePeerIdPrefix (peer) {
+  const prefix = getPeerIdPrefix(peer)
+  if (!prefix) return ''
+  if (!/^[A-Za-z0-9-]+$/.test(prefix)) {
+    return ''
+  }
+  return prefix
+}
+
+function isPeerClientUnknown (peer) {
+  const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
+  const result = peerIdParser(peerId)
+  if (result !== 'task.peer-client-unknown') {
+    return false
+  }
+  const clientName = typeof peer === 'object' && peer
+    ? (peer.clientName || peer.client || peer.client_name || peer.userAgent || peer.agent || peer.name || '')
+    : ''
+  return !`${clientName}`.trim()
+}
+
+function getPeerClientTooltip (peer) {
+  if (isPeerClientUnknown(peer)) {
+    return ''
+  }
+  const clientText = renderPeerClient(peer)
+  const prefix = getPeerIdPrefix(peer)
+  if (!prefix) return clientText
+  return `${clientText} / ${prefix}`
+}
+
+function renderPeerClient (peer) {
+  const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
+  const result = peerIdParser(peerId)
+  if (result === 'task.peer-client-unknown') {
+    const clientName = typeof peer === 'object' && peer
+      ? (peer.clientName || peer.client || peer.client_name || peer.userAgent || peer.agent || peer.name || '')
+      : ''
+    const normalizedName = `${clientName}`.trim()
+    if (normalizedName) {
+      return `${normalizedName} / N/A`
+    }
+    const prefix = getSafePeerIdPrefix(peer)
+    return prefix || '-'
+  }
+  return result
+}
+
+function formatDuration (seconds) {
+  const s = Number(seconds) || 0
+  if (s <= 0) return '0s'
+  const i18nObj = {
+    hour: t('app.hour') || 'h',
+    minute: t('app.minute') || 'm',
+    second: t('app.second') || 's'
+  }
+  return timeFormat(s, { i18n: i18nObj })
+}
+
+function updateTableHeight () {
+  // height="100%" handled by CSS
+}
+
+function handleSortChange ({ prop, order }) {
+  sortProp.value = prop || 'downloadSpeed'
+  sortOrder.value = order || 'descending'
+}
+
+function getLocationFromIp (ip) {
+  const info = getPeerInfo(ip)
+  return info ? info.location : '-'
+}
+
+function countryNameToCode (countryName) {
+  const name = `${countryName || ''}`.trim()
+  if (!name) return null
+  return COUNTRY_NAME_TO_CODE[name] || null
+}
+
+function getPeerSource (peer) {
+  if (!peer) return '-'
+  const source = `${peer.source || ''}`.toLowerCase()
+  if (source === 'lsd') return t('task.peer-source-lsd')
+  if (source === 'dht') return t('task.peer-source-dht')
+  if (source === 'pex') return t('task.peer-source-pex')
+  if (source === 'tracker') return t('task.peer-source-tracker')
+  if (source === 'manual') return t('task.peer-source-manual')
+  if (peer.localPeer === 'true' || peer.localPeer === true) return t('task.peer-source-lsd')
+  if (peer.fromDHT === 'true' || peer.fromDHT === true) return t('task.peer-source-dht')
+  if (peer.fromPEX === 'true' || peer.fromPEX === true) return t('task.peer-source-pex')
+  return '-'
+}
+
+function getPeerProtocol (peer) {
+  if (!peer) return '-'
+  const protocol = `${peer.protocol || ''}`.toLowerCase()
+  if (protocol === 'tcp') return t('task.peer-protocol-tcp')
+  if (protocol === 'utp') return t('task.peer-protocol-utp')
+  if (protocol === 'tcp-ext') return t('task.peer-protocol-tcp-ext')
+  if (protocol === 'utp-ext') return t('task.peer-protocol-utp-ext')
+  return protocol || '-'
+}
+
+function getPeerEncryption (peer) {
+  if (!peer) return '-'
+  const encrypted = peer.encrypted
+  if (encrypted === null || encrypted === undefined) return '-'
+  if (encrypted === true || encrypted === 'true' || encrypted === '1' || encrypted === 1) {
+    return t('task.peer-encryption-mse')
+  }
+  return t('task.peer-encryption-plaintext')
+}
+
+function getPeerStatus (peer) {
+  if (!peer) return '-'
+  const status = `${peer.engineStatus || ''}`.toLowerCase()
+  if (status === 'banned') return t('task.peer-status-banned')
+  if (status === 'attempting') return t('task.peer-status-attempting')
+  if (status === 'downloading') return t('task.peer-status-downloading')
+  if (status === 'uploading') return t('task.peer-status-uploading')
+  if (status === 'seeding') return t('task.peer-status-seeding')
+  if (status === 'idle') return t('task.peer-status-idle')
+  return '-'
+}
+
+function handleExpandChange (row, expanded) {
+  if (row.isGroup) {
+    if (expanded) {
+      if (!expandedGroupKeys.value.includes(row.id)) {
+        expandedGroupKeys.value.push(row.id)
+      }
+    } else {
+      expandedGroupKeys.value = expandedGroupKeys.value.filter(k => k !== row.id)
+    }
+  }
+}
+
+function handleSpanMethod ({ row, column, rowIndex, columnIndex }) {
+  if (row.isGroup) {
+    if (columnIndex === 0) {
+      return [1, 12]
+    } else {
+      return [0, 0]
+    }
+  }
+}
+
+function handleRowClick (row) {
+  if (row.isGroup) {
+    peerTable.value.toggleRowExpansion(row)
+  }
+}
+
+function handleRowContextMenu (row, column, event) {
+  if (!row.isGroup) {
+    event.preventDefault()
+    contextMenuPeer.value = row
+    contextMenuType.value = 'peer'
+
+    const isBanned = row && row.status === 'banned'
+    const menuWidth = 160
+    const menuItems = isBanned ? 5 : 4
+    const menuHeight = menuItems * 36 + 10
+    openContextMenu(event, menuWidth, menuHeight)
+  }
+}
+
+function handleTableContextMenu (event) {
+  const target = event && event.target
+  if (target && (target.closest('.el-table__row') || target.closest('.el-table__header-wrapper'))) {
+    return
+  }
+  contextMenuPeer.value = null
+  contextMenuType.value = 'blank'
+  const menuWidth = 180
+  const menuItems = 5
+  const menuHeight = menuItems * 36 + 10
+  openContextMenu(event, menuWidth, menuHeight)
+}
+
+function openContextMenu (event, menuWidth, menuHeight) {
+  const windowWidth = window.innerWidth
+  const windowHeight = window.innerHeight
+  let x = event.clientX
+  let y = event.clientY
+
+  if (x + menuWidth > windowWidth) {
+    x = windowWidth - menuWidth - 5
+  }
+  if (y + menuHeight > windowHeight) {
+    y = windowHeight - menuHeight - 5
+  }
+  if (x < 5) x = 5
+  if (y < 5) y = 5
+
+  contextMenuX.value = x
+  contextMenuY.value = y
+  contextMenuVisible.value = true
+
+  if (contextMenuCloseHandler) {
+    document.removeEventListener('click', contextMenuCloseHandler)
+  }
+  contextMenuCloseHandler = (e) => {
+    const target = e && e.target
+    if (target && target.closest && target.closest('.mo-peer-context-menu')) {
+      return
+    }
+    closeContextMenu()
+  }
+  if (contextMenuTimer) {
+    clearTimeout(contextMenuTimer)
+  }
+  contextMenuTimer = setTimeout(() => {
+    contextMenuTimer = null
+    document.addEventListener('click', contextMenuCloseHandler)
+  }, 100)
+}
+
+function closeContextMenu () {
+  contextMenuVisible.value = false
+  contextMenuPeer.value = null
+  contextMenuType.value = ''
+  if (contextMenuCloseHandler) {
+    document.removeEventListener('click', contextMenuCloseHandler)
+    contextMenuCloseHandler = null
+  }
+}
+
+function togglePeerGroupVisibility (key) {
+  const current = peerGroupVisibility.value
+  const next = {
+    connected: current.connected,
+    attempting: current.attempting,
+    banned: current.banned,
+    disconnected: current.disconnected
+  }
+  if (Object.prototype.hasOwnProperty.call(next, key)) {
+    next[key] = !next[key]
+    savePeerGroupVisibility(next)
+  }
+  closeContextMenu()
+}
+
+function resetPeerGroupVisibility () {
+  const next = {
+    connected: true,
+    attempting: true,
+    banned: true,
+    disconnected: true
+  }
+  savePeerGroupVisibility(next)
+  closeContextMenu()
+}
+
+function savePeerGroupVisibility (next) {
+  preferenceStore.save({
+    peerGroupVisibility: next
+  })
+}
+
+async function banPeer (duration) {
+  const peer = contextMenuPeer.value
+  closeContextMenu()
+
+  if (!peer) return
+  const ip = String(peer.ip || '')
+  const isBanned = peer.status === 'banned'
+
+  if (!ip) {
+    msg.error('Invalid IP address')
+    return
+  }
+
+  try {
+    let durationText = ''
+    if (duration === 300) {
+      durationText = t('task.ban-duration-5min')
+    } else if (duration === 3600) {
+      durationText = t('task.ban-duration-1hour')
+    } else if (duration === 86400) {
+      durationText = t('task.ban-duration-1day')
+    } else {
+      durationText = t('task.ban-duration-forever')
+    }
+
+    const confirmMessage = isBanned
+      ? t('task.extend-ban-confirm', { ip, duration: durationText })
+      : t('task.ban-peer-confirm', { ip, duration: durationText })
+    const confirmTitle = isBanned
+      ? t('task.extend-ban-title')
+      : t('task.ban-peer-title')
+
+    await ElMessageBox.confirm(
+      confirmMessage,
+      confirmTitle,
+      {
+        confirmButtonText: t('app.yes'),
+        cancelButtonText: t('app.no'),
+        type: 'warning'
+      }
+    )
+
+    await taskStore.banPeer({
+      gid: props.task.gid,
+      ip: ip,
+      duration: duration
+    })
+
+    msg.success(t('task.ban-peer-success', { ip }))
+  } catch (err) {
+    if (err !== 'cancel') {
+      console.error('[TaskPeers] Ban peer failed:', err)
+      msg.error(t('task.ban-peer-failed'))
+    }
+  }
+}
+
+async function unbanPeer () {
+  const peer = contextMenuPeer.value
+  closeContextMenu()
+
+  if (!peer) return
+  const ip = String(peer.ip || '')
+
+  if (!ip) {
+    msg.error('Invalid IP address')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      t('task.unban-peer-confirm', { ip }),
+      t('task.unban-peer-title'),
+      {
+        confirmButtonText: t('app.yes'),
+        cancelButtonText: t('app.no'),
+        type: 'info'
+      }
+    )
+
+    await taskStore.unbanPeer({
+      gid: props.task.gid,
+      ip: ip
+    })
+
+    msg.success(t('task.unban-peer-success', { ip }))
+  } catch (err) {
+    if (err !== 'cancel') {
+      console.error('[TaskPeers] Unban peer failed:', err)
+      msg.error(t('task.unban-peer-failed'))
+    }
+  }
+}
+
+defineExpose({
+  updateTableHeight
+})
 </script>
 
 <style lang="scss">

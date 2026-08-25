@@ -4,12 +4,8 @@ Icon.register({
   'task-start-line': {
     'width': 24,
     'height': 24,
-    'raw': `<polygon fill="none" stroke-miterlimit="10" points="5,22 5,2 20,12 "/>`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="6 3 20 12 6 21 6 3"/>
+    </g>`
   }
 })

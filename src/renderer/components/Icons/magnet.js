@@ -4,17 +4,10 @@ Icon.register({
   'magnet': {
     'width': 24,
     'height': 24,
-    'raw': `
-      <line fill="none" stroke-miterlimit="10" x1="8.2" y1="4.5" x2="11.1" y2="7.3"></line>
-      <line fill="none" stroke-miterlimit="10" x1="16.7" y1="12.9" x2="19.5" y2="15.8"></line>
-      <path fill="none" stroke-miterlimit="10"
-        d="M12.5,17.2 c-1.6,1.6-4.1,1.6-5.7,0c-1.6-1.6-1.6-4.1,0-5.7l7.1-7.1l-2.8-2.8L4,8.7C0.9,11.8,0.9,16.9,4,20s8.2,3.1,11.3,0l7.1-7.1l-2.8-2.8 L12.5,17.2z">
-      </path>`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3z"/>
+      <path d="m5 8 4 4"/>
+      <path d="m12 15 4 4"/>
+    </g>`
   }
 })

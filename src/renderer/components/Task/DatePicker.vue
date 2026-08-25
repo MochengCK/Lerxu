@@ -9,19 +9,19 @@
     ref="picker"
   >
     <div class="picker-header">
-      <el-tooltip effect="dark" :content="$t('task.prev-month')" placement="top" :open-delay="500" popper-class="date-picker-tooltip">
+      <mo-hover-tip effect="dark" :content="t('task.prev-month')" placement="top" :open-delay="500">
         <button class="nav-btn" @click="prevMonth">
           <mo-icon name="chevron-left" width="16" height="16" />
         </button>
-      </el-tooltip>
-      <el-tooltip effect="dark" :content="$t('task.dblclick-to-today')" placement="top" :open-delay="500" popper-class="date-picker-tooltip">
+      </mo-hover-tip>
+      <mo-hover-tip effect="dark" :content="t('task.dblclick-to-today')" placement="top" :open-delay="500">
         <span class="current-month" @dblclick="goToToday">{{ currentYear }}年 {{ currentMonth }}月</span>
-      </el-tooltip>
-      <el-tooltip effect="dark" :content="$t('task.next-month')" placement="top" :open-delay="500" popper-class="date-picker-tooltip">
+      </mo-hover-tip>
+      <mo-hover-tip effect="dark" :content="t('task.next-month')" placement="top" :open-delay="500">
         <button class="nav-btn" @click="nextMonth">
           <mo-icon name="chevron-right" width="16" height="16" />
         </button>
-      </el-tooltip>
+      </mo-hover-tip>
     </div>
     <div class="picker-body">
       <div class="weekdays">
@@ -46,223 +46,223 @@
         </div>
       </div>
     </div>
-    <div class="picker-footer" v-if="value">
+    <div class="picker-footer" v-if="modelValue">
       <button class="footer-btn clear-btn" @click="clearFilter">
-        {{ $t('task.clear-filter') }}
+        {{ t('task.clear-filter') }}
       </button>
     </div>
   </div>
 </template>
 
-<script>
-  import '@/components/Icons/chevron-left'
-  import '@/components/Icons/chevron-right'
+<script setup>
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import '@/components/Icons/chevron-left'
+import '@/components/Icons/chevron-right'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 
-  export default {
-    name: 'mo-custom-date-picker',
-    props: {
-      value: {
-        type: String,
-        default: ''
-      },
-      frosted: {
-        type: Boolean,
-        default: false
-      },
-      taskCounts: {
-        type: Object,
-        default: () => ({})
-      },
-      triggerRect: {
-        default: () => ({})
-      }
-    },
-    directives: {
-      'click-outside': {
-        bind (el, binding) {
-          el._clickOutside = (event) => {
-            if (!(el === event.target || el.contains(event.target))) {
-              binding.value(event)
-            }
-          }
-          document.addEventListener('click', el._clickOutside)
-        },
-        unbind (el) {
-          document.removeEventListener('click', el._clickOutside)
-        }
-      }
-    },
-    data () {
-      return {
-        currentYear: new Date().getFullYear(),
-        currentMonth: new Date().getMonth() + 1,
-        weekDays: ['日', '一', '二', '三', '四', '五', '六'],
-        positionTop: false,
-        pickerHeight: 360
-      }
-    },
-    computed: {
-      calendarDays () {
-        const days = []
-        const firstDay = new Date(this.currentYear, this.currentMonth - 1, 1)
-        const lastDay = new Date(this.currentYear, this.currentMonth, 0)
-        const startDayOfWeek = firstDay.getDay()
-        const daysInMonth = lastDay.getDate()
+const { t } = i18n.global
 
-        // 上个月的天数
-        const prevMonthLastDay = new Date(this.currentYear, this.currentMonth - 1, 0).getDate()
-        for (let i = startDayOfWeek - 1; i >= 0; i--) {
-          const day = prevMonthLastDay - i
-          const prevMonth = this.currentMonth === 1 ? 12 : this.currentMonth - 1
-          const prevYear = this.currentMonth === 1 ? this.currentYear - 1 : this.currentYear
-          const dateStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          days.push({
-            day,
-            dateStr,
-            otherMonth: true,
-            isToday: this.isToday(prevYear, prevMonth, day),
-            isSelected: this.value === dateStr,
-            taskCount: this.taskCounts[dateStr] || 0
-          })
-        }
-
-        // 当前月的天数
-        for (let day = 1; day <= daysInMonth; day++) {
-          const dateStr = `${this.currentYear}-${String(this.currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          days.push({
-            day,
-            dateStr,
-            otherMonth: false,
-            isToday: this.isToday(this.currentYear, this.currentMonth, day),
-            isSelected: this.value === dateStr,
-            taskCount: this.taskCounts[dateStr] || 0
-          })
-        }
-
-        // 下个月的天数（补齐6行）
-        const remainingDays = 42 - days.length
-        for (let day = 1; day <= remainingDays; day++) {
-          const nextMonth = this.currentMonth === 12 ? 1 : this.currentMonth + 1
-          const nextYear = this.currentMonth === 12 ? this.currentYear + 1 : this.currentYear
-          const dateStr = `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          days.push({
-            day,
-            dateStr,
-            otherMonth: true,
-            isToday: this.isToday(nextYear, nextMonth, day),
-            isSelected: this.value === dateStr,
-            taskCount: this.taskCounts[dateStr] || 0
-          })
-        }
-
-        return days
-      },
-      pickerStyle () {
-        if (!this.triggerRect || !this.triggerRect.right) {
-          return {}
-        }
-        const style = {
-          right: `${window.innerWidth - this.triggerRect.right + 8}px`
-        }
-        if (this.positionTop) {
-          style.bottom = `${window.innerHeight - this.triggerRect.top + 6}px`
-        } else {
-          style.top = `${this.triggerRect.bottom + 6}px`
-        }
-        return style
-      }
-    },
-    mounted () {
-      if (this.value) {
-        const [year, month] = this.value.split('-').map(Number)
-        if (year && month) {
-          this.currentYear = year
-          this.currentMonth = month
-        }
-      }
-      this.calculatePosition()
-      window.addEventListener('resize', this.calculatePosition)
-      // 自动聚焦以支持键盘操作
-      this.$nextTick(() => {
-        if (this.$refs.picker) {
-          this.$refs.picker.focus()
-        }
-      })
-    },
-    beforeDestroy () {
-      window.removeEventListener('resize', this.calculatePosition)
-    },
-    methods: {
-      calculatePosition () {
-        if (!this.triggerRect || !this.triggerRect.bottom) {
-          return
-        }
-        const spaceBelow = window.innerHeight - this.triggerRect.bottom
-        const spaceAbove = this.triggerRect.top
-        // 如果下方空间不足，且上方空间更大，则显示在上方
-        this.positionTop = spaceBelow < this.pickerHeight && spaceAbove > spaceBelow
-      },
-      isToday (year, month, day) {
-        const today = new Date()
-        return today.getFullYear() === year &&
-          today.getMonth() + 1 === month &&
-          today.getDate() === day
-      },
-      prevMonth () {
-        if (this.currentMonth === 1) {
-          this.currentMonth = 12
-          this.currentYear--
-        } else {
-          this.currentMonth--
-        }
-      },
-      nextMonth () {
-        if (this.currentMonth === 12) {
-          this.currentMonth = 1
-          this.currentYear++
-        } else {
-          this.currentMonth++
-        }
-      },
-      goToToday () {
-        const today = new Date()
-        this.currentYear = today.getFullYear()
-        this.currentMonth = today.getMonth() + 1
-      },
-      selectDate (day) {
-        this.$emit('input', day.dateStr)
-        this.$emit('change', day.dateStr)
-      },
-      selectToday () {
-        const today = new Date()
-        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-        this.$emit('input', dateStr)
-        this.$emit('change', dateStr)
-      },
-      clearFilter () {
-        this.$emit('input', '')
-        this.$emit('clear')
-      },
-      onDayHover (day) {
-        this.$emit('hover', day.dateStr)
-      },
-      onGridMouseLeave () {
-        this.$emit('hover', null)
-      },
-      handleKeydown (event) {
-        if (event.key === 'ArrowLeft') {
-          this.prevMonth()
-        } else if (event.key === 'ArrowRight') {
-          this.nextMonth()
-        } else if (event.key === 'Escape') {
-          this.$emit('close')
-        }
-      },
-      handleClickOutside () {
-        this.$emit('close')
+const vClickOutside = {
+  mounted (el, binding) {
+    el._clickOutside = (event) => {
+      if (!(el === event.target || el.contains(event.target))) {
+        binding.value(event)
       }
     }
+    document.addEventListener('click', el._clickOutside)
+  },
+  unmounted (el) {
+    document.removeEventListener('click', el._clickOutside)
   }
+}
+
+const props = defineProps({
+  modelValue: {
+    type: String,
+    default: ''
+  },
+  frosted: {
+    type: Boolean,
+    default: false
+  },
+  taskCounts: {
+    type: Object,
+    default: () => ({})
+  },
+  triggerRect: {
+    default: () => ({})
+  }
+})
+
+const emit = defineEmits(['update:modelValue', 'change', 'clear', 'hover', 'close'])
+
+defineOptions({ name: 'mo-custom-date-picker' })
+
+const picker = ref(null)
+const currentYear = ref(new Date().getFullYear())
+const currentMonth = ref(new Date().getMonth() + 1)
+const weekDays = ['日', '一', '二', '三', '四', '五', '六']
+const positionTop = ref(false)
+const pickerHeight = 360
+
+function isToday (year, month, day) {
+  const today = new Date()
+  return today.getFullYear() === year &&
+    today.getMonth() + 1 === month &&
+    today.getDate() === day
+}
+
+const calendarDays = computed(() => {
+  const days = []
+  const firstDay = new Date(currentYear.value, currentMonth.value - 1, 1)
+  const lastDay = new Date(currentYear.value, currentMonth.value, 0)
+  const startDayOfWeek = firstDay.getDay()
+  const daysInMonth = lastDay.getDate()
+
+  const prevMonthLastDay = new Date(currentYear.value, currentMonth.value - 1, 0).getDate()
+  for (let i = startDayOfWeek - 1; i >= 0; i--) {
+    const day = prevMonthLastDay - i
+    const prevMonth = currentMonth.value === 1 ? 12 : currentMonth.value - 1
+    const prevYear = currentMonth.value === 1 ? currentYear.value - 1 : currentYear.value
+    const dateStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    days.push({
+      day,
+      dateStr,
+      otherMonth: true,
+      isToday: isToday(prevYear, prevMonth, day),
+      isSelected: props.modelValue === dateStr,
+      taskCount: props.taskCounts[dateStr] || 0
+    })
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${currentYear.value}-${String(currentMonth.value).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    days.push({
+      day,
+      dateStr,
+      otherMonth: false,
+      isToday: isToday(currentYear.value, currentMonth.value, day),
+      isSelected: props.modelValue === dateStr,
+      taskCount: props.taskCounts[dateStr] || 0
+    })
+  }
+
+  const remainingDays = 42 - days.length
+  for (let day = 1; day <= remainingDays; day++) {
+    const nextMonth = currentMonth.value === 12 ? 1 : currentMonth.value + 1
+    const nextYear = currentMonth.value === 12 ? currentYear.value + 1 : currentYear.value
+    const dateStr = `${nextYear}-${String(nextMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    days.push({
+      day,
+      dateStr,
+      otherMonth: true,
+      isToday: isToday(nextYear, nextMonth, day),
+      isSelected: props.modelValue === dateStr,
+      taskCount: props.taskCounts[dateStr] || 0
+    })
+  }
+
+  return days
+})
+
+const pickerStyle = computed(() => {
+  if (!props.triggerRect || !props.triggerRect.right) {
+    return {}
+  }
+  const style = {
+    right: `${window.innerWidth - props.triggerRect.right + 8}px`
+  }
+  if (positionTop.value) {
+    style.bottom = `${window.innerHeight - props.triggerRect.top + 6}px`
+  } else {
+    style.top = `${props.triggerRect.bottom + 6}px`
+  }
+  return style
+})
+
+function calculatePosition () {
+  if (!props.triggerRect || !props.triggerRect.bottom) return
+  const spaceBelow = window.innerHeight - props.triggerRect.bottom
+  const spaceAbove = props.triggerRect.top
+  positionTop.value = spaceBelow < pickerHeight && spaceAbove > spaceBelow
+}
+
+function prevMonth () {
+  if (currentMonth.value === 1) {
+    currentMonth.value = 12
+    currentYear.value--
+  } else {
+    currentMonth.value--
+  }
+}
+
+function nextMonth () {
+  if (currentMonth.value === 12) {
+    currentMonth.value = 1
+    currentYear.value++
+  } else {
+    currentMonth.value++
+  }
+}
+
+function goToToday () {
+  const today = new Date()
+  currentYear.value = today.getFullYear()
+  currentMonth.value = today.getMonth() + 1
+}
+
+function selectDate (day) {
+  emit('update:modelValue', day.dateStr)
+  emit('change', day.dateStr)
+}
+
+function clearFilter () {
+  emit('update:modelValue', '')
+  emit('clear')
+}
+
+function onDayHover (day) {
+  emit('hover', day.dateStr)
+}
+
+function onGridMouseLeave () {
+  emit('hover', null)
+}
+
+function handleKeydown (event) {
+  if (event.key === 'ArrowLeft') {
+    prevMonth()
+  } else if (event.key === 'ArrowRight') {
+    nextMonth()
+  } else if (event.key === 'Escape') {
+    emit('close')
+  }
+}
+
+function handleClickOutside () {
+  emit('close')
+}
+
+onMounted(() => {
+  if (props.modelValue) {
+    const [year, month] = props.modelValue.split('-').map(Number)
+    if (year && month) {
+      currentYear.value = year
+      currentMonth.value = month
+    }
+  }
+  calculatePosition()
+  window.addEventListener('resize', calculatePosition)
+  nextTick(() => {
+    if (picker.value) {
+      picker.value.focus()
+    }
+  })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', calculatePosition)
+})
 </script>
 
 <style lang="scss">
@@ -536,10 +536,5 @@
 
 .theme-dark .custom-date-picker .clear-btn {
   color: #aaa;
-}
-
-/* Tooltip z-index fix */
-.date-picker-tooltip {
-  z-index: 99999 !important;
 }
 </style>

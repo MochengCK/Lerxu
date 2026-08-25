@@ -4,40 +4,8 @@ export const availableLanguages = [
     label: '跟随系统'
   },
   {
-    value: 'de',
-    label: 'Deutsch'
-  },
-  {
     value: 'en-US',
     label: 'English'
-  },
-  {
-    value: 'es',
-    label: 'Español'
-  },
-  {
-    value: 'fr',
-    label: 'Français'
-  },
-  {
-    value: 'it',
-    label: 'Italiano'
-  },
-  {
-    value: 'ja',
-    label: '日本語'
-  },
-  {
-    value: 'ko',
-    label: '한국어'
-  },
-  {
-    value: 'pt-BR',
-    label: 'Português (Brasil)'
-  },
-  {
-    value: 'ru',
-    label: 'Русский'
   },
   {
     value: 'zh-CN',
@@ -91,28 +59,8 @@ export const getLanguage = (locale = 'en-US') => {
     return locale
   }
 
-  if (locale.startsWith('de')) {
-    return 'de'
-  }
-
   if (locale.startsWith('en')) {
     return 'en-US'
-  }
-
-  if (locale.startsWith('es')) {
-    return 'es'
-  }
-
-  if (locale.startsWith('fr')) {
-    return 'fr'
-  }
-
-  if (locale.startsWith('it')) {
-    return 'it'
-  }
-
-  if (locale.startsWith('pt')) {
-    return 'pt-BR'
   }
 
   if (locale === 'zh-HK') {
@@ -122,4 +70,7 @@ export const getLanguage = (locale = 'en-US') => {
   if (locale.startsWith('zh')) {
     return 'zh-CN'
   }
+
+  // 默认回退到英文
+  return 'en-US'
 }

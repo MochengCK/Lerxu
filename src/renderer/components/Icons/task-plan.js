@@ -4,13 +4,13 @@ Icon.register({
   'task-plan': {
     'width': 24,
     'height': 24,
-    'raw': `<circle cx="12" cy="13" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
-      <polyline points="12,9 12,13 15,15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M12 5V3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-      <path d="M5.5 7.5L4 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-      <path d="M18.5 7.5L20 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
-    'g': {
-      'fill': 'none'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="13" r="8"/>
+      <path d="M12 9v4l2 2"/>
+      <path d="M5 3 2 6"/>
+      <path d="m22 6-3-3"/>
+      <path d="M6.38 18.7 4 21"/>
+      <path d="M17.64 18.67 20 21"/>
+    </g>`
   }
 })

@@ -9,7 +9,7 @@ body {
     BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-variant: tabular-nums;
-  font-size: $--font-size-medium;
+  font-size: var(--el-font-size-medium);
   margin: 0;
   overflow: hidden;
 }
@@ -51,16 +51,23 @@ iframe {
   @include clearfix();
 }
 
-/* Element UI
--------------------------- */
-.el-dialog__wrapper {
+/* Element Plus dialog centering
+--------------------------
+   Element Plus 的弹窗 DOM 结构为：
+   .el-overlay > .el-overlay-dialog > .el-dialog
+   默认 .el-dialog 使用 margin: 15vh auto 50px（距顶部 15vh），
+   这里通过 flex 居中 .el-overlay-dialog 并给 .el-dialog 设为
+   margin: auto，使弹窗在视口中垂直水平居中。
+   .el-dialog__wrapper 是 Element UI (Vue 2) 的遗留类名，
+   在 Element Plus 中已不存在，保留旧规则无效果。 */
+.el-overlay-dialog {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .el-dialog {
-  margin: 0 auto !important;
+  margin: auto !important;
   border-radius: 12px;
   overflow: hidden;
 }
@@ -140,11 +147,16 @@ iframe {
   }
 }
 
-.el-message-box__wrapper {
+/* Element Plus 消息框居中：.el-overlay-message-box 默认使用 text-align:center + ::after
+   伪元素实现垂直居中，无需额外样式。旧的 .el-message-box__wrapper 在 Element Plus 中已不存在。 */
+.el-overlay-message-box {
   display: flex;
   align-items: center;
   justify-content: center;
-  outline: none;
+
+  &::after {
+    display: none;
+  }
 }
 
 .el-message__content {
@@ -152,7 +164,7 @@ iframe {
   word-break: break-all;
 
   a {
-    color: $--link-color;
+    color: var(--el-color-primary-light-2);
   }
 }
 
@@ -206,18 +218,89 @@ iframe {
   font-size: 12px;
   line-height: 1;
   padding-top: 4px;
-  color: $--color-info;
+  color: var(--el-color-info);
 
   >a {
     margin-right: 10px;
   }
 }
 
+/* 输入框/选择框只显示边框，不显示背景（透出底层容器底色） */
 .el-input__inner,
 .el-textarea__inner {
   border-radius: 6px;
-  /* 只显示边框，不显示背景，透出底层容器底色 */
   background-color: transparent !important;
+}
+
+/* 统一输入框/选择框容器：透明背景 + 下拉圆角（与 ExtendSelect 头部一致） */
+.el-input__wrapper,
+.el-select__wrapper {
+  border-radius: var(--lc-radius-dropdown, 6px);
+  background-color: transparent !important;
+}
+
+/* 独立输入框/选择框的悬停和聚焦边框高亮 */
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--lc-border-hover) inset !important;
+}
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--lc-color-primary) inset !important;
+}
+/* 选择框（el-select__wrapper）：复用 ExtendSelect 的风格 ——
+   透明背景 + 细边框，悬停/聚焦时边框高亮 + 浮起阴影 */
+.el-select__wrapper {
+  box-shadow: 0 0 0 1px var(--lc-border-base) inset !important;
+  transition: box-shadow 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+
+  &.is-hovering:not(.is-focused) {
+    box-shadow: 0 0 0 1px var(--lc-border-hover) inset !important;
+  }
+
+  &.is-focused {
+    box-shadow: 0 0 0 1px var(--el-color-primary) inset,
+                0 4px 16px rgba(0, 0, 0, 0.1) !important;
+  }
+}
+.el-textarea__inner:hover {
+  box-shadow: 0 0 0 1px var(--lc-border-hover) inset !important;
+}
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--lc-color-primary) inset !important;
+}
+
+/* 输入框组（带 prepend/append 按钮）中，输入框本体也需在悬停/聚焦时高亮，
+   而不仅是两侧按钮高亮。按组型绘制边框形状，避免左右出现重复的“独立竖杠”：
+   - 仅 prepend：上/下/右
+   - 仅 append ：上/下/左
+   - prepend+append：只画上/下（左右两侧由按钮分割线提供）
+   权重(0,4,0)高于下方基础规则(0,2,0)。 */
+.el-input-group--prepend:not(.el-input-group--append) .el-input__wrapper:hover {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+              inset 0 -1px 0 0 var(--lc-border-hover),
+              inset -1px 0 0 0 var(--lc-border-hover) !important;
+}
+.el-input-group--prepend:not(.el-input-group--append) .el-input__wrapper.is-focus {
+  box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+              inset 0 -1px 0 0 var(--lc-color-primary),
+              inset -1px 0 0 0 var(--lc-color-primary) !important;
+}
+.el-input-group--append:not(.el-input-group--prepend) .el-input__wrapper:hover {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+              inset 0 -1px 0 0 var(--lc-border-hover),
+              inset 1px 0 0 0 var(--lc-border-hover) !important;
+}
+.el-input-group--append:not(.el-input-group--prepend) .el-input__wrapper.is-focus {
+  box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+              inset 0 -1px 0 0 var(--lc-color-primary),
+              inset 1px 0 0 0 var(--lc-color-primary) !important;
+}
+.el-input-group--prepend.el-input-group--append .el-input__wrapper:hover {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+              inset 0 -1px 0 0 var(--lc-border-hover) !important;
+}
+.el-input-group--prepend.el-input-group--append .el-input__wrapper.is-focus {
+  box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+              inset 0 -1px 0 0 var(--lc-color-primary) !important;
 }
 
 .el-select-dropdown {
@@ -240,6 +323,11 @@ iframe {
   }
 }
 
+/* 下拉框列表统一 ExtendSelect 的 4px 节奏：四边 padding 4px */
+.el-select-dropdown .el-select-dropdown__list {
+  padding: 4px !important;
+}
+
 /* 全局弹窗缩放过渡动画 */
 .popup-scale-enter-active {
   transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1), transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
@@ -251,43 +339,52 @@ iframe {
   will-change: transform, opacity;
 }
 
-.popup-scale-enter,
+.popup-scale-enter-from,
 .popup-scale-leave-to {
   opacity: 0;
   transform: scale(0.92);
 }
 
-/* el-dialog 弹窗：遮罩层做淡入淡出，内部 dialog 做缩放过渡 */
-.dialog-fade-enter-active {
-  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+/* el-dialog 弹窗：遮罩层做淡入淡出，内部 dialog 做缩放过渡
+   Element Plus 使用 @keyframes animation 而非 CSS transition，
+   且默认在 .el-overlay-dialog 上有 translateY(-20px) 位移动画。
+   这里覆盖为 scale 缩放过渡，与全局弹窗动画风格一致。 */
+.dialog-fade-enter-active,
+.dialog-fade-leave-active {
+  .el-overlay-dialog {
+    animation: none !important;
+  }
 
   .el-dialog {
     transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
     will-change: transform;
   }
+}
+
+.dialog-fade-leave-active .el-dialog {
+  transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.dialog-fade-enter-active {
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dialog-fade-leave-active {
   transition: opacity 0.14s cubic-bezier(0.4, 0, 1, 1);
-
-  .el-dialog {
-    transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1);
-    will-change: transform;
-  }
 }
 
-.dialog-fade-enter,
-.dialog-fade-leave-to {
-  opacity: 0;
-
-  .el-dialog {
-    transform: scale(0.92);
-  }
+.dialog-fade-enter-from .el-dialog,
+.dialog-fade-leave-to .el-dialog {
+  transform: scale(0.92);
 }
 
-/* el-message-box 弹窗：遮罩层做淡入淡出，内部 messagebox 做缩放过渡 */
-.msgbox-fade-enter-active {
-  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+/* el-message-box 弹窗：遮罩层做淡入淡出，内部 messagebox 做缩放过渡
+   Element Plus 使用 @keyframes animation，这里覆盖为 transition + scale */
+.msgbox-fade-enter-active,
+.msgbox-fade-leave-active {
+  .el-overlay-message-box {
+    animation: none !important;
+  }
 
   .el-message-box {
     transition: transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
@@ -295,60 +392,60 @@ iframe {
   }
 }
 
+.msgbox-fade-leave-active .el-message-box {
+  transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1);
+}
+
+.msgbox-fade-enter-active {
+  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .msgbox-fade-leave-active {
   transition: opacity 0.14s cubic-bezier(0.4, 0, 1, 1);
-
-  .el-message-box {
-    transition: transform 0.14s cubic-bezier(0.4, 0, 1, 1);
-    will-change: transform;
-  }
 }
 
-.msgbox-fade-enter,
-.msgbox-fade-leave-to {
-  opacity: 0;
-
-  .el-message-box {
-    transform: scale(0.92);
-  }
+.msgbox-fade-enter-from .el-message-box,
+.msgbox-fade-leave-to .el-message-box {
+  transform: scale(0.92);
 }
 
-/* 重做所有二级选择框的展开收起动画（缩放效果，与全局弹窗一致） */
+/* 选择框下拉展开/收起动画：与 ExtendSelect 的 grid 生长动画风格一致 ——
+   使用 scaleY 垂直生长 + 透明度淡入淡出，展开用 ease-out，收起稍快用 ease-in */
 .el-zoom-in-top-enter-active {
-  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1), transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.24s cubic-bezier(0.33, 1, 0.68, 1), transform 0.24s cubic-bezier(0.33, 1, 0.68, 1);
   transform-origin: center top;
   will-change: transform, opacity;
 }
 
 .el-zoom-in-top-leave-active {
-  transition: opacity 0.14s cubic-bezier(0.4, 0, 1, 1), transform 0.14s cubic-bezier(0.4, 0, 1, 1);
+  transition: opacity 0.18s cubic-bezier(0.55, 0, 1, 0.45), transform 0.18s cubic-bezier(0.55, 0, 1, 0.45);
   transform-origin: center top;
   will-change: transform, opacity;
 }
 
-.el-zoom-in-top-enter,
+.el-zoom-in-top-enter-from,
 .el-zoom-in-top-leave-to {
   opacity: 0;
-  transform: scale(0.92);
+  transform: scaleY(0.6) translateY(-4px);
 }
 
 /* 弹窗显示在上方时（如 select 翻转、date-picker 上方展开） */
 .el-zoom-in-bottom-enter-active {
-  transition: opacity 0.18s cubic-bezier(0.4, 0, 0.2, 1), transform 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: opacity 0.24s cubic-bezier(0.33, 1, 0.68, 1), transform 0.24s cubic-bezier(0.33, 1, 0.68, 1);
   transform-origin: center bottom;
   will-change: transform, opacity;
 }
 
 .el-zoom-in-bottom-leave-active {
-  transition: opacity 0.14s cubic-bezier(0.4, 0, 1, 1), transform 0.14s cubic-bezier(0.4, 0, 1, 1);
+  transition: opacity 0.18s cubic-bezier(0.55, 0, 1, 0.45), transform 0.18s cubic-bezier(0.55, 0, 1, 0.45);
   transform-origin: center bottom;
   will-change: transform, opacity;
 }
 
-.el-zoom-in-bottom-enter,
+.el-zoom-in-bottom-enter-from,
 .el-zoom-in-bottom-leave-to {
   opacity: 0;
-  transform: scale(0.92);
+  transform: scaleY(0.6) translateY(4px);
 }
 
 /* popover / tooltip 等中心展开的局部弹窗 */
@@ -362,28 +459,41 @@ iframe {
   will-change: transform, opacity;
 }
 
-.el-zoom-in-center-enter,
+.el-zoom-in-center-enter-from,
 .el-zoom-in-center-leave-to {
   opacity: 0;
   transform: scale(0.92);
 }
 
+/* 选择器下拉项：与任务计划 ExtendSelect 选项完全同规格 ——
+   行高 24px、行间距 4px、四周边缘 4px（由 list padding 提供）、
+   文字距边框 4+6=10px、圆角 6px、悬停底色 + 加深叠层 */
 .el-select-dropdown__item {
-  margin: 2px 6px;
+  height: 24px;
+  line-height: 24px;
+  margin: 4px 0 0;
+  padding: 0 26px 0 6px;
   border-radius: 6px;
   font-size: 14px !important;
   font-weight: 400 !important;
   transition: color 0.2s ease, background-color 0.2s ease;
 
+  &:first-child {
+    margin-top: 0;
+  }
+
   &.hover,
+  &.is-hovering,
   &:hover {
     border-radius: 6px;
     background-color: var(--lc-bg-hover);
+    box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.06);
   }
 
-  &.selected {
+  &.selected,
+  &.is-selected {
     border-radius: 6px;
-    color: $--color-primary;
+    color: var(--el-color-primary);
     font-size: 14px !important;
     font-weight: 400 !important;
 
@@ -391,10 +501,12 @@ iframe {
       background-color: var(--lc-bg-hover) !important;
     }
 
+    /* 选中对勾：与 ExtendSelect 的 check 图标同位置（距右 10px） */
     &::after {
+      right: 10px;
       font-weight: normal !important;
       opacity: 1;
-      transform: scale(1);
+      transform: translateY(-50%) scale(1);
       transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
   }
@@ -409,25 +521,27 @@ iframe {
   &::after {
     content: "\e6da";
     position: absolute;
-    right: 18px;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%) scale(0.4);
     font-family: 'element-icons';
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     opacity: 0;
-    transform: scale(0.4);
     transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
     pointer-events: none;
     will-change: opacity, transform;
   }
 
-  &.selected {
+  &.selected,
+  &.is-selected {
     font-weight: 400 !important;
     font-size: 14px !important;
 
     &::after {
       opacity: 1;
-      transform: scale(1);
+      transform: translateY(-50%) scale(1);
       font-size: 16px !important;
       transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
@@ -441,6 +555,21 @@ iframe {
 
 .el-select-group__wrap:not(:last-of-type) {
   padding-bottom: 0 !important;
+}
+
+/* el-select multiple: tag 关闭按钮垂直居中 */
+.el-select .el-tag .el-tag__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.el-select .el-tag .el-tag__close .el-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
 }
 
 .el-time-panel,
@@ -470,12 +599,15 @@ iframe {
 .el-input-group__prepend {
   background-color: transparent !important;
   position: relative;
-  border-color: var(--lc-border-base);
   border-radius: 6px;
-  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+  transition: box-shadow 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 
 .el-input-group__prepend {
+  /* 左、上、下三边边框（与 EP 的 inset-prepend-border 一致） */
+  box-shadow: 1px 0 0 0 var(--lc-border-base) inset,
+              0 1px 0 0 var(--lc-border-base) inset,
+              0 -1px 0 0 var(--lc-border-base) inset !important;
   border-right: none !important;
 
   &::after {
@@ -491,6 +623,10 @@ iframe {
 }
 
 .el-input-group__append {
+  /* 右、上、下三边边框（与 EP 的 inset-append-border 一致） */
+  box-shadow: 0 1px 0 0 var(--lc-border-base) inset,
+              0 -1px 0 0 var(--lc-border-base) inset,
+              -1px 0 0 0 var(--lc-border-base) inset !important;
   border-left: none !important;
 
   &::before {
@@ -505,15 +641,13 @@ iframe {
   }
 }
 
-.el-input-group--prepend .el-input__inner,
-.el-input-group--append .el-input__inner {
-  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
-}
-
-.el-input-group--prepend .el-input__inner {
-  border-left: none !important;
+.el-input-group--prepend .el-input__wrapper {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+  /* 只画上、下、右三边的 inset shadow，不画左边 */
+  box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+              inset 0 -1px 0 0 var(--lc-border-base),
+              inset -1px 0 0 0 var(--lc-border-base) !important;
 }
 
 .el-input-group--prepend .el-input-group__prepend {
@@ -521,10 +655,13 @@ iframe {
   border-bottom-right-radius: 0;
 }
 
-.el-input-group--append .el-input__inner {
-  border-right: none !important;
+.el-input-group--append .el-input__wrapper {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
+  /* 只画上、下、左三边的 inset shadow，不画右边 */
+  box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+              inset 0 -1px 0 0 var(--lc-border-base),
+              inset 1px 0 0 0 var(--lc-border-base) !important;
 }
 
 .el-input-group--append .el-input-group__append {
@@ -532,10 +669,44 @@ iframe {
   border-bottom-left-radius: 0;
 }
 
-/* 带前后按钮的输入框组：prepend/append 只显示边框，不显示背景（与暗色模式一致） */
+/* disabled + append/prepend：Element Plus 默认 disabled 样式会画四周 box-shadow，
+   覆盖上面只画三边的样式，导致输入框右侧出现多余竖杠。
+   这里重新覆盖为只画对应的边。 */
+.el-input.is-disabled.el-input-group--append .el-input__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+              inset 0 -1px 0 0 var(--lc-border-base),
+              inset 1px 0 0 0 var(--lc-border-base) !important;
+}
+
+.el-input.is-disabled.el-input-group--prepend .el-input__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+              inset 0 -1px 0 0 var(--lc-border-base),
+              inset -1px 0 0 0 var(--lc-border-base) !important;
+}
+
+.el-input.is-disabled.el-input-group--prepend.el-input-group--append .el-input__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+              inset 0 -1px 0 0 var(--lc-border-base) !important;
+}
+
+/* prepend 与 append 同时存在时，输入框本体只画上/下两条边，
+   左右两侧由按钮各自的 ::before/::after 分割线提供，避免出现重复竖杠。 */
+.el-input-group--prepend.el-input-group--append .el-input__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+              inset 0 -1px 0 0 var(--lc-border-base) !important;
+}
+
+/* 带前后按钮的输入框组：prepend/append 只显示边框，不显示背景 */
 .el-input-group__append,
 .el-input-group__prepend {
   background-color: transparent !important;
+}
+
+/* 纯图标按钮型槽位（历史路径 / 选择目录按钮）：收紧默认 0 20px 内边距，
+   让按钮区域与输入框比例协调、观感一体 */
+.el-input-group__prepend:has(.mo-history-directory),
+.el-input-group__append:has(.select-directory) {
+  padding: 0 8px;
 }
 
 .el-input-group__prepend .el-button,
@@ -553,31 +724,57 @@ iframe {
   }
 }
 
-.el-input-group:hover:not(:has(.el-input__inner:focus)) {
-  .el-input__inner {
-    border-color: $--border-color-hover !important;
+/* 悬停时统一边框高亮（输入框本体也一并高亮，与两侧按钮连成一体；
+   按组型绘制边框形状，避免出现重复竖杠） */
+.el-input-group:hover:not(:has(.el-input__wrapper.is-focus)) {
+  .el-input-group__prepend {
+    box-shadow: 1px 0 0 0 var(--lc-border-hover) inset,
+                0 1px 0 0 var(--lc-border-hover) inset,
+                0 -1px 0 0 var(--lc-border-hover) inset !important;
   }
-  .el-input-group__prepend,
   .el-input-group__append {
-    border-color: $--border-color-hover !important;
+    box-shadow: 0 1px 0 0 var(--lc-border-hover) inset,
+                0 -1px 0 0 var(--lc-border-hover) inset,
+                -1px 0 0 0 var(--lc-border-hover) inset !important;
   }
   .el-input-group__prepend::after,
   .el-input-group__append::before {
-    background-color: $--border-color-hover !important;
+    background-color: var(--lc-border-hover) !important;
+  }
+
+  /* 悬停两侧按钮时，输入框本体同样高亮 */
+  &.el-input-group--prepend:not(.el-input-group--append) .el-input__wrapper {
+    box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+                inset 0 -1px 0 0 var(--lc-border-hover),
+                inset -1px 0 0 0 var(--lc-border-hover) !important;
+  }
+  &.el-input-group--append:not(.el-input-group--prepend) .el-input__wrapper {
+    box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+                inset 0 -1px 0 0 var(--lc-border-hover),
+                inset 1px 0 0 0 var(--lc-border-hover) !important;
+  }
+  &.el-input-group--prepend.el-input-group--append .el-input__wrapper {
+    box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+                inset 0 -1px 0 0 var(--lc-border-hover) !important;
   }
 }
 
-.el-input-group:has(.el-input__inner:focus),
-.el-input-group:has(.el-input.is-focus),
-.el-input-group:has(.el-input__inner.is-focus) {
-  .el-input__inner,
-  .el-input-group__prepend,
+/* 聚焦时统一边框高亮（主题色） */
+.el-input-group:has(.el-input__wrapper.is-focus),
+.el-input-group:has(.el-input.is-focus) {
+  .el-input-group__prepend {
+    box-shadow: 1px 0 0 0 var(--lc-color-primary) inset,
+                0 1px 0 0 var(--lc-color-primary) inset,
+                0 -1px 0 0 var(--lc-color-primary) inset !important;
+  }
   .el-input-group__append {
-    border-color: $--color-primary !important;
+    box-shadow: 0 1px 0 0 var(--lc-color-primary) inset,
+                0 -1px 0 0 var(--lc-color-primary) inset,
+                -1px 0 0 0 var(--lc-color-primary) inset !important;
   }
   .el-input-group__prepend::after,
   .el-input-group__append::before {
-    background-color: $--color-primary !important;
+    background-color: var(--lc-color-primary) !important;
   }
 }
 
@@ -616,9 +813,14 @@ iframe {
   }
 }
 
-.el-input-number.is-controls-right .el-input__inner,
-.el-input-number.is-controls-right + .el-select .el-input__inner {
-  transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+/* el-input-number + el-select 组合：仅当输入框后面紧跟选择框时，才移除输入框右边框 */
+.el-input-number.is-controls-right:has(+ .el-select) .el-input__wrapper {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+              inset 0 -1px 0 0 var(--lc-border-base),
+              inset 1px 0 0 0 var(--lc-border-base) !important;
+  transition: box-shadow 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 }
 
 .el-input-number__increase.is-disabled,
@@ -631,17 +833,22 @@ iframe {
   margin-left: -4px;
   position: relative;
 
-  .el-input__inner {
+  .el-select__wrapper {
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
+    /* 只画上/下/右三边，不画左边 */
+    box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+                inset 0 -1px 0 0 var(--lc-border-base),
+                inset -1px 0 0 0 var(--lc-border-base) !important;
+    transition: box-shadow 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
   }
 
   &::before {
     content: '';
     position: absolute;
     left: 0;
-    top: 0;
-    bottom: 0;
+    top: 6px;
+    bottom: 6px;
     width: 1px;
     z-index: 1;
     background-color: var(--lc-border-base);
@@ -649,73 +856,92 @@ iframe {
   }
 }
 
-// 输入框悬停时，整体边框跟随变色（聚焦时除外）
-.el-input-number.is-controls-right:hover:not(:focus-within) .el-input__inner,
-.el-input-number.is-controls-right + .el-select:hover:not(:focus-within) .el-input__inner {
-  border-color: $--border-color-hover !important;
+// 输入框悬停时，整体边框跟随变色（聚焦时除外）——仅当与选择框配对时
+.el-input-number.is-controls-right:has(+ .el-select):hover:not(:focus-within) .el-input__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+              inset 0 -1px 0 0 var(--lc-border-hover),
+              inset 1px 0 0 0 var(--lc-border-hover) !important;
+}
+
+.el-input-number.is-controls-right + .el-select:hover:not(:focus-within) .el-select__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+              inset 0 -1px 0 0 var(--lc-border-hover),
+              inset -1px 0 0 0 var(--lc-border-hover) !important;
 }
 
 .el-input-number.is-controls-right:hover:not(:focus-within) {
   .el-input-number__increase::before,
   .el-input-number__decrease::before {
-    background-color: $--border-color-hover !important;
+    background-color: var(--lc-border-hover) !important;
   }
 }
 
-.el-input-number.is-controls-right:focus-within {
-  .el-input__inner {
-    border-color: $--color-primary !important;
+.el-input-number.is-controls-right:has(+ .el-select):focus-within {
+  .el-input__wrapper {
+    box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+                inset 0 -1px 0 0 var(--lc-color-primary),
+                inset 1px 0 0 0 var(--lc-color-primary) !important;
   }
   .el-input-number__increase::before,
   .el-input-number__decrease::before {
-    background-color: $--color-primary !important;
+    background-color: var(--lc-color-primary) !important;
   }
 }
 
 .el-input-number.is-controls-right + .el-select:hover:not(:focus-within)::before {
-  background-color: $--border-color-hover !important;
+  background-color: var(--lc-border-hover) !important;
 }
 
 .el-input-number.is-controls-right + .el-select:focus-within {
-  .el-input__inner {
-    border-color: $--color-primary !important;
+  .el-select__wrapper {
+    box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+                inset 0 -1px 0 0 var(--lc-color-primary),
+                inset -1px 0 0 0 var(--lc-color-primary) !important;
   }
   &::before {
-    background-color: $--color-primary !important;
+    background-color: var(--lc-color-primary) !important;
   }
 }
 
 // 输入框聚焦/悬停时，联动高亮相邻选择框
-.el-input-number.is-controls-right:hover:not(:focus-within) + .el-select:not(:hover):not(:focus-within) .el-input__inner {
-  border-color: $--border-color-hover !important;
+.el-input-number.is-controls-right:hover:not(:focus-within) + .el-select:not(:hover):not(:focus-within) .el-select__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+              inset 0 -1px 0 0 var(--lc-border-hover),
+              inset -1px 0 0 0 var(--lc-border-hover) !important;
 }
 .el-input-number.is-controls-right:hover:not(:focus-within) + .el-select:not(:hover):not(:focus-within)::before {
-  background-color: $--border-color-hover !important;
+  background-color: var(--lc-border-hover) !important;
 }
-.el-input-number.is-controls-right:focus-within + .el-select:not(:focus-within) .el-input__inner {
-  border-color: $--color-primary !important;
+.el-input-number.is-controls-right:focus-within + .el-select:not(:focus-within) .el-select__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+              inset 0 -1px 0 0 var(--lc-color-primary),
+              inset -1px 0 0 0 var(--lc-color-primary) !important;
 }
 .el-input-number.is-controls-right:focus-within + .el-select:not(:focus-within)::before {
-  background-color: $--color-primary !important;
+  background-color: var(--lc-color-primary) !important;
 }
 
-// 选择框聚焦/悬停时，联动高亮相邻输入框
-.el-input-number.is-controls-right:has(+ .el-select:hover:not(:focus-within)):not(:hover):not(:focus-within) .el-input__inner {
-  border-color: $--border-color-hover !important;
+// 选择框聚焦/悬停时，联动高亮相邻输入框——仅当与选择框配对时
+.el-input-number.is-controls-right:has(+ .el-select:hover:not(:focus-within)):not(:hover):not(:focus-within) .el-input__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+              inset 0 -1px 0 0 var(--lc-border-hover),
+              inset 1px 0 0 0 var(--lc-border-hover) !important;
 }
 .el-input-number.is-controls-right:has(+ .el-select:hover:not(:focus-within)):not(:hover):not(:focus-within) {
   .el-input-number__increase::before,
   .el-input-number__decrease::before {
-    background-color: $--border-color-hover !important;
+    background-color: var(--lc-border-hover) !important;
   }
 }
-.el-input-number.is-controls-right:has(+ .el-select:focus-within):not(:focus-within) .el-input__inner {
-  border-color: $--color-primary !important;
+.el-input-number.is-controls-right:has(+ .el-select:focus-within):not(:focus-within) .el-input__wrapper {
+  box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+              inset 0 -1px 0 0 var(--lc-color-primary),
+              inset 1px 0 0 0 var(--lc-color-primary) !important;
 }
 .el-input-number.is-controls-right:has(+ .el-select:focus-within):not(:focus-within) {
   .el-input-number__increase::before,
   .el-input-number__decrease::before {
-    background-color: $--color-primary !important;
+    background-color: var(--lc-color-primary) !important;
   }
 }
 
@@ -725,8 +951,8 @@ iframe {
   width: 16px;
   height: 16px;
   border-radius: 4px;
-  background-color: $--color-white;
-  border: 1.5px solid $--border-color-base;
+  background-color: var(--el-color-white);
+  border: 1.5px solid var(--el-border-color);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
   &::after {
@@ -743,17 +969,17 @@ iframe {
 
 .el-checkbox__input {
   &:hover .el-checkbox__inner {
-    border-color: $--color-primary;
+    border-color: var(--el-color-primary);
   }
 
   &.is-focus .el-checkbox__inner {
-    border-color: $--color-primary;
-    box-shadow: 0 0 0 2px rgba($--color-primary, 0.15);
+    border-color: var(--el-color-primary);
+    box-shadow: 0 0 0 2px rgba(var(--el-color-primary), 0.15);
   }
 
   &.is-checked .el-checkbox__inner {
-    background-color: $--color-primary;
-    border-color: $--color-primary;
+    background-color: var(--el-color-primary);
+    border-color: var(--el-color-primary);
 
     &::after {
       transform: rotate(45deg) scaleY(1);
@@ -761,38 +987,38 @@ iframe {
   }
 
   &.is-checked.is-focus .el-checkbox__inner {
-    box-shadow: 0 0 0 2px rgba($--color-primary, 0.2);
+    box-shadow: 0 0 0 2px rgba(var(--el-color-primary), 0.2);
   }
 
   &.is-disabled .el-checkbox__inner {
-    background-color: $--background-color-base;
-    border-color: $--border-color-light;
+    background-color: var(--el-fill-color-light);
+    border-color: var(--el-border-color-light);
     cursor: not-allowed;
 
     &::after {
-      border-color: $--color-text-placeholder;
+      border-color: var(--el-text-color-placeholder);
     }
   }
 
   &.is-checked.is-disabled .el-checkbox__inner {
-    background-color: $--border-color-extra-light;
-    border-color: $--border-color-base;
+    background-color: var(--el-border-color-extra-light);
+    border-color: var(--el-border-color);
 
     &::after {
-      border-color: $--color-text-placeholder;
+      border-color: var(--el-text-color-placeholder);
     }
   }
 }
 
 .el-checkbox__label {
-  font-size: $--font-size-base;
+  font-size: var(--el-font-size-base);
   padding-left: 10px;
   transition: color 0.2s;
 }
 
 .el-checkbox {
   &.is-checked .el-checkbox__label {
-    color: $--checkbox-checked-font-color;
+    color: var(--el-color-primary);
   }
 }
 
@@ -802,23 +1028,50 @@ iframe {
   transition: all 0.2s;
 
   &.is-checked {
-    border-color: $--color-primary;
+    border-color: var(--el-color-primary);
   }
 }
 
 /* Switch
+   注意：滑块（__action）绝对定位的百分比按 core 的 padding box（宽度-2px 边框）
+   解析，EP 各尺寸有独立的 checked 偏移规则（默认-17/大-21/小-13），覆盖尺寸时
+   必须同步覆盖对应偏移，否则 ON 态滑块会停在轨道中间。
 -------------------------- */
 .el-switch {
   cursor: pointer;
 }
+/* 默认尺寸调大：40x20/滑块16 → 46x24/滑块18 */
 .el-switch__core {
-  border-radius: 11px;
+  min-width: 46px;
+  height: 24px;
+  border-radius: 12px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.el-switch__core::after {
+.el-switch__core .el-switch__action {
+  width: 18px;
+  height: 18px;
+}
+
+.el-switch.is-checked .el-switch__core .el-switch__action {
+  left: calc(100% - 19px);
+}
+
+/* small 尺寸（偏好设置 size="small" 表单内）升级为默认观感：30x16/滑块12 → 40x20/滑块16 */
+.el-switch--small .el-switch__core {
+  min-width: 40px;
+  height: 20px;
+  border-radius: 10px;
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.el-switch--small .el-switch__core .el-switch__action {
+  width: 16px;
+  height: 16px;
+}
+
+.el-switch--small.is-checked .el-switch__core .el-switch__action {
+  left: calc(100% - 17px);
 }
 
 .el-switch__label {
@@ -826,7 +1079,7 @@ iframe {
 }
 
 .el-switch.is-checked .el-switch__label {
-  color: $--color-primary;
+  color: var(--el-color-primary);
 }
 
 .el-drawer__container {
@@ -834,11 +1087,15 @@ iframe {
 }
 
 /* App Main
+   Vue 3 的 mount 不再替换挂载点：index.html 的 #root 是外层容器，
+   App.vue 根节点才是真正的 #app（带 is-mac/has-custom-titlebar 等类名），
+   因此 #root 也需要撑满高度。
 -------------------------- */
+#root,
 #app,
 #container {
   height: 100%;
-  background-color: $--app-background;
+  background-color: var(--lc-bg-app);
 }
 
 /* macOS 原生透明背景：html/body 保持透明，让窗口 vibrancy 毛玻璃透出。
@@ -904,7 +1161,7 @@ html.mac-native-transparent body {
 
 .aside {
   background-color: transparent;
-  color: $--aside-text-color;
+  color: var(--lc-aside-text);
 }
 
 .aside.is-auto-hide-aside {
@@ -922,7 +1179,7 @@ html.mac-native-transparent body {
 
 .subnav {
   background-color: transparent;
-  color: $--subnav-text-color;
+  color: var(--lc-subnav-text);
 }
 
 .subnav.is-auto-hide-subnav {
@@ -1103,11 +1360,11 @@ html.mac-native-transparent body {
 }
 
 .selected .task-item {
-  border-color: $--task-item-hover-border-color;
+  border-color: var(--lc-task-item-hover-border);
 }
 
 .main.panel {
-  background-color: $--main-background;
+  background-color: var(--lc-bg-main);
 }
 
 .subnav-inner {
@@ -1117,7 +1374,7 @@ html.mac-native-transparent body {
 
   h3 {
     font-size: 16px;
-    color: $--subnav-title-color;
+    color: var(--lc-subnav-title);
     font-weight: normal;
     line-height: 24px;
     margin: 0 0 28px;
@@ -1154,12 +1411,12 @@ html.mac-native-transparent body {
         i,
         span,
         svg {
-          color: $--subnav-active-text-color;
+          color: var(--lc-subnav-active-text);
         }
       }
 
       &.active {
-        background-color: $--subnav-active-background;
+        background-color: var(--lc-subnav-active-bg);
       }
     }
 
@@ -1171,7 +1428,7 @@ html.mac-native-transparent body {
       }
 
       li.active {
-        background-color: $--subnav-active-background;
+        background-color: var(--lc-subnav-active-bg);
       }
     }
   }
@@ -1194,21 +1451,21 @@ html.mac-native-transparent body {
 
 .panel {
   position: relative;
-  background: $--panel-background;
+  background: var(--lc-bg-panel);
 
   .panel-header {
     position: relative;
     padding: 6px 2px 6px 12px;
     margin: 44px 16px 0;
     height: auto !important;
-    border: 1px solid $--task-item-border-color;
+    border: 1px solid var(--lc-task-item-border);
     border-radius: 10px;
     box-sizing: border-box;
     user-select: none;
 
     h4 {
       margin: 0;
-      color: $--panel-title-color;
+      color: var(--lc-text-primary);
       font-size: 16px;
       font-weight: normal;
       line-height: 24px;
@@ -1225,11 +1482,11 @@ html.mac-native-transparent body {
 }
 
 .form-actions {
-  background: $--form-actions-background;
+  background: var(--lc-form-actions-bg);
 }
 
 .mo-table-wrapper {
-  border: 1px solid $--table-border-color;
+  border: 1px solid var(--lc-table-border);
   border-bottom: none;
   overflow-x: hidden;
   overflow-y: auto;
@@ -1257,7 +1514,7 @@ html.mac-native-transparent body {
 
 .form-static-value {
   word-break: break-all;
-  color: $--input-font-color;
+  color: var(--el-text-color-regular);
 }
 
 @media only screen and (max-width:567px) {

@@ -4,10 +4,11 @@ Icon.register({
   'preference-basic': {
     'width': 24,
     'height': 24,
-    'paths': [{
-      'd': 'M6.5,11h11c3,0,5.5-2.5,5.5-5.5S20.5,0,17.5,0h-11C3.5,0,1,2.5,1,5.5S3.5,11,6.5,11z M6.5,2 C8.4,2,10,3.6,10,5.5S8.4,9,6.5,9S3,7.4,3,5.5S4.6,2,6.5,2z'
-    }, {
-      'd': 'M17.5,13h-11c-3,0-5.5,2.5-5.5,5.5S3.5,24,6.5,24h11c3,0,5.5-2.5,5.5-5.5S20.5,13,17.5,13z M17.5,22c-1.9,0-3.5-1.6-3.5-3.5s1.6-3.5,3.5-3.5s3.5,1.6,3.5,3.5S19.4,22,17.5,22z'
-    }]
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2" y="4" width="20" height="6" rx="3"/>
+      <circle cx="7" cy="7" r="1.4" fill="currentColor" stroke="none"/>
+      <rect x="2" y="14" width="20" height="6" rx="3"/>
+      <circle cx="17" cy="17" r="1.4" fill="currentColor" stroke="none"/>
+    </g>`
   }
 })

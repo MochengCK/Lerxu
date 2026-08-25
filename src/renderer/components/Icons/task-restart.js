@@ -4,14 +4,9 @@ Icon.register({
   'task-restart': {
     'width': 24,
     'height': 24,
-    'raw': `<path data-cap="butt" fill="none" stroke="currentColor" stroke-miterlimit="10" d="M6.121,20.121 C7.727,21.22,9.907,22,12,22c5.523,0,10-4.477,10-10c0-5.523-4.477-10-10-10C8.101,2,4.728,4.233,3.078,7.488"/>
-      <polyline fill="none" stroke="currentColor" stroke-miterlimit="10" points="2.278,1.588 3.078,7.488 9.078,6.688 "/>
-      <circle data-color="color-2" fill="none" stroke-miterlimit="10" cx="4" cy="18" r="3"/>`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+      <path d="M21 3v5h5"/>
+    </g>`
   }
 })

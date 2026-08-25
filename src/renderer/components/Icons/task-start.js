@@ -4,8 +4,8 @@ Icon.register({
   'task-start': {
     'width': 24,
     'height': 24,
-    'paths': [{
-      'd': 'M20.555,11.168l-15-10c-0.307-0.204-0.702-0.224-1.026-0.05C4.203,1.292,4,1.631,4,2v20 c0,0.369,0.203,0.708,0.528,0.882C4.676,22.961,4.838,23,5,23c0.194,0,0.388-0.057,0.555-0.168l15-10C20.833,12.646,21,12.334,21,12 S20.833,11.354,20.555,11.168z'
-    }]
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="6 3 20 12 6 21 6 3"/>
+    </g>`
   }
 })

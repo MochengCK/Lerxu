@@ -15,7 +15,7 @@
       "submenu": [
         { "id": "task.new-task", "command": "application:new-task", "command-after": "application:show?page=index" },
         { "id": "task.new-bt-task", "command": "application:new-bt-task", "command-after": "application:show?page=index" },
-        { "id": "task.open-file", "command": "application:open-file", "command-before": "application:show?page=index" },
+        { "id": "task.open-torrent-file", "command": "application:open-file", "command-before": "application:show?page=index" },
         { "type": "separator" },
         { "id": "app.task-list", "command": "application:task-list" },
         { "id": "task.pause-task", "command": "application:pause-task" },

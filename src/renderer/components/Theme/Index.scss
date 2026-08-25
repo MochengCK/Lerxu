@@ -4,11 +4,11 @@
 
 /* Normalize.css
 -------------------------- */
-@import '~normalize.css/normalize.css';
+@import 'normalize.css/normalize.css';
 
-/* Element UI
+/* Element Plus
 -------------------------- */
-@import '~element-ui/packages/theme-chalk/src/index';
+@import 'element-plus/dist/index.css';
 
 /* Theme Light (default)
 -------------------------- */
@@ -68,17 +68,17 @@ html.mac-native-transparent .is-task-plan-open .title-bar {
   -webkit-backdrop-filter: none;
 }
 
-/* macOS 原生透明背景：将 el-drawer / el-dialog 遮罩层（.v-modal）
-   和弹窗本体提到标题栏之上。标题栏 z-index 为 5000，.v-modal 默认
+/* macOS 原生透明背景：将 el-overlay (Element Plus replacement for .v-modal)
+   和弹窗本体提到标题栏之上。标题栏 z-index 为 5000，el-overlay 默认
    z-index 约 2000+，低于标题栏。这导致标题栏的 backdrop-filter 会
-   模糊到正在淡出的 .v-modal，在关闭抽屉时产生黑色残影。
-   将 .v-modal 和弹窗容器提到 5100+，使其覆盖标题栏，
-   标题栏 backdrop-filter 不会捕获到 .v-modal 的淡出动画。 */
-html.mac-native-transparent .v-modal {
+   模糊到正在淡出的 el-overlay，在关闭抽屉时产生黑色残影。
+   将 el-overlay 和弹窗容器提到 5100+，使其覆盖标题栏，
+   标题栏 backdrop-filter 不会捕获到 el-overlay 的淡出动画。 */
+html.mac-native-transparent .el-overlay {
   z-index: 5100 !important;
 }
-html.mac-native-transparent .el-drawer__wrapper,
-html.mac-native-transparent .el-dialog__wrapper {
+html.mac-native-transparent .el-drawer,
+html.mac-native-transparent .el-dialog {
   z-index: 5101 !important;
 }
 

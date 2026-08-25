@@ -3,15 +3,15 @@
     <!-- ED2K Server & KAD info summary -->
     <div class="mo-ed2k-summary">
       <div class="ed2k-summary-item" v-if="ed2kMeta.serverAddr">
-        <span class="ed2k-summary-label">{{ $t('task.ed2k-source-server') }}:</span>
+        <span class="ed2k-summary-label">{{ t('task.ed2k-source-server') }}:</span>
         <span class="ed2k-summary-value">{{ ed2kMeta.serverAddr }}:{{ ed2kMeta.serverPort }}</span>
       </div>
       <div class="ed2k-summary-item">
-        <span class="ed2k-summary-label">{{ $t('task.ed2k-source-kad') }}:</span>
+        <span class="ed2k-summary-label">{{ t('task.ed2k-source-kad') }}:</span>
         <span class="ed2k-summary-value">{{ kadStatusText }}</span>
       </div>
       <div class="ed2k-summary-item">
-        <span class="ed2k-summary-label">{{ $t('task.task-connections') }}:</span>
+        <span class="ed2k-summary-label">{{ t('task.task-connections') }}:</span>
         <span class="ed2k-summary-value">{{ allSources.length }}</span>
       </div>
     </div>
@@ -21,7 +21,7 @@
       <el-table
         ref="sourceTable"
         class="mo-ed2k-source-table"
-        size="mini"
+        size="small"
         :data="groupedSources"
         :height="tableHeight"
         row-key="id"
@@ -29,14 +29,14 @@
         :tree-props="{children: 'children', hasChildren: 'hasChildren'}"
         :span-method="handleSpanMethod"
         :row-class-name="getRowClassName"
-        :empty-text="$t('task.ed2k-source-no-sources')"
+        :empty-text="t('task.ed2k-source-no-sources')"
         @row-click="handleRowClick"
       >
         <el-table-column
-          :label="$t('task.ed2k-source-host')"
+          :label="t('task.ed2k-source-host')"
           prop="addr"
           min-width="160">
-          <template slot-scope="scope">
+          <template #default="scope">
             <template v-if="scope.row.isGroup">
               <span class="mo-source-group-label">{{ scope.row.groupLabel }}</span>
             </template>
@@ -46,10 +46,10 @@
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.ed2k-source-state')"
+          :label="t('task.ed2k-source-state')"
           prop="ed2kState"
           min-width="100">
-          <template slot-scope="scope">
+          <template #default="scope">
             <template v-if="!scope.row.isGroup">
               <span :class="['ed2k-state-tag', `ed2k-state-${scope.row.ed2kState.toLowerCase()}`]">
                 {{ stateText(scope.row.ed2kState) }}
@@ -58,11 +58,11 @@
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.ed2k-source-queue')"
+          :label="t('task.ed2k-source-queue')"
           prop="queuePosition"
           min-width="80"
           align="center">
-          <template slot-scope="scope">
+          <template #default="scope">
             <template v-if="!scope.row.isGroup">
               <span v-if="scope.row.queuePosition >= 0">{{ scope.row.queuePosition }}</span>
               <span v-else>-</span>
@@ -70,10 +70,10 @@
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.ed2k-source-parts')"
+          :label="t('task.ed2k-source-parts')"
           min-width="100"
           align="center">
-          <template slot-scope="scope">
+          <template #default="scope">
             <template v-if="!scope.row.isGroup && scope.row.totalParts > 0">
               {{ scope.row.availableParts }} / {{ scope.row.totalParts }}
             </template>
@@ -84,156 +84,166 @@
   </div>
 </template>
 
-<script>
-  import { mapState } from 'vuex'
+<script setup>
+import { ref, computed, watch, onMounted, nextTick, getCurrentInstance } from 'vue'
+import { useTaskStore } from '@/store/task'
+import { storeToRefs } from 'pinia'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 
-  const GROUP_CONFIG = [
-    { key: 'connected', states: ['CONNECTED', 'DOWNLOADING', 'QUEUED'] },
-    { key: 'attempting', states: ['CONNECTING', 'NEW'] },
-    { key: 'disconnected', states: ['FAILED'] },
-    { key: 'banned', states: ['EXPIRED'] }
-  ]
+const { t } = i18n.global
+const instance = getCurrentInstance()
 
-  export default {
-    name: 'mo-task-ed2k-sources',
-    props: {
-      peers: {
-        type: [Object, Array],
-        default: () => ({ connected: [], attempting: [], banned: [], disconnected: [] })
-      },
-      task: {
-        type: Object,
-        default: () => ({})
-      }
-    },
-    data () {
-      return {
-        tableHeight: 300,
-        expandedGroupKeys: []
-      }
-    },
-    computed: {
-      ...mapState('task', {
-        currentTaskPeers: state => state.currentTaskPeers
-      }),
-      peersData () {
-        if (this.currentTaskPeers && typeof this.currentTaskPeers === 'object') {
-          return this.currentTaskPeers
-        }
-        return { connected: [], attempting: [], banned: [], disconnected: [] }
-      },
-      ed2kMeta () {
-        if (this.currentTaskPeers && this.currentTaskPeers.ed2kMeta) {
-          return this.currentTaskPeers.ed2kMeta
-        }
-        return { serverAddr: '', serverPort: 0, kadEnabled: false, kadState: '' }
-      },
-      kadStatusText () {
-        if (!this.ed2kMeta.kadEnabled) return this.$t('task.ed2k-kad-disabled')
-        const state = this.ed2kMeta.kadState
-        if (!state) return this.$t('task.ed2k-kad-disabled')
-        const key = `task.ed2k-kad-${state}`
-        const translated = this.$t(key)
-        return translated === key ? state : translated
-      },
-      allSources () {
-        const result = []
-        for (const group of GROUP_CONFIG) {
-          const list = this.peersData[group.key] || []
-          list.forEach(item => {
-            result.push({
-              addr: item.ip || item.addr || '',
-              port: item.port || '',
-              ed2kState: item.ed2kState || 'NEW',
-              queuePosition: Number(item.queuePosition || -1),
-              availableParts: Number(item.availableParts || 0),
-              totalParts: Number(item.totalParts || 0),
-              source: item.source || 'ed2k'
-            })
-          })
-        }
-        return result
-      },
-      groupedSources () {
-        const groups = []
-        let idx = 0
-        for (const group of GROUP_CONFIG) {
-          const items = this.allSources.filter(s => group.states.includes(s.ed2kState))
-          if (items.length === 0) continue
-          const groupKey = `group-${idx++}`
-          const groupLabels = {
-            connected: this.$t('task.peers-connected'),
-            attempting: this.$t('task.peers-attempting'),
-            disconnected: this.$t('task.peers-disconnected'),
-            banned: this.$t('task.peers-banned')
-          }
-          groups.push({
-            id: groupKey,
-            isGroup: true,
-            groupLabel: `${groupLabels[group.key]} (${items.length})`,
-            children: items.map((item, i) => ({
-              id: `${groupKey}-${i}`,
-              ...item
-            }))
-          })
-        }
-        return groups
-      }
-    },
-    mounted () {
-      this.$nextTick(() => {
-        this.updateTableHeight()
-        this.expandedGroupKeys = this.groupedSources.map(g => g.id)
-      })
-    },
-    watch: {
-      allSources () {
-        this.$nextTick(() => {
-          this.updateTableHeight()
-          // Auto-expand all groups
-          this.expandedGroupKeys = this.groupedSources.map(g => g.id)
-        })
-      }
-    },
-    methods: {
-      updateTableHeight () {
-        if (!this.$refs.tableWrapper) return
-        const wrapper = this.$refs.tableWrapper
-        const rect = wrapper.getBoundingClientRect()
-        if (rect.height > 0) {
-          this.tableHeight = Math.max(200, rect.height)
-        }
-      },
-      stateText (state) {
-        const key = `task.ed2k-source-state-${state}`
-        const translated = this.$t(key)
-        return translated === key ? state : translated
-      },
-      getRowClassName ({ row }) {
-        if (row.isGroup) return 'ed2k-source-group-row'
-        return `ed2k-source-row ed2k-source-row-${(row.ed2kState || '').toLowerCase()}`
-      },
-      handleSpanMethod ({ row, columnIndex }) {
-        if (row.isGroup) {
-          if (columnIndex === 0) {
-            return [1, 4]
-          }
-          return [0, 0]
-        }
-        return { rowspan: 1, colspan: 1 }
-      },
-      handleRowClick (row) {
-        if (!row || !row.isGroup) return
-        const key = row.id
-        const idx = this.expandedGroupKeys.indexOf(key)
-        if (idx >= 0) {
-          this.expandedGroupKeys.splice(idx, 1)
-        } else {
-          this.expandedGroupKeys.push(key)
-        }
-      }
-    }
+const taskStore = useTaskStore()
+const { currentTaskPeers } = storeToRefs(taskStore)
+
+const GROUP_CONFIG = [
+  { key: 'connected', states: ['CONNECTED', 'DOWNLOADING', 'QUEUED'] },
+  { key: 'attempting', states: ['CONNECTING', 'NEW'] },
+  { key: 'disconnected', states: ['FAILED'] },
+  { key: 'banned', states: ['EXPIRED'] }
+]
+
+const props = defineProps({
+  peers: {
+    type: [Object, Array],
+    default: () => ({ connected: [], attempting: [], banned: [], disconnected: [] })
+  },
+  task: {
+    type: Object,
+    default: () => ({})
   }
+})
+
+defineOptions({ name: 'mo-task-ed2k-sources' })
+
+const tableWrapper = ref(null)
+const sourceTable = ref(null)
+const tableHeight = ref(300)
+const expandedGroupKeys = ref([])
+
+const peersData = computed(() => {
+  if (currentTaskPeers.value && typeof currentTaskPeers.value === 'object') {
+    return currentTaskPeers.value
+  }
+  return { connected: [], attempting: [], banned: [], disconnected: [] }
+})
+
+const ed2kMeta = computed(() => {
+  if (currentTaskPeers.value && currentTaskPeers.value.ed2kMeta) {
+    return currentTaskPeers.value.ed2kMeta
+  }
+  return { serverAddr: '', serverPort: 0, kadEnabled: false, kadState: '' }
+})
+
+const kadStatusText = computed(() => {
+  if (!ed2kMeta.value.kadEnabled) return t('task.ed2k-kad-disabled')
+  const state = ed2kMeta.value.kadState
+  if (!state) return t('task.ed2k-kad-disabled')
+  const key = `task.ed2k-kad-${state}`
+  const translated = t(key)
+  return translated === key ? state : translated
+})
+
+const allSources = computed(() => {
+  const result = []
+  for (const group of GROUP_CONFIG) {
+    const list = peersData.value[group.key] || []
+    list.forEach(item => {
+      result.push({
+        addr: item.ip || item.addr || '',
+        port: item.port || '',
+        ed2kState: item.ed2kState || 'NEW',
+        queuePosition: Number(item.queuePosition || -1),
+        availableParts: Number(item.availableParts || 0),
+        totalParts: Number(item.totalParts || 0),
+        source: item.source || 'ed2k'
+      })
+    })
+  }
+  return result
+})
+
+const groupedSources = computed(() => {
+  const groups = []
+  let idx = 0
+  for (const group of GROUP_CONFIG) {
+    const items = allSources.value.filter(s => group.states.includes(s.ed2kState))
+    if (items.length === 0) continue
+    const groupKey = `group-${idx++}`
+    const groupLabels = {
+      connected: t('task.peers-connected'),
+      attempting: t('task.peers-attempting'),
+      disconnected: t('task.peers-disconnected'),
+      banned: t('task.peers-banned')
+    }
+    groups.push({
+      id: groupKey,
+      isGroup: true,
+      groupLabel: `${groupLabels[group.key]} (${items.length})`,
+      children: items.map((item, i) => ({
+        id: `${groupKey}-${i}`,
+        ...item
+      }))
+    })
+  }
+  return groups
+})
+
+function updateTableHeight () {
+  if (!tableWrapper.value) return
+  const rect = tableWrapper.value.getBoundingClientRect()
+  if (rect.height > 0) {
+    tableHeight.value = Math.max(200, rect.height)
+  }
+}
+
+function stateText (state) {
+  const key = `task.ed2k-source-state-${state}`
+  const translated = t(key)
+  return translated === key ? state : translated
+}
+
+function getRowClassName ({ row }) {
+  if (row.isGroup) return 'ed2k-source-group-row'
+  return `ed2k-source-row ed2k-source-row-${(row.ed2kState || '').toLowerCase()}`
+}
+
+function handleSpanMethod ({ row, columnIndex }) {
+  if (row.isGroup) {
+    if (columnIndex === 0) return [1, 4]
+    return [0, 0]
+  }
+  return { rowspan: 1, colspan: 1 }
+}
+
+function handleRowClick (row) {
+  if (!row || !row.isGroup) return
+  const key = row.id
+  const idx = expandedGroupKeys.value.indexOf(key)
+  if (idx >= 0) {
+    expandedGroupKeys.value.splice(idx, 1)
+  } else {
+    expandedGroupKeys.value.push(key)
+  }
+}
+
+onMounted(() => {
+  nextTick(() => {
+    updateTableHeight()
+    expandedGroupKeys.value = groupedSources.value.map(g => g.id)
+  })
+})
+
+watch(allSources, () => {
+  nextTick(() => {
+    updateTableHeight()
+    expandedGroupKeys.value = groupedSources.value.map(g => g.id)
+  })
+})
+
+defineExpose({
+  updateTableHeight
+})
 </script>
 
 <style lang="scss">

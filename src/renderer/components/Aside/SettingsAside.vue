@@ -8,121 +8,114 @@
           class="non-draggable"
           :class="{ active: currentPage === '/preference' }"
         >
-          <el-tooltip
+          <mo-hover-tip
             effect="dark"
-            :content="$t('subnav.preferences')"
+            :content="t('subnav.preferences')"
             placement="right"
             :open-delay="500"
           >
             <mo-icon name="menu-preference" width="20" height="20" />
-          </el-tooltip>
+          </mo-hover-tip>
         </li>
       </ul>
     </div>
   </el-aside>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import { mapState } from 'vuex'
-  import '@/components/Icons/menu-preference'
+<script setup>
+import { ref, computed, onMounted, onBeforeUnmount, getCurrentInstance } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
+import is from 'electron-is'
+import { ipcRenderer } from 'electron'
+import { useAppStore, usePreferenceStore } from '@/store'
+import { storeToRefs } from 'pinia'
+import '@/components/Icons/menu-preference'
 
-  export default {
-    name: 'mo-aside',
-    components: {
-    },
-    data () {
-      return {
-        isAsideProximityHovered: false
-      }
-    },
-    computed: {
-      ...mapState('app', {
-        currentPage: state => state.currentPage
-      }),
-      ...mapState('preference', {
-        autoHideAside: state => state.config.autoHideAside
-      }),
-      asideDraggable () {
-        return is.macOS()
-      },
-      vibrancy () {
-        return is.macOS()
-          ? {
-            backgroundColor: 'transparent'
-          }
-          : {}
-      }
-    },
-    methods: {
-      updateAsideProximityHover (event) {
-        if (!this.autoHideAside) {
-          if (this.isAsideProximityHovered) {
-            this.isAsideProximityHovered = false
-          }
-          return
-        }
-        if (!event) {
-          return
-        }
-        const height = typeof window !== 'undefined' ? window.innerHeight : 0
-        if (!height) {
-          return
-        }
-        const zoneHeight = Math.max(this.$el ? this.$el.offsetHeight : 0, 120) + 100
-        const centerY = height / 2
-        const top = centerY - zoneHeight / 2
-        const bottom = centerY + zoneHeight / 2
-        const withinY = event.clientY >= top && event.clientY <= bottom
-        const withinX = event.clientX <= 120
-        const next = withinX && withinY
-        if (next !== this.isAsideProximityHovered) {
-          this.isAsideProximityHovered = next
-        }
-      },
-      handleWindowMouseMoveForAside (event) {
-        this._asideMouseEvent = event
-        if (this._asideMouseRaf) {
-          return
-        }
-        this._asideMouseRaf = window.requestAnimationFrame(() => {
-          this._asideMouseRaf = null
-          const lastEvent = this._asideMouseEvent
-          this._asideMouseEvent = null
-          this.updateAsideProximityHover(lastEvent)
-        })
-      },
-      nav (page) {
-        if (page === '/preference') {
-          this.$electron.ipcRenderer.send('open-preference-window')
-          return
-        }
-        this.$router.push({
-          path: page
-        }).catch(err => {
-          console.log(err)
-        })
-      }
-    },
-    mounted () {
-      if (typeof window !== 'undefined') {
-        this._handleWindowMouseMoveForAside = (event) => {
-          this.handleWindowMouseMoveForAside(event)
-        }
-        window.addEventListener('mousemove', this._handleWindowMouseMoveForAside)
-      }
-    },
-    beforeDestroy () {
-      if (typeof window !== 'undefined' && this._handleWindowMouseMoveForAside) {
-        window.removeEventListener('mousemove', this._handleWindowMouseMoveForAside)
-        this._handleWindowMouseMoveForAside = null
-      }
-      if (this._asideMouseRaf) {
-        window.cancelAnimationFrame(this._asideMouseRaf)
-        this._asideMouseRaf = null
-      }
+defineOptions({ name: 'mo-aside' })
+
+const route = useRoute()
+const router = useRouter()
+const { t } = i18n.global
+const instance = getCurrentInstance()
+
+const appStore = useAppStore()
+const preferenceStore = usePreferenceStore()
+const { currentPage } = storeToRefs(appStore)
+
+const isAsideProximityHovered = ref(false)
+
+let asideMouseRaf = null
+let asideMouseEvent = null
+let handleWindowMouseMoveForAside = null
+
+const autoHideAside = computed(() => preferenceStore.config?.autoHideAside ?? false)
+
+const asideDraggable = computed(() => is.macOS())
+
+const vibrancy = computed(() => is.macOS() ? { backgroundColor: 'transparent' } : {})
+
+function updateAsideProximityHover (event) {
+  if (!autoHideAside.value) {
+    if (isAsideProximityHovered.value) {
+      isAsideProximityHovered.value = false
     }
+    return
   }
+  if (!event) return
+  const height = typeof window !== 'undefined' ? window.innerHeight : 0
+  if (!height) return
+  const el = instance.proxy.$el
+  const zoneHeight = Math.max(el ? el.offsetHeight : 0, 120) + 100
+  const centerY = height / 2
+  const top = centerY - zoneHeight / 2
+  const bottom = centerY + zoneHeight / 2
+  const withinY = event.clientY >= top && event.clientY <= bottom
+  const withinX = event.clientX <= 120
+  const next = withinX && withinY
+  if (next !== isAsideProximityHovered.value) {
+    isAsideProximityHovered.value = next
+  }
+}
+
+function handleMouseMove (event) {
+  asideMouseEvent = event
+  if (asideMouseRaf) return
+  asideMouseRaf = window.requestAnimationFrame(() => {
+    asideMouseRaf = null
+    const lastEvent = asideMouseEvent
+    asideMouseEvent = null
+    updateAsideProximityHover(lastEvent)
+  })
+}
+
+function nav (page) {
+  if (page === '/preference') {
+    ipcRenderer.send('open-preference-window')
+    return
+  }
+  router.push({ path: page }).catch(err => {
+    console.log(err)
+  })
+}
+
+onMounted(() => {
+  if (typeof window !== 'undefined') {
+    handleWindowMouseMoveForAside = (event) => handleMouseMove(event)
+    window.addEventListener('mousemove', handleWindowMouseMoveForAside)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined' && handleWindowMouseMoveForAside) {
+    window.removeEventListener('mousemove', handleWindowMouseMoveForAside)
+    handleWindowMouseMoveForAside = null
+  }
+  if (asideMouseRaf) {
+    window.cancelAnimationFrame(asideMouseRaf)
+    asideMouseRaf = null
+  }
+})
 </script>
 
 <style lang="scss">

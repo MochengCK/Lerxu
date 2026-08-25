@@ -2,7 +2,7 @@ import { ipcRenderer } from 'electron'
 import is from 'electron-is'
 import { isEmpty, clone } from 'lodash'
 import { existsSync } from 'fs'
-import { basename, resolve, isAbsolute } from 'path'
+import { basename, dirname, resolve, isAbsolute, sep } from 'path'
 import IpcEngineClient from './IpcEngineClient'
 import {
   separateConfig,
@@ -23,6 +23,11 @@ import taskHistory from './TaskHistory'
 // 用 path 做 key 缓存，避免每秒重复同步 fs 调用
 const dashPartExistsCache = new Map()
 const DASH_PART_CACHE_LIMIT = 500
+
+// .aria2 控制文件解析结果缓存（gid -> {totalLength, completedLength}）：
+// 重启后 paused/waiting 任务每轮轮询都会命中，避免反复同步读盘
+const aria2ControlCache = new Map()
+const ARIA2_CONTROL_CACHE_LIMIT = 500
 
 const looksLikeBilibiliDashPart = (task) => {
   try {
@@ -623,6 +628,92 @@ export default class Api {
     })
   }
 
+  // 候选控制文件路径：单文件为 <file>.aria2；多文件 BT 位于 dir/<种子根目录>.aria2
+  _buildControlFileCandidates (task) {
+    try {
+      const files = Array.isArray(task.files) ? task.files : []
+      const first = files[0] && files[0].path ? `${files[0].path}` : ''
+      if (!first) {
+        return []
+      }
+      const cands = [`${first}.xfer`]
+      if (files.length > 1) {
+        const innerDir = dirname(first)
+        const rootName = basename(innerDir)
+        cands.push(`${dirname(innerDir)}${sep}${rootName}.xfer`)
+      }
+      return cands
+    } catch (_) {
+      return []
+    }
+  }
+
+  // 重启后 paused/waiting 任务在引擎加载断点前 completedLength 上报为 0。
+  // 这里读取 .aria2 控制文件（aria2 暂停时自己落盘的真实断点）回填显示，
+  // 数值与用户点击「开始」后引擎上报的进度一致，不存在"记录值≠实际值"。
+  async _enrichProgressFromControlFiles (tasks = []) {
+    try {
+      const byGid = new Map()
+      const pending = []
+      tasks.forEach(t => {
+        if (!t || !t.gid) {
+          return
+        }
+        const st = `${t.status || ''}`
+        if (![TASK_STATUS.PAUSED, TASK_STATUS.WAITING].includes(st)) {
+          return
+        }
+        if (Number(t.completedLength || 0) > 0) {
+          return
+        }
+        const gid = `${t.gid}`
+        if (aria2ControlCache.has(gid)) {
+          byGid.set(gid, aria2ControlCache.get(gid))
+          return
+        }
+        const cands = this._buildControlFileCandidates(t)
+        if (!cands.length) {
+          return
+        }
+        pending.push({ gid, cands })
+      })
+      if (pending.length) {
+        const results = await ipcRenderer.invoke('aria2-control:progress', { candidates: pending.map(p => p.cands) }).catch(() => null)
+        if (Array.isArray(results)) {
+          pending.forEach((p, i) => {
+            const r = results[i]
+            if (r && Number(r.completedLength) > 0) {
+              if (aria2ControlCache.size > ARIA2_CONTROL_CACHE_LIMIT) {
+                aria2ControlCache.clear()
+              }
+              aria2ControlCache.set(p.gid, r)
+              byGid.set(p.gid, r)
+            }
+          })
+        }
+      }
+      if (!byGid.size) {
+        return tasks
+      }
+      return tasks.map(t => {
+        if (!t || !t.gid) {
+          return t
+        }
+        const r = byGid.get(`${t.gid}`)
+        if (!r || Number(t.completedLength || 0) > 0) {
+          return t
+        }
+        return {
+          ...t,
+          completedLength: `${r.completedLength}`,
+          ...(Number(t.totalLength || 0) <= 0 ? { totalLength: `${r.totalLength}` } : {})
+        }
+      })
+    } catch (_) {
+      return tasks
+    }
+  }
+
   fetchDownloadingTaskList (params = {}) {
     const { offset = 0, num = 20, keys } = params
     const activeArgs = compactUndefined([keys])
@@ -631,10 +722,11 @@ export default class Api {
       this.client.multicall([
         ['aria2.tellActive', ...activeArgs],
         ['aria2.tellWaiting', ...waitingArgs]
-      ]).then((data) => {
+      ]).then(async (data) => {
         console.log('[LinkCore] fetch downloading task list data:', data)
         let result = mergeTaskResult(data)
         result = this._mergeHistoryToTasks(result)
+        result = await this._enrichProgressFromControlFiles(result)
         result = result.filter(task => {
           const status = `${task && task.status ? task.status : ''}`
           return status === TASK_STATUS.ACTIVE || status === TASK_STATUS.WAITING
@@ -652,6 +744,7 @@ export default class Api {
     const args = compactUndefined([offset, num, keys])
     return this.client.call('tellWaiting', ...args)
       .then(data => this._mergeHistoryToTasks(data))
+      .then(data => this._enrichProgressFromControlFiles(data))
   }
 
   fetchStoppedTaskList (params = {}) {
@@ -678,7 +771,7 @@ export default class Api {
         ['aria2.tellActive', ...activeArgs],
         ['aria2.tellWaiting', ...waitingArgs],
         ['aria2.tellStopped', ...stoppedArgs]
-      ]).then((data) => {
+      ]).then(async (data) => {
         let result = mergeTaskResult(data)
 
         const stoppedTasks = result.filter(task => {
@@ -994,6 +1087,9 @@ export default class Api {
 
   multicall (method, params = {}) {
     let { gids, options = {} } = params
+    if (!Array.isArray(gids) || gids.length === 0) {
+      return Promise.resolve([])
+    }
     const normalizedOptions = normalizeBtEncryptionForEngine(options)
     options = formatOptionsForEngine(normalizedOptions)
 

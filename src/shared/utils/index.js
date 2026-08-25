@@ -934,7 +934,11 @@ export const checkIsNeedRestart = (changed = {}) => {
   }
   const kebabCaseChanged = changeKeysToKebabCase(changed)
   const changedKeys = new Set(Object.keys(kebabCaseChanged))
-  return needRestartKeys.some(key => changedKeys.has(key))
+  const matched = needRestartKeys.filter(key => changedKeys.has(key))
+  if (matched.length > 0) {
+    console.warn('[LinkCore] checkIsNeedRestart matched keys:', matched, 'all changedKeys:', [...changedKeys])
+  }
+  return matched.length > 0
 }
 
 export const checkIsNeedRun = (enable, lastTime, interval) => {

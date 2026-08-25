@@ -26,9 +26,11 @@ import { bytesToSize, checkIsNeedRunAdvanced, detectResource, sanitizeLink, getT
 import {
   deduplicateTrackers,
   fetchBtTrackerFromSource,
+  fetchTrackerSourceText,
   reduceTrackerString
 } from '@shared/utils/tracker'
 import { fetchEd2kServersFromSource } from '@shared/utils/ed2k'
+import { parseAria2ControlProgress } from './utils/aria2-control'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
 import { getLanguage } from '@shared/locales'
 import { showItemInFolder, getEngineList, mergeAria2Conf, getSystemHttpProxy } from './utils'
@@ -109,6 +111,13 @@ export default class Application extends EventEmitter {
 
     this.initWindowManager()
 
+    // IPC handler 必须在任何窗口创建前注册：
+    // macOS 首次启动会触发 activate，可能在 init 后半段（引擎启动耗时数秒）
+    // 就打开窗口，若此时 handler 未注册，渲染进程 bootstrap 调用
+    // get-app-config 会直接失败导致前端永远不挂载。
+    // 各 handler 内部已对未就绪组件做守卫，提前注册是安全的。
+    this.handleIpcInvokes()
+
     this.initUPnPManager()
 
     // 在启动引擎前，如果使用系统代理模式，先获取系统代理地址
@@ -139,8 +148,6 @@ export default class Application extends EventEmitter {
     this.handleEvents()
 
     this.handleIpcMessages()
-
-    this.handleIpcInvokes()
 
     this.initAppHttpServer()
 
@@ -1911,6 +1918,33 @@ export default class Application extends EventEmitter {
   }
 
   /**
+   * macOS activate 统一入口。
+   *
+   * 注意：首次启动时 activate 也会触发，且可能早于 init() 完成（引擎启动
+   * 耗时数秒）。若此时直接 showPage 创建窗口，渲染进程会在
+   * handleIpcInvokes() 注册前调用 get-app-config，导致前端 bootstrap 失败。
+   * 因此这里先等待 init settle：
+   *  - init 进行中 → 等待，窗口由 start() 统一创建
+   *  - init 失败   → 走 retryStart 补救
+   *  - init 成功   → 正常 showPage（bring to front）
+   */
+  async handleActivate () {
+    if (!this.windowManager) {
+      await this.retryStart('index')
+      return
+    }
+
+    try {
+      await this._initPromise
+    } catch (err) {
+      await this.retryStart('index')
+      return
+    }
+
+    this.showPage('index')
+  }
+
+  /**
    * 引擎是否仍在运行（用于退出流程判断是否需要 RPC 调用）
    */
   isEngineRunning () {
@@ -3217,6 +3251,14 @@ export default class Application extends EventEmitter {
       this.relaunch()
     })
 
+    this.on('application:log', ({ level, message }) => {
+      if (level === 'warn') {
+        logger.warn(message)
+      } else {
+        logger.info(message)
+      }
+    })
+
     this.on('application:quit', () => {
       this.quit()
     })
@@ -4042,7 +4084,13 @@ export default class Application extends EventEmitter {
         return { success: false, error: 'invalid-gid' }
       }
 
-      const task = await this.engineClient.call('tellStatus', gid)
+      let task
+      try {
+        task = await this.engineClient.call('tellStatus', gid)
+      } catch (e) {
+        this._progressSpeedSamples.delete(gid)
+        return { success: false, done: true, error: 'task-not-found' }
+      }
       if (!task || !task.gid) {
         this._progressSpeedSamples.delete(gid)
         return { success: false, done: true, error: 'task-not-found' }
@@ -4135,7 +4183,12 @@ export default class Application extends EventEmitter {
 
       let connectionsData = null
       if (includeConnections && (status === TASK_STATUS.ACTIVE || status === TASK_STATUS.WAITING)) {
-        const servers = await this.engineClient.call('getServers', gid)
+        let servers
+        try {
+          servers = await this.engineClient.call('getServers', gid)
+        } catch (e) {
+          servers = []
+        }
         const serverList = []
         let totalConnections = 0
         let activeConnections = 0
@@ -4276,12 +4329,106 @@ export default class Application extends EventEmitter {
       return fetchEd2kServersFromSource(source, proxy)
     })
 
+    // Tracker 源提取请求走主进程，确保渲染层 axios(XHR) 无法生效的代理配置
+    // 在这里（Node adapter）真正生效，行为与 ED2K 请求一致
+    ipcMain.handle('tracker-source:fetch', async (_event, { url, proxy }) => {
+      return fetchTrackerSourceText(url, proxy)
+    })
+
+    ipcMain.handle('bt-tracker:fetch', async (_event, { source, proxy, useGithubMirror, githubMirrorUrls }) => {
+      return fetchBtTrackerFromSource(source, proxy, { useGithubMirror, githubMirrorUrls })
+    })
+
+    // 批量解析 .aria2 断点控制文件：重启后 paused 任务在 unpause 前引擎上报进度为 0，
+    // 渲染层用它读取引擎自己保存的真实断点（与开始任务后的实际进度一致）
+    ipcMain.handle('aria2-control:progress', (_event, { candidates }) => {
+      const lists = Array.isArray(candidates) ? candidates : []
+      return lists.map(cand => {
+        const arr = Array.isArray(cand) ? cand : []
+        for (const p of arr) {
+          const r = parseAria2ControlProgress(p)
+          if (r) {
+            return r
+          }
+        }
+        return null
+      })
+    })
+
     ipcMain.handle('application:repair-download-file-permission', async (event, filePath) => {
       try {
         return await this.repairDownloadFilePermission(filePath)
       } catch (err) {
         logger.warn('[LinkCore] repair-download-file-permission IPC failed:', err && err.message ? err.message : err)
         return { repaired: false, reason: 'exception' }
+      }
+    })
+
+    // 代理渲染进程发起的 HEAD/Range 请求，绕过浏览器 CORS 限制
+    ipcMain.handle('uri:fetch-size', async (_event, { url, headers: customHeaders }) => {
+      try {
+        const { net } = require('electron')
+        const result = await new Promise((resolve) => {
+          const headers = { ...(customHeaders || {}) }
+          headers.Accept = headers.Accept || '*/*'
+          let settled = false
+          const finish = (data) => {
+            if (settled) return
+            settled = true
+            resolve(data)
+          }
+
+          const handleResponse = (resp) => {
+            const ch = resp.headers
+            const contentLength = ch['Content-Length'] || ch['content-length'] || ''
+            const contentDisposition = ch['Content-Disposition'] || ch['content-disposition'] || ''
+            const responseHeaders = {}
+            for (const key of Object.keys(ch)) {
+              responseHeaders[key] = ch[key]
+            }
+            let len = contentLength
+            if (!len || len === '0') {
+              // HEAD 没返回 content-length，尝试 Range GET
+              const rangeReq = net.request({ url, method: 'GET', redirect: 'follow' })
+              rangeReq.setHeader('Range', 'bytes=0-0')
+              for (const [k, v] of Object.entries(headers)) {
+                rangeReq.setHeader(k, v)
+              }
+              rangeReq.on('response', (rangeResp) => {
+                const rh = rangeResp.headers
+                const cr = rh['Content-Range'] || rh['content-range'] || ''
+                const m = /\/(\d+)$/i.exec(cr)
+                const finalLen = m && m[1] ? m[1] : ''
+                const disp = rh['Content-Disposition'] || rh['content-disposition'] || contentDisposition
+                rangeResp.destroy()
+                finish({ contentLength: finalLen, contentDisposition: disp, status: rangeResp.statusCode })
+              })
+              rangeReq.on('error', () => {
+                finish({ contentLength: '', contentDisposition: contentDisposition, status: resp.statusCode })
+              })
+              rangeReq.end()
+              return
+            }
+            finish({ contentLength: len, contentDisposition, status: resp.statusCode })
+          }
+
+          const req = net.request({ url, method: 'HEAD', redirect: 'follow' })
+          for (const [k, v] of Object.entries(headers)) {
+            req.setHeader(k, v)
+          }
+          req.on('response', handleResponse)
+          req.on('error', () => {
+            finish({ contentLength: '', contentDisposition: '', status: 0 })
+          })
+          req.end()
+
+          setTimeout(() => {
+            finish({ contentLength: '', contentDisposition: '', status: 0 })
+          }, 15000)
+        })
+        return { ok: true, ...result }
+      } catch (err) {
+        return { ok: false, error: err && err.message ? err.message : 'fetch failed' }
       }
     })
   }

@@ -1,9 +1,8 @@
 <template>
   <el-dialog
-    custom-class="tab-title-dialog add-task-dialog"
+    class="tab-title-dialog add-task-dialog"
     width="50vw"
-    :visible.sync="dialogVisible"
-    :top="dialogTop"
+    v-model="dialogVisible"
     :show-close="false"
     :before-close="beforeClose"
     append-to-body
@@ -11,11 +10,14 @@
     @opened="handleOpened"
     @closed="handleClosed"
   >
-    <el-form ref="taskForm" label-position="left" :model="form" :rules="rules">
+    <el-form
+            ref="taskFormRef"
+            :model="form"
+    >
       <el-form-item>
         <div class="add-task-primary-input-wrap">
           <button type="button" class="add-task-type-floating__close" aria-label="Close" @click="handleClose">
-            <i class="el-icon-close"></i>
+            <el-icon class="add-task-type-floating__close-icon"><Close /></el-icon>
           </button>
           <div class="add-task-type-floating__bar">
             <mo-segmented-slider
@@ -27,19 +29,19 @@
           </div>
           <div v-show="taskType === 'uri'" class="add-task-content-pane">
             <el-input
-              ref="uri"
+              ref="uriInput"
               type="textarea"
               auto-complete="off"
               :autosize="{ minRows: 5, maxRows: 5 }"
 
-              :placeholder="$t('task.uri-task-tips')"
-              @paste.native="handleUriPaste"
+              :placeholder="t('task.uri-task-tips')"
+              @paste="handleUriPaste"
               v-model="form.uris"
             >
             </el-input>
           </div>
           <div v-show="taskType === 'torrent'" class="add-task-content-pane">
-            <mo-select-torrent ref="selectTorrent" v-on:change="handleTorrentChange" />
+            <mo-select-torrent ref="selectTorrent" @change="handleTorrentChange" />
           </div>
         </div>
       </el-form-item>
@@ -48,32 +50,32 @@
             <el-table
               :data="parsedTasks"
               class="mo-parsed-table"
-              size="mini"
+              size="small"
               :max-height="parsedTableMaxHeight"
             >
-              <el-table-column :label="$t('task.task-name')" min-width="240">
-                <template slot-scope="scope">
-                  <el-tooltip v-if="!scope.row.editing" :content="$t('task.double-click-to-edit')" placement="top" :open-delay="300">
+              <el-table-column :label="t('task.task-name')" min-width="240">
+                <template #default="scope">
+                  <mo-hover-tip v-if="!scope.row.editing" :content="t('task.double-click-to-edit')" placement="top" :open-delay="300">
                     <span class="mo-parsed-text" @dblclick="enableNameEdit(scope.$index)">{{ scope.row.name }}</span>
-                  </el-tooltip>
+                  </mo-hover-tip>
                   <el-input
                     v-else
-                    size="mini"
+                    size="small"
                     v-model="scope.row.name"
                     @blur="disableNameEdit(scope.$index)"
-                    @keyup.enter.native="disableNameEdit(scope.$index)"
+                    @keyup.enter="disableNameEdit(scope.$index)"
                   />
                 </template>
               </el-table-column>
-              <el-table-column :label="$t('task.file-size')" min-width="120" align="right">
-                <template slot-scope="scope">
+              <el-table-column :label="t('task.file-size')" min-width="120" align="right">
+                <template #default="scope">
                   <span>{{ scope.row.sizeText }}</span>
                 </template>
               </el-table-column>
-              <el-table-column v-if="isPriorityEngineEnabled" :label="$t('task.task-priority')" min-width="150" align="right">
-                <template slot-scope="scope">
+              <el-table-column v-if="isPriorityEngineEnabled" :label="t('task.task-priority')" min-width="150" align="right">
+                <template #default="scope">
                   <el-input-number
-                    size="mini"
+                    size="small"
                     v-model="scope.row.priority"
                     :min="0"
                     :max="999"
@@ -89,7 +91,7 @@
 
         <el-col :span="24" :xs="24">
           <el-form-item
-            :label="`${$t('task.task-split')}: `"
+            :label="`${t('task.task-split')}: `"
             :label-width="formLabelWidth"
           >
             <el-input-number
@@ -98,14 +100,14 @@
               controls-position="right"
               :min="1"
               :max="config.engineMaxConnectionPerServer"
-              :label="$t('task.task-split')"
+              :label="t('task.task-split')"
             >
             </el-input-number>
           </el-form-item>
         </el-col>
       </el-row>
       <el-form-item
-        :label="`${$t('task.task-dir')}: `"
+        :label="`${t('task.task-dir')}: `"
         :label-width="formLabelWidth"
       >
         <el-input
@@ -113,82 +115,87 @@
           v-model="form.dir"
           :readonly="isMas"
         >
-          <mo-history-directory
-            slot="prepend"
-            @selected="handleHistoryDirectorySelected"
-          />
-          <mo-select-directory
-            v-if="isRenderer"
-            slot="append"
-            @selected="handleNativeDirectorySelected"
-          />
+          <template #prepend>
+            <mo-history-directory
+              placement="top-start"
+              @selected="handleHistoryDirectorySelected"
+            />
+          </template>
+          <template #append>
+            <mo-select-directory
+              v-if="isRenderer"
+              @selected="handleNativeDirectorySelected"
+            />
+          </template>
         </el-input>
       </el-form-item>
       <div class="task-advanced-options" v-if="showAdvanced">
         <el-row :gutter="8" style="margin-bottom: 8px; align-items:center;">
           <el-col :span="16" :xs="14">
-            <el-form-item :label="`${$t('task.advanced-presets')}: `" :label-width="formLabelWidth">
-              <el-select v-model="selectedAdvancedPresetId" placeholder="" @change="onAdvancedPresetChange">
-                <el-option :label="$t('task.empty-preset')" value="" />
-                <el-option v-for="p in advancedPresets" :key="p.id" :label="p.name" :value="p.id" />
-              </el-select>
+            <el-form-item :label="`${t('task.advanced-presets')}: `" :label-width="formLabelWidth">
+              <mo-extend-select
+                v-model="selectedAdvancedPresetId"
+                placeholder=""
+                :options="[{ label: t('task.empty-preset'), value: '' }, ...advancedPresets.map(p => ({ label: p.name, value: p.id }))]"
+                @change="onAdvancedPresetChange"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="8" :xs="10" style="text-align:right;">
             <div class="preset-actions">
-              <el-button type="primary" size="mini" @click="saveOrUpdateAdvancedPreset">{{ selectedAdvancedPresetId ? $t('task.update-advanced-preset') : $t('task.save-advanced-preset') }}</el-button>
-              <el-button type="danger" size="mini" :disabled="!selectedAdvancedPresetId" @click="deleteAdvancedPreset">{{ $t('task.delete-advanced-preset') }}</el-button>
+              <el-button type="primary" size="small" @click="saveOrUpdateAdvancedPreset">{{ selectedAdvancedPresetId ? t('task.update-advanced-preset') : t('task.save-advanced-preset') }}</el-button>
+              <el-button type="danger" size="small" :disabled="!selectedAdvancedPresetId" @click="deleteAdvancedPreset">{{ t('task.delete-advanced-preset') }}</el-button>
             </div>
           </el-col>
         </el-row>
         <el-form-item
-          :label="`${$t('task.task-user-agent')}: `"
+          :label="`${t('task.task-user-agent')}: `"
           :label-width="formLabelWidth"
         >
           <el-input
             type="textarea"
             auto-complete="off"
             :autosize="{ minRows: 2, maxRows: 3 }"
-            :placeholder="$t('task.task-user-agent')"
+            :placeholder="t('task.task-user-agent')"
             v-model="form.userAgent"
           >
           </el-input>
         </el-form-item>
         <el-form-item
-          :label="`${$t('task.task-authorization')}: `"
+          :label="`${t('task.task-authorization')}: `"
           :label-width="formLabelWidth"
         >
           <el-input
             type="textarea"
             auto-complete="off"
             :autosize="{ minRows: 2, maxRows: 3 }"
-            :placeholder="$t('task.task-authorization')"
+            :placeholder="t('task.task-authorization')"
             v-model="form.authorization"
           >
           </el-input>
         </el-form-item>
         <el-form-item
-          :label="`${$t('task.task-referer')}: `"
+          :label="`${t('task.task-referer')}: `"
           :label-width="formLabelWidth"
         >
           <el-input
             type="textarea"
             auto-complete="off"
             :autosize="{ minRows: 2, maxRows: 3 }"
-            :placeholder="$t('task.task-referer')"
+            :placeholder="t('task.task-referer')"
             v-model="form.referer"
           >
           </el-input>
         </el-form-item>
         <el-form-item
-          :label="`${$t('task.task-cookie')}: `"
+          :label="`${t('task.task-cookie')}: `"
           :label-width="formLabelWidth"
         >
           <el-input
             type="textarea"
             auto-complete="off"
             :autosize="{ minRows: 2, maxRows: 3 }"
-            :placeholder="$t('task.task-cookie')"
+            :placeholder="t('task.task-cookie')"
             v-model="form.cookie"
           >
           </el-input>
@@ -196,7 +203,7 @@
         <el-row :gutter="12">
           <el-col :span="16" :xs="24">
             <el-form-item
-              :label="`${$t('task.task-proxy')}: `"
+              :label="`${t('task.task-proxy')}: `"
               :label-width="formLabelWidth"
             >
               <el-input
@@ -208,7 +215,7 @@
           <el-col :span="8" :xs="24">
             <div class="help-link">
               <a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Proxy" rel="noopener noreferrer">
-                {{ $t('preferences.proxy-tips') }}
+                {{ t('preferences.proxy-tips') }}
                 <mo-icon name="link" width="12" height="12" />
               </a>
             </div>
@@ -216,907 +223,926 @@
         </el-row>
         <el-form-item label="" :label-width="formLabelWidth" style="margin-top: 12px;">
           <div class="toggle-row">
-            <span class="toggle-label">{{$t('task.navigate-to-downloading')}}</span>
+            <span class="toggle-label">{{t('task.navigate-to-downloading')}}</span>
             <el-switch v-model="form.newTaskShowDownloading" />
           </div>
         </el-form-item>
       </div>
   </el-form>
-<div slot="footer" class="dialog-footer">
+<template #footer>
+<div class="dialog-footer">
 <el-checkbox
 class="chk"
 v-model="showAdvanced"
 >
-{{$t('task.show-advanced-options')}}
+{{t('task.show-advanced-options')}}
 </el-checkbox>
         <el-button
           type="primary"
           class="dialog-submit-btn"
-          @click="submitForm('taskForm')"
+          @click="submitForm()"
         >
-          {{$t('app.submit')}}
+          {{t('app.submit')}}
         </el-button>
       </div>
+</template>
     <el-dialog
-      custom-class="save-advanced-preset-dialog"
+      class="save-advanced-preset-dialog"
       width="400px"
-      :visible.sync="savePresetDialogVisible"
+      v-model="savePresetDialogVisible"
       :append-to-body="true"
     >
       <div>
         <el-form label-position="left">
-          <el-form-item :label="`${$t('task.preset-name')}: `" :label-width="formLabelWidth">
+          <el-form-item :label="`${t('task.preset-name')}: `" :label-width="formLabelWidth">
             <el-input v-model="savePresetName" />
           </el-form-item>
         </el-form>
       </div>
-      <div slot="footer" class="dialog-footer">
-        <el-button @click="savePresetDialogVisible=false">{{ $t('app.cancel') }}</el-button>
-        <el-button type="primary" @click="saveAdvancedPreset">{{ $t('app.save') }}</el-button>
-      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="savePresetDialogVisible=false">{{ t('app.cancel') }}</el-button>
+          <el-button type="primary" @click="saveAdvancedPreset">{{ t('app.save') }}</el-button>
+        </div>
+      </template>
     </el-dialog>
   </el-dialog>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import { mapState } from 'vuex'
-  import { isEmpty } from 'lodash'
-  import HistoryDirectory from '@/components/Preference/HistoryDirectory'
-  import SelectDirectory from '@/components/Native/SelectDirectory'
-  import SelectTorrent from '@/components/Task/SelectTorrent'
-  import SegmentedSlider from '@/components/SegmentedSlider/SegmentedSlider'
-  import {
-    initTaskForm,
-    buildUriPayload,
-    buildTorrentPayload
-  } from '@/utils/task'
-  import { ADD_TASK_TYPE } from '@shared/constants'
-  import { detectResource, splitTaskLinks, normalizeCookie, generateUniqueTaskName } from '@shared/utils'
-  import '@/components/Icons/inbox'
+<script setup>
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import is from 'electron-is'
+import { ipcRenderer } from 'electron'
+import { isEmpty } from 'lodash'
+// mo-history-directory, mo-select-directory, mo-select-torrent,
+// mo-segmented-slider, mo-hover-tip, mo-extend-select are globally registered in main.js
+import {
+  initTaskForm,
+  buildUriPayload,
+  buildTorrentPayload
+} from '@/utils/task'
+import i18n from '@/plugins/i18n'
+import { createMsg } from '@/components/Msg'
+import { useAppStore } from '@/store/app'
+import { useTaskStore } from '@/store/task'
+import { usePreferenceStore } from '@/store/preference'
+import { storeToRefs } from 'pinia'
+import { ADD_TASK_TYPE } from '@shared/constants'
+import { detectResource, splitTaskLinks, normalizeCookie, generateUniqueTaskName } from '@shared/utils'
+import '@/components/Icons/inbox'
+import '@/components/Icons/folder'
+import '@/components/Icons/link'
+import { Close } from '@element-plus/icons-vue'
 
-  export default {
-    name: 'mo-add-task',
-    components: {
-      [HistoryDirectory.name]: HistoryDirectory,
-      [SelectDirectory.name]: SelectDirectory,
-      [SelectTorrent.name]: SelectTorrent,
-      [SegmentedSlider.name]: SegmentedSlider
-    },
-    props: {
-      visible: {
-        type: Boolean,
-        default: false
-      },
-      type: {
-        type: String,
-        default: ADD_TASK_TYPE.URI
+defineOptions({ name: 'mo-add-task' })
+
+const { t } = i18n.global
+const msg = createMsg(ElMessage, { showClose: true })
+const router = useRouter()
+
+const props = defineProps({
+  visible: {
+    type: Boolean,
+    default: false
+  },
+  type: {
+    type: String,
+    default: ADD_TASK_TYPE.URI
+  }
+})
+
+const appStore = useAppStore()
+const taskStore = useTaskStore()
+const preferenceStore = usePreferenceStore()
+const { config } = storeToRefs(preferenceStore)
+const { addTaskUrl: addTaskUrlFromStore } = storeToRefs(appStore)
+const { taskList } = storeToRefs(taskStore)
+
+// --- Data ---
+const formLabelWidth = '110px'
+const showAdvanced = ref(false)
+const form = ref({})
+const rules = ref({})
+const parsedTasks = ref([])
+const lastDuplicateHistoryKey = ref('')
+const keepTrailingNewline = ref(false)
+const advancedPresets = ref([])
+const selectedAdvancedPresetId = ref('')
+const savePresetDialogVisible = ref(false)
+const savePresetName = ref('')
+let clipboardTimer = null
+const lastClipboardText = ref('')
+const dialogOpenInitialized = ref(false)
+const dialogVisible = ref(false)
+let _closeTimer = null
+let _historyUrlSet = null
+
+// --- Template refs ---
+const taskFormRef = ref(null)
+const uriInput = ref(null)
+const selectTorrent = ref(null)
+
+// --- Computed ---
+const isRenderer = is.renderer()
+const isMas = is.mas()
+const isPriorityEngineEnabled = computed(() => !!(config.value && config.value.enablePriorityEngine))
+const taskType = computed(() => props.type === 'video' ? ADD_TASK_TYPE.URI : props.type)
+const taskTypeOptions = computed(() => [
+  { value: 'uri', label: t('task.uri-task') },
+  { value: 'torrent', label: t('task.torrent-task') }
+])
+const parsedTableMaxHeight = computed(() => {
+  const count = parsedTasks.value.length
+  if (count === 0) return undefined
+  const headerHeight = 40
+  const rowHeight = 32
+  const maxRows = 5
+  const maxHeight = headerHeight + maxRows * rowHeight
+  return Math.min(headerHeight + count * rowHeight, maxHeight)
+})
+
+// --- Watchers ---
+watch(taskType, (current, previous) => {
+  // 切换任务类型时清除解析预览，防止种子文件列表显示在链接任务的解析框中
+  if (current !== previous) {
+    parsedTasks.value = []
+  }
+
+  if (props.visible && isUriLikeType(previous)) {
+    return
+  }
+
+  if (isUriLikeType(current)) {
+    // 切换到链接任务时，如果已有 URL 则重新构建预览
+    if (form.value.uris) {
+      updateUriPreview(form.value.uris)
+    }
+    setTimeout(() => {
+      uriInput.value && uriInput.value.focus()
+    }, 50)
+  }
+})
+
+watch(() => props.visible, (current) => {
+  dialogVisible.value = current
+  const cfg = config.value || {}
+  const clipboardAutoPasteEnabled = cfg.clipboardAutoPaste === undefined ? true : !!cfg.clipboardAutoPaste
+  if (current === true) {
+    document.addEventListener('keydown', handleHotkey)
+    if (clipboardAutoPasteEnabled) {
+      startClipboardWatch()
+    }
+  } else {
+    document.removeEventListener('keydown', handleHotkey)
+    stopClipboardWatch()
+  }
+})
+
+watch(addTaskUrlFromStore, (current, previous) => {
+  if (!props.visible) {
+    return
+  }
+  applyUrlFromStore(current, previous)
+})
+
+watch(() => form.value.uris, (val) => {
+  if (isUriLikeType(taskType.value)) {
+    updateUriPreview(val)
+  }
+})
+
+// --- Lifecycle ---
+onMounted(() => {
+  dialogVisible.value = props.visible
+  if (props.visible && !dialogOpenInitialized.value) {
+    handleOpen()
+    nextTick(() => {
+      handleOpened()
+    })
+  }
+})
+
+onBeforeUnmount(() => {
+  stopClipboardWatch()
+  if (_closeTimer) {
+    clearTimeout(_closeTimer)
+    _closeTimer = null
+  }
+  document.removeEventListener('keydown', handleHotkey)
+})
+
+// --- Methods ---
+function isUriLikeType (type) {
+  return type === ADD_TASK_TYPE.URI
+}
+
+function applyUrlFromStore (current, previous) {
+  if (!isUriLikeType(taskType.value)) {
+    return
+  }
+  const cur = (current || '').trim()
+  const prev = (previous || '').trim()
+  if (!cur || cur === prev) {
+    return
+  }
+  const existing = (form.value.uris || '').trim()
+  const lines = existing ? existing.split(/\r?\n/).filter(Boolean) : []
+  if (!lines.includes(cur)) {
+    const next = existing ? `${existing}\n${cur}` : cur
+    keepTrailingNewline.value = true
+    form.value.uris = next
+  }
+}
+
+function loadAdvancedPresets () {
+  const { advancedOptionPresets = [] } = config.value || {}
+  advancedPresets.value = Array.isArray(advancedOptionPresets) ? advancedOptionPresets : []
+}
+
+function openSavePresetDialog () {
+  const data = {
+    userAgent: form.value.userAgent || '',
+    authorization: form.value.authorization || '',
+    referer: form.value.referer || '',
+    cookie: form.value.cookie || '',
+    allProxy: form.value.allProxy || '',
+    newTaskShowDownloading: !!form.value.newTaskShowDownloading
+  }
+  const allEmpty = [
+    data.userAgent,
+    data.authorization,
+    data.referer,
+    data.cookie,
+    data.allProxy
+  ].every(v => !v || !String(v).trim()) && !data.newTaskShowDownloading
+  if (allEmpty) {
+    msg.warning(t('task.empty-advanced-options-tips'))
+    return
+  }
+  savePresetName.value = ''
+  savePresetDialogVisible.value = true
+}
+
+function saveAdvancedPreset () {
+  const name = (savePresetName.value || '').trim() || `Preset ${new Date().toLocaleString()}`
+  const data = {
+    userAgent: form.value.userAgent || '',
+    authorization: form.value.authorization || '',
+    referer: form.value.referer || '',
+    cookie: form.value.cookie || '',
+    allProxy: form.value.allProxy || '',
+    newTaskShowDownloading: !!form.value.newTaskShowDownloading
+  }
+  const preset = { id: Date.now().toString(), name, data }
+  const next = [...advancedPresets.value, preset]
+  advancedPresets.value = next
+  preferenceStore.save({ advancedOptionPresets: next })
+  msg.success(t('task.save-preset-success'))
+  savePresetDialogVisible.value = false
+  selectedAdvancedPresetId.value = preset.id
+}
+
+function onAdvancedPresetChange (id) {
+  if (!id) {
+    form.value.userAgent = ''
+    form.value.authorization = ''
+    form.value.referer = ''
+    form.value.cookie = ''
+    form.value.allProxy = ''
+    form.value.newTaskShowDownloading = !!(config.value && config.value.newTaskShowDownloading)
+    return
+  }
+  const preset = advancedPresets.value.find(p => p.id === id)
+  if (!preset) return
+  const d = preset.data || {}
+  form.value.userAgent = d.userAgent || ''
+  form.value.authorization = d.authorization || ''
+  form.value.referer = d.referer || ''
+  form.value.cookie = d.cookie || ''
+  form.value.allProxy = d.allProxy || ''
+  form.value.newTaskShowDownloading = !!d.newTaskShowDownloading
+  msg.success(t('task.apply-preset-success'))
+}
+
+function deleteAdvancedPreset () {
+  const id = selectedAdvancedPresetId.value
+  if (!id) return
+  const next = advancedPresets.value.filter(p => p.id !== id)
+  advancedPresets.value = next
+  selectedAdvancedPresetId.value = ''
+  onAdvancedPresetChange('')
+  preferenceStore.save({ advancedOptionPresets: next })
+  msg.success(t('task.delete-preset-success'))
+}
+
+function updateAdvancedPreset () {
+  const id = selectedAdvancedPresetId.value
+  if (!id) return
+  const presetIndex = advancedPresets.value.findIndex(p => p.id === id)
+  if (presetIndex === -1) return
+
+  const data = {
+    userAgent: form.value.userAgent || '',
+    authorization: form.value.authorization || '',
+    referer: form.value.referer || '',
+    cookie: form.value.cookie || '',
+    allProxy: form.value.allProxy || '',
+    newTaskShowDownloading: !!form.value.newTaskShowDownloading
+  }
+
+  const updatedPresets = [...advancedPresets.value]
+  updatedPresets[presetIndex] = {
+    ...updatedPresets[presetIndex],
+    data
+  }
+
+  advancedPresets.value = updatedPresets
+  preferenceStore.save({ advancedOptionPresets: updatedPresets })
+  msg.success(t('task.update-preset-success'))
+}
+
+function saveOrUpdateAdvancedPreset () {
+  if (selectedAdvancedPresetId.value) {
+    updateAdvancedPreset()
+  } else {
+    openSavePresetDialog()
+  }
+}
+
+async function autofillResourceLink () {
+  try {
+    const content = await ipcRenderer.invoke('clipboard:read-text')
+    const text = (content || '').trim()
+    if (!text) {
+      return
+    }
+    lastClipboardText.value = text
+
+    if (isEmpty(form.value.uris)) {
+      const hasResource = detectResource(text)
+      if (!hasResource) {
+        return
       }
-    },
-    data () {
-      return {
-        formLabelWidth: '110px',
-        showAdvanced: false,
-        form: {},
-        rules: {},
-        parsedTasks: [],
-        lastDuplicateHistoryKey: '',
-        keepTrailingNewline: false,
-        advancedPresets: [],
-        selectedAdvancedPresetId: '',
-        savePresetDialogVisible: false,
-        savePresetName: '',
-        clipboardTimer: null,
-        lastClipboardText: '',
-        dialogOpenInitialized: false,
-        dialogVisible: false
+      form.value.uris = text
+      updateUriPreview(form.value.uris)
+      keepTrailingNewline.value = true
+      ensureTrailingNewlineAndCaret()
+    }
+  } catch (e) {
+  }
+}
+
+function startClipboardWatch () {
+  if (clipboardTimer) {
+    return
+  }
+  const readClipboard = () => ipcRenderer.invoke('clipboard:read-text')
+  const checkClipboard = async () => {
+    if (!props.visible) {
+      return
+    }
+    if (!isUriLikeType(taskType.value)) {
+      return
+    }
+    const content = await readClipboard()
+    const text = (content || '').trim()
+    if (!text) {
+      return
+    }
+    if (text === lastClipboardText.value) {
+      return
+    }
+    lastClipboardText.value = text
+    const hasResource = detectResource(text)
+    if (!hasResource) {
+      return
+    }
+    const existing = (form.value.uris || '').trim()
+    if (!existing) {
+      form.value.uris = text
+    } else {
+      const lines = existing.split(/\r?\n/).filter(Boolean)
+      if (lines.includes(text)) {
+        return
       }
-    },
-    computed: {
-      isRenderer: () => is.renderer(),
-      isMas: () => is.mas(),
-      ...mapState('app', {
-        addTaskUrlFromStore: state => state.addTaskUrl
-      }),
-      ...mapState('task', {
-        taskList: state => state.taskList
-      }),
-      ...mapState('preference', {
-        config: state => state.config
-      }),
-      isPriorityEngineEnabled () {
-        return !!(this.config && this.config.enablePriorityEngine)
-      },
-      taskType () {
-        return this.type === 'video' ? ADD_TASK_TYPE.URI : this.type
-      },
-      taskTypeOptions () {
-        return [
-          { value: 'uri', label: this.$t('task.uri-task') },
-          { value: 'torrent', label: this.$t('task.torrent-task') }
-        ]
-      },
-      dialogTop () {
-        const advancedVisible = this.showAdvanced
-        return advancedVisible ? '8vh' : '15vh'
-      },
-      parsedTableMaxHeight () {
-        const count = this.parsedTasks.length
-        if (count === 0) return undefined
-        const headerHeight = 40
-        const rowHeight = 32
-        const maxRows = 5
-        const maxHeight = headerHeight + maxRows * rowHeight
-        return Math.min(headerHeight + count * rowHeight, maxHeight)
+      form.value.uris = `${existing}\n${text}`
+    }
+    updateUriPreview(form.value.uris)
+    keepTrailingNewline.value = true
+    ensureTrailingNewlineAndCaret()
+  }
+  clipboardTimer = setInterval(checkClipboard, 1000)
+}
+
+function stopClipboardWatch () {
+  if (clipboardTimer) {
+    clearInterval(clipboardTimer)
+    clipboardTimer = null
+  }
+}
+
+function beforeClose (done) {
+  if (isEmpty(form.value.uris) && isEmpty(form.value.torrent)) {
+    done()
+    if (_closeTimer) clearTimeout(_closeTimer)
+    _closeTimer = setTimeout(() => {
+      _closeTimer = null
+      if (!dialogVisible.value) {
+        handleClosed()
       }
+    }, 200)
+  }
+}
+
+function buildStoreState () {
+  return {
+    app: {
+      addTaskUrl: appStore.addTaskUrl,
+      addTaskOptions: appStore.addTaskOptions
     },
-    mounted () {
-      this.dialogVisible = this.visible
-      if (this.visible && !this.dialogOpenInitialized) {
-        this.handleOpen()
-        this.$nextTick(() => {
-          this.handleOpened()
-        })
-      }
-    },
-    watch: {
-      taskType (current, previous) {
-        // 切换任务类型时清除解析预览，防止种子文件列表显示在链接任务的解析框中
-        if (current !== previous) {
-          this.parsedTasks = []
-        }
+    preference: {
+      config: config.value
+    }
+  }
+}
 
-        if (this.visible && this.isUriLikeType(previous)) {
-          return
-        }
+function handleOpen () {
+  dialogOpenInitialized.value = true
+  form.value = initTaskForm(buildStoreState())
+  parsedTasks.value = []
+  selectedAdvancedPresetId.value = ''
+  onAdvancedPresetChange('')
+  loadAdvancedPresets()
+  if (isUriLikeType(taskType.value)) {
+    if (addTaskUrlFromStore.value) {
+      applyUrlFromStore(addTaskUrlFromStore.value, '')
+    }
+    if (!isEmpty(form.value.uris)) {
+      updateUriPreview(form.value.uris)
+      keepTrailingNewline.value = true
+      ensureTrailingNewlineAndCaret()
+    }
+    const cfg = config.value || {}
+    const clipboardAutoPasteEnabled = cfg.clipboardAutoPaste === undefined ? true : !!cfg.clipboardAutoPaste
+    if (clipboardAutoPasteEnabled) {
+      autofillResourceLink()
+    }
+    setTimeout(() => {
+      uriInput.value && uriInput.value.focus()
+    }, 50)
+  }
+}
 
-        if (this.isUriLikeType(current)) {
-          // 切换到链接任务时，如果已有 URL 则重新构建预览
-          if (this.form.uris) {
-            this.updateUriPreview(this.form.uris)
-          }
-          setTimeout(() => {
-            this.$refs.uri && this.$refs.uri.focus()
-          }, 50)
-        }
-      },
-      visible (current) {
-        this.dialogVisible = current
-        const cfg = this.config || {}
-        const clipboardAutoPasteEnabled = cfg.clipboardAutoPaste === undefined ? true : !!cfg.clipboardAutoPaste
-        if (current === true) {
-          document.addEventListener('keydown', this.handleHotkey)
-          if (clipboardAutoPasteEnabled) {
-            this.startClipboardWatch()
-          }
-        } else {
-          document.removeEventListener('keydown', this.handleHotkey)
-          this.stopClipboardWatch()
-        }
-      },
-      addTaskUrlFromStore (current, previous) {
-        if (!this.visible) {
-          return
-        }
-        this.applyUrlFromStore(current, previous)
-      },
-      'form.uris' (val) {
-        if (this.isUriLikeType(this.taskType)) {
-          this.updateUriPreview(val)
-        }
-      }
-    },
-    beforeDestroy () {
-      this.stopClipboardWatch()
-      if (this._closeTimer) {
-        clearTimeout(this._closeTimer)
-        this._closeTimer = null
-      }
-      document.removeEventListener('keydown', this.handleHotkey)
-    },
-    methods: {
-      isUriLikeType (type) {
-        return type === ADD_TASK_TYPE.URI
-      },
-      applyUrlFromStore (current, previous) {
-        if (!this.isUriLikeType(this.taskType)) {
-          return
-        }
-        const cur = (current || '').trim()
-        const prev = (previous || '').trim()
-        if (!cur || cur === prev) {
-          return
-        }
-        const existing = (this.form.uris || '').trim()
-        const lines = existing ? existing.split(/\r?\n/).filter(Boolean) : []
-        if (!lines.includes(cur)) {
-          const next = existing ? `${existing}\n${cur}` : cur
-          this.keepTrailingNewline = true
-          this.form.uris = next
-        }
-      },
-      loadAdvancedPresets () {
-        const { advancedOptionPresets = [] } = this.config || {}
-        this.advancedPresets = Array.isArray(advancedOptionPresets) ? advancedOptionPresets : []
-      },
-      openSavePresetDialog () {
-        const data = {
-          userAgent: this.form.userAgent || '',
-          authorization: this.form.authorization || '',
-          referer: this.form.referer || '',
-          cookie: this.form.cookie || '',
-          allProxy: this.form.allProxy || '',
-          newTaskShowDownloading: !!this.form.newTaskShowDownloading
-        }
-        const allEmpty = [
-          data.userAgent,
-          data.authorization,
-          data.referer,
-          data.cookie,
-          data.allProxy
-        ].every(v => !v || !String(v).trim()) && !data.newTaskShowDownloading
-        if (allEmpty) {
-          this.$msg.warning(this.$t('task.empty-advanced-options-tips'))
-          return
-        }
-        this.savePresetName = ''
-        this.savePresetDialogVisible = true
-      },
-      saveAdvancedPreset () {
-        const name = (this.savePresetName || '').trim() || `Preset ${new Date().toLocaleString()}`
-        const data = {
-          userAgent: this.form.userAgent || '',
-          authorization: this.form.authorization || '',
-          referer: this.form.referer || '',
-          cookie: this.form.cookie || '',
-          allProxy: this.form.allProxy || '',
-          newTaskShowDownloading: !!this.form.newTaskShowDownloading
-        }
-        const preset = { id: Date.now().toString(), name, data }
-        const next = [...this.advancedPresets, preset]
-        this.advancedPresets = next
-        this.$store.dispatch('preference/save', { advancedOptionPresets: next })
-        this.$msg.success(this.$t('task.save-preset-success'))
-        this.savePresetDialogVisible = false
-        this.selectedAdvancedPresetId = preset.id
-      },
-      onAdvancedPresetChange (id) {
-        if (!id) {
-          this.form.userAgent = ''
-          this.form.authorization = ''
-          this.form.referer = ''
-          this.form.cookie = ''
-          this.form.allProxy = ''
-          this.form.newTaskShowDownloading = !!(this.config && this.config.newTaskShowDownloading)
-          return
-        }
-        const preset = this.advancedPresets.find(p => p.id === id)
-        if (!preset) return
-        const d = preset.data || {}
-        this.form.userAgent = d.userAgent || ''
-        this.form.authorization = d.authorization || ''
-        this.form.referer = d.referer || ''
-        this.form.cookie = d.cookie || ''
-        this.form.allProxy = d.allProxy || ''
-        this.form.newTaskShowDownloading = !!d.newTaskShowDownloading
-        this.$msg.success(this.$t('task.apply-preset-success'))
-      },
-      deleteAdvancedPreset () {
-        const id = this.selectedAdvancedPresetId
-        if (!id) return
-        const next = this.advancedPresets.filter(p => p.id !== id)
-        this.advancedPresets = next
-        this.selectedAdvancedPresetId = ''
-        this.onAdvancedPresetChange('')
-        this.$store.dispatch('preference/save', { advancedOptionPresets: next })
-        this.$msg.success(this.$t('task.delete-preset-success'))
-      },
-      updateAdvancedPreset () {
-        const id = this.selectedAdvancedPresetId
-        if (!id) return
-        const presetIndex = this.advancedPresets.findIndex(p => p.id === id)
-        if (presetIndex === -1) return
+function handleOpened () {
+  detectThunderResource(form.value.uris)
+}
 
-        const data = {
-          userAgent: this.form.userAgent || '',
-          authorization: this.form.authorization || '',
-          referer: this.form.referer || '',
-          cookie: this.form.cookie || '',
-          allProxy: this.form.allProxy || '',
-          newTaskShowDownloading: !!this.form.newTaskShowDownloading
-        }
+function handleClose () {
+  dialogVisible.value = false
+  if (_closeTimer) clearTimeout(_closeTimer)
+  _closeTimer = setTimeout(() => {
+    _closeTimer = null
+    if (!dialogVisible.value) {
+      handleClosed()
+    }
+  }, 200)
+}
 
-        const updatedPresets = [...this.advancedPresets]
-        updatedPresets[presetIndex] = {
-          ...updatedPresets[presetIndex],
-          data
-        }
+function handleClosed () {
+  if (_closeTimer) {
+    clearTimeout(_closeTimer)
+    _closeTimer = null
+  }
+  dialogOpenInitialized.value = false
+  reset()
+  appStore.hideAddTaskDialog()
+}
 
-        this.advancedPresets = updatedPresets
-        this.$store.dispatch('preference/save', { advancedOptionPresets: updatedPresets })
-        this.$msg.success(this.$t('task.update-preset-success'))
-      },
-      saveOrUpdateAdvancedPreset () {
-        if (this.selectedAdvancedPresetId) {
-          this.updateAdvancedPreset()
-        } else {
-          this.openSavePresetDialog()
-        }
-      },
-      async autofillResourceLink () {
-        try {
-          // 渲染进程直连 electron.clipboard 已弃用，改经主进程 IPC 桥
-          const content = await this.$electron.ipcRenderer.invoke('clipboard:read-text')
-          const text = (content || '').trim()
-          if (!text) {
-            return
-          }
-          this.lastClipboardText = text
+function handleHotkey (event) {
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+    event.preventDefault()
+    submitForm()
+  }
+}
 
-          if (isEmpty(this.form.uris)) {
-            const hasResource = detectResource(text)
-            if (!hasResource) {
-              return
-            }
-            this.form.uris = text
-            this.updateUriPreview(this.form.uris)
-            this.keepTrailingNewline = true
-            this.ensureTrailingNewlineAndCaret()
-          }
-        } catch (e) {
-        }
-      },
-      startClipboardWatch () {
-        if (this.clipboardTimer) {
-          return
-        }
-        const readClipboard = () => this.$electron.ipcRenderer.invoke('clipboard:read-text')
-        const checkClipboard = async () => {
-          if (!this.visible) {
-            return
-          }
-          if (!this.isUriLikeType(this.taskType)) {
-            return
-          }
-          const content = await readClipboard()
-          const text = (content || '').trim()
-          if (!text) {
-            return
-          }
-          if (text === this.lastClipboardText) {
-            return
-          }
-          this.lastClipboardText = text
-          const hasResource = detectResource(text)
-          if (!hasResource) {
-            return
-          }
-          const existing = (this.form.uris || '').trim()
-          if (!existing) {
-            this.form.uris = text
-          } else {
-            const lines = existing.split(/\r?\n/).filter(Boolean)
-            if (lines.includes(text)) {
-              return
-            }
-            this.form.uris = `${existing}\n${text}`
-          }
-          this.updateUriPreview(this.form.uris)
-          this.keepTrailingNewline = true
-          this.ensureTrailingNewlineAndCaret()
-        }
-        this.clipboardTimer = setInterval(checkClipboard, 1000)
-      },
-      stopClipboardWatch () {
-        if (this.clipboardTimer) {
-          clearInterval(this.clipboardTimer)
-          this.clipboardTimer = null
-        }
-      },
-      beforeClose (done) {
-        if (isEmpty(this.form.uris) && isEmpty(this.form.torrent)) {
-          done()
-          // 确保在动画结束后dispatch，即使@closed事件未触发
-          if (this._closeTimer) clearTimeout(this._closeTimer)
-          this._closeTimer = setTimeout(() => {
-            this._closeTimer = null
-            if (!this.dialogVisible) {
-              this.handleClosed()
-            }
-          }, 200)
-        }
-      },
-      handleOpen () {
-        this.dialogOpenInitialized = true
-        this.form = initTaskForm(this.$store.state)
-        this.parsedTasks = []
-        this.selectedAdvancedPresetId = ''
-        this.onAdvancedPresetChange('')
-        this.loadAdvancedPresets()
-        if (this.isUriLikeType(this.taskType)) {
-          if (this.addTaskUrlFromStore) {
-            this.applyUrlFromStore(this.addTaskUrlFromStore, '')
-          }
-          if (!isEmpty(this.form.uris)) {
-            this.updateUriPreview(this.form.uris)
-            this.keepTrailingNewline = true
-            this.ensureTrailingNewlineAndCaret()
-          }
-          const cfg = this.config || {}
-          const clipboardAutoPasteEnabled = cfg.clipboardAutoPaste === undefined ? true : !!cfg.clipboardAutoPaste
-          if (clipboardAutoPasteEnabled) {
-            this.autofillResourceLink()
-          }
-          setTimeout(() => {
-            this.$refs.uri && this.$refs.uri.focus()
-          }, 50)
-        }
-      },
-      handleOpened () {
-        this.detectThunderResource(this.form.uris)
-      },
-      handleClose () {
-        this.dialogVisible = false
-        // 确保在动画结束后dispatch，即使@closed事件未触发
-        if (this._closeTimer) clearTimeout(this._closeTimer)
-        this._closeTimer = setTimeout(() => {
-          this._closeTimer = null
-          if (!this.dialogVisible) {
-            this.handleClosed()
-          }
-        }, 200)
-      },
-      handleClosed () {
-        if (this._closeTimer) {
-          clearTimeout(this._closeTimer)
-          this._closeTimer = null
-        }
-        this.dialogOpenInitialized = false
-        this.reset()
-        this.$store.dispatch('app/hideAddTaskDialog')
-      },
-      handleHotkey (event) {
-        if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-          event.preventDefault()
+function handleTaskTypeInput (type) {
+  appStore.changeAddTaskType(type)
+}
 
-          this.submitForm('taskForm')
-        }
-      },
-      handleTabClick (tab) {
-        this.$store.dispatch('app/changeAddTaskType', tab.name)
-      },
-      handleTaskTypeInput (type) {
-        this.$store.dispatch('app/changeAddTaskType', type)
-      },
-      handleUriPaste (event) {
-        // 从剪贴板直接获取粘贴的文本，避免依赖 v-model 更新时机
-        const pastedText = (event.clipboardData || window.clipboardData).getData('text') || ''
-        if (pastedText) {
-          this.detectThunderResource(pastedText)
-          this.updateUriPreview(pastedText)
-        }
-        setImmediate(() => {
-          this.keepTrailingNewline = true
-          this.ensureTrailingNewlineAndCaret()
-        })
-      },
-      ensureTrailingNewlineAndCaret () {
-        let uris = this.$refs.uri && (this.$refs.uri.value || (this.$refs.uri.$refs && this.$refs.uri.$refs.textarea && this.$refs.uri.$refs.textarea.value))
-        if (!uris) return
-        if (!/\n$/.test(uris)) {
-          uris = uris.replace(/\s+$/, '') + '\n'
-          this.form.uris = uris
-        }
-        this.$nextTick(() => {
-          const textarea = this.$refs.uri && this.$refs.uri.$refs && this.$refs.uri.$refs.textarea
-          if (textarea) {
-            const end = this.form.uris.length
-            textarea.selectionStart = end
-            textarea.selectionEnd = end
-          }
-          this.keepTrailingNewline = false
-        })
-      },
-      detectThunderResource (uris = '') {
-        if (uris.includes('thunder://')) {
-          this.$msg({
-            type: 'warning',
-            message: this.$t('task.thunder-link-tips'),
-            duration: 6000
-          })
-        }
-      },
-      handleTorrentChange (torrent, selectedFileIndex, files) {
-        this.form.torrent = torrent
-        this.form.selectFile = selectedFileIndex
-        if (Array.isArray(files) && files.length > 0) {
-          this.parsedTasks = files.map(f => {
-            const size = (typeof f.length === 'number') ? f.length : (typeof f.size === 'number' ? f.size : 0)
-            return { name: f.path || f.name, sizeText: this.bytesToSize(size) }
-          })
-        } else {
-          this.updateTorrentPreview()
-        }
-      },
-      handleHistoryDirectorySelected (dir) {
-        this.form.dir = dir
-      },
-      handleNativeDirectorySelected (dir) {
-        this.form.dir = dir
-        this.$store.dispatch('preference/recordHistoryDirectory', dir)
-      },
-      reset () {
-        this.showAdvanced = false
-        this.form = initTaskForm(this.$store.state)
-        this.parsedTasks = []
-        this.lastDuplicateHistoryKey = ''
-        this._historyUrlSet = null
-        this.selectedAdvancedPresetId = ''
-        this.savePresetDialogVisible = false
-        this.savePresetName = ''
-      },
-      enableNameEdit (idx) {
-        if (this.parsedTasks[idx]) {
-          this.$set(this.parsedTasks[idx], 'editing', true)
-        }
-      },
-      disableNameEdit (idx) {
-        const task = this.parsedTasks[idx]
-        if (!task) return
-        this.$set(task, 'editing', false)
-        const originalName = task.originalName || task.name || ''
-        if (!task.originalName && originalName) {
-          this.$set(task, 'originalName', originalName)
-        }
-        const currentName = task.name || ''
-        const renamed = originalName && currentName && currentName !== originalName
-        this.$set(task, 'renamed', !!renamed)
-      },
-      async updateUriPreview (uris = '') {
-        const sanitized = splitTaskLinks(uris || '')
-        const seen = new Set()
-        const lines = []
-        for (const u of sanitized) {
-          if (!seen.has(u)) {
-            seen.add(u)
-            lines.push(u)
-          }
-        }
-        const removed = sanitized.length - lines.length
-        const joined = lines.join('\n')
-        const currentJoined = (uris || '').trim().replace(/(?:\r\n|\r|\n)/g, '\n')
-        if (joined !== currentJoined) {
-          this.form.uris = joined
-          if (removed > 0) {
-            this.$msg.info(this.$t('task.remove-duplicate-links-message', { count: removed }))
-          }
-        }
+function handleUriPaste (event) {
+  const pastedText = (event.clipboardData || window.clipboardData).getData('text') || ''
+  if (pastedText) {
+    detectThunderResource(pastedText)
+    updateUriPreview(pastedText)
+  }
+  setImmediate(() => {
+    keepTrailingNewline.value = true
+    ensureTrailingNewlineAndCaret()
+  })
+}
 
-        // 保留已存在 URL 的优先值和其他属性
-        const existingMap = new Map()
-        for (const task of this.parsedTasks) {
-          if (task.url) {
-            existingMap.set(task.url, task)
+function ensureTrailingNewlineAndCaret () {
+  let uris = uriInput.value && (uriInput.value.value || (uriInput.value.$refs && uriInput.value.$refs.textarea && uriInput.value.$refs.textarea.value))
+  if (!uris) return
+  if (!/\n$/.test(uris)) {
+    uris = uris.replace(/\s+$/, '') + '\n'
+    form.value.uris = uris
+  }
+  nextTick(() => {
+    const textarea = uriInput.value && uriInput.value.$refs && uriInput.value.$refs.textarea
+    if (textarea) {
+      const end = form.value.uris.length
+      textarea.selectionStart = end
+      textarea.selectionEnd = end
+    }
+    keepTrailingNewline.value = false
+  })
+}
+
+function detectThunderResource (uris = '') {
+  if (uris.includes('thunder://')) {
+    msg({
+      type: 'warning',
+      message: t('task.thunder-link-tips'),
+      duration: 6000
+    })
+  }
+}
+
+function handleTorrentChange (torrent, selectedFileIndex, files) {
+  form.value.torrent = torrent
+  form.value.selectFile = selectedFileIndex
+  if (Array.isArray(files) && files.length > 0) {
+    parsedTasks.value = files.map(f => {
+      const size = (typeof f.length === 'number') ? f.length : (typeof f.size === 'number' ? f.size : 0)
+      return { name: f.path || f.name, sizeText: bytesToSize(size) }
+    })
+  } else {
+    updateTorrentPreview()
+  }
+}
+
+function handleHistoryDirectorySelected (dir) {
+  form.value.dir = dir
+}
+
+function handleNativeDirectorySelected (dir) {
+  form.value.dir = dir
+  preferenceStore.recordHistoryDirectory(dir)
+}
+
+function reset () {
+  showAdvanced.value = false
+  form.value = initTaskForm(buildStoreState())
+  parsedTasks.value = []
+  lastDuplicateHistoryKey.value = ''
+  _historyUrlSet = null
+  selectedAdvancedPresetId.value = ''
+  savePresetDialogVisible.value = false
+  savePresetName.value = ''
+}
+
+function enableNameEdit (idx) {
+  if (parsedTasks.value[idx]) {
+    parsedTasks.value[idx].editing = true
+  }
+}
+
+function disableNameEdit (idx) {
+  const task = parsedTasks.value[idx]
+  if (!task) return
+  task.editing = false
+  const originalName = task.originalName || task.name || ''
+  if (!task.originalName && originalName) {
+    task.originalName = originalName
+  }
+  const currentName = task.name || ''
+  const renamed = originalName && currentName && currentName !== originalName
+  task.renamed = !!renamed
+}
+
+async function updateUriPreview (uris = '') {
+  const sanitized = splitTaskLinks(uris || '')
+  const seen = new Set()
+  const lines = []
+  for (const u of sanitized) {
+    if (!seen.has(u)) {
+      seen.add(u)
+      lines.push(u)
+    }
+  }
+  const removed = sanitized.length - lines.length
+  const joined = lines.join('\n')
+  const currentJoined = (uris || '').trim().replace(/(?:\r\n|\r|\n)/g, '\n')
+  if (joined !== currentJoined) {
+    form.value.uris = joined
+    if (removed > 0) {
+      msg.info(t('task.remove-duplicate-links-message', { count: removed }))
+    }
+  }
+
+  const existingMap = new Map()
+  for (const task of parsedTasks.value) {
+    if (task.url) {
+      existingMap.set(task.url, task)
+    }
+  }
+
+  const suggestedName = lines.length === 1 && form.value.out && typeof form.value.out === 'string' && form.value.out.trim()
+    ? form.value.out.trim()
+    : null
+
+  if (suggestedName) {
+    form.value.out = ''
+  }
+
+  const items = lines.map((u, i) => {
+    if (suggestedName) {
+      try {
+        const url = decodeURI(u)
+        const lastSlash = url.lastIndexOf('/')
+        let name = lastSlash >= 0 ? url.substring(lastSlash + 1) : url
+        if (name) {
+          const qIdx = name.indexOf('?')
+          const hIdx = name.indexOf('#')
+          const cutIdx = [qIdx, hIdx].filter(i => i >= 0).sort((a, b) => a - b)[0]
+          if (typeof cutIdx === 'number') {
+            name = name.substring(0, cutIdx)
           }
         }
-
-        // 如果只有一个 URL 且 form.out 存在（从浏览器扩展传入的建议文件名），使用它
-        const suggestedName = lines.length === 1 && this.form.out && typeof this.form.out === 'string' && this.form.out.trim()
-          ? this.form.out.trim()
-          : null
-
-        // 使用建议文件名后立即清空，避免影响后续操作
-        if (suggestedName) {
-          this.form.out = ''
+        const uniqueName = generateUniqueTaskNameFn(suggestedName)
+        return {
+          name: uniqueName,
+          originalName: suggestedName,
+          renamed: uniqueName !== suggestedName,
+          sizeText: '-',
+          editing: false,
+          priority: 0,
+          url: u,
+          order: i
         }
-
-        const items = lines.map((u, i) => {
-          // 如果有建议的文件名，即使 URL 已存在也要使用新的建议文件名
-          if (suggestedName) {
-            try {
-              const url = decodeURI(u)
-              const lastSlash = url.lastIndexOf('/')
-              let name = lastSlash >= 0 ? url.substring(lastSlash + 1) : url
-              if (name) {
-                const qIdx = name.indexOf('?')
-                const hIdx = name.indexOf('#')
-                const cutIdx = [qIdx, hIdx].filter(i => i >= 0).sort((a, b) => a - b)[0]
-                if (typeof cutIdx === 'number') {
-                  name = name.substring(0, cutIdx)
-                }
-              }
-              // 使用建议的文件名并确保唯一
-              const uniqueName = this.generateUniqueTaskName(suggestedName)
-              return {
-                name: uniqueName,
-                originalName: suggestedName,
-                renamed: uniqueName !== suggestedName,
-                sizeText: '-',
-                editing: false,
-                priority: 0,
-                url: u,
-                order: i
-              }
-            } catch (e) {
-              const uniqueName = this.generateUniqueTaskName(suggestedName)
-              return {
-                name: uniqueName,
-                originalName: suggestedName,
-                renamed: uniqueName !== suggestedName,
-                sizeText: '-',
-                editing: false,
-                priority: 0,
-                url: u,
-                order: i
-              }
-            }
-          }
-
-          // 检查是否已存在该 URL，保留其优先值和其他属性
-          const existing = existingMap.get(u)
-          if (existing) {
-            const originalName = existing.originalName || existing.name || ''
-            const uniqueName = this.generateUniqueTaskName(existing.name)
-            return {
-              ...existing,
-              name: uniqueName,
-              originalName,
-              renamed: uniqueName !== existing.name,
-              order: i
-            }
-          }
-
-          try {
-            let name = ''
-            // ED2K 链接: ed2k://|file|filename|size|hash|/
-            if (u.toLowerCase().startsWith('ed2k://|file|')) {
-              const parts = u.split('|')
-              // parts[0] = 'ed2k://'
-              // parts[1] = 'file'
-              // parts[2] = filename
-              // parts[3] = size
-              // parts[4] = hash
-              if (parts.length >= 3) {
-                name = decodeURIComponent(parts[2])
-              }
-            } else {
-              const url = decodeURI(u)
-              const lastSlash = url.lastIndexOf('/')
-              name = lastSlash >= 0 ? url.substring(lastSlash + 1) : url
-              if (name) {
-                const qIdx = name.indexOf('?')
-                const hIdx = name.indexOf('#')
-                const cutIdx = [qIdx, hIdx].filter(i => i >= 0).sort((a, b) => a - b)[0]
-                if (typeof cutIdx === 'number') {
-                  name = name.substring(0, cutIdx)
-                }
-              }
-            }
-            // 使用建议的文件名（如果存在）并确保唯一
-            const finalName = suggestedName || name || u
-            const uniqueName = this.generateUniqueTaskName(finalName)
-            return {
-              name: uniqueName,
-              originalName: finalName,
-              renamed: uniqueName !== finalName,
-              sizeText: '-',
-              editing: false,
-              priority: 0,
-              url: u,
-              order: i
-            }
-          } catch (e) {
-            const finalName = suggestedName || u
-            const uniqueName = this.generateUniqueTaskName(finalName)
-            return {
-              name: uniqueName,
-              originalName: finalName,
-              renamed: uniqueName !== finalName,
-              sizeText: '-',
-              editing: false,
-              priority: 0,
-              url: u,
-              order: i
-            }
-          }
-        })
-        this.parsedTasks = items
-
-        // 只对新增的 URL 获取文件大小
-        const newLines = lines.filter(u => !existingMap.has(u))
-        if (newLines.length > 0) {
-          await this.fetchUriSizes(lines)
-        }
-
-        if (this.keepTrailingNewline && lines.length > 0) {
-          this.ensureTrailingNewlineAndCaret()
-        }
-      },
-      openVideoPreference () {
-        this.$router.push({ path: '/preference/video' }).catch(() => {})
-      },
-      async fetchUriSizes (lines = []) {
-        const buildHeaders = () => {
-          const h = {}
-          if (this.form.userAgent) h['User-Agent'] = this.form.userAgent
-          if (this.form.referer) h.Referer = this.form.referer
-          if (this.form.cookie) {
-            const cookie = normalizeCookie(this.form.cookie)
-            if (cookie) {
-              h.Cookie = cookie
-            }
-          }
-          if (this.form.authorization) h.Authorization = this.form.authorization
-          h.Accept = '*/*'
-          return h
-        }
-        const parseDisposition = (v) => {
-          if (!v) return null
-          const star = /filename\*=([^;]+)/i.exec(v)
-          if (star && star[1]) {
-            const part = star[1].trim()
-            const m = /^([^']*)'[^']*'(.*)$/.exec(part)
-            const name = m ? decodeURIComponent(m[2]) : decodeURIComponent(part)
-            return name
-          }
-          const normal = /filename="?([^";]+)"?/i.exec(v)
-          if (normal && normal[1]) return normal[1]
-          return null
-        }
-        const updates = await Promise.all(lines.map(async (u, idx) => {
-          if (!/^https?:/i.test(u) || u.startsWith('magnet:')) {
-            // ED2K 链接: 从链接本身解析文件大小
-            if (u.toLowerCase().startsWith('ed2k://|file|')) {
-              const parts = u.split('|')
-              if (parts.length >= 4) {
-                const size = parseInt(parts[3], 10)
-                if (!isNaN(size) && size > 0) {
-                  return { idx, sizeText: this.bytesToSize(size), dispName: null }
-                }
-              }
-            }
-            return { idx, sizeText: '-', dispName: null }
-          }
-          const headers = buildHeaders()
-          try {
-            let res = await fetch(u, { method: 'HEAD', headers })
-            let len = res.headers.get('content-length')
-            let disp = parseDisposition(res.headers.get('content-disposition'))
-            if (!len || len === '0') {
-              try {
-                res = await fetch(u, { method: 'GET', headers: { ...headers, Range: 'bytes=0-0' } })
-                const cr = res.headers.get('content-range')
-                if (cr) {
-                  const m = /\/(\d+)$/i.exec(cr)
-                  if (m && m[1]) len = m[1]
-                }
-                if (!disp) disp = parseDisposition(res.headers.get('content-disposition'))
-              } catch (_) {}
-            }
-            const sizeText = len ? this.bytesToSize(parseInt(len, 10)) : '-'
-            return { idx, sizeText, dispName: disp }
-          } catch (_) {
-            return { idx, sizeText: '-', dispName: null }
-          }
-        }))
-        updates.forEach(({ idx, sizeText, dispName }) => {
-          if (this.parsedTasks[idx]) {
-            this.$set(this.parsedTasks[idx], 'sizeText', sizeText)
-            if (dispName) {
-              this.$set(this.parsedTasks[idx], 'name', dispName)
-            }
-          }
-        })
-      },
-      updateTorrentPreview () {
-        // For torrent tasks, try to read files from child component if available
-        const selectComp = this.$refs && this.$refs.selectTorrent
-        let items = []
-        if (selectComp && Array.isArray(selectComp.files) && selectComp.files.length > 0) {
-          items = selectComp.files.map(f => {
-            const size = (typeof f.length === 'number') ? f.length : (typeof f.size === 'number' ? f.size : 0)
-            return { name: f.path || f.name, sizeText: this.bytesToSize(size), editing: false }
-          })
-        }
-        this.parsedTasks = items
-      },
-
-      bytesToSize (n) {
-        if (!n || n <= 0) return '-'
-        const units = ['B', 'KB', 'MB', 'GB', 'TB']
-        let i = 0
-        let val = n
-        while (val >= 1024 && i < units.length - 1) { val /= 1024; i++ }
-        return `${val.toFixed(1)} ${units[i]}`
-      },
-      generateUniqueTaskName (name) {
-        const taskList = this.taskList || []
-        const existingNames = new Set(taskList.map(t => t.name))
-        return generateUniqueTaskName(name, existingNames)
-      },
-      async addTask (type, form) {
-        let payload = null
-        if (this.isUriLikeType(type)) {
-          // 获取自动分类配置
-          const autoCategorizeFiles = this.config.autoCategorizeFiles || false
-          const fileCategories = this.config.fileCategories || null
-
-          payload = await buildUriPayload(form, autoCategorizeFiles, fileCategories)
-          this.$store.dispatch('task/addUri', payload).catch(err => {
-            this.$msg.error(err.message)
-          })
-        } else if (type === ADD_TASK_TYPE.TORRENT) {
-          payload = buildTorrentPayload(form)
-          this.$store.dispatch('task/addTorrent', payload).catch(err => {
-            this.$msg.error(err.message)
-          })
-        } else if (type === 'metalink') {
-        // @TODO addMetalink
-        } else {
-          console.error('[LinkCore] Add task fail', form)
-        }
-      },
-      async submitForm (formName) {
-        const valid = await new Promise(resolve => {
-          this.$refs[formName].validate(v => resolve(v))
-        })
-        if (!valid) {
-          return
-        }
-
-        try {
-          if (this.isUriLikeType(this.taskType) && this.parsedTasks.length > 0) {
-            const buckets = {}
-            const prios = []
-            this.parsedTasks.forEach(item => {
-              const p = Number(item.priority) || 0
-              if (!buckets[p]) {
-                buckets[p] = []
-                prios.push(p)
-              }
-              buckets[p].push(item)
-            })
-            prios.sort((a, b) => b - a)
-            const ordered = []
-            let remaining = this.parsedTasks.length
-            const indices = prios.map(() => 0)
-            while (remaining > 0) {
-              for (let i = 0; i < prios.length; i++) {
-                const p = prios[i]
-                const arr = buckets[p]
-                const idx = indices[i]
-                if (idx < arr.length) {
-                  ordered.push(arr[idx])
-                  indices[i] = idx + 1
-                  remaining--
-                  if (remaining <= 0) break
-                }
-              }
-            }
-            this.form.customOuts = ordered.map(i => i.name)
-            const urisOrdered = ordered.map(i => i.url)
-            this.form.uris = urisOrdered.join('\n')
-            this.form.priorities = ordered.map(i => Number(i.priority) || 0)
-          }
-          await this.addTask(this.taskType, this.form)
-
-          this.handleClose()
-          if (this.form.newTaskShowDownloading) {
-            const config = this.config || {}
-            const jumpTarget = this.form.newTaskJumpTarget || config.newTaskJumpTarget || 'downloading'
-            const status = jumpTarget === 'all' ? 'all' : 'active'
-            this.$router.push({
-              path: `/task/${status}`
-            }).catch(err => {
-              console.log(err)
-            })
-          }
-        } catch (err) {
-          this.$msg.error(this.$t(err.message))
+      } catch (e) {
+        const uniqueName = generateUniqueTaskNameFn(suggestedName)
+        return {
+          name: uniqueName,
+          originalName: suggestedName,
+          renamed: uniqueName !== suggestedName,
+          sizeText: '-',
+          editing: false,
+          priority: 0,
+          url: u,
+          order: i
         }
       }
     }
+
+    const existing = existingMap.get(u)
+    if (existing) {
+      const originalName = existing.originalName || existing.name || ''
+      const uniqueName = generateUniqueTaskNameFn(existing.name)
+      return {
+        ...existing,
+        name: uniqueName,
+        originalName,
+        renamed: uniqueName !== existing.name,
+        order: i
+      }
+    }
+
+    try {
+      let name = ''
+      if (u.toLowerCase().startsWith('ed2k://|file|')) {
+        const parts = u.split('|')
+        if (parts.length >= 3) {
+          name = decodeURIComponent(parts[2])
+        }
+      } else {
+        const url = decodeURI(u)
+        const lastSlash = url.lastIndexOf('/')
+        name = lastSlash >= 0 ? url.substring(lastSlash + 1) : url
+        if (name) {
+          const qIdx = name.indexOf('?')
+          const hIdx = name.indexOf('#')
+          const cutIdx = [qIdx, hIdx].filter(i => i >= 0).sort((a, b) => a - b)[0]
+          if (typeof cutIdx === 'number') {
+            name = name.substring(0, cutIdx)
+          }
+        }
+      }
+      const finalName = suggestedName || name || u
+      const uniqueName = generateUniqueTaskNameFn(finalName)
+      return {
+        name: uniqueName,
+        originalName: finalName,
+        renamed: uniqueName !== finalName,
+        sizeText: '-',
+        editing: false,
+        priority: 0,
+        url: u,
+        order: i
+      }
+    } catch (e) {
+      const finalName = suggestedName || u
+      const uniqueName = generateUniqueTaskNameFn(finalName)
+      return {
+        name: uniqueName,
+        originalName: finalName,
+        renamed: uniqueName !== finalName,
+        sizeText: '-',
+        editing: false,
+        priority: 0,
+        url: u,
+        order: i
+      }
+    }
+  })
+  parsedTasks.value = items
+
+  const newLines = lines.filter(u => !existingMap.has(u))
+  if (newLines.length > 0) {
+    await fetchUriSizes(lines)
   }
+
+  if (keepTrailingNewline.value && lines.length > 0) {
+    ensureTrailingNewlineAndCaret()
+  }
+}
+
+async function fetchUriSizes (lines = []) {
+  const buildHeaders = () => {
+    const h = {}
+    if (form.value.userAgent) h['User-Agent'] = form.value.userAgent
+    if (form.value.referer) h.Referer = form.value.referer
+    if (form.value.cookie) {
+      const cookie = normalizeCookie(form.value.cookie)
+      if (cookie) {
+        h.Cookie = cookie
+      }
+    }
+    if (form.value.authorization) h.Authorization = form.value.authorization
+    h.Accept = '*/*'
+    return h
+  }
+  const parseDisposition = (v) => {
+    if (!v) return null
+    const star = /filename\*=([^;]+)/i.exec(v)
+    if (star && star[1]) {
+      const part = star[1].trim()
+      const m = /^([^']*)'[^']*'(.*)$/.exec(part)
+      const name = m ? decodeURIComponent(m[2]) : decodeURIComponent(part)
+      return name
+    }
+    const normal = /filename="?([^";]+)"?/i.exec(v)
+    if (normal && normal[1]) return normal[1]
+    return null
+  }
+  const updates = await Promise.all(lines.map(async (u, idx) => {
+    if (!/^https?:/i.test(u) || u.startsWith('magnet:')) {
+      if (u.toLowerCase().startsWith('ed2k://|file|')) {
+        const parts = u.split('|')
+        if (parts.length >= 4) {
+          const size = parseInt(parts[3], 10)
+          if (!isNaN(size) && size > 0) {
+            return { idx, sizeText: bytesToSize(size), dispName: null }
+          }
+        }
+      }
+      return { idx, sizeText: '-', dispName: null }
+    }
+    const headers = buildHeaders()
+    try {
+      const res = await ipcRenderer.invoke('uri:fetch-size', { url: u, headers })
+      let len = res && res.ok ? res.contentLength : ''
+      let disp = res && res.ok ? parseDisposition(res.contentDisposition) : null
+      if (!len || len === '0') {
+        // HEAD/Range 都没拿到，返回 '-'
+      }
+      const sizeText = len ? bytesToSize(parseInt(len, 10)) : '-'
+      return { idx, sizeText, dispName: disp }
+    } catch (_) {
+      return { idx, sizeText: '-', dispName: null }
+    }
+  }))
+  updates.forEach(({ idx, sizeText, dispName }) => {
+    if (parsedTasks.value[idx]) {
+      parsedTasks.value[idx].sizeText = sizeText
+      if (dispName) {
+        parsedTasks.value[idx].name = dispName
+      }
+    }
+  })
+}
+
+function updateTorrentPreview () {
+  const selectComp = selectTorrent.value
+  let items = []
+  if (selectComp && Array.isArray(selectComp.files) && selectComp.files.length > 0) {
+    items = selectComp.files.map(f => {
+      const size = (typeof f.length === 'number') ? f.length : (typeof f.size === 'number' ? f.size : 0)
+      return { name: f.path || f.name, sizeText: bytesToSize(size), editing: false }
+    })
+  }
+  parsedTasks.value = items
+}
+
+function bytesToSize (n) {
+  if (!n || n <= 0) return '-'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  let val = n
+  while (val >= 1024 && i < units.length - 1) { val /= 1024; i++ }
+  return `${val.toFixed(1)} ${units[i]}`
+}
+
+function generateUniqueTaskNameFn (name) {
+  const list = taskList.value || []
+  const existingNames = new Set(list.map(t => t.name))
+  return generateUniqueTaskName(name, existingNames)
+}
+
+async function addTask (type, formData) {
+  let payload = null
+  if (isUriLikeType(type)) {
+    const autoCategorizeFiles = config.value.autoCategorizeFiles || false
+    const fileCategories = config.value.fileCategories || null
+
+    payload = await buildUriPayload(formData, autoCategorizeFiles, fileCategories)
+    taskStore.addUri(payload).catch(err => {
+      msg.error(err.message)
+    })
+  } else if (type === ADD_TASK_TYPE.TORRENT) {
+    payload = buildTorrentPayload(formData)
+    taskStore.addTorrent(payload).catch(err => {
+      msg.error(err.message)
+    })
+  } else if (type === 'metalink') {
+    // @TODO addMetalink
+  } else {
+    console.error('[LinkCore] Add task fail', formData)
+  }
+}
+
+async function submitForm () {
+  const valid = await new Promise(resolve => {
+    taskFormRef.value.validate(v => resolve(v))
+  })
+  if (!valid) {
+    return
+  }
+
+  try {
+    if (isUriLikeType(taskType.value) && parsedTasks.value.length > 0) {
+      const buckets = {}
+      const prios = []
+      parsedTasks.value.forEach(item => {
+        const p = Number(item.priority) || 0
+        if (!buckets[p]) {
+          buckets[p] = []
+          prios.push(p)
+        }
+        buckets[p].push(item)
+      })
+      prios.sort((a, b) => b - a)
+      const ordered = []
+      let remaining = parsedTasks.value.length
+      const indices = prios.map(() => 0)
+      while (remaining > 0) {
+        for (let i = 0; i < prios.length; i++) {
+          const p = prios[i]
+          const arr = buckets[p]
+          const idx = indices[i]
+          if (idx < arr.length) {
+            ordered.push(arr[idx])
+            indices[i] = idx + 1
+            remaining--
+            if (remaining <= 0) break
+          }
+        }
+      }
+      form.value.customOuts = ordered.map(i => i.name)
+      const urisOrdered = ordered.map(i => i.url)
+      form.value.uris = urisOrdered.join('\n')
+      form.value.priorities = ordered.map(i => Number(i.priority) || 0)
+    }
+    await addTask(taskType.value, form.value)
+
+    handleClose()
+    if (form.value.newTaskShowDownloading) {
+      const cfg = config.value || {}
+      const jumpTarget = form.value.newTaskJumpTarget || cfg.newTaskJumpTarget || 'downloading'
+      const status = jumpTarget === 'all' ? 'all' : 'active'
+      router.push({
+        path: `/task/${status}`
+      }).catch(err => {
+        console.log(err)
+      })
+    }
+  } catch (err) {
+    msg.error(t(err.message))
+  }
+}
 </script>
 
 <style lang="scss">
@@ -1124,9 +1150,11 @@ v-model="showAdvanced"
   position: relative;
   padding-top: 38px;
   padding-bottom: 0;
+  width: 100%;
 
   .add-task-content-pane {
     min-height: 120px;
+    width: 100%;
 
     /* 种子模式下文件表格底部与分片数选择框之间保持间距 */
     .selective-torrent {
@@ -1140,7 +1168,7 @@ v-model="showAdvanced"
 
   .el-textarea__inner,
   .el-upload-dragger {
-    border-radius: 12px !important;
+    border-radius: 8px !important;
     background: transparent !important;
   }
 
@@ -1199,18 +1227,34 @@ v-model="showAdvanced"
   min-width: 380px;
   border-radius: 16px;
 
+  /* 顶部/底部整体收紧：任务类型导航栏与关闭按钮上移，页脚下缘收紧 */
+  padding-top: 8px;
+  padding-bottom: 6px;
+
+  .el-dialog__body {
+    padding-top: 4px;
+  }
+
   .el-button {
     border-radius: 8px;
+  }
+
+  /* 确保输入框/输入框组在弹窗内占满可用宽度 */
+  .el-form-item__content {
+    .el-input,
+    .el-textarea,
+    .el-input-group,
+    .el-input-number {
+      width: 100%;
+    }
   }
 
   .el-dialog__header {
     display: none;
   }
 
-  /* 确保弹窗遮罩层有正确的背景色 */
-  :deep(.el-dialog__wrapper) {
-    background: rgba(0, 0, 0, 0.5);
-  }
+  /* Element Plus 的遮罩层由 .el-overlay 处理，无需额外设置背景色 */
+  /* :deep(.el-overlay) 已由 Element Plus modal 属性自动生成遮罩 */
 .parsed-preview {
     margin-top: 0;
     margin-bottom: 16px;
@@ -1315,11 +1359,31 @@ v-model="showAdvanced"
     position: relative;
     display: flex;
     align-items: center;
-    min-height: 52px;
-    padding-left: 20px;
+    min-height: 40px;
+    padding-left: 4px;
   .chk {
     line-height: 28px;
     &.el-checkbox {
+      /* 勾选框 16px（默认 14px 略小、18px 偏大）；
+         对勾用 50%/50% + translate 定位并覆盖 checked 态 transform，保证视觉居中 */
+      .el-checkbox__inner {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+
+        &::after {
+          width: 4px;
+          height: 8px;
+          left: 50%;
+          top: 44%;
+          transform: translate(-50%, -50%) rotate(45deg) scaleY(0);
+          transform-origin: center;
+        }
+      }
+      &.is-checked .el-checkbox__inner::after,
+      .el-checkbox__input.is-checked .el-checkbox__inner::after {
+        transform: translate(-50%, -50%) rotate(45deg) scaleY(1);
+      }
       .el-checkbox__label {
         padding-left: 6px;
         font-size: 13px;
@@ -1333,8 +1397,8 @@ v-model="showAdvanced"
   }
   .dialog-submit-btn {
     position: absolute;
-    right: 12px;
-    bottom: 10px;
+    right: 0;
+    bottom: 4px;
     height: 28px;
     padding: 0 16px;
     border-radius: 8px !important;
@@ -1347,8 +1411,12 @@ v-model="showAdvanced"
     flex-direction: row;
     justify-content: flex-end;
     align-items: center;
-    gap: 6px;
+    gap: 2px; /* 继续收紧两个预设按钮之间的间距 */
     flex-wrap: nowrap;
+
+    .el-button {
+      border-radius: 6px; /* 比输入框圆角略大一点，保持区分度 */
+    }
   }
 }
 

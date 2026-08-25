@@ -1,12 +1,12 @@
 <template>
   <el-drawer
-    :custom-class="drawerClass"
+    :class="drawerClass"
     size="73.7%"
     v-if="gid"
     :with-header="true"
     :show-close="false"
     :destroy-on-close="true"
-    :visible="visible"
+    v-model="drawerVisible"
     :before-close="handleClose"
     append-to-body
     @open="handleOpen"
@@ -26,13 +26,13 @@
           <el-input
             v-if="activeTab === 'peers' && isBT"
             v-model="peerSearch"
-            size="mini"
+            size="small"
             class="task-detail-peer-search"
-            :placeholder="$t('task.peers-search')"
+            :placeholder="t('task.peers-search')"
             clearable
           />
           <button type="button" class="task-detail-close" aria-label="Close" @click="handleClose">
-            <i class="el-icon-close"></i>
+            <el-icon><Close /></el-icon>
           </button>
         </div>
       </div>
@@ -42,19 +42,19 @@
         <mo-task-general :task="task" />
       </div>
       <div v-show="activeTab === 'activity'">
-        <mo-task-activity ref="taskGraphic" :task="task" />
+        <TaskActivity ref="taskGraphic" :task="task" />
       </div>
       <div v-show="activeTab === 'trackers'" v-if="isBT" class="task-detail-pane">
         <mo-task-trackers :task="task" />
       </div>
       <div v-show="activeTab === 'peers'" v-if="isBT" class="task-detail-pane">
-        <mo-task-peers ref="taskPeers" :peers="peers" :task="task" :search-text="peerSearch" />
+        <TaskPeers ref="taskPeers" :peers="peers" :task="task" :search-text="peerSearch" />
       </div>
       <div v-show="activeTab === 'sources'" v-if="isEd2k" class="task-detail-pane">
-        <mo-task-ed2k-sources ref="taskSources" :peers="peers" :task="task" />
+        <TaskEd2kSources ref="taskSources" :peers="peers" :task="task" />
       </div>
       <div v-show="activeTab === 'files'" class="task-detail-pane">
-        <mo-task-files
+        <TaskFiles
           ref="detailFileList"
           mode="DETAIL"
           :files="fileList"
@@ -74,499 +74,465 @@
   </el-drawer>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import { debounce, merge } from 'lodash'
-  import {
-    calcFormLabelWidth,
-    checkTaskIsBT,
-    checkTaskIsSeeder,
-    isMagnetTask,
-    isEd2kTask,
-    getFileName,
-    getFileExtension
-  } from '@shared/utils'
-  import {
-    EMPTY_STRING,
-    NONE_SELECTED_FILES,
-    SELECTED_ALL_FILES,
-    TASK_STATUS
-  } from '@shared/constants'
-  import TaskItemActions from '@/components/Task/TaskItemActions'
-  import TaskGeneral from './TaskGeneral'
-  import TaskActivity from './TaskActivity'
-  import TaskTrackers from './TaskTrackers'
-  import TaskPeers from './TaskPeers'
-  import TaskEd2kSources from './TaskEd2kSources'
-  import TaskFiles from './TaskFiles'
-  import TaskConnections from './TaskConnections'
-  import SegmentedSlider from '@/components/SegmentedSlider/SegmentedSlider'
-  import { mapState } from 'vuex'
+<script setup>
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import is from 'electron-is'
+import { debounce, merge } from 'lodash'
+import {
+  calcFormLabelWidth,
+  checkTaskIsBT,
+  checkTaskIsSeeder,
+  isMagnetTask,
+  isEd2kTask,
+  getFileName,
+  getFileExtension
+} from '@shared/utils'
+import {
+  EMPTY_STRING,
+  NONE_SELECTED_FILES,
+  SELECTED_ALL_FILES,
+  TASK_STATUS
+} from '@shared/constants'
+import i18n from '@/plugins/i18n'
+// mo-task-item-actions, mo-task-general, mo-task-trackers,
+// mo-segmented-slider are globally registered in main.js
+// TaskActivity/TaskPeers/TaskEd2kSources/TaskFiles 必须本地 import：
+// 组件通过 ref 访问其 defineExpose 的实例方法（updateGraphicWidth /
+// updateTableHeight / toggleSelection 等），defineAsyncComponent 包装器
+// 不会透传实例方法。
+import TaskActivity from './TaskActivity'
+import TaskPeers from './TaskPeers'
+import TaskEd2kSources from './TaskEd2kSources'
+import TaskFiles from './TaskFiles'
+import { ElMessage } from 'element-plus'
+import { createMsg } from '@/components/Msg'
+import { usePreferenceStore } from '@/store/preference'
+import { useTaskStore } from '@/store/task'
+import { storeToRefs } from 'pinia'
 
-  const cached = {
-    files: []
+const { t } = i18n.global
+const msg = createMsg(ElMessage, { showClose: true })
+
+const props = defineProps({
+  gid: {
+    type: String
+  },
+  task: {
+    type: Object
+  },
+  files: {
+    type: Array,
+    default: () => []
+  },
+  peers: {
+    type: [Object, Array],
+    default: () => ({ connected: [], attempting: [], banned: [], disconnected: [] })
+  },
+  visible: {
+    type: Boolean,
+    default: false
   }
+})
 
-  export default {
-    name: 'mo-task-detail',
-    components: {
-      [TaskItemActions.name]: TaskItemActions,
-      [TaskGeneral.name]: TaskGeneral,
-      [TaskActivity.name]: TaskActivity,
-      [TaskTrackers.name]: TaskTrackers,
-      [TaskPeers.name]: TaskPeers,
-      [TaskEd2kSources.name]: TaskEd2kSources,
-      [TaskFiles.name]: TaskFiles,
-      [TaskConnections.name]: TaskConnections,
-      [SegmentedSlider.name]: SegmentedSlider
-    },
-    props: {
-      gid: {
-        type: String
-      },
-      task: {
-        type: Object
-      },
-      files: {
-        type: Array,
-        default: function () {
-          return []
-        }
-      },
-      peers: {
-        type: [Object, Array],
-        default: function () {
-          return { connected: [], attempting: [], banned: [], disconnected: [] }
-        }
-      },
-      visible: {
-        type: Boolean,
-        default: false
-      }
-    },
-    data () {
-      const { locale } = this.$store.state.preference.config
-      return {
-        form: {},
-        formLabelWidth: calcFormLabelWidth(locale),
-        locale,
-        activeTab: 'general',
-        peerSearch: '',
-        graphicWidth: 0,
-        filesSelection: EMPTY_STRING,
-        selectionChangedCount: 0,
-        statusHintTruncated: false,
-        resizeHandler: null,
-        drawerAnimationDone: false
-      }
-    },
-    computed: {
-      ...mapState('task', {
-        magnetStatuses: state => state.magnetStatuses,
-        dataAccessStatuses: state => state.dataAccessStatuses
-      }),
-      ...mapState('preference', {
-        preferenceConfig: state => state.config
-      }),
-      isRenderer: () => is.renderer(),
-      taskDetailDefaultTransparentEnabled () {
-        const cfg = this.preferenceConfig || {}
-        return cfg.taskDetailDefaultTransparent === undefined ? false : !!cfg.taskDetailDefaultTransparent
-      },
-      taskDetailFrostedBlurValue () {
-        const cfg = this.preferenceConfig || {}
-        const raw = Number(cfg.taskDetailFrostedBlur)
-        return Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 10) : 0
-      },
-      shouldEnableBackdrop () {
-        return this.taskDetailDefaultTransparentEnabled && this.taskDetailFrostedBlurValue > 0
-      },
-      drawerClass () {
-        const base = 'panel task-detail-drawer'
-        return this.shouldEnableBackdrop ? `${base} task-detail-drawer--backdrop` : base
-      },
-      isBT () {
-        return checkTaskIsBT(this.task)
-      },
-      isEd2k () {
-        return isEd2kTask(this.task)
-      },
-      navTabs () {
-        const tabs = ['general', 'activity']
-        if (this.isBT) {
-          tabs.push('trackers', 'peers')
-        }
-        if (this.isEd2k) {
-          tabs.push('sources')
-        }
-        tabs.push('files', 'connections')
-        return tabs
-      },
-      navOptions () {
-        const labelMap = {
-          general: this.$t('task.task-detail-general'),
-          activity: this.$t('task.task-detail-activity'),
-          trackers: this.$t('task.task-detail-trackers'),
-          peers: this.$t('task.task-detail-peers'),
-          sources: this.$t('task.task-detail-sources'),
-          files: this.$t('task.task-detail-files'),
-          connections: this.$t('task.task-detail-connections')
-        }
-        return this.navTabs.map(tab => ({ value: tab, label: labelMap[tab] || tab }))
-      },
-      isSeeder () {
-        const task = this.task || {}
-        return task.status === TASK_STATUS.ACTIVE && checkTaskIsSeeder(task)
-      },
-      magnetHintText () {
-        const task = this.task || {}
-        const zero = Number(task.downloadSpeed) === 0
-        const isMagnet = isMagnetTask(task)
+defineOptions({ name: 'mo-task-detail' })
 
-        // 检查任务是否已经完成解析（元数据已准备好）
-        const metadataReady = task.totalLength > 0 && task.files && task.files.length > 0
+const preferenceStore = usePreferenceStore()
+const taskStore = useTaskStore()
+const { config: preferenceConfig } = storeToRefs(preferenceStore)
+const { magnetStatuses, dataAccessStatuses } = storeToRefs(taskStore)
 
-        // 如果不是磁力链接、下载速度不为零、或者元数据已准备好，都不显示提示
-        if (!(isMagnet && zero && !metadataReady)) return ''
+const cached = { files: [] }
 
-        const s = this.magnetStatuses[task.gid]
-        if (!s) return this.$t('task.magnet-fetching-metadata')
-        const { peerCount = 0, trackerCount = 0, elapsedSec = 0, phase = '', peerTrend = 'flat', globalLimitLow = false, pauseMetadata = false } = s
-        const cfg = this.preferenceConfig || {}
-        const dhtEnabled = Number(cfg['dht-listen-port'] || cfg.dhtListenPort || 0) > 0
-        const trackersConfigured = `${cfg['bt-tracker'] || cfg.btTracker || ''}`.trim().length > 0
-        const elapsedMin = Math.floor(elapsedSec / 60)
-        if (phase === 'no_trackers' || (peerCount === 0 && trackerCount === 0)) {
-          const base = trackersConfigured ? this.$t('task.magnet-status-contacting-trackers', { trackerCount }) : this.$t('task.magnet-status-no-trackers')
-          const suggest = this.$t('task.magnet-suggest-add-trackers')
-          return `${base}，${suggest}`
-        }
-        if (phase === 'contacting_trackers' || (peerCount === 0 && trackerCount > 0)) {
-          const base = this.$t('task.magnet-status-contacting-trackers', { trackerCount })
-          if (elapsedMin >= 2) {
-            const wait = this.$t('task.magnet-status-long-wait') + ' ' + this.$t('task.magnet-status-elapsed-minutes', { minutes: elapsedMin })
-            const extra = dhtEnabled ? '' : (' ' + this.$t('task.magnet-suggest-open-port'))
-            const limit = globalLimitLow ? (' ' + this.$t('task.magnet-suggest-limit')) : ''
-            const paused = pauseMetadata ? (' ' + this.$t('task.magnet-suggest-unpause-metadata')) : ''
-            return `${base}，${wait}${extra}${limit}${paused}`
-          }
-          return base
-        }
-        const peersText = this.$t('task.magnet-status-peers', { peerCount })
-        const trackersText = this.$t('task.magnet-status-trackers', { trackerCount })
-        if (elapsedMin >= 2) {
-          const wait = this.$t('task.magnet-status-long-wait') + ' ' + this.$t('task.magnet-status-elapsed-minutes', { minutes: elapsedMin })
-          const trendText = peerTrend === 'up' ? this.$t('task.magnet-trend-up') : (peerTrend === 'down' ? this.$t('task.magnet-trend-down') : this.$t('task.magnet-trend-flat'))
-          const limit = globalLimitLow ? (' ' + this.$t('task.magnet-suggest-limit')) : ''
-          const paused = pauseMetadata ? (' ' + this.$t('task.magnet-suggest-unpause-metadata')) : ''
-          return `${peersText}，${trackersText}，${wait}，${trendText}${limit}${paused}`
-        }
-        const trendText = peerTrend === 'up' ? this.$t('task.magnet-trend-up') : (peerTrend === 'down' ? this.$t('task.magnet-trend-down') : '')
-        return `${peersText}，${trackersText}${trendText ? '，' + trendText : ''}`
-      },
-      statusHintText () {
-        const task = this.task || {}
-        if (!task) {
-          return ''
-        }
-        const raw = `${task.statusHint || ''}`.trim()
-        if (!raw) {
-          return ''
-        }
-        if (raw.startsWith('task.')) {
-          return this.$t(raw)
-        }
-        return raw
-      },
-      resolveErrorReason () {
-        return (errorCode, errorMessage = '') => {
-          const code = Number(errorCode)
-          if (!code) {
-            return ''
-          }
-          const msg = `${errorMessage || ''}`
-          if (code === 3) {
-            return this.$t('task.error-reason-not-found')
-          }
-          if (code === 1) {
-            // Fake-IP 错误（代理软件）
-            if (/fake-ip|198\.18\.|198\.19\./i.test(msg)) {
-              return this.$t('task.error-reason-fake-ip')
-            }
-            // DNS 解析错误
-            if (/DNS|name resolution|hostname|getaddrinfo|no data/i.test(msg)) {
-              return this.$t('task.error-reason-dns')
-            }
-            // SSL/TLS 错误
-            if (/SSL|TLS|certificate/i.test(msg)) {
-              return this.$t('task.error-reason-ssl')
-            }
-            // 连接超时
-            if (/timeout|timed out/i.test(msg)) {
-              return this.$t('task.error-reason-timeout')
-            }
-            // 连接被拒绝
-            if (/connection refused|refused/i.test(msg)) {
-              return this.$t('task.error-reason-refused')
-            }
-            return this.$t('task.error-reason-network')
-          }
-          if (code === 16) {
-            if (/Permission denied|permission/i.test(msg)) {
-              return this.$t('task.error-reason-permission')
-            }
-            if (/No space left|disk full/i.test(msg)) {
-              return this.$t('task.error-reason-disk-full')
-            }
-            return this.$t('task.error-reason-disk')
-          }
-          return this.$t('task.error-reason-generic')
-        }
-      },
-      taskStatus () {
-        const { task, isSeeder } = this
-        if (isSeeder && task.status === TASK_STATUS.ACTIVE) {
-          return TASK_STATUS.SEEDING
-        } else {
-          return task.status
-        }
-      },
-      fileList () {
-        const { files } = this
-        const task = this.task || {}
-        const cfg = this.preferenceConfig || {}
-        const suffix = cfg.downloadingFileSuffix || ''
-        const completedStatuses = [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED]
-        const shouldStripSuffix = !!(suffix && !this.isBT && completedStatuses.includes(task.status))
-        const result = files.map((item) => {
-          const rawName = getFileName(item.path)
-          const name = shouldStripSuffix && rawName && rawName.endsWith(suffix)
-            ? rawName.slice(0, -suffix.length)
-            : rawName
-          const extension = getFileExtension(name)
-          return {
-            idx: Number(item.index),
-            selected: item.selected === 'true',
-            path: item.path,
-            name,
-            extension: extension ? `.${extension}` : '',
-            length: parseInt(item.length, 10),
-            completedLength: item.completedLength
-          }
-        })
-        merge(cached.files, result)
-        return cached.files
-      },
-      selectedFileList () {
-        const { fileList } = this
-        const result = fileList.filter((item) => item.selected)
+const form = ref({})
+const formLabelWidth = computed(() => calcFormLabelWidth(preferenceConfig.value.locale))
+const locale = computed(() => preferenceConfig.value.locale)
+const activeTab = ref('general')
+const peerSearch = ref('')
+const graphicWidth = ref(0)
+const filesSelection = ref(EMPTY_STRING)
+const selectionChangedCount = ref(0)
+const statusHintTruncated = ref(false)
+let resizeHandler = null
+const drawerAnimationDone = ref(false)
+const drawerVisible = ref(props.visible)
 
-        return result
-      }
-    },
-    mounted () {
-      this.resizeHandler = debounce(() => {
-        if (this.activeTab === 'activity' && this.$refs.taskGraphic) {
-          this.$refs.taskGraphic.updateGraphicWidth()
-        }
-        this.updateNavIndicator()
-      }, 250)
-      window.addEventListener('resize', this.resizeHandler)
-      this.$nextTick(() => this.updateNavIndicator())
-    },
-    destroyed () {
-      window.removeEventListener('resize', this.resizeHandler)
-      if (this.resizeHandler && this.resizeHandler.cancel) {
-        this.resizeHandler.cancel()
-      }
-      cached.files = []
-    },
-    watch: {
-      gid () {
-        cached.files = []
-      },
-      statusHintText () {
-        this.updateStatusTruncation()
-      },
-      isBT () {
-        this.$nextTick(() => this.updateNavIndicator())
-      },
-      isEd2k () {
-        this.$nextTick(() => this.updateNavIndicator())
-      }
-    },
-    methods: {
-      handleOpen () {
-        this.drawerAnimationDone = false
-      },
-      handleOpened () {
-        const done = () => {
-          this.drawerAnimationDone = true
+const taskGraphic = ref(null)
+const taskPeers = ref(null)
+const taskSources = ref(null)
+const detailFileList = ref(null)
+const detailStatusText = ref(null)
+const navSlider = ref(null)
 
-          // 如果当前标签是peers或sources，启用节点数据获取
-          if (this.activeTab === 'peers' || this.activeTab === 'sources') {
-            this.$store.dispatch('task/toggleEnabledFetchPeers', true)
-          }
+watch(() => props.visible, (val) => {
+  drawerVisible.value = val
+})
 
-          if (this.activeTab === 'peers' && this.$refs.taskPeers) {
-            setImmediate(() => {
-              this.$refs.taskPeers.updateTableHeight()
-            })
-          }
-          if (this.activeTab === 'sources' && this.$refs.taskSources) {
-            setImmediate(() => {
-              this.$refs.taskSources.updateTableHeight()
-            })
-          }
-          if (this.activeTab === 'activity' && this.$refs.taskGraphic) {
-            this.$refs.taskGraphic.updateGraphicWidth()
-          }
-          this.$nextTick(() => this.updateNavIndicator())
-        }
-        if (typeof window !== 'undefined' && window.requestAnimationFrame) {
-          window.requestAnimationFrame(() => window.requestAnimationFrame(done))
-          return
-        }
-        setTimeout(done, 0)
-      },
-      handleClose (done) {
-        this.drawerAnimationDone = false
-        // 关闭任务详情时禁用节点数据获取
-        this.$store.dispatch('task/toggleEnabledFetchPeers', false)
-        this.$store.dispatch('task/hideTaskDetail')
-        window.removeEventListener('resize', this.resizeHandler)
-        if (this.resizeHandler && this.resizeHandler.cancel) {
-          this.resizeHandler.cancel()
-        }
-        if (typeof done === 'function') {
-          done()
-        }
-      },
-      handleClosed (done) {
-        this.drawerAnimationDone = false
-        this.$store.dispatch('task/updateCurrentTaskGid', EMPTY_STRING)
-        this.$store.dispatch('task/updateCurrentTaskItem', null)
-        this.resetFaskFilesSelection()
-      },
-      updateStatusTruncation () {
-        this.$nextTick(() => {
-          const el = this.$refs.detailStatusText
-          if (!el || !el.scrollWidth || !el.clientWidth) {
-            this.statusHintTruncated = false
-            return
-          }
-          this.statusHintTruncated = el.scrollWidth > el.clientWidth
-        })
-      },
-      handleTabBeforeLeave (activeName, oldActiveName) {
-        this.activeTab = activeName
-        switch (oldActiveName) {
-        case 'peers':
-          this.$store.dispatch('task/toggleEnabledFetchPeers', false)
-          break
-        case 'files':
-          this.resetTaskFilesSelection()
-          break
-        }
-      },
-      handleTabClick (tab) {
-        const { name } = tab
-        this.activeTab = name
-        switch (name) {
-        case 'peers':
-          this.$store.dispatch('task/toggleEnabledFetchPeers', true)
-          setImmediate(() => {
-            if (this.$refs.taskPeers) {
-              this.$refs.taskPeers.updateTableHeight()
-            }
-          })
-          break
-        case 'activity':
-          this.$nextTick(() => {
-            if (this.$refs.taskGraphic) {
-              this.$refs.taskGraphic.updateGraphicWidth()
-            }
-          })
-          break
-        case 'files':
-          setImmediate(() => {
-            this.updateFilesListSelection()
-          })
-          break
-        }
-      },
-      handleTabChange (tabName) {
-        // 先立即更新指示器，避免被后续重型 pane 渲染阻塞
-        const prevTab = this.activeTab
-        this.activeTab = tabName
-        this.updateNavIndicator()
-        switch (tabName) {
-        case 'peers':
-        case 'sources':
-          this.$store.dispatch('task/toggleEnabledFetchPeers', true)
-          setImmediate(() => {
-            const ref = tabName === 'sources' ? 'taskSources' : 'taskPeers'
-            if (this.$refs[ref]) {
-              this.$refs[ref].updateTableHeight()
-            }
-          })
-          break
-        case 'activity':
-          this.$nextTick(() => {
-            if (this.$refs.taskGraphic) {
-              this.$refs.taskGraphic.updateGraphicWidth()
-            }
-          })
-          break
-        case 'files':
-          setImmediate(() => {
-            this.updateFilesListSelection()
-          })
-          break
-        }
-        if ((prevTab === 'peers' || prevTab === 'sources') && tabName !== 'peers' && tabName !== 'sources') {
-          this.$store.dispatch('task/toggleEnabledFetchPeers', false)
-        }
-      },
-      updateNavIndicator () {
-        // 委托给通用滑块组件测量指示器
-        if (this.$refs.navSlider && this.$refs.navSlider.updateIndicator) {
-          this.$refs.navSlider.updateIndicator()
-        }
-      },
-      updateFilesListSelection () {
-        if (!this.$refs.detailFileList) {
-          return
-        }
+const isRenderer = is.renderer()
 
-        const { selectedFileList } = this
-        this.$refs.detailFileList.toggleSelection(selectedFileList)
-        this.$refs.detailFileList.activeType = 'all'
-      },
-      handleSelectionChange (val) {
-        this.filesSelection = val
-      },
-      resetFaskFilesSelection () {
-        this.filesSelection = EMPTY_STRING
-        this.selectionChangedCount = 0
-        if (this.$refs.detailFileList) {
-          this.$refs.detailFileList.hideConfirm()
-        }
-      },
-      saveFaskFilesSelection () {
-        const { gid, filesSelection } = this
-        if (filesSelection === NONE_SELECTED_FILES) {
-          this.$msg.warning(this.$t('task.select-at-least-one'))
-          return
-        }
+const taskDetailDefaultTransparentEnabled = computed(() => {
+  const cfg = preferenceConfig.value || {}
+  return cfg.taskDetailDefaultTransparent === undefined ? false : !!cfg.taskDetailDefaultTransparent
+})
 
-        const options = {
-          selectFile: filesSelection !== SELECTED_ALL_FILES ? filesSelection : EMPTY_STRING
-        }
-        this.$store.dispatch('task/changeTaskOption', { gid, options })
-      }
+const taskDetailFrostedBlurValue = computed(() => {
+  const cfg = preferenceConfig.value || {}
+  const raw = Number(cfg.taskDetailFrostedBlur)
+  return Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 10) : 0
+})
+
+const shouldEnableBackdrop = computed(() => taskDetailDefaultTransparentEnabled.value && taskDetailFrostedBlurValue.value > 0)
+
+const drawerClass = computed(() => {
+  const base = 'panel task-detail-drawer'
+  return shouldEnableBackdrop.value ? `${base} task-detail-drawer--backdrop` : base
+})
+
+const isBT = computed(() => checkTaskIsBT(props.task))
+const isEd2k = computed(() => isEd2kTask(props.task))
+
+const navTabs = computed(() => {
+  const tabs = ['general', 'activity']
+  if (isBT.value) tabs.push('trackers', 'peers')
+  if (isEd2k.value) tabs.push('sources')
+  tabs.push('files', 'connections')
+  return tabs
+})
+
+const navOptions = computed(() => {
+  const labelMap = {
+    general: t('task.task-detail-general'),
+    activity: t('task.task-detail-activity'),
+    trackers: t('task.task-detail-trackers'),
+    peers: t('task.task-detail-peers'),
+    sources: t('task.task-detail-sources'),
+    files: t('task.task-detail-files'),
+    connections: t('task.task-detail-connections')
+  }
+  return navTabs.value.map(tab => ({ value: tab, label: labelMap[tab] || tab }))
+})
+
+const isSeeder = computed(() => {
+  const task = props.task || {}
+  return task.status === TASK_STATUS.ACTIVE && checkTaskIsSeeder(task)
+})
+
+const magnetHintText = computed(() => {
+  const task = props.task || {}
+  const zero = Number(task.downloadSpeed) === 0
+  const isMagnet = isMagnetTask(task)
+  const metadataReady = task.totalLength > 0 && task.files && task.files.length > 0
+  if (!(isMagnet && zero && !metadataReady)) return ''
+  const s = magnetStatuses.value[task.gid]
+  if (!s) return t('task.magnet-fetching-metadata')
+  const { peerCount = 0, trackerCount = 0, elapsedSec = 0, phase = '', peerTrend = 'flat', globalLimitLow = false, pauseMetadata = false } = s
+  const cfg = preferenceConfig.value || {}
+  const dhtEnabled = Number(cfg['dht-listen-port'] || cfg.dhtListenPort || 0) > 0
+  const trackersConfigured = `${cfg['bt-tracker'] || cfg.btTracker || ''}`.trim().length > 0
+  const elapsedMin = Math.floor(elapsedSec / 60)
+  if (phase === 'no_trackers' || (peerCount === 0 && trackerCount === 0)) {
+    const base = trackersConfigured ? t('task.magnet-status-contacting-trackers', { trackerCount }) : t('task.magnet-status-no-trackers')
+    const suggest = t('task.magnet-suggest-add-trackers')
+    return `${base}，${suggest}`
+  }
+  if (phase === 'contacting_trackers' || (peerCount === 0 && trackerCount > 0)) {
+    const base = t('task.magnet-status-contacting-trackers', { trackerCount })
+    if (elapsedMin >= 2) {
+      const wait = t('task.magnet-status-long-wait') + ' ' + t('task.magnet-status-elapsed-minutes', { minutes: elapsedMin })
+      const extra = dhtEnabled ? '' : (' ' + t('task.magnet-suggest-open-port'))
+      const limit = globalLimitLow ? (' ' + t('task.magnet-suggest-limit')) : ''
+      const paused = pauseMetadata ? (' ' + t('task.magnet-suggest-unpause-metadata')) : ''
+      return `${base}，${wait}${extra}${limit}${paused}`
     }
+    return base
   }
+  const peersText = t('task.magnet-status-peers', { peerCount })
+  const trackersText = t('task.magnet-status-trackers', { trackerCount })
+  if (elapsedMin >= 2) {
+    const wait = t('task.magnet-status-long-wait') + ' ' + t('task.magnet-status-elapsed-minutes', { minutes: elapsedMin })
+    const trendText = peerTrend === 'up' ? t('task.magnet-trend-up') : (peerTrend === 'down' ? t('task.magnet-trend-down') : t('task.magnet-trend-flat'))
+    const limit = globalLimitLow ? (' ' + t('task.magnet-suggest-limit')) : ''
+    const paused = pauseMetadata ? (' ' + t('task.magnet-suggest-unpause-metadata')) : ''
+    return `${peersText}，${trackersText}，${wait}，${trendText}${limit}${paused}`
+  }
+  const trendText = peerTrend === 'up' ? t('task.magnet-trend-up') : (peerTrend === 'down' ? t('task.magnet-trend-down') : '')
+  return `${peersText}，${trackersText}${trendText ? '，' + trendText : ''}`
+})
+
+const statusHintText = computed(() => {
+  const task = props.task || {}
+  if (!task) return ''
+  const raw = `${task.statusHint || ''}`.trim()
+  if (!raw) return ''
+  if (raw.startsWith('task.')) return t(raw)
+  return raw
+})
+
+const resolveErrorReason = computed(() => {
+  return (errorCode, errorMessage = '') => {
+    const code = Number(errorCode)
+    if (!code) return ''
+    const msgText = `${errorMessage || ''}`
+    if (code === 3) return t('task.error-reason-not-found')
+    if (code === 1) {
+      if (/fake-ip|198\.18\.|198\.19\./i.test(msgText)) return t('task.error-reason-fake-ip')
+      if (/DNS|name resolution|hostname|getaddrinfo|no data/i.test(msgText)) return t('task.error-reason-dns')
+      if (/SSL|TLS|certificate/i.test(msgText)) return t('task.error-reason-ssl')
+      if (/timeout|timed out/i.test(msgText)) return t('task.error-reason-timeout')
+      if (/connection refused|refused/i.test(msgText)) return t('task.error-reason-refused')
+      return t('task.error-reason-network')
+    }
+    if (code === 16) {
+      if (/Permission denied|permission/i.test(msgText)) return t('task.error-reason-permission')
+      if (/No space left|disk full/i.test(msgText)) return t('task.error-reason-disk-full')
+      return t('task.error-reason-disk')
+    }
+    return t('task.error-reason-generic')
+  }
+})
+
+const taskStatus = computed(() => {
+  if (isSeeder.value && props.task.status === TASK_STATUS.ACTIVE) {
+    return TASK_STATUS.SEEDING
+  }
+  return props.task.status
+})
+
+const fileList = computed(() => {
+  const task = props.task || {}
+  const cfg = preferenceConfig.value || {}
+  const suffix = cfg.downloadingFileSuffix || ''
+  const completedStatuses = [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED]
+  const shouldStripSuffix = !!(suffix && !isBT.value && completedStatuses.includes(task.status))
+  const result = props.files.map((item) => {
+    const rawName = getFileName(item.path)
+    const name = shouldStripSuffix && rawName && rawName.endsWith(suffix)
+      ? rawName.slice(0, -suffix.length)
+      : rawName
+    const extension = getFileExtension(name)
+    return {
+      idx: Number(item.index),
+      selected: item.selected === 'true',
+      path: item.path,
+      name,
+      extension: extension ? `.${extension}` : '',
+      length: parseInt(item.length, 10),
+      completedLength: item.completedLength
+    }
+  })
+  merge(cached.files, result)
+  return cached.files
+})
+
+const selectedFileList = computed(() => fileList.value.filter((item) => item.selected))
+
+// Lifecycle
+onMounted(() => {
+  resizeHandler = debounce(() => {
+    if (activeTab.value === 'activity' && taskGraphic.value) {
+      taskGraphic.value.updateGraphicWidth()
+    }
+    updateNavIndicator()
+  }, 250)
+  window.addEventListener('resize', resizeHandler)
+  nextTick(() => updateNavIndicator())
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', resizeHandler)
+  if (resizeHandler && resizeHandler.cancel) {
+    resizeHandler.cancel()
+  }
+  cached.files = []
+})
+
+// Watchers
+watch(() => props.gid, () => {
+  cached.files = []
+})
+
+watch(statusHintText, () => {
+  updateStatusTruncation()
+})
+
+watch(isBT, () => {
+  nextTick(() => updateNavIndicator())
+})
+
+watch(isEd2k, () => {
+  nextTick(() => updateNavIndicator())
+})
+
+// Methods
+function handleOpen () {
+  drawerAnimationDone.value = false
+}
+
+function handleOpened () {
+  const done = () => {
+    drawerAnimationDone.value = true
+    if (activeTab.value === 'peers' || activeTab.value === 'sources') {
+      taskStore.toggleEnabledFetchPeers(true)
+    }
+    if (activeTab.value === 'peers' && taskPeers.value) {
+      setImmediate(() => {
+        taskPeers.value.updateTableHeight()
+      })
+    }
+    if (activeTab.value === 'sources' && taskSources.value) {
+      setImmediate(() => {
+        taskSources.value.updateTableHeight()
+      })
+    }
+    if (activeTab.value === 'activity' && taskGraphic.value) {
+      taskGraphic.value.updateGraphicWidth()
+    }
+    nextTick(() => updateNavIndicator())
+  }
+  if (typeof window !== 'undefined' && window.requestAnimationFrame) {
+    window.requestAnimationFrame(() => window.requestAnimationFrame(done))
+    return
+  }
+  setTimeout(done, 0)
+}
+
+function handleClose (done) {
+  drawerAnimationDone.value = false
+  taskStore.toggleEnabledFetchPeers(false)
+  taskStore.hideTaskDetail()
+  window.removeEventListener('resize', resizeHandler)
+  if (resizeHandler && resizeHandler.cancel) {
+    resizeHandler.cancel()
+  }
+  if (typeof done === 'function') {
+    done()
+  }
+}
+
+function handleClosed (done) {
+  drawerAnimationDone.value = false
+  taskStore.updateCurrentTaskGid(EMPTY_STRING)
+  taskStore.updateCurrentTaskItem(null)
+  resetTaskFilesSelection()
+}
+
+function updateStatusTruncation () {
+  nextTick(() => {
+    const el = detailStatusText.value
+    if (!el || !el.scrollWidth || !el.clientWidth) {
+      statusHintTruncated.value = false
+      return
+    }
+    statusHintTruncated.value = el.scrollWidth > el.clientWidth
+  })
+}
+
+function handleTabBeforeLeave (activeName, oldActiveName) {
+  activeTab.value = activeName
+  switch (oldActiveName) {
+  case 'peers':
+    taskStore.toggleEnabledFetchPeers(false)
+    break
+  case 'files':
+    resetTaskFilesSelection()
+    break
+  }
+}
+
+function handleTabClick (tab) {
+  const { name } = tab
+  activeTab.value = name
+  switch (name) {
+  case 'peers':
+    taskStore.toggleEnabledFetchPeers(true)
+    setImmediate(() => {
+      if (taskPeers.value) {
+        taskPeers.value.updateTableHeight()
+      }
+    })
+    break
+  case 'activity':
+    nextTick(() => {
+      if (taskGraphic.value) {
+        taskGraphic.value.updateGraphicWidth()
+      }
+    })
+    break
+  case 'files':
+    setImmediate(() => {
+      updateFilesListSelection()
+    })
+    break
+  }
+}
+
+function handleTabChange (tabName) {
+  const prevTab = activeTab.value
+  activeTab.value = tabName
+  updateNavIndicator()
+  switch (tabName) {
+  case 'peers':
+  case 'sources':
+    taskStore.toggleEnabledFetchPeers(true)
+    setImmediate(() => {
+      const ref = tabName === 'sources' ? taskSources.value : taskPeers.value
+      if (ref) {
+        ref.updateTableHeight()
+      }
+    })
+    break
+  case 'activity':
+    nextTick(() => {
+      if (taskGraphic.value) {
+        taskGraphic.value.updateGraphicWidth()
+      }
+    })
+    break
+  case 'files':
+    setImmediate(() => {
+      updateFilesListSelection()
+    })
+    break
+  }
+  if ((prevTab === 'peers' || prevTab === 'sources') && tabName !== 'peers' && tabName !== 'sources') {
+    taskStore.toggleEnabledFetchPeers(false)
+  }
+}
+
+function updateNavIndicator () {
+  if (navSlider.value && navSlider.value.updateIndicator) {
+    navSlider.value.updateIndicator()
+  }
+}
+
+function updateFilesListSelection () {
+  if (!detailFileList.value) return
+  detailFileList.value.toggleSelection(selectedFileList.value)
+  detailFileList.value.activeType = 'all'
+}
+
+function handleSelectionChange (val) {
+  filesSelection.value = val
+}
+
+function resetTaskFilesSelection () {
+  filesSelection.value = EMPTY_STRING
+  selectionChangedCount.value = 0
+  if (detailFileList.value) {
+    detailFileList.value.hideConfirm()
+  }
+}
+
+function saveTaskFilesSelection () {
+  const { gid, filesSelection: fs } = { gid: props.gid, filesSelection: filesSelection.value }
+  if (fs === NONE_SELECTED_FILES) {
+    msg.warning(t('task.select-at-least-one'))
+    return
+  }
+  const options = {
+    selectFile: fs !== SELECTED_ALL_FILES ? fs : EMPTY_STRING
+  }
+  taskStore.changeTaskOption({ gid, options })
+}
 </script>
 
 <style lang="scss">
@@ -710,8 +676,8 @@
 
 .theme-light.has-app-background-image:not(.task-detail-default-transparent) {
   .task-detail-drawer {
-    background-color: $--panel-background !important;
-    background: $--panel-background !important;
+    background-color: var(--lc-bg-panel) !important;
+    background: var(--lc-bg-panel) !important;
   }
 
   .task-detail-drawer {
@@ -748,8 +714,8 @@
 
 .theme-dark.has-app-background-image:not(.task-detail-default-transparent) {
   .task-detail-drawer {
-    background-color: $--dk-panel-background !important;
-    background: $--dk-panel-background !important;
+    background-color: var(--lc-bg-panel) !important;
+    background: var(--lc-bg-panel) !important;
   }
 
   .task-detail-drawer .el-drawer__header,
@@ -800,7 +766,7 @@
     align-items: center;
     justify-content: flex-start;
     width: 100%;
-    padding: 1.75rem 0.75rem 1rem;
+    padding: 1.125rem 0.1875rem 1rem 0.3125rem; /* 上间距减小；左（滑块）保持收紧、右（关闭按钮）再收紧 */
     box-sizing: border-box;
   }
   .task-detail-nav-wrapper {
@@ -831,7 +797,7 @@
     cursor: pointer;
   }
   .task-detail-close:hover {
-    color: $--color-primary;
+    color: var(--el-color-primary);
   }
   .task-detail-peer-search {
     max-width: 240px;
@@ -844,7 +810,7 @@
 .task-detail-content {
   flex: 1;
   height: 0; /* Ensures flex container scrolls correctly */
-  padding: 0.5rem 0.75rem;
+  padding: 0.125rem 0.25rem; /* 继续收紧抽屉内容区顶部/下/左右留白 */
   box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;
@@ -864,7 +830,7 @@
     width: 100%;
     text-align: center;
     font-size: 0;
-    padding: 0.5rem 1.25rem 1.5rem;
+    padding: 0.5rem 1.25rem 0.375rem; /* 收紧底部控制按钮的底部留白 */
     display: flex;
     align-content: center;
     justify-content: center;

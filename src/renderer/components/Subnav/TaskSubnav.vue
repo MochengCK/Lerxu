@@ -3,7 +3,7 @@
     <div class="subnav-scroll-area">
     <!-- 下载区 -->
     <div class="subnav-section">
-      <div class="subnav-section-label">{{ $t('subnav.download-section') }}</div>
+      <div class="subnav-section-label">{{ t('subnav.download-section') }}</div>
       <ul class="task-nav-list">
         <li
           @click="() => nav('all')"
@@ -12,7 +12,7 @@
           <i class="subnav-icon">
             <mo-icon name="subnav-all" width="20" height="20" />
           </i>
-          <span>{{ $t('task.all') }}</span>
+          <span>{{ t('task.all') }}</span>
           <span class="subnav-count">{{ taskCounts.all }}</span>
         </li>
         <li
@@ -22,7 +22,7 @@
           <i class="subnav-icon">
             <mo-icon name="subnav-active" width="20" height="20" />
           </i>
-          <span>{{ $t('task.active') }}</span>
+          <span>{{ t('task.active') }}</span>
           <span class="subnav-count">{{ taskCounts.active }}</span>
         </li>
         <li
@@ -32,7 +32,7 @@
           <i class="subnav-icon">
             <mo-icon name="subnav-waiting" width="20" height="20" />
           </i>
-          <span>{{ $t('task.waiting') }}</span>
+          <span>{{ t('task.waiting') }}</span>
           <span class="subnav-count">{{ taskCounts.waiting }}</span>
         </li>
         <li
@@ -42,7 +42,7 @@
           <i class="subnav-icon">
             <mo-icon name="subnav-stopped" width="20" height="20" />
           </i>
-          <span>{{ $t('task.stopped') }}</span>
+          <span>{{ t('task.stopped') }}</span>
           <span class="subnav-count">{{ taskCounts.stopped }}</span>
         </li>
       </ul>
@@ -54,7 +54,7 @@
         class="subnav-section-label subnav-section-toggle"
         @click="toggleTypeCollapsed"
       >
-        <span>{{ $t('subnav.type-section') }}</span>
+        <span>{{ t('subnav.type-section') }}</span>
         <i class="subnav-chevron" :class="{ 'is-collapsed': typeCollapsed }"></i>
       </div>
       <ul class="task-nav-list category-nav-list" :class="{ 'is-collapsed': typeCollapsed }">
@@ -79,12 +79,12 @@
     <div class="subnav-speed-box">
       <span class="subnav-speed-item">
         <span class="subnav-speed-label">↑</span>
-        <span class="subnav-speed-value">{{ stat.uploadSpeed | bytesToSize }}/s</span>
+        <span class="subnav-speed-value">{{ bytesToSize(stat.uploadSpeed) }}/s</span>
       </span>
       <span class="subnav-speed-divider"></span>
       <span class="subnav-speed-item">
         <span class="subnav-speed-label">↓</span>
-        <span class="subnav-speed-value">{{ stat.downloadSpeed | bytesToSize }}/s</span>
+        <span class="subnav-speed-value">{{ bytesToSize(stat.downloadSpeed) }}/s</span>
       </span>
     </div>
 
@@ -97,99 +97,96 @@
         <i class="subnav-icon">
           <mo-icon name="menu-preference" width="20" height="20" />
         </i>
-        <span>{{ $t('subnav.preferences') }}</span>
+        <span>{{ t('subnav.preferences') }}</span>
       </li>
     </ul>
     </div>
   </nav>
 </template>
 
-<script>
-  import { mapGetters, mapState } from 'vuex'
-  import { bytesToSize } from '@shared/utils'
-  import '@/components/Icons/subnav-all'
-  import '@/components/Icons/subnav-active'
-  import '@/components/Icons/subnav-waiting'
-  import '@/components/Icons/subnav-stopped'
-  import '@/components/Icons/subnav-type-all'
-  import '@/components/Icons/menu-preference'
-  import '@/components/Icons/subnav-archives'
-  import '@/components/Icons/subnav-programs'
-  import '@/components/Icons/subnav-videos'
-  import '@/components/Icons/subnav-music'
-  import '@/components/Icons/subnav-images'
-  import '@/components/Icons/subnav-documents'
+<script setup>
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
+import { ipcRenderer } from 'electron'
+import { bytesToSize } from '@shared/utils'
+import { useAppStore, useTaskStore } from '@/store'
+import { storeToRefs } from 'pinia'
 
-  export default {
-    name: 'mo-task-subnav',
-    props: {
-      current: {
-        type: String,
-        default: 'all'
-      }
-    },
-    data () {
-      // 类型区的折叠状态持久化（localStorage），重启应用后保持上次状态
-      let savedCollapsed = false
-      try {
-        savedCollapsed = typeof window !== 'undefined' && window.localStorage.getItem('taskSubnavTypeCollapsed') === '1'
-      } catch (_) {}
-      return {
-        typeCollapsed: savedCollapsed
-      }
-    },
-    computed: {
-      title () {
-        return this.$t('subnav.task-list')
-      },
-      ...mapGetters('task', {
-        taskCounts: 'filteredTaskCounts',
-        categoryCounts: 'categoryCounts'
-      }),
-      ...mapState('task', {
-        categoryFilter: state => state.categoryFilter
-      }),
-      ...mapState('app', ['stat']),
-      categories () {
-        return [
-          { value: '', label: this.$t('task.category-all'), icon: 'subnav-type-all' },
-          { value: 'archives', label: this.$t('task.category-archives'), icon: 'subnav-archives' },
-          { value: 'programs', label: this.$t('task.category-programs'), icon: 'subnav-programs' },
-          { value: 'videos', label: this.$t('task.category-videos'), icon: 'subnav-videos' },
-          { value: 'music', label: this.$t('task.category-music'), icon: 'subnav-music' },
-          { value: 'images', label: this.$t('task.category-images'), icon: 'subnav-images' },
-          { value: 'documents', label: this.$t('task.category-documents'), icon: 'subnav-documents' }
-        ]
-      }
-    },
-    methods: {
-      toggleTypeCollapsed () {
-        this.typeCollapsed = !this.typeCollapsed
-        try {
-          if (typeof window !== 'undefined' && window.localStorage) {
-            window.localStorage.setItem('taskSubnavTypeCollapsed', this.typeCollapsed ? '1' : '0')
-          }
-        } catch (_) {}
-      },
-      nav (status = 'active') {
-        this.$router.push({
-          path: `/task/${status}`
-        }).catch(err => {
-          console.log(err)
-        })
-      },
-      selectCategory (value) {
-        this.$store.dispatch('task/updateCategoryFilter', value)
-        this.$store.dispatch('task/fetchList')
-      },
-      openPreference () {
-        this.$electron.ipcRenderer.send('open-preference-window')
-      }
-    },
-    filters: {
-      bytesToSize
-    }
+import '@/components/Icons/subnav-all'
+import '@/components/Icons/subnav-active'
+import '@/components/Icons/subnav-waiting'
+import '@/components/Icons/subnav-stopped'
+import '@/components/Icons/subnav-type-all'
+import '@/components/Icons/menu-preference'
+import '@/components/Icons/subnav-archives'
+import '@/components/Icons/subnav-programs'
+import '@/components/Icons/subnav-videos'
+import '@/components/Icons/subnav-music'
+import '@/components/Icons/subnav-images'
+import '@/components/Icons/subnav-documents'
+
+const props = defineProps({
+  current: {
+    type: String,
+    default: 'all'
   }
+})
+
+defineOptions({ name: 'mo-task-subnav' })
+
+const router = useRouter()
+const { t } = i18n.global
+
+const appStore = useAppStore()
+const taskStore = useTaskStore()
+const { stat } = storeToRefs(appStore)
+const { categoryFilter } = storeToRefs(taskStore)
+
+// 类型区的折叠状态持久化（localStorage），重启应用后保持上次状态
+let savedCollapsed = false
+try {
+  savedCollapsed = typeof window !== 'undefined' && window.localStorage.getItem('taskSubnavTypeCollapsed') === '1'
+} catch (_) {}
+
+const typeCollapsed = ref(savedCollapsed)
+
+const taskCounts = computed(() => taskStore.filteredTaskCounts)
+const categoryCounts = computed(() => taskStore.categoryCounts)
+
+const categories = computed(() => [
+  { value: '', label: t('task.category-all'), icon: 'subnav-type-all' },
+  { value: 'archives', label: t('task.category-archives'), icon: 'subnav-archives' },
+  { value: 'programs', label: t('task.category-programs'), icon: 'subnav-programs' },
+  { value: 'videos', label: t('task.category-videos'), icon: 'subnav-videos' },
+  { value: 'music', label: t('task.category-music'), icon: 'subnav-music' },
+  { value: 'images', label: t('task.category-images'), icon: 'subnav-images' },
+  { value: 'documents', label: t('task.category-documents'), icon: 'subnav-documents' }
+])
+
+function toggleTypeCollapsed () {
+  typeCollapsed.value = !typeCollapsed.value
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem('taskSubnavTypeCollapsed', typeCollapsed.value ? '1' : '0')
+    }
+  } catch (_) {}
+}
+
+function nav (status = 'active') {
+  router.push({ path: `/task/${status}` }).catch(err => {
+    console.log(err)
+  })
+}
+
+function selectCategory (value) {
+  taskStore.updateCategoryFilter(value)
+  taskStore.fetchList()
+}
+
+function openPreference () {
+  ipcRenderer.send('open-preference-window')
+}
 </script>
 
 <style lang="scss">

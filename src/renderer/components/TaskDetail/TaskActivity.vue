@@ -34,78 +34,74 @@
         v-show="showBottomFade"
       />
     </div>
-    <el-form-item :label="`${$t('task.task-progress-info')}: `">
-      <div class="form-static-value" style="overflow: hidden">
-        <el-row :gutter="12">
-          <el-col :span="18">
-            <div class="progress-wrapper">
-              <mo-task-progress
-                :completed="Number(task.completedLength)"
-                :total="Number(task.totalLength)"
-                :status="taskStatus"
-                :speed="Number(task.downloadSpeed)"
-              />
-            </div>
-          </el-col>
-          <el-col :span="5">
-            {{ percent }}
-          </el-col>
-        </el-row>
+    <el-form-item :label="`${t('task.task-progress-info')}: `">
+      <div class="form-static-value task-progress-static" style="overflow: hidden">
+        <div class="task-progress-row">
+          <div class="progress-wrapper">
+            <mo-task-progress
+              :completed="Number(task.completedLength)"
+              :total="Number(task.totalLength)"
+              :status="taskStatus"
+              :speed="Number(task.downloadSpeed)"
+            />
+          </div>
+          <div class="task-progress-percent">{{ percent }}</div>
+        </div>
       </div>
     </el-form-item>
     <el-form-item>
       <div class="form-static-value">
-        <span>{{ task.completedLength | bytesToSize(2) }}</span>
-        <span v-if="task.totalLength > 0"> / {{ task.totalLength | bytesToSize(2) }}</span>
+        <span>{{ bytesToSize(task.completedLength, 2) }}</span>
+        <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
         <span class="task-time-remaining" v-if="isActive && remaining > 0">
           {{
-            remaining | timeFormat({
-              prefix: $t('task.remaining-prefix'),
+            timeFormat(remaining, {
+              prefix: t('task.remaining-prefix'),
               i18n: {
-                'gt1d': $t('app.gt1d'),
-                'hour': $t('app.hour'),
-                'minute': $t('app.minute'),
-                'second': $t('app.second')
+                'gt1d': t('app.gt1d'),
+                'hour': t('app.hour'),
+                'minute': t('app.minute'),
+                'second': t('app.second')
               }
             })
           }}
         </span>
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-num-seeders')}: `" v-if="isBT">
+    <el-form-item :label="`${t('task.task-num-seeders')}: `" v-if="isBT">
       <div class="form-static-value">
         {{ task.numSeeders }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-connections')}: `">
+    <el-form-item :label="`${t('task.task-connections')}: `">
       <div class="form-static-value">
         {{ task.connections }}
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-download-speed')}: `">
+    <el-form-item :label="`${t('task.task-download-speed')}: `">
       <div class="form-static-value">
-        <span>{{ task.downloadSpeed | bytesToSize }}/s</span>
+        <span>{{ bytesToSize(task.downloadSpeed) }}/s</span>
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-average-speed')}: `">
+    <el-form-item :label="`${t('task.task-average-speed')}: `">
       <div class="form-static-value">
-        <span>{{ averageDownloadSpeed | bytesToSize }}/s</span>
+        <span>{{ bytesToSize(averageDownloadSpeed) }}/s</span>
         <span class="average-speed-samples" v-if="speedSampleCount > 0">
-          ({{ $t('task.task-average-speed-samples', { count: speedSampleCount }) }})
+          ({{ t('task.task-average-speed-samples', { count: speedSampleCount }) }})
         </span>
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-upload-speed')}: `" v-if="isBT">
+    <el-form-item :label="`${t('task.task-upload-speed')}: `" v-if="isBT">
       <div class="form-static-value">
-        <span>{{ task.uploadSpeed | bytesToSize }}/s</span>
+        <span>{{ bytesToSize(task.uploadSpeed) }}/s</span>
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-upload-length')}: `" v-if="isBT">
+    <el-form-item :label="`${t('task.task-upload-length')}: `" v-if="isBT">
       <div class="form-static-value">
-        <span>{{ task.uploadLength | bytesToSize }}</span>
+        <span>{{ bytesToSize(task.uploadLength) }}</span>
       </div>
     </el-form-item>
-    <el-form-item :label="`${$t('task.task-ratio')}: `" v-if="isBT">
+    <el-form-item :label="`${t('task.task-ratio')}: `" v-if="isBT">
       <div class="form-static-value">
         {{ ratio }}
       </div>
@@ -113,379 +109,396 @@
   </el-form>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import {
-    bytesToSize,
-    calcFormLabelWidth,
-    calcProgress,
-    calcRatio,
-    checkTaskIsBT,
-    checkTaskIsSeeder,
-    timeFormat,
-    timeRemaining
-  } from '@shared/utils'
-  import { TASK_STATUS } from '@shared/constants'
-  import TaskGraphic from '@/components/TaskGraphic/TaskGraphic'
-  import TaskProgress from '@/components/Task/TaskProgress'
+<script setup>
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import is from 'electron-is'
+import {
+  bytesToSize,
+  calcFormLabelWidth,
+  calcProgress,
+  calcRatio,
+  checkTaskIsBT,
+  checkTaskIsSeeder,
+  timeFormat,
+  timeRemaining
+} from '@shared/utils'
+import { TASK_STATUS } from '@shared/constants'
+import i18n from '@/plugins/i18n'
+import TaskGraphic from '@/components/TaskGraphic/TaskGraphic'
+import TaskProgress from '@/components/Task/TaskProgress'
+import { usePreferenceStore } from '@/store/preference'
+import { useTaskStore } from '@/store/task'
+import { storeToRefs } from 'pinia'
 
-  export default {
-    name: 'mo-task-activity',
-    components: {
-      [TaskGraphic.name]: TaskGraphic,
-      [TaskProgress.name]: TaskProgress
-    },
-    props: {
-      gid: {
-        type: String
-      },
-      task: {
-        type: Object
-      },
-      files: {
-        type: Array,
-        default: function () {
-          return []
-        }
-      },
-      peers: {
-        type: Array,
-        default: function () {
-          return []
-        }
-      },
-      visible: {
-        type: Boolean,
-        default: false
-      }
-    },
-    data () {
-      const { locale } = this.$store.state.preference.config
-      return {
-        form: {},
-        formLabelWidth: calcFormLabelWidth(locale),
-        locale,
-        graphicWidth: 0,
-        // 记录开始采样时的已下载量，用于计算增量
-        initialCompletedLength: 0,
-        downloadStartTime: null,
-        downloadEndTime: null,
-        // 拖拽滚动状态
-        isDragging: false,
-        dragStartY: 0,
-        dragStartScrollTop: 0,
-        // 渐变显示状态
-        showTopFade: false,
-        showBottomFade: false,
-        graphicMaxRows: 6,
-        graphicRafId: null
-      }
-    },
-    computed: {
-      isRenderer: () => is.renderer(),
-      speedSamples () {
-        const gid = this.task && this.task.gid ? `${this.task.gid}` : ''
-        const map = this.$store.state.task.taskSpeedSamples || {}
-        const samples = gid && Array.isArray(map[gid]) ? map[gid] : []
-        return samples
-      },
-      isBT () {
-        return checkTaskIsBT(this.task)
-      },
-      isSeeder () {
-        return checkTaskIsSeeder(this.task)
-      },
-      taskStatus () {
-        const { task, isSeeder } = this
-        if (isSeeder) {
-          return TASK_STATUS.SEEDING
-        } else {
-          return task.status
-        }
-      },
-      isActive () {
-        return this.taskStatus === TASK_STATUS.ACTIVE
-      },
-      percent () {
-        const { totalLength, completedLength } = this.task
-        const percent = calcProgress(totalLength, completedLength)
-        return `${percent}%`
-      },
-      remaining () {
-        const { totalLength, completedLength, downloadSpeed } = this.task
-        return timeRemaining(totalLength, completedLength, downloadSpeed)
-      },
-      ratio () {
-        if (!this.isBT) {
-          return 0
-        }
+const { t } = i18n.global
 
-        const { totalLength, uploadLength } = this.task
-        const ratio = calcRatio(totalLength, uploadLength)
-        return ratio
-      },
-      averageDownloadSpeed () {
-        // 如果任务不是活跃状态，或者任务中有已保存的平均速度且我们没有样本（例如刚恢复）
-        if (!this.isActive && this.task && this.task.averageDownloadSpeed != null) {
-          const v = Number(this.task.averageDownloadSpeed)
-          return Number.isFinite(v) && v >= 0 ? v : 0
-        }
+const props = defineProps({
+  gid: {
+    type: String
+  },
+  task: {
+    type: Object
+  },
+  files: {
+    type: Array,
+    default: () => []
+  },
+  peers: {
+    type: Array,
+    default: () => []
+  },
+  visible: {
+    type: Boolean,
+    default: false
+  }
+})
 
-        // 如果有样本，计算当前样本的平均速度
-        if (this.speedSamples.length > 0) {
-          const normalized = this.speedSamples
-            .map(s => {
-              if (typeof s === 'number') {
-                const speed = Number(s)
-                if (!Number.isFinite(speed) || speed < 0) return null
-                return { bytes: speed, durationMs: 1000 }
-              }
-              if (!s || typeof s !== 'object') return null
-              const bytes = Number(s.bytes)
-              const durationMs = Number(s.durationMs)
-              if (!Number.isFinite(bytes) || bytes < 0) return null
-              if (!Number.isFinite(durationMs) || durationMs <= 0) return null
-              return { bytes, durationMs }
-            })
-            .filter(Boolean)
+defineOptions({ name: 'mo-task-activity' })
 
-          if (normalized.length > 0) {
-            const totalBytes = normalized.reduce((sum, it) => sum + it.bytes, 0)
-            const totalDurationMs = normalized.reduce((sum, it) => sum + it.durationMs, 0)
-            const avg = totalDurationMs > 0 ? Math.round((totalBytes * 1000) / totalDurationMs) : 0
-            return avg
-          }
-        }
+const preferenceStore = usePreferenceStore()
+const taskStore = useTaskStore()
+const { config } = storeToRefs(preferenceStore)
 
-        // 如果没有样本（例如刚启动应用，samples还未累积），但有历史记录
-        if (this.task && this.task.averageDownloadSpeed != null) {
-          const v = Number(this.task.averageDownloadSpeed)
-          return Number.isFinite(v) && v >= 0 ? v : 0
-        }
+const form = ref({})
+const formLabelWidth = computed(() => calcFormLabelWidth(config.value.locale))
+const locale = computed(() => config.value.locale)
+const graphicWidth = ref(0)
+const initialCompletedLength = ref(0)
+const downloadStartTime = ref(null)
+const downloadEndTime = ref(null)
+const isDragging = ref(false)
+const dragStartY = ref(0)
+const dragStartScrollTop = ref(0)
+const showTopFade = ref(false)
+const showBottomFade = ref(false)
+const graphicMaxRows = 6
+let graphicRafId = null
+let _fadeStateTimer = null
+let _graphicDragBound = false
 
-        return 0
-      },
-      speedSampleCount () {
-        if (!this.isActive && this.task && this.task.averageSpeedSampleCount != null) {
-          const v = Number(this.task.averageSpeedSampleCount)
-          return Number.isFinite(v) && v >= 0 ? v : 0
+const graphicBox = ref(null)
+
+const isRenderer = is.renderer()
+
+const speedSamples = computed(() => {
+  const gid = props.task && props.task.gid ? `${props.task.gid}` : ''
+  const map = taskStore.taskSpeedSamples || {}
+  const samples = gid && Array.isArray(map[gid]) ? map[gid] : []
+  return samples
+})
+
+const isBT = computed(() => checkTaskIsBT(props.task))
+const isSeeder = computed(() => checkTaskIsSeeder(props.task))
+const taskStatus = computed(() => {
+  if (isSeeder.value) {
+    return TASK_STATUS.SEEDING
+  }
+  return props.task.status
+})
+const isActive = computed(() => taskStatus.value === TASK_STATUS.ACTIVE)
+const percent = computed(() => {
+  const { totalLength, completedLength } = props.task
+  const p = calcProgress(totalLength, completedLength)
+  return `${p}%`
+})
+const remaining = computed(() => {
+  const { totalLength, completedLength, downloadSpeed } = props.task
+  return timeRemaining(totalLength, completedLength, downloadSpeed)
+})
+const ratio = computed(() => {
+  if (!isBT.value) return 0
+  const { totalLength, uploadLength } = props.task
+  return calcRatio(totalLength, uploadLength)
+})
+
+const averageDownloadSpeed = computed(() => {
+  if (!isActive.value && props.task && props.task.averageDownloadSpeed != null) {
+    const v = Number(props.task.averageDownloadSpeed)
+    return Number.isFinite(v) && v >= 0 ? v : 0
+  }
+
+  if (speedSamples.value.length > 0) {
+    const normalized = speedSamples.value
+      .map(s => {
+        if (typeof s === 'number') {
+          const speed = Number(s)
+          if (!Number.isFinite(speed) || speed < 0) return null
+          return { bytes: speed, durationMs: 1000 }
         }
-        return this.speedSamples
-          .map(s => {
-            if (typeof s === 'number') {
-              const speed = Number(s)
-              return Number.isFinite(speed) && speed > 0 ? speed : 0
-            }
-            if (!s || typeof s !== 'object') return 0
-            const bytes = Number(s.bytes)
-            const durationMs = Number(s.durationMs)
-            if (!Number.isFinite(bytes) || bytes < 0) return 0
-            if (!Number.isFinite(durationMs) || durationMs <= 0) return 0
-            const speed = (bytes * 1000) / durationMs
-            return Number.isFinite(speed) && speed > 0 ? speed : 0
-          })
-          .filter(v => v > 0).length
-      }
-    },
-    filters: {
-      bytesToSize,
-      timeFormat
-    },
-    watch: {
-      'task.completedLength': {
-        handler (newLength, oldLength) {
-          // 检测下载开始（仅在未记录起始时间时）
-          const length = Number(newLength)
-          if (Number.isFinite(length) && length > 0 && !this.downloadStartTime) {
-            this.downloadStartTime = Date.now()
-            this.initialCompletedLength = length
-          }
-        },
-        immediate: true
-      },
-      'task.status': {
-        handler (newStatus, oldStatus) {
-          const currentLength = Number(this.task && this.task.completedLength ? this.task.completedLength : 0)
-          if (
-            oldStatus === TASK_STATUS.ACTIVE &&
-            newStatus !== TASK_STATUS.ACTIVE &&
-            this.downloadStartTime &&
-            Number.isFinite(currentLength) &&
-            currentLength > this.initialCompletedLength
-          ) {
-            this.downloadEndTime = Date.now()
-          }
-          if (newStatus === TASK_STATUS.ACTIVE && oldStatus !== TASK_STATUS.ACTIVE) {
-            this.resetSpeedSamples()
-            this.downloadStartTime = Date.now()
-            this.initialCompletedLength = Number(this.task ? this.task.completedLength : 0) || 0
-            this.downloadEndTime = null
-          }
-        }
-      },
-      'task.gid': {
-        handler (newGid, oldGid) {
-          if (newGid !== oldGid) {
-            this.downloadStartTime = null
-            this.initialCompletedLength = 0
-            this.downloadEndTime = null
-          }
-        }
-      },
-      graphicWidth: {
-        handler () {
-          this.scheduleUpdateGraphicFadeState()
-        }
-      },
-      'task.bitfield': {
-        handler () {
-          // bitfield changes frequently during BT download; debounce to avoid
-          // forced reflow (scrollHeight/clientHeight/scrollTop reads) on every tick.
-          this.scheduleUpdateGraphicFadeState()
-        }
-      }
-    },
-    mounted () {
-      setImmediate(() => {
-        this.updateGraphicWidth()
+        if (!s || typeof s !== 'object') return null
+        const bytes = Number(s.bytes)
+        const durationMs = Number(s.durationMs)
+        if (!Number.isFinite(bytes) || bytes < 0) return null
+        if (!Number.isFinite(durationMs) || durationMs <= 0) return null
+        return { bytes, durationMs }
       })
-      // 初始化记录当前已下载量（作为基准线）
-      const initLength = Number(this.task && this.task.completedLength ? this.task.completedLength : 0)
-      if (Number.isFinite(initLength) && initLength > 0) {
-        this.downloadStartTime = Date.now()
-        this.initialCompletedLength = initLength
-      }
-    },
-    beforeDestroy () {
-      this.unbindGraphicDragEvents()
-      if (this.graphicRafId) {
-        cancelAnimationFrame(this.graphicRafId)
-        this.graphicRafId = null
-      }
-      if (this._fadeStateTimer) {
-        clearTimeout(this._fadeStateTimer)
-      }
-    },
-    methods: {
-      scheduleUpdateGraphicFadeState () {
-        // Debounce: bitfield changes frequently during BT download, and
-        // updateGraphicFadeState reads scrollHeight/clientHeight/scrollTop
-        // (forced reflow). Collapse repeated calls into one layout read.
-        if (this._fadeStateTimer) {
-          clearTimeout(this._fadeStateTimer)
-        }
-        this._fadeStateTimer = setTimeout(() => {
-          this._fadeStateTimer = null
-          this.updateGraphicFadeState()
-        }, 200)
-      },
-      updateGraphicWidth () {
-        if (!this.$refs.graphicBox) {
-          return
-        }
-        this.graphicWidth = this.calcInnerWidth(this.$refs.graphicBox)
-        this.scheduleUpdateGraphicFadeState()
-      },
-      calcInnerWidth (ele) {
-        if (!ele) {
-          return 0
-        }
+      .filter(Boolean)
 
-        const style = getComputedStyle(ele, null)
-        const width = parseInt(style.width, 10)
-        const paddingLeft = parseInt(style.paddingLeft, 10)
-        const paddingRight = parseInt(style.paddingRight, 10)
-        return width - paddingLeft - paddingRight
-      },
-      calcGraphicMaxHeight () {
-        const atomHeight = 10
-        const atomGutter = 3
-        const paddingTop = 8
-        const paddingBottom = 8
-        return this.graphicMaxRows * (atomHeight + atomGutter) - atomGutter + paddingTop + paddingBottom
-      },
-      updateGraphicFadeState () {
-        try {
-          const box = this.$refs.graphicBox
-          if (!box) return
-          const scrollH = box.scrollHeight || 0
-          const clientH = box.clientHeight || 0
-          const hasOverflow = scrollH > clientH + 2
-          if (!hasOverflow) {
-            this.showTopFade = false
-            this.showBottomFade = false
-            return
-          }
-          const scrollTop = box.scrollTop || 0
-          this.showTopFade = scrollTop > 2
-          const atBottom = scrollTop + clientH >= scrollH - 2
-          this.showBottomFade = !atBottom
-        } catch (_) {
-          this.showTopFade = false
-          this.showBottomFade = false
-        }
-      },
-      onGraphicScroll () {
-        if (this.graphicRafId) return
-        this.graphicRafId = requestAnimationFrame(() => {
-          this.graphicRafId = null
-          this.updateGraphicFadeState()
-        })
-      },
-      onGraphicMouseDown (e) {
-        try {
-          const box = this.$refs.graphicBox
-          if (!box) return
-          const scrollH = box.scrollHeight || 0
-          const clientH = box.clientHeight || 0
-          if (scrollH <= clientH + 2) return
-          this.isDragging = true
-          this.dragStartY = e.clientY
-          this.dragStartScrollTop = box.scrollTop || 0
-          this.bindGraphicDragEvents()
-          e.preventDefault()
-        } catch (_) {}
-      },
-      bindGraphicDragEvents () {
-        if (this._graphicDragBound) return
-        this._graphicDragBound = true
-        document.addEventListener('mousemove', this.onGraphicMouseMove)
-        document.addEventListener('mouseup', this.onGraphicMouseUp)
-      },
-      unbindGraphicDragEvents () {
-        if (!this._graphicDragBound) return
-        this._graphicDragBound = false
-        document.removeEventListener('mousemove', this.onGraphicMouseMove)
-        document.removeEventListener('mouseup', this.onGraphicMouseUp)
-      },
-      onGraphicMouseMove (e) {
-        if (!this.isDragging) return
-        try {
-          const box = this.$refs.graphicBox
-          if (!box) return
-          const deltaY = e.clientY - this.dragStartY
-          box.scrollTop = this.dragStartScrollTop - deltaY
-        } catch (_) {}
-      },
-      onGraphicMouseUp () {
-        this.isDragging = false
-        this.unbindGraphicDragEvents()
-      },
-      resetSpeedSamples () {
-        const gid = this.task && this.task.gid ? `${this.task.gid}` : ''
-        if (gid) {
-          this.$store.dispatch('task/resetTaskSpeedSamples', gid)
-        }
-        this.downloadStartTime = null
-        this.initialCompletedLength = 0
-      }
+    if (normalized.length > 0) {
+      const totalBytes = normalized.reduce((sum, it) => sum + it.bytes, 0)
+      const totalDurationMs = normalized.reduce((sum, it) => sum + it.durationMs, 0)
+      const avg = totalDurationMs > 0 ? Math.round((totalBytes * 1000) / totalDurationMs) : 0
+      return avg
     }
   }
+
+  if (props.task && props.task.averageDownloadSpeed != null) {
+    const v = Number(props.task.averageDownloadSpeed)
+    return Number.isFinite(v) && v >= 0 ? v : 0
+  }
+
+  return 0
+})
+
+const speedSampleCount = computed(() => {
+  if (!isActive.value && props.task && props.task.averageSpeedSampleCount != null) {
+    const v = Number(props.task.averageSpeedSampleCount)
+    return Number.isFinite(v) && v >= 0 ? v : 0
+  }
+  return speedSamples.value
+    .map(s => {
+      if (typeof s === 'number') {
+        const speed = Number(s)
+        return Number.isFinite(speed) && speed > 0 ? speed : 0
+      }
+      if (!s || typeof s !== 'object') return 0
+      const bytes = Number(s.bytes)
+      const durationMs = Number(s.durationMs)
+      if (!Number.isFinite(bytes) || bytes < 0) return 0
+      if (!Number.isFinite(durationMs) || durationMs <= 0) return 0
+      const speed = (bytes * 1000) / durationMs
+      return Number.isFinite(speed) && speed > 0 ? speed : 0
+    })
+    .filter(v => v > 0).length
+})
+
+// Watchers
+watch(
+  () => props.task && props.task.completedLength,
+  (newLength) => {
+    const length = Number(newLength)
+    if (Number.isFinite(length) && length > 0 && !downloadStartTime.value) {
+      downloadStartTime.value = Date.now()
+      initialCompletedLength.value = length
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.task && props.task.status,
+  (newStatus, oldStatus) => {
+    const currentLength = Number(props.task && props.task.completedLength ? props.task.completedLength : 0)
+    if (
+      oldStatus === TASK_STATUS.ACTIVE &&
+      newStatus !== TASK_STATUS.ACTIVE &&
+      downloadStartTime.value &&
+      Number.isFinite(currentLength) &&
+      currentLength > initialCompletedLength.value
+    ) {
+      downloadEndTime.value = Date.now()
+    }
+    if (newStatus === TASK_STATUS.ACTIVE && oldStatus !== TASK_STATUS.ACTIVE) {
+      resetSpeedSamples()
+      downloadStartTime.value = Date.now()
+      initialCompletedLength.value = Number(props.task ? props.task.completedLength : 0) || 0
+      downloadEndTime.value = null
+    }
+  }
+)
+
+watch(
+  () => props.task && props.task.gid,
+  (newGid, oldGid) => {
+    if (newGid !== oldGid) {
+      downloadStartTime.value = null
+      initialCompletedLength.value = 0
+      downloadEndTime.value = null
+    }
+  }
+)
+
+watch(graphicWidth, () => {
+  scheduleUpdateGraphicFadeState()
+})
+
+watch(
+  () => props.task && props.task.bitfield,
+  () => {
+    scheduleUpdateGraphicFadeState()
+  }
+)
+
+// Lifecycle
+onMounted(() => {
+  setImmediate(() => {
+    updateGraphicWidth()
+  })
+  const initLength = Number(props.task && props.task.completedLength ? props.task.completedLength : 0)
+  if (Number.isFinite(initLength) && initLength > 0) {
+    downloadStartTime.value = Date.now()
+    initialCompletedLength.value = initLength
+  }
+})
+
+onBeforeUnmount(() => {
+  unbindGraphicDragEvents()
+  if (graphicRafId) {
+    cancelAnimationFrame(graphicRafId)
+    graphicRafId = null
+  }
+  if (_fadeStateTimer) {
+    clearTimeout(_fadeStateTimer)
+  }
+})
+
+// Methods
+function scheduleUpdateGraphicFadeState () {
+  if (_fadeStateTimer) {
+    clearTimeout(_fadeStateTimer)
+  }
+  _fadeStateTimer = setTimeout(() => {
+    _fadeStateTimer = null
+    updateGraphicFadeState()
+  }, 200)
+}
+
+function updateGraphicWidth () {
+  if (!graphicBox.value) return
+  graphicWidth.value = calcInnerWidth(graphicBox.value)
+  scheduleUpdateGraphicFadeState()
+}
+
+function calcInnerWidth (ele) {
+  if (!ele) return 0
+  const style = getComputedStyle(ele, null)
+  const width = parseInt(style.width, 10)
+  const paddingLeft = parseInt(style.paddingLeft, 10)
+  const paddingRight = parseInt(style.paddingRight, 10)
+  return width - paddingLeft - paddingRight
+}
+
+function updateGraphicFadeState () {
+  try {
+    const box = graphicBox.value
+    if (!box) return
+    const scrollH = box.scrollHeight || 0
+    const clientH = box.clientHeight || 0
+    const hasOverflow = scrollH > clientH + 2
+    if (!hasOverflow) {
+      showTopFade.value = false
+      showBottomFade.value = false
+      return
+    }
+    const scrollTop = box.scrollTop || 0
+    showTopFade.value = scrollTop > 2
+    const atBottom = scrollTop + clientH >= scrollH - 2
+    showBottomFade.value = !atBottom
+  } catch (_) {
+    showTopFade.value = false
+    showBottomFade.value = false
+  }
+}
+
+function onGraphicScroll () {
+  if (graphicRafId) return
+  graphicRafId = requestAnimationFrame(() => {
+    graphicRafId = null
+    updateGraphicFadeState()
+  })
+}
+
+function onGraphicMouseDown (e) {
+  try {
+    const box = graphicBox.value
+    if (!box) return
+    const scrollH = box.scrollHeight || 0
+    const clientH = box.clientHeight || 0
+    if (scrollH <= clientH + 2) return
+    isDragging.value = true
+    dragStartY.value = e.clientY
+    dragStartScrollTop.value = box.scrollTop || 0
+    bindGraphicDragEvents()
+    e.preventDefault()
+  } catch (_) {}
+}
+
+function bindGraphicDragEvents () {
+  if (_graphicDragBound) return
+  _graphicDragBound = true
+  document.addEventListener('mousemove', onGraphicMouseMove)
+  document.addEventListener('mouseup', onGraphicMouseUp)
+}
+
+function unbindGraphicDragEvents () {
+  if (!_graphicDragBound) return
+  _graphicDragBound = false
+  document.removeEventListener('mousemove', onGraphicMouseMove)
+  document.removeEventListener('mouseup', onGraphicMouseUp)
+}
+
+function onGraphicMouseMove (e) {
+  if (!isDragging.value) return
+  try {
+    const box = graphicBox.value
+    if (!box) return
+    const deltaY = e.clientY - dragStartY.value
+    box.scrollTop = dragStartScrollTop.value - deltaY
+  } catch (_) {}
+}
+
+function onGraphicMouseUp () {
+  isDragging.value = false
+  unbindGraphicDragEvents()
+}
+
+function resetSpeedSamples () {
+  const gid = props.task && props.task.gid ? `${props.task.gid}` : ''
+  if (gid) {
+    taskStore.resetTaskSpeedSamples(gid)
+  }
+  downloadStartTime.value = null
+  initialCompletedLength.value = 0
+}
+
+defineExpose({
+  updateGraphicWidth
+})
 </script>
 
 <style lang="scss">
-.progress-wrapper {
+.task-progress-static {
+  width: 100%;
+}
+
+.task-progress-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.task-progress-row .progress-wrapper {
+  flex: 1;
+  min-width: 0;
   padding: 0.6875rem 0 0 0;
+
+  .el-progress {
+    width: 100%;
+  }
+}
+
+.task-progress-percent {
+  flex-shrink: 0;
+  margin-left: 12px;
+  white-space: nowrap;
+}
+
+.progress-wrapper {
+  width: 100%;
+
+  .el-progress {
+    width: 100%;
+  }
 }
 
 .task-time-remaining {

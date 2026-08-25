@@ -63,12 +63,15 @@ export const initTaskForm = state => {
     split
   } = state.preference.config
 
-  let initialSplit = maxConnectionPerServer
-  if (typeof initialSplit !== 'number' || !Number.isFinite(initialSplit) || initialSplit <= 0) {
-    initialSplit = split
+  let initialSplit = Number(maxConnectionPerServer)
+  if (!Number.isFinite(initialSplit) || initialSplit <= 0) {
+    initialSplit = Number(split)
   }
-  if (typeof initialSplit !== 'number' || !Number.isFinite(initialSplit) || initialSplit <= 0) {
-    initialSplit = engineMaxConnectionPerServer
+  if (!Number.isFinite(initialSplit) || initialSplit <= 0) {
+    initialSplit = Number(engineMaxConnectionPerServer)
+  }
+  if (!Number.isFinite(initialSplit) || initialSplit <= 0) {
+    initialSplit = 1
   }
 
   const result = {
@@ -91,6 +94,12 @@ export const initTaskForm = state => {
     userAgent: '',
     authorization: '',
     ...addTaskOptions
+  }
+  // addTaskOptions（如引擎 getOption 返回值）可能携带字符串形式的 split，
+  // 归一化为正整数，避免 ElInputNumber 的 Number 类型校验告警/异常
+  if (result.split !== undefined) {
+    const splitNum = Number(result.split)
+    result.split = Number.isFinite(splitNum) && splitNum > 0 ? splitNum : initialSplit
   }
   return result
 }

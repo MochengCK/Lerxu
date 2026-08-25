@@ -4,18 +4,11 @@ Icon.register({
   'document': {
     'width': 24,
     'height': 24,
-    'raw': `<rect x="3" y="1" width="18" height="22"></rect>
-      <line x1="15" y1="6" x2="17" y2="6"></line>
-      <line x1="15" y1="10" x2="17" y2="10"></line>
-      <line x1="7" y1="14" x2="17" y2="14"></line>
-      <line x1="7" y1="18" x2="17" y2="18"></line>
-      <rect x="7" y="6" width="4" height="4"></rect>`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2',
-      'fill': 'none'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/>
+      <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
+      <path d="M9 13h6"/>
+      <path d="M9 17h4"/>
+    </g>`
   }
 })

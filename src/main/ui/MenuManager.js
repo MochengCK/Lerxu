@@ -9,6 +9,18 @@ import {
 } from '../utils/menu'
 import { getI18n } from '../ui/Locale'
 
+// 静态引入各平台菜单模板，确保 Rollup 打包时内联 JSON
+// （动态 require(`../menus/${platform}.json`) 在打包后会找不到模块）
+import darwinMenu from '../menus/darwin.json'
+import win32Menu from '../menus/win32.json'
+import linuxMenu from '../menus/linux.json'
+
+const menuTemplates = {
+  darwin: darwinMenu,
+  win32: win32Menu,
+  linux: linuxMenu
+}
+
 export default class MenuManager extends EventEmitter {
   constructor (options) {
     super()
@@ -24,7 +36,7 @@ export default class MenuManager extends EventEmitter {
   }
 
   load () {
-    const template = require(`../menus/${process.platform}.json`)
+    const template = menuTemplates[process.platform] || linuxMenu
     this.template = template.menu
   }
 

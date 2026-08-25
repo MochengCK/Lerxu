@@ -23,59 +23,59 @@
       </el-row>
     </div>
       <div class="mo-connections-empty" v-if="!loading && !hasSummary && !initialLoading">
-      <i class="el-icon-connection"></i>
-      <p>{{ connectionsData && connectionsData.emptyText ? connectionsData.emptyText : $t('task.no-connections') }}</p>
+      <el-icon><Connection /></el-icon>
+      <p>{{ connectionsData && connectionsData.emptyText ? connectionsData.emptyText : t('task.no-connections') }}</p>
     </div>
     <div class="mo-connections-loading" v-if="initialLoading">
-      <i class="el-icon-loading"></i>
-      <p>{{ $t('task.loading-connections') }}</p>
+      <el-icon class="is-loading"><Loading /></el-icon>
+      <p>{{ t('task.loading-connections') }}</p>
     </div>
     <div class="mo-table-wrapper" v-if="!initialLoading && serverList.length > 0">
       <el-table
         class="mo-connection-table"
         :data="serverList"
         :row-key="row => row._key"
-        size="mini"
+        size="small"
         height="450"
       >
         <el-table-column
-          :label="$t('task.connection-host')"
+          :label="t('task.connection-host')"
           min-width="150"
         >
-          <template slot-scope="scope">
-            <el-tooltip :content="scope.row.host" placement="top" :disabled="!scope.row._hostOverflow">
+          <template #default="scope">
+            <mo-hover-tip :content="scope.row.host" placement="top" :disabled="!scope.row._hostOverflow">
               <span class="mo-conn-host" @mouseenter="handleHostMouseEnter($event, scope.row)">{{ scope.row.host }}</span>
-            </el-tooltip>
+            </mo-hover-tip>
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-peer-downloaded')"
+          :label="t('task.task-peer-downloaded')"
           width="120"
           align="right"
         >
-          <template slot-scope="scope">
+          <template #default="scope">
             {{ scope.row.downloaded }}
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.connection-speed')"
+          :label="t('task.connection-speed')"
           width="120"
           align="right"
         >
-          <template slot-scope="scope">
+          <template #default="scope">
             <span :class="{ 'speed-active': scope.row.isActive }">
               {{ scope.row.speed }}
             </span>
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.connection-status')"
+          :label="t('task.connection-status')"
           width="80"
           align="center"
         >
-          <template slot-scope="scope">
+          <template #default="scope">
             <el-tag
-              size="mini"
+              size="small"
               :type="scope.row.isActive ? 'success' : 'info'"
             >
               {{ scope.row.status }}
@@ -87,199 +87,158 @@
   </div>
 </template>
 
-<script>
-  import { bytesToSize, checkTaskIsSeeder } from '@shared/utils'
-  import api from '@/api'
+<script setup>
+import { ref, computed, watch, onMounted, onActivated, onBeforeUnmount } from 'vue'
+import { bytesToSize, checkTaskIsSeeder } from '@shared/utils'
+import api from '@/api'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 
-  export default {
-    name: 'mo-task-connections',
-    filters: {
-      bytesToSize
-    },
-    props: {
-      task: {
-        type: Object,
-        default: () => ({})
-      }
-    },
-    data () {
-      return {
-        connectionsData: null,
-        loading: false,
-        initialLoading: true,
-        fetchTimer: null
-      }
-    },
-    computed: {
-      hasSummary () {
-        return this.connectionsData && this.connectionsData.servers && this.connectionsData.servers.length > 0
-      },
-      totalConnections () {
-        return this.connectionsData && this.connectionsData.totalValue ? parseInt(this.connectionsData.totalValue) : 0
-      },
-      activeConnections () {
-        return this.connectionsData && this.connectionsData.activeValue ? parseInt(this.connectionsData.activeValue) : 0
-      },
-      taskDownloadSpeed () {
-        return Number(this.task && this.task.downloadSpeed) || 0
-      },
-      serverList () {
-        return (this.connectionsData && this.connectionsData.servers) || []
-      }
-    },
-    mounted () {
-      this.resetAndFetch()
-    },
-    activated () {
-      this.resetAndFetch()
-    },
-    beforeDestroy () {
-      // 清理定时器
-      if (this.fetchTimer) {
-        clearTimeout(this.fetchTimer)
-        this.fetchTimer = null
-      }
-    },
-    watch: {
-      'task.gid': {
-        handler (newGid, oldGid) {
-          if (newGid && newGid !== oldGid) {
-            this.resetAndFetch()
-          }
-        }
-      },
-      'task.status': {
-        handler (newStatus) {
-          // 检查是否在做种，做种时不清空连接数据
-          const isSeeding = checkTaskIsSeeder(this.task)
-          // 只在任务暂停、完成（非做种）、出错或已移除时，清空连接列表
-          // （TASK_STATUS 无 stopped 状态，历史遗留分支已移除）
-          if (newStatus === 'paused' || newStatus === 'error' || newStatus === 'removed' ||
-            (newStatus === 'complete' && !isSeeding)) {
-            this.connectionsData = null
-            this.initialLoading = false
-          } else if (newStatus === 'active' || newStatus === 'waiting' || isSeeding) {
-            // 任务活跃、等待或做种时获取连接信息
-            this.resetAndFetch()
-          }
-        }
-      },
-      'task.downloadSpeed': {
-        handler () {
-          // 下载速度变化时更新（下载中时会频繁变化）
-          if (this.task && this.task.status === 'active') {
-            this.debouncedFetchConnections()
-          }
-        }
-      },
-      'task.connections': {
-        handler () {
-          // 连接数变化时也更新
-          if (this.task && this.task.status === 'active') {
-            this.debouncedFetchConnections()
-          }
-        }
-      }
-    },
-    methods: {
-      handleHostMouseEnter (event, row) {
-        try {
-          const el = event && event.currentTarget
-          const overflow = !!(el && el.scrollWidth > el.clientWidth + 1)
-          if (row && row._hostOverflow !== overflow) {
-            this.$set(row, '_hostOverflow', overflow)
-          }
-        } catch (e) {}
-      },
-      resetAndFetch () {
-        this.connectionsData = null
-        this.initialLoading = true
-        this.fetchConnections()
-      },
-      debouncedFetchConnections () {
-        // 防抖：300ms 内只调用一次 fetchConnections
-        if (this.fetchTimer) {
-          clearTimeout(this.fetchTimer)
-        }
-        this.fetchTimer = setTimeout(() => {
-          this.fetchConnections()
-        }, 300)
-      },
-      async fetchConnections () {
-        const gid = this.task && this.task.gid
-        if (!gid) {
-          this.connectionsData = null
-          this.initialLoading = false
-          return
-        }
+const { t } = i18n.global
 
-        this.loading = true
-        try {
-          const servers = await api.fetchTaskServers({ gid })
-          const taskSpeed = Number(this.task.downloadSpeed) || 0
-          this.connectionsData = this.buildConnectionsData(servers, taskSpeed)
-        } catch (err) {
-          console.warn('[TaskConnections] fetchConnections error:', err.message)
-          if (this.initialLoading) {
-            this.connectionsData = this.buildConnectionsData([], this.taskDownloadSpeed)
-          }
-        } finally {
-          this.loading = false
-          this.initialLoading = false
-        }
-      },
-      buildConnectionsData (servers = [], taskSpeed = 0) {
-        let totalConnections = 0
-        let activeConnections = 0
-        const serverList = []
-
-        if (Array.isArray(servers)) {
-          servers.forEach((file, fileIndex) => {
-            const fileServers = file.servers || []
-            fileServers.forEach((server, serverIndex) => {
-              totalConnections++
-              const speed = Number(server.downloadSpeed) || 0
-              const isActive = speed > 0
-              if (isActive) {
-                activeConnections++
-              }
-              // 提取主机名
-              let host = '-'
-              const uri = server.currentUri || server.uri || ''
-              if (uri) {
-                try {
-                  const url = new URL(uri)
-                  host = url.hostname
-                } catch (e) {
-                  const match = uri.match(/:\/\/([^/:]+)/)
-                  host = match ? match[1] : uri
-                }
-              }
-              serverList.push({
-                host,
-                speed: `${bytesToSize(speed, 2)}/s`,
-                downloaded: bytesToSize(Number(server.downloadLength) || 0, 2),
-                isActive,
-                status: isActive ? this.$t('task.connection-status-active') : this.$t('task.connection-status-idle'),
-                _key: `${fileIndex}-${serverIndex}-${host}`
-              })
-            })
-          })
-        }
-
-        return {
-          totalLabel: this.$t('task.connections-total'),
-          totalValue: String(totalConnections),
-          activeLabel: this.$t('task.connections-active'),
-          activeValue: String(activeConnections),
-          speedLabel: this.$t('task.connections-total-speed'),
-          speedValue: `${bytesToSize(taskSpeed, 2)}/s`,
-          servers: serverList,
-          emptyText: this.$t('task.no-connections')
-        }
-      }
-    }
+const props = defineProps({
+  task: {
+    type: Object,
+    default: () => ({})
   }
+})
+
+defineOptions({ name: 'mo-task-connections' })
+
+const connectionsData = ref(null)
+const loading = ref(false)
+const initialLoading = ref(true)
+let fetchTimer = null
+
+const hasSummary = computed(() => connectionsData.value && connectionsData.value.servers && connectionsData.value.servers.length > 0)
+const totalConnections = computed(() => connectionsData.value && connectionsData.value.totalValue ? parseInt(connectionsData.value.totalValue) : 0)
+const activeConnections = computed(() => connectionsData.value && connectionsData.value.activeValue ? parseInt(connectionsData.value.activeValue) : 0)
+const taskDownloadSpeed = computed(() => Number(props.task && props.task.downloadSpeed) || 0)
+const serverList = computed(() => (connectionsData.value && connectionsData.value.servers) || [])
+
+function handleHostMouseEnter (event, row) {
+  try {
+    const el = event && event.currentTarget
+    const overflow = !!(el && el.scrollWidth > el.clientWidth + 1)
+    if (row && row._hostOverflow !== overflow) {
+      row['_hostOverflow'] = overflow
+    }
+  } catch (e) {}
+}
+
+function resetAndFetch () {
+  connectionsData.value = null
+  initialLoading.value = true
+  fetchConnections()
+}
+
+function debouncedFetchConnections () {
+  if (fetchTimer) clearTimeout(fetchTimer)
+  fetchTimer = setTimeout(() => { fetchConnections() }, 300)
+}
+
+async function fetchConnections () {
+  const gid = props.task && props.task.gid
+  if (!gid) {
+    connectionsData.value = null
+    initialLoading.value = false
+    return
+  }
+  loading.value = true
+  try {
+    const servers = await api.fetchTaskServers({ gid })
+    const taskSpeed = Number(props.task.downloadSpeed) || 0
+    connectionsData.value = buildConnectionsData(servers, taskSpeed)
+  } catch (err) {
+    console.warn('[TaskConnections] fetchConnections error:', err.message)
+    if (initialLoading.value) {
+      connectionsData.value = buildConnectionsData([], taskDownloadSpeed.value)
+    }
+  } finally {
+    loading.value = false
+    initialLoading.value = false
+  }
+}
+
+function buildConnectionsData (servers = [], taskSpeed = 0) {
+  let totalConnections = 0
+  let activeConnections = 0
+  const serverList = []
+
+  if (Array.isArray(servers)) {
+    servers.forEach((file, fileIndex) => {
+      const fileServers = file.servers || []
+      fileServers.forEach((server, serverIndex) => {
+        totalConnections++
+        const speed = Number(server.downloadSpeed) || 0
+        const isActive = speed > 0
+        if (isActive) activeConnections++
+        let host = '-'
+        const uri = server.currentUri || server.uri || ''
+        if (uri) {
+          try {
+            const url = new URL(uri)
+            host = url.hostname
+          } catch (e) {
+            const match = uri.match(/:\/\/([^/:]+)/)
+            host = match ? match[1] : uri
+          }
+        }
+        serverList.push({
+          host,
+          speed: `${bytesToSize(speed, 2)}/s`,
+          downloaded: bytesToSize(Number(server.downloadLength) || 0, 2),
+          isActive,
+          status: isActive ? t('task.connection-status-active') : t('task.connection-status-idle'),
+          _key: `${fileIndex}-${serverIndex}-${host}`
+        })
+      })
+    })
+  }
+
+  return {
+    totalLabel: t('task.connections-total'),
+    totalValue: String(totalConnections),
+    activeLabel: t('task.connections-active'),
+    activeValue: String(activeConnections),
+    speedLabel: t('task.connections-total-speed'),
+    speedValue: `${bytesToSize(taskSpeed, 2)}/s`,
+    servers: serverList,
+    emptyText: t('task.no-connections')
+  }
+}
+
+onMounted(() => { resetAndFetch() })
+onActivated(() => { resetAndFetch() })
+
+onBeforeUnmount(() => {
+  if (fetchTimer) {
+    clearTimeout(fetchTimer)
+    fetchTimer = null
+  }
+})
+
+watch(() => props.task?.gid, (newGid, oldGid) => {
+  if (newGid && newGid !== oldGid) resetAndFetch()
+})
+
+watch(() => props.task?.status, (newStatus) => {
+  const isSeeding = checkTaskIsSeeder(props.task)
+  if (newStatus === 'paused' || newStatus === 'error' || newStatus === 'removed' ||
+    (newStatus === 'complete' && !isSeeding)) {
+    connectionsData.value = null
+    initialLoading.value = false
+  } else if (newStatus === 'active' || newStatus === 'waiting' || isSeeding) {
+    resetAndFetch()
+  }
+})
+
+watch(() => props.task?.downloadSpeed, () => {
+  if (props.task && props.task.status === 'active') debouncedFetchConnections()
+})
+
+watch(() => props.task?.connections, () => {
+  if (props.task && props.task.status === 'active') debouncedFetchConnections()
+})
 </script>
 
 <style lang="scss">

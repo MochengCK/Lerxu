@@ -2,118 +2,140 @@
   <div v-if="false"></div>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import { mapState } from 'vuex'
-  import api from '@/api'
-  import taskHistory from '@/api/TaskHistory'
-  import {
-    getTaskFullPath,
-    getTaskActualPath,
-    getPathCandidates,
-    showNativeNotification
-  } from '@/utils/native'
+<script setup>
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import is from 'electron-is'
+import { ipcRenderer } from 'electron'
+import { ElMessage } from 'element-plus'
+import api from '@/api'
+import taskHistory from '@/api/TaskHistory'
+import {
+  getTaskFullPath,
+  getTaskActualPath,
+  getPathCandidates,
+  showNativeNotification
+} from '@/utils/native'
+import i18n from '@/plugins/i18n'
+import { createMsg } from '@/components/Msg'
+import { useAppStore } from '@/store/app'
+import { useTaskStore } from '@/store/task'
+import { usePreferenceStore } from '@/store/preference'
+import { storeToRefs } from 'pinia'
+import { checkTaskIsBT, getTaskName, getTaskUri, isMagnetTask } from '@shared/utils'
+import { isTaskFileSelectionConfirmed } from '@/utils/task'
+import { TASK_STATUS } from '@shared/constants'
+import { spawn, spawnSync, execSync } from 'node:child_process'
+import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync, copyFileSync, writeFileSync } from 'node:fs'
+import { dirname, basename, extname, resolve, isAbsolute, join } from 'node:path'
+import { app } from '@electron/remote'
+import {
+  autoCategorizeDownloadedFile as autoCategorizeFile,
+  buildCategorizedPath,
+  createCategoryDirectory
+} from '@shared/utils/file-categorize'
+import {
+  clearMergeRetryTimer,
+  setMergeRetryTimer,
+  clearAllMergeRetryTimers
+} from '@/utils/mergeRetryManager'
 
-  import { checkTaskIsBT, getTaskName, getTaskUri, isMagnetTask } from '@shared/utils'
-  import { isTaskFileSelectionConfirmed } from '@/utils/task'
-  import { TASK_STATUS } from '@shared/constants'
-  import { spawn, spawnSync, execSync } from 'node:child_process'
-  import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync, copyFileSync } from 'node:fs'
-  import { dirname, basename, extname, resolve, isAbsolute } from 'node:path'
-  import {
-    autoCategorizeDownloadedFile,
-    buildCategorizedPath,
-    createCategoryDirectory
-  } from '@shared/utils/file-categorize'
+defineOptions({ name: 'mo-engine-client' })
 
-  export default {
-    name: 'mo-engine-client',
-    data () {
-      return {
-        magnetZeroMap: {},
-        magnetAlertedSet: new Set(),
-        magnetResolvedSet: new Set(),
-        dataAccessZeroMap: {},
-        dataAccessLastCompletedMap: {},
-        pollingCount: 0,
-        taskSpeedSampleBaseMap: {},
-        downloadStartNotifiedGids: new Set(),
-        segmentErrorRetryMap: {},
-        autoRefererFallbackTriedUris: new Set(),
-        engineConnectionStable: true,
-        pendingFileSelectionSynced: false
-      }
-    },
-    computed: {
-      isRenderer: () => is.renderer(),
-      ...mapState('app', {
-        uploadSpeed: state => state.stat.uploadSpeed,
-        downloadSpeed: state => state.stat.downloadSpeed,
-        speed: state => state.stat.uploadSpeed + state.stat.downloadSpeed,
-        interval: state => state.interval,
-        downloading: state => state.stat.numActive > 0,
-        progress: state => state.progress
-      }),
-      ...mapState('task', {
-        seedingList: state => state.seedingList,
-        taskDetailVisible: state => state.taskDetailVisible,
-        enabledFetchPeers: state => state.enabledFetchPeers,
-        currentTaskGid: state => state.currentTaskGid,
-        currentTaskItem: state => state.currentTaskItem
-      }),
-      ...mapState('preference', {
-        taskNotification: state => state.config.taskNotification,
-        taskCompleteNotifyClickAction: state => state.config.taskCompleteNotifyClickAction || 'open-folder'
-      }),
-      currentTaskIsBT () {
-        return checkTaskIsBT(this.currentTaskItem)
-      }
-    },
-    watch: {
-      speed (val) {
+const { t } = i18n.global
+const msg = createMsg(ElMessage, { showClose: true })
+const route = useRoute()
+const router = useRouter()
+
+const appStore = useAppStore()
+const taskStore = useTaskStore()
+const preferenceStore = usePreferenceStore()
+const { config: preferenceConfig } = storeToRefs(preferenceStore)
+const { stat, interval, progress } = storeToRefs(appStore)
+const { seedingList, taskDetailVisible, enabledFetchPeers, currentTaskGid, currentTaskItem } = storeToRefs(taskStore)
+
+// Computed from app store
+const uploadSpeed = computed(() => appStore.stat.uploadSpeed)
+const downloadSpeed = computed(() => appStore.stat.downloadSpeed)
+const speed = computed(() => appStore.stat.uploadSpeed + appStore.stat.downloadSpeed)
+const downloading = computed(() => appStore.stat.numActive > 0)
+// Computed from preference store
+const taskNotification = computed(() => preferenceConfig.value.taskNotification)
+const taskCompleteNotifyClickAction = computed(() => preferenceConfig.value.taskCompleteNotifyClickAction || 'open-folder')
+
+// --- Data ---
+const magnetZeroMap = ref({})
+const magnetAlertedSet = ref(new Set())
+const magnetResolvedSet = ref(new Set())
+const dataAccessZeroMap = ref({})
+const dataAccessLastCompletedMap = ref({})
+const pollingCount = ref(0)
+const taskSpeedSampleBaseMap = ref({})
+const downloadStartNotifiedGids = ref(new Set())
+const segmentErrorRetryMap = ref({})
+const autoRefererFallbackTriedUris = ref(new Set())
+const engineConnectionStable = ref(true)
+const pendingFileSelectionSynced = ref(false)
+let lastSpeedUpdate = null
+let timer = null
+let _bootTimer = null
+let _visibilityHandler = null
+let _bilibiliMergeNotified = new Set()
+let _dashMergeJobs = new Map()
+let _pollingKickAt = 0
+let _btRetryTimers = new Map()
+let _resumedCompletedFixing = false
+
+// --- Computed ---
+const isRenderer = is.renderer()
+const currentTaskIsBT = computed(() => checkTaskIsBT(currentTaskItem.value))
+
+// --- Watchers ---
+watch(speed, (val) => {
         // Throttle speed updates to avoid excessive IPC calls
         // Only update if it's been more than 800ms since last update
         const now = Date.now()
-        if (this.lastSpeedUpdate && now - this.lastSpeedUpdate < 800) {
+        if (lastSpeedUpdate && now - lastSpeedUpdate < 800) {
           return
         }
-        this.lastSpeedUpdate = now
+        lastSpeedUpdate = now
 
-        const { uploadSpeed, downloadSpeed } = this
-        this.$electron.ipcRenderer.send('event', 'speed-change', {
-          uploadSpeed,
-          downloadSpeed
+        const { uploadSpeed: us, downloadSpeed: ds } = { uploadSpeed: uploadSpeed.value, downloadSpeed: downloadSpeed.value }
+        ipcRenderer.send('event', 'speed-change', {
+          uploadSpeed: us,
+          downloadSpeed: ds
         })
-      },
-      downloading (val, oldVal) {
-        if (val !== oldVal && this.isRenderer) {
-          this.$electron.ipcRenderer.send('event', 'download-status-change', val)
+})
+watch(downloading, (val, oldVal) => {
+        if (val !== oldVal && isRenderer) {
+          ipcRenderer.send('event', 'download-status-change', val)
         }
-      },
-      progress (val) {
-        this.$electron.ipcRenderer.send('event', 'progress-change', val)
-      }
-    },
-    methods: {
-      isPreferenceWindow () {
-        const path = this.$route && this.$route.path ? `${this.$route.path}` : ''
+})
+watch(progress, (val) => {
+        ipcRenderer.send('event', 'progress-change', val)
+})
+
+// --- Methods ---
+
+      function isPreferenceWindow() {
+        const path = route && route.path ? `${route.path}` : ''
         const hashPath = typeof window !== 'undefined' && window.location && window.location.hash
           ? `${window.location.hash}`
           : ''
         return path.startsWith('/preference-window') || hashPath.startsWith('#/preference-window')
-      },
-      maybeEnterIdleInterval () {
+      }
+      function maybeEnterIdleInterval() {
         const hidden = typeof document !== 'undefined' && !!document.hidden
-        const stat = (this.$store.state.app && this.$store.state.app.stat) ? this.$store.state.app.stat : {}
+        const stat = appStore.stat || {}
         const numActive = Number(stat.numActive || 0)
         const numWaiting = Number(stat.numWaiting || 0)
-        const busy = (numActive + numWaiting) > 0 || !!this.taskDetailVisible
+        const busy = (numActive + numWaiting) > 0 || !!taskDetailVisible.value
         if (hidden && !busy) {
-          this.$store.dispatch('app/updateInterval', 30000)
-          this.$store.dispatch('app/clearProgress')
+          appStore.updateInterval(30000)
+          appStore.clearProgress()
         }
-      },
-      renamePreserveTimes (from, to) {
+      }
+      function renamePreserveTimes(from, to) {
         let st = null
         try {
           st = statSync(from)
@@ -138,13 +160,13 @@
           } catch (_) {}
         }
         return existsSync(to) && !existsSync(from)
-      },
+      }
       /**
        * 清理引擎下载控制文件（<file>.xfer）。
        * 下载完成后应用会把带后缀的文件重命名为最终文件名，此时引擎的
        * 控制文件可能因竞态未被引擎自身删除而残留，这里统一清理。
        */
-      cleanupAria2ControlFiles (paths) {
+      function cleanupAria2ControlFiles(paths) {
         const list = Array.isArray(paths) ? paths : [paths]
         list.forEach((p) => {
           if (!p) return
@@ -160,18 +182,17 @@
             }
           })
         })
-      },
+      }
       /**
        * 修复带有下载后缀的文件名中的序号位置
        * 例如：/path/to/5EClient-8.2.5.exe (1).vxdv -> /path/to/5EClient-8.2.5 (1).exe.vxdv
        */
-      fixFileNameWithSuffix (filePath, downloadingFileSuffix) {
+      function fixFileNameWithSuffix(filePath, downloadingFileSuffix) {
         if (!downloadingFileSuffix || !filePath.endsWith(downloadingFileSuffix)) {
           return filePath
         }
 
-        const { dirname, basename, join } = require('node:path')
-        const dir = dirname(filePath)
+const dir = dirname(filePath)
         const fullFilename = basename(filePath)
 
         // 移除下载后缀得到原始文件名（可能带有错误位置的序号）
@@ -190,39 +211,38 @@
         }
 
         return filePath
-      },
-      async fetchTaskItem ({ gid }) {
+      }
+      async function fetchTaskItem({ gid }) {
         return api.fetchTaskItem({ gid })
           .catch((e) => {
             console.warn(`fetchTaskItem fail: ${e.message}`)
           })
-      },
-      onDownloadStart (event) {
-        this.$store.dispatch('task/fetchList')
-        this.$store.dispatch('app/resetInterval')
-        this.$store.dispatch('task/saveSession')
-        this.kickPolling()
+      }
+      function onDownloadStart(event) {
+        taskStore.fetchList()
+        appStore.resetInterval()
+        taskStore.saveSession()
+        kickPolling()
         const [{ gid }] = event
-        const { seedingList } = this
-        if (seedingList.includes(gid)) {
+        if (seedingList.value.includes(gid)) {
           return
         }
 
         // 检查是否已经显示过这个任务的开始下载通知，防止重复显示
-        if (this.downloadStartNotifiedGids.has(gid)) {
+        if (downloadStartNotifiedGids.value.has(gid)) {
           return
         }
-        this.downloadStartNotifiedGids.add(gid)
+        downloadStartNotifiedGids.value.add(gid)
 
-        this.fetchTaskItem({ gid })
+        fetchTaskItem({ gid })
           .then(async (task) => {
             if (!task) {
               return
             }
             const { dir } = task
-            this.$store.dispatch('preference/recordHistoryDirectory', dir)
+            preferenceStore.recordHistoryDirectory(dir)
             const taskName = getTaskName(task)
-            const cfg = this.$store.state.preference.config || {}
+            const cfg = preferenceConfig.value || {}
             let fromHistory = false
             try {
               const gidKey = task && task.gid ? `${task.gid}` : ''
@@ -232,7 +252,7 @@
             let isBilibiliPart = false
             try {
               const p = getTaskActualPath(task, cfg)
-              const info = this.parseBilibiliDashPart(p)
+              const info = parseBilibiliDashPart(p)
               isBilibiliPart = !!(info && info.base)
             } catch (_) {}
             if (!isBilibiliPart) {
@@ -254,100 +274,99 @@
               const hs = opt && opt.header ? opt.header : []
               const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
               const referer = opt && opt.referer ? `${opt.referer}` : ''
-              if (!isBilibiliPart && this.looksLikeBilibiliSource(referer, headers)) {
+              if (!isBilibiliPart && looksLikeBilibiliSource(referer, headers)) {
                 isBilibiliPart = true
               }
               const fromHeader = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`))
               const fromBrowserExtension = fromHeader || fromHistory
               if (fromBrowserExtension) {
-                const key = this.buildBrowserStartNotifyKey(task, cfg)
-                if (!this._browserStartNotifiedKeys) {
-                  this._browserStartNotifiedKeys = new Map()
+                const key = buildBrowserStartNotifyKey(task, cfg)
+                if (!_browserStartNotifiedKeys) {
+                  _browserStartNotifiedKeys = new Map()
                 }
                 const now = Date.now()
                 const windowMs = 10000
                 let shouldNotify = true
                 if (key) {
-                  const prev = Number(this._browserStartNotifiedKeys.get(key) || 0)
+                  const prev = Number(_browserStartNotifiedKeys.get(key) || 0)
                   if (prev && (now - prev) < windowMs) {
                     shouldNotify = false
                   }
-                  this._browserStartNotifiedKeys.set(key, now)
-                  if (this._browserStartNotifiedKeys.size > 500) {
-                    for (const [k, t] of this._browserStartNotifiedKeys.entries()) {
+                  _browserStartNotifiedKeys.set(key, now)
+                  if (_browserStartNotifiedKeys.size > 500) {
+                    for (const [k, t] of _browserStartNotifiedKeys.entries()) {
                       if (!t || (now - Number(t)) > (windowMs * 3)) {
-                        this._browserStartNotifiedKeys.delete(k)
+                        _browserStartNotifiedKeys.delete(k)
                       }
                     }
                   }
                 }
                 if (shouldNotify) {
-                  const message = this.$t('task.download-start-browser-message')
-                  this.$msg.info(message)
+                  const message = t('task.download-start-browser-message')
+                  msg.info(message)
                   if (is.windows()) {
                     showNativeNotification({
                       title: message,
                       body: taskName,
                       onClick: () => {
-                        this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
+                        ipcRenderer.send('command', 'application:show', { page: 'index' })
                       }
                     })
                   }
                 }
               } else if (!isBilibiliPart) {
-                const message = this.$t('task.download-start-message', { taskName })
-                this.$msg.info(message)
+                const message = t('task.download-start-message', { taskName })
+                msg.info(message)
               }
             } catch (_) {
               if (fromHistory) {
-                const key = this.buildBrowserStartNotifyKey(task, cfg)
-                if (!this._browserStartNotifiedKeys) {
-                  this._browserStartNotifiedKeys = new Map()
+                const key = buildBrowserStartNotifyKey(task, cfg)
+                if (!_browserStartNotifiedKeys) {
+                  _browserStartNotifiedKeys = new Map()
                 }
                 const now = Date.now()
                 const windowMs = 10000
                 let shouldNotify = true
                 if (key) {
-                  const prev = Number(this._browserStartNotifiedKeys.get(key) || 0)
+                  const prev = Number(_browserStartNotifiedKeys.get(key) || 0)
                   if (prev && (now - prev) < windowMs) {
                     shouldNotify = false
                   }
-                  this._browserStartNotifiedKeys.set(key, now)
-                  if (this._browserStartNotifiedKeys.size > 500) {
-                    for (const [k, t] of this._browserStartNotifiedKeys.entries()) {
+                  _browserStartNotifiedKeys.set(key, now)
+                  if (_browserStartNotifiedKeys.size > 500) {
+                    for (const [k, t] of _browserStartNotifiedKeys.entries()) {
                       if (!t || (now - Number(t)) > (windowMs * 3)) {
-                        this._browserStartNotifiedKeys.delete(k)
+                        _browserStartNotifiedKeys.delete(k)
                       }
                     }
                   }
                 }
                 if (shouldNotify) {
-                  const message = this.$t('task.download-start-browser-message')
-                  this.$msg.info(message)
+                  const message = t('task.download-start-browser-message')
+                  msg.info(message)
                   if (is.windows()) {
                     showNativeNotification({
                       title: message,
                       body: taskName,
                       onClick: () => {
-                        this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
+                        ipcRenderer.send('command', 'application:show', { page: 'index' })
                       }
                     })
                   }
                 }
               } else if (!isBilibiliPart) {
-                const message = this.$t('task.download-start-message', { taskName })
-                this.$msg.info(message)
+                const message = t('task.download-start-message', { taskName })
+                msg.info(message)
               }
             }
 
-            this.ensureTargetDirectoryExists(task)
-            this.ensureCategoryDirectoryForTask(task)
+            ensureTargetDirectoryExists(task)
+            ensureCategoryDirectoryForTask(task)
           })
-      },
-      onDownloadPause (event) {
+      }
+      function onDownloadPause(event) {
         const [{ gid }] = event
-        const { seedingList } = this
-        if (seedingList.includes(gid)) {
+        if (seedingList.value.includes(gid)) {
           return
         }
 
@@ -357,25 +376,25 @@
         // "暂停很久才生效"，这里通过事件驱动实现即时反馈。
         // 注意：不弹 toast，因为引擎侧自动暂停（磁力元数据下载完成后等待
         // 选择文件、bt-stop-timeout 自动停止等）也会触发本事件。
-        this.$store.dispatch('task/fetchList')
-        this.$store.dispatch('app/resetInterval')
-        this.kickPolling()
-      },
-      onDownloadStop (event) {
+        taskStore.fetchList()
+        appStore.resetInterval()
+        kickPolling()
+      }
+      function onDownloadStop(event) {
         const [{ gid }] = event
-        this.fetchTaskItem({ gid })
+        fetchTaskItem({ gid })
           .then((task) => {
             if (!task) {
               return
             }
             const taskName = getTaskName(task)
-            const message = this.$t('task.download-stop-message', { taskName })
-            this.$msg.info(message)
+            const message = t('task.download-stop-message', { taskName })
+            msg.info(message)
           })
-      },
-      onDownloadError (event) {
+      }
+      function onDownloadError(event) {
         const [{ gid }] = event
-        this.fetchTaskItem({ gid })
+        fetchTaskItem({ gid })
           .then(async (task) => {
             if (!task) {
               return
@@ -383,18 +402,18 @@
             const taskName = getTaskName(task)
             const { errorCode, errorMessage } = task
             console.error(`[LinkCore] download error gid: ${gid}, #${errorCode}, ${errorMessage}`)
-            const reason = this.resolveErrorReason(errorCode, errorMessage)
+            const reason = resolveErrorReason(errorCode, errorMessage)
             const message = reason
-              ? this.$t('task.download-error-with-reason', { taskName, reason })
-              : this.$t('task.download-error-message', { taskName })
+              ? t('task.download-error-with-reason', { taskName, reason })
+              : t('task.download-error-message', { taskName })
             const link = `<a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Error#${errorCode}" rel="noopener noreferrer">${errorCode}</a>`
 
             const msg = `${errorMessage || ''}`
-            const segmentPath = this.extractSegmentFilePath(msg)
+            const segmentPath = extractSegmentFilePath(msg)
             const isBt = checkTaskIsBT(task)
 
             if (segmentPath && isBt) {
-              this.tryRepairSegmentFile(task, segmentPath).catch(() => {})
+              tryRepairSegmentFile(task, segmentPath).catch(() => {})
             }
 
             // 对BT任务添加额外的错误处理和恢复机制
@@ -407,7 +426,7 @@
                 bittorrent: task.bittorrent,
                 filesCount: task.files ? task.files.length : 0
               })
-              this.handleBtErrorRecovery(task, errorCode, errorMessage)
+              handleBtErrorRecovery(task, errorCode, errorMessage)
             }
             const parseHttpStatus = (text) => {
               const m = `${text || ''}`.match(/\b(\d{3})\b/)
@@ -437,14 +456,14 @@
             // 浏览器扩展任务默认携带页面 Referer。这里先自动移除 Referer/Origin
             // 重试一次，成功则无需用户干预；失败再走"更新链接"提示流程。
             if (httpStatus === 403 && canShowUpdateLink) {
-              const retried = await this.tryAutoRefererFallback(task)
+              const retried = await tryAutoRefererFallback(task)
               if (retried) {
                 return
               }
             }
 
             if (canShowUpdateLink) {
-              this.$store.dispatch('task/markTaskNeedUpdateLink', {
+              taskStore.markTaskNeedUpdateLink({
                 gid,
                 httpStatus,
                 level: rule.level,
@@ -455,7 +474,7 @@
 
               const st = task && task.status ? `${task.status}` : ''
               if (st === TASK_STATUS.ACTIVE || st === TASK_STATUS.WAITING) {
-                this.$store.dispatch('task/pauseTask', task).catch(() => {})
+                taskStore.pauseTask(task).catch(() => {})
               }
               // 任务因链接失效被暂停（等待更新链接），暂停任务不会进入 stopped
               // 列表，历史记录不会保存错误状态；若此时退出应用，引擎会把暂停
@@ -469,10 +488,10 @@
                   savedAt: Date.now()
                 }, task)
               } catch (_) {}
-              this.$msg.warning(this.$t(rule.notifyKey || 'task.link-update-needed', { taskName }))
+              msg.warning(t(rule.notifyKey || 'task.link-update-needed', { taskName }))
             }
 
-            this.$msg({
+            msg({
               type: 'error',
               showClose: true,
               duration: 5000,
@@ -480,8 +499,8 @@
               message: `${message} ${link}`
             })
           })
-      },
-      extractSegmentFilePath (text = '') {
+      }
+      function extractSegmentFilePath(text = '') {
         const raw = `${text || ''}`
         const match = raw.match(/segment file\s+(.+?\.xfer)\b/i)
         if (!match) {
@@ -489,10 +508,10 @@
         }
         const path = match[1] ? `${match[1]}` : ''
         return path.replace(/^["']|["']$/g, '')
-      },
+      }
       // 从引擎错误信息中提取无法打开/重命名的文件路径，
       // 如 "Failed to open the file /path/to/file, cause: ..."
-      extractOpenFailedFilePath (text = '') {
+      function extractOpenFailedFilePath(text = '') {
         const raw = `${text || ''}`
         let match = raw.match(/Failed to open the file\s+(.+?),\s*cause:/i)
         if (match) {
@@ -503,13 +522,13 @@
           return `${match[1] || ''}`.trim()
         }
         return ''
-      },
+      }
       // macOS：修复应用更新后旧下载文件因 TCC 来源属性无法打开的问题。
       // 主进程依次清除 com.apple.provenance、恢复权限、必要时复制重建文件，
       // 返回是否修复成功。
-      async tryRepairDownloadFilePermission (gid, filePath) {
+      async function tryRepairDownloadFilePermission(gid, filePath) {
         try {
-          const res = await this.$electron.ipcRenderer.invoke('application:repair-download-file-permission', filePath)
+          const res = await ipcRenderer.invoke('application:repair-download-file-permission', filePath)
           const ok = !!(res && res.repaired)
           console.info(`[LinkCore] repair download file permission gid=${gid} path=${filePath}:`, res)
           return ok
@@ -517,13 +536,13 @@
           console.warn('[LinkCore] repair download file permission IPC failed:', err)
           return false
         }
-      },
+      }
       // 403 自动回退：移除 Referer/Origin 后重建任务重试（每个 URI 仅一次）。
       // 背景：部分视频 CDN（如签名直链 vdownload.hembed.com）会拒绝任何携带
       // Referer 的请求，而浏览器扩展任务默认带上页面 Referer，导致 403；
       // 应用内手动添加因不带 Referer 反而正常。B 站等站点必须携带 Referer，
       // 移除后重试会再次失败并进入既有的"更新链接"提示流程，无副作用。
-      async tryAutoRefererFallback (task) {
+      async function tryAutoRefererFallback(task) {
         try {
           const gid = task && task.gid ? `${task.gid}` : ''
           if (!gid || checkTaskIsBT(task) || isMagnetTask(task)) {
@@ -533,7 +552,7 @@
           if (!uri || !/^https?:/i.test(uri)) {
             return false
           }
-          if (this.autoRefererFallbackTriedUris.has(uri)) {
+          if (autoRefererFallbackTriedUris.value.has(uri)) {
             return false
           }
 
@@ -558,7 +577,7 @@
             return false
           }
 
-          this.autoRefererFallbackTriedUris.add(uri)
+          autoRefererFallbackTriedUris.value.add(uri)
 
           const options = {
             continue: true,
@@ -573,39 +592,39 @@
 
           const nextGid = await api.addUriRaw({ uri, options })
           if (!nextGid) {
-            this.autoRefererFallbackTriedUris.delete(uri)
+            autoRefererFallbackTriedUris.value.delete(uri)
             return false
           }
 
           const oldStatus = task && task.status ? `${task.status}` : ''
           if ([TASK_STATUS.ERROR, TASK_STATUS.COMPLETE, TASK_STATUS.REMOVED].includes(oldStatus)) {
-            await this.$store.dispatch('task/removeTaskRecord', { gid, status: oldStatus }).catch(() => {})
+            await taskStore.removeTaskRecord({ gid, status: oldStatus }).catch(() => {})
           } else {
-            await this.$store.dispatch('task/removeTask', { gid }).catch(() => {})
+            await taskStore.removeTask({ gid }).catch(() => {})
           }
-          await this.$store.dispatch('task/fetchList').catch(() => {})
-          await this.$store.dispatch('app/fetchGlobalStat').catch(() => {})
+          await taskStore.fetchList().catch(() => {})
+          await appStore.fetchGlobalStat().catch(() => {})
 
           const taskName = getTaskName(task)
-          this.$msg.warning(this.$t('task.auto-referer-fallback', { taskName }))
+          msg.warning(t('task.auto-referer-fallback', { taskName }))
           console.info(`[LinkCore] 403 auto referer fallback: ${gid} -> ${nextGid} (${uri})`)
           return true
         } catch (e) {
           console.warn('[LinkCore] auto referer fallback failed:', e)
           return false
         }
-      },
-      async tryRepairSegmentFile (task, segmentPath) {
+      }
+      async function tryRepairSegmentFile(task, segmentPath) {
         const gid = task && task.gid ? `${task.gid}` : ''
         if (!gid) {
           return false
         }
-        const retryMap = this.segmentErrorRetryMap || {}
+        const retryMap = segmentErrorRetryMap.value || {}
         const count = Number(retryMap[gid] || 0)
         if (count >= 1) {
           return false
         }
-        this.$set(this.segmentErrorRetryMap, gid, count + 1)
+        segmentErrorRetryMap.value[gid] = count + 1
 
         try {
           if (segmentPath && existsSync(segmentPath)) {
@@ -635,60 +654,59 @@
             }
           } catch (_) {}
 
-          await this.$store.dispatch('task/addUri', {
+          await taskStore.addUri({
             uris: [uri],
             options
           })
 
           await api.removeTaskRecord({ gid }).catch(() => {})
-          this.$msg.warning('检测到任务续传文件损坏，已尝试自动重建任务')
+          msg.warning('检测到任务续传文件损坏，已尝试自动重建任务')
           return true
         } catch (e) {
           console.warn('[LinkCore] Auto repair segment file failed:', e)
           return false
         }
-      },
-      onDownloadComplete (event) {
+      }
+      function onDownloadComplete(event) {
         const [{ gid }] = event
-        this.$store.dispatch('task/removeFromSeedingList', gid)
+        taskStore.removeFromSeedingList(gid)
 
-        this.fetchTaskItem({ gid })
+        fetchTaskItem({ gid })
           .then((task) => {
             if (!task) {
               return
             }
-            return this.handleDownloadComplete(task, false)
+            return handleDownloadComplete(task, false)
           })
           .finally(() => {
-            this.$store.dispatch('task/fetchList')
+            taskStore.fetchList()
           })
-      },
-      onBtDownloadComplete (event) {
-        this.$store.dispatch('task/fetchList')
+      }
+      function onBtDownloadComplete(event) {
+        taskStore.fetchList()
         const [{ gid }] = event
-        const { seedingList } = this
-        if (seedingList.includes(gid)) {
+        if (seedingList.value.includes(gid)) {
           return
         }
 
-        this.$store.dispatch('task/addToSeedingList', gid)
+        taskStore.addToSeedingList(gid)
 
-        this.fetchTaskItem({ gid })
+        fetchTaskItem({ gid })
           .then((task) => {
             if (!task) {
               return
             }
-            this.handleDownloadComplete(task, true)
+            handleDownloadComplete(task, true)
           })
-      },
-      async handleDownloadComplete (task, isBT) {
-        const cfg = this.$store.state.preference.config || {}
+      }
+      async function handleDownloadComplete(task, isBT) {
+        const cfg = preferenceConfig.value || {}
         const path = getTaskActualPath(task, cfg)
-        const finalPath = isBT ? path : await this.removeDownloadingSuffix(task, path, cfg)
+        const finalPath = isBT ? path : await removeDownloadingSuffix(task, path, cfg)
         let isBilibiliPart = false
         if (!isBT) {
           try {
-            const info = this.parseBilibiliDashPart(finalPath)
+            const info = parseBilibiliDashPart(finalPath)
             if (info && info.base) {
               isBilibiliPart = true
             }
@@ -696,7 +714,7 @@
           if (!isBilibiliPart) {
             try {
               const actual = getTaskActualPath(task, cfg)
-              const info2 = this.parseBilibiliDashPart(actual)
+              const info2 = parseBilibiliDashPart(actual)
               if (info2 && info2.base) {
                 isBilibiliPart = true
               }
@@ -731,12 +749,12 @@
                   const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
                   const referer = opt && opt.referer ? `${opt.referer}` : ''
                   fromSupportedSource = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`)) ||
-                    this.looksLikeBilibiliSource(referer, headers)
+                    looksLikeBilibiliSource(referer, headers)
                 }
                 if (fromSupportedSource) {
-                  const pair = this.collectExtensionDashParts(finalPath || path, cfg)
+                  const pair = collectExtensionDashParts(finalPath || path, cfg)
                   const suffix = cfg.downloadingFileSuffix || ''
-                  const looksLikeStream = this.looksLikeExtensionDashStreamPath(finalPath || path, suffix)
+                  const looksLikeStream = looksLikeExtensionDashStreamPath(finalPath || path, suffix)
                   if (looksLikeStream || (pair && pair.isPairCandidate)) {
                     isBilibiliPart = true
                   }
@@ -746,8 +764,8 @@
           }
         }
 
-        this.$store.dispatch('task/saveSession')
-        this.persistAverageSpeedToHistory(task)
+        taskStore.saveSession()
+        persistAverageSpeedToHistory(task)
         try {
           const gid = task && task.gid ? `${task.gid}` : ''
           if (gid) {
@@ -815,54 +833,54 @@
               }
             }
             if (name) {
-              this.$store.dispatch('task/setTaskDisplayName', { gid, name })
+              taskStore.setTaskDisplayName({ gid, name })
             }
           }
         } catch (_) {}
         if (!isBilibiliPart) {
           const notifyPath = finalPath || path
-          this.showTaskCompleteNotify(task, isBT, notifyPath)
-          this.$electron.ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
+          showTaskCompleteNotify(task, isBT, notifyPath)
+          ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
         }
-        this.setFileMtimeOnComplete(task, finalPath)
+        setFileMtimeOnComplete(task, finalPath)
 
         // 如果需要合并（Bilibili DASH 分段视频），先设置 MERGING 状态
         const mergeGid = task && task.gid ? `${task.gid}` : ''
-        const mergeKey = this.getDashMergeKey(finalPath, cfg)
+        const mergeKey = getDashMergeKey(finalPath, cfg)
         if (isBilibiliPart && mergeGid) {
-          this.$store.dispatch('task/addToMergingList', { gid: mergeGid, mergeKey })
-          this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.MERGING })
+          taskStore.addToMergingList({ gid: mergeGid, mergeKey })
+          taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.MERGING })
         }
 
         // 合并开始前，清除所有相关任务的等待配对状态
         if (isBilibiliPart && mergeKey) {
-          this.$store.dispatch('task/clearMergeProgressByMergeKey', mergeKey)
+          taskStore.clearMergeProgressByMergeKey(mergeKey)
         }
 
-        const mergeResult = await this.runDashMergeExclusive(mergeKey, () => {
-          return this.maybeMergeBilibiliDash(finalPath, task)
+        const mergeResult = await runDashMergeExclusive(mergeKey, () => {
+          return maybeMergeBilibiliDash(finalPath, task)
         })
 
         // 等待配对文件时，设置等待提示并启动重试机制
         if (mergeResult && mergeResult.waitingForPair && mergeGid) {
-          this.$store.dispatch('task/setMergeProgress', {
+          taskStore.setMergeProgress({
             gid: mergeGid,
             progress: { waitingForPair: true }
           })
           // 启动重试：每隔3秒重新扫描配对文件，最多重试20次（60秒）
-          this._scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, 0, 20)
+          _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, 0, 20)
         }
 
         // 合并完成后，通过 mergeKey 清理所有相关任务并恢复 COMPLETE 状态
         if (isBilibiliPart && mergeGid && !(mergeResult && mergeResult.waitingForPair)) {
-          this.$store.dispatch('task/removeAllMergingByMergeKey', mergeKey)
-          this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.COMPLETE })
-          this.$store.dispatch('task/fetchList')
+          taskStore.removeAllMergingByMergeKey(mergeKey)
+          taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
+          taskStore.fetchList()
         }
 
         if (mergeResult && mergeResult.mergedPath) {
-          this.setFileMtimeOnComplete(task, mergeResult.mergedPath)
-          this.autoCategorizeDownloadedFile(task, mergeResult.mergedPath)
+          setFileMtimeOnComplete(task, mergeResult.mergedPath)
+          autoCategorizeDownloadedFile(task, mergeResult.mergedPath)
           try {
             const gid = task && task.gid ? `${task.gid}` : ''
             if (gid) {
@@ -870,7 +888,7 @@
               const suffix = cfg.downloadingFileSuffix || ''
               const name = suffix && base.endsWith(suffix) ? base.slice(0, -suffix.length) : base
               if (name) {
-                this.$store.dispatch('task/setTaskDisplayName', { gid, name })
+                taskStore.setTaskDisplayName({ gid, name })
               }
             }
           } catch (_) {}
@@ -878,41 +896,41 @@
           if (isBilibiliPart || (mergeResult && mergeResult.isBilibiliPart)) {
             try {
               const key = resolve(mergeResult.mergedPath)
-              if (!this._bilibiliMergeNotified) {
-                this._bilibiliMergeNotified = new Set()
+              if (!_bilibiliMergeNotified) {
+                _bilibiliMergeNotified = new Set()
               }
-              if (this._bilibiliMergeNotified.has(key)) {
+              if (_bilibiliMergeNotified.has(key)) {
                 shouldNotify = false
               } else {
-                this._bilibiliMergeNotified.add(key)
+                _bilibiliMergeNotified.add(key)
               }
             } catch (_) {}
           }
           if (shouldNotify) {
             const notifyPath = mergeResult.mergedPath
-            this.showTaskCompleteNotify(task, isBT, notifyPath)
-            this.$electron.ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
+            showTaskCompleteNotify(task, isBT, notifyPath)
+            ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
           }
         } else if (mergeResult && mergeResult.isBilibiliPart && mergeResult.noFfmpeg) {
           try {
             const gidKey = task && task.gid ? `${task.gid}` : ''
-            if (!this._extensionDashNoFfmpegNotified) {
-              this._extensionDashNoFfmpegNotified = new Set()
+            if (!_extensionDashNoFfmpegNotified) {
+              _extensionDashNoFfmpegNotified = new Set()
             }
-            if (!gidKey || !this._extensionDashNoFfmpegNotified.has(gidKey)) {
+            if (!gidKey || !_extensionDashNoFfmpegNotified.has(gidKey)) {
               if (gidKey) {
-                this._extensionDashNoFfmpegNotified.add(gidKey)
+                _extensionDashNoFfmpegNotified.add(gidKey)
               }
               const notifyPath = mergeResult.fallbackNotifyPath || finalPath || path
-              this.showTaskCompleteNotify(task, isBT, notifyPath)
-              this.$electron.ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
+              showTaskCompleteNotify(task, isBT, notifyPath)
+              ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
             }
           } catch (_) {}
         } else if (!(mergeResult && mergeResult.isBilibiliPart)) {
-          this.autoCategorizeDownloadedFile(task, finalPath)
+          autoCategorizeDownloadedFile(task, finalPath)
         }
-      },
-      looksLikeBilibiliSource (referer, headers) {
+      }
+      function looksLikeBilibiliSource(referer, headers) {
         const isHostMatchDomain = (host, domain) => {
           try {
             const h = `${host || ''}`.toLowerCase().replace(/\.$/, '')
@@ -956,16 +974,16 @@
           } catch (_) {}
         }
         return false
-      },
-      buildBrowserStartNotifyKey (task, cfg) {
+      }
+      function buildBrowserStartNotifyKey(task, cfg) {
         try {
           const gid = task && task.gid ? `${task.gid}` : ''
-          const config = cfg && typeof cfg === 'object' ? cfg : (this.$store.state.preference.config || {})
+          const config = cfg && typeof cfg === 'object' ? cfg : (preferenceConfig.value || {})
           const suffix = config && config.downloadingFileSuffix ? `${config.downloadingFileSuffix}` : ''
           const p = getTaskActualPath(task, config) || ''
           const raw = p ? basename(p) : ''
-          const file0 = suffix ? this.stripDownloadingSuffixFromFilename(raw, suffix) : raw
-          const file = this.stripDuplicateNumberBeforeExtension(file0)
+          const file0 = suffix ? stripDownloadingSuffixFromFilename(raw, suffix) : raw
+          const file = stripDuplicateNumberBeforeExtension(file0)
           const lower = file.toLowerCase()
           const isPairLike =
             lower.endsWith('_video.mp4') ||
@@ -975,7 +993,7 @@
           if (!isPairLike) {
             return gid
           }
-          const stem = this.normalizeDashStemFromFilename(file)
+          const stem = normalizeDashStemFromFilename(file)
           const dir = p ? dirname(p) : ''
           if (!stem || !dir) {
             return gid
@@ -984,66 +1002,66 @@
         } catch (_) {
           return ''
         }
-      },
-      looksLikeExtensionDashStreamPath (p, downloadingFileSuffix) {
+      }
+      function looksLikeExtensionDashStreamPath(p, downloadingFileSuffix) {
         try {
           const raw = p ? `${p}` : ''
           if (!raw) return false
           const file0 = basename(raw)
           const suffix = downloadingFileSuffix ? `${downloadingFileSuffix}` : ''
-          const file1 = suffix ? this.stripDownloadingSuffixFromFilename(file0, suffix) : file0
-          const file = this.stripDuplicateNumberBeforeExtension(file1)
+          const file1 = suffix ? stripDownloadingSuffixFromFilename(file0, suffix) : file0
+          const file = stripDuplicateNumberBeforeExtension(file1)
           return /(video\s*stream|audio\s*stream|videostream|audiostream|视频流|音频流)/i.test(file)
         } catch (_) {
           return false
         }
-      },
-      stripDownloadingSuffixFromFilename (filename, downloadingFileSuffix) {
+      }
+      function stripDownloadingSuffixFromFilename(filename, downloadingFileSuffix) {
         const name = filename ? `${filename}` : ''
         const suffix = downloadingFileSuffix ? `${downloadingFileSuffix}` : ''
         if (!name || !suffix) return name
         return name.endsWith(suffix) ? name.slice(0, -suffix.length) : name
-      },
-      stripDuplicateNumberBeforeExtension (filename) {
+      }
+      function stripDuplicateNumberBeforeExtension(filename) {
         const name = filename ? `${filename}` : ''
         if (!name) return name
         return name.replace(/\s+\(\d+\)(?=\.[^.]+$)/, '')
-      },
-      normalizeDashStemFromFilename (filename) {
+      }
+      function normalizeDashStemFromFilename(filename) {
         const name = filename ? `${filename}` : ''
         if (!name) return ''
-        const withoutDup = this.stripDuplicateNumberBeforeExtension(name)
+        const withoutDup = stripDuplicateNumberBeforeExtension(name)
         const dot = withoutDup.lastIndexOf('.')
         const stem = dot > 0 ? withoutDup.slice(0, dot) : withoutDup
         return stem
           .replace(/(?:[._-]|\s+|\()?(video\s*stream|audio\s*stream|videostream|audiostream|video|audio|视频流|音频流|视频|音频)\)?$/i, '')
           .trim()
-      },
+      }
       // 去掉 stem 末尾的分P序号后缀（如 "标题_1" -> "标题"），
       // 用于合并产物的最终命名，避免重复下载时产物叫 "标题_1.mp4" 而非 "标题.mp4"。
       // 配对用的 stem 仍保留序号（在 collectExtensionDashParts 中）。
-      stripDashSequenceSuffix (stem) {
+      function stripDashSequenceSuffix(stem) {
         const s = stem ? `${stem}` : ''
         if (!s) return ''
         return s.replace(/_[0-9]+$/, '').trim()
-      },
-      getDashExtFromFilename (filename) {
+      }
+      function getDashExtFromFilename(filename) {
         const name = filename ? `${filename}` : ''
         const lower = name.toLowerCase()
         if (lower.endsWith('.mp4')) return 'mp4'
         if (lower.endsWith('.m4a')) return 'm4a'
         if (lower.endsWith('.m4s')) return 'm4s'
         return ''
-      },
-      collectExtensionDashParts (finalPath, cfg) {
+      }
+      function collectExtensionDashParts(finalPath, cfg) {
         try {
           const p = finalPath ? `${finalPath}` : ''
           if (!p) return null
           const downloadingFileSuffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
           const dir = dirname(p)
           const file = basename(p)
-          const fileNoSuffix = this.stripDownloadingSuffixFromFilename(file, downloadingFileSuffix)
-          const stem = this.normalizeDashStemFromFilename(fileNoSuffix)
+          const fileNoSuffix = stripDownloadingSuffixFromFilename(file, downloadingFileSuffix)
+          const stem = normalizeDashStemFromFilename(fileNoSuffix)
           if (!stem) return null
 
           let entries = []
@@ -1067,10 +1085,10 @@
             if (!e || e.toLowerCase().endsWith('.xfer')) continue
             if (e.startsWith('.') && e.includes('.linkcore-merging-')) continue
             const pendingBySuffix = !!(downloadingFileSuffix && e.endsWith(downloadingFileSuffix))
-            const eNoSuffix = this.stripDownloadingSuffixFromFilename(e, downloadingFileSuffix)
-            const ext = this.getDashExtFromFilename(eNoSuffix)
+            const eNoSuffix = stripDownloadingSuffixFromFilename(e, downloadingFileSuffix)
+            const ext = getDashExtFromFilename(eNoSuffix)
             if (!ext) continue
-            const s = this.normalizeDashStemFromFilename(eNoSuffix)
+            const s = normalizeDashStemFromFilename(eNoSuffix)
             if (!s || s !== stem) continue
             const pendingByAria2 = aria2Set.has(e) || aria2Set.has(eNoSuffix)
             const diskPath = resolve(dir, e)
@@ -1096,16 +1114,16 @@
         } catch (_) {
           return null
         }
-      },
-      parseBilibiliDashPart (fullPath) {
+      }
+      function parseBilibiliDashPart(fullPath) {
         try {
           const p = fullPath ? `${fullPath}` : ''
           if (!p) return null
           const rawFile = basename(p)
-          const cfg = this.$store.state.preference.config || {}
+          const cfg = preferenceConfig.value || {}
           const suffix = cfg.downloadingFileSuffix || ''
-          const file = this.stripDuplicateNumberBeforeExtension(rawFile)
-          const normalized = suffix ? this.stripDownloadingSuffixFromFilename(file, suffix) : file
+          const file = stripDuplicateNumberBeforeExtension(rawFile)
+          const normalized = suffix ? stripDownloadingSuffixFromFilename(file, suffix) : file
           const m1 = normalized.match(/^(.*)_(video\.mp4|audio\.m4a)$/i)
           if (m1) {
             const base = m1[1] ? `${m1[1]}` : ''
@@ -1128,8 +1146,8 @@
         } catch (_) {
           return null
         }
-      },
-      deriveBilibiliDashRootDir (partDir, cfg) {
+      }
+      function deriveBilibiliDashRootDir(partDir, cfg) {
         try {
           const d = partDir ? `${partDir}` : ''
           if (!d) return ''
@@ -1150,8 +1168,8 @@
         } catch (_) {
           return partDir ? `${partDir}` : ''
         }
-      },
-      buildBilibiliDashCandidates (rootDir, base, kind, cfg) {
+      }
+      function buildBilibiliDashCandidates(rootDir, base, kind, cfg) {
         const candidates = new Set()
         try {
           const rd = rootDir ? `${rootDir}` : ''
@@ -1188,8 +1206,8 @@
           }
         } catch (_) {}
         return Array.from(candidates)
-      },
-      findFirstExistingPath (paths) {
+      }
+      function findFirstExistingPath(paths) {
         try {
           const arr = Array.isArray(paths) ? paths : []
           for (const p of arr) {
@@ -1197,22 +1215,20 @@
           }
         } catch (_) {}
         return ''
-      },
-      resolveFfmpegPath () {
+      }
+      function resolveFfmpegPath() {
         const candidates = []
         const ffmpegExeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
 
-        // 检查用户数据目录中的 ffmpeg
-        try {
-          const { app } = require('@electron/remote')
-          const userDataPath = app.getPath('userData')
+// 检查用户数据目录中的 ffmpeg
+try {
+const userDataPath = app.getPath('userData')
           candidates.push(resolve(userDataPath, 'ffmpeg', ffmpegExeName))
         } catch (_) {}
 
-        // 检查应用安装目录（通过 exe 路径获取）
-        try {
-          const { app } = require('@electron/remote')
-          const exePath = app.getPath('exe')
+// 检查应用安装目录（通过 exe 路径获取）
+try {
+const exePath = app.getPath('exe')
           const appDir = dirname(exePath)
           candidates.push(resolve(appDir, ffmpegExeName))
         } catch (_) {}
@@ -1231,139 +1247,131 @@
 
         // 检查系统 PATH 中的 ffmpeg
         candidates.push('ffmpeg')
-        return candidates.find(p => (p === 'ffmpeg' ? this.checkSystemFfmpeg() : existsSync(p))) || ''
-      },
-      checkSystemFfmpeg () {
+        return candidates.find(p => (p === 'ffmpeg' ? checkSystemFfmpeg() : existsSync(p))) || ''
+      }
+      function checkSystemFfmpeg() {
         try {
           const result = spawnSync('ffmpeg', ['-version'], { windowsHide: true, timeout: 5000 })
           return result.status === 0
         } catch (_) {
           return false
         }
-      },
-      async ensureFfmpeg () {
+      }
+      async function ensureFfmpeg() {
         // 检查是否已有 ffmpeg
-        const existingPath = this.resolveFfmpegPath()
+        const existingPath = resolveFfmpegPath()
         if (existingPath) {
           return existingPath
         }
 
-        // 检查用户是否已经取消过提示
-        const { app } = require('@electron/remote')
-        const userDataPath = app.getPath('userData')
+// 检查用户是否已经取消过提示
+const userDataPath = app.getPath('userData')
         const skipFlagPath = resolve(userDataPath, '.ffmpeg-skip')
         if (existsSync(skipFlagPath)) {
           return ''
         }
 
         // 提示用户需要手动安装 FFmpeg
-        this.$msg.warning(this.$t('task.ffmpeg-required-manual'))
+        msg.warning(t('task.ffmpeg-required-manual'))
 
-        // 记录已提示，避免重复提示
-        try {
-          const fs = require('node:fs')
-          fs.writeFileSync(skipFlagPath, '1')
+// 记录已提示，避免重复提示
+try {
+writeFileSync(skipFlagPath, '1')
         } catch (_) {}
 
         return ''
-      },
-      getDashMergeKey (filePath, cfg) {
+      }
+      function getDashMergeKey(filePath, cfg) {
         try {
           const path = filePath ? resolve(`${filePath}`) : ''
           if (!path) return ''
           const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
           const raw = basename(path)
-          const normalized = suffix ? this.stripDownloadingSuffixFromFilename(raw, suffix) : raw
-          const stem = this.normalizeDashStemFromFilename(normalized)
+          const normalized = suffix ? stripDownloadingSuffixFromFilename(raw, suffix) : raw
+          const stem = normalizeDashStemFromFilename(normalized)
           return stem ? `${dirname(path)}|${stem}` : path
         } catch (_) {
           return ''
         }
-      },
-      _scheduleMergeRetry (mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt, maxAttempts) {
-        if (!this._mergeRetryTimers) {
-          this._mergeRetryTimers = new Map()
-        }
+      }
+      function _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt, maxAttempts) {
         // 清除已有的重试定时器
-        const existingTimer = this._mergeRetryTimers.get(mergeGid)
-        if (existingTimer) {
-          clearTimeout(existingTimer)
-        }
+        clearMergeRetryTimer(mergeGid)
         // 检查任务是否还在合并列表中（可能已被用户删除或已合并完成）
-        const { mergingList } = this.$store.state.task
+        const { mergingList } = taskStore
         if (!mergingList.includes(mergeGid)) {
           return
         }
         const timer = setTimeout(async () => {
-          this._mergeRetryTimers.delete(mergeGid)
+          clearMergeRetryTimer(mergeGid)
           if (attempt >= maxAttempts) {
             // 超过最大重试次数，放弃等待，标记为完成
             console.warn(`[LinkCore] Merge retry exhausted for ${mergeGid} after ${maxAttempts} attempts`)
-            this.$store.dispatch('task/removeFromMergingList', mergeGid)
-            this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.COMPLETE })
-            this.$store.dispatch('task/fetchList')
+            taskStore.removeFromMergingList(mergeGid)
+            taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
+            taskStore.fetchList()
             return
           }
           // 重新扫描配对文件
           try {
-            const retryResult = await this.runDashMergeExclusive(mergeKey, () => {
-              return this.maybeMergeBilibiliDash(finalPath, task)
+            const retryResult = await runDashMergeExclusive(mergeKey, () => {
+              return maybeMergeBilibiliDash(finalPath, task)
             })
             if (retryResult && retryResult.mergedPath) {
               // 合并成功
-              this.$store.dispatch('task/removeAllMergingByMergeKey', mergeKey)
-              this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.COMPLETE })
-              this.$store.dispatch('task/fetchList')
-              this.setFileMtimeOnComplete(task, retryResult.mergedPath)
-              this.autoCategorizeDownloadedFile(task, retryResult.mergedPath)
+              taskStore.removeAllMergingByMergeKey(mergeKey)
+              taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
+              taskStore.fetchList()
+              setFileMtimeOnComplete(task, retryResult.mergedPath)
+              autoCategorizeDownloadedFile(task, retryResult.mergedPath)
               try {
                 const base = basename(retryResult.mergedPath || '')
                 const suffix = cfg.downloadingFileSuffix || ''
                 const name = suffix && base.endsWith(suffix) ? base.slice(0, -suffix.length) : base
                 if (name) {
-                  this.$store.dispatch('task/setTaskDisplayName', { gid: mergeGid, name })
+                  taskStore.setTaskDisplayName({ gid: mergeGid, name })
                 }
               } catch (_) {}
-              this.showTaskCompleteNotify(task, isBT, retryResult.mergedPath)
-              this.$electron.ipcRenderer.send('event', 'task-download-complete', task, retryResult.mergedPath)
+              showTaskCompleteNotify(task, isBT, retryResult.mergedPath)
+              ipcRenderer.send('event', 'task-download-complete', task, retryResult.mergedPath)
             } else if (retryResult && retryResult.waitingForPair) {
               // 仍然等待配对，继续重试
-              this._scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
+              _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
             } else {
               // 合并失败（非等待配对），清理并标记完成
-              this.$store.dispatch('task/removeAllMergingByMergeKey', mergeKey)
-              this.$store.dispatch('task/setTaskStatus', { gid: mergeGid, status: TASK_STATUS.COMPLETE })
-              this.$store.dispatch('task/fetchList')
+              taskStore.removeAllMergingByMergeKey(mergeKey)
+              taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
+              taskStore.fetchList()
             }
           } catch (e) {
             console.warn(`[LinkCore] Merge retry ${attempt + 1} failed:`, e)
-            this._scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
+            _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
           }
         }, 3000)
-        this._mergeRetryTimers.set(mergeGid, timer)
-      },
-      runDashMergeExclusive (key, merge) {
+        setMergeRetryTimer(mergeGid, timer)
+      }
+      function runDashMergeExclusive(key, merge) {
         if (!key) {
           return Promise.resolve().then(merge)
         }
-        if (!this._dashMergeJobs) {
-          this._dashMergeJobs = new Map()
+        if (!_dashMergeJobs) {
+          _dashMergeJobs = new Map()
         }
-        const running = this._dashMergeJobs.get(key)
+        const running = _dashMergeJobs.get(key)
         if (running) {
           return running
         }
         const job = Promise.resolve()
           .then(merge)
           .finally(() => {
-            if (this._dashMergeJobs.get(key) === job) {
-              this._dashMergeJobs.delete(key)
+            if (_dashMergeJobs.get(key) === job) {
+              _dashMergeJobs.delete(key)
             }
           })
-        this._dashMergeJobs.set(key, job)
+        _dashMergeJobs.set(key, job)
         return job
-      },
-      runFfmpegMux (ffmpegPath, videoPath, audioPath, outputPath, progressGid = '') {
+      }
+      function runFfmpegMux(ffmpegPath, videoPath, audioPath, outputPath, progressGid = '') {
         return new Promise((resolve, reject) => {
           const cmd = ffmpegPath || ''
           const args = [
@@ -1406,7 +1414,7 @@
                 const totalSize = parseInt(kv.total_size || '0', 10)
                 const speed = parseFloat(kv.speed || '0')
                 const percent = totalInputSize > 0 ? Math.min(100, Math.round(totalSize / totalInputSize * 100)) : 0
-                this.$store.dispatch('task/setMergeProgress', {
+                taskStore.setMergeProgress({
                   gid: progressGid,
                   progress: { percent, totalSize, speed }
                 })
@@ -1424,8 +1432,8 @@
             reject(new Error(msg))
           })
         })
-      },
-      async validateDashMergeOutput (ffmpegPath, outputPath) {
+      }
+      async function validateDashMergeOutput(ffmpegPath, outputPath) {
         if (!outputPath || !existsSync(outputPath)) {
           return false
         }
@@ -1453,19 +1461,19 @@
           child.on('error', () => done(false))
           child.on('close', (code) => done(code === 0))
         })
-      },
-      async mergeDashToOutput (ffmpegPath, videoPath, audioPath, outputPath, progressGid = '') {
+      }
+      async function mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, progressGid = '') {
         const tempPath = resolve(dirname(outputPath), `.${basename(outputPath)}.linkcore-merging-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`)
         try {
           try {
-            await this.runFfmpegMux(ffmpegPath, videoPath, audioPath, tempPath, progressGid)
+            await runFfmpegMux(ffmpegPath, videoPath, audioPath, tempPath, progressGid)
           } catch (firstError) {
             try {
               if (existsSync(tempPath)) unlinkSync(tempPath)
             } catch (_) {}
-            await this.runFfmpegMux(ffmpegPath, audioPath, videoPath, tempPath, progressGid)
+            await runFfmpegMux(ffmpegPath, audioPath, videoPath, tempPath, progressGid)
           }
-          if (!await this.validateDashMergeOutput(ffmpegPath, tempPath)) {
+          if (!await validateDashMergeOutput(ffmpegPath, tempPath)) {
             throw new Error('Merged DASH output does not contain both video and audio streams')
           }
           if (existsSync(outputPath)) {
@@ -1478,8 +1486,8 @@
             if (existsSync(tempPath)) unlinkSync(tempPath)
           } catch (_) {}
         }
-      },
-      getDashMergeOutputPath (dir, stem, inputPaths = []) {
+      }
+      function getDashMergeOutputPath(dir, stem, inputPaths = []) {
         const inputs = new Set((inputPaths || []).filter(Boolean).map(path => resolve(path)))
         for (let i = 0; i < 1000; i++) {
           const rand = Math.random().toString(36).slice(2, 10)
@@ -1490,8 +1498,8 @@
         }
         const fallback = resolve(dir, `.linkcore-merging-${Date.now()}.mp4`)
         return fallback
-      },
-      forceDeleteFileSync (filePath) {
+      }
+      function forceDeleteFileSync(filePath) {
         if (!filePath) return false
         let full = ''
         try { full = resolve(filePath) } catch (_) { full = `${filePath}` }
@@ -1513,8 +1521,8 @@
           }
         }
         return !existsSync(full)
-      },
-      generateUniqueFilePath (dir, stem, ext, pathsToIgnore = []) {
+      }
+      function generateUniqueFilePath(dir, stem, ext, pathsToIgnore = []) {
         const pathExists = (candidate) => {
           try {
             return existsSync(resolve(candidate))
@@ -1533,13 +1541,13 @@
           }
         }
         return ''
-      },
-      async maybeMergeBilibiliDash (finalPath, task = null) {
-        const info = this.parseBilibiliDashPart(finalPath)
+      }
+      async function maybeMergeBilibiliDash(finalPath, task = null) {
+        const info = parseBilibiliDashPart(finalPath)
         if (!info) {
-          return await this.maybeMergeExtensionDash(finalPath, task)
+          return await maybeMergeExtensionDash(finalPath, task)
         }
-        const cfg = this.$store.state.preference.config || {}
+        const cfg = preferenceConfig.value || {}
         const { dir, base, type } = info
 
         if (type === 'm4s') {
@@ -1574,7 +1582,7 @@
           })
           const readyParts = parts.filter(p => p && p.ready)
           if (readyParts.length < 2) {
-            const ffmpegPath = this.resolveFfmpegPath()
+            const ffmpegPath = resolveFfmpegPath()
             if (!ffmpegPath) {
               const notifyKey = `${dir || ''}|${base || ''}`
               const fallbackNotifyPath = finalPath || ''
@@ -1584,20 +1592,20 @@
           }
           const videoPath = readyParts[0].path
           const audioPath = readyParts[1].path
-          const ffmpegPath = await this.ensureFfmpeg()
+          const ffmpegPath = await ensureFfmpeg()
           if (!ffmpegPath) {
             const notifyKey = `${dir || ''}|${base || ''}`
             const fallbackNotifyPath = finalPath || ''
             return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
           }
-          const outputBase = this.stripDashSequenceSuffix(base)
-          const outputPath = this.getDashMergeOutputPath(dir, outputBase, [videoPath, audioPath])
+          const outputBase = stripDashSequenceSuffix(base)
+          const outputPath = getDashMergeOutputPath(dir, outputBase, [videoPath, audioPath])
           if (!outputPath) {
             return { isBilibiliPart: true, mergedPath: '' }
           }
           try {
-            await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
-            const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
+            await mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
+            const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
             console.warn(`[LinkCore] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
@@ -1605,21 +1613,21 @@
           }
         }
 
-        const rootDir = this.deriveBilibiliDashRootDir(dir, cfg)
+        const rootDir = deriveBilibiliDashRootDir(dir, cfg)
         const videoCand = [
-          ...this.buildBilibiliDashCandidates(rootDir, base, 'video', cfg),
-          ...this.buildBilibiliDashCandidates(dir, base, 'video', cfg)
+          ...buildBilibiliDashCandidates(rootDir, base, 'video', cfg),
+          ...buildBilibiliDashCandidates(dir, base, 'video', cfg)
         ]
         const audioCand = [
-          ...this.buildBilibiliDashCandidates(rootDir, base, 'audio', cfg),
-          ...this.buildBilibiliDashCandidates(dir, base, 'audio', cfg)
+          ...buildBilibiliDashCandidates(rootDir, base, 'audio', cfg),
+          ...buildBilibiliDashCandidates(dir, base, 'audio', cfg)
         ]
 
-        const videoPath = this.findFirstExistingPath(videoCand)
-        const audioPath = this.findFirstExistingPath(audioCand)
+        const videoPath = findFirstExistingPath(videoCand)
+        const audioPath = findFirstExistingPath(audioCand)
 
         if (!videoPath || !audioPath) {
-          const ffmpegPath = this.resolveFfmpegPath()
+          const ffmpegPath = resolveFfmpegPath()
           if (!ffmpegPath) {
             const notifyKey = `${dir || ''}|${base || ''}`
             const fallbackNotifyPath = finalPath || ''
@@ -1629,13 +1637,13 @@
         }
 
         const outputDir = dirname(videoPath || finalPath || rootDir || dir)
-        const outputBase = this.stripDashSequenceSuffix(base)
-        const outputPath = this.getDashMergeOutputPath(outputDir, outputBase, [videoPath, audioPath])
+        const outputBase = stripDashSequenceSuffix(base)
+        const outputPath = getDashMergeOutputPath(outputDir, outputBase, [videoPath, audioPath])
         if (!outputPath) {
           return { isBilibiliPart: true, mergedPath: '' }
         }
 
-        const ffmpegPath = await this.ensureFfmpeg()
+        const ffmpegPath = await ensureFfmpeg()
         if (!ffmpegPath) {
           const notifyKey = `${outputDir || ''}|${base || ''}`
           const fallbackNotifyPath = finalPath || ''
@@ -1643,15 +1651,15 @@
         }
 
         try {
-          await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
-          const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
+          await mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
+          const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
           return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
         } catch (e) {
           console.warn(`[LinkCore] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
           return { isBilibiliPart: true, mergedPath: '' }
         }
-      },
-      async maybeMergeExtensionDash (finalPath, task = null) {
+      }
+      async function maybeMergeExtensionDash(finalPath, task = null) {
         try {
           const gid = task && task.gid ? `${task.gid}` : ''
           if (!gid) return { isBilibiliPart: false, mergedPath: '' }
@@ -1670,13 +1678,13 @@
               const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
               const referer = opt && opt.referer ? `${opt.referer}` : ''
               fromSupportedSource = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`)) ||
-                this.looksLikeBilibiliSource(referer, headers)
+                looksLikeBilibiliSource(referer, headers)
             } catch (_) {
               fromSupportedSource = false
             }
           }
-          const cfg = this.$store.state.preference.config || {}
-          const pair = this.collectExtensionDashParts(finalPath, cfg)
+          const cfg = preferenceConfig.value || {}
+          const pair = collectExtensionDashParts(finalPath, cfg)
           if (!pair || !pair.isPairCandidate) {
             return { isBilibiliPart: false, mergedPath: '' }
           }
@@ -1707,9 +1715,9 @@
 
                 let pathToProcess = diskPath
                 try {
-                  const fixed = this.fixFileNameWithSuffix(pathToProcess, downloadingFileSuffix)
+                  const fixed = fixFileNameWithSuffix(pathToProcess, downloadingFileSuffix)
                   if (fixed && fixed !== pathToProcess && existsSync(pathToProcess)) {
-                    const okFix = this.renamePreserveTimes(pathToProcess, fixed)
+                    const okFix = renamePreserveTimes(pathToProcess, fixed)
                     if (okFix) {
                       pathToProcess = fixed
                     }
@@ -1727,7 +1735,7 @@
                     continue
                   }
                   if (existsSync(pathToProcess)) {
-                    const ok = this.renamePreserveTimes(pathToProcess, targetPath)
+                    const ok = renamePreserveTimes(pathToProcess, targetPath)
                     if (ok) {
                       part.diskPath = targetPath
                       part.pending = false
@@ -1740,7 +1748,7 @@
 
           const ready = (pair.parts || []).filter(p => p && !p.pending && p.diskPath && existsSync(p.diskPath))
           if (ready.length < 2) {
-            const ffmpegPath = this.resolveFfmpegPath()
+            const ffmpegPath = resolveFfmpegPath()
             if (!ffmpegPath) {
               const notifyKey = `${pair.dir || ''}|${pair.stem || ''}`
               const fallbackNotifyPath = finalPath || ''
@@ -1783,13 +1791,13 @@
             return { isBilibiliPart: true, mergedPath: '' }
           }
 
-          const outputBase = this.stripDashSequenceSuffix(pair.stem)
-          const outputPath = this.getDashMergeOutputPath(pair.dir, outputBase, [videoPath, audioPath])
+          const outputBase = stripDashSequenceSuffix(pair.stem)
+          const outputPath = getDashMergeOutputPath(pair.dir, outputBase, [videoPath, audioPath])
           if (!outputPath) {
             return { isBilibiliPart: true, mergedPath: '' }
           }
 
-          const ffmpegPath = await this.ensureFfmpeg()
+          const ffmpegPath = await ensureFfmpeg()
           if (!ffmpegPath) {
             const notifyKey = `${pair.dir || ''}|${pair.stem || ''}`
             const fallbackNotifyPath = finalPath || ''
@@ -1797,9 +1805,9 @@
           }
 
           try {
-            await this.mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
+            await mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
             const info = { dir: pair.dir, base: pair.stem, type: 'named' }
-            const finalOutputPath = await this.afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
+            const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
             console.warn(`[LinkCore] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
@@ -1808,14 +1816,14 @@
         } catch (_) {
           return { isBilibiliPart: false, mergedPath: '' }
         }
-      },
-      async afterBilibiliMerge (task, info, videoPath, audioPath, outputPath) {
+      }
+      async function afterBilibiliMerge(task, info, videoPath, audioPath, outputPath) {
         let finalOutputPath = outputPath
         const deletedFiles = new Set()
         const deletedCandidates = new Set()
         const deletedSuffix = (() => {
           try {
-            const cfg = this.$store.state.preference.config || {}
+            const cfg = preferenceConfig.value || {}
             return cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
           } catch (_) {
             return ''
@@ -1918,12 +1926,12 @@
                     toDelete.add(`${full}.aria2`)
                   }
                 } else if (type === 'named') {
-                  const cfg = this.$store.state.preference.config || {}
+                  const cfg = preferenceConfig.value || {}
                   const suffix = cfg.downloadingFileSuffix || ''
-                  const raw = suffix ? this.stripDownloadingSuffixFromFilename(s, suffix) : s
-                  const ext = this.getDashExtFromFilename(raw)
+                  const raw = suffix ? stripDownloadingSuffixFromFilename(s, suffix) : s
+                  const ext = getDashExtFromFilename(raw)
                   if (ext) {
-                    const stem = this.normalizeDashStemFromFilename(raw)
+                    const stem = normalizeDashStemFromFilename(raw)
                     if (stem && stem === base) {
                       const nameNoExt = raw.length > ext.length + 1 ? raw.slice(0, raw.length - ext.length - 1) : ''
                       const isMarkedPart = (nameNoExt && nameNoExt !== stem)
@@ -2095,16 +2103,16 @@
                 for (const se of scanEntries) {
                   const sen = se ? `${se}` : ''
                   if (!sen || (sen.startsWith('.') && sen.includes('.linkcore-merging-'))) continue
-                  const raw = scanSuffix ? this.stripDownloadingSuffixFromFilename(sen, scanSuffix) : sen
-                  const ext = this.getDashExtFromFilename(raw)
+                  const raw = scanSuffix ? stripDownloadingSuffixFromFilename(sen, scanSuffix) : sen
+                  const ext = getDashExtFromFilename(raw)
                   if (!ext) continue
-                  const stem = this.normalizeDashStemFromFilename(raw)
+                  const stem = normalizeDashStemFromFilename(raw)
                   if (!stem) continue
                   let shouldDelete = false
                   if (stem === scanBase) {
                     shouldDelete = true
                   } else if (m4sBase && /\.m4s$/i.test(raw)) {
-                    const plainRaw = this.stripDuplicateNumberBeforeExtension(raw)
+                    const plainRaw = stripDuplicateNumberBeforeExtension(raw)
                     if (plainRaw.startsWith(`${m4sBase}-`) || plainRaw === `${m4sBase}.m4s`) {
                       shouldDelete = true
                     }
@@ -2132,20 +2140,20 @@
 
             await waitMs(100)
 
-            const finalTarget = this.generateUniqueFilePath(dirOut, titleBase, targetExt)
+            const finalTarget = generateUniqueFilePath(dirOut, titleBase, targetExt)
             if (finalTarget && resolve(finalTarget) !== resolve(outputPath)) {
               if (targetExt === '.mp4') {
                 if (existsSync(finalTarget) && isKnownSourcePath(finalTarget)) {
                   await aggressiveDelete(finalTarget)
                   await waitMs(100)
                 }
-                const ok = this.renamePreserveTimes(outputPath, finalTarget)
+                const ok = renamePreserveTimes(outputPath, finalTarget)
                 if (ok) {
                   finalOutputPath = finalTarget
                 } else {
                   await aggressiveDelete(finalTarget)
                   await waitMs(100)
-                  const ok2 = this.renamePreserveTimes(outputPath, finalTarget)
+                  const ok2 = renamePreserveTimes(outputPath, finalTarget)
                   if (ok2) {
                     finalOutputPath = finalTarget
                   }
@@ -2155,7 +2163,7 @@
                   finalOutputPath = finalTarget
                 } else {
                   try {
-                    const ffmpegPath = this.resolveFfmpegPath()
+                    const ffmpegPath = resolveFfmpegPath()
                     if (ffmpegPath) {
                       const remuxOk = await new Promise((resolve) => {
                         const child = spawn(ffmpegPath, [
@@ -2233,10 +2241,10 @@
             engineStatus: '',
             dashMerged: true
           }
-          const cfg = this.$store.state.preference.config || {}
+          const cfg = preferenceConfig.value || {}
           const targetBase = info && info.base ? `${info.base}` : ''
           const targetType = info && info.type ? `${info.type}` : ''
-          const targetDir = info && info.dir ? this.deriveBilibiliDashRootDir(`${info.dir}`, cfg) : ''
+          const targetDir = info && info.dir ? deriveBilibiliDashRootDir(`${info.dir}`, cfg) : ''
           const looksLikeDashPartFile = (filename) => {
             const n = filename ? `${filename}` : ''
             if (!n) return false
@@ -2255,7 +2263,7 @@
             const n = normalizedName ? `${normalizedName}` : ''
             if (!n || !targetBase) return false
             if (!/\.m4s$/i.test(n)) return false
-            const plainName = this.stripDuplicateNumberBeforeExtension(n)
+            const plainName = stripDuplicateNumberBeforeExtension(n)
             return plainName.startsWith(`${targetBase}-`) || plainName === `${targetBase}.m4s`
           }
           const memberGids = (taskHistory.getAllHistory() || []).filter(item => {
@@ -2269,16 +2277,16 @@
               }
               const full = getTaskFullPath(item)
               if (!full || !targetBase || !targetDir) return false
-              const itemRoot = this.deriveBilibiliDashRootDir(dirname(full), cfg)
+              const itemRoot = deriveBilibiliDashRootDir(dirname(full), cfg)
               if (resolve(itemRoot) !== resolve(targetDir)) return false
               const suffix = cfg.downloadingFileSuffix || ''
               const raw = basename(full)
-              const normalized = suffix ? this.stripDownloadingSuffixFromFilename(raw, suffix) : raw
+              const normalized = suffix ? stripDownloadingSuffixFromFilename(raw, suffix) : raw
               let stemMatch = false
               if (targetType === 'm4s') {
-                stemMatch = matchesM4sGroup(normalized) || this.normalizeDashStemFromFilename(normalized) === targetBase
+                stemMatch = matchesM4sGroup(normalized) || normalizeDashStemFromFilename(normalized) === targetBase
               } else {
-                stemMatch = this.normalizeDashStemFromFilename(normalized) === targetBase
+                stemMatch = normalizeDashStemFromFilename(normalized) === targetBase
               }
               if (!stemMatch) return false
               if (!looksLikeDashPartFile(normalized) && existsSync(full)) {
@@ -2302,7 +2310,7 @@
             try { taskHistory.removeTask(memberGid) } catch (_) {}
           }
           try {
-            this.$store.dispatch('task/clearTaskCachesForGids', memberGids.filter(mg => mg && mg !== gid))
+            taskStore.clearTaskCachesForGids(memberGids.filter(mg => mg && mg !== gid))
           } catch (_) {}
         } catch (_) {}
 
@@ -2310,7 +2318,7 @@
           const gid = task && task.gid ? `${task.gid}` : ''
           if (gid && finalOutputPath) {
             const historyAll = taskHistory.getAllHistory ? (taskHistory.getAllHistory() || []) : (taskHistory.getHistory() || [])
-            const cfg = this.$store.state.preference.config || {}
+            const cfg = preferenceConfig.value || {}
             const deleted = deletedCandidates && deletedCandidates.size > 0 ? deletedCandidates : (deletedFiles && deletedFiles.size > 0 ? deletedFiles : null)
             const normalizeFull = (p) => {
               try {
@@ -2347,15 +2355,15 @@
                 }
                 const rawFile = basename(full)
                 const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
-                const file = this.stripDuplicateNumberBeforeExtension(rawFile)
-                const normalized = suffix ? this.stripDownloadingSuffixFromFilename(file, suffix) : file
+                const file = stripDuplicateNumberBeforeExtension(rawFile)
+                const normalized = suffix ? stripDownloadingSuffixFromFilename(file, suffix) : file
                 if (`${targetType || ''}` === 'm4s' && /\.m4s$/i.test(normalized)) {
-                  const plainName = this.stripDuplicateNumberBeforeExtension(normalized)
+                  const plainName = stripDuplicateNumberBeforeExtension(normalized)
                   if (plainName.startsWith(`${targetBase}-`) || plainName === `${targetBase}.m4s`) {
                     return true
                   }
                 }
-                const stem = this.normalizeDashStemFromFilename(normalized)
+                const stem = normalizeDashStemFromFilename(normalized)
                 return !!(stem && stem === targetBase)
               } catch (_) {
                 return false
@@ -2404,7 +2412,7 @@
             const targetBase = targetInfo && targetInfo.base ? `${targetInfo.base}` : ''
             const targetType = targetInfo && targetInfo.type ? `${targetInfo.type}` : ''
             const targetDir = targetInfo && targetInfo.dir ? `${targetInfo.dir}` : ''
-            const targetRootDir = targetDir ? this.deriveBilibiliDashRootDir(targetDir, cfg) : ''
+            const targetRootDir = targetDir ? deriveBilibiliDashRootDir(targetDir, cfg) : ''
             historyAll.forEach(item => {
               try {
                 if (!item || !item.gid) {
@@ -2420,10 +2428,10 @@
                   const itemFull = getTaskFullPath(item) || ''
                   const itemBase = itemFull ? basename(itemFull) : ''
                   const itemNormalized = cfg.downloadingFileSuffix && itemBase.endsWith(cfg.downloadingFileSuffix)
-                    ? this.stripDownloadingSuffixFromFilename(itemBase, cfg.downloadingFileSuffix)
+                    ? stripDownloadingSuffixFromFilename(itemBase, cfg.downloadingFileSuffix)
                     : itemBase
                   const isCleanFinal = !!itemNormalized && !!/\.mp4$/i.test(itemNormalized) &&
-                    !/(?:[._-]|\s+|\()?(?:video\s*stream|audio\s*stream|videostream|audiostream|video|audio|视频流|音频流|视频|音频)\)?$/i.test(this.normalizeDashStemFromFilename(itemNormalized) || '') &&
+                    !/(?:[._-]|\s+|\()?(?:video\s*stream|audio\s*stream|videostream|audiostream|video|audio|视频流|音频流|视频|音频)\)?$/i.test(normalizeDashStemFromFilename(itemNormalized) || '') &&
                     !/\.m4s$/i.test(itemNormalized)
                   if (!isCleanFinal || !existsSync(itemFull)) {
                     try {
@@ -2455,14 +2463,14 @@
                 if (!targetBase || !targetRootDir) {
                   return
                 }
-                const partInfo = this.parseBilibiliDashPart(full)
+                const partInfo = parseBilibiliDashPart(full)
                 if (!partInfo || !partInfo.base || !partInfo.dir) {
                   return
                 }
                 if (`${partInfo.base}` !== targetBase) {
                   return
                 }
-                const partRootDir = this.deriveBilibiliDashRootDir(`${partInfo.dir}`, cfg)
+                const partRootDir = deriveBilibiliDashRootDir(`${partInfo.dir}`, cfg)
                 try {
                   if (resolve(partRootDir) !== resolve(targetRootDir)) {
                     return
@@ -2487,20 +2495,20 @@
         } catch (_) {}
 
         try {
-          this.$store.dispatch('task/fetchList').catch(() => {})
-          this.$store.dispatch('app/fetchGlobalStat').catch(() => {})
+          taskStore.fetchList().catch(() => {})
+          appStore.fetchGlobalStat().catch(() => {})
         } catch (_) {}
 
         return finalOutputPath
-      },
-      persistAverageSpeedToHistory (task) {
+      }
+      function persistAverageSpeedToHistory(task) {
         try {
           const gid = task && task.gid ? `${task.gid}` : ''
           if (!gid) {
             return
           }
 
-          const map = this.$store.state.task.taskSpeedSamples || {}
+          const map = taskStore.taskSpeedSamples || {}
           const samples = Array.isArray(map[gid]) ? map[gid] : []
           if (samples.length === 0) {
             return
@@ -2537,8 +2545,8 @@
           }
         } catch (_) {
         }
-      },
-      ensureTargetDirectoryExists (task) {
+      }
+      function ensureTargetDirectoryExists(task) {
         const fullPath = getTaskFullPath(task)
         const targetDir = dirname(fullPath)
         if (!existsSync(targetDir)) {
@@ -2549,10 +2557,10 @@
             console.warn(`[LinkCore] Failed to create target directory: ${error.message}`)
           }
         }
-      },
+      }
 
-      ensureCategoryDirectoryForTask (task) {
-        const cfg = this.$store.state.preference.config || {}
+      function ensureCategoryDirectoryForTask(task) {
+        const cfg = preferenceConfig.value || {}
         const autoCategorizeEnabled = cfg.autoCategorizeFiles
         const categories = cfg.fileCategories
 
@@ -2606,9 +2614,9 @@
         const filename = basename(filePath)
         const categorizedInfo = buildCategorizedPath(filePath, filename, categories, baseDir)
         createCategoryDirectory(categorizedInfo.categorizedDir)
-      },
+      }
 
-      getUniqueCompletedPath (filePath) {
+      function getUniqueCompletedPath(filePath) {
         if (!filePath || !existsSync(filePath)) {
           return filePath
         }
@@ -2622,9 +2630,9 @@
           }
         }
         return ''
-      },
-      async removeDownloadingSuffix (task, manualPath = '', preferenceConfig = null) {
-        const cfg = preferenceConfig || this.$store.state.preference.config || {}
+      }
+      async function removeDownloadingSuffix(task, manualPath = '', preferenceConfig = null) {
+        const cfg = preferenceConfig || preferenceConfig.value || {}
         const downloadingFileSuffix = cfg.downloadingFileSuffix || ''
 
         const taskPath = getTaskFullPath(task)
@@ -2654,7 +2662,7 @@
           for (let i = 0; i < attempts; i++) {
             if (!existsSync(f)) return existsSync(t)
             if (!existsSync(t)) {
-              const ok = this.renamePreserveTimes(f, t)
+              const ok = renamePreserveTimes(f, t)
               if (ok) return true
             }
             await sleep(delayMs)
@@ -2663,31 +2671,31 @@
         }
 
         if (currentPath.endsWith(downloadingFileSuffix)) {
-          const fixedPath = this.fixFileNameWithSuffix(currentPath, downloadingFileSuffix)
+          const fixedPath = fixFileNameWithSuffix(currentPath, downloadingFileSuffix)
           let pathToProcess = currentPath
 
           if (fixedPath !== currentPath && existsSync(currentPath)) {
             const okFix = await renameWithRetry(currentPath, fixedPath)
             if (okFix) {
               console.log(`[LinkCore] Fixed file name structure: ${currentPath} -> ${fixedPath}`)
-              this.cleanupAria2ControlFiles([currentPath, fixedPath])
+              cleanupAria2ControlFiles([currentPath, fixedPath])
               pathToProcess = fixedPath
             }
           }
 
           const desiredPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
           const originalPath = existsSync(pathToProcess)
-            ? this.getUniqueCompletedPath(desiredPath)
+            ? getUniqueCompletedPath(desiredPath)
             : desiredPath
           if (existsSync(pathToProcess) && originalPath) {
             const ok = await renameWithRetry(pathToProcess, originalPath)
             if (ok && existsSync(originalPath)) {
               console.log(`[LinkCore] Removed downloading suffix: ${pathToProcess} -> ${originalPath}`)
-              this.cleanupAria2ControlFiles([pathToProcess, originalPath, desiredPath])
+              cleanupAria2ControlFiles([pathToProcess, originalPath, desiredPath])
               return originalPath
             }
           } else if (existsSync(desiredPath)) {
-            this.cleanupAria2ControlFiles([desiredPath])
+            cleanupAria2ControlFiles([desiredPath])
             return desiredPath
           }
           return existsSync(desiredPath) ? desiredPath : currentPath
@@ -2696,23 +2704,23 @@
             return path.endsWith(downloadingFileSuffix) && existsSync(path)
           }) || `${currentPath}${downloadingFileSuffix}`
           if (existsSync(suffixedPath)) {
-            const targetPath = this.getUniqueCompletedPath(
+            const targetPath = getUniqueCompletedPath(
               suffixedPath.slice(0, -downloadingFileSuffix.length)
             )
             if (targetPath) {
               const ok = await renameWithRetry(suffixedPath, targetPath)
               if (ok && existsSync(targetPath)) {
                 console.log(`[LinkCore] Removed downloading suffix: ${suffixedPath} -> ${targetPath}`)
-                this.cleanupAria2ControlFiles([suffixedPath, targetPath])
+                cleanupAria2ControlFiles([suffixedPath, targetPath])
                 return targetPath
               }
             }
           }
           return existsSync(currentPath) ? currentPath : suffixedPath
         }
-      },
-      autoCategorizeDownloadedFile (task, manualPath = null) {
-        const cfg = this.$store.state.preference.config || {}
+      }
+      function autoCategorizeDownloadedFile(task, manualPath = null) {
+        const cfg = preferenceConfig.value || {}
         const autoCategorizeEnabled = cfg.autoCategorizeFiles
 
         console.log('[LinkCore] Auto categorize check - enabled:', autoCategorizeEnabled)
@@ -2785,15 +2793,15 @@
               if (downloadingFileSuffix) {
                 if (filePath.endsWith(downloadingFileSuffix) && existsSync(filePath)) {
                   // 首先尝试修复文件名中的序号位置
-                  const fixedPath = this.fixFileNameWithSuffix(filePath, downloadingFileSuffix)
+                  const fixedPath = fixFileNameWithSuffix(filePath, downloadingFileSuffix)
                   let pathToProcess = filePath
 
                   // 如果修复后的路径不同，先重命名到正确的位置
                   if (fixedPath !== filePath) {
-                    const renameOk = this.renamePreserveTimes(filePath, fixedPath)
+                    const renameOk = renamePreserveTimes(filePath, fixedPath)
                     if (renameOk) {
                       console.log(`[LinkCore] Fixed BT file name structure: ${filePath} -> ${fixedPath}`)
-                      this.cleanupAria2ControlFiles([filePath, fixedPath])
+                      cleanupAria2ControlFiles([filePath, fixedPath])
                       pathToProcess = fixedPath
                     } else {
                       console.warn(`[LinkCore] Failed to fix BT file name structure: ${filePath} -> ${fixedPath}`)
@@ -2801,10 +2809,10 @@
                   }
 
                   const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
-                  const ok = this.renamePreserveTimes(pathToProcess, originalPath)
+                  const ok = renamePreserveTimes(pathToProcess, originalPath)
                   if (ok) {
                     console.log(`[LinkCore] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
-                    this.cleanupAria2ControlFiles([pathToProcess, originalPath])
+                    cleanupAria2ControlFiles([pathToProcess, originalPath])
                     filePath = originalPath
                   }
                 }
@@ -2825,7 +2833,7 @@
                 return
               }
 
-              const result = autoCategorizeDownloadedFile(filePath, baseDir, categories)
+              const result = autoCategorizeFile(filePath, baseDir, categories)
               if (result) {
                 console.log(`[LinkCore] File categorized successfully: ${filePath}`)
               }
@@ -2846,15 +2854,15 @@
             if (downloadingFileSuffix) {
               if (filePath.endsWith(downloadingFileSuffix) && existsSync(filePath)) {
                 // 首先尝试修复文件名中的序号位置
-                const fixedPath = this.fixFileNameWithSuffix(filePath, downloadingFileSuffix)
+                const fixedPath = fixFileNameWithSuffix(filePath, downloadingFileSuffix)
                 let pathToProcess = filePath
 
                 // 如果修复后的路径不同，先重命名到正确的位置
                 if (fixedPath !== filePath) {
-                  const renameOk = this.renamePreserveTimes(filePath, fixedPath)
+                  const renameOk = renamePreserveTimes(filePath, fixedPath)
                   if (renameOk) {
                     console.log(`[LinkCore] Fixed file name structure before categorize: ${filePath} -> ${fixedPath}`)
-                    this.cleanupAria2ControlFiles([filePath, fixedPath])
+                    cleanupAria2ControlFiles([filePath, fixedPath])
                     pathToProcess = fixedPath
                   } else {
                     console.warn(`[LinkCore] Failed to fix file name structure before categorize: ${filePath} -> ${fixedPath}`)
@@ -2862,33 +2870,33 @@
                 }
 
                 const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
-                const ok = this.renamePreserveTimes(pathToProcess, originalPath)
+                const ok = renamePreserveTimes(pathToProcess, originalPath)
                 if (ok) {
                   console.log(`[LinkCore] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
-                  this.cleanupAria2ControlFiles([pathToProcess, originalPath])
+                  cleanupAria2ControlFiles([pathToProcess, originalPath])
                   filePath = originalPath
                 }
               } else {
                 const suffixedPath = filePath + downloadingFileSuffix
                 if (!existsSync(filePath) && existsSync(suffixedPath)) {
                   // 也检查这个路径是否需要修复
-                  const fixedSuffixedPath = this.fixFileNameWithSuffix(suffixedPath, downloadingFileSuffix)
+                  const fixedSuffixedPath = fixFileNameWithSuffix(suffixedPath, downloadingFileSuffix)
                   let pathToProcess = suffixedPath
 
                   if (fixedSuffixedPath !== suffixedPath && existsSync(suffixedPath)) {
-                    const renameOk = this.renamePreserveTimes(suffixedPath, fixedSuffixedPath)
+                    const renameOk = renamePreserveTimes(suffixedPath, fixedSuffixedPath)
                     if (renameOk) {
                       console.log(`[LinkCore] Fixed suffixed file name structure: ${suffixedPath} -> ${fixedSuffixedPath}`)
-                      this.cleanupAria2ControlFiles([suffixedPath, fixedSuffixedPath])
+                      cleanupAria2ControlFiles([suffixedPath, fixedSuffixedPath])
                       pathToProcess = fixedSuffixedPath
                     }
                   }
 
                   const targetPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
-                  const ok = this.renamePreserveTimes(pathToProcess, targetPath)
+                  const ok = renamePreserveTimes(pathToProcess, targetPath)
                   if (ok) {
                     console.log(`[LinkCore] Restored downloading suffix before categorize: ${pathToProcess} -> ${targetPath}`)
-                    this.cleanupAria2ControlFiles([pathToProcess, targetPath])
+                    cleanupAria2ControlFiles([pathToProcess, targetPath])
                     filePath = targetPath
                   }
                 }
@@ -2922,9 +2930,9 @@
         } catch (error) {
           console.error(`[LinkCore] Error during auto categorization: ${error.message}`)
         }
-      },
-      setFileMtimeOnComplete (task, manualPath = null) {
-        const enabled = this.$store.state.preference.config.setFileMtimeOnComplete
+      }
+      function setFileMtimeOnComplete(task, manualPath = null) {
+        const enabled = preferenceConfig.value.setFileMtimeOnComplete
         if (!enabled) {
           return
         }
@@ -2939,8 +2947,8 @@
         } catch (error) {
           console.warn(`[LinkCore] Failed to set file mtime on complete: ${error.message}`)
         }
-      },
-      showTaskCompleteNotify (task, isBT, path) {
+      }
+      function showTaskCompleteNotify(task, isBT, path) {
         let taskName = ''
         try {
           const base = path ? basename(path) : ''
@@ -2952,161 +2960,161 @@
           taskName = getTaskName(task)
         }
         const message = isBT
-          ? this.$t('task.bt-download-complete-message', { taskName })
-          : this.$t('task.download-complete-message', { taskName })
+          ? t('task.bt-download-complete-message', { taskName })
+          : t('task.download-complete-message', { taskName })
         const tips = isBT
-          ? '\n' + this.$t('task.bt-download-complete-tips')
+          ? '\n' + t('task.bt-download-complete-tips')
           : ''
 
-        this.$msg.success(`${message}${tips}`)
+        msg.success(`${message}${tips}`)
 
         // 系统通知由主进程展示（task-download-complete 事件），
         // 渲染进程只负责应用内 toast，避免重复通知
-      },
-      showTaskErrorNotify (task) {
+      }
+      function showTaskErrorNotify(task) {
         const taskName = getTaskName(task)
 
-        const message = this.$t('task.download-fail-message', { taskName })
-        this.$msg.error(message)
+        const message = t('task.download-fail-message', { taskName })
+        msg.error(message)
 
-        if (!this.taskNotification) {
+        if (!taskNotification.value) {
           return
         }
 
         showNativeNotification({
-          title: this.$t('task.download-fail-notify'),
+          title: t('task.download-fail-notify'),
           body: taskName
         })
-      },
-      bindEngineEvents () {
-        api.client.on('onDownloadStart', this.onDownloadStart)
-        api.client.on('onDownloadPause', this.onDownloadPause)
-        api.client.on('onDownloadStop', this.onDownloadStop)
-        api.client.on('onDownloadComplete', this.onDownloadComplete)
-        api.client.on('onDownloadError', this.onDownloadError)
-        api.client.on('onBtDownloadComplete', this.onBtDownloadComplete)
-      },
-      unbindEngineEvents () {
-        api.client.removeListener('onDownloadStart', this.onDownloadStart)
-        api.client.removeListener('onDownloadPause', this.onDownloadPause)
-        api.client.removeListener('onDownloadStop', this.onDownloadStop)
-        api.client.removeListener('onDownloadComplete', this.onDownloadComplete)
-        api.client.removeListener('onDownloadError', this.onDownloadError)
-        api.client.removeListener('onBtDownloadComplete', this.onBtDownloadComplete)
-      },
-      onEngineReconnect () {
+      }
+      function bindEngineEvents() {
+        api.client.on('onDownloadStart', onDownloadStart)
+        api.client.on('onDownloadPause', onDownloadPause)
+        api.client.on('onDownloadStop', onDownloadStop)
+        api.client.on('onDownloadComplete', onDownloadComplete)
+        api.client.on('onDownloadError', onDownloadError)
+        api.client.on('onBtDownloadComplete', onBtDownloadComplete)
+      }
+      function unbindEngineEvents() {
+        api.client.removeListener('onDownloadStart', onDownloadStart)
+        api.client.removeListener('onDownloadPause', onDownloadPause)
+        api.client.removeListener('onDownloadStop', onDownloadStop)
+        api.client.removeListener('onDownloadComplete', onDownloadComplete)
+        api.client.removeListener('onDownloadError', onDownloadError)
+        api.client.removeListener('onBtDownloadComplete', onBtDownloadComplete)
+      }
+      function onEngineReconnect() {
         // WebSocket 重连成功后，旧 socket 上的事件监听器已失效，
         // 必须重新绑定引擎推送事件（onDownloadStart 等）。
-        this.unbindEngineEvents()
-        this.bindEngineEvents()
+        unbindEngineEvents()
+        bindEngineEvents()
 
         // 立即刷新一次任务列表和全局统计，
         // 消除断线期间的 UI 数据空白。
-        this.$store.dispatch('app/fetchGlobalStat')
-        this.$store.dispatch('task/fetchList')
+        appStore.fetchGlobalStat()
+        taskStore.fetchList()
 
         // 重置轮询间隔，避免在 idle interval 下延迟刷新
-        this.$store.dispatch('app/resetInterval')
-        this.kickPolling()
+        appStore.resetInterval()
+        kickPolling()
 
         // 重置连接状态标记
-        this.engineConnectionStable = true
-      },
-      startPolling () {
-        this.stopPolling()
-        this.timer = setTimeout(() => {
+        engineConnectionStable.value = true
+      }
+      function startPolling() {
+        stopPolling()
+        timer = setTimeout(() => {
           try {
-            this.polling()
+            polling()
           } catch (err) {
             // 单次轮询的同步异常不能中断轮询循环，
             // 否则任务列表会永久停止刷新（startPolling 不再被调用）
             console.error('[LinkCore] polling error, loop continues:', err)
           }
-          this.startPolling()
-        }, this.interval)
-      },
-      kickPolling () {
+          startPolling()
+        }, interval.value)
+      }
+      function kickPolling() {
         const now = Date.now()
-        if (this._pollingKickAt && now - this._pollingKickAt < 400) {
+        if (_pollingKickAt && now - _pollingKickAt < 400) {
           return
         }
-        this._pollingKickAt = now
-        this.stopPolling()
-        this.timer = setTimeout(() => {
+        _pollingKickAt = now
+        stopPolling()
+        timer = setTimeout(() => {
           try {
-            this.polling()
+            polling()
           } catch (err) {
             console.error('[LinkCore] polling error, loop continues:', err)
           }
-          this.startPolling()
+          startPolling()
         }, 0)
-      },
-      polling () {
-        this.pollingCount = (this.pollingCount || 0) + 1
+      }
+      function polling() {
+        pollingCount.value = (pollingCount.value || 0) + 1
         // 每30次polling（约30秒）保存一次平均速度
-        if (this.pollingCount % 30 === 0) {
-          this.persistAllActiveTasksAverageSpeed()
+        if (pollingCount.value % 30 === 0) {
+          persistAllActiveTasksAverageSpeed()
         }
 
-        this.maybeEnterIdleInterval()
+        maybeEnterIdleInterval()
 
-        const stat = (this.$store.state.app && this.$store.state.app.stat) ? this.$store.state.app.stat : {}
+        const stat = appStore.stat || {}
         const numActive = Number(stat.numActive || 0)
         const numWaiting = Number(stat.numWaiting || 0)
         const hasActiveOrWaiting = (numActive + numWaiting) > 0
 
-        this.$store.dispatch('app/fetchGlobalStat')
+        appStore.fetchGlobalStat()
         if (hasActiveOrWaiting) {
-          this.$store.dispatch('app/fetchProgress')
+          appStore.fetchProgress()
         } else {
-          this.$store.dispatch('app/clearProgress')
+          appStore.clearProgress()
         }
 
-        this.$store.dispatch('task/fetchList').then(() => {
-          this.sampleAverageSpeedForActiveTasks()
-          this.checkMagnetAlerts()
-          this.checkDataAccessStatus()
-          this.fixResumedCompletedSuffixTasks().catch(() => {})
-          this.fixResumedErroredTasks().catch(() => {})
+        taskStore.fetchList().then(() => {
+          sampleAverageSpeedForActiveTasks()
+          checkMagnetAlerts()
+          checkDataAccessStatus()
+          fixResumedCompletedSuffixTasks().catch(() => {})
+          fixResumedErroredTasks().catch(() => {})
           // 首次轮询后校验待选择文件状态，移除已不存在的任务条目
-          if (!this.pendingFileSelectionSynced) {
-            this.pendingFileSelectionSynced = true
+          if (!pendingFileSelectionSynced.value) {
+            pendingFileSelectionSynced.value = true
             // 用未过滤的全量列表校验：state.taskList 受当前列表类型
             // 与日期筛选影响，可能漏掉任务导致已确认记录被误删，
             // 进而在重启后把已选文件的任务重新标记为待选择。
             api.fetchTaskList({ type: 'all' }).then((allList) => {
-              this.$store.dispatch('task/syncPendingFileSelection', allList || [])
-              this.scanForPendingBtTasks()
+              taskStore.syncPendingFileSelection(allList || [])
+              scanForPendingBtTasks()
             }).catch(() => {
-              const list = this.$store.state.task.taskList || []
-              this.$store.dispatch('task/syncPendingFileSelection', list)
-              this.scanForPendingBtTasks()
+              const list = taskStore.taskList || []
+              taskStore.syncPendingFileSelection(list)
+              scanForPendingBtTasks()
             })
           }
         }).catch(() => {
           // 引擎断线时 fetchList 会 reject，静默忽略
         })
 
-        if (this.taskDetailVisible && this.currentTaskGid) {
+        if (taskDetailVisible.value && currentTaskGid.value) {
           // 只对活跃任务调用 fetchItemWithPeers 或 fetchItem，避免对历史记录任务调用 aria2 API
           // 通过检查任务状态来判断是否为活跃任务
-          const task = this.$store.state.task.currentTaskItem
+          const task = taskStore.currentTaskItem
           if (task) {
             // 检查任务状态，如果是已完成、已失败或已移除状态，不调用 API
             const activeStatuses = ['active', 'waiting', 'paused']
             if (activeStatuses.includes(task.status)) {
-              if (this.currentTaskIsBT && this.enabledFetchPeers) {
-                this.$store.dispatch('task/fetchItemWithPeers', this.currentTaskGid)
+              if (currentTaskIsBT.value && enabledFetchPeers.value) {
+                taskStore.fetchItemWithPeers(currentTaskGid.value)
               } else {
-                this.$store.dispatch('task/fetchItem', this.currentTaskGid)
+                taskStore.fetchItem(currentTaskGid.value)
               }
             }
           }
         }
-      },
-      maybeRestoreSuffixNearCompletion (task) {
+      }
+      function maybeRestoreSuffixNearCompletion(task) {
         try {
-          const suffix = this.$store.state.preference.config.downloadingFileSuffix
+          const suffix = preferenceConfig.value.downloadingFileSuffix
           if (!suffix) return
           const isBT = checkTaskIsBT(task)
           if (isBT) return
@@ -3118,16 +3126,16 @@
           const finalPath = getTaskFullPath(task)
           const suffixedPath = finalPath + suffix
           if (existsSync(suffixedPath) && !existsSync(finalPath)) {
-            const ok = this.renamePreserveTimes(suffixedPath, finalPath)
+            const ok = renamePreserveTimes(suffixedPath, finalPath)
             if (ok) {
               console.log(`[LinkCore] Restored suffix near completion: ${suffixedPath} -> ${finalPath}`)
-              this.cleanupAria2ControlFiles([suffixedPath, finalPath])
+              cleanupAria2ControlFiles([suffixedPath, finalPath])
             }
           }
         } catch (_) {}
-      },
-      restoreSuffixFilesForActiveTasks () {
-        const suffix = this.$store.state.preference.config.downloadingFileSuffix
+      }
+      function restoreSuffixFilesForActiveTasks() {
+        const suffix = preferenceConfig.value.downloadingFileSuffix
         if (!suffix) {
           return
         }
@@ -3165,17 +3173,17 @@
                 if (shouldRestore) {
                   // 如果原文件存在但大小为0，先删除
                   if (existsSync(finalPath)) {
-                    try {
-                      require('fs').unlinkSync(finalPath)
+try {
+unlinkSync(finalPath)
                     } catch (e) {
                       console.warn(`[LinkCore] Failed to remove empty file: ${finalPath}`, e)
                     }
                   }
 
-                  const ok = this.renamePreserveTimes(suffixedPath, finalPath)
+                  const ok = renamePreserveTimes(suffixedPath, finalPath)
                   if (ok) {
                     console.log(`[LinkCore] Restored suffix on startup: ${suffixedPath} -> ${finalPath}`)
-                    this.cleanupAria2ControlFiles([suffixedPath, finalPath])
+                    cleanupAria2ControlFiles([suffixedPath, finalPath])
                   } else {
                     console.warn(`[LinkCore] Failed to restore suffix on startup: ${suffixedPath} -> ${finalPath}`)
                   }
@@ -3186,17 +3194,17 @@
             }
           })
         })
-      },
-      persistAllActiveTasksAverageSpeed () {
-        const list = this.$store.state.task.taskList || []
+      }
+      function persistAllActiveTasksAverageSpeed() {
+        const list = taskStore.taskList || []
         list.forEach(task => {
           if (task.status === TASK_STATUS.ACTIVE) {
-            this.persistAverageSpeedToHistory(task)
+            persistAverageSpeedToHistory(task)
           }
         })
-      },
-      sampleAverageSpeedForActiveTasks () {
-        const list = this.$store.state.task.taskList || []
+      }
+      function sampleAverageSpeedForActiveTasks() {
+        const list = taskStore.taskList || []
         const activeGids = new Set()
         const now = Date.now()
         list.forEach(task => {
@@ -3214,38 +3222,38 @@
 
           const completed = Number(task.completedLength || 0)
           if (!Number.isFinite(completed) || completed < 0) {
-            this.taskSpeedSampleBaseMap[gid] = { ts: now, completed: 0 }
+            taskSpeedSampleBaseMap.value[gid] = { ts: now, completed: 0 }
             return
           }
 
-          const prev = this.taskSpeedSampleBaseMap[gid]
+          const prev = taskSpeedSampleBaseMap.value[gid]
           if (!prev || !Number.isFinite(prev.ts) || !Number.isFinite(prev.completed)) {
-            this.taskSpeedSampleBaseMap[gid] = { ts: now, completed }
+            taskSpeedSampleBaseMap.value[gid] = { ts: now, completed }
             return
           }
 
           const durationMs = now - prev.ts
           const bytes = completed - prev.completed
           if (!(durationMs > 0) || durationMs > 15000 || durationMs < 200 || bytes < 0) {
-            this.taskSpeedSampleBaseMap[gid] = { ts: now, completed }
+            taskSpeedSampleBaseMap.value[gid] = { ts: now, completed }
             return
           }
 
-          this.taskSpeedSampleBaseMap[gid] = { ts: now, completed }
-          this.$store.dispatch('task/addTaskSpeedSample', {
+          taskSpeedSampleBaseMap.value[gid] = { ts: now, completed }
+          taskStore.addTaskSpeedSample({
             gid,
             sample: { bytes, durationMs },
             maxSamples: 60
           })
         })
 
-        Object.keys(this.taskSpeedSampleBaseMap || {}).forEach(gid => {
+        Object.keys(taskSpeedSampleBaseMap.value || {}).forEach(gid => {
           if (!activeGids.has(gid)) {
-            delete this.taskSpeedSampleBaseMap[gid]
+            delete taskSpeedSampleBaseMap.value[gid]
           }
         })
-      },
-      async alertMagnetStatus (task) {
+      }
+      async function alertMagnetStatus(task) {
         try {
           const gid = task.gid
           const detailed = await api.fetchTaskItemWithPeers({ gid })
@@ -3276,10 +3284,10 @@
           } else if (peerCount > 0) {
             phase = 'peers_connected'
           }
-          const cfg = this.$store.state.preference?.config || {}
+          const cfg = preferenceStore?.config || {}
           const dhtListenPort = Number(cfg['dht-listen-port'] || 0)
           const dhtEnabled = dhtListenPort > 0
-          this.$store.dispatch('task/updateMagnetStatus', {
+          taskStore.updateMagnetStatus({
             gid,
             peerCount,
             trackerCount,
@@ -3288,13 +3296,13 @@
             dhtEnabled,
             updatedAt: Date.now()
           })
-          this.magnetAlertedSet.add(gid)
+          magnetAlertedSet.value.add(gid)
         } catch (e) {
           console.warn('alertMagnetStatus fail:', e.message)
         }
-      },
-      checkMagnetAlerts () {
-        const list = this.$store.state.task.taskList || []
+      }
+      function checkMagnetAlerts() {
+        const list = taskStore.taskList || []
         const currentGids = new Set(list.map(t => t && t.gid ? `${t.gid}` : ''))
 
         list.forEach(task => {
@@ -3303,23 +3311,23 @@
           const magnetPending = isMagnetTask(task)
 
           if (magnetPending && zero) {
-            const count = (this.magnetZeroMap[gid] || 0) + 1
-            this.magnetZeroMap[gid] = count
-            const elapsedSec = Math.round(count * (this.interval / 1000))
+            const count = (magnetZeroMap.value[gid] || 0) + 1
+            magnetZeroMap.value[gid] = count
+            const elapsedSec = Math.round(count * (interval.value / 1000))
             // 读取上一状态用于趋势判断
-            const prev = (this.$store.state.task.magnetStatuses || {})[gid] || {}
+            const prev = (taskStore.magnetStatuses || {})[gid] || {}
             const prevPeers = Number(prev.peerCount || 0)
             const peerCount = Number((task.peers || []).length || prevPeers)
             let peerTrend = 'flat'
             if (peerCount > prevPeers) peerTrend = 'up'
             else if (peerCount < prevPeers) peerTrend = 'down'
 
-            const cfg = this.$store.state.preference?.config || {}
+            const cfg = preferenceStore?.config || {}
             const limitStr = `${cfg['max-overall-download-limit'] || cfg.maxOverallDownloadLimit || 0}`
             const globalLimitLow = !(limitStr === '0' || Number(limitStr) >= 102400)
             const pauseMetadata = !!(cfg['pause-metadata'] || cfg.pauseMetadata)
 
-            this.$store.dispatch('task/updateMagnetStatus', {
+            taskStore.updateMagnetStatus({
               gid,
               fetching: true,
               elapsedSec,
@@ -3329,19 +3337,19 @@
               globalLimitLow,
               pauseMetadata
             })
-            if (count >= 3 && !this.magnetAlertedSet.has(gid)) {
-              this.alertMagnetStatus(task)
+            if (count >= 3 && !magnetAlertedSet.value.has(gid)) {
+              alertMagnetStatus(task)
             }
           } else {
-            this.magnetZeroMap[gid] = 0
+            magnetZeroMap.value[gid] = 0
             if (!magnetPending) {
-              const wasMagnet = !!(this.$store.state.task.magnetStatuses || {})[gid]
-              this.$store.dispatch('task/clearMagnetStatus', gid)
-              if (this.magnetAlertedSet.has(gid)) {
-                this.magnetAlertedSet.delete(gid)
+              const wasMagnet = !!(taskStore.magnetStatuses || {})[gid]
+              taskStore.clearMagnetStatus(gid)
+              if (magnetAlertedSet.value.has(gid)) {
+                magnetAlertedSet.value.delete(gid)
               }
               if (wasMagnet) {
-                this.handleMagnetResolved(task)
+                handleMagnetResolved(task)
               }
             }
           }
@@ -3350,31 +3358,31 @@
         // 检测已从任务列表中消失的磁力任务（元数据下载完成后原任务变为已完成被移除）
         // 这种情况下 checkMagnetAlerts 的主循环无法检测到磁力→非磁力的转变，
         // 需要在此补充检测，确保 handleMagnetResolved 被调用以设置 pendingFileSelection
-        Object.keys(this.magnetZeroMap).forEach(gid => {
+        Object.keys(magnetZeroMap.value).forEach(gid => {
           if (!gid || currentGids.has(gid)) return
-          const count = this.magnetZeroMap[gid] || 0
+          const count = magnetZeroMap.value[gid] || 0
           if (count <= 0) return
           // 任务已不在列表中但曾被追踪为磁力任务，触发 resolved 处理
-          this.magnetZeroMap[gid] = 0
-          if (!this.magnetResolvedSet.has(gid)) {
-            this.handleMagnetResolved({ gid })
+          magnetZeroMap.value[gid] = 0
+          if (!magnetResolvedSet.value.has(gid)) {
+            handleMagnetResolved({ gid })
           }
         })
-      },
-      handleMagnetResolved (task) {
+      }
+      function handleMagnetResolved(task) {
         const gid = task && task.gid ? `${task.gid}` : ''
         if (!gid) return
-        if (this.magnetResolvedSet.has(gid)) {
+        if (magnetResolvedSet.value.has(gid)) {
           return
         }
-        this.magnetResolvedSet.add(gid)
+        magnetResolvedSet.value.add(gid)
         // 用户此前已确认过文件选择的任务（confirmedFileSelection），
         // 应用重启后引擎重新解析元数据时不应再回到"待选择文件"状态，
         // 直接恢复下载即可（select-file 选项已随会话保存）。
         // 注意：确认记录需在校验时实时读取——磁力重启后 gid 漂移，
         // syncPendingFileSelection 会按 infoHash 把记录改挂到新 gid，
         // 早于异步回调取快照会读到过期数据。
-        const getConfirmed = () => this.$store.state.task.confirmedFileSelection || {}
+        const getConfirmed = () => taskStore.confirmedFileSelection || {}
         api.fetchTaskItem({ gid }).then((detail) => {
           const followedBy = detail && detail.followedBy ? detail.followedBy : []
           if (followedBy.length) {
@@ -3385,8 +3393,8 @@
                   if (isTaskFileSelectionConfirmed(getConfirmed(), newTask || detail)) {
                     api.resumeTask({ gid: newGid }).catch(() => {})
                   } else {
-                    this.$store.dispatch('task/setPendingFileSelection', newGid)
-                    this.notifyPendingFileSelection(newTask || detail)
+                    taskStore.setPendingFileSelection(newGid)
+                    notifyPendingFileSelection(newTask || detail)
                   }
                 } else {
                   api.resumeTask({ gid: newGid }).catch(() => {})
@@ -3402,8 +3410,8 @@
               if (isTaskFileSelectionConfirmed(getConfirmed(), detail)) {
                 api.resumeTask({ gid }).catch(() => {})
               } else {
-                this.$store.dispatch('task/setPendingFileSelection', gid)
-                this.notifyPendingFileSelection(detail)
+                taskStore.setPendingFileSelection(gid)
+                notifyPendingFileSelection(detail)
               }
             } else if (files.length <= 1 && detail.status === TASK_STATUS.PAUSED) {
               api.resumeTask({ gid }).catch(() => {})
@@ -3411,13 +3419,13 @@
           }
         }).catch(() => {
           // 原始磁力任务可能已从引擎中移除，扫描任务列表查找新出现的暂停 BT 任务
-          this.scanForPendingBtTasks()
+          scanForPendingBtTasks()
         })
-      },
-      scanForPendingBtTasks () {
-        const list = this.$store.state.task.taskList || []
-        const pending = this.$store.state.task.pendingFileSelection || {}
-        const confirmed = this.$store.state.task.confirmedFileSelection || {}
+      }
+      function scanForPendingBtTasks() {
+        const list = taskStore.taskList || []
+        const pending = taskStore.pendingFileSelection || {}
+        const confirmed = taskStore.confirmedFileSelection || {}
         list.forEach(task => {
           const taskGid = task && task.gid ? `${task.gid}` : ''
           if (!taskGid || pending[taskGid] || isTaskFileSelectionConfirmed(confirmed, task)) return
@@ -3430,60 +3438,60 @@
           // 避免将已选择文件、正在下载但被引擎暂停的任务误标记为待选择文件
           const completed = Number(task.completedLength || 0)
           if (completed > 0) return
-          this.$store.dispatch('task/setPendingFileSelection', taskGid)
-          this.notifyPendingFileSelection(task)
+          taskStore.setPendingFileSelection(taskGid)
+          notifyPendingFileSelection(task)
         })
-      },
-      notifyPendingFileSelection (task) {
-        const message = this.$t('task.pending-file-selection-message', {
+      }
+      function notifyPendingFileSelection(task) {
+        const message = t('task.pending-file-selection-message', {
           taskName: getTaskName(task)
         })
-        this.$msg.info(message)
+        msg.info(message)
 
-        const notifyTitle = this.$t('task.pending-file-selection-notify')
+        const notifyTitle = t('task.pending-file-selection-notify')
         showNativeNotification({
           title: notifyTitle,
           body: getTaskName(task),
           onClick: () => {
-            this.$electron.ipcRenderer.send('command', 'application:show', { page: 'index' })
+            ipcRenderer.send('command', 'application:show', { page: 'index' })
           }
         })
-      },
-      checkDataAccessStatus () {
-        const list = this.$store.state.task.taskList || []
+      }
+      function checkDataAccessStatus() {
+        const list = taskStore.taskList || []
         const activeStatuses = ['active']
         list.forEach(task => {
           const gid = task.gid
           const status = task.status
           const isMagnet = isMagnetTask(task)
           if (!activeStatuses.includes(status) || isMagnet) {
-            this.dataAccessZeroMap[gid] = 0
-            this.dataAccessLastCompletedMap[gid] = undefined
-            this.$store.dispatch('task/clearDataAccessStatus', gid)
+            dataAccessZeroMap.value[gid] = 0
+            dataAccessLastCompletedMap.value[gid] = undefined
+            taskStore.clearDataAccessStatus(gid)
             return
           }
           const completed = Number(task.completedLength || 0)
           const speedZero = Number(task.downloadSpeed) === 0
-          const lastCompleted = Number(this.dataAccessLastCompletedMap[gid] || 0)
+          const lastCompleted = Number(dataAccessLastCompletedMap.value[gid] || 0)
           if (!speedZero || completed > lastCompleted) {
-            this.dataAccessLastCompletedMap[gid] = completed
-            this.dataAccessZeroMap[gid] = 0
-            this.$store.dispatch('task/clearDataAccessStatus', gid)
+            dataAccessLastCompletedMap.value[gid] = completed
+            dataAccessZeroMap.value[gid] = 0
+            taskStore.clearDataAccessStatus(gid)
             return
           }
-          const count = (this.dataAccessZeroMap[gid] || 0) + 1
-          this.dataAccessZeroMap[gid] = count
-          const elapsedSec = Math.round(count * (this.interval / 1000))
-          this.$store.dispatch('task/updateDataAccessStatus', {
+          const count = (dataAccessZeroMap.value[gid] || 0) + 1
+          dataAccessZeroMap.value[gid] = count
+          const elapsedSec = Math.round(count * (interval.value / 1000))
+          taskStore.updateDataAccessStatus({
             gid,
             elapsedSec,
             updatedAt: Date.now()
           })
         })
 
-        this.pruneInternalMapsByTaskList(list)
-      },
-      pruneInternalMapsByTaskList (list) {
+        pruneInternalMapsByTaskList(list)
+      }
+      function pruneInternalMapsByTaskList(list) {
         const gids = Array.isArray(list) ? list.map(t => `${t && t.gid ? t.gid : ''}`).filter(Boolean) : []
         const gidSet = new Set(gids)
 
@@ -3516,108 +3524,108 @@
           return next
         }
 
-        this.magnetZeroMap = pruneObj(this.magnetZeroMap)
-        this.dataAccessZeroMap = pruneObj(this.dataAccessZeroMap)
-        this.dataAccessLastCompletedMap = pruneObj(this.dataAccessLastCompletedMap)
+        magnetZeroMap.value = pruneObj(magnetZeroMap.value)
+        dataAccessZeroMap.value = pruneObj(dataAccessZeroMap.value)
+        dataAccessLastCompletedMap.value = pruneObj(dataAccessLastCompletedMap.value)
 
-        if (this.magnetAlertedSet && this.magnetAlertedSet.size > 0) {
-          Array.from(this.magnetAlertedSet).forEach(gid => {
+        if (magnetAlertedSet.value && magnetAlertedSet.value.size > 0) {
+          Array.from(magnetAlertedSet.value).forEach(gid => {
             if (!gidSet.has(`${gid}`)) {
-              this.magnetAlertedSet.delete(gid)
+              magnetAlertedSet.value.delete(gid)
             }
           })
         }
 
-        if (this.magnetResolvedSet && this.magnetResolvedSet.size > 0) {
-          Array.from(this.magnetResolvedSet).forEach(gid => {
+        if (magnetResolvedSet.value && magnetResolvedSet.value.size > 0) {
+          Array.from(magnetResolvedSet.value).forEach(gid => {
             if (!gidSet.has(`${gid}`)) {
-              this.magnetResolvedSet.delete(gid)
+              magnetResolvedSet.value.delete(gid)
             }
           })
         }
 
-        if (this.downloadStartNotifiedGids && this.downloadStartNotifiedGids.size > 0) {
-          Array.from(this.downloadStartNotifiedGids).forEach(gid => {
+        if (downloadStartNotifiedGids.value && downloadStartNotifiedGids.value.size > 0) {
+          Array.from(downloadStartNotifiedGids.value).forEach(gid => {
             if (!gidSet.has(`${gid}`)) {
-              this.downloadStartNotifiedGids.delete(gid)
+              downloadStartNotifiedGids.value.delete(gid)
             }
           })
-          capSet(this.downloadStartNotifiedGids, 2000)
+          capSet(downloadStartNotifiedGids.value, 2000)
         }
 
-        if (this._resumedCompletedFixedGids && this._resumedCompletedFixedGids.size > 0) {
-          Array.from(this._resumedCompletedFixedGids).forEach(gid => {
+        if (_resumedCompletedFixedGids && _resumedCompletedFixedGids.size > 0) {
+          Array.from(_resumedCompletedFixedGids).forEach(gid => {
             if (!gidSet.has(`${gid}`)) {
-              this._resumedCompletedFixedGids.delete(gid)
+              _resumedCompletedFixedGids.delete(gid)
             }
           })
-          capSet(this._resumedCompletedFixedGids, 2000)
+          capSet(_resumedCompletedFixedGids, 2000)
         }
 
-        if (this._bilibiliMergeNotified && this._bilibiliMergeNotified.size > 0) {
-          Array.from(this._bilibiliMergeNotified).forEach(gid => {
+        if (_bilibiliMergeNotified && _bilibiliMergeNotified.size > 0) {
+          Array.from(_bilibiliMergeNotified).forEach(gid => {
             if (!gidSet.has(`${gid}`)) {
-              this._bilibiliMergeNotified.delete(gid)
+              _bilibiliMergeNotified.delete(gid)
             }
           })
-          capSet(this._bilibiliMergeNotified, 500)
+          capSet(_bilibiliMergeNotified, 500)
         }
-      },
-      resolveErrorReason (errorCode, errorMessage = '') {
+      }
+      function resolveErrorReason(errorCode, errorMessage = '') {
         const code = Number(errorCode)
         if (!code) {
           return ''
         }
         const msg = `${errorMessage || ''}`
         if (code === 3) {
-          return this.$t('task.error-reason-not-found')
+          return t('task.error-reason-not-found')
         }
         if (code === 1) {
           // Fake-IP 错误（代理软件）
           if (/fake-ip|198\.18\.|198\.19\./i.test(msg)) {
-            return this.$t('task.error-reason-fake-ip')
+            return t('task.error-reason-fake-ip')
           }
           // DNS 解析错误
           if (/DNS|name resolution|hostname|getaddrinfo|no data/i.test(msg)) {
-            return this.$t('task.error-reason-dns')
+            return t('task.error-reason-dns')
           }
           // SSL/TLS 错误
           if (/SSL|TLS|certificate/i.test(msg)) {
-            return this.$t('task.error-reason-ssl')
+            return t('task.error-reason-ssl')
           }
           // 连接超时
           if (/timeout|timed out/i.test(msg)) {
-            return this.$t('task.error-reason-timeout')
+            return t('task.error-reason-timeout')
           }
           // 连接被拒绝
           if (/connection refused|refused/i.test(msg)) {
-            return this.$t('task.error-reason-refused')
+            return t('task.error-reason-refused')
           }
-          return this.$t('task.error-reason-network')
+          return t('task.error-reason-network')
         }
         if (code === 14 || code === 15) {
           // 14: 重命名文件失败 / 15: 打开已存在文件失败。
           // macOS 上应用更新后 TCC 授权失效，引擎打开/重命名下载目录中的
           // 文件会返回 EPERM (Operation not permitted)，需引导用户重新授权。
           if (/operation not permitted|permission denied|not permitted/i.test(msg)) {
-            return this.$t('task.error-reason-permission')
+            return t('task.error-reason-permission')
           }
-          return this.$t('task.error-reason-disk')
+          return t('task.error-reason-disk')
         }
         if (code === 16) {
           if (/Permission denied|permission/i.test(msg)) {
-            return this.$t('task.error-reason-permission')
+            return t('task.error-reason-permission')
           }
           if (/No space left|disk full/i.test(msg)) {
-            return this.$t('task.error-reason-disk-full')
+            return t('task.error-reason-disk-full')
           }
-          return this.$t('task.error-reason-disk')
+          return t('task.error-reason-disk')
         }
-        return this.$t('task.error-reason-generic')
-      },
+        return t('task.error-reason-generic')
+      }
 
       // BT任务错误恢复机制
-      async handleBtErrorRecovery (task, errorCode, errorMessage) {
+      async function handleBtErrorRecovery(task, errorCode, errorMessage) {
         const code = Number(errorCode)
         const msg = `${errorMessage || ''}`
         const gid = task && task.gid ? `${task.gid}` : ''
@@ -3629,18 +3637,18 @@
         // 按 gid 跟踪重试定时器：同一任务多次报错时替换旧定时器，
         // 组件销毁时统一清理，避免对已删除任务触发无效恢复
         const scheduleRetry = (delay) => {
-          if (!this._btRetryTimers) {
-            this._btRetryTimers = new Map()
+          if (!_btRetryTimers) {
+            _btRetryTimers = new Map()
           }
-          const existing = this._btRetryTimers.get(gid)
+          const existing = _btRetryTimers.get(gid)
           if (existing) {
             clearTimeout(existing)
           }
           const timer = setTimeout(() => {
-            this._btRetryTimers.delete(gid)
+            _btRetryTimers.delete(gid)
             api.resumeTask({ gid }).catch(() => {})
           }, delay)
-          this._btRetryTimers.set(gid, timer)
+          _btRetryTimers.set(gid, timer)
         }
 
         // 针对特定错误类型的恢复策略
@@ -3668,38 +3676,38 @@
               // 先尝试自动修复：清除旧实例文件上的 com.apple.provenance 等
               // 来源属性（必要时复制重建文件），修复成功后立即重试任务，
               // 无需用户手动处理。
-              const failedPath = this.extractOpenFailedFilePath(msg)
+              const failedPath = extractOpenFailedFilePath(msg)
               let repaired = false
               if (failedPath) {
-                repaired = await this.tryRepairDownloadFilePermission(gid, failedPath)
+                repaired = await tryRepairDownloadFilePermission(gid, failedPath)
               }
               if (repaired) {
                 console.log(`[LinkCore] BT task ${gid} file permission repaired, resuming now`)
                 scheduleRetry(2000)
                 break
               }
-              if (!this._permNotifiedGids) {
-                this._permNotifiedGids = new Set()
+              if (!_permNotifiedGids) {
+                _permNotifiedGids = new Set()
               }
-              if (!this._permNotifiedGids.has(gid)) {
-                this._permNotifiedGids.add(gid)
-                this.$msg.warning(this.$t('task.error-reason-permission-macos'))
+              if (!_permNotifiedGids.has(gid)) {
+                _permNotifiedGids.add(gid)
+                msg.warning(t('task.error-reason-permission-macos'))
               }
             } else {
-              this.$msg.warning(this.$t('task.error-reason-permission'))
+              msg.warning(t('task.error-reason-permission'))
             }
             console.log(`[LinkCore] BT task ${gid} permission denied, will retry in 120 seconds`)
             scheduleRetry(120000)
           } else if (/No space left|disk full/i.test(msg)) {
-            this.$msg.warning('磁盘空间不足，请清理磁盘空间后重新开始下载')
+            msg.warning('磁盘空间不足，请清理磁盘空间后重新开始下载')
           }
           break
 
         case 16: // 文件系统错误
           if (/No space left|disk full/i.test(msg)) {
-            this.$msg.warning('磁盘空间不足，请清理磁盘空间后重新开始下载')
+            msg.warning('磁盘空间不足，请清理磁盘空间后重新开始下载')
           } else if (/Permission denied|permission/i.test(msg)) {
-            this.$msg.warning('文件权限错误，请检查下载目录权限')
+            msg.warning('文件权限错误，请检查下载目录权限')
           }
           break
 
@@ -3710,30 +3718,28 @@
             scheduleRetry(60000)
           }
         }
-      },
-      stopPolling () {
-        clearTimeout(this.timer)
-        this.timer = null
-      },
-      async fixResumedCompletedSuffixTasks () {
-        const cfg = this.$store.state.preference && this.$store.state.preference.config
-          ? this.$store.state.preference.config
-          : {}
+      }
+      function stopPolling() {
+        clearTimeout(timer)
+        timer = null
+      }
+      async function fixResumedCompletedSuffixTasks() {
+        const cfg = preferenceConfig.value || {}
         const suffix = cfg.downloadingFileSuffix || ''
         if (!suffix) {
           return
         }
 
         const now = Date.now()
-        if (this._resumedCompletedFixing) {
+        if (_resumedCompletedFixing) {
           return
         }
-        if (this._resumedCompletedLastRun && now - this._resumedCompletedLastRun < 5000) {
+        if (_resumedCompletedLastRun && now - _resumedCompletedLastRun < 5000) {
           return
         }
-        this._resumedCompletedLastRun = now
+        _resumedCompletedLastRun = now
 
-        const list = this.$store.state.task.taskList || []
+        const list = taskStore.taskList || []
         const activeStatuses = new Set([TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED])
         const history = taskHistory.getHistory()
         if (!Array.isArray(history) || history.length === 0) {
@@ -3757,13 +3763,13 @@
           return
         }
 
-        this._resumedCompletedFixing = true
+        _resumedCompletedFixing = true
         try {
           let changed = false
           for (const task of candidates) {
             const gid = task.gid ? `${task.gid}` : ''
             if (!gid) continue
-            if (this._resumedCompletedFixedGids && this._resumedCompletedFixedGids.has(gid)) {
+            if (_resumedCompletedFixedGids && _resumedCompletedFixedGids.has(gid)) {
               continue
             }
 
@@ -3791,10 +3797,10 @@
               continue
             }
 
-            if (!this._resumedCompletedFixedGids) {
-              this._resumedCompletedFixedGids = new Set()
+            if (!_resumedCompletedFixedGids) {
+              _resumedCompletedFixedGids = new Set()
             }
-            this._resumedCompletedFixedGids.add(gid)
+            _resumedCompletedFixedGids.add(gid)
 
             try {
               // 检查是否为元数据任务 - 这些任务不应该保存到历史记录
@@ -3819,26 +3825,26 @@
           }
 
           if (changed) {
-            await this.$store.dispatch('task/fetchList')
+            await taskStore.fetchList()
           }
         } finally {
-          this._resumedCompletedFixing = false
+          _resumedCompletedFixing = false
         }
-      },
-      async fixResumedErroredTasks () {
+      }
+      async function fixResumedErroredTasks() {
         // 引擎通过 save-session 保存 error/unfinished 下载，应用重启后
         // 引擎会把已失败的任务恢复为 waiting 并重新开始下载（或恢复为
         // paused）。这里把历史记录为 error 且引擎仍在队列中的任务移除，
         // 保持 error 状态。注意：不能读 taskList——_mergeHistoryToTasks
         // 已把这类任务强制显示为 error，会漏掉真正的候选。
         const now = Date.now()
-        if (this._resumedErrorFixing) {
+        if (_resumedErrorFixing) {
           return
         }
-        if (this._resumedErrorLastRun && now - this._resumedErrorLastRun < 5000) {
+        if (_resumedErrorLastRun && now - _resumedErrorLastRun < 5000) {
           return
         }
-        this._resumedErrorLastRun = now
+        _resumedErrorLastRun = now
 
         const history = taskHistory.getHistory()
         if (!Array.isArray(history) || history.length === 0) {
@@ -3883,19 +3889,19 @@
           return
         }
 
-        this._resumedErrorFixing = true
+        _resumedErrorFixing = true
         try {
           let changed = false
           for (const task of candidates) {
             const gid = task.gid ? `${task.gid}` : ''
             if (!gid) continue
-            if (this._resumedErrorFixedGids && this._resumedErrorFixedGids.has(gid)) {
+            if (_resumedErrorFixedGids && _resumedErrorFixedGids.has(gid)) {
               continue
             }
-            if (!this._resumedErrorFixedGids) {
-              this._resumedErrorFixedGids = new Set()
+            if (!_resumedErrorFixedGids) {
+              _resumedErrorFixedGids = new Set()
             }
-            this._resumedErrorFixedGids.add(gid)
+            _resumedErrorFixedGids.add(gid)
 
             console.log(`[LinkCore] Stopping auto-resumed errored task ${gid} (engine status: ${task.status || ''})`)
             // 从引擎队列移除（不删除文件），保留本地历史记录，
@@ -3914,104 +3920,73 @@
           }
 
           if (changed) {
-            await this.$store.dispatch('task/fetchList')
+            await taskStore.fetchList()
           }
         } finally {
-          this._resumedErrorFixing = false
+          _resumedErrorFixing = false
         }
       }
-    },
-    created () {
-      if (this.isPreferenceWindow()) {
+// --- Lifecycle ---
+onMounted(() => {
+      if (isPreferenceWindow()) {
         return
       }
-      // 加载持久化的待选择文件状态，确保应用重启后能恢复
-      this.$store.dispatch('task/loadPendingFileSelection')
-      this.bindEngineEvents()
-      // 监听 WebSocket 重连事件，重连后重新绑定引擎事件并刷新数据
-      api.client.on('reconnect', this.onEngineReconnect)
-      // macOS：主动请求通知权限（尽力而为）。部分 Electron 版本
-      // requestPermission 会触发系统权限弹窗；即使不弹窗，主进程的
-      // 原生通知在首次展示时系统也会自动弹出权限申请。
-      if (is.macOS() && typeof Notification !== 'undefined' && typeof Notification.requestPermission === 'function') {
-        try {
-          const p = Notification.requestPermission()
-          if (p && typeof p.catch === 'function') {
-            p.catch(() => {})
-          }
-        } catch (_) {}
-      }
-      this._resumedCompletedFixing = false
-      this._resumedCompletedLastRun = 0
-      this._resumedCompletedFixedGids = new Set()
-      this._resumedErrorFixing = false
-      this._resumedErrorLastRun = 0
-      this._resumedErrorFixedGids = new Set()
-      this._bilibiliMergeNotified = new Set()
-      this._dashMergeJobs = new Map()
-      this._pollingKickAt = 0
-    },
-    mounted () {
-      if (this.isPreferenceWindow()) {
-        return
-      }
+      // 绑定引擎推送事件（onDownloadStart 等），
+      // 必须在轮询启动前完成，否则任务开始/完成等事件无法驱动即时刷新
+      bindEngineEvents()
+      api.client.on('reconnect', onEngineReconnect)
+
       // 保存定时器句柄，防止组件在 100ms 内被销毁后轮询"复活"
-      this._bootTimer = setTimeout(() => {
-        this._bootTimer = null
+      _bootTimer = setTimeout(() => {
+        _bootTimer = null
         // 引擎启动早期可能尚未就绪（主进程 RPC 走 HTTP 兜底），
         // 获取失败不应产生未捕获的 Promise 异常，静默降级即可
-        this.$store.dispatch('app/fetchEngineInfo').catch((err) => {
+        appStore.fetchEngineInfo().catch((err) => {
           console.warn('[LinkCore] fetch engine info failed:', err && err.message ? err.message : err)
         })
-        this.$store.dispatch('app/fetchEngineOptions')
+        appStore.fetchEngineOptions()
 
-        this.startPolling()
+        startPolling()
       }, 100)
 
-      this._visibilityHandler = () => {
-        this.maybeEnterIdleInterval()
+      _visibilityHandler = () => {
+        maybeEnterIdleInterval()
         if (typeof document !== 'undefined' && document && !document.hidden) {
-          this.kickPolling()
+          kickPolling()
         }
       }
       if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') {
-        document.addEventListener('visibilitychange', this._visibilityHandler)
+        document.addEventListener('visibilitychange', _visibilityHandler)
       }
-    },
-    destroyed () {
-      if (this.isPreferenceWindow()) {
+})
+
+onUnmounted(() => {
+      if (isPreferenceWindow()) {
         return
       }
-      if (this._bootTimer) {
-        clearTimeout(this._bootTimer)
-        this._bootTimer = null
+      if (_bootTimer) {
+        clearTimeout(_bootTimer)
+        _bootTimer = null
       }
-      // 清理 BT 错误恢复的重试定时器
-      if (this._btRetryTimers && this._btRetryTimers.size > 0) {
-        this._btRetryTimers.forEach((timer) => {
+      if (_btRetryTimers && _btRetryTimers.size > 0) {
+        _btRetryTimers.forEach((timer) => {
           clearTimeout(timer)
         })
-        this._btRetryTimers.clear()
+        _btRetryTimers.clear()
       }
-      // 清理分片合并的重试定时器
-      if (this._mergeRetryTimers && this._mergeRetryTimers.size > 0) {
-        this._mergeRetryTimers.forEach((timer) => {
-          clearTimeout(timer)
-        })
-        this._mergeRetryTimers.clear()
+      clearAllMergeRetryTimers()
+      taskStore.saveSession()
+
+      unbindEngineEvents()
+      api.client.removeListener('reconnect', onEngineReconnect)
+
+      stopPolling()
+
+      if (_visibilityHandler && typeof document !== 'undefined' && document && typeof document.removeEventListener === 'function') {
+        document.removeEventListener('visibilitychange', _visibilityHandler)
       }
-      this.$store.dispatch('task/saveSession')
+})
 
-      this.unbindEngineEvents()
-      api.client.removeListener('reconnect', this.onEngineReconnect)
-
-      this.stopPolling()
-
-      if (this._visibilityHandler && typeof document !== 'undefined' && document && typeof document.removeEventListener === 'function') {
-        document.removeEventListener('visibilitychange', this._visibilityHandler)
-      }
-    }
-  }
 </script>
 
 <style>

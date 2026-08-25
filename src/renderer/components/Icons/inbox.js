@@ -4,15 +4,9 @@ Icon.register({
   'inbox': {
     'width': 24,
     'height': 24,
-    'raw': `<polyline data-cap="butt" fill="none" stroke-miterlimit="10" points="23,15 16,15 16,18 8,18 8,15 1,15 "/>
-      <line data-cap="butt" fill="none" stroke-miterlimit="10" x1="12" y1="1" x2="12" y2="11"/>
-      <polyline fill="none" stroke-miterlimit="10" points="19,6 20,6 23,15 23,23 1,23 1,15 4,6 5,6 "/>
-      <polyline fill="none" stroke-miterlimit="10" points=" 15,8 12,11 9,8 "/>`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '1.5'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+    </g>`
   }
 })

@@ -1,6 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { app } from 'electron'
 import is from 'electron-is'
+// 与 index.js 的 initialize() 保持同一份 bundle 内实例；
+// 若此处用运行时 require()，会加载 node_modules 里的另一份拷贝，
+// 导致 enable() 写入的缓存与 bundle 内 IPC 检查的不是同一个，remote 调用全部失败
+import { enable as enableRemote } from '@electron/remote/main'
 
 import ExceptionHandler from './core/ExceptionHandler'
 import logger from './core/LogManager'
@@ -73,7 +77,7 @@ export default class Launcher extends EventEmitter {
 
   handleRendererRemote () {
     app.on('browser-window-created', (_, window) => {
-      require('@electron/remote/main').enable(window.webContents)
+      enableRemote(window.webContents)
     })
   }
 
@@ -174,12 +178,7 @@ export default class Launcher extends EventEmitter {
     app.on('activate', () => {
       if (global.application) {
         logger.info('[LinkCore] activate')
-        // init 失败后 windowManager 可能未初始化，尝试重新 init
-        if (!global.application.windowManager) {
-          global.application.retryStart('index')
-        } else {
-          global.application.showPage('index')
-        }
+        global.application.handleActivate()
       }
     })
   }

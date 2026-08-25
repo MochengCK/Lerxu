@@ -19,474 +19,418 @@
   </nav>
 </template>
 
-<script>
-  import { mapState, mapActions } from 'vuex'
-  import '@/components/Icons/preference-basic'
-  import '@/components/Icons/preference-advanced'
-  import '@/components/Icons/preference-appearance'
-  import '@/components/Icons/preference-transfer'
-  import '@/components/Icons/preference-task'
-  import '@/components/Icons/preference-file'
-  import '@/components/Icons/preference-bt'
-  import '@/components/Icons/preference-ed2k'
+<script setup>
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useAppStore } from '@/store/app'
+import { usePreferenceStore } from '@/store/preference'
+import { storeToRefs } from 'pinia'
+import { ipcRenderer } from 'electron'
+import '@/components/Icons/preference-basic'
+import '@/components/Icons/preference-advanced'
+import '@/components/Icons/preference-appearance'
+import '@/components/Icons/preference-transfer'
+import '@/components/Icons/preference-task'
+import '@/components/Icons/preference-file'
+import '@/components/Icons/preference-bt'
+import '@/components/Icons/preference-ed2k'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 
-  export default {
-    name: 'mo-preference-subnav',
-    props: {
-      current: {
-        type: String,
-        default: 'basic'
-      }
-    },
-    data () {
-      return {
-        appVersion: '',
-        sliderTop: 0,
-        sliderHeight: 36
-      }
-    },
-    computed: {
-      ...mapState('app', ['isCheckingUpdate']),
-      ...mapState('preference', ['updateAvailable', 'newVersion', 'isDownloadingUpdate', 'updateDownloaded', 'downloadProgress', 'downloadTotal', 'downloadTransferred', 'releaseNotes']),
-      preferenceBasePath () {
-        const path = `${this.$route.path || ''}`
-        return path.startsWith('/preference-window') ? '/preference-window' : '/preference'
-      },
-      isStandalone () {
-        return this.preferenceBasePath === '/preference-window'
-      },
-      title () {
-        return this.$t('subnav.preferences')
-      },
-      subnavItems () {
-        return [
-          { key: 'basic', title: this.$t('preferences.basic'), icon: 'preference-basic' },
-          { key: 'appearance', title: this.$t('preferences.appearance'), icon: 'preference-appearance' },
-          { key: 'transfer', title: this.$t('preferences.transfer-settings'), icon: 'preference-transfer' },
-          { key: 'bt', title: this.$t('preferences.bt-settings'), icon: 'preference-bt' },
-          { key: 'ed2k', title: this.$t('preferences.ed2k-settings'), icon: 'preference-ed2k' },
-          { key: 'task', title: this.$t('preferences.task-manage'), icon: 'preference-task' },
-          { key: 'file', title: this.$t('preferences.file-manage'), icon: 'preference-file' },
-          { key: 'advanced', title: this.$t('preferences.advanced'), icon: 'preference-advanced' }
-        ]
-      },
-      isChecking () {
-        return this.isCheckingUpdate
-      },
-      currentIndex () {
-        return this.subnavItems.findIndex(item => item.key === this.current)
-      },
-      sliderStyle () {
-        const index = this.currentIndex
-        if (index === -1) return { display: 'none' }
-        const top = Number.isFinite(this.sliderTop) ? this.sliderTop : 0
-        const height = Number.isFinite(this.sliderHeight) ? this.sliderHeight : 36
-        return {
-          transform: `translateY(${top}px)`,
-          height: `${height}px`
-        }
-      }
-    },
-    async mounted () {
-      // 获取应用版本信息
-      try {
-        const appConfig = await this.$electron.ipcRenderer.invoke('get-app-config')
-        this.appVersion = appConfig.version
-      } catch (error) {
-        console.error('[LinkCore] Failed to get app version:', error)
-      }
+const { t } = i18n.global
+const route = useRoute()
+const router = useRouter()
+const instance = getCurrentInstance()
 
-      // 从主进程获取当前实时更新状态
-      try {
-        const updateStatus = await this.$electron.ipcRenderer.invoke('get-update-status')
+const appStore = useAppStore()
+const preferenceStore = usePreferenceStore()
 
-        // 同步检查状态
-        if (updateStatus.isChecking) {
-          this.updateCheckingUpdate(true)
-        } else {
-          this.updateCheckingUpdate(false)
-        }
+const { isCheckingUpdate } = storeToRefs(appStore)
+const { updateAvailable, newVersion, isDownloadingUpdate, updateDownloaded, downloadProgress, downloadTotal, downloadTransferred, releaseNotes } = storeToRefs(preferenceStore)
 
-        // 同步下载状态
-        this.updateIsDownloadingUpdate(updateStatus.isDownloading)
-        this.updateUpdateDownloaded(updateStatus.updateDownloaded)
+const props = defineProps({
+  current: {
+    type: String,
+    default: 'basic'
+  }
+})
 
-        if (updateStatus.isDownloading) {
-          this.updateDownloadProgress(updateStatus.downloadProgress || 0)
-          this.updateDownloadSize({
-            total: updateStatus.downloadTotal || 0,
-            transferred: updateStatus.downloadTransferred || 0
-          })
-          if (updateStatus.newVersion) {
-            this.updateNewVersion(updateStatus.newVersion)
-          }
-          if (updateStatus.releaseNotes) {
-            this.updateReleaseNotes(updateStatus.releaseNotes)
-          }
-          this.updateUpdateAvailable(false)
-          this.updateLastCheckUpdateTime(Date.now())
-        } else if (updateStatus.updateDownloaded) {
-          this.updateUpdateAvailable(false)
-          if (updateStatus.newVersion) {
-            this.updateNewVersion(updateStatus.newVersion)
-          }
-          if (updateStatus.releaseNotes) {
-            this.updateReleaseNotes(updateStatus.releaseNotes)
-          }
-          this.updateLastCheckUpdateTime(Date.now())
-        } else {
-          // 没有正在进行的下载，从配置恢复
-          const cfg = (this.$store.state.preference && this.$store.state.preference.config) || {}
-          const updateAvailable = cfg['update-available'] || cfg.updateAvailable || false
-          const newVersion = cfg['new-version'] || cfg.newVersion || ''
-          const lastCheckUpdateTime = cfg['last-check-update-time'] || cfg.lastCheckUpdateTime || 0
-          const releaseNotes = cfg['release-notes'] || cfg.releaseNotes || ''
+defineOptions({ name: 'mo-preference-subnav' })
 
-          // 校验残留状态仍有效（newVersion 确实比当前版本新），
-          // 避免用户已手动升级后仍显示过期的"下载新版本"按钮
-          if (updateAvailable && newVersion && this.isVersionNewer(newVersion, this.appVersion)) {
-            this.updateUpdateAvailable(updateAvailable)
-            this.updateNewVersion(newVersion)
-            if (lastCheckUpdateTime) {
-              this.updateLastCheckUpdateTime(lastCheckUpdateTime)
-            }
-            if (releaseNotes) {
-              this.updateReleaseNotes(releaseNotes)
-            }
-          }
-        }
-      } catch (error) {
-        console.error('[LinkCore] Failed to get update status:', error)
-      }
+const appVersion = ref('')
+const sliderTop = ref(0)
+const sliderHeight = ref(36)
+let _updateIpcHandlers = null
 
-      this.updateSliderFromDom()
+const preferenceBasePath = computed(() => {
+  const path = `${route.path || ''}`
+  return path.startsWith('/preference-window') ? '/preference-window' : '/preference'
+})
 
-      // 监听更新事件
-      this._updateIpcHandlers = {
-        'checking-for-update': () => {
-          this.updateCheckingUpdate(true)
-        },
-        'update-available': (event, version, releaseNotes, isPrerelease) => {
-          this.updateCheckingUpdate(false)
-          this.updateUpdateAvailable(true)
-          this.updateUpdateDownloaded(false)
-          this.updateNewVersion(version)
-          this.updateUpdateIsPrerelease(!!isPrerelease)
-          this.updateLastCheckUpdateTime(Date.now())
-          this.updateReleaseNotes(releaseNotes || '')
-        },
-        'update-not-available': () => {
-          this.updateCheckingUpdate(false)
-          this.updateUpdateAvailable(false)
-          this.updateUpdateDownloaded(false)
-          this.updateNewVersion('')
-          this.updateUpdateIsPrerelease(false)
-          this.updateLastCheckUpdateTime(Date.now())
-        },
-        'update-error': () => {
-          this.updateCheckingUpdate(false)
-          this.updateIsDownloadingUpdate(false)
-          this.updateUpdateDownloaded(false)
-        },
-        // 监听下载开始事件
-        'download-start': () => {
-          this.updateIsDownloadingUpdate(true)
-          this.updateUpdateDownloaded(false)
-          this.updateUpdateAvailable(false)
-          this.updateDownloadProgress(0)
-          this.updateDownloadSize({ total: 0, transferred: 0 })
-        },
-        // 监听下载进度事件
-        'download-progress': (event, progress) => {
-          const percent = Math.round(progress.percent)
-          this.updateDownloadProgress(percent)
-          this.updateIsDownloadingUpdate(true)
-          this.updateDownloadSize({
-            total: progress.total || 0,
-            transferred: progress.transferred || 0
-          })
-        },
-        // 监听下载完成事件
-        // 只同步状态，不弹"下载完成"消息：同一事件会同时触发本页面级监听
-        // 与下载流程的临时监听（还有 Advanced 页面级监听），重复提示；
-        // 统一由下载发起方的临时监听弹一条。
-        'update-downloaded': () => {
-          this.updateIsDownloadingUpdate(false)
-          this.updateUpdateDownloaded(true)
-          this.updateUpdateAvailable(false)
-        },
-        // 监听下载取消事件
-        'update-cancelled': () => {
-          this.updateIsDownloadingUpdate(false)
-          this.updateUpdateDownloaded(false)
-          this.updateDownloadProgress(0)
-          this.updateDownloadSize({ total: 0, transferred: 0 })
-        }
-      }
-      Object.keys(this._updateIpcHandlers).forEach((channel) => {
-        this.$electron.ipcRenderer.on(channel, this._updateIpcHandlers[channel])
-      })
-    },
-    beforeDestroy () {
-      // 移除事件监听
-      if (this._updateIpcHandlers) {
-        Object.keys(this._updateIpcHandlers).forEach((channel) => {
-          this.$electron.ipcRenderer.removeListener(channel, this._updateIpcHandlers[channel])
-        })
-        this._updateIpcHandlers = null
-      }
-    },
-    watch: {
-      current () {
-        this.$nextTick(() => {
-          this.updateSliderFromDom()
-        })
-      },
-      subnavItems () {
-        this.$nextTick(() => {
-          this.updateSliderFromDom()
-        })
-      }
-    },
-    methods: {
-      ...mapActions('app', ['updateCheckingUpdate']),
-      ...mapActions('preference', ['updateUpdateAvailable', 'updateUpdateDownloaded', 'updateNewVersion', 'updateUpdateIsPrerelease', 'updateLastCheckUpdateTime', 'updateIsDownloadingUpdate', 'updateDownloadProgress', 'updateDownloadSize', 'updateReleaseNotes']),
-      nav (category = 'basic') {
-        const base = this.preferenceBasePath
-        this.$router.push({
-          path: `${base}/${category}`
-        }).catch(err => {
-          console.log(err)
-        })
-      },
-      // 完整版本比较（与主进程 UpdateManager 的 semver 语义一致）：
-      // 保留 pre-release 标签（3.0.2-Beta1 < 3.0.2-Beta2 < 3.0.2），
-      // 用于校验持久化配置中残留的"有新版本"状态是否仍然有效，
-      // 避免 Beta 用户已检测到正式版更新却因版本号折叠被误判过期。
-      isVersionNewer (a, b) {
-        if (!a || !b) return false
-        const parse = (v) => {
-          const m = String(v).trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/)
-          if (!m) return null
-          return {
-            major: parseInt(m[1], 10),
-            minor: parseInt(m[2], 10),
-            patch: parseInt(m[3], 10),
-            pre: m[4] ? m[4].toLowerCase().split('.') : null
-          }
-        }
-        const pa = parse(a)
-        const pb = parse(b)
-        if (!pa || !pb) return false
-        if (pa.major !== pb.major) return pa.major > pb.major
-        if (pa.minor !== pb.minor) return pa.minor > pb.minor
-        if (pa.patch !== pb.patch) return pa.patch > pb.patch
-        // 正式版大于 pre-release；同为 pre-release 时逐标识符比较（与 semver 规则一致）
-        if (!pa.pre) return !!pb.pre
-        if (!pb.pre) return false
-        const len = Math.max(pa.pre.length, pb.pre.length)
-        for (let i = 0; i < len; i++) {
-          const x = pa.pre[i]
-          const y = pb.pre[i]
-          if (x === undefined) return false
-          if (y === undefined) return true
-          if (x === y) continue
-          const xn = /^\d+$/.test(x)
-          const yn = /^\d+$/.test(y)
-          if (xn && yn) return parseInt(x, 10) > parseInt(y, 10)
-          if (xn) return false // 数字标识符 < 字母标识符
-          if (yn) return true
-          return x > y
-        }
-        return false
-      },
-      updateSliderFromDom () {
-        if (!this.$el) {
-          return
-        }
-        const activeItem = this.$el.querySelector('.preference-subnav-ul li.active')
-        if (!activeItem) {
-          return
-        }
-        this.sliderTop = activeItem.offsetTop || 0
-        this.sliderHeight = activeItem.offsetHeight || 36
-      },
+const isStandalone = computed(() => preferenceBasePath.value === '/preference-window')
 
-      // 获取版本显示文本
-      getVersionText () {
-        if (this.isDownloadingUpdate) {
-          const bytesToSize = (this.$options && this.$options.filters && this.$options.filters.bytesToSize)
-            ? this.$options.filters.bytesToSize
-            : (bytes, decimals = 2) => {
-                if (!bytes || bytes === 0) return '0 B'
-                const k = 1024
-                const sizes = ['B', 'KB', 'MB', 'GB']
-                const i = Math.floor(Math.log(bytes) / Math.log(k))
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i]
-              }
-          const transferred = bytesToSize(this.downloadTransferred, 2)
-          const total = bytesToSize(this.downloadTotal, 2)
-          if (this.downloadTotal > 0) {
-            return `下载中 ${this.downloadProgress}% (${transferred} / ${total})`
-          }
-          return `下载中 ${this.downloadProgress}%`
-        } else if (this.updateAvailable) {
-          return `下载新版本 ${this.newVersion}`
-        } else {
-          return this.appVersion
-        }
-      },
+const title = computed(() => t('subnav.preferences'))
 
-      // 检查是否支持消息提示
-      hasMsgSupport () {
-        return typeof this.$msg !== 'undefined' && this.$msg !== null
-      },
+const subnavItems = computed(() => [
+  { key: 'basic', title: t('preferences.basic'), icon: 'preference-basic' },
+  { key: 'appearance', title: t('preferences.appearance'), icon: 'preference-appearance' },
+  { key: 'transfer', title: t('preferences.transfer-settings'), icon: 'preference-transfer' },
+  { key: 'bt', title: t('preferences.bt-settings'), icon: 'preference-bt' },
+  { key: 'ed2k', title: t('preferences.ed2k-settings'), icon: 'preference-ed2k' },
+  { key: 'task', title: t('preferences.task-manage'), icon: 'preference-task' },
+  { key: 'file', title: t('preferences.file-manage'), icon: 'preference-file' },
+  { key: 'advanced', title: t('preferences.advanced'), icon: 'preference-advanced' }
+])
 
-      // 显示消息
-      showMessage (type, message) {
-        if (this.hasMsgSupport()) {
-          this.$msg[type](message)
-        } else {
-          console.log(`[LinkCore] Update message: ${type} - ${message}`)
-          // 如果没有消息组件，使用浏览器的alert
-          if (type === 'error') {
-            alert(message)
-          }
-        }
-      },
+const isChecking = computed(() => isCheckingUpdate.value)
 
-      // 检查更新
-      checkForUpdates () {
-        // 如果正在检查，直接返回
-        if (this.isCheckingUpdate) return
+const currentIndex = computed(() => subnavItems.value.findIndex(item => item.key === props.current))
 
-        // 设置检查状态
-        this.updateCheckingUpdate(true)
+const sliderStyle = computed(() => {
+  const index = currentIndex.value
+  if (index === -1) return { display: 'none' }
+  const top = Number.isFinite(sliderTop.value) ? sliderTop.value : 0
+  const height = Number.isFinite(sliderHeight.value) ? sliderHeight.value : 36
+  return {
+    transform: `translateY(${top}px)`,
+    height: `${height}px`
+  }
+})
 
-        // 显示检查中消息
-        this.showMessage('info', this.$t('app.checking-for-updates'))
+function nav (category = 'basic') {
+  const base = preferenceBasePath.value
+  router.push({
+    path: `${base}/${category}`
+  }).catch(err => {
+    console.log(err)
+  })
+}
 
-        // 创建临时事件监听器，使用once确保只触发一次
-        const onUpdateError = (_event, errMsg) => {
-          const msg = errMsg || this.$t('app.update-error-message')
-          this.showMessage('error', msg)
-          this.updateCheckingUpdate(false)
-        }
-
-        const onUpdateNotAvailable = () => {
-          this.showMessage('success', this.$t('app.update-not-available-message'))
-          this.updateCheckingUpdate(false)
-          this.updateUpdateAvailable(false)
-          this.updateNewVersion('')
-          this.updateLastCheckUpdateTime(Date.now())
-        }
-
-        const onUpdateAvailable = (event, version, releaseNotes) => {
-          this.showMessage('info', this.$t('app.update-available-message'))
-          this.updateCheckingUpdate(false)
-          this.updateUpdateAvailable(true)
-          this.updateNewVersion(version)
-          this.updateLastCheckUpdateTime(Date.now())
-          this.updateReleaseNotes(releaseNotes || '')
-        }
-
-        // 使用once监听事件，确保事件只处理一次
-        this.$electron.ipcRenderer.once('update-error', onUpdateError)
-        this.$electron.ipcRenderer.once('update-not-available', onUpdateNotAvailable)
-        this.$electron.ipcRenderer.once('update-available', onUpdateAvailable)
-
-        // 设置超时处理，防止无限期等待
-        const timeout = setTimeout(() => {
-          console.log('[LinkCore] Update check timed out')
-          // 移除所有临时事件监听器
-          this.$electron.ipcRenderer.removeListener('update-error', onUpdateError)
-          this.$electron.ipcRenderer.removeListener('update-not-available', onUpdateNotAvailable)
-          this.$electron.ipcRenderer.removeListener('update-available', onUpdateAvailable)
-
-          // 显示超时消息
-          this.showMessage('error', this.$t('app.update-timeout-message') || '更新检查超时，请稍后重试')
-          this.updateCheckingUpdate(false)
-        }, 30000) // 30秒超时（含镜像回退时间）
-
-        // 监听任何更新事件，清除超时
-        const clearTimeoutListener = () => {
-          clearTimeout(timeout)
-          console.log('[LinkCore] Update check completed, clearing timeout')
-          // 移除清除超时的监听器
-          this.$electron.ipcRenderer.removeListener('update-error', clearTimeoutListener)
-          this.$electron.ipcRenderer.removeListener('update-not-available', clearTimeoutListener)
-          this.$electron.ipcRenderer.removeListener('update-available', clearTimeoutListener)
-        }
-        this.$electron.ipcRenderer.once('update-error', clearTimeoutListener)
-        this.$electron.ipcRenderer.once('update-not-available', clearTimeoutListener)
-        this.$electron.ipcRenderer.once('update-available', clearTimeoutListener)
-
-        // 发送检查更新命令
-        console.log('[LinkCore] Sending check for updates command')
-        this.$electron.ipcRenderer.send('command', 'application:check-for-updates')
-      },
-
-      // 下载更新
-      downloadUpdate () {
-        if (this.isDownloadingUpdate) return
-        this.updateIsDownloadingUpdate(true)
-        this.updateDownloadProgress(0)
-        this.updateDownloadSize({ total: 0, transferred: 0 })
-
-        // 显示下载开始消息
-        this.showMessage('info', this.$t('app.downloading-new-version'))
-
-        const cleanupListeners = () => {
-          this.$electron.ipcRenderer.removeListener('download-progress', onDownloadProgress)
-          this.$electron.ipcRenderer.removeListener('update-downloaded', onDownloaded)
-          this.$electron.ipcRenderer.removeListener('update-error', onDownloadError)
-          this.$electron.ipcRenderer.removeListener('update-cancelled', onDownloadCancelled)
-        }
-
-        // 监听下载进度事件
-        const onDownloadProgress = (event, progress) => {
-          this.updateDownloadProgress(Math.round(progress.percent))
-          this.updateDownloadSize({
-            total: progress.total || 0,
-            transferred: progress.transferred || 0
-          })
-        }
-
-        // 监听下载完成事件
-        const onDownloaded = () => {
-          this.updateIsDownloadingUpdate(false)
-          this.updateUpdateAvailable(false)
-          this.showMessage('success', this.$t('app.update-download-complete-restart'))
-          cleanupListeners()
-        }
-
-        // 监听下载错误事件
-        const onDownloadError = (_event, errMsg) => {
-          this.updateIsDownloadingUpdate(false)
-          const msg = errMsg ? this.$t('app.update-download-failed', { message: errMsg }) : this.$t('app.update-download-failed-network')
-          this.showMessage('error', msg)
-          cleanupListeners()
-        }
-
-        // 监听下载取消事件
-        const onDownloadCancelled = () => {
-          this.updateIsDownloadingUpdate(false)
-          this.showMessage('info', this.$t('app.update-download-cancelled'))
-          cleanupListeners()
-        }
-
-        // 注册事件监听器
-        this.$electron.ipcRenderer.on('download-progress', onDownloadProgress)
-        this.$electron.ipcRenderer.on('update-downloaded', onDownloaded)
-        this.$electron.ipcRenderer.on('update-error', onDownloadError)
-        this.$electron.ipcRenderer.on('update-cancelled', onDownloadCancelled)
-
-        // 发送下载更新命令
-        console.log('[LinkCore] Sending download update command')
-        this.$electron.ipcRenderer.send('command', 'application:download-update')
-      }
+function isVersionNewer (a, b) {
+  if (!a || !b) return false
+  const parse = (v) => {
+    const m = String(v).trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/)
+    if (!m) return null
+    return {
+      major: parseInt(m[1], 10),
+      minor: parseInt(m[2], 10),
+      patch: parseInt(m[3], 10),
+      pre: m[4] ? m[4].toLowerCase().split('.') : null
     }
   }
+  const pa = parse(a)
+  const pb = parse(b)
+  if (!pa || !pb) return false
+  if (pa.major !== pb.major) return pa.major > pb.major
+  if (pa.minor !== pb.minor) return pa.minor > pb.minor
+  if (pa.patch !== pb.patch) return pa.patch > pb.patch
+  if (!pa.pre) return !!pb.pre
+  if (!pb.pre) return false
+  const len = Math.max(pa.pre.length, pb.pre.length)
+  for (let i = 0; i < len; i++) {
+    const x = pa.pre[i]
+    const y = pb.pre[i]
+    if (x === undefined) return false
+    if (y === undefined) return true
+    if (x === y) continue
+    const xn = /^\d+$/.test(x)
+    const yn = /^\d+$/.test(y)
+    if (xn && yn) return parseInt(x, 10) > parseInt(y, 10)
+    if (xn) return false
+    if (yn) return true
+    return x > y
+  }
+  return false
+}
+
+function updateSliderFromDom () {
+  const root = instance?.proxy?.$el
+  if (!root) return
+  const activeItem = root.querySelector('.preference-subnav-ul li.active')
+  if (!activeItem) return
+  sliderTop.value = activeItem.offsetTop || 0
+  sliderHeight.value = activeItem.offsetHeight || 36
+}
+
+function getVersionText () {
+  if (isDownloadingUpdate.value) {
+    const bytesToSize = (bytes, decimals = 2) => {
+      if (!bytes || bytes === 0) return '0 B'
+      const k = 1024
+      const sizes = ['B', 'KB', 'MB', 'GB']
+      const i = Math.floor(Math.log(bytes) / Math.log(k))
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(decimals)) + ' ' + sizes[i]
+    }
+    const transferred = bytesToSize(downloadTransferred.value, 2)
+    const total = bytesToSize(downloadTotal.value, 2)
+    if (downloadTotal.value > 0) {
+      return `下载中 ${downloadProgress.value}% (${transferred} / ${total})`
+    }
+    return `下载中 ${downloadProgress.value}%`
+  } else if (updateAvailable.value) {
+    return `下载新版本 ${newVersion.value}`
+  } else {
+    return appVersion.value
+  }
+}
+
+function hasMsgSupport () {
+  return typeof instance.proxy.$msg !== 'undefined' && instance.proxy.$msg !== null
+}
+
+function showMessage (type, message) {
+  if (hasMsgSupport()) {
+    instance.proxy.$msg[type](message)
+  } else {
+    console.log(`[LinkCore] Update message: ${type} - ${message}`)
+    if (type === 'error') {
+      alert(message)
+    }
+  }
+}
+
+function checkForUpdates () {
+  if (isCheckingUpdate.value) return
+  appStore.updateCheckingUpdate(true)
+  showMessage('info', t('app.checking-for-updates'))
+
+  const onUpdateError = (_event, errMsg) => {
+    const msg = errMsg || t('app.update-error-message')
+    showMessage('error', msg)
+    appStore.updateCheckingUpdate(false)
+  }
+
+  const onUpdateNotAvailable = () => {
+    showMessage('success', t('app.update-not-available-message'))
+    appStore.updateCheckingUpdate(false)
+    preferenceStore.updateUpdateAvailable(false)
+    preferenceStore.updateNewVersion('')
+    preferenceStore.updateLastCheckUpdateTime(Date.now())
+  }
+
+  const onUpdateAvailable = (event, version, releaseNotes) => {
+    showMessage('info', t('app.update-available-message'))
+    appStore.updateCheckingUpdate(false)
+    preferenceStore.updateUpdateAvailable(true)
+    preferenceStore.updateNewVersion(version)
+    preferenceStore.updateLastCheckUpdateTime(Date.now())
+    preferenceStore.updateReleaseNotes(releaseNotes || '')
+  }
+
+  ipcRenderer.once('update-error', onUpdateError)
+  ipcRenderer.once('update-not-available', onUpdateNotAvailable)
+  ipcRenderer.once('update-available', onUpdateAvailable)
+
+  const timeout = setTimeout(() => {
+    console.log('[LinkCore] Update check timed out')
+    ipcRenderer.removeListener('update-error', onUpdateError)
+    ipcRenderer.removeListener('update-not-available', onUpdateNotAvailable)
+    ipcRenderer.removeListener('update-available', onUpdateAvailable)
+
+    showMessage('error', t('app.update-timeout-message') || '更新检查超时，请稍后重试')
+    appStore.updateCheckingUpdate(false)
+  }, 30000)
+
+  const clearTimeoutListener = () => {
+    clearTimeout(timeout)
+    console.log('[LinkCore] Update check completed, clearing timeout')
+    ipcRenderer.removeListener('update-error', clearTimeoutListener)
+    ipcRenderer.removeListener('update-not-available', clearTimeoutListener)
+    ipcRenderer.removeListener('update-available', clearTimeoutListener)
+  }
+  ipcRenderer.once('update-error', clearTimeoutListener)
+  ipcRenderer.once('update-not-available', clearTimeoutListener)
+  ipcRenderer.once('update-available', clearTimeoutListener)
+
+  console.log('[LinkCore] Sending check for updates command')
+  ipcRenderer.send('command', 'application:check-for-updates')
+}
+
+function downloadUpdate () {
+  if (isDownloadingUpdate.value) return
+  preferenceStore.updateIsDownloadingUpdate(true)
+  preferenceStore.updateDownloadProgress(0)
+  preferenceStore.updateDownloadSize({ total: 0, transferred: 0 })
+
+  showMessage('info', t('app.downloading-new-version'))
+
+  const cleanupListeners = () => {
+    ipcRenderer.removeListener('download-progress', onDownloadProgress)
+    ipcRenderer.removeListener('update-downloaded', onDownloaded)
+    ipcRenderer.removeListener('update-error', onDownloadError)
+    ipcRenderer.removeListener('update-cancelled', onDownloadCancelled)
+  }
+
+  const onDownloadProgress = (event, progress) => {
+    preferenceStore.updateDownloadProgress(Math.round(progress.percent))
+    preferenceStore.updateDownloadSize({
+      total: progress.total || 0,
+      transferred: progress.transferred || 0
+    })
+  }
+
+  const onDownloaded = () => {
+    preferenceStore.updateIsDownloadingUpdate(false)
+    preferenceStore.updateUpdateAvailable(false)
+    showMessage('success', t('app.update-download-complete-restart'))
+    cleanupListeners()
+  }
+
+  const onDownloadError = (_event, errMsg) => {
+    preferenceStore.updateIsDownloadingUpdate(false)
+    const msg = errMsg ? t('app.update-download-failed', { message: errMsg }) : t('app.update-download-failed-network')
+    showMessage('error', msg)
+    cleanupListeners()
+  }
+
+  const onDownloadCancelled = () => {
+    preferenceStore.updateIsDownloadingUpdate(false)
+    showMessage('info', t('app.update-download-cancelled'))
+    cleanupListeners()
+  }
+
+  ipcRenderer.on('download-progress', onDownloadProgress)
+  ipcRenderer.on('update-downloaded', onDownloaded)
+  ipcRenderer.on('update-error', onDownloadError)
+  ipcRenderer.on('update-cancelled', onDownloadCancelled)
+
+  console.log('[LinkCore] Sending download update command')
+  ipcRenderer.send('command', 'application:download-update')
+}
+
+onMounted(async () => {
+  try {
+    const appConfig = await ipcRenderer.invoke('get-app-config')
+    appVersion.value = appConfig.version
+  } catch (error) {
+    console.error('[LinkCore] Failed to get app version:', error)
+  }
+
+  try {
+    const updateStatus = await ipcRenderer.invoke('get-update-status')
+
+    if (updateStatus.isChecking) {
+      appStore.updateCheckingUpdate(true)
+    } else {
+      appStore.updateCheckingUpdate(false)
+    }
+
+    preferenceStore.updateIsDownloadingUpdate(updateStatus.isDownloading)
+    preferenceStore.updateUpdateDownloaded(updateStatus.updateDownloaded)
+
+    if (updateStatus.isDownloading) {
+      preferenceStore.updateDownloadProgress(updateStatus.downloadProgress || 0)
+      preferenceStore.updateDownloadSize({
+        total: updateStatus.downloadTotal || 0,
+        transferred: updateStatus.downloadTransferred || 0
+      })
+      if (updateStatus.newVersion) preferenceStore.updateNewVersion(updateStatus.newVersion)
+      if (updateStatus.releaseNotes) preferenceStore.updateReleaseNotes(updateStatus.releaseNotes)
+      preferenceStore.updateUpdateAvailable(false)
+      preferenceStore.updateLastCheckUpdateTime(Date.now())
+    } else if (updateStatus.updateDownloaded) {
+      preferenceStore.updateUpdateAvailable(false)
+      if (updateStatus.newVersion) preferenceStore.updateNewVersion(updateStatus.newVersion)
+      if (updateStatus.releaseNotes) preferenceStore.updateReleaseNotes(updateStatus.releaseNotes)
+      preferenceStore.updateLastCheckUpdateTime(Date.now())
+    } else {
+      const cfg = preferenceStore.config || {}
+      const ua = cfg['update-available'] || cfg.updateAvailable || false
+      const nv = cfg['new-version'] || cfg.newVersion || ''
+      const lct = cfg['last-check-update-time'] || cfg.lastCheckUpdateTime || 0
+      const rn = cfg['release-notes'] || cfg.releaseNotes || ''
+
+      if (ua && nv && isVersionNewer(nv, appVersion.value)) {
+        preferenceStore.updateUpdateAvailable(ua)
+        preferenceStore.updateNewVersion(nv)
+        if (lct) preferenceStore.updateLastCheckUpdateTime(lct)
+        if (rn) preferenceStore.updateReleaseNotes(rn)
+      }
+    }
+  } catch (error) {
+    console.error('[LinkCore] Failed to get update status:', error)
+  }
+
+  updateSliderFromDom()
+
+  _updateIpcHandlers = {
+    'checking-for-update': () => {
+      appStore.updateCheckingUpdate(true)
+    },
+    'update-available': (event, version, releaseNotes, isPrerelease) => {
+      appStore.updateCheckingUpdate(false)
+      preferenceStore.updateUpdateAvailable(true)
+      preferenceStore.updateUpdateDownloaded(false)
+      preferenceStore.updateNewVersion(version)
+      preferenceStore.updateUpdateIsPrerelease(!!isPrerelease)
+      preferenceStore.updateLastCheckUpdateTime(Date.now())
+      preferenceStore.updateReleaseNotes(releaseNotes || '')
+    },
+    'update-not-available': () => {
+      appStore.updateCheckingUpdate(false)
+      preferenceStore.updateUpdateAvailable(false)
+      preferenceStore.updateUpdateDownloaded(false)
+      preferenceStore.updateNewVersion('')
+      preferenceStore.updateUpdateIsPrerelease(false)
+      preferenceStore.updateLastCheckUpdateTime(Date.now())
+    },
+    'update-error': () => {
+      appStore.updateCheckingUpdate(false)
+      preferenceStore.updateIsDownloadingUpdate(false)
+      preferenceStore.updateUpdateDownloaded(false)
+    },
+    'download-start': () => {
+      preferenceStore.updateIsDownloadingUpdate(true)
+      preferenceStore.updateUpdateDownloaded(false)
+      preferenceStore.updateUpdateAvailable(false)
+      preferenceStore.updateDownloadProgress(0)
+      preferenceStore.updateDownloadSize({ total: 0, transferred: 0 })
+    },
+    'download-progress': (event, progress) => {
+      const percent = Math.round(progress.percent)
+      preferenceStore.updateDownloadProgress(percent)
+      preferenceStore.updateIsDownloadingUpdate(true)
+      preferenceStore.updateDownloadSize({
+        total: progress.total || 0,
+        transferred: progress.transferred || 0
+      })
+    },
+    'update-downloaded': () => {
+      preferenceStore.updateIsDownloadingUpdate(false)
+      preferenceStore.updateUpdateDownloaded(true)
+      preferenceStore.updateUpdateAvailable(false)
+    },
+    'update-cancelled': () => {
+      preferenceStore.updateIsDownloadingUpdate(false)
+      preferenceStore.updateUpdateDownloaded(false)
+      preferenceStore.updateDownloadProgress(0)
+      preferenceStore.updateDownloadSize({ total: 0, transferred: 0 })
+    }
+  }
+  Object.keys(_updateIpcHandlers).forEach((channel) => {
+    ipcRenderer.on(channel, _updateIpcHandlers[channel])
+  })
+})
+
+onBeforeUnmount(() => {
+  if (_updateIpcHandlers) {
+    Object.keys(_updateIpcHandlers).forEach((channel) => {
+      ipcRenderer.removeListener(channel, _updateIpcHandlers[channel])
+    })
+    _updateIpcHandlers = null
+  }
+})
+
+watch(() => props.current, () => {
+  nextTick(() => {
+    updateSliderFromDom()
+  })
+})
+
+watch(subnavItems, () => {
+  nextTick(() => {
+    updateSliderFromDom()
+  })
+})
 </script>
 
 <style lang="scss">

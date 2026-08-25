@@ -10,7 +10,7 @@
       <el-table
         ref="trackerTable"
         class="mo-tracker-table"
-        size="mini"
+        size="small"
         :data="groupedTrackers"
         :height="tableHeight"
         row-key="id"
@@ -19,10 +19,10 @@
         @row-click="handleRowClick"
       >
         <el-table-column
-          :label="$t('task.task-tracker-url')"
+          :label="t('task.task-tracker-url')"
           prop="url"
           min-width="200">
-          <template slot-scope="scope">
+          <template #default="scope">
             <template v-if="scope.row.isGroup">
               <span class="mo-tracker-group-label">{{ scope.row.groupLabel }}</span>
             </template>
@@ -44,65 +44,65 @@
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-tracker-protocol')"
+          :label="t('task.task-tracker-protocol')"
           prop="protocol"
           align="center"
           width="70">
-          <template slot-scope="scope">
+          <template #default="scope">
             {{ scope.row.protocol }}
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-tracker-status')"
+          :label="t('task.task-tracker-status')"
           prop="status"
           align="center"
           width="80">
-          <template slot-scope="scope">
+          <template #default="scope">
             {{ getTrackerStatusText(scope.row.status) }}
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-tracker-seeders')"
+          :label="t('task.task-tracker-seeders')"
           prop="seeders"
           align="right"
           width="80">
-          <template slot-scope="scope">
+          <template #default="scope">
             {{ scope.row.seeders }}
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-tracker-leechers')"
+          :label="t('task.task-tracker-leechers')"
           prop="leechers"
           align="right"
           width="80">
-          <template slot-scope="scope">
+          <template #default="scope">
             {{ scope.row.leechers }}
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-tracker-peers')"
+          :label="t('task.task-tracker-peers')"
           prop="peers"
           align="right"
           width="80">
-          <template slot-scope="scope">
+          <template #default="scope">
             {{ scope.row.peers }}
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-tracker-download-count')"
+          :label="t('task.task-tracker-download-count')"
           prop="downloadCount"
           align="right"
           width="90">
-          <template slot-scope="scope">
+          <template #default="scope">
             {{ scope.row.downloadCount }}
           </template>
         </el-table-column>
         <el-table-column
-          :label="$t('task.task-tracker-next-announce')"
+          :label="t('task.task-tracker-next-announce')"
           prop="nextAnnounceTime"
           align="right"
           width="100">
-          <template slot-scope="scope">
+          <template #default="scope">
             {{ formatNextAnnounceTime(scope.row.nextAnnounceTime) }}
           </template>
         </el-table-column>
@@ -111,355 +111,330 @@
   </div>
 </template>
 
-<script>
-  import is from 'electron-is'
-  import {
-    calcFormLabelWidth,
-    checkTaskIsBT,
-    checkTaskIsSeeder
-  } from '@shared/utils'
-  import { convertTrackerDataToLine } from '@shared/utils/tracker'
-  import { EMPTY_STRING } from '@shared/constants'
-  import api from '@/api'
+<script setup>
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import is from 'electron-is'
+import {
+  calcFormLabelWidth,
+  checkTaskIsBT,
+  checkTaskIsSeeder
+} from '@shared/utils'
+import { convertTrackerDataToLine } from '@shared/utils/tracker'
+import { EMPTY_STRING } from '@shared/constants'
+import i18n from '@/plugins/i18n'
+import api from '@/api'
+import { usePreferenceStore } from '@/store/preference'
+import { storeToRefs } from 'pinia'
 
-  export default {
-    name: 'mo-task-trackers',
-    props: {
-      task: {
-        type: Object
-      }
-    },
-    data () {
-      const { locale } = this.$store.state.preference.config
-      return {
-        form: {},
-        formLabelWidth: calcFormLabelWidth(locale),
-        locale,
-        tableHeight: '100%',
-        trackerStats: [],
-        // 通用网页图标（地球），用于 favicon 加载失败或无法获取时的占位
-        defaultFavicon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23909399' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E",
-        // 追踪器 URL -> 解析后的 favicon URL（加载失败后永久记为 defaultFavicon）
-        faviconUrlCache: {},
-        // 追踪器 URL -> 是否已加载完成（响应式，避免静态 inline style 被 re-render 重置）
-        faviconLoaded: {}
-      }
-    },
-    computed: {
-      isRenderer: () => is.renderer(),
-      isBT () {
-        return checkTaskIsBT(this.task)
-      },
-      isSeeder () {
-        return checkTaskIsSeeder(this.task)
-      },
-      announceList () {
-        if (!this.isBT) {
-          return EMPTY_STRING
-        }
+const { t } = i18n.global
 
-        const { bittorrent } = this.task
-        if (!bittorrent || !bittorrent.announceList) {
-          return EMPTY_STRING
-        }
-        const data = bittorrent.announceList.map((i) => i[0])
-        return convertTrackerDataToLine(data)
-      },
-      trackerList () {
-        if (!this.isBT) {
-          return []
-        }
+const props = defineProps({
+  task: {
+    type: Object
+  }
+})
 
-        return this.trackerStats.map((stat, index) => {
-          return {
-            id: `tracker-${index}`,
-            url: stat.url || '',
-            protocol: stat.protocol || 'unknown',
-            status: stat.status || 'waiting',
-            peers: stat.peers || 0,
-            seeders: stat.seeders || 0,
-            leechers: stat.leechers || 0,
-            downloadCount: stat.downloadCount || 0,
-            nextAnnounceTime: stat.nextAnnounceTime || 0
-          }
-        })
-      },
-      groupedTrackers () {
-        const list = this.trackerList
-        if (list.length === 0) {
-          return []
-        }
+defineOptions({ name: 'mo-task-trackers' })
 
-        // 按状态分组：working（已连接）、not-working（连接失败）、waiting（等待中）
-        const groups = {
-          working: [],
-          'not-working': [],
-          waiting: []
-        }
-        list.forEach(t => {
-          const key = groups[t.status] !== undefined ? t.status : 'waiting'
-          groups[key].push(t)
-        })
+const preferenceStore = usePreferenceStore()
+const { config } = storeToRefs(preferenceStore)
 
-        const result = []
-        const groupOrder = [
-          { key: 'working', label: this.$t('task.trackers-group-working') },
-          { key: 'not-working', label: this.$t('task.trackers-group-not-working') },
-          { key: 'waiting', label: this.$t('task.trackers-group-waiting') }
-        ]
+const form = ref({})
+const formLabelWidth = computed(() => calcFormLabelWidth(config.value.locale))
+const locale = computed(() => config.value.locale)
+const tableHeight = ref('100%')
+const trackerStats = ref([])
+const defaultFavicon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23909399' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E"
+const faviconUrlCache = ref({})
+const faviconLoaded = ref({})
 
-        groupOrder.forEach(({ key, label }) => {
-          const items = groups[key]
-          if (items.length === 0) return
-          result.push({
-            id: `group-${key}`,
-            isGroup: true,
-            groupLabel: `${label} (${items.length})`,
-            groupKey: key
-          })
-          items.forEach(item => {
-            result.push(item)
-          })
-        })
+const tableWrapper = ref(null)
+const trackerTable = ref(null)
 
-        return Object.freeze(result)
-      },
-      trackerStatusMap () {
-        return {
-          working: this.$t('task.tracker-status-working'),
-          updating: this.$t('task.tracker-status-updating'),
-          error: this.$t('task.tracker-status-error'),
-          unknown: this.$t('task.tracker-status-unknown'),
-          disabled: this.$t('task.tracker-status-disabled'),
-          pending: this.$t('task.tracker-status-pending'),
-          waiting: this.$t('task.tracker-status-waiting'),
-          'not-working': this.$t('task.tracker-status-not-working')
-        }
-      },
-      preconnectOrigins () {
-        const origins = new Set()
-        this.trackerList.forEach(t => {
-          const faviconUrl = this.getFaviconUrl(t.url)
-          if (faviconUrl && faviconUrl.startsWith('http')) {
-            try {
-              origins.add(new URL(faviconUrl).origin)
-            } catch (e) {}
-          }
-        })
-        return Array.from(origins)
-      }
-    },
-    watch: {
-      'task.gid': {
-        handler (newGid) {
-          // Re-fetch tracker stats only when the task changes (not every poll).
-          // The previous `task: { deep: true }` watcher fired on every poll
-          // tick (task is replaced ~1s), causing redundant fetchTrackerStats
-          // calls. Tracker list changes infrequently, so gid-keyed refresh is
-          // sufficient; periodic refresh is handled by a separate timer.
-          this._trackerFetchTimer && clearTimeout(this._trackerFetchTimer)
-          // 切换任务时清空 favicon 缓存，避免旧任务的图标缓存污染
-          if (this._faviconFlushRafId) {
-            cancelAnimationFrame(this._faviconFlushRafId)
-            this._faviconFlushRafId = null
-          }
-          this._faviconLoadQueue = null
-          this.faviconUrlCache = {}
-          this.faviconLoaded = {}
-          if (newGid && this.task && checkTaskIsBT(this.task)) {
-            this.fetchTrackerStats(newGid)
-            this._startTrackerRefreshTimer(newGid)
-          } else {
-            this.trackerStats = []
-          }
-        },
-        immediate: true
-      },
-      'task.status': {
-        handler (newStatus) {
-          // Refresh when task becomes active again (resume from pause).
-          if (newStatus === 'active' && this.task && this.task.gid && checkTaskIsBT(this.task)) {
-            this._trackerFetchTimer && clearTimeout(this._trackerFetchTimer)
-            this.fetchTrackerStats(this.task.gid)
-            this._startTrackerRefreshTimer(this.task.gid)
-          } else if (newStatus !== 'active' && newStatus !== 'waiting') {
-            this._stopTrackerRefreshTimer()
-          }
-        }
-      }
-    },
-    mounted () {
-    },
-    beforeDestroy () {
-      if (this._faviconFlushRafId) {
-        cancelAnimationFrame(this._faviconFlushRafId)
-      }
-      this._stopTrackerRefreshTimer()
-    },
-    methods: {
-      _startTrackerRefreshTimer (gid) {
-        this._stopTrackerRefreshTimer()
-        // Refresh tracker stats every 10s (trackers change slowly compared
-        // to peer lists; polling every 1s was wasteful).
-        this._trackerRefreshInterval = setInterval(() => {
-          if (gid && this.task && this.task.gid === gid && checkTaskIsBT(this.task)) {
-            this.fetchTrackerStats(gid)
-          } else {
-            this._stopTrackerRefreshTimer()
-          }
-        }, 10000)
-      },
-      _stopTrackerRefreshTimer () {
-        if (this._trackerRefreshInterval) {
-          clearInterval(this._trackerRefreshInterval)
-          this._trackerRefreshInterval = null
-        }
-      },
-      async fetchTrackerStats (gid) {
-        try {
-          const stats = await api.fetchTaskTrackers({ gid })
-          // 引擎返回按状态分类的 Dict: { working: [], not-working: [], waiting: [] }
-          // 兼容旧版返回扁平 List 的格式
-          let list = []
-          if (Array.isArray(stats)) {
-            list = stats
-          } else if (stats && typeof stats === 'object') {
-            const keys = ['working', 'not-working', 'waiting']
-            keys.forEach(key => {
-              const arr = stats[key]
-              if (Array.isArray(arr)) {
-                list.push(...arr)
-              }
-            })
-          }
-          // Deduplicate by URL — the engine may return the same tracker multiple
-          // times (torrent announce list + global bt-tracker config overlap).
-          const seen = new Set()
-          list = list.filter(stat => {
-            const url = ((stat && stat.url) || '').trim()
-            if (!url || seen.has(url)) return false
-            seen.add(url)
-            return true
-          })
-          this.trackerStats = list
-          // Pre-compute favicon URLs to avoid URL parsing & side effects during render
-          this.precomputeFaviconUrls()
-        } catch (error) {
-          this.trackerStats = []
-        }
-      },
-      handleSpanMethod ({ row, columnIndex }) {
-        // 分组行：合并所有列
-        if (row.isGroup) {
-          if (columnIndex === 0) {
-            return [1, 8]
-          }
-          return [0, 0]
-        }
-      },
-      getRowClassName ({ row }) {
-        if (row.isGroup) {
-          const groupKey = row.groupKey || ''
-          return `mo-tracker-group-row mo-tracker-group-${groupKey}`
-        }
-        return ''
-      },
-      handleRowClick (row) {
-        // 分组行点击暂不处理展开/折叠，保持全部展开
-      },
-      getTrackerStatusText (status) {
-        return this.trackerStatusMap[status] || status || '-'
-      },
-      precomputeFaviconUrls () {
-        // Pre-resolve favicon URLs when tracker data changes so the render
-        // path is a pure cache lookup with zero side effects.
-        this.trackerStats.forEach(stat => {
-          const url = stat.url || ''
-          if (url && this.faviconUrlCache[url] === undefined) {
-            this.faviconUrlCache[url] = this.resolveFaviconUrl(url)
-          }
-        })
-      },
-      resolveFaviconUrl (url) {
-        try {
-          const parsed = new URL(url)
-          const host = parsed.hostname
-          if (!host) {
-            return this.defaultFavicon
-          }
-          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-            return `${parsed.origin}/favicon.ico`
-          }
-          return `https://${host}/favicon.ico`
-        } catch (e) {
-          return this.defaultFavicon
-        }
-      },
-      getFaviconUrl (url) {
-        // Pure cache lookup — no URL parsing, no side effects during render
-        return this.faviconUrlCache[url] || this.defaultFavicon
-      },
-      isFaviconLoaded (url) {
-        return this.faviconLoaded[url] === true
-      },
-      onFaviconError (e) {
-        const img = e.target
-        const url = img.getAttribute('data-tracker-url')
-        // favicon 加载失败时永久标记为 defaultFavicon 并更新 src
-        if (url && this.faviconUrlCache[url] !== this.defaultFavicon) {
-          this.$set(this.faviconUrlCache, url, this.defaultFavicon)
-          img.src = this.defaultFavicon
-        } else if (url) {
-          // 已在使用 defaultFavicon 但仍出错（data URI 极少出错），直接标记为已加载
-          this._enqueueFaviconLoaded(url)
-        }
-      },
-      onFaviconLoad (e) {
-        const url = e.target.getAttribute('data-tracker-url')
-        if (url) {
-          this._enqueueFaviconLoaded(url)
-        }
-      },
-      _enqueueFaviconLoaded (url) {
-        // Batch favicon loaded-state updates: collect URLs and flush in a
-        // single requestAnimationFrame to avoid N individual re-renders.
-        if (!this._faviconLoadQueue) {
-          this._faviconLoadQueue = {}
-        }
-        this._faviconLoadQueue[url] = true
-        if (!this._faviconFlushRafId) {
-          this._faviconFlushRafId = requestAnimationFrame(() => {
-            this._faviconFlushRafId = null
-            const queue = this._faviconLoadQueue
-            this._faviconLoadQueue = null
-            if (queue && Object.keys(queue).length > 0) {
-              this.faviconLoaded = Object.assign({}, this.faviconLoaded, queue)
-            }
-          })
-        }
-      },
-      formatNextAnnounceTime (timestamp) {
-        if (!timestamp || timestamp <= 0) {
-          return '-'
-        }
+let _trackerFetchTimer = null
+let _faviconFlushRafId = null
+let _faviconLoadQueue = null
+let _trackerRefreshInterval = null
 
-        const now = Math.floor(Date.now() / 1000)
-        const diff = timestamp - now
+const isRenderer = is.renderer()
 
-        if (diff <= 0) {
-          return this.$t('task.tracker-next-immediately')
-        }
+const isBT = computed(() => checkTaskIsBT(props.task))
+const isSeeder = computed(() => checkTaskIsSeeder(props.task))
 
-        const minutes = Math.floor(diff / 60)
-        const seconds = diff % 60
+const announceList = computed(() => {
+  if (!isBT.value) return EMPTY_STRING
+  const { bittorrent } = props.task
+  if (!bittorrent || !bittorrent.announceList) return EMPTY_STRING
+  const data = bittorrent.announceList.map((i) => i[0])
+  return convertTrackerDataToLine(data)
+})
 
-        if (minutes > 0) {
-          return `${minutes}m ${seconds}s`
-        }
-        return `${seconds}s`
-      }
+const trackerList = computed(() => {
+  if (!isBT.value) return []
+  return trackerStats.value.map((stat, index) => ({
+    id: `tracker-${index}`,
+    url: stat.url || '',
+    protocol: stat.protocol || 'unknown',
+    status: stat.status || 'waiting',
+    peers: stat.peers || 0,
+    seeders: stat.seeders || 0,
+    leechers: stat.leechers || 0,
+    downloadCount: stat.downloadCount || 0,
+    nextAnnounceTime: stat.nextAnnounceTime || 0
+  }))
+})
+
+const groupedTrackers = computed(() => {
+  const list = trackerList.value
+  if (list.length === 0) return []
+
+  const groups = {
+    working: [],
+    'not-working': [],
+    waiting: []
+  }
+  list.forEach(t => {
+    const key = groups[t.status] !== undefined ? t.status : 'waiting'
+    groups[key].push(t)
+  })
+
+  const result = []
+  const groupOrder = [
+    { key: 'working', label: i18n.global.t('task.trackers-group-working') },
+    { key: 'not-working', label: i18n.global.t('task.trackers-group-not-working') },
+    { key: 'waiting', label: i18n.global.t('task.trackers-group-waiting') }
+  ]
+
+  groupOrder.forEach(({ key, label }) => {
+    const items = groups[key]
+    if (items.length === 0) return
+    result.push({
+      id: `group-${key}`,
+      isGroup: true,
+      groupLabel: `${label} (${items.length})`,
+      groupKey: key
+    })
+    items.forEach(item => result.push(item))
+  })
+
+  return Object.freeze(result)
+})
+
+const trackerStatusMap = computed(() => ({
+  working: i18n.global.t('task.tracker-status-working'),
+  updating: i18n.global.t('task.tracker-status-updating'),
+  error: i18n.global.t('task.tracker-status-error'),
+  unknown: i18n.global.t('task.tracker-status-unknown'),
+  disabled: i18n.global.t('task.tracker-status-disabled'),
+  pending: i18n.global.t('task.tracker-status-pending'),
+  waiting: i18n.global.t('task.tracker-status-waiting'),
+  'not-working': i18n.global.t('task.tracker-status-not-working')
+}))
+
+const preconnectOrigins = computed(() => {
+  const origins = new Set()
+  trackerList.value.forEach(t => {
+    const faviconUrl = getFaviconUrl(t.url)
+    if (faviconUrl && faviconUrl.startsWith('http')) {
+      try {
+        origins.add(new URL(faviconUrl).origin)
+      } catch (e) {}
+    }
+  })
+  return Array.from(origins)
+})
+
+// Watchers
+watch(
+  () => props.task && props.task.gid,
+  (newGid) => {
+    if (_trackerFetchTimer) clearTimeout(_trackerFetchTimer)
+    if (_faviconFlushRafId) {
+      cancelAnimationFrame(_faviconFlushRafId)
+      _faviconFlushRafId = null
+    }
+    _faviconLoadQueue = null
+    faviconUrlCache.value = {}
+    faviconLoaded.value = {}
+    if (newGid && props.task && checkTaskIsBT(props.task)) {
+      fetchTrackerStats(newGid)
+      _startTrackerRefreshTimer(newGid)
+    } else {
+      trackerStats.value = []
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => props.task && props.task.status,
+  (newStatus) => {
+    if (newStatus === 'active' && props.task && props.task.gid && checkTaskIsBT(props.task)) {
+      if (_trackerFetchTimer) clearTimeout(_trackerFetchTimer)
+      fetchTrackerStats(props.task.gid)
+      _startTrackerRefreshTimer(props.task.gid)
+    } else if (newStatus !== 'active' && newStatus !== 'waiting') {
+      _stopTrackerRefreshTimer()
     }
   }
+)
+
+onBeforeUnmount(() => {
+  if (_faviconFlushRafId) {
+    cancelAnimationFrame(_faviconFlushRafId)
+  }
+  _stopTrackerRefreshTimer()
+})
+
+// Methods
+function _startTrackerRefreshTimer (gid) {
+  _stopTrackerRefreshTimer()
+  _trackerRefreshInterval = setInterval(() => {
+    if (gid && props.task && props.task.gid === gid && checkTaskIsBT(props.task)) {
+      fetchTrackerStats(gid)
+    } else {
+      _stopTrackerRefreshTimer()
+    }
+  }, 10000)
+}
+
+function _stopTrackerRefreshTimer () {
+  if (_trackerRefreshInterval) {
+    clearInterval(_trackerRefreshInterval)
+    _trackerRefreshInterval = null
+  }
+}
+
+async function fetchTrackerStats (gid) {
+  try {
+    const stats = await api.fetchTaskTrackers({ gid })
+    let list = []
+    if (Array.isArray(stats)) {
+      list = stats
+    } else if (stats && typeof stats === 'object') {
+      const keys = ['working', 'not-working', 'waiting']
+      keys.forEach(key => {
+        const arr = stats[key]
+        if (Array.isArray(arr)) {
+          list.push(...arr)
+        }
+      })
+    }
+    const seen = new Set()
+    list = list.filter(stat => {
+      const url = ((stat && stat.url) || '').trim()
+      if (!url || seen.has(url)) return false
+      seen.add(url)
+      return true
+    })
+    trackerStats.value = list
+    precomputeFaviconUrls()
+  } catch (error) {
+    trackerStats.value = []
+  }
+}
+
+function handleSpanMethod ({ row, columnIndex }) {
+  if (row.isGroup) {
+    if (columnIndex === 0) {
+      return [1, 8]
+    }
+    return [0, 0]
+  }
+}
+
+function getRowClassName ({ row }) {
+  if (row.isGroup) {
+    const groupKey = row.groupKey || ''
+    return `mo-tracker-group-row mo-tracker-group-${groupKey}`
+  }
+  return ''
+}
+
+function handleRowClick (row) {
+  // 分组行点击暂不处理展开/折叠，保持全部展开
+}
+
+function getTrackerStatusText (status) {
+  return trackerStatusMap.value[status] || status || '-'
+}
+
+function precomputeFaviconUrls () {
+  trackerStats.value.forEach(stat => {
+    const url = stat.url || ''
+    if (url && faviconUrlCache.value[url] === undefined) {
+      faviconUrlCache.value[url] = resolveFaviconUrl(url)
+    }
+  })
+}
+
+function resolveFaviconUrl (url) {
+  try {
+    const parsed = new URL(url)
+    const host = parsed.hostname
+    if (!host) return defaultFavicon
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return `${parsed.origin}/favicon.ico`
+    }
+    return `https://${host}/favicon.ico`
+  } catch (e) {
+    return defaultFavicon
+  }
+}
+
+function getFaviconUrl (url) {
+  return faviconUrlCache.value[url] || defaultFavicon
+}
+
+function isFaviconLoaded (url) {
+  return faviconLoaded.value[url] === true
+}
+
+function onFaviconError (e) {
+  const img = e.target
+  const url = img.getAttribute('data-tracker-url')
+  if (url && faviconUrlCache.value[url] !== defaultFavicon) {
+    faviconUrlCache.value[url] = defaultFavicon
+    img.src = defaultFavicon
+  } else if (url) {
+    _enqueueFaviconLoaded(url)
+  }
+}
+
+function onFaviconLoad (e) {
+  const url = e.target.getAttribute('data-tracker-url')
+  if (url) {
+    _enqueueFaviconLoaded(url)
+  }
+}
+
+function _enqueueFaviconLoaded (url) {
+  if (!_faviconLoadQueue) {
+    _faviconLoadQueue = {}
+  }
+  _faviconLoadQueue[url] = true
+  if (!_faviconFlushRafId) {
+    _faviconFlushRafId = requestAnimationFrame(() => {
+      _faviconFlushRafId = null
+      const queue = _faviconLoadQueue
+      _faviconLoadQueue = null
+      if (queue && Object.keys(queue).length > 0) {
+        faviconLoaded.value = Object.assign({}, faviconLoaded.value, queue)
+      }
+    })
+  }
+}
+
+function formatNextAnnounceTime (timestamp) {
+  if (!timestamp || timestamp <= 0) return '-'
+  const now = Math.floor(Date.now() / 1000)
+  const diff = timestamp - now
+  if (diff <= 0) return i18n.global.t('task.tracker-next-immediately')
+  const minutes = Math.floor(diff / 60)
+  const seconds = diff % 60
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
+}
 </script>
 
 <style lang="scss">

@@ -67,7 +67,9 @@ export const getEngineArch = (platform, arch) => {
 
 export const getDevEnginePath = (platform, arch) => {
   const ah = getEngineArch(platform, arch)
-  const base = `../../../extra/${platform}/${ah}/engine`
+  // __dirname = <workspace>/dist/electron（vite-plugin-electron 主进程产物目录）
+  // 回退两级即到工作区根目录的 extra/
+  const base = `../../extra/${platform}/${ah}/engine`
   const result = resolve(__dirname, base)
   return result
 }

@@ -3,7 +3,7 @@
   { "type": "separator" },
   { "id": "task.new-task", "command": "application:new-task", "command-after": "application:show?page=index" },
   { "id": "task.new-bt-task", "command": "application:new-bt-task", "command-arg": { "type": "torrent" }, "command-after": "application:show?page=index" },
-  { "id": "task.open-file", "command": "application:open-file", "command-before": "application:show?page=index" },
+  { "id": "task.open-torrent-file", "command": "application:open-file", "command-before": "application:show?page=index" },
   { "type": "separator" },
   { "id": "task.pause-all-task", "command": "application:pause-all-task" },
   { "id": "task.resume-all-task", "command": "application:resume-all-task" },

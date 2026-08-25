@@ -243,7 +243,7 @@ export default class ConfigManager {
         'security-scan-tool': 'system',
         'custom-security-scan-path': '',
         'task-view-mode': 'list',
-        'show-task-type-badge': true,
+        'show-task-type-badge': false,
         'ed2k-enabled': true,
         'ed2k-listen-port': 4662,
         'ed2k-max-connections': 200,

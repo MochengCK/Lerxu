@@ -1,9 +1,9 @@
-import { Message } from 'element-ui'
+import { ElMessage as Message } from 'element-plus'
 import { base64StringToBlob } from 'blob-util'
 import { ipcRenderer } from 'electron'
 
 import router from '@/router'
-import store from '@/store'
+import { useAppStore, usePreferenceStore, useTaskStore } from '@/store'
 import { buildFileList } from '@shared/utils'
 import { ADD_TASK_TYPE } from '@shared/constants'
 import { getLocaleManager } from '@/components/Locale'
@@ -18,22 +18,26 @@ const i18n = getLocaleManager().getI18n()
 
 const updateSystemTheme = (payload = {}) => {
   const { theme } = payload
-  store.dispatch('app/updateSystemTheme', theme)
+  const appStore = useAppStore()
+  appStore.updateSystemTheme(theme)
 }
 
 const updateTheme = (payload = {}) => {
   const { theme } = payload
-  store.dispatch('preference/updateAppTheme', theme)
+  const preferenceStore = usePreferenceStore()
+  preferenceStore.updateAppTheme(theme)
 }
 
 const updateLocale = (payload = {}) => {
   const { locale } = payload
-  store.dispatch('preference/updateAppLocale', locale)
+  const preferenceStore = usePreferenceStore()
+  preferenceStore.updateAppLocale(locale)
 }
 
 const updateTrayFocused = (payload = {}) => {
   const { focused } = payload
-  store.dispatch('app/updateTrayFocused', focused)
+  const appStore = useAppStore()
+  appStore.updateTrayFocused(focused)
 }
 
 const addTask = (payload = {}) => {
@@ -48,17 +52,19 @@ const addTask = (payload = {}) => {
     ...rest
   }
 
+  const appStore = useAppStore()
+
   if (type === ADD_TASK_TYPE.URI && uri) {
-    store.dispatch('app/updateAddTaskUrl', uri)
+    appStore.updateAddTaskUrl(uri)
   }
-  store.dispatch('app/updateAddTaskOptions', options)
+  appStore.updateAddTaskOptions(options)
 
   if (silent) {
     addTaskSilent(type)
     return
   }
 
-  store.dispatch('app/showAddTaskDialog', type)
+  appStore.showAddTaskDialog(type)
 }
 
 const addTaskSilent = async (type) => {
@@ -67,26 +73,41 @@ const addTaskSilent = async (type) => {
   } catch (err) {
     Message.error(i18n.t(err.message))
   } finally {
-    store.dispatch('app/resetAddTaskOptions')
+    const appStore = useAppStore()
+    appStore.resetAddTaskOptions()
   }
 }
 
 const addTaskByType = async (type) => {
-  const form = initTaskForm(store.state)
+  const appStore = useAppStore()
+  const preferenceStore = usePreferenceStore()
+  const taskStore = useTaskStore()
+
+  // Build a state-like object for initTaskForm compatibility
+  const form = initTaskForm({
+    app: {
+      addTaskUrl: appStore.addTaskUrl,
+      addTaskTorrents: appStore.addTaskTorrents,
+      addTaskOptions: appStore.addTaskOptions
+    },
+    preference: {
+      config: preferenceStore.config
+    }
+  })
 
   let payload = null
   if (type === ADD_TASK_TYPE.URI) {
-    const config = store.state.preference.config || {}
+    const config = preferenceStore.config || {}
     const autoCategorizeFiles = config.autoCategorizeFiles || false
     const fileCategories = config.fileCategories || null
 
     payload = await buildUriPayload(form, autoCategorizeFiles, fileCategories)
-    store.dispatch('task/addUri', payload).catch(err => {
+    taskStore.addUri(payload).catch(err => {
       Message.error(err.message)
     })
   } else if (type === ADD_TASK_TYPE.TORRENT) {
     payload = buildTorrentPayload(form)
-    store.dispatch('task/addTorrent', payload).catch(err => {
+    taskStore.addTorrent(payload).catch(err => {
       Message.error(err.message)
     })
   } else if (type === 'metalink') {
@@ -97,7 +118,8 @@ const addTaskByType = async (type) => {
 }
 
 const showAddBtTask = () => {
-  store.dispatch('app/showAddTaskDialog', ADD_TASK_TYPE.TORRENT)
+  const appStore = useAppStore()
+  appStore.showAddTaskDialog(ADD_TASK_TYPE.TORRENT)
 }
 
 const showAddBtTaskWithFile = (payload = {}) => {
@@ -106,13 +128,15 @@ const showAddBtTaskWithFile = (payload = {}) => {
     return
   }
 
+  const appStore = useAppStore()
+
   const blob = base64StringToBlob(dataURL, 'application/x-bittorrent')
   const file = new File([blob], name, { type: 'application/x-bittorrent' })
   const fileList = buildFileList(file)
 
-  store.dispatch('app/showAddTaskDialog', ADD_TASK_TYPE.TORRENT)
+  appStore.showAddTaskDialog(ADD_TASK_TYPE.TORRENT)
   setTimeout(() => {
-    store.dispatch('app/addTaskAddTorrents', { fileList })
+    appStore.addTaskAddTorrents({ fileList })
   }, 200)
 }
 
@@ -144,11 +168,13 @@ const showUnderDevelopmentMessage = () => {
 }
 
 const pauseTask = () => {
-  store.dispatch('task/batchPauseSelectedTasks')
+  const taskStore = useTaskStore()
+  taskStore.batchPauseSelectedTasks()
 }
 
 const resumeTask = () => {
-  store.dispatch('task/batchResumeSelectedTasks')
+  const taskStore = useTaskStore()
+  taskStore.batchResumeSelectedTasks()
 }
 
 const deleteTask = () => {
@@ -166,27 +192,32 @@ const moveTaskDown = () => {
 }
 
 const pauseAllTask = () => {
-  store.dispatch('task/pauseAllTask')
+  const taskStore = useTaskStore()
+  taskStore.pauseAllTask()
 }
 
 const resumeAllTask = () => {
-  store.dispatch('task/resumeAllTask')
+  const taskStore = useTaskStore()
+  taskStore.resumeAllTask()
 }
 
 const selectAllTask = () => {
-  store.dispatch('task/selectAllTask')
+  const taskStore = useTaskStore()
+  taskStore.selectAllTask()
 }
 
 const showTaskDetail = (payload = {}) => {
   const { gid } = payload
   navigateTaskList()
   if (gid) {
-    store.dispatch('task/showTaskDetailByGid', gid)
+    const taskStore = useTaskStore()
+    taskStore.showTaskDetailByGid(gid)
   }
 }
 
 const fetchPreference = () => {
-  store.dispatch('preference/fetchPreference')
+  const preferenceStore = usePreferenceStore()
+  preferenceStore.fetchPreference()
 }
 
 const handleTaskProgressControl = (payload = {}) => {
@@ -194,7 +225,8 @@ const handleTaskProgressControl = (payload = {}) => {
 }
 
 const updateEngineList = (payload = {}) => {
-  store.commit('app/UPDATE_ENGINE_LIST', payload)
+  const appStore = useAppStore()
+  appStore.updateEngineList(payload)
 }
 
 commands.register('application:task-list', navigateTaskList)

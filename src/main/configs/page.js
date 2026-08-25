@@ -1,26 +1,19 @@
 import is from 'electron-is'
 import path from 'path'
 
-const getVideoSnifferUrl = () => {
-  if (is.dev()) {
-    return `file://${path.resolve(__dirname, '../pages/video-sniffer.html').replace(/\\/g, '/')}`
-  }
-  return `file://${path.join(__dirname, 'pages/video-sniffer.html').replace(/\\/g, '/')}`
+/* 主进程经 vite 构建后，dev 与 prod 的 __dirname 恒为 dist/electron，
+   独立 HTML 页面（pages/）与之同级。旧代码 dev 分支用 ../pages 指向
+   dist/pages（不存在），导致编辑规则/视频嗅探等窗口在 dev 下加载失败、
+   打开后空白。pages 目录由 vite.config.js 的 copyMainPages 插件同步。 */
+const getPageUrl = (file) => {
+  return `file://${path.join(__dirname, 'pages', file).replace(/\\/g, '/')}`
 }
 
-const getVideoSnifferAddFormatUrl = () => {
-  if (is.dev()) {
-    return `file://${path.resolve(__dirname, '../pages/video-sniffer-add-format.html').replace(/\\/g, '/')}`
-  }
-  return `file://${path.join(__dirname, 'pages/video-sniffer-add-format.html').replace(/\\/g, '/')}`
-}
+const getVideoSnifferUrl = () => getPageUrl('video-sniffer.html')
 
-const getFileCategoriesUrl = () => {
-  if (is.dev()) {
-    return `file://${path.resolve(__dirname, '../pages/file-categories.html').replace(/\\/g, '/')}`
-  }
-  return `file://${path.join(__dirname, 'pages/file-categories.html').replace(/\\/g, '/')}`
-}
+const getVideoSnifferAddFormatUrl = () => getPageUrl('video-sniffer-add-format.html')
+
+const getFileCategoriesUrl = () => getPageUrl('file-categories.html')
 
 const getPreferenceUrl = () => {
   if (is.dev()) {

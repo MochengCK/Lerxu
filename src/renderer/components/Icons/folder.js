@@ -4,12 +4,8 @@ Icon.register({
   'folder': {
     'width': 24,
     'height': 24,
-    'raw': `<line fill="none" stroke-miterlimit="10" x1="1" y1="8" x2="23" y2="8" /><polygon fill="none" stroke-miterlimit="10" points="23,23 1,23 1,1 10,1 12,4 23,4 " />`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/>
+    </g>`
   }
 })

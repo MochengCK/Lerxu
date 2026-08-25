@@ -1,11 +1,9 @@
-import Vue from 'vue'
-import Vuex from 'vuex'
-
-import modules from './modules'
-
-Vue.use(Vuex)
-
-export default new Vuex.Store({
-  modules,
-  strict: process.env.NODE_ENV !== 'production'
-})
+/**
+ * Pinia store entry point.
+ *
+ * Exports all store composables for use across the application.
+ * Replaces the old Vuex store (src/renderer/store/index.js + modules/).
+ */
+export { useAppStore } from './app'
+export { usePreferenceStore } from './preference'
+export { useTaskStore } from './task'

@@ -2,12 +2,10 @@ import Icon from '@/components/Icons/Icon'
 
 Icon.register({
   'chevron-left': {
-    width: 24,
-    height: 24,
-    paths: [
-      {
-        d: 'M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z'
-      }
-    ]
+    'width': 24,
+    'height': 24,
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m15 6-6 6 6 6"/>
+    </g>`
   }
 })

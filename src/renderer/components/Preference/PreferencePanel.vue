@@ -17,12 +17,12 @@
             @mousedown="handlePreferenceSearchMouseDown"
             @mouseup="handlePreferenceSearchMouseUp"
           >
-            <i class="el-icon-search"></i>
+            <el-icon class="preference-search-icon"><Search /></el-icon>
             <input
               ref="preferenceSearchInput"
               class="floating-bar-search-input"
               type="text"
-              :placeholder="$t('preferences.search-settings')"
+              :placeholder="t('preferences.search-settings')"
               v-model="preferenceSearchValue"
               @click.stop
               @focus="handlePreferenceSearchFocus"
@@ -76,361 +76,326 @@
   </el-container>
 </template>
 
-<script>
-  import { mapState } from 'vuex'
-  import Aside from '@/components/Aside/SettingsAside'
-  import PreferenceAdvanced from '@/components/Preference/Advanced'
+<script setup>
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, getCurrentInstance } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import i18n from '@/plugins/i18n'
+import { usePreferenceStore } from '@/store/preference'
+import { storeToRefs } from 'pinia'
+import Aside from '@/components/Aside/SettingsAside'
+import PreferenceAdvanced from '@/components/Preference/Advanced'
 
-  export default {
-    name: 'mo-content-preference',
-    components: {
-      [Aside.name]: Aside
-    },
-    data () {
-      return {
-        windowWidth: 0,
-        isPreferenceSearchHovering: false,
-        isPreferenceSearchFocused: false,
-        isPreferenceSearchPressed: false,
-        preferenceSearchTimer: null,
-        isPreferenceSearchAutoNavigating: false,
-        preferenceSearchToken: 0,
-        pendingPreferenceSearchKeyword: '',
-        preferenceSearchIndex: {},
-        preferenceSearchStaticIndexReady: false,
-        preferenceSearchLastIndexedPath: ''
-      }
-    },
-    computed: {
-      ...mapState('preference', {
-        autoHideAside: state => state.config.autoHideAside,
-        preferenceSearchKeyword: state => state.searchKeyword
-      }),
-      preferenceSearchValue: {
-        get () {
-          return this.preferenceSearchKeyword
-        },
-        set (val) {
-          this.$store.dispatch('preference/updateSearchKeyword', val)
+const { t } = i18n.global
+const route = useRoute()
+const router = useRouter()
+const instance = getCurrentInstance()
+
+const preferenceStore = usePreferenceStore()
+const { config: preferenceConfig } = storeToRefs(preferenceStore)
+
+// --- Data ---
+const windowWidth = ref(0)
+const isPreferenceSearchHovering = ref(false)
+const isPreferenceSearchFocused = ref(false)
+const isPreferenceSearchPressed = ref(false)
+let preferenceSearchTimer = null
+const isPreferenceSearchAutoNavigating = ref(false)
+let preferenceSearchToken = 0
+const pendingPreferenceSearchKeyword = ref('')
+const preferenceSearchIndex = ref({})
+const preferenceSearchStaticIndexReady = ref(false)
+const preferenceSearchLastIndexedPath = ref('')
+const preferenceSearchInput = ref(null)
+const preferenceForm = ref(null)
+let _handleWindowResize = null
+let _preferenceSearchMouseUpHandler = null
+
+// --- Computed ---
+const autoHideAside = computed(() => preferenceConfig.value.autoHideAside)
+const preferenceSearchKeyword = computed(() => preferenceStore.searchKeyword)
+
+const preferenceSearchValue = computed({
+  get () { return preferenceSearchKeyword.value },
+  set (val) { preferenceStore.updateSearchKeyword(val) }
+})
+
+const preferenceBasePath = computed(() => {
+  const path = `${route.path || ''}`
+  return path.startsWith('/preference-window') ? '/preference-window' : '/preference'
+})
+
+const isStandalone = computed(() => preferenceBasePath.value === '/preference-window')
+
+const isSmallWindow = computed(() => {
+  const width = windowWidth.value || (typeof window !== 'undefined' ? window.innerWidth : 0)
+  if (!width) return false
+  return width < 700
+})
+
+const isThreeColumn = computed(() => !isSmallWindow.value)
+const showThreeColumnSubnav = computed(() => !isStandalone.value && isThreeColumn.value)
+const showSmallScreenNav = computed(() => !isStandalone.value && !isThreeColumn.value)
+
+const subnavItems = computed(() => {
+  const base = preferenceBasePath.value
+  return [
+    { key: 'basic', title: t('preferences.basic'), route: `${base}/basic` },
+    { key: 'appearance', title: t('preferences.appearance'), route: `${base}/appearance` },
+    { key: 'transfer', title: t('preferences.transfer-settings'), route: `${base}/transfer` },
+    { key: 'bt', title: t('preferences.bt-settings'), route: `${base}/bt` },
+    { key: 'task', title: t('preferences.task-manage'), route: `${base}/task` },
+    { key: 'file', title: t('preferences.file-manage'), route: `${base}/file` },
+    { key: 'advanced', title: t('preferences.advanced'), route: `${base}/advanced` }
+  ]
+})
+
+const subnavs = computed(() => subnavItems.value.map(item => ({
+  key: item.key,
+  title: item.title,
+  route: item.route
+})))
+
+const title = computed(() => {
+  const rawPath = `${route.path || ''}`
+  const parts = rawPath.replace(/^\/preference(?:-window)?\//, '').split('/')
+  const key = parts && parts[0] ? parts[0] : 'basic'
+  const subnav = subnavs.value.find(item => item.key === key)
+  return subnav ? subnav.title : t('preferences.basic')
+})
+
+const currentPreferenceCategory = computed(() => {
+  const rawPath = `${route.path || ''}`
+  const parts = rawPath.replace(/^\/preference(?:-window)?\//, '').split('/')
+  return parts && parts[0] ? parts[0] : 'basic'
+})
+
+// --- Watchers ---
+watch(preferenceSearchKeyword, (val) => {
+  schedulePreferenceSearch(val)
+})
+watch(() => route.path, () => {
+  preferenceSearchLastIndexedPath.value = ''
+})
+
+// --- Methods ---
+function navPreference (category) {
+  const base = preferenceBasePath.value
+  router.push({ path: `${base}/${category}` }).catch(err => {
+    console.log(err)
+  })
+}
+
+function isActive (path) {
+  const current = route.path
+  if (current === path) return true
+  const base = preferenceBasePath.value
+  return current === base && path === `${base}/basic`
+}
+
+function handleWindowResize () {
+  if (typeof window === 'undefined') return
+  windowWidth.value = window.innerWidth || 0
+}
+
+function focusPreferenceSearch () {
+  nextTick(() => {
+    const input = preferenceSearchInput.value
+    if (input && input.focus) {
+      input.focus()
+    }
+  })
+}
+
+function handlePreferenceSearchMouseEnter () {
+  isPreferenceSearchHovering.value = true
+}
+function handlePreferenceSearchMouseLeave () {
+  isPreferenceSearchHovering.value = false
+  isPreferenceSearchPressed.value = false
+  removePreferenceSearchMouseUpListener()
+}
+function handlePreferenceSearchMouseDown () {
+  isPreferenceSearchPressed.value = true
+  addPreferenceSearchMouseUpListener()
+}
+function handlePreferenceSearchMouseUp () {
+  isPreferenceSearchPressed.value = false
+  removePreferenceSearchMouseUpListener()
+}
+function handlePreferenceSearchFocus () {
+  isPreferenceSearchFocused.value = true
+}
+function handlePreferenceSearchBlur () {
+  isPreferenceSearchFocused.value = false
+}
+
+function addPreferenceSearchMouseUpListener () {
+  if (typeof window === 'undefined') return
+  if (!_preferenceSearchMouseUpHandler) {
+    _preferenceSearchMouseUpHandler = () => handlePreferenceSearchMouseUp()
+  }
+  window.addEventListener('mouseup', _preferenceSearchMouseUpHandler)
+}
+function removePreferenceSearchMouseUpListener () {
+  if (typeof window === 'undefined' || !_preferenceSearchMouseUpHandler) return
+  window.removeEventListener('mouseup', _preferenceSearchMouseUpHandler)
+}
+
+function schedulePreferenceSearch (keyword) {
+  if (preferenceSearchTimer) {
+    clearTimeout(preferenceSearchTimer)
+    preferenceSearchTimer = null
+  }
+  const normalized = `${keyword || ''}`.trim()
+  if (!normalized) {
+    pendingPreferenceSearchKeyword.value = ''
+    return
+  }
+  if (isPreferenceSearchAutoNavigating.value) {
+    pendingPreferenceSearchKeyword.value = normalized
+    return
+  }
+  preferenceSearchTimer = setTimeout(() => {
+    runPreferenceSearch(normalized)
+  }, 200)
+}
+
+async function runPreferenceSearch (keyword) {
+  const normalized = `${keyword || ''}`.trim().toLowerCase()
+  if (!normalized) return
+  const token = ++preferenceSearchToken
+  if (isPreferenceSearchAutoNavigating.value) {
+    pendingPreferenceSearchKeyword.value = keyword
+    return
+  }
+  ensurePreferenceSearchStaticIndex()
+  const currentCategory = currentPreferenceCategory.value
+  if (preferenceSearchLastIndexedPath.value !== route.path) {
+    await updatePreferenceSearchIndexFromCurrentForm()
+    preferenceSearchLastIndexedPath.value = route.path
+  }
+  if (token !== preferenceSearchToken) return
+  const matchedCategory = findPreferenceSearchMatch(normalized, currentCategory)
+  if (!matchedCategory || matchedCategory === currentCategory) return
+  isPreferenceSearchAutoNavigating.value = true
+  await navigateToPreferenceCategory(matchedCategory)
+  isPreferenceSearchAutoNavigating.value = false
+  if (pendingPreferenceSearchKeyword.value) {
+    const nextKeyword = pendingPreferenceSearchKeyword.value
+    pendingPreferenceSearchKeyword.value = ''
+    runPreferenceSearch(nextKeyword)
+  }
+}
+
+async function navigateToPreferenceCategory (category) {
+  const base = preferenceBasePath.value
+  const targetPath = `${base}/${category}`
+  if (route.path !== targetPath) {
+    await router.push({ path: targetPath }).catch(() => {})
+  }
+  await nextTick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+}
+
+function ensurePreferenceSearchStaticIndex () {
+  if (preferenceSearchStaticIndexReady.value) return
+  const index = { ...preferenceSearchIndex.value }
+  const entries = [
+    { key: 'advanced', component: PreferenceAdvanced }
+  ]
+  entries.forEach(entry => {
+    const keys = extractPreferenceKeysFromComponent(entry.component)
+    if (!keys.length) return
+    const text = keys.map(key => `${t(key) || ''}`).join(' ').toLowerCase()
+    if (text) {
+      index[entry.key] = text
+    }
+  })
+  preferenceSearchIndex.value = index
+  preferenceSearchStaticIndexReady.value = true
+}
+
+function extractPreferenceKeysFromComponent (component) {
+  const render = component && (component.render || (component.options && component.options.render))
+  if (typeof render !== 'function') return []
+  const source = `${render.toString() || ''}`
+  const matches = source.match(/preferences\.[a-z0-9-]+/gi) || []
+  return Array.from(new Set(matches))
+}
+
+async function updatePreferenceSearchIndexFromCurrentForm () {
+  await nextTick()
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const formComponent = preferenceForm.value
+  if (!formComponent || !formComponent.$el) return
+  const el = formComponent.$el
+  const cards = el.querySelectorAll('.preference-card, .preference-bottom-actions')
+  const currentCategory = currentPreferenceCategory.value
+  const nextIndex = { ...preferenceSearchIndex.value }
+  if (!cards.length) {
+    const text = `${el.textContent || ''}`.toLowerCase()
+    nextIndex[currentCategory] = text
+    preferenceSearchIndex.value = nextIndex
+    return
+  }
+  const basicCategories = new Set(['basic', 'appearance', 'transfer', 'bt', 'task', 'file'])
+  if (basicCategories.has(currentCategory)) {
+    const categoryTextMap = {}
+    Array.from(cards).forEach(card => {
+      const text = `${card.textContent || ''}`.toLowerCase()
+      const rawCategory = `${card.dataset.category || ''}`.trim()
+      const categories = rawCategory ? rawCategory.split(/\s+/) : [currentCategory]
+      categories.forEach(category => {
+        if (!categoryTextMap[category]) {
+          categoryTextMap[category] = text
+        } else {
+          categoryTextMap[category] = `${categoryTextMap[category]} ${text}`
         }
-      },
-      preferenceBasePath () {
-        const path = `${this.$route.path || ''}`
-        return path.startsWith('/preference-window') ? '/preference-window' : '/preference'
-      },
-      isStandalone () {
-        return this.preferenceBasePath === '/preference-window'
-      },
-      isSmallWindow () {
-        const width = this.windowWidth || (typeof window !== 'undefined' ? window.innerWidth : 0)
-        if (!width) {
-          return false
-        }
-        return width < 700
-      },
-      isThreeColumn () {
-        return !this.isSmallWindow
-      },
-      showMainAside () {
-        // In three-column mode, the main aside is not shown;
-        // the subnav takes its place as the left sidebar
-        return false
-      },
-      showThreeColumnSubnav () {
-        if (this.isStandalone) {
-          return false
-        }
-        return this.isThreeColumn
-      },
-      showSmallScreenNav () {
-        if (this.isStandalone) {
-          return false
-        }
-        // In three-column mode, small screen nav is not needed
-        if (this.isThreeColumn) {
-          return false
-        }
-        return true
-      },
-      subnavs () {
-        return this.subnavItems.map(item => ({
-          key: item.key,
-          title: item.title,
-          route: item.route
-        }))
-      },
-      subnavItems () {
-        const base = this.preferenceBasePath
-        return [
-          { key: 'basic', title: this.$t('preferences.basic'), route: `${base}/basic` },
-          { key: 'appearance', title: this.$t('preferences.appearance'), route: `${base}/appearance` },
-          { key: 'transfer', title: this.$t('preferences.transfer-settings'), route: `${base}/transfer` },
-          { key: 'bt', title: this.$t('preferences.bt-settings'), route: `${base}/bt` },
-          { key: 'task', title: this.$t('preferences.task-manage'), route: `${base}/task` },
-          { key: 'file', title: this.$t('preferences.file-manage'), route: `${base}/file` },
-          { key: 'advanced', title: this.$t('preferences.advanced'), route: `${base}/advanced` }
-        ]
-      },
-      title () {
-        const rawPath = `${this.$route.path || ''}`
-        const parts = rawPath.replace(/^\/preference(?:-window)?\//, '').split('/')
-        const key = parts && parts[0] ? parts[0] : 'basic'
-        const subnav = this.subnavs.find(item => item.key === key)
-        return subnav ? subnav.title : this.$t('preferences.basic')
-      },
-      currentPreferenceCategory () {
-        const rawPath = `${this.$route.path || ''}`
-        const parts = rawPath.replace(/^\/preference(?:-window)?\//, '').split('/')
-        return parts && parts[0] ? parts[0] : 'basic'
-      }
-    },
-    watch: {
-      preferenceSearchKeyword (val) {
-        this.schedulePreferenceSearch(val)
-      },
-      '$route.path' () {
-        // Invalidate search index cache when the route changes,
-        // so the next search rebuilds the index for the new page.
-        this.preferenceSearchLastIndexedPath = ''
-      }
-    },
-    methods: {
-      navPreference (category) {
-        const base = this.preferenceBasePath
-        this.$router.push({
-          path: `${base}/${category}`
-        }).catch(err => {
-          console.log(err)
-        })
-      },
-      isActive (path) {
-        const current = this.$route.path
-        if (current === path) {
-          return true
-        }
-        const base = this.preferenceBasePath
-        return current === base && path === `${base}/basic`
-      },
-      handleWindowResize () {
-        if (typeof window === 'undefined') {
-          return
-        }
-        this.windowWidth = window.innerWidth || 0
-      },
-      focusPreferenceSearch () {
-        this.$nextTick(() => {
-          const input = this.$refs.preferenceSearchInput
-          if (input && input.focus) {
-            input.focus()
-          }
-        })
-      },
-      handlePreferenceSearchMouseEnter () {
-        this.isPreferenceSearchHovering = true
-      },
-      handlePreferenceSearchMouseLeave () {
-        this.isPreferenceSearchHovering = false
-        this.isPreferenceSearchPressed = false
-        this.removePreferenceSearchMouseUpListener()
-      },
-      handlePreferenceSearchMouseDown () {
-        this.isPreferenceSearchPressed = true
-        this.addPreferenceSearchMouseUpListener()
-      },
-      handlePreferenceSearchMouseUp () {
-        this.isPreferenceSearchPressed = false
-        this.removePreferenceSearchMouseUpListener()
-      },
-      handlePreferenceSearchFocus () {
-        this.isPreferenceSearchFocused = true
-      },
-      handlePreferenceSearchBlur () {
-        this.isPreferenceSearchFocused = false
-      },
-      addPreferenceSearchMouseUpListener () {
-        if (typeof window === 'undefined') {
-          return
-        }
-        if (!this._preferenceSearchMouseUpHandler) {
-          this._preferenceSearchMouseUpHandler = () => {
-            this.handlePreferenceSearchMouseUp()
-          }
-        }
-        window.addEventListener('mouseup', this._preferenceSearchMouseUpHandler)
-      },
-      removePreferenceSearchMouseUpListener () {
-        if (typeof window === 'undefined' || !this._preferenceSearchMouseUpHandler) {
-          return
-        }
-        window.removeEventListener('mouseup', this._preferenceSearchMouseUpHandler)
-      },
-      schedulePreferenceSearch (keyword) {
-        if (this.preferenceSearchTimer) {
-          clearTimeout(this.preferenceSearchTimer)
-          this.preferenceSearchTimer = null
-        }
-        const normalized = `${keyword || ''}`.trim()
-        if (!normalized) {
-          this.pendingPreferenceSearchKeyword = ''
-          return
-        }
-        if (this.isPreferenceSearchAutoNavigating) {
-          this.pendingPreferenceSearchKeyword = normalized
-          return
-        }
-        this.preferenceSearchTimer = setTimeout(() => {
-          this.runPreferenceSearch(normalized)
-        }, 200)
-      },
-      async runPreferenceSearch (keyword) {
-        const normalized = `${keyword || ''}`.trim().toLowerCase()
-        if (!normalized) {
-          return
-        }
-        const token = ++this.preferenceSearchToken
-        if (this.isPreferenceSearchAutoNavigating) {
-          this.pendingPreferenceSearchKeyword = keyword
-          return
-        }
-        this.ensurePreferenceSearchStaticIndex()
-        const currentCategory = this.currentPreferenceCategory
-        // Only rebuild the DOM-based index when the route has changed since
-        // the last scan. Repeated searches on the same page reuse the cache,
-        // avoiding expensive textContent reads and reflow on every keystroke.
-        if (this.preferenceSearchLastIndexedPath !== this.$route.path) {
-          await this.updatePreferenceSearchIndexFromCurrentForm()
-          this.preferenceSearchLastIndexedPath = this.$route.path
-        }
-        if (token !== this.preferenceSearchToken) {
-          return
-        }
-        const matchedCategory = this.findPreferenceSearchMatch(normalized, currentCategory)
-        if (!matchedCategory || matchedCategory === currentCategory) {
-          return
-        }
-        this.isPreferenceSearchAutoNavigating = true
-        await this.navigateToPreferenceCategory(matchedCategory)
-        this.isPreferenceSearchAutoNavigating = false
-        if (this.pendingPreferenceSearchKeyword) {
-          const nextKeyword = this.pendingPreferenceSearchKeyword
-          this.pendingPreferenceSearchKeyword = ''
-          this.runPreferenceSearch(nextKeyword)
-        }
-      },
-      async navigateToPreferenceCategory (category) {
-        const base = this.preferenceBasePath
-        const targetPath = `${base}/${category}`
-        if (this.$route.path !== targetPath) {
-          await this.$router.push({ path: targetPath }).catch(() => {})
-        }
-        await this.$nextTick()
-        await new Promise(resolve => setTimeout(resolve, 0))
-      },
-      ensurePreferenceSearchStaticIndex () {
-        if (this.preferenceSearchStaticIndexReady) {
-          return
-        }
-        const index = { ...this.preferenceSearchIndex }
-        const entries = [
-          { key: 'advanced', component: PreferenceAdvanced }
-        ]
-        entries.forEach(entry => {
-          const keys = this.extractPreferenceKeysFromComponent(entry.component)
-          if (!keys.length) {
-            return
-          }
-          const text = keys.map(key => `${this.$t(key) || ''}`).join(' ').toLowerCase()
-          if (text) {
-            index[entry.key] = text
-          }
-        })
-        this.preferenceSearchIndex = index
-        this.preferenceSearchStaticIndexReady = true
-      },
-      extractPreferenceKeysFromComponent (component) {
-        const render = component && (component.render || (component.options && component.options.render))
-        if (typeof render !== 'function') {
-          return []
-        }
-        const source = `${render.toString() || ''}`
-        const matches = source.match(/preferences\.[a-z0-9-]+/gi) || []
-        return Array.from(new Set(matches))
-      },
-      async updatePreferenceSearchIndexFromCurrentForm () {
-        await this.$nextTick()
-        await new Promise(resolve => setTimeout(resolve, 0))
-        const formComponent = this.$refs.preferenceForm
-        if (!formComponent || !formComponent.$el) {
-          return
-        }
-        const cards = formComponent.$el.querySelectorAll('.preference-card, .preference-bottom-actions')
-        const currentCategory = this.currentPreferenceCategory
-        const nextIndex = { ...this.preferenceSearchIndex }
-        if (!cards.length) {
-          const text = `${formComponent.$el.textContent || ''}`.toLowerCase()
-          nextIndex[currentCategory] = text
-          this.preferenceSearchIndex = nextIndex
-          return
-        }
-        const basicCategories = new Set(['basic', 'appearance', 'transfer', 'bt', 'task', 'file'])
-        if (basicCategories.has(currentCategory)) {
-          const categoryTextMap = {}
-          Array.from(cards).forEach(card => {
-            const text = `${card.textContent || ''}`.toLowerCase()
-            const rawCategory = `${card.dataset.category || ''}`.trim()
-            const categories = rawCategory ? rawCategory.split(/\s+/) : [currentCategory]
-            categories.forEach(category => {
-              if (!categoryTextMap[category]) {
-                categoryTextMap[category] = text
-              } else {
-                categoryTextMap[category] = `${categoryTextMap[category]} ${text}`
-              }
-            })
-          })
-          Object.keys(categoryTextMap).forEach(category => {
-            nextIndex[category] = categoryTextMap[category]
-          })
-          this.preferenceSearchIndex = nextIndex
-          return
-        }
-        const text = Array.from(cards).map(card => card.textContent || '').join(' ').toLowerCase()
-        nextIndex[currentCategory] = text
-        this.preferenceSearchIndex = nextIndex
-      },
-      findPreferenceSearchMatch (keyword, currentCategory) {
-        const index = this.preferenceSearchIndex || {}
-        const categories = [currentCategory, ...this.subnavItems.map(item => item.key).filter(key => key !== currentCategory)]
-        for (const key of categories) {
-          const text = index[key]
-          if (text && text.includes(keyword)) {
-            return key
-          }
-        }
-        return ''
-      }
-    },
-    mounted () {
-      if (typeof window !== 'undefined') {
-        this.handleWindowResize()
-        this._handleWindowResize = () => {
-          this.handleWindowResize()
-        }
-        window.addEventListener('resize', this._handleWindowResize)
-      }
-    },
-    beforeDestroy () {
-      // 清理尚未执行的搜索防抖定时器，避免组件销毁后触发导航
-      if (this.preferenceSearchTimer) {
-        clearTimeout(this.preferenceSearchTimer)
-        this.preferenceSearchTimer = null
-      }
-      if (typeof window !== 'undefined' && this._handleWindowResize) {
-        window.removeEventListener('resize', this._handleWindowResize)
-        this._handleWindowResize = null
-      }
-      this.removePreferenceSearchMouseUpListener()
+      })
+    })
+    Object.keys(categoryTextMap).forEach(category => {
+      nextIndex[category] = categoryTextMap[category]
+    })
+    preferenceSearchIndex.value = nextIndex
+    return
+  }
+  const text = Array.from(cards).map(card => card.textContent || '').join(' ').toLowerCase()
+  nextIndex[currentCategory] = text
+  preferenceSearchIndex.value = nextIndex
+}
+
+function findPreferenceSearchMatch (keyword, currentCategory) {
+  const index = preferenceSearchIndex.value || {}
+  const categories = [currentCategory, ...subnavItems.value.map(item => item.key).filter(key => key !== currentCategory)]
+  for (const key of categories) {
+    const text = index[key]
+    if (text && text.includes(keyword)) {
+      return key
     }
   }
+  return ''
+}
+
+// --- Lifecycle ---
+onMounted(() => {
+  if (typeof window !== 'undefined') {
+    handleWindowResize()
+    _handleWindowResize = () => handleWindowResize()
+    window.addEventListener('resize', _handleWindowResize)
+  }
+})
+
+onBeforeUnmount(() => {
+  if (preferenceSearchTimer) {
+    clearTimeout(preferenceSearchTimer)
+    preferenceSearchTimer = null
+  }
+  if (typeof window !== 'undefined' && _handleWindowResize) {
+    window.removeEventListener('resize', _handleWindowResize)
+    _handleWindowResize = null
+  }
+  removePreferenceSearchMouseUpListener()
+})
 </script>
 
 <style lang="scss">
@@ -501,7 +466,7 @@
 
 .subnav-small-screen .menu svg {
   padding: 6px;
-  color: $--icon-color;
+  color: #666;
   outline: none;
   border: none;
   box-shadow: none;
@@ -509,7 +474,7 @@
 
 .subnav-small-screen__text {
   font-size: 12px;
-  color: $--color-text-regular;
+  color: var(--el-text-color-regular);
   line-height: 1;
   white-space: nowrap;
 }
@@ -615,7 +580,7 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
   width: 100%;
   height: 28px;
   border-radius: 8px;
-  border: 1px solid $--border-color-base;
+  border: 1px solid var(--el-border-color);
   background: transparent;
   padding: 0 8px;
   overflow: hidden;
@@ -629,7 +594,7 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
   &:hover,
   &.is-hovered,
   &:focus-within {
-    border-color: $--color-primary;
+    border-color: var(--el-color-primary);
   }
 }
 
@@ -638,32 +603,32 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
   border: none;
   outline: none;
   background: transparent;
-  color: $--color-text-regular;
+  color: var(--el-text-color-regular);
   font-size: 13px;
   padding: 0;
   height: 100%;
   min-width: 0;
 
   &::placeholder {
-    color: $--color-text-secondary;
+    color: var(--el-text-color-secondary);
     opacity: 0.6;
   }
 }
 
 .preference-subnav-search .floating-bar-search i {
   font-size: 14px;
-  color: $--task-action-color;
+  color: var(--lc-task-action);
   margin-right: 6px;
   flex-shrink: 0;
 }
 
 .theme-dark .preference-subnav-search .floating-bar-search {
-  border-color: $--task-item-border-color;
+  border-color: var(--lc-task-item-border);
 
   &:hover,
   &.is-hovered,
   &:focus-within {
-    border-color: $--color-primary;
+    border-color: var(--el-color-primary);
   }
 }
 
@@ -713,17 +678,17 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
     background: transparent;
     border-radius: 12px;
     padding: 20px 24px;
-    border: 1px solid $--border-color-light;
+    border: 1px solid var(--el-border-color-light);
     transition: all 0.3s ease;
   }
 
   .card-title {
     font-size: 17px;
     font-weight: 600;
-    color: $--color-text-primary;
+    color: var(--el-text-color-primary);
     margin-bottom: 16px;
     padding-bottom: 10px;
-    border-bottom: 1px solid $--border-color-light;
+    border-bottom: 1px solid var(--el-border-color-light);
     letter-spacing: 0.3px;
   }
 
@@ -733,26 +698,26 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
 
   .el-switch__label {
     font-weight: normal;
-    color: $--color-text-regular;
+    color: var(--el-text-color-regular);
     &.is-active {
-      color: $--color-text-regular;
+      color: var(--el-text-color-regular);
     }
   }
 
   .el-checkbox__input.is-checked + .el-checkbox__label {
-    color: $--color-text-regular;
+    color: var(--el-text-color-regular);
   }
 
   .el-form-item {
     a {
-      color: $--color-text-regular;
+      color: var(--el-text-color-regular);
       text-decoration: none;
       &:hover {
-        color: $--color-text-primary;
+        color: var(--el-text-color-primary);
         text-decoration: underline;
       }
       &:active {
-        color: $--color-text-primary;
+        color: var(--el-text-color-primary);
       }
     }
   }
@@ -762,8 +727,15 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
   }
 
   .el-form-item__content {
-    color: $--color-text-regular;
+    color: var(--el-text-color-regular);
     line-height: 1.6;
+    /* Element Plus 的 .el-form-item__content 默认 display:flex; align-items:center; flex-wrap:wrap,
+       但直接子元素（el-row、el-col、div 等）不会自动占满宽度，
+       会被 inline-flex 压缩为内容宽度。这里确保每个直接子元素占满宽度，
+       使多行内容正确垂直堆叠，同时不破坏 EP 默认的 flex-wrap 行为。 */
+    & > * {
+      flex-basis: 100%;
+    }
   }
 
   .form-item-sub {
@@ -781,7 +753,7 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
 
       .toggle-label {
         font-size: 13px;
-        color: $--color-text-secondary;
+        color: var(--el-text-color-secondary);
         flex: 1;
         min-width: 0;
       }
@@ -799,7 +771,7 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
 
         .toggle-desc {
           font-size: 12px;
-          color: $--color-text-secondary;
+          color: var(--el-text-color-secondary);
           line-height: 1.4;
           opacity: 0.7;
         }
@@ -815,7 +787,7 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
 
       .sub-row-label {
         font-size: 13px;
-        color: $--color-text-secondary;
+        color: var(--el-text-color-secondary);
       }
     }
   }
@@ -824,13 +796,13 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
     margin-left: 24px;
     margin-bottom: 10px;
     padding-left: 12px;
-    border-left: 2px solid $--border-color-lighter;
+    border-left: 2px solid var(--el-border-color-lighter);
     line-height: 1.6;
 
     .el-radio-group {
       .el-radio__label {
         font-size: 13px;
-        color: $--color-text-secondary;
+        color: var(--el-text-color-secondary);
       }
     }
   }
@@ -844,7 +816,7 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
     border-radius: 8px;
   }
 
-  .el-button--mini {
+  .el-button--small {
     border-radius: 6px;
   }
 }
@@ -866,7 +838,7 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
   }
 
   .card-title {
-    color: $--dk-panel-title-color;
+    color: var(--lc-text-primary);
     border-bottom-color: rgba(255, 255, 255, 0.1);
   }
 }
@@ -899,12 +871,12 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
 
 .action-link {
   cursor: pointer;
-  color: $--link-color;
+  color: var(--el-color-primary-light-2);
   &.update-available {
     font-weight: bold;
   }
   &:hover {
-    color: $--link-hover-color;
+    color: var(--el-color-primary);
     text-decoration: underline;
   }
 }
@@ -928,26 +900,26 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
 
   /* Light theme styles */
   .el-input__inner {
-    background: $--input-background-color !important;
-    border-color: $--border-color-base !important;
-    color: $--color-text-primary !important;
+    background: var(--el-fill-color-blank) !important;
+    border-color: var(--el-border-color) !important;
+    color: var(--el-text-color-primary) !important;
   }
 
   .el-input__inner:focus {
-    border-color: $--color-primary !important;
+    border-color: var(--el-color-primary) !important;
   }
 }
 
 /* Dark theme styles for better integration */
 .theme-dark .language-select {
   .el-input__inner {
-    background: $--dk-panel-background !important;
+    background: var(--lc-bg-panel) !important;
     border-color: rgba(255, 255, 255, 0.1) !important;
-    color: $--dk-panel-title-color !important;
+    color: var(--lc-text-primary) !important;
   }
 
   .el-input__inner:focus {
-    border-color: $--color-primary !important;
+    border-color: var(--el-color-primary) !important;
   }
 }
 
@@ -958,8 +930,8 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
   height: 32px;
   line-height: 30px;
   padding: 0 12px;
-  background-color: $--button-danger-background-color !important;
-  border-color: $--button-danger-border-color !important;
-  color: $--button-danger-font-color !important;
+  background-color: var(--el-color-danger) !important;
+  border-color: var(--el-color-danger) !important;
+  color: var(--el-color-white) !important;
 }
 </style>

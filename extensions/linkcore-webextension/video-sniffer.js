@@ -26,46 +26,22 @@
       'Audio': {
         'en': 'Audio',
         'zh_CN': '音频',
-        'zh_TW': '音訊',
-        'ja': 'オーディオ',
-        'ko': '오디오',
-        'es': 'Audio',
-        'fr': 'Audio',
-        'de': 'Audio',
-        'ru': 'Аудио'
+        'zh_TW': '音訊'
       },
       'Hi-Res Audio': {
         'en': 'Hi-Res Audio',
         'zh_CN': '高品质音频',
-        'zh_TW': '高品質音訊',
-        'ja': 'ハイレゾ音声',
-        'ko': '고품질 오디오',
-        'es': 'Audio de alta resolución',
-        'fr': 'Audio haute résolution',
-        'de': 'High-Res Audio',
-        'ru': 'Аудио высокого разрешения'
+        'zh_TW': '高品質音訊'
       },
       'High Audio': {
         'en': 'High Audio',
         'zh_CN': '高音质',
-        'zh_TW': '高音質',
-        'ja': '高音質',
-        'ko': '고음질',
-        'es': 'Audio alto',
-        'fr': 'Audio élevé',
-        'de': 'Hohe Audioqualität',
-        'ru': 'Высокое качество звука'
+        'zh_TW': '高音質'
       },
       'Unknown': {
         'en': 'Unknown',
         'zh_CN': '未知',
-        'zh_TW': '未知',
-        'ja': '不明',
-        'ko': '알 수 없음',
-        'es': 'Desconocido',
-        'fr': 'Inconnu',
-        'de': 'Unbekannt',
-        'ru': 'Неизвестно'
+        'zh_TW': '未知'
       }
     }
     

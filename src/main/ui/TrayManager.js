@@ -14,6 +14,8 @@ import {
 } from '../utils/menu'
 import { convertArrayBufferToBuffer } from '../utils/index'
 import keymap from '@shared/keymap'
+// 静态引入，确保 Rollup 打包时内联 JSON
+import trayTemplate from '../menus/tray.json'
 
 let tray = null
 const { platform } = process
@@ -63,7 +65,7 @@ export default class TrayManager extends EventEmitter {
   }
 
   loadTemplate () {
-    this.template = require('../menus/tray.json')
+    this.template = trayTemplate
   }
 
   getMergedKeymap () {
@@ -98,7 +100,8 @@ export default class TrayManager extends EventEmitter {
   }
 
   loadImagesForMacOS () {
-    this.normalIcon = this.getFromCacheOrCreateImage('mo-tray-light-normal.png')
+    // static/ 中只有 @1x/@2x 变体；@2x 由 nativeImage 自动按 Retina 缩放
+    this.normalIcon = this.getFromCacheOrCreateImage('mo-tray-light-normal@2x.png')
   }
 
   loadImagesForWindows () {

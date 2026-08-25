@@ -23,4 +23,21 @@ export default class LocaleManager {
   getI18n () {
     return i18next
   }
+
+  getCurrentLanguage () {
+    return i18next.language || 'en-US'
+  }
+
+  /**
+   * Get all messages in vue-i18n format (flattened).
+   * @returns {Object} { locale: { ...translations } }
+   */
+  getAllMessages () {
+    const result = {}
+    const resources = (this.options && this.options.resources) || {}
+    for (const [locale, resource] of Object.entries(resources)) {
+      result[locale] = (resource && resource.translation) || resource
+    }
+    return result
+  }
 }

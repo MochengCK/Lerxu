@@ -4,17 +4,12 @@ Icon.register({
   'trash': {
     'width': 24,
     'height': 24,
-    'raw': `<polyline fill="none" stroke-miterlimit="10" points="20,9 20,23 4,23 4,9 " />
-      <line fill="none" stroke-miterlimit="10" x1="1" y1="5" x2="23" y2="5" />
-      <line fill="none" stroke-miterlimit="10" x1="12" y1="12" x2="12" y2="18" />
-      <line fill="none" stroke-miterlimit="10" x1="8" y1="12" x2="8" y2="18" />
-      <line fill="none" stroke-miterlimit="10" x1="16" y1="12" x2="16" y2="18" />
-      <polyline fill="none" stroke-miterlimit="10" points="8,5 8,1 16,1 16,5 " />`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 6h18"/>
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+      <path d="M10 11v6"/>
+      <path d="M14 11v6"/>
+    </g>`
   }
 })

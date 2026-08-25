@@ -1,7 +1,8 @@
 import { access, constants, existsSync } from 'node:fs'
 import { resolve, basename, dirname, isAbsolute } from 'node:path'
 import { shell, nativeTheme } from '@electron/remote'
-import { Message } from 'element-ui'
+import { ElMessage as Message } from 'element-plus'
+import { Notification } from 'electron'
 import api from '@/api'
 
 import {
@@ -277,7 +278,6 @@ export const getSystemTheme = () => {
  */
 export const showNativeNotification = ({ title, body, onClick }) => {
   try {
-    const { Notification } = require('electron')
     if (Notification && Notification.isSupported && Notification.isSupported()) {
       const notify = new Notification({ title, body })
       if (onClick) {

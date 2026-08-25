@@ -4,12 +4,8 @@ Icon.register({
   'select-all': {
     'width': 24,
     'height': 24,
-    'raw': `<polyline points="5,12 10,17 19,7" fill="none" stroke-miterlimit="10" />`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2.5'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 6 9 17l-5-5"/>
+    </g>`
   }
 })

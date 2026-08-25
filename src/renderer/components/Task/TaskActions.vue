@@ -1,22 +1,20 @@
 <template>
   <div class="task-actions">
     <div class="task-control-group">
-      <el-tooltip
-        class="item"
+      <mo-hover-tip
         effect="dark"
         placement="bottom"
-        :content="$t('app.add-task')"
+        :content="t('app.add-task')"
       >
         <i class="task-action" @click="onAddClick">
           <mo-icon name="menu-add" width="14" height="14" />
         </i>
-      </el-tooltip>
+      </mo-hover-tip>
       <span class="task-control-separator"></span>
-      <el-tooltip
-        class="item"
+      <mo-hover-tip
         effect="dark"
         placement="bottom"
-        :content="$t('task.pause-all-task')"
+        :content="t('task.pause-all-task')"
       >
         <i
           class="task-action"
@@ -25,12 +23,11 @@
         >
           <mo-icon name="task-pause-line" width="14" height="14" />
         </i>
-      </el-tooltip>
-      <el-tooltip
-        class="item"
+      </mo-hover-tip>
+      <mo-hover-tip
         effect="dark"
         placement="bottom"
-        :content="$t('task.resume-all-task')"
+        :content="t('task.resume-all-task')"
       >
         <i
           class="task-action"
@@ -39,26 +36,24 @@
         >
           <mo-icon name="task-start-line" width="14" height="14" />
         </i>
-      </el-tooltip>
+      </mo-hover-tip>
     </div>
     <slot></slot>
     <div class="task-action-group">
-      <el-tooltip
-        class="item"
+      <mo-hover-tip
         effect="dark"
         placement="bottom"
-        :content="$t('task.purge-record')"
+        :content="t('task.purge-record')"
         v-if="currentList === 'stopped'"
       >
         <i class="task-action" @click="onPurgeRecordClick">
           <mo-icon name="purge" width="14" height="14" />
         </i>
-      </el-tooltip>
-      <el-tooltip
-        class="item"
+      </mo-hover-tip>
+      <mo-hover-tip
         effect="dark"
         placement="bottom"
-        :content="$t('task.delete-selected-tasks')"
+        :content="t('task.delete-selected-tasks')"
         v-if="currentList !== 'stopped'"
       >
         <i
@@ -67,12 +62,11 @@
           @click="onBatchDeleteClick">
           <mo-icon name="delete" width="14" height="14" />
         </i>
-      </el-tooltip>
-      <el-tooltip
-        class="item"
+      </mo-hover-tip>
+      <mo-hover-tip
         effect="dark"
         placement="bottom"
-        :content="$t('app.task-plan')"
+        :content="t('app.task-plan')"
       >
         <i
           class="task-action"
@@ -81,12 +75,11 @@
         >
           <mo-icon name="task-plan" width="16" height="16" />
         </i>
-      </el-tooltip>
-      <el-tooltip
-        class="item"
+      </mo-hover-tip>
+      <mo-hover-tip
         effect="dark"
         placement="bottom"
-        :content="dateFilter.storeFilterDate || $t('task.date-filter')"
+        :content="dateFilter.storeFilterDate || t('task.date-filter')"
         :disabled="anyPopupOpen"
       >
         <i
@@ -103,12 +96,11 @@
           >{{ dateFilter.displayDateText }}</span>
           <mo-icon name="date-filter" width="16" height="16" />
         </i>
-      </el-tooltip>
-      <el-tooltip
-        class="item"
+      </mo-hover-tip>
+      <mo-hover-tip
         effect="dark"
         placement="bottom"
-        :content="$t('task.sort')"
+        :content="t('task.sort')"
         :disabled="anyPopupOpen"
       >
         <i
@@ -135,7 +127,7 @@
             </div>
           </transition>
         </i>
-      </el-tooltip>
+      </mo-hover-tip>
     </div>
     <mo-segmented-slider
       class="view-mode-nav"
@@ -147,267 +139,275 @@
   </div>
 </template>
 
-<script>
-  import { mapState } from 'vuex'
+<script setup>
+import { ref, computed, onMounted, onBeforeUnmount, getCurrentInstance } from 'vue'
+import { useTaskStore } from '@/store/task'
+import { useAppStore } from '@/store/app'
+import { usePreferenceStore } from '@/store/preference'
+import { storeToRefs } from 'pinia'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
+import { commands } from '@/components/CommandManager/instance'
+import { ADD_TASK_TYPE, TASK_STATUS } from '@shared/constants'
+import { bytesToSize, timeFormat } from '@shared/utils'
+// mo-segmented-slider is globally registered in main.js
+import '@/components/Icons/menu-add'
+import '@/components/Icons/view-list'
+import '@/components/Icons/view-grid'
+import '@/components/Icons/delete'
+import '@/components/Icons/purge'
+import '@/components/Icons/more'
+import '@/components/Icons/task-plan'
+import '@/components/Icons/task-pause-line'
+import '@/components/Icons/task-start-line'
+import '@/components/Icons/sort'
 
-  import { commands } from '@/components/CommandManager/instance'
-  import { ADD_TASK_TYPE, TASK_STATUS } from '@shared/constants'
-  import { bytesToSize, timeFormat } from '@shared/utils'
-  import SegmentedSlider from '@/components/SegmentedSlider/SegmentedSlider'
-  import '@/components/Icons/menu-add'
-  import '@/components/Icons/view-list'
-  import '@/components/Icons/view-grid'
-  import '@/components/Icons/delete'
-  import '@/components/Icons/purge'
-  import '@/components/Icons/more'
-  import '@/components/Icons/task-plan'
-  import '@/components/Icons/task-pause-line'
-  import '@/components/Icons/task-start-line'
-  import '@/components/Icons/sort'
+const { t } = i18n.global
+const instance = getCurrentInstance()
 
-  export default {
-    name: 'mo-task-actions',
-    components: {
-      [SegmentedSlider.name]: SegmentedSlider
-    },
-    props: {
-      task: {
-        type: Object,
-        default: null
-      },
-      dateFilter: {
-        type: Object,
-        default: () => ({
-          storeFilterDate: null,
-          displayDateText: '',
-          active: false,
-          showText: false,
-          dateFilterFrosted: false
-        })
-      }
-    },
-    data () {
-      return {
-        isSortMenuVisible: false,
-        currentSortField: 'name',
-        sortOrder: 'asc',
-        anyPopupOpen: false
-      }
-    },
-    computed: {
-      ...mapState('task', {
-        currentList: state => state.currentList,
-        selectedGidListCount: state => state.selectedGidList.length,
-        viewMode: state => state.viewMode,
-        taskList: state => state.taskList
-      }),
-      ...mapState('app', {
-        stat: state => state.stat
-      }),
-      ...mapState('preference', {
-        taskPlanActionFromConfig: state => (state.config && state.config.taskPlanAction) || 'none'
-      }),
-      viewModeOptions () {
-        return [
-          { value: 'list', icon: 'view-list', tooltip: this.$t('task.list-view') },
-          { value: 'grid', icon: 'view-grid', tooltip: this.$t('task.grid-view') }
-        ]
-      },
-      isTaskPlanPlanned () {
-        return this.taskPlanActionFromConfig !== 'none'
-      },
-      sortOptions () {
-        return [
-          { label: this.$t('task.sort-by-completed-time'), value: 'completedTime' },
-          { label: this.$t('task.sort-by-remaining-time'), value: 'remainingTime' },
-          { label: this.$t('task.sort-by-speed'), value: 'speed' },
-          { label: this.$t('task.sort-by-size'), value: 'size' },
-          { label: this.$t('task.sort-by-name'), value: 'name' }
-        ]
-      },
-      canPauseAllTasks () {
-        return this.stat && this.stat.numActive > 0
-      },
-      canResumeAllTasks () {
-        if (this.taskList.length === 0) return false
-        const resumableTasks = this.taskList.filter(task => {
-          return task.status === TASK_STATUS.WAITING || task.status === TASK_STATUS.PAUSED
-        })
-        return resumableTasks.length > 0
-      }
-    },
-    filters: {
-      bytesToSize,
-      timeFormat
-    },
-    methods: {
-      onBatchDeleteClick (event) {
-        const deleteWithFiles = !!event.shiftKey
-        commands.emit('batch-delete-task', { deleteWithFiles })
-      },
-      onViewModeChange (mode) {
-        if (this.viewMode !== mode) {
-          this.$store.dispatch('task/updateViewMode', mode)
-        }
-      },
-      onPurgeRecordClick () {
-        this.$store.dispatch('task/purgeTaskRecord')
-          .then(() => {
-            this.$msg.success(this.$t('task.purge-record-success'))
-          })
-          .catch(({ code }) => {
-            if (code === 1) {
-              this.$msg.error(this.$t('task.purge-record-fail'))
-            }
-          })
-      },
-      onAddClick () {
-        this.$store.dispatch('app/showAddTaskDialog', ADD_TASK_TYPE.URI)
-      },
-      onTaskPlanClick () {
-        if (this.isTaskPlanPlanned) {
-          this.$store.dispatch('preference/save', {
-            taskPlanAction: 'none',
-            taskPlanType: 'complete',
-            taskPlanTime: '',
-            taskPlanGids: [],
-            taskPlanOnlyWhenIdle: false
-          })
-          this.$store.commit('app/UPDATE_TASK_PLAN_VISIBLE', false)
-          this.$msg.success(this.$t('app.task-plan-cancelled-message'))
-          return
-        }
-        this.$store.commit('app/UPDATE_TASK_PLAN_VISIBLE', true)
-      },
-      onPauseAllClick () {
-        if (!this.canPauseAllTasks) return
-        this.$store.dispatch('task/pauseAllTask')
-          .then(() => {
-            this.$msg.success(this.$t('task.pause-all-task-success'))
-          })
-          .catch(({ code }) => {
-            if (code === 1) {
-              this.$msg.error(this.$t('task.pause-all-task-fail'))
-            }
-          })
-      },
-      onResumeAllClick () {
-        if (!this.canResumeAllTasks) return
-        this.$store.dispatch('task/resumeAllTask')
-          .then(() => {
-            this.$msg.success(this.$t('task.resume-all-task-success'))
-          })
-          .catch(({ code }) => {
-            if (code === 1) {
-              this.$msg.error(this.$t('task.resume-all-task-fail'))
-            }
-          })
-      },
-      onSortClick () {
-        if (this.isSortMenuVisible) {
-          this.isSortMenuVisible = false
-          this.anyPopupOpen = false
-          return
-        }
-        // 先通知其它弹窗关闭，再用双 rAF 延迟开启自身 enter：第一帧让其它弹窗的 leave
-        // 过渡启动，第二帧才开启 enter，避免与 leave 同帧渲染导致 enter 起始状态
-        // （scale(0.92)/opacity:0）未绘制即切到终态、入场动画丢失。
-        commands.emit('popup:open', 'task-sort')
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            this.isSortMenuVisible = true
-            this.anyPopupOpen = true
-          })
-        })
-      },
-      onOtherPopupOpen (source) {
-        if (source !== 'task-sort' && this.isSortMenuVisible) {
-          this.isSortMenuVisible = false
-        }
-        this.anyPopupOpen = true
-      },
-      onPopupClosed () {
-        this.anyPopupOpen = false
-      },
-      handleGlobalClick (event) {
-        if (this.isSortMenuVisible && !this.$el.contains(event.target)) {
-          this.isSortMenuVisible = false
-          this.anyPopupOpen = false
-          commands.emit('popup:closed')
-        }
-      },
-      handleSortOptionClick (sortField) {
-        if (this.currentSortField === sortField) {
-          this.sortOrder = this.sortOrder === 'asc' ? 'desc' : 'asc'
-        } else {
-          this.currentSortField = sortField
-          this.sortOrder = 'asc'
-        }
-        this.$store.dispatch('task/sortTasks', {
-          field: this.currentSortField,
-          order: this.sortOrder
-        })
-        this.saveSortState()
-        this.isSortMenuVisible = false
-        this.anyPopupOpen = false
-        commands.emit('popup:closed')
-      },
-      saveSortState () {
-        try {
-          const sortState = {
-            field: this.currentSortField,
-            order: this.sortOrder
-          }
-          window.localStorage.setItem('taskSortState', JSON.stringify(sortState))
-        } catch (e) {
-          console.error('Failed to save sort state:', e)
-        }
-      },
-      loadSortState () {
-        try {
-          const savedState = window.localStorage.getItem('taskSortState')
-          if (savedState) {
-            const sortState = JSON.parse(savedState)
-            if (sortState.field && sortState.order) {
-              this.currentSortField = sortState.field
-              this.sortOrder = sortState.order
-              this.$store.dispatch('task/sortTasks', {
-                field: this.currentSortField,
-                order: this.sortOrder
-              })
-            }
-          }
-        } catch (e) {
-          console.error('Failed to load sort state:', e)
-        }
-      },
-      onDateFilterClick (event) {
-        event.stopPropagation()
-        event.preventDefault()
-        const rect = this.$refs.dateFilterBtn
-          ? this.$refs.dateFilterBtn.getBoundingClientRect()
-          : event.target.getBoundingClientRect()
-        this.$emit('date-filter-click', { event, rect })
-      },
-      onDateFilterEnter () {
-        this.$emit('date-filter-hover')
-      },
-      onDateFilterLeave () {
-        this.$emit('date-filter-leave')
-      }
-    },
-    mounted () {
-      document.addEventListener('click', this.handleGlobalClick)
-      commands.on('popup:open', this.onOtherPopupOpen)
-      commands.on('popup:closed', this.onPopupClosed)
-      this.loadSortState()
-    },
-    beforeDestroy () {
-      document.removeEventListener('click', this.handleGlobalClick)
-      commands.removeListener('popup:open', this.onOtherPopupOpen)
-      commands.removeListener('popup:closed', this.onPopupClosed)
-    }
+const taskStore = useTaskStore()
+const appStore = useAppStore()
+const preferenceStore = usePreferenceStore()
+
+const { currentList, selectedGidList, viewMode, taskList } = storeToRefs(taskStore)
+const { stat } = storeToRefs(appStore)
+const { config: preferenceConfig } = storeToRefs(preferenceStore)
+
+const selectedGidListCount = computed(() => selectedGidList.value.length)
+
+const props = defineProps({
+  task: {
+    type: Object,
+    default: null
+  },
+  dateFilter: {
+    type: Object,
+    default: () => ({
+      storeFilterDate: null,
+      displayDateText: '',
+      active: false,
+      showText: false,
+      dateFilterFrosted: false
+    })
   }
+})
+
+const emit = defineEmits(['date-filter-click', 'date-filter-hover', 'date-filter-leave'])
+
+defineOptions({ name: 'mo-task-actions' })
+
+const dateFilterBtn = ref(null)
+const isSortMenuVisible = ref(false)
+const currentSortField = ref('name')
+const sortOrder = ref('asc')
+const anyPopupOpen = ref(false)
+
+const viewModeOptions = computed(() => [
+  { value: 'list', icon: 'view-list', tooltip: t('task.list-view') },
+  { value: 'grid', icon: 'view-grid', tooltip: t('task.grid-view') }
+])
+
+const taskPlanActionFromConfig = computed(() => (preferenceConfig.value && preferenceConfig.value.taskPlanAction) || 'none')
+const isTaskPlanPlanned = computed(() => taskPlanActionFromConfig.value !== 'none')
+
+const sortOptions = computed(() => [
+  { label: t('task.sort-by-completed-time'), value: 'completedTime' },
+  { label: t('task.sort-by-remaining-time'), value: 'remainingTime' },
+  { label: t('task.sort-by-speed'), value: 'speed' },
+  { label: t('task.sort-by-size'), value: 'size' },
+  { label: t('task.sort-by-name'), value: 'name' }
+])
+
+const canPauseAllTasks = computed(() => stat.value && stat.value.numActive > 0)
+
+const canResumeAllTasks = computed(() => {
+  if (taskList.value.length === 0) return false
+  const resumableTasks = taskList.value.filter(task => {
+    return task.status === TASK_STATUS.WAITING || task.status === TASK_STATUS.PAUSED
+  })
+  return resumableTasks.length > 0
+})
+
+function onBatchDeleteClick (event) {
+  const deleteWithFiles = !!event.shiftKey
+  commands.emit('batch-delete-task', { deleteWithFiles })
+}
+
+function onViewModeChange (mode) {
+  if (viewMode.value !== mode) {
+    taskStore.updateViewMode(mode)
+  }
+}
+
+function onPurgeRecordClick () {
+  taskStore.purgeTaskRecord()
+    .then(() => {
+      instance.proxy.$msg.success(t('task.purge-record-success'))
+    })
+    .catch(({ code }) => {
+      if (code === 1) {
+        instance.proxy.$msg.error(t('task.purge-record-fail'))
+      }
+    })
+}
+
+function onAddClick () {
+  appStore.showAddTaskDialog(ADD_TASK_TYPE.URI)
+}
+
+function onTaskPlanClick () {
+  if (isTaskPlanPlanned.value) {
+    preferenceStore.save({
+      taskPlanAction: 'none',
+      taskPlanType: 'complete',
+      taskPlanTime: '',
+      taskPlanGids: [],
+      taskPlanOnlyWhenIdle: false
+    })
+    appStore.updateTaskPlanVisible(false)
+    instance.proxy.$msg.success(t('app.task-plan-cancelled-message'))
+    return
+  }
+  appStore.updateTaskPlanVisible(true)
+}
+
+function onPauseAllClick () {
+  if (!canPauseAllTasks.value) return
+  taskStore.pauseAllTask()
+    .then(() => {
+      instance.proxy.$msg.success(t('task.pause-all-task-success'))
+    })
+    .catch(({ code }) => {
+      if (code === 1) {
+        instance.proxy.$msg.error(t('task.pause-all-task-fail'))
+      }
+    })
+}
+
+function onResumeAllClick () {
+  if (!canResumeAllTasks.value) return
+  taskStore.resumeAllTask()
+    .then(() => {
+      instance.proxy.$msg.success(t('task.resume-all-task-success'))
+    })
+    .catch(({ code }) => {
+      if (code === 1) {
+        instance.proxy.$msg.error(t('task.resume-all-task-fail'))
+      }
+    })
+}
+
+function onSortClick () {
+  if (isSortMenuVisible.value) {
+    isSortMenuVisible.value = false
+    anyPopupOpen.value = false
+    return
+  }
+  commands.emit('popup:open', 'task-sort')
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      isSortMenuVisible.value = true
+      anyPopupOpen.value = true
+    })
+  })
+}
+
+function onOtherPopupOpen (source) {
+  if (source !== 'task-sort' && isSortMenuVisible.value) {
+    isSortMenuVisible.value = false
+  }
+  anyPopupOpen.value = true
+}
+
+function onPopupClosed () {
+  anyPopupOpen.value = false
+}
+
+function handleGlobalClick (event) {
+  const root = instance?.proxy?.$el
+  if (isSortMenuVisible.value && root && !root.contains(event.target)) {
+    isSortMenuVisible.value = false
+    anyPopupOpen.value = false
+    commands.emit('popup:closed')
+  }
+}
+
+function handleSortOptionClick (sortField) {
+  if (currentSortField.value === sortField) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    currentSortField.value = sortField
+    sortOrder.value = 'asc'
+  }
+  taskStore.sortTasks({
+    field: currentSortField.value,
+    order: sortOrder.value
+  })
+  saveSortState()
+  isSortMenuVisible.value = false
+  anyPopupOpen.value = false
+  commands.emit('popup:closed')
+}
+
+function saveSortState () {
+  try {
+    const sortState = {
+      field: currentSortField.value,
+      order: sortOrder.value
+    }
+    window.localStorage.setItem('taskSortState', JSON.stringify(sortState))
+  } catch (e) {
+    console.error('Failed to save sort state:', e)
+  }
+}
+
+function loadSortState () {
+  try {
+    const savedState = window.localStorage.getItem('taskSortState')
+    if (savedState) {
+      const sortState = JSON.parse(savedState)
+      if (sortState.field && sortState.order) {
+        currentSortField.value = sortState.field
+        sortOrder.value = sortState.order
+        taskStore.sortTasks({
+          field: currentSortField.value,
+          order: sortOrder.value
+        })
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load sort state:', e)
+  }
+}
+
+function onDateFilterClick (event) {
+  event.stopPropagation()
+  event.preventDefault()
+  const rect = dateFilterBtn.value
+    ? dateFilterBtn.value.getBoundingClientRect()
+    : event.target.getBoundingClientRect()
+  emit('date-filter-click', { event, rect })
+}
+
+function onDateFilterEnter () {
+  emit('date-filter-hover')
+}
+
+function onDateFilterLeave () {
+  emit('date-filter-leave')
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleGlobalClick)
+  commands.on('popup:open', onOtherPopupOpen)
+  commands.on('popup:closed', onPopupClosed)
+  loadSortState()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleGlobalClick)
+  commands.removeListener('popup:open', onOtherPopupOpen)
+  commands.removeListener('popup:closed', onPopupClosed)
+})
 </script>
 
 <style lang="scss">
@@ -422,7 +422,7 @@
   overflow: visible;
   user-select: none;
   cursor: default;
-  color: $--task-action-color;
+  color: var(--lc-task-action);
   transition: all 0.35s cubic-bezier(0.215, 0.61, 0.355, 1);
   display: flex;
   align-items: center;
@@ -437,7 +437,7 @@
   padding: 0 4px;
   pointer-events: auto;
   background-color: transparent;
-  border: 1px solid $--task-item-border-color;
+  border: 1px solid var(--lc-task-item-border);
   border-radius: 8px;
   box-sizing: border-box;
   flex-shrink: 0;
@@ -450,10 +450,10 @@
     cursor: pointer;
     outline: none;
     &:hover {
-      color: $--task-action-hover-color;
+      color: var(--lc-task-action-hover);
     }
     &.disabled {
-      color: $--task-action-disabled-color;
+      color: var(--lc-task-action-disabled);
     }
     &.is-planned {
       color: #67c23a;
@@ -466,10 +466,10 @@
     white-space: nowrap;
     position: relative;
     &.has-filter {
-      color: $--color-primary;
+      color: var(--el-color-primary);
     }
     &.is-active {
-      color: $--color-primary;
+      color: var(--el-color-primary);
     }
     .task-date-filter-text {
       font-size: 12px;
@@ -496,7 +496,7 @@
   padding: 0 4px;
   pointer-events: auto;
   background-color: transparent;
-  border: 1px solid $--task-item-border-color;
+  border: 1px solid var(--lc-task-item-border);
   border-radius: 8px;
   box-sizing: border-box;
   flex-shrink: 0;
@@ -509,10 +509,10 @@
     cursor: pointer;
     outline: none;
     &:hover {
-      color: $--task-action-hover-color;
+      color: var(--lc-task-action-hover);
     }
     &.disabled {
-      color: $--task-action-disabled-color;
+      color: var(--lc-task-action-disabled);
     }
   }
 }
@@ -544,7 +544,7 @@
 .sort-action {
   position: relative;
   &.is-active {
-    color: $--color-primary;
+    color: var(--el-color-primary);
   }
 }
 
@@ -580,7 +580,7 @@
   }
 
   &.is-selected {
-    color: $--color-primary;
+    color: var(--el-color-primary);
   }
 }
 
@@ -599,11 +599,11 @@
 }
 
 .sort-arrow-up {
-  border-bottom: 5px solid $--color-primary;
+  border-bottom: 5px solid var(--el-color-primary);
 }
 
 .sort-arrow-down {
-  border-top: 5px solid $--color-primary;
+  border-top: 5px solid var(--el-color-primary);
 }
 
 .theme-dark .sort-menu {

@@ -6,7 +6,7 @@
     :height="height"
     :viewBox="box">
     <g v-for="(row, index) in atoms" :key="`g-${index}`" >
-      <mo-task-graphic-atom
+      <Atom
         v-for="atom in row"
         :key="`atom-${atom.id}`"
         :status="atom.status"
@@ -22,133 +22,111 @@
   </svg>
 </template>
 
-<script>
-  import Atom from './Atom'
+<script setup>
+defineOptions({ name: 'mo-task-graphic' }) // 供父组件 [X.name]: X 注册
+  import { computed } from 'vue'
+  import Atom from './Atom.vue'
 
-  export default {
-    name: 'mo-task-graphic',
-    components: {
-      [Atom.name]: Atom
+  const props = defineProps({
+    bitfield: {
+      type: String,
+      default: ''
     },
-    props: {
-      bitfield: {
-        type: String,
-        default: ''
-      },
-      numPieces: {
-        type: Number,
-        default: 0
-      },
-      downloadSpeed: {
-        type: Number,
-        default: 0
-      },
-      pieceLength: {
-        type: Number,
-        default: 0
-      },
-      outerWidth: {
-        type: Number,
-        default: 240
-      },
-      atomWidth: {
-        type: Number,
-        default: 10
-      },
-      atomHeight: {
-        type: Number,
-        default: 10
-      },
-      atomGutter: {
-        type: Number,
-        default: 3
-      },
-      atomRadius: {
-        type: Number,
-        default: 4
-      }
+    numPieces: {
+      type: Number,
+      default: 0
     },
-    computed: {
-      len () {
-        // bitfield 按字节补零，每个十六进制字符（nibble）对应 4 个分片。
-        // 当 numPieces 不是 4 的倍数时，最后一个 nibble 可能只包含填充位
-        // （值为 0），直接按 bitfield.length 渲染会多出一个"未下载"的假分片，
-        // 即使任务已全部下载完成。按真实分片数 ceil(numPieces / 4) 截断。
-        const total = Number(this.numPieces)
-        if (total > 0) {
-          return Math.min(Math.ceil(total / 4), this.bitfield.length)
-        }
-        return this.bitfield.length
-      },
-      atomWG () {
-        return this.atomWidth + this.atomGutter
-      },
-      atomHG () {
-        return this.atomHeight + this.atomGutter
-      },
-      columnCount () {
-        const { outerWidth, atomWidth, atomWG } = this
-        const result = parseInt((outerWidth - atomWidth) / atomWG, 10) + 1
-        return result
-      },
-      rowCount () {
-        const { len, columnCount } = this
-        const result = parseInt((len / columnCount), 10) + 1
-        return result
-      },
-      offset () {
-        const { outerWidth, atomWidth, atomWG, columnCount } = this
-        const totalWidth = atomWG * (columnCount - 1) + atomWidth
-        const result = (outerWidth - totalWidth) / 2
-        return parseFloat(result.toFixed(2))
-      },
-      width () {
-        const { atomWidth, atomWG, columnCount } = this
-        const result = atomWG * (columnCount - 1) + atomWidth
-        return parseInt(result, 10)
-      },
-      height () {
-        const { atomHeight, atomHG, rowCount, offset } = this
-        const result = atomHG * (rowCount - 1) + atomHeight + offset * 2
-        return parseInt(result, 10)
-      },
-      box () {
-        return `0 0 ${this.width} ${this.height}`
-      },
-      atoms () {
-        const { len, columnCount } = this
-        const result = []
-        let row = []
-        for (let i = 0; i < len; i++) {
-          row.push(this.buildAtom(i))
+    downloadSpeed: {
+      type: Number,
+      default: 0
+    },
+    pieceLength: {
+      type: Number,
+      default: 0
+    },
+    outerWidth: {
+      type: Number,
+      default: 240
+    },
+    atomWidth: {
+      type: Number,
+      default: 10
+    },
+    atomHeight: {
+      type: Number,
+      default: 10
+    },
+    atomGutter: {
+      type: Number,
+      default: 3
+    },
+    atomRadius: {
+      type: Number,
+      default: 4
+    }
+  })
 
-          if ((i + 1) % columnCount === 0) {
-            result.push(row)
-            row = []
-          }
-        }
+  const len = computed(() => {
+    const total = Number(props.numPieces)
+    if (total > 0) {
+      return Math.min(Math.ceil(total / 4), props.bitfield.length)
+    }
+    return props.bitfield.length
+  })
+
+  const atomWG = computed(() => props.atomWidth + props.atomGutter)
+  const atomHG = computed(() => props.atomHeight + props.atomGutter)
+
+  const columnCount = computed(() => {
+    return parseInt((props.outerWidth - props.atomWidth) / atomWG.value, 10) + 1
+  })
+
+  const rowCount = computed(() => {
+    return parseInt((len.value / columnCount.value), 10) + 1
+  })
+
+  const offset = computed(() => {
+    const totalWidth = atomWG.value * (columnCount.value - 1) + props.atomWidth
+    const result = (props.outerWidth - totalWidth) / 2
+    return parseFloat(result.toFixed(2))
+  })
+
+  const width = computed(() => {
+    return parseInt(atomWG.value * (columnCount.value - 1) + props.atomWidth, 10)
+  })
+
+  const height = computed(() => {
+    return parseInt(atomHG.value * (rowCount.value - 1) + props.atomHeight + offset.value * 2, 10)
+  })
+
+  const box = computed(() => `0 0 ${width.value} ${height.value}`)
+
+  function buildAtom (index) {
+    const hIndex = index + 1
+    let chIndex = index % columnCount.value
+    let rhIndex = parseInt((index / columnCount.value), 10)
+    chIndex = chIndex < 0 ? 0 : chIndex
+    rhIndex = rhIndex < 0 ? 0 : rhIndex
+    const result = {
+      id: `${hIndex}`,
+      status: Math.floor(parseInt(props.bitfield[index], 16) / 4),
+      x: chIndex * atomWG.value,
+      y: offset.value + rhIndex * atomHG.value
+    }
+    return result
+  }
+
+  const atoms = computed(() => {
+    const result = []
+    let row = []
+    for (let i = 0; i < len.value; i++) {
+      row.push(buildAtom(i))
+      if ((i + 1) % columnCount.value === 0) {
         result.push(row)
-
-        return result
-      }
-    },
-    methods: {
-      buildAtom (index) {
-        const { bitfield, offset, atomWG, atomHG, columnCount } = this
-        const hIndex = index + 1
-        let chIndex = index % columnCount
-        let rhIndex = parseInt((index / columnCount), 10)
-        chIndex = chIndex < 0 ? 0 : chIndex
-        rhIndex = rhIndex < 0 ? 0 : rhIndex
-        const result = {
-          id: `${hIndex}`,
-          status: Math.floor(parseInt(bitfield[index], 16) / 4),
-          x: chIndex * atomWG,
-          y: offset + rhIndex * atomHG
-        }
-
-        return result
+        row = []
       }
     }
-  }
+    result.push(row)
+    return result
+  })
 </script>

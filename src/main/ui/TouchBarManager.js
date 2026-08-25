@@ -4,6 +4,8 @@ import { TouchBar, nativeImage } from 'electron'
 
 import { handleCommand } from '../utils/menu'
 import logger from '../core/LogManager'
+// 静态引入，确保 Rollup 打包时内联 JSON
+import touchBarTemplate from '../menus/touchBar.json'
 
 const { TouchBarButton, TouchBarLabel, TouchBarSpacer, TouchBarGroup } = TouchBar
 
@@ -16,7 +18,7 @@ export default class TouchBarManager extends EventEmitter {
   }
 
   load () {
-    this.template = require('../menus/touchBar.json')
+    this.template = touchBarTemplate
   }
 
   getClickFn (item) {

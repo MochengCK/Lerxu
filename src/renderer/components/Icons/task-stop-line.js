@@ -4,12 +4,8 @@ Icon.register({
   'task-stop-line': {
     'width': 24,
     'height': 24,
-    'raw': `<rect x="2" y="2" fill="none" stroke-miterlimit="10" width="20" height="20" />`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6" y="6" width="12" height="12" rx="2"/>
+    </g>`
   }
 })

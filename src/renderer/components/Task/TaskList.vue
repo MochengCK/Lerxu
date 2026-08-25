@@ -4,12 +4,13 @@
     v-if="displayTaskList.length > 0"
     attribute="attr"
     @change="handleDragSelectChange"
-    @mousedown.native="handleListBlankClick"
+    @mousedown="handleListBlankClick"
   >
     <div
       v-for="item in displayTaskList"
       :key="item.gid"
       :attr="item.gid"
+      v-memo="[item.status, item.completedLength, item.downloadSpeed, item.uploadSpeed, item.uploadLength, item.connections, item.numSeeders, viewMode, resizeVersion, selectedList.includes(item.gid)]"
       :class="getItemClass(item)"
       @click.stop="(e) => handleItemClick(item, e)"
       @contextmenu.stop.prevent="(e) => handleItemContextMenu(item, e)"
@@ -23,479 +24,382 @@
   </mo-drag-select>
   <div class="no-task" v-else>
     <div class="no-task-inner">
-      {{ $t('task.no-task') }}
+      {{ t('task.no-task') }}
     </div>
   </div>
 </template>
 
-<script>
-  import { Menu, getCurrentWindow } from '@electron/remote'
-  import { mapState } from 'vuex'
-  import { cloneDeep } from 'lodash'
-  import {
-    checkTaskIsSeeder,
-    getFileExtension,
-    getFileNameFromFile,
-    getTaskName
-  } from '@shared/utils'
-  import {
-    AUDIO_SUFFIXES,
-    DOCUMENT_SUFFIXES,
-    IMAGE_SUFFIXES,
-    SUB_SUFFIXES,
-    VIDEO_SUFFIXES,
-    TASK_STATUS
-  } from '@shared/constants'
+<script setup>
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { Menu, getCurrentWindow } from '@electron/remote'
+import { cloneDeep } from 'lodash'
+import {
+  checkTaskIsSeeder,
+  getFileExtension,
+  getFileNameFromFile,
+  getTaskName
+} from '@shared/utils'
+import {
+  AUDIO_SUFFIXES,
+  DOCUMENT_SUFFIXES,
+  IMAGE_SUFFIXES,
+  SUB_SUFFIXES,
+  VIDEO_SUFFIXES,
+  TASK_STATUS
+} from '@shared/constants'
+import i18n from '@/plugins/i18n'
+import DragSelect from '@/components/DragSelect/DragSelect'
+import { getTaskActualPath } from '@/utils/native'
+import { commands } from '@/components/CommandManager/instance'
+import TaskItem from './TaskItem'
+import { useTaskStore } from '@/store/task'
+import { usePreferenceStore } from '@/store/preference'
+import { storeToRefs } from 'pinia'
 
-  import DragSelect from '@/components/DragSelect/DragSelect'
-  import { getTaskActualPath } from '@/utils/native'
-  import { commands } from '@/components/CommandManager/instance'
-  import TaskItem from './TaskItem'
+const { t } = i18n.global
 
-  const CATEGORY_SUFFIXES = {
-    archives: new Set(['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz']),
-    programs: new Set(['exe', 'msi', 'deb', 'rpm', 'dmg', 'apk', 'app']),
-    videos: new Set([...VIDEO_SUFFIXES, ...SUB_SUFFIXES].map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
-    music: new Set(AUDIO_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
-    images: new Set(IMAGE_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
-    documents: new Set(DOCUMENT_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, '')))
+const CATEGORY_SUFFIXES = {
+  archives: new Set(['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz']),
+  programs: new Set(['exe', 'msi', 'deb', 'rpm', 'dmg', 'apk', 'app']),
+  videos: new Set([...VIDEO_SUFFIXES, ...SUB_SUFFIXES].map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
+  music: new Set(AUDIO_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
+  images: new Set(IMAGE_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, ''))),
+  documents: new Set(DOCUMENT_SUFFIXES.map(s => `${s}`.toLowerCase().replace(/^\./, '')))
+}
+
+const normalizeKeystrokeTokens = (str) => {
+  return `${str || ''}`
+    .trim()
+    .toLowerCase()
+    .split(/[-+]/g)
+    .map(s => `${s || ''}`.trim())
+    .filter(Boolean)
+    .map(t => {
+      if (t === 'control') return 'ctrl'
+      if (t === 'command' || t === 'meta') return 'cmd'
+      if (t === 'commandorcontrol' || t === 'cmdorctrl') return 'cmdctrl'
+      return t
+    })
+}
+
+const props = defineProps({
+  category: {
+    type: String,
+    default: ''
+  },
+  keyword: {
+    type: String,
+    default: ''
   }
+})
 
-  // 将用户配置的修饰键写法归一化为统一 token 列表
-  const normalizeKeystrokeTokens = (str) => {
-    return `${str || ''}`
-      .trim()
-      .toLowerCase()
-      .split(/[-+]/g)
-      .map(s => `${s || ''}`.trim())
-      .filter(Boolean)
-      .map(t => {
-        if (t === 'control') return 'ctrl'
-        if (t === 'command' || t === 'meta') return 'cmd'
-        if (t === 'commandorcontrol' || t === 'cmdorctrl') return 'cmdctrl'
-        return t
-      })
+defineOptions({ name: 'mo-task-list' })
+
+const taskStore = useTaskStore()
+const preferenceStore = usePreferenceStore()
+const { config: preferenceConfig } = storeToRefs(preferenceStore)
+
+const selectedList = ref(cloneDeep(taskStore.selectedGidList) || [])
+const isMultiSelectModifierPressed = ref(false)
+const isMultiSelectMode = ref(false)
+const resizeVersion = ref(0)
+
+let handleKeyEvent = null
+let handleResize = null
+
+const displayTaskList = computed(() => {
+  const baseList = !props.category
+    ? taskStore.taskList
+    : taskStore.taskList.filter((task) => taskMatchesCategory(task, props.category))
+  const q = `${props.keyword || ''}`.trim().toLowerCase()
+  if (!q) return baseList
+  return baseList.filter((task) => {
+    const name = getTaskName(task, { defaultName: '', maxLen: -1 }) || ''
+    const uri = `${task && task.uri ? task.uri : ''}`.toLowerCase()
+    const gid = `${task && task.gid ? task.gid : ''}`.toLowerCase()
+    const loweredName = `${name}`.toLowerCase()
+    return loweredName.includes(q) || uri.includes(q) || gid.includes(q)
+  })
+})
+
+const multiSelectModifier = computed(() => {
+  const v = preferenceConfig.value && preferenceConfig.value.taskMultiSelectModifier
+  return (v ? `${v}`.toLowerCase() : 'ctrl').trim()
+})
+
+const multiSelectKeystroke = computed(() => {
+  const tokens = normalizeKeystrokeTokens(multiSelectModifier.value)
+  const modifiers = []
+  let key = ''
+  tokens.forEach(t => {
+    if (t === 'cmdctrl' || t === 'ctrl' || t === 'cmd' || t === 'shift' || t === 'alt') {
+      if (!modifiers.includes(t)) modifiers.push(t)
+    } else {
+      key = t
+    }
+  })
+  const normalized = [...modifiers, key].filter(Boolean).join('-')
+  return normalized || 'ctrl'
+})
+
+const multiSelectModifiers = computed(() => {
+  const tokens = normalizeKeystrokeTokens(multiSelectKeystroke.value)
+  const allowed = new Set(['cmdctrl', 'ctrl', 'cmd', 'shift', 'alt'])
+  const uniq = []
+  tokens.forEach(t => {
+    if (!allowed.has(t)) return
+    if (uniq.includes(t)) return
+    uniq.push(t)
+  })
+  return uniq.length > 0 ? uniq : ['ctrl']
+})
+
+const isMultiSelectToggleShortcut = computed(() => {
+  const tokens = normalizeKeystrokeTokens(multiSelectKeystroke.value)
+  if (tokens.length === 0) return false
+  const allowed = new Set(['cmdctrl', 'ctrl', 'cmd', 'shift', 'alt'])
+  return tokens.some(t => !allowed.has(t))
+})
+
+const viewMode = computed(() => taskStore.viewMode)
+
+// Lifecycle
+onMounted(() => {
+  handleKeyEvent = (e) => {
+    if (e && e.type === 'keydown' && isMultiSelectToggleShortcut.value && isMultiSelectToggleHit(e) && !e.repeat) {
+      if (!e.repeat) {
+        isMultiSelectMode.value = !isMultiSelectMode.value
+      }
+      isMultiSelectModifierPressed.value = isMultiSelectMode.value
+      e.preventDefault()
+      return
+    }
+    isMultiSelectModifierPressed.value = isMultiSelectToggleShortcut.value
+      ? isMultiSelectMode.value
+      : getModifierPressedFromEvent(e)
   }
+  window.addEventListener('keydown', handleKeyEvent)
+  window.addEventListener('keyup', handleKeyEvent)
+  handleResize = () => {
+    resizeVersion.value += 1
+  }
+  window.addEventListener('resize', handleResize)
+})
 
-  export default {
-    name: 'mo-task-list',
-    components: {
-      [DragSelect.name]: DragSelect,
-      [TaskItem.name]: TaskItem
-    },
-    props: {
-      category: {
-        type: String,
-        default: ''
-      },
-      keyword: {
-        type: String,
-        default: ''
-      }
-    },
-    data () {
-      const selectedList = cloneDeep(this.$store.state.task.selectedGidList) || []
-      return {
-        selectedList,
-        isMultiSelectModifierPressed: false,
-        isMultiSelectMode: false,
-        resizeVersion: 0
-      }
-    },
-    computed: {
-      ...mapState('task', {
-        taskList: state => state.taskList,
-        selectedGidList: state => state.selectedGidList,
-        viewMode: state => state.viewMode
-      }),
-      ...mapState('preference', {
-        preferenceConfig: state => state.config
-      }),
-      displayTaskList () {
-        const baseList = !this.category
-          ? this.taskList
-          : this.taskList.filter((task) => this.taskMatchesCategory(task, this.category))
-        const q = `${this.keyword || ''}`.trim().toLowerCase()
-        if (!q) {
-          return baseList
-        }
-        return baseList.filter((task) => {
-          const name = getTaskName(task, {
-            defaultName: '',
-            maxLen: -1
-          }) || ''
-          const uri = `${task && task.uri ? task.uri : ''}`.toLowerCase()
-          const gid = `${task && task.gid ? task.gid : ''}`.toLowerCase()
-          const loweredName = `${name}`.toLowerCase()
-          return loweredName.includes(q) || uri.includes(q) || gid.includes(q)
-        })
-      },
-      multiSelectModifier () {
-        const v = this.preferenceConfig && this.preferenceConfig.taskMultiSelectModifier
-        return (v ? `${v}`.toLowerCase() : 'ctrl').trim()
-      },
-      multiSelectKeystroke () {
-        const tokens = normalizeKeystrokeTokens(this.multiSelectModifier)
+onBeforeUnmount(() => {
+  if (handleKeyEvent) {
+    window.removeEventListener('keydown', handleKeyEvent)
+    window.removeEventListener('keyup', handleKeyEvent)
+  }
+  if (handleResize) {
+    window.removeEventListener('resize', handleResize)
+  }
+})
 
-        const modifiers = []
-        let key = ''
-        tokens.forEach(t => {
-          if (t === 'cmdctrl' || t === 'ctrl' || t === 'cmd' || t === 'shift' || t === 'alt') {
-            if (!modifiers.includes(t)) modifiers.push(t)
-          } else {
-            key = t
-          }
-        })
+// Watchers
+watch(() => taskStore.selectedGidList, (newVal) => {
+  selectedList.value = newVal
+})
 
-        const normalized = [...modifiers, key].filter(Boolean).join('-')
-        return normalized || 'ctrl'
-      },
-      multiSelectModifiers () {
-        const tokens = normalizeKeystrokeTokens(this.multiSelectKeystroke)
+// Methods
+function normalizeKeystroke (event) {
+  const parts = []
+  if (event.ctrlKey || event.metaKey) parts.push('cmdctrl')
+  if (event.shiftKey) parts.push('shift')
+  if (event.altKey) parts.push('alt')
+  let key = event.key || ''
+  key = key.toLowerCase()
+  if (key === 'control' || key === 'meta' || key === 'shift' || key === 'alt') return ''
+  if (key === 'arrowup') key = 'up'
+  if (key === 'arrowdown') key = 'down'
+  if (key === 'arrowleft') key = 'left'
+  if (key === 'arrowright') key = 'right'
+  if (key === 'escape') key = 'esc'
+  return [...parts, key].filter(Boolean).join('-')
+}
 
-        const allowed = new Set(['cmdctrl', 'ctrl', 'cmd', 'shift', 'alt'])
-        const uniq = []
-        tokens.forEach(t => {
-          if (!allowed.has(t)) return
-          if (uniq.includes(t)) return
-          uniq.push(t)
-        })
-        return uniq.length > 0 ? uniq : ['ctrl']
-      },
-      isMultiSelectToggleShortcut () {
-        const tokens = normalizeKeystrokeTokens(this.multiSelectKeystroke)
-        if (tokens.length === 0) return false
-        const allowed = new Set(['cmdctrl', 'ctrl', 'cmd', 'shift', 'alt'])
-        return tokens.some(t => !allowed.has(t))
-      }
-    },
-    mounted () {
-      this.handleKeyEvent = (e) => {
-        if (e && e.type === 'keydown' && this.isMultiSelectToggleShortcut && this.isMultiSelectToggleHit(e) && !e.repeat) {
-          if (!e.repeat) {
-            this.isMultiSelectMode = !this.isMultiSelectMode
-          }
-          this.isMultiSelectModifierPressed = this.isMultiSelectMode
-          e.preventDefault()
-          return
-        }
-        this.isMultiSelectModifierPressed = this.isMultiSelectToggleShortcut
-          ? this.isMultiSelectMode
-          : this.getModifierPressedFromEvent(e)
-      }
-      window.addEventListener('keydown', this.handleKeyEvent)
-      window.addEventListener('keyup', this.handleKeyEvent)
-      this.handleResize = () => {
-        this.resizeVersion += 1
-      }
-      window.addEventListener('resize', this.handleResize)
-    },
-    beforeDestroy () {
-      if (this.handleKeyEvent) {
-        window.removeEventListener('keydown', this.handleKeyEvent)
-        window.removeEventListener('keyup', this.handleKeyEvent)
-      }
-      if (this.handleResize) {
-        window.removeEventListener('resize', this.handleResize)
-      }
-    },
-    methods: {
-      normalizeKeystroke (event) {
-        const parts = []
-        if (event.ctrlKey || event.metaKey) parts.push('cmdctrl')
-        if (event.shiftKey) parts.push('shift')
-        if (event.altKey) parts.push('alt')
-        let key = event.key || ''
-        key = key.toLowerCase()
-        if (key === 'control' || key === 'meta' || key === 'shift' || key === 'alt') {
-          return ''
-        }
-        if (key === 'arrowup') key = 'up'
-        if (key === 'arrowdown') key = 'down'
-        if (key === 'arrowleft') key = 'left'
-        if (key === 'arrowright') key = 'right'
-        if (key === 'escape') key = 'esc'
-        const result = [...parts, key].filter(Boolean).join('-')
-        return result
-      },
-      isMultiSelectToggleHit (event) {
-        const expected = `${this.multiSelectKeystroke || ''}`.trim().toLowerCase()
-        if (!expected) return false
-        const actual = this.normalizeKeystroke(event)
-        return actual && actual === expected
-      },
-      getModifierPressedFromEvent (e) {
-        const required = this.multiSelectModifiers || []
-        return required.every((key) => {
-          if (key === 'shift') return !!e.shiftKey
-          if (key === 'alt') return !!e.altKey
-          if (key === 'cmd') return !!e.metaKey
-          if (key === 'cmdctrl') return !!(e.ctrlKey || e.metaKey)
-          return !!e.ctrlKey
-        })
-      },
-      isMultiSelectEvent (e) {
-        return this.isMultiSelectToggleShortcut
-          ? this.isMultiSelectMode
-          : this.getModifierPressedFromEvent(e)
-      },
-      getCategorySuffixes (category) {
-        return CATEGORY_SUFFIXES[category] || new Set()
-      },
-      getTaskFileExtensions (task) {
-        const files = (task && task.files) || []
-        const suffix = (this.preferenceConfig && this.preferenceConfig.downloadingFileSuffix) || ''
-        const result = []
-        files.forEach((file) => {
-          let name = getFileNameFromFile(file)
-          if (suffix && name && name.endsWith(suffix)) {
-            name = name.slice(0, -suffix.length)
-          }
-          const ext = `${getFileExtension(name)}`.toLowerCase()
-          if (ext) {
-            result.push(ext)
-          }
-        })
-        return result
-      },
-      taskMatchesCategory (task, category) {
-        const suffixes = this.getCategorySuffixes(category)
-        if (suffixes.size === 0) {
-          return false
-        }
-        const exts = this.getTaskFileExtensions(task)
-        return exts.some((ext) => suffixes.has(ext))
-      },
-      handleDragSelectChange (selectedList) {
-        const incoming = Array.isArray(selectedList) ? selectedList : []
-        const next = this.isMultiSelectModifierPressed
-          ? Array.from(new Set([...(this.selectedList || []), ...incoming]))
-          : incoming
-        this.selectedList = next
-        this.$store.dispatch('task/selectTasks', cloneDeep(next))
-      },
-      handleItemClick (item, e) {
-        const gid = item && item.gid
-        if (!gid) {
-          return
-        }
+function isMultiSelectToggleHit (event) {
+  const expected = `${multiSelectKeystroke.value || ''}`.trim().toLowerCase()
+  if (!expected) return false
+  const actual = normalizeKeystroke(event)
+  return actual && actual === expected
+}
 
-        const current = Array.isArray(this.selectedList) ? this.selectedList : []
-        const useMulti = this.isMultiSelectEvent(e)
-        let next = []
+function getModifierPressedFromEvent (e) {
+  const required = multiSelectModifiers.value || []
+  return required.every((key) => {
+    if (key === 'shift') return !!e.shiftKey
+    if (key === 'alt') return !!e.altKey
+    if (key === 'cmd') return !!e.metaKey
+    if (key === 'cmdctrl') return !!(e.ctrlKey || e.metaKey)
+    return !!e.ctrlKey
+  })
+}
 
-        if (useMulti) {
-          const set = new Set(current)
-          if (set.has(gid)) {
-            set.delete(gid)
-          } else {
-            set.add(gid)
-          }
-          next = Array.from(set)
-        } else {
-          next = [gid]
-        }
+function isMultiSelectEvent (e) {
+  return isMultiSelectToggleShortcut.value
+    ? isMultiSelectMode.value
+    : getModifierPressedFromEvent(e)
+}
 
-        this.selectedList = next
-        this.$store.dispatch('task/selectTasks', cloneDeep(next))
+function getCategorySuffixes (category) {
+  return CATEGORY_SUFFIXES[category] || new Set()
+}
 
-        // 如果侧边栏已经打开，更新显示的任务
-        const taskDetailVisible = this.$store.state.task.taskDetailVisible
-        if (taskDetailVisible && next.length > 0) {
-          // 显示第一个选中的任务
-          const firstSelectedGid = next[0]
-          const task = this.taskList.find(t => t.gid === firstSelectedGid)
-          if (task) {
-            this.$store.dispatch('task/showTaskDetail', task)
-          }
-        }
-      },
-      handleItemContextMenu (item, event) {
-        const task = item || null
-        const gid = task && task.gid ? task.gid : ''
-        if (!gid) {
-          return
-        }
-        if (!this.selectedList.includes(gid)) {
-          this.selectedList = [gid]
-          this.$store.dispatch('task/selectTasks', [gid])
-        }
+function getTaskFileExtensions (task) {
+  const files = (task && task.files) || []
+  const suffix = (preferenceConfig.value && preferenceConfig.value.downloadingFileSuffix) || ''
+  const result = []
+  files.forEach((file) => {
+    let name = getFileNameFromFile(file)
+    if (suffix && name && name.endsWith(suffix)) {
+      name = name.slice(0, -suffix.length)
+    }
+    const ext = `${getFileExtension(name)}`.toLowerCase()
+    if (ext) result.push(ext)
+  })
+  return result
+}
 
-        const selected = Array.isArray(this.selectedList) ? this.selectedList : []
-        const selectedUnique = Array.from(new Set(selected.map(x => `${x || ''}`.trim()).filter(Boolean)))
-        const isMultiSelected = selectedUnique.length > 1 && selectedUnique.includes(`${gid}`)
+function taskMatchesCategory (task, category) {
+  const suffixes = getCategorySuffixes(category)
+  if (suffixes.size === 0) return false
+  const exts = getTaskFileExtensions(task)
+  return exts.some((ext) => suffixes.has(ext))
+}
 
-        const template = isMultiSelected
-          ? this.getMultiTaskContextMenuTemplate(selectedUnique)
-          : this.getTaskContextMenuTemplate(task, event)
+function handleDragSelectChange (selectedListIncoming) {
+  const incoming = Array.isArray(selectedListIncoming) ? selectedListIncoming : []
+  const next = isMultiSelectModifierPressed.value
+    ? Array.from(new Set([...(selectedList.value || []), ...incoming]))
+    : incoming
+  selectedList.value = next
+  taskStore.selectTasks(cloneDeep(next))
+}
 
-        const menu = Menu.buildFromTemplate(template)
-        menu.popup({
-          window: getCurrentWindow(),
-          x: event.x != null ? event.x : event.clientX,
-          y: event.y != null ? event.y : event.clientY
-        })
-      },
-      getMultiTaskContextMenuTemplate (selectedGids = []) {
-        const gids = Array.isArray(selectedGids) ? selectedGids : []
-        const list = Array.isArray(this.taskList) ? this.taskList : []
-        const selectedTasks = list.filter(t => t && gids.includes(`${t.gid}`))
-
-        const canPause = selectedTasks.some(t => t && t.status === TASK_STATUS.ACTIVE)
-        const canResume = selectedTasks.some(t => t && (t.status === TASK_STATUS.PAUSED || t.status === TASK_STATUS.WAITING))
-
-        return [
-          {
-            label: this.$t('task.pause-task'),
-            enabled: canPause,
-            click: () => commands.execute('application:pause-task')
-          },
-          {
-            label: this.$t('task.resume-task'),
-            enabled: canResume,
-            click: () => commands.execute('application:resume-task')
-          },
-          { type: 'separator' },
-          {
-            label: this.$t('task.delete-selected-tasks'),
-            click: () => commands.emit('batch-delete-task', { deleteWithFiles: false })
-          },
-          {
-            label: `${this.$t('task.delete-selected-tasks')}（${this.$t('task.delete-task-label')}）`,
-            click: () => commands.emit('batch-delete-task', { deleteWithFiles: true })
-          },
-          { type: 'separator' },
-          {
-            label: this.$t('task.refresh-list'),
-            click: () => this.$store.dispatch('task/fetchList')
-          },
-          {
-            label: this.$t('task.select-all-task'),
-            click: () => commands.execute('application:select-all-task')
-          }
-        ]
-      },
-      getTaskContextMenuTemplate (task, event) {
-        const status = task && task.status ? task.status : ''
-        const isSeeder = checkTaskIsSeeder(task)
-        const taskName = getTaskName(task, {
-          defaultName: this.$t('task.get-task-name'),
-          maxLen: -1
-        })
-
-        let path = ''
-        try {
-          path = getTaskActualPath(task, this.preferenceConfig || {}) || ''
-        } catch (_) {
-          path = ''
-        }
-
-        const items = []
-
-        if (status === TASK_STATUS.ACTIVE) {
-          items.push({
-            label: this.$t('task.pause-task'),
-            click: () => commands.emit('pause-task', { task, taskName })
-          })
-        } else if (status === TASK_STATUS.PAUSED || status === TASK_STATUS.WAITING) {
-          items.push({
-            label: this.$t('task.resume-task'),
-            click: () => commands.emit('resume-task', { task, taskName })
-          })
-        }
-
-        if (isSeeder) {
-          items.push({
-            label: this.$t('task.stop'),
-            click: () => commands.emit('stop-task-seeding', { task })
-          })
-        }
-
-        if ([TASK_STATUS.ERROR, TASK_STATUS.COMPLETE, TASK_STATUS.REMOVED].includes(status)) {
-          items.push({
-            label: this.$t('task.restart'),
-            click: () => commands.emit('restart-task', {
-              task,
-              taskName,
-              showDialog: status === TASK_STATUS.COMPLETE || !!(event && event.altKey)
-            })
-          })
-        }
-
-        if (items.length > 0) {
-          items.push({ type: 'separator' })
-        }
-
-        items.push({
-          label: this.$t('task.reveal-in-folder'),
-          enabled: !!path,
-          click: () => commands.emit('reveal-in-folder', { path })
-        })
-
-        items.push({
-          label: this.$t('task.copy-link'),
-          click: () => commands.emit('copy-task-link', { task })
-        })
-
-        items.push({
-          label: this.$t('task.info'),
-          click: () => commands.emit('show-task-info', { task })
-        })
-
-        items.push({ type: 'separator' })
-
-        const deleteEventPayload = (deleteWithFiles) => ({ task, taskName, deleteWithFiles: !!deleteWithFiles })
-        const isRecordRemove = [TASK_STATUS.ERROR, TASK_STATUS.COMPLETE, TASK_STATUS.REMOVED].includes(status)
-        if (isRecordRemove) {
-          items.push({
-            label: this.$t('task.remove-record'),
-            click: () => commands.emit('delete-task-record', deleteEventPayload(false))
-          })
-          items.push({
-            label: `${this.$t('task.remove-record')}（${this.$t('task.remove-record-label')}）`,
-            click: () => commands.emit('delete-task-record', deleteEventPayload(true))
-          })
-        } else {
-          items.push({
-            label: this.$t('task.delete-task'),
-            click: () => commands.emit('delete-task', deleteEventPayload(false))
-          })
-          items.push({
-            label: `${this.$t('task.delete-task')}（${this.$t('task.delete-task-label')}）`,
-            click: () => commands.emit('delete-task', deleteEventPayload(true))
-          })
-        }
-
-        return items
-      },
-      handleListBlankClick (e) {
-        if (!e || e.target !== e.currentTarget) {
-          return
-        }
-        if (typeof e.button === 'number' && e.button !== 0) {
-          return
-        }
-        if (!this.selectedList || this.selectedList.length === 0) {
-          return
-        }
-        this.selectedList = []
-        this.$store.dispatch('task/selectTasks', [])
-      },
-      getItemClass (item) {
-        const isSelected = this.selectedList.includes(item.gid)
-        return {
-          'task-item-wrapper': true,
-          [`task-item-wrapper--${this.viewMode}`]: true,
-          selected: isSelected
-        }
-      }
-    },
-    watch: {
-      selectedGidList (newVal) {
-        this.selectedList = newVal
-      }
+function handleItemClick (item, e) {
+  const gid = item && item.gid
+  if (!gid) return
+  const current = Array.isArray(selectedList.value) ? selectedList.value : []
+  const useMulti = isMultiSelectEvent(e)
+  let next = []
+  if (useMulti) {
+    const set = new Set(current)
+    if (set.has(gid)) set.delete(gid)
+    else set.add(gid)
+    next = Array.from(set)
+  } else {
+    next = [gid]
+  }
+  selectedList.value = next
+  taskStore.selectTasks(cloneDeep(next))
+  if (taskStore.taskDetailVisible && next.length > 0) {
+    const firstSelectedGid = next[0]
+    const task = taskStore.taskList.find(t => t.gid === firstSelectedGid)
+    if (task) {
+      taskStore.showTaskDetail(task)
     }
   }
+}
+
+function handleItemContextMenu (item, event) {
+  const task = item || null
+  const gid = task && task.gid ? task.gid : ''
+  if (!gid) return
+  if (!selectedList.value.includes(gid)) {
+    selectedList.value = [gid]
+    taskStore.selectTasks([gid])
+  }
+  const selected = Array.isArray(selectedList.value) ? selectedList.value : []
+  const selectedUnique = Array.from(new Set(selected.map(x => `${x || ''}`.trim()).filter(Boolean)))
+  const isMultiSelected = selectedUnique.length > 1 && selectedUnique.includes(`${gid}`)
+  const template = isMultiSelected
+    ? getMultiTaskContextMenuTemplate(selectedUnique)
+    : getTaskContextMenuTemplate(task, event)
+  const menu = Menu.buildFromTemplate(template)
+  menu.popup({
+    window: getCurrentWindow(),
+    x: event.x != null ? event.x : event.clientX,
+    y: event.y != null ? event.y : event.clientY
+  })
+}
+
+function getMultiTaskContextMenuTemplate (selectedGids = []) {
+  const gids = Array.isArray(selectedGids) ? selectedGids : []
+  const list = Array.isArray(taskStore.taskList) ? taskStore.taskList : []
+  const selectedTasks = list.filter(t => t && gids.includes(`${t.gid}`))
+  const canPause = selectedTasks.some(t => t && t.status === TASK_STATUS.ACTIVE)
+  const canResume = selectedTasks.some(t => t && (t.status === TASK_STATUS.PAUSED || t.status === TASK_STATUS.WAITING))
+  return [
+    { label: t('task.pause-task'), enabled: canPause, click: () => commands.execute('application:pause-task') },
+    { label: t('task.resume-task'), enabled: canResume, click: () => commands.execute('application:resume-task') },
+    { type: 'separator' },
+    { label: t('task.delete-selected-tasks'), click: () => commands.emit('batch-delete-task', { deleteWithFiles: false }) },
+    { label: `${t('task.delete-selected-tasks')}（${t('task.delete-task-label')}）`, click: () => commands.emit('batch-delete-task', { deleteWithFiles: true }) },
+    { type: 'separator' },
+    { label: t('task.refresh-list'), click: () => taskStore.fetchList() },
+    { label: t('task.select-all-task'), click: () => commands.execute('application:select-all-task') }
+  ]
+}
+
+function getTaskContextMenuTemplate (task, event) {
+  const status = task && task.status ? task.status : ''
+  const isSeeder = checkTaskIsSeeder(task)
+  const taskName = getTaskName(task, { defaultName: t('task.get-task-name'), maxLen: -1 })
+  let path = ''
+  try {
+    path = getTaskActualPath(task, preferenceConfig.value || {}) || ''
+  } catch (_) {
+    path = ''
+  }
+  const items = []
+  if (status === TASK_STATUS.ACTIVE) {
+    items.push({ label: t('task.pause-task'), click: () => commands.emit('pause-task', { task, taskName }) })
+  } else if (status === TASK_STATUS.PAUSED || status === TASK_STATUS.WAITING) {
+    items.push({ label: t('task.resume-task'), click: () => commands.emit('resume-task', { task, taskName }) })
+  }
+  if (isSeeder) {
+    items.push({ label: t('task.stop'), click: () => commands.emit('stop-task-seeding', { task }) })
+  }
+  if ([TASK_STATUS.ERROR, TASK_STATUS.COMPLETE, TASK_STATUS.REMOVED].includes(status)) {
+    items.push({
+      label: t('task.restart'),
+      click: () => commands.emit('restart-task', { task, taskName, showDialog: status === TASK_STATUS.COMPLETE || !!(event && event.altKey) })
+    })
+  }
+  if (items.length > 0) items.push({ type: 'separator' })
+  items.push({ label: t('task.reveal-in-folder'), enabled: !!path, click: () => commands.emit('reveal-in-folder', { path }) })
+  items.push({ label: t('task.copy-link'), click: () => commands.emit('copy-task-link', { task }) })
+  items.push({ label: t('task.info'), click: () => commands.emit('show-task-info', { task }) })
+  items.push({ type: 'separator' })
+  const deleteEventPayload = (deleteWithFiles) => ({ task, taskName, deleteWithFiles: !!deleteWithFiles })
+  const isRecordRemove = [TASK_STATUS.ERROR, TASK_STATUS.COMPLETE, TASK_STATUS.REMOVED].includes(status)
+  if (isRecordRemove) {
+    items.push({ label: t('task.remove-record'), click: () => commands.emit('delete-task-record', deleteEventPayload(false)) })
+    items.push({ label: `${t('task.remove-record')}（${t('task.remove-record-label')}）`, click: () => commands.emit('delete-task-record', deleteEventPayload(true)) })
+  } else {
+    items.push({ label: t('task.delete-task'), click: () => commands.emit('delete-task', deleteEventPayload(false)) })
+    items.push({ label: `${t('task.delete-task')}（${t('task.delete-task-label')}）`, click: () => commands.emit('delete-task', deleteEventPayload(true)) })
+  }
+  return items
+}
+
+function handleListBlankClick (e) {
+  if (!e || e.target !== e.currentTarget) return
+  if (typeof e.button === 'number' && e.button !== 0) return
+  if (!selectedList.value || selectedList.value.length === 0) return
+  selectedList.value = []
+  taskStore.selectTasks([])
+}
+
+function getItemClass (item) {
+  const isSelected = selectedList.value.includes(item.gid)
+  return {
+    'task-item-wrapper': true,
+    [`task-item-wrapper--${viewMode.value}`]: true,
+    selected: isSelected
+  }
+}
 </script>
 
 <style lang="scss">
@@ -593,7 +497,7 @@
 .no-task-inner {
   width: 100%;
   padding-top: 280px;
-  background: transparent url('~@/assets/no-task.svg') top center no-repeat;
+  background: transparent url('@/assets/no-task.svg') top center no-repeat;
   background-size: 400px auto;
 }
 </style>

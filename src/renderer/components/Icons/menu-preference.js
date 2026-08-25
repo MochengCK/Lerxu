@@ -4,12 +4,16 @@ Icon.register({
   'menu-preference': {
     'width': 24,
     'height': 24,
-    'raw': `<line fill="none" stroke-miterlimit="10" x1="14" y1="4" x2="23" y2="4"/> <line fill="none" stroke-miterlimit="10" x1="1" y1="4" x2="4" y2="4"/> <line data-color="color-2" fill="none" stroke-miterlimit="10" x1="22" y1="12" x2="23" y2="12"/> <line data-color="color-2" fill="none" stroke-miterlimit="10" x1="1" y1="12" x2="12" y2="12"/> <line fill="none" stroke-miterlimit="10" x1="14" y1="20" x2="23" y2="20"/> <line fill="none" stroke-miterlimit="10" x1="1" y1="20" x2="4" y2="20"/> <circle fill="none" stroke-miterlimit="10" cx="7" cy="4" r="3"/> <circle data-color="color-2" fill="none" stroke-miterlimit="10" cx="15" cy="12" r="3"/> <circle fill="none" stroke-miterlimit="10" cx="7" cy="20" r="3"/>`,
-    'g': {
-      'stroke': 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2'
-    }
+    'raw': `<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 4h-7"/>
+      <path d="M10 4H3"/>
+      <path d="M21 12h-9"/>
+      <path d="M8 12H3"/>
+      <path d="M21 20h-5"/>
+      <path d="M12 20H3"/>
+      <path d="M14 2v4"/>
+      <path d="M8 10v4"/>
+      <path d="M16 18v4"/>
+    </g>`
   }
 })
