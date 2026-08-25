@@ -240,27 +240,52 @@
         </div>
       </template>
       <template v-else-if="contextMenuPeer && contextMenuPeer.status === 'banned'">
-        <div class="context-menu-item" @click="banPeer(300)">
-          <el-icon><CirclePlus /></el-icon>
-          {{ t('task.extend-ban-5min') }}
-        </div>
-        <div class="context-menu-item" @click="banPeer(3600)">
-          <el-icon><CirclePlus /></el-icon>
-          {{ t('task.extend-ban-1hour') }}
-        </div>
-        <div class="context-menu-item" @click="banPeer(86400)">
-          <el-icon><CirclePlus /></el-icon>
-          {{ t('task.extend-ban-1day') }}
-        </div>
-        <div class="context-menu-item" @click="banPeer(-1)">
-          <el-icon><CirclePlus /></el-icon>
-          {{ t('task.extend-ban-forever') }}
-        </div>
-        <div class="context-menu-divider"></div>
-        <div class="context-menu-item" @click="unbanPeer">
-          <el-icon><CircleCheckFilled /></el-icon>
-          {{ t('task.unban-peer') }}
-        </div>
+        <template v-if="isAutoBannedPeer(contextMenuPeer)">
+          <div class="context-menu-item" @click="banPeer(300)">
+            <el-icon><CircleCloseFilled /></el-icon>
+            {{ t('task.ban-peer-5min') }}
+          </div>
+          <div class="context-menu-item" @click="banPeer(3600)">
+            <el-icon><CircleCloseFilled /></el-icon>
+            {{ t('task.ban-peer-1hour') }}
+          </div>
+          <div class="context-menu-item" @click="banPeer(86400)">
+            <el-icon><CircleCloseFilled /></el-icon>
+            {{ t('task.ban-peer-1day') }}
+          </div>
+          <div class="context-menu-item" @click="banPeer(-1)">
+            <el-icon><CircleCloseFilled /></el-icon>
+            {{ t('task.ban-peer-forever') }}
+          </div>
+          <div class="context-menu-divider"></div>
+          <div class="context-menu-item" @click="unbanPeer">
+            <el-icon><CircleCheckFilled /></el-icon>
+            {{ t('task.unban-peer') }}
+          </div>
+        </template>
+        <template v-else>
+          <div class="context-menu-item" @click="banPeer(300)">
+            <el-icon><CirclePlus /></el-icon>
+            {{ t('task.extend-ban-5min') }}
+          </div>
+          <div class="context-menu-item" @click="banPeer(3600)">
+            <el-icon><CirclePlus /></el-icon>
+            {{ t('task.extend-ban-1hour') }}
+          </div>
+          <div class="context-menu-item" @click="banPeer(86400)">
+            <el-icon><CirclePlus /></el-icon>
+            {{ t('task.extend-ban-1day') }}
+          </div>
+          <div class="context-menu-item" @click="banPeer(-1)">
+            <el-icon><CirclePlus /></el-icon>
+            {{ t('task.extend-ban-forever') }}
+          </div>
+          <div class="context-menu-divider"></div>
+          <div class="context-menu-item" @click="unbanPeer">
+            <el-icon><CircleCheckFilled /></el-icon>
+            {{ t('task.unban-peer') }}
+          </div>
+        </template>
       </template>
       <template v-else>
         <div class="context-menu-item" @click="banPeer(300)">
@@ -1276,10 +1301,16 @@ function getPeerSource (peer) {
   if (source === 'pex') return t('task.peer-source-pex')
   if (source === 'tracker') return t('task.peer-source-tracker')
   if (source === 'manual') return t('task.peer-source-manual')
+  if (source === 'auto') return t('task.peer-source-auto')
   if (peer.localPeer === 'true' || peer.localPeer === true) return t('task.peer-source-lsd')
   if (peer.fromDHT === 'true' || peer.fromDHT === true) return t('task.peer-source-dht')
   if (peer.fromPEX === 'true' || peer.fromPEX === true) return t('task.peer-source-pex')
   return '-'
+}
+
+function isAutoBannedPeer (peer) {
+  if (!peer) return false
+  return `${peer.source || ''}`.toLowerCase() === 'auto'
 }
 
 function getPeerProtocol (peer) {

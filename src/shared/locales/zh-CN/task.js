@@ -65,6 +65,7 @@ export default {
   'peer-source-dht': 'DHT',
   'peer-source-pex': 'PEX',
   'peer-source-manual': '手动',
+  'peer-source-auto': '自动',
   'peer-source-tracker': 'Tracker',
   'peer-failure-short-tcp': 'TCP',
   'peer-failure-short-utp': 'UTP',
