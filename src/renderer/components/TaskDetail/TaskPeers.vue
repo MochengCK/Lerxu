@@ -63,8 +63,8 @@
             </template>
             <template v-else>
               <!-- 所有peer都显示IP:Port格式，保持一致 -->
-              <mo-hover-tip effect="dark" :content="`${scope.row.ip}:${scope.row.port}`" placement="top" :open-delay="0">
-                <span class="mo-peer-text">{{ `${scope.row.ip}:${scope.row.port}` }}</span>
+              <mo-hover-tip effect="dark" :content="`${scope.row.ip}:${scope.row.port}`" placement="top" :open-delay="300" :disabled="!getOverflow(scope.row, 'host') || !scope.row.ip">
+                <span class="mo-peer-text" data-field="host" :data-row-id="scope.row.id" :class="{ 'is-truncated': getOverflow(scope.row, 'host') }" @mouseenter="handleTextOverflow($event, scope.row, 'host')">{{ `${scope.row.ip}:${scope.row.port}` }}</span>
               </mo-hover-tip>
             </template>
           </template>
@@ -75,13 +75,13 @@
           sortable="custom"
           min-width="100">
           <template #default="scope">
-            <mo-hover-tip effect="dark" :content="getPeerLocation(scope.row.ip)" placement="top" :open-delay="0">
+            <mo-hover-tip effect="dark" :content="getPeerLocation(scope.row.ip)" placement="top" :open-delay="300" :disabled="!getOverflow(scope.row, 'location') || !getPeerLocation(scope.row.ip) || getPeerLocation(scope.row.ip) === '-'">
               <span class="mo-peer-location">
                 <span
                   v-if="getPeerCountryCode(scope.row.ip)"
                   :class="getPeerCountryClass(scope.row.ip)"
                 ></span>
-                <span class="mo-peer-text">{{ getPeerLocation(scope.row.ip) }}</span>
+                <span class="mo-peer-text" data-field="location" :data-row-id="scope.row.id" :class="{ 'is-truncated': getOverflow(scope.row, 'location') }" @mouseenter="handleTextOverflow($event, scope.row, 'location')">{{ getPeerLocation(scope.row.ip) }}</span>
               </span>
             </mo-hover-tip>
           </template>
@@ -92,8 +92,8 @@
           sortable="custom"
           min-width="125">
           <template #default="scope">
-            <mo-hover-tip effect="dark" :content="getPeerClientTooltip(scope.row)" placement="top" :open-delay="0">
-              <span class="mo-peer-text">{{ renderPeerClient(scope.row) }}</span>
+            <mo-hover-tip effect="dark" :content="getOverflow(scope.row, 'client') ? `${renderPeerClient(scope.row)} / ${getPeerIdPrefix(scope.row)}` : getPeerIdPrefix(scope.row)" placement="top" :open-delay="300" :disabled="!getPeerIdPrefix(scope.row)">
+              <span class="mo-peer-text" data-field="client" :data-row-id="scope.row.id" :class="{ 'is-truncated': getOverflow(scope.row, 'client') }" @mouseenter="handleTextOverflow($event, scope.row, 'client')">{{ renderPeerClient(scope.row) }}</span>
             </mo-hover-tip>
           </template>
         </el-table-column>
@@ -127,8 +127,8 @@
               -
             </template>
             <template v-else-if="scope.row.status === 'disconnected'">
-              <mo-hover-tip effect="dark" :content="getPeerFailureDetailText(scope.row)" placement="top" :open-delay="0">
-                <span class="mo-peer-text">{{ getPeerFailureSummaryText(scope.row) }}</span>
+              <mo-hover-tip effect="dark" :content="getPeerFailureDetailText(scope.row)" placement="top" :open-delay="300" :disabled="!getPeerFailureDetailText(scope.row)">
+                <span class="mo-peer-text" data-field="status" :data-row-id="scope.row.id" :class="{ 'is-truncated': getOverflow(scope.row, 'status') }" @mouseenter="handleTextOverflow($event, scope.row, 'status')">{{ getPeerFailureSummaryText(scope.row) }}</span>
               </mo-hover-tip>
             </template>
             <template v-else>
@@ -165,7 +165,17 @@
           sortable="custom"
           width="90">
           <template #default="scope">
-            {{ getPeerSource(scope.row) }}
+            <template v-if="scope.row.isGroup">
+              -
+            </template>
+            <template v-else-if="scope.row.engineStatus === 'banned'">
+              <mo-hover-tip effect="dark" :content="getBanReasonText(scope.row)" placement="top" :open-delay="300" :disabled="!getOverflow(scope.row, 'source') || !getBanReasonText(scope.row)">
+                <span class="mo-peer-text" data-field="source" :data-row-id="scope.row.id" :class="{ 'is-truncated': getOverflow(scope.row, 'source') }" :style="{ color: '#F56C6C' }" @mouseenter="handleTextOverflow($event, scope.row, 'source')">{{ getPeerSource(scope.row) }}</span>
+              </mo-hover-tip>
+            </template>
+            <template v-else>
+              {{ getPeerSource(scope.row) }}
+            </template>
           </template>
         </el-table-column>
         <el-table-column
@@ -310,7 +320,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import {
   bitfieldToPercent,
   bytesToSize,
@@ -640,6 +650,14 @@ const sortProp = ref('downloadSpeed')
 const sortOrder = ref('descending')
 const tableHeight = ref('100%')
 const expandedGroupKeys = ref(['group-connected'])
+// 溢出状态：key = `${rowId}:${field}`，value = boolean
+// 用 reactive 对象而非直接写 row 属性，确保 Vue 能追踪变化
+const overflowState = reactive({})
+
+function getOverflow (row, field) {
+  if (!row || !row.id) return false
+  return !!overflowState[`${row.id}:${field}`]
+}
 const contextMenuVisible = ref(false)
 const contextMenuX = ref(0)
 const contextMenuY = ref(0)
@@ -1235,16 +1253,6 @@ function isPeerClientUnknown (peer) {
   return !`${clientName}`.trim()
 }
 
-function getPeerClientTooltip (peer) {
-  if (isPeerClientUnknown(peer)) {
-    return ''
-  }
-  const clientText = renderPeerClient(peer)
-  const prefix = getPeerIdPrefix(peer)
-  if (!prefix) return clientText
-  return `${clientText} / ${prefix}`
-}
-
 function renderPeerClient (peer) {
   const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
   const result = peerIdParser(peerId)
@@ -1276,6 +1284,66 @@ function formatDuration (seconds) {
 function updateTableHeight () {
   // height="100%" handled by CSS
 }
+
+/* 通用溢出检测：mouseenter 时检查文本是否被截断，
+   将结果写入响应式 overflowState，控制 mo-hover-tip 的 :disabled */
+function handleTextOverflow (event, row, key) {
+  try {
+    const el = event && event.currentTarget
+    if (!el || !row || !row.id) return
+    const overflow = el.scrollWidth > el.clientWidth + 1
+    const prop = `${row.id}:${key}`
+    if (overflowState[prop] !== overflow) {
+      overflowState[prop] = overflow
+    }
+  } catch (e) {}
+}
+
+/* 批量检测表格中所有 .mo-peer-text 的溢出状态，
+   在数据变化或表格渲染后自动调用，使渐隐效果在初始渲染时就生效 */
+function checkAllOverflow () {
+  try {
+    const table = peerTable.value?.$el
+    if (!table) return
+    const spans = table.querySelectorAll('.mo-peer-text[data-field][data-row-id]')
+    spans.forEach(span => {
+      const field = span.dataset.field
+      const rowId = span.dataset.rowId
+      if (!field || !rowId) return
+      const overflow = span.scrollWidth > span.clientWidth + 1
+      const prop = `${rowId}:${field}`
+      if (overflowState[prop] !== overflow) {
+        overflowState[prop] = overflow
+      }
+    })
+  } catch (e) {}
+}
+
+// 数据变化后自动检测（用 rAF 确保 el-table 内部渲染完成）
+watch(() => groupedPeers.value, () => {
+  nextTick(() => requestAnimationFrame(() => checkAllOverflow()))
+}, { deep: false })
+
+// 挂载后检测一次
+onMounted(() => {
+  nextTick(() => requestAnimationFrame(() => checkAllOverflow()))
+  // 监听容器尺寸变化：v-show 从隐藏切换到可见时需要重新检测溢出状态
+  if (peerTable.value?.$el) {
+    resizeObserver = new ResizeObserver(() => {
+      checkAllOverflow()
+    })
+    resizeObserver.observe(peerTable.value.$el)
+  }
+})
+
+let resizeObserver = null
+
+onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+})
 
 function handleSortChange ({ prop, order }) {
   sortProp.value = prop || 'downloadSpeed'
@@ -1311,6 +1379,23 @@ function getPeerSource (peer) {
 function isAutoBannedPeer (peer) {
   if (!peer) return false
   return `${peer.source || ''}`.toLowerCase() === 'auto'
+}
+
+function getBanReasonText (peer) {
+  if (!peer) return ''
+  const reason = `${peer.banReason || ''}`.toLowerCase()
+  if (reason === 'idle') return t('task.peer-ban-reason-idle')
+  if (reason === 'bad_data') return t('task.peer-ban-reason-bad-data')
+  if (reason === 'ban_list') return t('task.peer-ban-reason-ban-list')
+  if (reason === 'zero_progress') return t('task.peer-ban-reason-zero-progress')
+  if (reason === 'snubbing') return t('task.peer-ban-reason-snubbing')
+  if (reason === 'manual') return t('task.peer-ban-reason-manual')
+  if (reason === 'auto') return t('task.peer-ban-reason-auto')
+  // 未知原因时回退到 source 显示
+  const source = `${peer.source || ''}`.toLowerCase()
+  if (source === 'auto') return t('task.peer-ban-reason-auto')
+  if (source === 'manual') return t('task.peer-ban-reason-manual')
+  return t('task.peer-ban-reason-auto')
 }
 
 function getPeerProtocol (peer) {
@@ -1355,6 +1440,7 @@ function handleExpandChange (row, expanded) {
       expandedGroupKeys.value = expandedGroupKeys.value.filter(k => k !== row.id)
     }
   }
+  nextTick(() => checkAllOverflow())
 }
 
 function handleSpanMethod ({ row, column, rowIndex, columnIndex }) {
@@ -1629,12 +1715,23 @@ defineExpose({
     padding-left: 10px !important;
     padding-right: 10px !important;
   }
+  /* mo-hover-tip trigger 默认 inline-flex 会撑开宽度，
+     改为 block 并限制宽度，确保 text-overflow 和溢出检测生效 */
+  .lc-hover-tip__trigger {
+    display: block;
+    overflow: hidden;
+  }
   .mo-peer-text {
     display: block;
     white-space: nowrap;
     overflow: hidden;
     position: relative;
-    text-overflow: ellipsis;
+    text-overflow: clip; /* 不使用 ellipsis，避免双重省略效果 */
+    /* 文本被截断时右侧渐隐，避免硬截断突兀 */
+    &.is-truncated {
+      -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 85%, rgba(0, 0, 0, 0));
+      mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 85%, rgba(0, 0, 0, 0));
+    }
   }
   .mo-peer-location {
     display: flex;

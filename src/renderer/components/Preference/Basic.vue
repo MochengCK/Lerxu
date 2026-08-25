@@ -883,6 +883,69 @@
             class="form-item-sub"
             :span="24"
           >
+            <div class="bt-ban-collapse-header" @click="btBanSettingsExpanded = !btBanSettingsExpanded">
+              <span class="bt-ban-collapse-title">{{ t('preferences.bt-auto-ban-settings') }}</span>
+              <el-icon class="bt-ban-collapse-arrow" :class="{ 'is-expanded': btBanSettingsExpanded }">
+                <ArrowRight />
+              </el-icon>
+            </div>
+            <transition name="bt-ban-slide">
+              <div v-show="btBanSettingsExpanded" class="bt-ban-settings-body">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.bt-auto-ban-peer') }}</span>
+                  <div class="toggle-desc">
+                    {{ t('preferences.bt-auto-ban-peer-desc') }}
+                  </div>
+                </div>
+                <el-switch
+                  v-model="form.btAutoBanPeer"
+                  @change="autoSaveForm"
+                />
+              </div>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.bt-auto-ban-bad-data') }}</span>
+                  <div class="toggle-desc">
+                    {{ t('preferences.bt-auto-ban-bad-data-desc') }}
+                  </div>
+                </div>
+                <el-switch
+                  v-model="form.btAutoBanBadData"
+                  @change="autoSaveForm"
+                />
+              </div>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.bt-auto-ban-zero-progress') }}</span>
+                  <div class="toggle-desc">
+                    {{ t('preferences.bt-auto-ban-zero-progress-desc') }}
+                  </div>
+                </div>
+                <el-switch
+                  v-model="form.btAutoBanZeroProgress"
+                  @change="autoSaveForm"
+                />
+              </div>
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.bt-auto-ban-snubbing') }}</span>
+                  <div class="toggle-desc">
+                    {{ t('preferences.bt-auto-ban-snubbing-desc') }}
+                  </div>
+                </div>
+                <el-switch
+                  v-model="form.btAutoBanSnubbing"
+                  @change="autoSaveForm"
+                />
+              </div>
+            </div>
+            </transition>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
             <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
               {{ t('preferences.bt-ip-ban-list') }}
             </div>
@@ -2370,6 +2433,10 @@ const normalizeTaskMultiSelectModifier = (value) => {
       btEncryptionMode,
       btIpBanList,
       btSaveMetadata,
+      btAutoBanPeer,
+      btAutoBanBadData,
+      btAutoBanZeroProgress,
+      btAutoBanSnubbing,
       dir,
       downloadingFileSuffix,
       engineMaxConnectionPerServer,
@@ -2481,6 +2548,10 @@ const normalizeTaskMultiSelectModifier = (value) => {
       btAutoDownloadContent,
       btEncryptionMode: normalizeBtEncryptionMode(btEncryptionMode, config.btForceEncryption),
       btMaxPeers: btMaxPeers !== undefined ? btMaxPeers : '128',
+      btAutoBanPeer: btAutoBanPeer !== false && btAutoBanPeer !== 'false',
+      btAutoBanBadData: btAutoBanBadData !== false && btAutoBanBadData !== 'false',
+      btAutoBanZeroProgress: btAutoBanZeroProgress !== false && btAutoBanZeroProgress !== 'false',
+      btAutoBanSnubbing: btAutoBanSnubbing !== false && btAutoBanSnubbing !== 'false',
       dhtListenPort,
       diskCache: diskCache || '128M',
       enableDht: enableDht === true,
@@ -2683,6 +2754,8 @@ const { searchKeyword } = storeToRefs(preferenceStore)
 
 // --- Data ---
 const form = ref(initForm(preferenceConfig.value))
+// BT 自动封禁策略折叠状态
+const btBanSettingsExpanded = ref(false)
 // 限速单位独立存储：不再从 form 值推导（'0' 表示不限速时单位会丢失，
 // 且 computed setter 无法写回状态导致下拉选择无效），由 v-model 直接写入
 const downloadUnit = ref(extractSpeedUnit(form.value.maxOverallDownloadLimit))
@@ -4071,6 +4144,19 @@ watch(trackerSourceConfigVisible, (visible) => {
             delete data.btMinCryptoLevel
           }
 
+          if ('btAutoBanPeer' in data) {
+            data['bt-auto-ban-peer'] = data.btAutoBanPeer ? 'true' : 'false'
+          }
+          if ('btAutoBanBadData' in data) {
+            data['bt-auto-ban-bad-data'] = data.btAutoBanBadData ? 'true' : 'false'
+          }
+          if ('btAutoBanZeroProgress' in data) {
+            data['bt-auto-ban-zero-progress'] = data.btAutoBanZeroProgress ? 'true' : 'false'
+          }
+          if ('btAutoBanSnubbing' in data) {
+            data['bt-auto-ban-snubbing'] = data.btAutoBanSnubbing ? 'true' : 'false'
+          }
+
           if (btTracker) {
             data.btTracker = reduceTrackerString(convertLineToComma(btTracker))
           }
@@ -5219,6 +5305,74 @@ onBeforeUnmount(() => {
    align-items: center;
    gap: 16px;
    flex-wrap: wrap;
+ }
+
+ /* BT 自动封禁策略折叠容器 */
+ .bt-ban-collapse-header {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   padding: 6px 10px;
+   background: rgba(0, 0, 0, 0.03);
+   border-radius: 6px;
+   cursor: pointer;
+   user-select: none;
+   transition: background 0.2s;
+ }
+ .bt-ban-collapse-header:hover {
+   background: rgba(0, 0, 0, 0.06);
+ }
+ .bt-ban-collapse-title {
+   font-size: 13px;
+   font-weight: 500;
+   color: var(--lc-text-primary, #303133);
+ }
+ .bt-ban-collapse-arrow {
+   transition: transform 0.25s ease;
+   font-size: 12px;
+   color: var(--lc-text-secondary, #909399);
+ }
+ .bt-ban-collapse-arrow.is-expanded {
+   transform: rotate(90deg);
+ }
+ .bt-ban-settings-body {
+   padding: 8px 10px 4px;
+   overflow: hidden;
+ }
+ .bt-ban-settings-body .toggle-row {
+   margin-bottom: 10px;
+ }
+ .bt-ban-settings-body .toggle-row:last-child {
+   margin-bottom: 0;
+ }
+
+ /* 深色模式适配 */
+ .theme-dark .bt-ban-collapse-header {
+   background: rgba(255, 255, 255, 0.04);
+ }
+ .theme-dark .bt-ban-collapse-header:hover {
+   background: rgba(255, 255, 255, 0.08);
+ }
+ .theme-dark .bt-ban-collapse-title {
+   color: var(--lc-text-primary, #dfe3e8);
+ }
+ .theme-dark .bt-ban-collapse-arrow {
+   color: var(--lc-text-secondary, #8d94a5);
+ }
+
+ /* 展开收起过渡动画 */
+ .bt-ban-slide-enter-active,
+ .bt-ban-slide-leave-active {
+   transition: max-height 0.28s ease, opacity 0.28s ease, padding 0.28s ease;
+   max-height: 500px;
+   overflow: hidden;
+ }
+ .bt-ban-slide-enter-from,
+ .bt-ban-slide-leave-to {
+   max-height: 0;
+   opacity: 0;
+   padding-top: 0;
+   padding-bottom: 0;
  }
 
  /* 视频嗅探设置按钮样式 */

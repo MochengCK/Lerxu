@@ -5,7 +5,6 @@
         ref="torrentTable"
         :height="computedTableHeight"
         :data="files"
-        tooltip-effect="dark"
         style="width: 100%"
         @row-dblclick="handleRowDbClick"
         @selection-change="handleSelectionChange">
@@ -15,15 +14,17 @@
         </el-table-column>
         <el-table-column
           :label="t('task.file-name')"
-          min-width="200"
-          show-overflow-tooltip>
-          <template #default="scope">{{ scope.row.name }}</template>
+          min-width="200">
+          <template #default="scope">
+            <mo-hover-tip :content="scope.row.name" placement="top" :disabled="!getOverflow(scope.row, 'name') || !scope.row.name" :open-delay="300">
+              <span class="mo-file-name" data-field="name" :data-row-id="scope.row.idx" :class="{ 'is-truncated': getOverflow(scope.row, 'name') }" @mouseenter="handleNameMouseEnter($event, scope.row)">{{ scope.row.name }}</span>
+            </mo-hover-tip>
+          </template>
         </el-table-column>
         <el-table-column
           :label="t('task.file-extension')"
           width="80"
-          class-name="task-file-extension"
-          show-overflow-tooltip>
+          class-name="task-file-extension">
           <template #default="scope">{{ removeExtensionDot(scope.row.extension) }}</template>
         </el-table-column>
         <el-table-column
@@ -85,7 +86,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, getCurrentInstance } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount, getCurrentInstance } from 'vue'
 import { isEmpty } from 'lodash'
 import '@/components/Icons/video'
 import '@/components/Icons/audio'
@@ -143,6 +144,73 @@ const activeType = ref('all')
 const showConfirm = ref(false)
 const initialSelectedFileIndex = ref(null)
 
+// 溢出状态：key = `${rowIdx}:${field}`，value = boolean
+const overflowState = reactive({})
+
+function getOverflow (row, field) {
+  if (!row || row.idx === undefined || row.idx === null) return false
+  return !!overflowState[`${row.idx}:${field}`]
+}
+
+/* 通用溢出检测：mouseenter 时检查文本是否被截断 */
+function handleTextOverflow (event, row, key) {
+  try {
+    const el = event && event.currentTarget
+    if (!el || !row || row.idx === undefined || row.idx === null) return
+    const overflow = el.scrollWidth > el.clientWidth + 1
+    const prop = `${row.idx}:${key}`
+    if (overflowState[prop] !== overflow) {
+      overflowState[prop] = overflow
+    }
+  } catch (e) {}
+}
+
+/* 批量检测表格中所有 .mo-file-name 的溢出状态 */
+function checkAllOverflow () {
+  try {
+    const table = torrentTable.value?.$el
+    if (!table) return
+    const spans = table.querySelectorAll('.mo-file-name[data-field][data-row-id]')
+    spans.forEach(span => {
+      const field = span.dataset.field
+      const rowId = span.dataset.rowId
+      if (!field || !rowId) return
+      const overflow = span.scrollWidth > span.clientWidth + 1
+      const prop = `${rowId}:${field}`
+      if (overflowState[prop] !== overflow) {
+        overflowState[prop] = overflow
+      }
+    })
+  } catch (e) {}
+}
+
+// 数据变化后自动检测（用 rAF 确保 el-table 内部渲染完成）
+watch(() => props.files, () => {
+  nextTick(() => requestAnimationFrame(() => checkAllOverflow()))
+}, { deep: false })
+
+// 挂载后检测
+onMounted(() => {
+  nextTick(() => requestAnimationFrame(() => checkAllOverflow()))
+  // 监听容器尺寸变化：v-show 从隐藏切换到可见时 clientWidth 从 0 变为正常值，
+  // 此时需要重新检测溢出状态
+  if (torrentTable.value?.$el) {
+    resizeObserver = new ResizeObserver(() => {
+      checkAllOverflow()
+    })
+    resizeObserver.observe(torrentTable.value.$el)
+  }
+})
+
+let resizeObserver = null
+
+onBeforeUnmount(() => {
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+})
+
 const fileTypes = [
   { key: 'all', icon: 'select-all' },
   { key: 'video', icon: 'video', filter: filterVideoFiles },
@@ -176,6 +244,10 @@ const indicatorStyle = computed(() => {
   if (idx < 0) return { opacity: 0 }
   return { transform: `translateX(${idx * 100}%)`, opacity: 1 }
 })
+
+function handleNameMouseEnter (event, row) {
+  handleTextOverflow(event, row, 'name')
+}
 
 function toggleAllSelection () {
   if (!torrentTable.value) return
@@ -320,6 +392,22 @@ defineExpose({
           padding: 0 10px;
           font-size: var(--el-font-size-base);
           line-height: 1.5;
+        }
+        /* mo-hover-tip trigger 默认 inline-flex 会撑开宽度，
+           改为 block 并限制宽度，确保 text-overflow 和溢出检测生效 */
+        .lc-hover-tip__trigger {
+          display: block;
+          overflow: hidden;
+        }
+        .mo-file-name {
+          display: block;
+          overflow: hidden;
+          text-overflow: clip; /* 不使用 ellipsis，避免双重省略效果 */
+          white-space: nowrap;
+          &.is-truncated {
+            -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 85%, rgba(0, 0, 0, 0));
+            mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 85%, rgba(0, 0, 0, 0));
+          }
         }
       }
     }

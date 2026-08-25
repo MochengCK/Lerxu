@@ -120,7 +120,22 @@ const tipStyle = computed(() => {
 })
 
 watch(() => props.disabled, (val) => {
-  if (val) hideTip()
+  if (val) {
+    hideTip()
+  } else if (isTriggerHovered) {
+    // disabled 从 true 变 false（如溢出状态延迟检测后），
+    // 鼠标仍在 trigger 上时重新启动显示逻辑
+    clearCloseTimer()
+    if (props.openDelay > 0) {
+      clearOpenTimer()
+      openTimer = setTimeout(() => {
+        openTimer = null
+        showTip()
+      }, props.openDelay)
+    } else {
+      showTip()
+    }
+  }
 })
 
 watch(() => props.content, () => {

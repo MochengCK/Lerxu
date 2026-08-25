@@ -271,6 +271,11 @@ onMounted(() => {
       margin-right: 170px;
       margin-bottom: 0.75rem;
 
+      .lc-hover-tip__trigger {
+        display: block;
+        overflow: hidden;
+      }
+
       .task-name__text {
         font-size: 14px;
         line-height: 26px;
@@ -281,6 +286,7 @@ onMounted(() => {
 
         /* 仅在名称溢出时渐隐，避免右侧还有空位时文字提前淡出 */
         &.is-truncated {
+          text-overflow: clip;
           -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
           mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
         }
@@ -353,6 +359,13 @@ onMounted(() => {
   margin-left: 0;
   min-height: 26px;
 
+  /* mo-hover-tip trigger 默认 inline-flex 会撑开宽度，
+     这里改为 block 并限制宽度，确保 text-overflow 生效 */
+  .lc-hover-tip__trigger {
+    display: block;
+    overflow: hidden;
+  }
+
   .task-name__text {
     font-size: 14px;
     line-height: 26px;
@@ -364,6 +377,7 @@ onMounted(() => {
 
     /* 仅在名称溢出时渐隐，避免右侧还有空位时文字提前淡出 */
     &.is-truncated {
+      text-overflow: clip;
       -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
       mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0));
     }
