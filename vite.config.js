@@ -115,7 +115,7 @@ export default defineConfig(({ command }) => {
     css: {
       preprocessorOptions: {
         scss: {
-          additionalData: `@import "${resolve('src/renderer/components/Theme/Variables.scss')}";`,
+          additionalData: `@import "${resolve('src/renderer/components/Theme/Variables.scss').replace(/\\/g, '/')}";`,
           // 静音主题变量文件的大量 Sass 弃用告警（@import / mix() 全局函数 /
           // legacy JS API），待主题系统迁移到 @use 后可移除
           silenceDeprecations: ['legacy-js-api', 'import', 'global-builtin', 'color-functions']
