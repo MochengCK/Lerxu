@@ -28,7 +28,7 @@
     "preview": "vite preview",
     "lint": "eslint --ext .js,.vue -f ./node_modules/eslint-friendly-formatter src",
     "lint:fix": "eslint --ext .js,.vue -f ./node_modules/eslint-friendly-formatter --fix src",
-    "postinstall": "electron-builder install-app-deps && npm run lint:fix"
+    "postinstall": "electron-builder install-app-deps"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -52,6 +52,7 @@
     "@electron/notarize": "^1.2.4",
     "@electron/osx-sign": "^1.3.3",
     "@vitejs/plugin-vue": "^5.1.0",
+    "@babel/eslint-parser": "^7.25.0",
     "ajv": "^8.20.0",
     "cfonts": "^3.3.1",
     "chalk": "^4.1.2",
