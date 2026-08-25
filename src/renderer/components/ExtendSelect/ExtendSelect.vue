@@ -489,32 +489,41 @@ defineExpose({ focus, blur, close })
       border-radius: var(--lc-radius-dropdown);
       box-shadow: none;
       transform-origin: center top;
-      transition: border-color 0.24s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.24s cubic-bezier(0.4, 0, 0.2, 1), transform 0.24s cubic-bezier(0.33, 1, 0.68, 1), padding-top 0.24s cubic-bezier(0.33, 1, 0.68, 1), background-color 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+      /* 闭合态 max-height 仅容纳 head（24 + 上下 border 2 = 26 + 余量 2 ≈ 32），
+         展开态放大到 320px 容纳 head + 选项区（max 220 + padding），
+         用 max-height 而非 grid 1fr 动画——Chrome 对 grid 1fr + overflow:auto 子项
+         会将 1fr 解析为 ul padding（min-content 视为 0），导致选项区始终只 8px 高、显示不全 */
+      max-height: 32px;
+      transition: border-color 0.24s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.24s cubic-bezier(0.4, 0, 0.2, 1), transform 0.24s cubic-bezier(0.33, 1, 0.68, 1), padding-top 0.24s cubic-bezier(0.33, 1, 0.68, 1), background-color 0.24s cubic-bezier(0.4, 0, 0.2, 1), max-height 0.24s cubic-bezier(0.33, 1, 0.68, 1);
 
       /* 展开时整体略微放大 + 高亮边框 + 浮起阴影 + 独立下拉背景色；
-         padding-top 4px：所选项（head）随展开下移，框体顶部锚定、向下延伸来容纳 */
+         padding-top 4px：所选项（head）随展开下移，框体顶部锚定、向下延伸来容纳。
+         overflow 切为 visible + max-height 放大：选项区完整撑开，
+         避免被弹窗/容器边界裁切导致显示不全 */
       &.is-open {
+        overflow: visible;
         border-color: var(--el-color-primary);
         background-color: var(--lc-bg-dropdown, #fff);
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
         transform: scale(1.02);
         padding-top: 4px;
+        max-height: 320px;
       }
     }
 
-    /* 向上展开：box 从底部锚定，transform-origin 翻转到 center bottom，
-       padding 切换到底部，head 随展开上移，整体向上延伸 */
+    /* 向上展开时 box 从底部锚定，max-height 改为 320 不变（向上同样需要足够空间） */
     &.is-drop-top .lc-extend-select__box {
       top: auto;
       bottom: 0;
       transform-origin: center bottom;
       padding-top: 0;
-      transition: border-color 0.24s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.24s cubic-bezier(0.4, 0, 0.2, 1), transform 0.24s cubic-bezier(0.33, 1, 0.68, 1), padding-bottom 0.24s cubic-bezier(0.33, 1, 0.68, 1);
+      transition: border-color 0.24s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.24s cubic-bezier(0.4, 0, 0.2, 1), transform 0.24s cubic-bezier(0.33, 1, 0.68, 1), padding-bottom 0.24s cubic-bezier(0.33, 1, 0.68, 1), max-height 0.24s cubic-bezier(0.33, 1, 0.68, 1);
 
       &.is-open {
         padding-top: 0;
         padding-bottom: 4px;
         box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+        max-height: 320px;
       }
     }
 
@@ -697,10 +706,11 @@ defineExpose({ focus, blur, close })
       transform: rotate(180deg);
     }
 
-    /* 选项区外层：网格行高 0fr↔1fr 动画载体，实现精确高度的生长/收回（无 max-height 死区） */
+    /* 选项区外层：使用 block 布局（不用 grid 1fr——Chrome 对 overflow 子项的
+       grid 1fr 会 floor 到 ul padding，导致选项区只显示 8px、显示不全）。
+       高度由 box 的 max-height 动画统一控制（box 32px→320px） */
     &__options-wrap {
-      display: grid;
-      grid-template-rows: 1fr;
+      display: block;
     }
 
     /* 创建选项按钮 */
@@ -807,17 +817,17 @@ defineExpose({ focus, blur, close })
 
   /* 选项区展开/收起：网格行高 0fr↔1fr 按内容实际高度精确生长 + 淡入淡出，
      展开用 ease-out、收起稍快用 ease-in，动画期间内部裁剪，右侧不会闪现滚动条 */
-  .lc-extend-select-grow-enter-active {
-    transition: grid-template-rows 0.24s cubic-bezier(0.33, 1, 0.68, 1), opacity 0.18s ease-out;
-  }
-
+  /* 旧 grid-template-rows 动画已废弃（见 __options-wrap 注释）。
+     box 的 max-height 过渡承担展开/收起动画，下面 class 保留为无害的空操作。 */
+  .lc-extend-select-grow-enter-active,
   .lc-extend-select-grow-leave-active {
-    transition: grid-template-rows 0.18s cubic-bezier(0.55, 0, 1, 0.45), opacity 0.13s ease-in;
+    transition: opacity 0.18s ease-out;
   }
-
+  .lc-extend-select-grow-leave-active {
+    transition: opacity 0.13s ease-in;
+  }
   .lc-extend-select-grow-enter-from,
   .lc-extend-select-grow-leave-to {
-    grid-template-rows: 0fr;
     opacity: 0;
   }
 

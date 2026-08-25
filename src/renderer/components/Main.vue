@@ -34,6 +34,7 @@
             :placeholder="t('app.task-plan-time-placeholder')"
             format="HH:mm"
             value-format="HH:mm"
+            popper-class="task-plan-time-popper"
             style="width: 100%;"
           />
         </el-form-item>
@@ -1398,13 +1399,16 @@ function handleTaskListChange(list) {
   .el-dialog.task-plan-dialog {
     max-width: 360px;
     min-width: 320px;
-    /* 默认高度：内容由弹窗类型决定，避免「完成后」类型下弹窗过矮局促 */
-    min-height: 210px;
+    /* 不强制最小高度，让弹窗高度=内容（footer 自然贴底、按钮贴右下角），
+       避免类型切换时弹窗底部出现大段空白 */
+    min-height: 0;
     border-radius: 16px;
-    /* 放开裁剪，让 ExtendSelect 的选项区能延伸到弹窗外 */
-    overflow: visible;
-    /* 底部收紧，与新建任务弹窗提交按钮位置对齐 */
-    padding-bottom: 6px;
+    /* 底部收紧：保存按钮距弹窗底边 ≈ 4px(padding) + 6px(footer 内居中) = 10px */
+    padding-bottom: 4px;
+    /* 放开裁剪，让 ExtendSelect 的选项区能延伸到弹窗外。
+       用 !important 防止被 .theme-dark .el-dialog { overflow: hidden } 覆盖
+       （深色模式同名规则特异性同为 0,2,0，靠加载顺序胜出，致选项区被裁剪） */
+    overflow: visible !important;
   }
 
   /* EP 默认 .el-overlay 有 overflow:auto，会裁剪延伸出去的选项区。
@@ -1465,24 +1469,35 @@ function handleTaskListChange(list) {
   .el-dialog.task-plan-dialog .el-dialog__footer {
     padding: 0;
     background-color: transparent;
+    /* 兜底定位上下文：即使 .dialog-footer 的定位被覆盖，
+       提交按钮也始终锚定在 footer（弹窗底部）内 */
+    position: relative;
   }
 
   .task-plan-dialog .dialog-footer {
-    /* 与新建任务弹窗一致：作为定位容器，保存按钮锚定到此 */
-    position: relative;
     display: flex;
-    align-items: center;
-    min-height: 40px;
+    /* 按钮贴 footer 底部：增高的空间留在按钮上方，拉开与表单内容的间距，
+       底部仍由 padding-bottom + 弹窗 padding-bottom 控制为 10px */
+    align-items: flex-end;
+    /* 右对齐：按钮固定在弹窗右下角，不随弹窗内容增减漂移 */
+    justify-content: flex-end;
+    min-height: 56px;
+    padding: 0 0 6px;
+    box-sizing: border-box;
   }
 
-  /* 保存按钮位置与新建任务弹窗完全一致：right 0、bottom 4px */
+  /* 保存按钮固定在弹窗右下角：flex 右对齐 + 弹窗 padding 提供边缘间距。
+     不再使用 absolute 定位（依赖定位上下文，内容变化时位置会漂移） */
   .task-plan-dialog .dialog-submit-btn {
-    position: absolute;
-    right: 0;
-    bottom: 4px;
     height: 28px;
     padding: 0 16px;
     border-radius: 8px !important;
+  }
+
+  /* 时间选择器下拉面板：提升 z-index，避免被弹窗遮罩
+     （macOS 原生透明模式下遮罩 z-index 提到 5100）遮挡导致显示不全 */
+  .task-plan-time-popper {
+    z-index: 5200 !important;
   }
 
   .el-dialog.task-plan-dialog .el-dialog__footer::before {

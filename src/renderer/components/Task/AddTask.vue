@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     class="tab-title-dialog add-task-dialog"
-    width="50vw"
+    width="42vw"
     v-model="dialogVisible"
     :show-close="false"
     :before-close="beforeClose"
@@ -1223,7 +1223,7 @@ async function submitForm () {
 }
 
 .el-dialog.add-task-dialog {
-  max-width: 632px;
+  max-width: 560px;
   min-width: 380px;
   border-radius: 16px;
 
@@ -1349,6 +1349,12 @@ async function submitForm () {
     > a {
       color: #909399;
     }
+  }
+  /* 表单项标题左对齐：与顶部输入框（链接输入区）最左侧上下对齐。
+     EP 2.8 el-form-item__label 默认 display:flex + justify-content:flex-end
+     （label-position: right），flex 布局下 text-align 失效，必须改 justify-content */
+  .el-form-item__label {
+    justify-content: flex-start;
   }
   .el-dialog__footer {
     padding: 0;
