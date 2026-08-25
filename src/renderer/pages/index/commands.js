@@ -1,5 +1,4 @@
 import { ElMessage as Message } from 'element-plus'
-import { base64StringToBlob } from 'blob-util'
 import { ipcRenderer } from 'electron'
 
 import router from '@/router'
@@ -130,7 +129,13 @@ const showAddBtTaskWithFile = (payload = {}) => {
 
   const appStore = useAppStore()
 
-  const blob = base64StringToBlob(dataURL, 'application/x-bittorrent')
+  // 将 base64 字符串解码为 Blob（替代已移除的 blob-util 依赖）
+  const byteString = atob(dataURL)
+  const bytes = new Uint8Array(byteString.length)
+  for (let i = 0; i < byteString.length; i++) {
+    bytes[i] = byteString.charCodeAt(i)
+  }
+  const blob = new Blob([bytes], { type: 'application/x-bittorrent' })
   const file = new File([blob], name, { type: 'application/x-bittorrent' })
   const fileList = buildFileList(file)
 
