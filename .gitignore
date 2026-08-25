@@ -19,6 +19,7 @@ npm-debug.log.*
 build/*.plist
 dist/electron/*
 dist/web/*
+src/renderer/dist-electron/*
 
 # Release output
 release/*

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     class="tab-title-dialog add-task-dialog"
-    width="46vw"
+    width="50vw"
     v-model="dialogVisible"
     :show-close="false"
     :before-close="beforeClose"
@@ -1223,7 +1223,7 @@ async function submitForm () {
 }
 
 .el-dialog.add-task-dialog {
-  max-width: 600px;
+  max-width: 632px;
   min-width: 380px;
   border-radius: 16px;
 
