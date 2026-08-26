@@ -326,7 +326,9 @@ export default class Api {
   }
 
   savePreferenceToNativeStore (params = {}) {
-    const normalizedParams = normalizeBtEncryptionForEngine(params, { keepAppKeys: true })
+    // 深拷贝去除 Vue 响应式 Proxy 包装，IPC 序列化要求纯原生对象
+    const plainParams = JSON.parse(JSON.stringify(params))
+    const normalizedParams = normalizeBtEncryptionForEngine(plainParams, { keepAppKeys: true })
     const { user, system, others } = separateConfig(normalizedParams)
     const config = {}
 

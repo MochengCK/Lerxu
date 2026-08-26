@@ -217,14 +217,26 @@ export const usePreferenceStore = defineStore('preference', () => {
     const useGithubMirror = cfg.useGithubMirror !== undefined
       ? !!cfg.useGithubMirror
       : githubMirrorUrls.length > 0
+    // 深拷贝去除 Vue 响应式 Proxy 包装，IPC 序列化要求纯原生对象
+    const plainParams = JSON.parse(JSON.stringify({
+      source: trackerSource,
+      proxy,
+      useGithubMirror,
+      githubMirrorUrls
+    }))
     // 走主进程发起请求，使 axios proxy 配置（renderer XHR 下不生效）真正可用
-    return ipcRenderer.invoke('bt-tracker:fetch', { source: trackerSource, proxy, useGithubMirror, githubMirrorUrls })
+    return ipcRenderer.invoke('bt-tracker:fetch', plainParams)
   }
 
   function fetchEd2kServers (ed2kServerSource = []) {
     const cfg = config.value || {}
     const { proxy = {} } = cfg
-    return ipcRenderer.invoke('ed2k:fetch-servers', { source: ed2kServerSource, proxy })
+    // 深拷贝去除 Vue 响应式 Proxy 包装，IPC 序列化要求纯原生对象
+    const plainParams = JSON.parse(JSON.stringify({
+      source: ed2kServerSource,
+      proxy
+    }))
+    return ipcRenderer.invoke('ed2k:fetch-servers', plainParams)
   }
 
   function toggleEngineMode () {

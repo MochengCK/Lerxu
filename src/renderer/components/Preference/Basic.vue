@@ -4607,7 +4607,9 @@ watch(trackerSourceConfigVisible, (visible) => {
         return cfg && typeof cfg.proxy === 'object' && cfg.proxy ? cfg.proxy : {}
       }
       async function fetchTrackerText(url) {
-        const text = await ipcRenderer.invoke('tracker-source:fetch', { url: `${url}`, proxy: getTrackerProxyConfig() })
+        // 深拷贝去除 Vue 响应式 Proxy 包装，IPC 序列化要求纯原生对象
+        const plainParams = JSON.parse(JSON.stringify({ url: `${url}`, proxy: getTrackerProxyConfig() }))
+        const text = await ipcRenderer.invoke('tracker-source:fetch', plainParams)
         return `${text || ''}`
       }
       async function configureTrackerFromGithub() {
