@@ -280,8 +280,6 @@ export default {
   'extension-exclude-domains-tips': '例如：example.com,test.com；多個請用逗號或換行分隔',
   'extension-min-file-size': '最小檔案大小',
   'video-detection-settings': '影片嗅探設定',
-  'extension-download-success': '擴充功能檔案已儲存',
-  'extension-download-failed': '擴充功能檔案儲存失敗',
   'extension-file-not-found': '擴充功能檔案不存在，請檢查檔案路徑',
   'video-merge': '影片合併',
   'ffmpeg-status': 'FFmpeg 狀態',
@@ -342,6 +340,5 @@ export default {
   'update-channel-desc': '選擇檢查更新的發布管道',
   'update-channel-stable': '穩定版',
   'multi-select-task': '多選任務',
-  'select-extension-file-path': '選擇擴充功能檔案儲存位置',
   'builtin-origin-undeletable': '內建來源不可刪除',
 }

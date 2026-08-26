@@ -281,8 +281,6 @@ export default {
   'extension-exclude-domains-tips': 'Example: example.com,test.com; separate multiple with commas or new lines',
   'extension-min-file-size': 'Minimum file size',
   'video-detection-settings': 'Video Sniffer Settings',
-  'extension-download-success': 'Extension file has been saved',
-  'extension-download-failed': 'Failed to save extension file',
   'extension-file-not-found': 'Extension file does not exist, please check the file path',
 
   'video-merge': 'Video Merge',
@@ -344,6 +342,5 @@ export default {
   'update-channel-desc': 'Choose which release channel to check for updates',
   'update-channel-stable': 'Stable',
   'multi-select-task': 'Multi-select tasks',
-  'select-extension-file-path': 'Select the folder to save the extension',
   'builtin-origin-undeletable': 'Built-in sources cannot be removed',
 }

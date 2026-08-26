@@ -12,7 +12,7 @@
         @mouseenter="onTipEnter"
         @mouseleave="onTipLeave"
       >
-        <div class="lc-hover-tip__inner" ref="tipInnerRef">
+        <div class="lc-hover-tip__inner" ref="tipInnerRef" :style="innerStyle">
           <span class="lc-hover-tip__content">{{ content }}</span>
         </div>
       </div>
@@ -69,6 +69,11 @@ const visible = ref(false)
 const tipRect = ref(null)
 const triggerRect = ref(null)
 
+// 测量阶段：'measuring' = nowrap 测量自然宽度；'settled' = 应用最终约束
+const measurePhase = ref('measuring')
+// 文本自然宽度（nowrap 时的宽度）
+const naturalWidth = ref(0)
+
 let openTimer = null
 let closeTimer = null
 let isTipHovered = false
@@ -76,6 +81,45 @@ let isTriggerHovered = false
 
 const tipHeight = computed(() => tipRect.value ? tipRect.value.height : 28)
 const tipWidth = computed(() => tipRect.value ? tipRect.value.width : 60)
+
+// 安全边距：弹窗边缘到视口边缘的最小距离
+const SAFETY_MARGIN = 12
+
+// 计算弹窗的水平定位和最大宽度。
+// 策略：以触发元素中心为起点，优先居中；居中放不下则平移贴边；
+// 整个视口都放不下才设 max-width 换行。
+// 返回 { left, maxWidth, transform }
+const horizontalLayout = computed(() => {
+  if (!triggerRect.value || naturalWidth.value <= 0) {
+    return { left: 0, maxWidth: 0, transform: 'translateX(-50%)' }
+  }
+  const tc = triggerRect.value.left + triggerRect.value.width / 2
+  const tipW = naturalWidth.value
+  const half = tipW / 2
+  const vw = window.innerWidth
+
+  // 居中时的左右边界
+  const leftEdge = tc - half
+  const rightEdge = tc + half
+
+  // 情况 1：居中放得下 → 居中对齐
+  if (leftEdge >= SAFETY_MARGIN && rightEdge <= vw - SAFETY_MARGIN) {
+    return { left: tc, maxWidth: 0, transform: 'translateX(-50%)' }
+  }
+
+  // 情况 2：居中放不下，但整个视口宽度放得下 → 平移到不溢出
+  if (tipW <= vw - SAFETY_MARGIN * 2) {
+    if (leftEdge < SAFETY_MARGIN) {
+      // 左边溢出 → 贴左边对齐
+      return { left: SAFETY_MARGIN, maxWidth: 0, transform: 'none' }
+    }
+    // 右边溢出 → 贴右边对齐
+    return { left: vw - SAFETY_MARGIN, maxWidth: 0, transform: 'translateX(-100%)' }
+  }
+
+  // 情况 3：整个视口都放不下 → 设 max-width，贴左对齐
+  return { left: SAFETY_MARGIN, maxWidth: vw - SAFETY_MARGIN * 2, transform: 'none' }
+})
 
 const actualPlacement = computed(() => {
   if (!triggerRect.value) return props.placement
@@ -95,18 +139,40 @@ const actualPlacement = computed(() => {
   return props.placement
 })
 
+// 内层元素样式：测量阶段 nowrap，定稿阶段按需设置 max-width
+const innerStyle = computed(() => {
+  if (measurePhase.value === 'measuring') {
+    return { whiteSpace: 'nowrap' }
+  }
+  const mw = horizontalLayout.value.maxWidth
+  if (mw > 0) {
+    return { maxWidth: `${mw}px`, whiteSpace: 'normal' }
+  }
+  return { whiteSpace: 'nowrap' }
+})
+
 const tipStyle = computed(() => {
   if (!triggerRect.value) return { visibility: 'hidden' }
-  const { actualPlacement: ap, triggerRect: tr, offset: off } = { actualPlacement: actualPlacement.value, triggerRect: triggerRect.value, offset: props.offset }
+  const { actualPlacement: ap, triggerRect: tr, offset: off } = {
+    actualPlacement: actualPlacement.value,
+    triggerRect: triggerRect.value,
+    offset: props.offset
+  }
   const style = {}
-  if (ap === 'top') {
-    style.left = `${tr.left + tr.width / 2}px`
-    style.top = `${tr.top - off}px`
-    style.transform = 'translateX(-50%) translateY(-100%)'
-  } else if (ap === 'bottom') {
-    style.left = `${tr.left + tr.width / 2}px`
-    style.top = `${tr.bottom + off}px`
-    style.transform = 'translateX(-50%)'
+
+  if (ap === 'top' || ap === 'bottom') {
+    // 水平方向使用智能布局：居中 → 平移 → 换行
+    const hl = horizontalLayout.value
+    style.left = `${hl.left}px`
+    if (ap === 'top') {
+      style.top = `${tr.top - off}px`
+      style.transform = hl.transform === 'none'
+        ? 'translateY(-100%)'
+        : `${hl.transform} translateY(-100%)`
+    } else {
+      style.top = `${tr.bottom + off}px`
+      style.transform = hl.transform === 'none' ? 'none' : hl.transform
+    }
   } else if (ap === 'left') {
     style.left = `${tr.left - off}px`
     style.top = `${tr.top + tr.height / 2}px`
@@ -140,7 +206,9 @@ watch(() => props.disabled, (val) => {
 
 watch(() => props.content, () => {
   if (visible.value) {
-    nextTick(() => measureTip())
+    // 内容变化，重新走测量流程
+    measurePhase.value = 'measuring'
+    nextTick(() => measureAndSettle())
   }
 })
 
@@ -148,6 +216,25 @@ function measureTip () {
   if (tipInnerRef.value) {
     tipRect.value = tipInnerRef.value.getBoundingClientRect()
   }
+}
+
+// 两阶段测量：
+// 1. measuring 阶段（nowrap）：获取文本自然宽度
+// 2. settled 阶段：应用 max-width（如需要），重新测量最终尺寸
+function measureAndSettle () {
+  if (!tipInnerRef.value) return
+  // 阶段 1：测量自然宽度（此时 innerStyle 为 nowrap，无 max-width）
+  if (measurePhase.value === 'measuring') {
+    naturalWidth.value = tipInnerRef.value.getBoundingClientRect().width
+    // 切换到定稿阶段，让 innerStyle 和 tipStyle 更新
+    measurePhase.value = 'settled'
+    nextTick(() => {
+      // 阶段 2：测量最终尺寸（可能已换行），用于 placement 判断和定位
+      measureTip()
+    })
+    return
+  }
+  measureTip()
 }
 
 function onTriggerEnter () {
@@ -200,11 +287,12 @@ function showTip () {
   triggerRect.value = triggerRef.value
     ? triggerRef.value.getBoundingClientRect()
     : null
+  // 重置为测量阶段
+  measurePhase.value = 'measuring'
+  naturalWidth.value = 0
   visible.value = true
   emit('show')
-  nextTick(() => {
-    measureTip()
-  })
+  nextTick(() => measureAndSettle())
 }
 
 function hideTip () {
@@ -253,12 +341,12 @@ onBeforeUnmount(() => {
 }
 
 .lc-hover-tip__inner {
+  display: inline-block;
   padding: 5px 10px;
   border-radius: 4px;
   font-size: 12px;
   line-height: 1.4;
-  white-space: nowrap;
-  max-width: 300px;
+  overflow-wrap: break-word;
   word-break: break-word;
 }
 

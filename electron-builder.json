@@ -27,6 +27,15 @@
     {
       "from": "app-update.yml",
       "to": "./app-update.yml"
+    },
+    {
+      "from": "extensions/lerxu-webextension",
+      "to": "./lerxu-webextension",
+      "filter": [
+        "**/*",
+        "!**/*.txt",
+        "!**/generate_icons.py"
+      ]
     }
   ],
   "files": [

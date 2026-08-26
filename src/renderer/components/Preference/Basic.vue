@@ -536,10 +536,17 @@
             >
               <span
                 class="text-link"
-                style="color: #409EFF; cursor: pointer; text-decoration: underline;"
-                @click="downloadExtension"
+                style="color: #409EFF; cursor: pointer; text-decoration: underline; margin-right: 12px;"
+                @click="openBrowserExtension('chrome')"
               >
                 Chrome
+              </span>
+              <span
+                class="text-link"
+                style="color: #409EFF; cursor: pointer; text-decoration: underline;"
+                @click="openBrowserExtension('edge')"
+              >
+                Edge
               </span>
             </div>
             <div
@@ -2692,7 +2699,6 @@ import { app, dialog, shell } from '@electron/remote'
 import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
-import os from 'node:os'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import 'element-plus/es/components/message-box/style/css'
 import { cloneDeep, isEmpty } from 'lodash'
@@ -4029,43 +4035,44 @@ watch(trackerSourceConfigVisible, (visible) => {
           msg.error(t('preferences.save-fail-message'))
         }
       }
-      async function downloadExtension() {
-
-        // 扩展文件路径 - 指向目录（支持开发和生产环境）
+      // 获取浏览器扩展目录路径
+      // 开发环境：<workspace>/extensions/lerxu-webextension
+      // 生产环境：<resourcesPath>/lerxu-webextension（extraResources 打包到 asar 外部）
+      function getExtensionDir () {
+        const rp = process && process.resourcesPath ? process.resourcesPath : ''
+        if (rp) {
+          // 打包后扩展目录可能在不同位置，依次检查
+          const candidates = [
+            path.join(rp, 'lerxu-webextension'),
+            path.join(rp, 'app.asar', 'extensions', 'lerxu-webextension')
+          ]
+          for (const p of candidates) {
+            if (fs.existsSync(p)) return p
+          }
+        }
+        // 开发环境
         const appPath = app.getAppPath()
-        const extensionDir = path.join(appPath, 'extensions', 'lerxu-webextension')
+        return path.join(appPath, 'extensions', 'lerxu-webextension')
+      }
 
-        // 检查目录是否存在
+      // 点击浏览器按钮：跳转到对应浏览器的扩展管理页面，
+      // 同时在文件管理器中打开扩展目录的父目录并高亮扩展文件夹，
+      // 方便用户在浏览器"加载已解压的扩展程序"时选中该目录。
+      function openBrowserExtension (browser) {
+        const extensionDir = getExtensionDir()
+
         if (!fs.existsSync(extensionDir)) {
           msg.error(t('preferences.extension-file-not-found'))
           return
         }
 
-        // 弹出文件夹选择对话框
-        const result = await dialog.showOpenDialog({
-          title: t('preferences.select-extension-file-path'),
-          defaultPath: os.homedir() + '/Desktop',
-          properties: ['openDirectory', 'createDirectory']
-        })
+        // 通过主进程在文件管理器中定位并高亮扩展文件夹
+        // 必须在主进程执行：@electron/remote 的 shell.showItemInFolder 在渲染进程中行为不一致
+        ipcRenderer.invoke('reveal-extension-dir', { dir: extensionDir })
 
-        // 如果用户取消了选择
-        if (result.canceled || result.filePaths.length === 0) {
-          return
-        }
-
-        const selectedDir = result.filePaths[0]
-        const destinationDir = path.join(selectedDir, 'lerxu-webextension')
-
-        try {
-          // 复制整个目录到用户选择的位置
-          copyDirectory(extensionDir, destinationDir)
-
-          // 显示成功消息
-          msg.success(t('preferences.extension-download-success'))
-        } catch (error) {
-          console.error('下载扩展失败:', error)
-          msg.error(t('preferences.extension-download-failed'))
-        }
+        // 通过主进程用命令行启动浏览器并跳转到扩展管理页面
+        // shell.openExternal 无法打开 chrome:// 等浏览器内部协议
+        ipcRenderer.invoke('open-browser-extension-page', { browser })
       }
       function openVideoDetectionSettings() {
         ipcRenderer.send('open-video-detection-settings')
@@ -4864,32 +4871,6 @@ watch(trackerSourceConfigVisible, (visible) => {
         }
       }
 
-      // 复制目录
-      function copyDirectory(sourceDir, destinationDir) {
-
-        // 创建目标目录
-        if (!fs.existsSync(destinationDir)) {
-          fs.mkdirSync(destinationDir, { recursive: true })
-        }
-
-        // 读取源目录中的所有文件和子目录
-        const items = fs.readdirSync(sourceDir)
-
-        for (const item of items) {
-          const sourcePath = path.join(sourceDir, item)
-          const destinationPath = path.join(destinationDir, item)
-
-          const stat = fs.statSync(sourcePath)
-
-          if (stat.isDirectory()) {
-            // 如果是目录，递归复制
-            copyDirectory(sourcePath, destinationPath)
-          } else {
-            // 如果是文件，复制文件
-            fs.copyFileSync(sourcePath, destinationPath)
-          }
-        }
-      }
 // --- Lifecycle ---
 onMounted(() => {
       rebuildTrackerSourceOptions()

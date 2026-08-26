@@ -281,8 +281,6 @@ export default {
   'extension-exclude-domains-tips': '例如：example.com,test.com；多个请用逗号或换行分隔',
   'extension-min-file-size': '最小文件大小',
   'video-detection-settings': '视频嗅探设置',
-  'extension-download-success': '扩展文件已保存',
-  'extension-download-failed': '扩展文件保存失败',
   'extension-file-not-found': '扩展文件不存在，请检查文件路径',
 
   'video-merge': '视频合并',
@@ -344,6 +342,5 @@ export default {
   'update-channel-desc': '选择检查更新的发布渠道',
   'update-channel-stable': '稳定版',
   'multi-select-task': '多选任务',
-  'select-extension-file-path': '选择扩展文件保存位置',
   'builtin-origin-undeletable': '内置来源不可删除',
 }

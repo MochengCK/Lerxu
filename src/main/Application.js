@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { spawn } from 'node:child_process'
-import { readFile, unlink } from 'node:fs'
-import { extname, basename } from 'node:path'
+import { readFile, unlink, existsSync } from 'node:fs'
+import { extname, basename, join, dirname } from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
 import { app, clipboard, shell, dialog, ipcMain } from 'electron'
 import { createServer } from 'node:http'
@@ -4073,6 +4073,70 @@ export default class Application extends EventEmitter {
         return true
       } catch (e) {
         logger.warn('[Lerxu] clipboard write failed:', e.message)
+        return false
+      }
+    })
+
+    // 在文件管理器中打开扩展目录本身，并确保文件管理器窗口在最前面
+    // 必须在主进程执行：@electron/remote 的 shell 在渲染进程中行为不一致
+    ipcMain.handle('reveal-extension-dir', async (_event, payload = {}) => {
+      const dir = payload && payload.dir ? String(payload.dir) : ''
+      if (!dir) return false
+      // 打开扩展目录本身
+      shell.openPath(dir)
+      // 延迟后再次激活，确保文件管理器窗口在最前面而非被浏览器覆盖
+      setTimeout(() => {
+        const platform = process.platform
+        if (platform === 'darwin') {
+          spawn('open', ['-a', 'Finder', dir], { detached: true, stdio: 'ignore' }).unref()
+        } else if (platform === 'win32') {
+          spawn('explorer', [dir], { detached: true, stdio: 'ignore' }).unref()
+        } else if (platform === 'linux') {
+          spawn('xdg-open', [dir], { detached: true, stdio: 'ignore' }).unref()
+        }
+      }, 800)
+      return true
+    })
+
+    // 打开浏览器扩展管理页面（chrome://extensions、edge://extensions）
+    // 仅支持 Chromium 系浏览器；shell.openExternal 无法打开 chrome:// 等浏览器内部协议
+    ipcMain.handle('open-browser-extension-page', async (_event, payload = {}) => {
+      const browser = payload.browser || 'chrome'
+      const platform = process.platform
+
+      // 各平台启动浏览器的命令
+      // macOS: open -a "App Name" url
+      // Windows: start "title" chrome://...  → 系统会用对应浏览器打开其协议
+      //         但更可靠的方式是直接调用浏览器可执行路径 + url
+      // Linux: 尝试多个可能的二进制名称
+      const targets = {
+        darwin: {
+          chrome: ['open', ['-a', 'Google Chrome', 'chrome://extensions/']],
+          edge: ['open', ['-a', 'Microsoft Edge', 'edge://extensions/']]
+        },
+        win32: {
+          // Windows: 使用 start 命令，第一个 "" 是窗口标题占位符
+          // chrome:// 会被系统识别为 Chrome 的协议并由 Chrome 打开
+          // edge:// 会被系统识别为 Edge 的协议并由 Edge 打开
+          chrome: ['cmd', ['/c', 'start', '', 'chrome://extensions/']],
+          edge: ['cmd', ['/c', 'start', '', 'edge://extensions/']]
+        },
+        linux: {
+          chrome: ['sh', ['-c', 'google-chrome chrome://extensions/ 2>/dev/null || google-chrome-stable chrome://extensions/ 2>/dev/null || chromium chrome://extensions/ 2>/dev/null || chromium-browser chrome://extensions/ 2>/dev/null || xdg-open chrome://extensions/ 2>/dev/null']],
+          edge: ['sh', ['-c', 'microsoft-edge edge://extensions/ 2>/dev/null || microsoft-edge-stable edge://extensions/ 2>/dev/null || xdg-open edge://extensions/ 2>/dev/null']]
+        }
+      }
+      const platformTargets = targets[platform]
+      if (!platformTargets || !platformTargets[browser]) {
+        logger.warn(`[Lerxu] Unsupported browser/platform: ${browser}/${platform}`)
+        return false
+      }
+      const [cmd, args] = platformTargets[browser]
+      try {
+        spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref()
+        return true
+      } catch (e) {
+        logger.warn(`[Lerxu] Failed to open ${browser} extensions page:`, e && e.message ? e.message : e)
         return false
       }
     })
