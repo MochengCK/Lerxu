@@ -1,5 +1,5 @@
 export default {
-  'app': 'LinkCore',
+  'app': 'Lerxu',
   'file': 'File',
   'task': 'Task',
   'edit': 'Edit',

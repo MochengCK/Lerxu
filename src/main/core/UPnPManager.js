@@ -26,22 +26,22 @@ export default class UPnPManager {
     this.init()
 
     return new Promise((resolve, reject) => {
-      logger.info('[LinkCore] UPnPManager port mapping: ', port)
+      logger.info('[Lerxu] UPnPManager port mapping: ', port)
       if (!port) {
-        reject(new Error('[LinkCore] port was not specified'))
+        reject(new Error('[Lerxu] port was not specified'))
         return
       }
 
       try {
         client.map(port, (err) => {
           if (err) {
-            logger.warn(`[LinkCore] UPnPManager map ${port} failed, error: `, err.message)
+            logger.warn(`[Lerxu] UPnPManager map ${port} failed, error: `, err.message)
             reject(err.message)
             return
           }
 
           mappingStatus[port] = true
-          logger.info(`[LinkCore] UPnPManager port ${port} mapping succeeded`)
+          logger.info(`[Lerxu] UPnPManager port ${port} mapping succeeded`)
           resolve()
         })
       } catch (err) {
@@ -54,9 +54,9 @@ export default class UPnPManager {
     this.init()
 
     return new Promise((resolve, reject) => {
-      logger.info('[LinkCore] UPnPManager port unmapping: ', port)
+      logger.info('[Lerxu] UPnPManager port unmapping: ', port)
       if (!port) {
-        reject(new Error('[LinkCore] port was not specified'))
+        reject(new Error('[Lerxu] port was not specified'))
         return
       }
 
@@ -68,12 +68,12 @@ export default class UPnPManager {
       try {
         client.unmap(port, (err) => {
           if (err) {
-            logger.warn(`[LinkCore] UPnPManager unmap ${port} failed, error: `, err)
+            logger.warn(`[Lerxu] UPnPManager unmap ${port} failed, error: `, err)
             reject(err.message)
             return
           }
 
-          logger.info(`[LinkCore] UPnPManager port ${port} unmapping succeeded`)
+          logger.info(`[Lerxu] UPnPManager port ${port} unmapping succeeded`)
           mappingStatus[port] = false
           resolve()
         })
@@ -93,7 +93,7 @@ export default class UPnPManager {
         client = null
       })
     } catch (err) {
-      logger.warn('[LinkCore] close UPnP client fail', err)
+      logger.warn('[Lerxu] close UPnP client fail', err)
     }
   }
 }

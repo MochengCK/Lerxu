@@ -1,10 +1,10 @@
 // 多语言翻译数据
 const translations = {
   en: {
-    extensionName: "LinkCore",
-    extensionDescription: "Deeply integrated browser extension for LinkCore",
-    actionTitle: "LinkCore",
-    popupTitle: "LinkCore",
+    extensionName: "Lerxu",
+    extensionDescription: "Deeply integrated browser extension for Lerxu",
+    actionTitle: "Lerxu",
+    popupTitle: "Lerxu",
     rpcAddress: "RPC Address",
     connectionStatus: "Connection Status",
     clientVersion: "Client Version",
@@ -16,7 +16,7 @@ const translations = {
     autoHijack: "Auto-hijack browser downloads",
     connected: "Connected",
     disconnected: "Disconnected",
-    contextMenuDownload: "Download with LinkCore",
+    contextMenuDownload: "Download with Lerxu",
     labelExcludeCurrentSite: "Exclude this site",
     labelRemove: "Remove",
     labelRemoveFromExclude: "Restore download",
@@ -29,10 +29,10 @@ const translations = {
     placeholderExample: "Example: exe, zip, rar"
   },
   zh_CN: {
-    extensionName: "LinkCore",
-    extensionDescription: "LinkCore 深度集成浏览器插件",
-    actionTitle: "LinkCore",
-    popupTitle: "LinkCore",
+    extensionName: "Lerxu",
+    extensionDescription: "Lerxu 深度集成浏览器插件",
+    actionTitle: "Lerxu",
+    popupTitle: "Lerxu",
     rpcAddress: "RPC 地址",
     connectionStatus: "连接状态",
     clientVersion: "客户端版本",
@@ -44,7 +44,7 @@ const translations = {
     autoHijack: "自动接管浏览器下载",
     connected: "已连接",
     disconnected: "未连接",
-    contextMenuDownload: "使用 LinkCore 下载",
+    contextMenuDownload: "使用 Lerxu 下载",
     labelExcludeCurrentSite: "不接管此网站",
     labelRemove: "移除",
     labelRemoveFromExclude: "恢复接管",
@@ -57,10 +57,10 @@ const translations = {
     placeholderExample: "示例: exe, zip, rar"
   },
   zh_TW: {
-    extensionName: "LinkCore",
-    extensionDescription: "LinkCore 深度整合瀏覽器外掛程式",
-    actionTitle: "LinkCore",
-    popupTitle: "LinkCore",
+    extensionName: "Lerxu",
+    extensionDescription: "Lerxu 深度整合瀏覽器外掛程式",
+    actionTitle: "Lerxu",
+    popupTitle: "Lerxu",
     rpcAddress: "RPC 地址",
     connectionStatus: "連接狀態",
     clientVersion: "客戶端版本",
@@ -72,7 +72,7 @@ const translations = {
     autoHijack: "自動接管瀏覽器下載",
     connected: "已連接",
     disconnected: "未連接",
-    contextMenuDownload: "使用 LinkCore 下載"
+    contextMenuDownload: "使用 Lerxu 下載"
   }
 }
 

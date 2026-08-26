@@ -96,7 +96,7 @@ watch(torrents, (fileList) => {
 
   remote(file.raw, { timeout: 60 * 1000 }, (err, parsedTorrent) => {
     if (err) throw err
-    console.log('[LinkCore] parsed torrent: ', parsedTorrent)
+    console.log('[Lerxu] parsed torrent: ', parsedTorrent)
     files.value = listTorrentFiles(parsedTorrent.files)
     torrentFileList.value?.toggleAllSelection()
 

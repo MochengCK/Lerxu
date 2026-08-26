@@ -21,7 +21,7 @@ import {
   PROXY_SCOPE_OPTIONS,
   TRACKER_SOURCE_OPTIONS
 } from '@shared/constants'
-import { LINKCORE_BT_UA, LINKCORE_PEER_ID_PREFIX, CHROME_UA } from '@shared/ua'
+import { LERXU_BT_UA, LERXU_PEER_ID_PREFIX, CHROME_UA } from '@shared/ua'
 import { separateConfig, getEngineConnectionPolicy } from '@shared/utils'
 import { deduplicateTrackerString, reduceTrackerString } from '@shared/utils/tracker'
 
@@ -123,8 +123,8 @@ export default class ConfigManager {
         'seed-time': 2880,
         'split': defaultConn,
         'user-agent': CHROME_UA,
-        'peer-id-prefix': LINKCORE_PEER_ID_PREFIX,
-        'bt-user-agent': LINKCORE_BT_UA
+        'peer-id-prefix': LERXU_PEER_ID_PREFIX,
+        'bt-user-agent': LERXU_BT_UA
       }
       /* eslint-enable quote-props */
     })

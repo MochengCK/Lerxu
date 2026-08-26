@@ -4033,7 +4033,7 @@ watch(trackerSourceConfigVisible, (visible) => {
 
         // 扩展文件路径 - 指向目录（支持开发和生产环境）
         const appPath = app.getAppPath()
-        const extensionDir = path.join(appPath, 'extensions', 'linkcore-webextension')
+        const extensionDir = path.join(appPath, 'extensions', 'lerxu-webextension')
 
         // 检查目录是否存在
         if (!fs.existsSync(extensionDir)) {
@@ -4054,7 +4054,7 @@ watch(trackerSourceConfigVisible, (visible) => {
         }
 
         const selectedDir = result.filePaths[0]
-        const destinationDir = path.join(selectedDir, 'linkcore-webextension')
+        const destinationDir = path.join(selectedDir, 'lerxu-webextension')
 
         try {
           // 复制整个目录到用户选择的位置
@@ -4093,18 +4093,18 @@ watch(trackerSourceConfigVisible, (visible) => {
       function submitForm(formName) {
         const formRef = formName === 'basicForm' ? basicForm.value : formRefs[formName]
         if (!formRef) {
-          console.error('[LinkCore] form ref not found:', formName)
+          console.error('[Lerxu] form ref not found:', formName)
           return false
         }
         formRef.validate((valid) => {
           if (!valid) {
-            console.error('[LinkCore] preference form valid:', valid)
+            console.error('[Lerxu] preference form valid:', valid)
             return false
           }
 
           const diffResult = diffConfig(formOriginal.value, form.value)
           if (!isEmpty(diffResult)) {
-            console.log('[LinkCore] diffConfig result:', JSON.stringify(diffResult))
+            console.log('[Lerxu] diffConfig result:', JSON.stringify(diffResult))
           }
 
           const data = {
@@ -4187,7 +4187,7 @@ watch(trackerSourceConfigVisible, (visible) => {
             data.rpcListenPort = rpcDefaultPort.value
           }
 
-          console.log('[LinkCore] preference changed data:', data)
+          console.log('[Lerxu] preference changed data:', data)
 
           preferenceStore.save(data)
             .then(() => {
@@ -4210,7 +4210,7 @@ watch(trackerSourceConfigVisible, (visible) => {
             }
 
             if (checkIsNeedRestart(data)) {
-              console.warn('[LinkCore] preference change requires restart, data:', data)
+              console.warn('[Lerxu] preference change requires restart, data:', data)
               ipcRenderer.send('command', 'application:relaunch')
             }
           }

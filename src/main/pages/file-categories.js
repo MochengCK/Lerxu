@@ -2,7 +2,7 @@
   'use strict'
 
   const log = (...args) => {
-    console.log('[LinkCore:FileCategories]', ...args)
+    console.log('[Lerxu:FileCategories]', ...args)
   }
 
   log('========== Script loaded! ==========')
@@ -37,7 +37,7 @@
         translations = module.default || {}
         log('Translations loaded for locale:', locale)
       } catch (importError) {
-        console.error('[LinkCore:FileCategories] Failed to import translations:', importError)
+        console.error('[Lerxu:FileCategories] Failed to import translations:', importError)
         const response = await fetch(localePath)
         if (response.ok) {
           const text = await response.text()
@@ -51,7 +51,7 @@
         }
       }
     } catch (e) {
-      console.error('[LinkCore:FileCategories] Failed to load translations:', e)
+      console.error('[Lerxu:FileCategories] Failed to load translations:', e)
     }
   }
 
@@ -99,11 +99,11 @@
             }
           }
         }).catch((e) => {
-          console.error('[LinkCore:FileCategories] Failed to get theme:', e)
+          console.error('[Lerxu:FileCategories] Failed to get theme:', e)
         })
       }
     } catch (e) {
-      console.error('[LinkCore:FileCategories] Failed to get theme:', e)
+      console.error('[Lerxu:FileCategories] Failed to get theme:', e)
     }
   }
 
@@ -124,14 +124,14 @@
             updateUI()
           }
         }).catch((e) => {
-          console.error('[LinkCore:FileCategories] Failed to load settings from main process:', e)
+          console.error('[Lerxu:FileCategories] Failed to load settings from main process:', e)
           categories = JSON.parse(JSON.stringify(defaultCategories))
           originalCategories = JSON.parse(JSON.stringify(defaultCategories))
           updateUI()
         })
       }
     } catch (e) {
-      console.error('[LinkCore:FileCategories] Failed to load settings:', e)
+      console.error('[Lerxu:FileCategories] Failed to load settings:', e)
       categories = JSON.parse(JSON.stringify(defaultCategories))
       originalCategories = JSON.parse(JSON.stringify(defaultCategories))
       updateUI()
@@ -148,7 +148,7 @@
         return true
       }
     } catch (e) {
-      console.error('[LinkCore:FileCategories] Failed to save settings:', e)
+      console.error('[Lerxu:FileCategories] Failed to save settings:', e)
     }
     return false
   }
@@ -381,7 +381,7 @@
         await loadTranslations(locale)
       }
     } catch (e) {
-      console.error('[LinkCore:FileCategories] Failed to get locale:', e)
+      console.error('[Lerxu:FileCategories] Failed to get locale:', e)
     }
   }
 
@@ -473,7 +473,7 @@
             if (win) win.minimize()
           }
         } catch (e) {
-          console.error('[LinkCore:FileCategories] Failed to minimize window:', e)
+          console.error('[Lerxu:FileCategories] Failed to minimize window:', e)
         }
       })
     }
@@ -523,7 +523,7 @@
         })
       }
     } catch (e) {
-      console.error('[LinkCore:FileCategories] Failed to listen for theme changes:', e)
+      console.error('[Lerxu:FileCategories] Failed to listen for theme changes:', e)
     }
   })
 })()

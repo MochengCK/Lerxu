@@ -279,10 +279,10 @@ export const getSystemHttpProxy = async () => {
       return ''
     }
     const url = `http://${hostPort}`
-    logger.info('[LinkCore] detected system http proxy:', url, 'raw:', result)
+    logger.info('[Lerxu] detected system http proxy:', url, 'raw:', result)
     return url
   } catch (e) {
-    logger.warn('[LinkCore] getSystemHttpProxy failed:', e.message)
+    logger.warn('[Lerxu] getSystemHttpProxy failed:', e.message)
     return ''
   }
 }
@@ -305,7 +305,7 @@ export const showItemInFolder = (fullPath) => {
   fullPath = resolve(fullPath)
   access(fullPath, constants.F_OK, (err) => {
     if (err) {
-      logger.warn(`[LinkCore] ${fullPath} ${err ? 'does not exist' : 'exists'}`)
+      logger.warn(`[Lerxu] ${fullPath} ${err ? 'does not exist' : 'exists'}`)
       return
     }
 
@@ -334,7 +334,7 @@ export const getEngineList = (platform, arch) => {
       isDefault: true
     }]
   } catch (error) {
-    logger.warn(`[LinkCore] Engine binary not found: ${fullPath}`)
+    logger.warn(`[Lerxu] Engine binary not found: ${fullPath}`)
     return []
   }
 }

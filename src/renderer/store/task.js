@@ -1002,7 +1002,7 @@ const actions = {
           this.CHANGE_TASK_DETAIL_VISIBLE(true)
         } else {
           // 只有在本地和历史记录中都找不到任务时，才尝试从 aria2 引擎获取
-          console.log('[LinkCore] Task not found in local list or history, try to get from engine:', gid)
+          console.log('[Lerxu] Task not found in local list or history, try to get from engine:', gid)
           return api.fetchTaskItem({ gid })
             .then((task) => {
               this.updateCurrentTaskItem(task)
@@ -1010,13 +1010,13 @@ const actions = {
               this.CHANGE_TASK_DETAIL_VISIBLE(true)
             })
             .catch((error) => {
-              console.error('[LinkCore] Task not found in engine:', error.message)
+              console.error('[Lerxu] Task not found in engine:', error.message)
               // 可以添加一个错误提示给用户
             })
         }
       })
       .catch((err) => {
-        console.error('[LinkCore] fetch stopped task list fail:', err)
+        console.error('[Lerxu] fetch stopped task list fail:', err)
         // 可以添加一个错误提示给用户
       })
   },
@@ -1195,7 +1195,7 @@ const actions = {
 
         return filename // 如果找不到唯一名称，返回原始名称
       } catch (e) {
-        console.warn('[LinkCore] getUniqueFilename error:', e.message)
+        console.warn('[Lerxu] getUniqueFilename error:', e.message)
         return filename
       }
     }
@@ -1291,7 +1291,7 @@ const actions = {
               const o = opt && typeof opt === 'object' ? opt : {}
               const hs = o && o.header ? o.header : []
               const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
-              return headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`))
+              return headers.some(h => /X-Lerxu-Source\s*:\s*BrowserExtension/i.test(`${h}`))
             } catch (_) {
               return false
             }
@@ -1417,7 +1417,7 @@ const actions = {
       .catch((e) => {
         // 任务可能处于无法暂停的状态（如已完成、正在完成、已被移除等）。
         // 调用方均为删除流程，暂停失败不应阻塞后续的任务移除操作。
-        console.warn('[LinkCore] forcePauseTask failed, continuing with removal:', e && e.message)
+        console.warn('[Lerxu] forcePauseTask failed, continuing with removal:', e && e.message)
       })
       .finally(() => {
         this.fetchList()
@@ -1525,10 +1525,10 @@ const actions = {
         // 立即获取任务列表和全局统计以加快UI更新
         return Promise.all([
           this.fetchList().catch(err => {
-            console.error('[LinkCore] pauseAllTask: fetchList failed', err)
+            console.error('[Lerxu] pauseAllTask: fetchList failed', err)
           }),
           useAppStore().fetchGlobalStat().catch(err => {
-            console.error('[LinkCore] pauseAllTask: fetchGlobalStat failed', err)
+            console.error('[Lerxu] pauseAllTask: fetchGlobalStat failed', err)
           })
         ])
       })
@@ -1542,10 +1542,10 @@ const actions = {
         // 立即获取任务列表和全局统计以加快UI更新
         return Promise.all([
           this.fetchList().catch(err => {
-            console.error('[LinkCore] resumeAllTask: fetchList failed', err)
+            console.error('[Lerxu] resumeAllTask: fetchList failed', err)
           }),
           useAppStore().fetchGlobalStat().catch(err => {
-            console.error('[LinkCore] resumeAllTask: fetchGlobalStat failed', err)
+            console.error('[Lerxu] resumeAllTask: fetchGlobalStat failed', err)
           })
         ])
       })
@@ -1794,7 +1794,7 @@ const actions = {
     // 尝试从Aria2中删除任务记录，如果失败则忽略，因为任务可能已经不在Aria2中
     return api.removeTaskRecord({ gid })
       .catch((err) => {
-        console.log('[LinkCore] removeTaskRecord from aria2 fail:', err)
+        console.log('[Lerxu] removeTaskRecord from aria2 fail:', err)
         // 忽略Aria2删除失败的错误，继续执行
       })
       .finally(() => {
@@ -1852,7 +1852,7 @@ const actions = {
     return api.batchForcePauseTask({ gids })
       .catch((e) => {
         // 批量暂停在删除流程中属于尽力而为的步骤，失败不应阻塞后续移除。
-        console.warn('[LinkCore] batchForcePauseTask failed, continuing with removal:', e && e.message)
+        console.warn('[Lerxu] batchForcePauseTask failed, continuing with removal:', e && e.message)
       })
   },
   batchResumeTask (gids) {

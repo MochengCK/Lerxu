@@ -19,7 +19,7 @@ export const showItemInFolder = (fullPath, { errorMsg }) => {
 
   fullPath = resolve(fullPath)
   access(fullPath, constants.F_OK, (err) => {
-    console.warn(`[LinkCore] ${fullPath} ${err ? 'does not exist' : 'exists'}`)
+    console.warn(`[Lerxu] ${fullPath} ${err ? 'does not exist' : 'exists'}`)
     if (err && errorMsg) {
       Message.error(errorMsg)
       return
@@ -161,7 +161,7 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
   const taskDir = task && task.dir ? resolve(`${task.dir}`) : ''
   let path = getTaskFullPath(task)
 
-  console.log('[LinkCore] moveTaskFilesToTrash - task fields:', {
+  console.log('[Lerxu] moveTaskFilesToTrash - task fields:', {
     gid: task && task.gid,
     dir: task && task.dir,
     name: task && task.name,
@@ -183,7 +183,7 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
       const dirFromOpt = preOpt.dir ? resolve(`${preOpt.dir}`) : taskDir
       const outFromOpt = preOpt.out ? `${preOpt.out}` : ''
       const nameFallback = task && task.name ? `${task.name}` : ''
-      console.log('[LinkCore] moveTaskFilesToTrash - pre-fetched getOption fallback:', { dirFromOpt, outFromOpt, nameFallback })
+      console.log('[Lerxu] moveTaskFilesToTrash - pre-fetched getOption fallback:', { dirFromOpt, outFromOpt, nameFallback })
       if (dirFromOpt && outFromOpt) {
         path = resolve(dirFromOpt, outFromOpt)
         resolved = true
@@ -202,7 +202,7 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
           const dirFromOpt = opt && opt.dir ? resolve(`${opt.dir}`) : taskDir
           const outFromOpt = opt && opt.out ? `${opt.out}` : ''
           const nameFallback = task && task.name ? `${task.name}` : ''
-          console.log('[LinkCore] moveTaskFilesToTrash - live getOption fallback:', { dirFromOpt, outFromOpt, nameFallback })
+          console.log('[Lerxu] moveTaskFilesToTrash - live getOption fallback:', { dirFromOpt, outFromOpt, nameFallback })
           if (dirFromOpt && outFromOpt) {
             path = resolve(dirFromOpt, outFromOpt)
           } else if (dirFromOpt && nameFallback) {
@@ -210,19 +210,19 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
           }
         }
       } catch (e) {
-        console.warn('[LinkCore] moveTaskFilesToTrash - getOption fallback failed:', e.message)
+        console.warn('[Lerxu] moveTaskFilesToTrash - getOption fallback failed:', e.message)
       }
     }
   }
 
   if (!path || (taskDir && resolve(path) === taskDir)) {
     const err = new Error(`无法解析任务文件路径，跳过文件删除（gid=${task && task.gid}, dir=${taskDir}）`)
-    console.warn('[LinkCore] moveTaskFilesToTrash -', err.message)
+    console.warn('[Lerxu] moveTaskFilesToTrash -', err.message)
     throw err
   }
 
   const candidates = getPathCandidates(path, suffix, config)
-  console.log('[LinkCore] moveTaskFilesToTrash - candidates:', candidates.map(p => ({ path: p, exists: existsSync(p) })))
+  console.log('[Lerxu] moveTaskFilesToTrash - candidates:', candidates.map(p => ({ path: p, exists: existsSync(p) })))
 
   let deletedCount = 0
   let lastError = null
@@ -232,12 +232,12 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
     try {
       if (existsSync(p)) {
         const target = resolve(p)
-        console.log(`[LinkCore] ${target} exists, deleting...`)
+        console.log(`[Lerxu] ${target} exists, deleting...`)
         await shell.trashItem(target)
         deletedCount++
       }
     } catch (e) {
-      console.warn(`[LinkCore] Failed to trash ${p}:`, e)
+      console.warn(`[Lerxu] Failed to trash ${p}:`, e)
       lastError = e
     }
 
@@ -245,12 +245,12 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
     const xferPath = `${p}.xfer`
     try {
       if (existsSync(xferPath)) {
-        console.log(`[LinkCore] ${xferPath} exists, deleting...`)
+        console.log(`[Lerxu] ${xferPath} exists, deleting...`)
         await shell.trashItem(xferPath)
         deletedCount++
       }
     } catch (e) {
-      console.warn(`[LinkCore] Failed to trash ${xferPath}:`, e)
+      console.warn(`[Lerxu] Failed to trash ${xferPath}:`, e)
       lastError = e
     }
   }
@@ -287,7 +287,7 @@ export const showNativeNotification = ({ title, body, onClick }) => {
       return notify
     }
   } catch (e) {
-    console.warn('[LinkCore] Native notification unavailable, fallback to HTML5:', e.message)
+    console.warn('[Lerxu] Native notification unavailable, fallback to HTML5:', e.message)
   }
 
   if (typeof window !== 'undefined' && 'Notification' in window) {
@@ -298,7 +298,7 @@ export const showNativeNotification = ({ title, body, onClick }) => {
       }
       return notify
     } catch (e) {
-      console.warn('[LinkCore] HTML5 notification failed:', e.message)
+      console.warn('[Lerxu] HTML5 notification failed:', e.message)
     }
   }
 

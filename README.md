@@ -7,21 +7,21 @@
 </div>
 
 <p align="center">
-  <img src="./screenshots/linkcore-banner.png" width="1100" alt="LinkCore Logo" />
+  <img src="./screenshots/lerxu-banner.png" width="1100" alt="Lerxu Logo" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/MochengCK/LinkCore/releases">
-    <img src="https://img.shields.io/github/v/release/MochengCK/LinkCore.svg?style=for-the-badge" alt="GitHub release" />
+  <a href="https://github.com/MochengCK/Lerxu/releases">
+    <img src="https://img.shields.io/github/v/release/MochengCK/Lerxu.svg?style=for-the-badge" alt="GitHub release" />
   </a>
-  <a href="https://github.com/MochengCK/LinkCore/releases">
-    <img src="https://img.shields.io/github/downloads/MochengCK/LinkCore/total.svg?style=for-the-badge" alt="Total Downloads" />
+  <a href="https://github.com/MochengCK/Lerxu/releases">
+    <img src="https://img.shields.io/github/downloads/MochengCK/Lerxu/total.svg?style=for-the-badge" alt="Total Downloads" />
   </a>
   <a href="#supported-platforms">
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg?style=for-the-badge" alt="Support Platforms" />
   </a>
-  <a href="https://github.com/MochengCK/LinkCore/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/MochengCK/LinkCore.svg?style=for-the-badge" alt="License" />
+  <a href="https://github.com/MochengCK/Lerxu/blob/master/LICENSE">
+    <img src="https://img.shields.io/github/license/MochengCK/Lerxu.svg?style=for-the-badge" alt="License" />
   </a>
 </p>
 
@@ -35,7 +35,7 @@ A modern download manager powered by the XferCore engine, optimized for Windows,
   <tr>
     <td align="center" width="50%">
       <img
-        src="./screenshots/linkcore-screenshot-light.png"
+        src="./screenshots/lerxu-screenshot-light.png"
         alt="Light Mode - Task Management"
         style="max-width: 100%;"
       />
@@ -43,7 +43,7 @@ A modern download manager powered by the XferCore engine, optimized for Windows,
     </td>
     <td align="center" width="50%">
       <img
-        src="./screenshots/linkcore-screenshot-task.png"
+        src="./screenshots/lerxu-screenshot-task.png"
         alt="Dark Mode - Task Management"
         style="max-width: 100%;"
       />
@@ -54,7 +54,7 @@ A modern download manager powered by the XferCore engine, optimized for Windows,
 
 ## Engine & Connections
 
-- LinkCore ships with the XferCore download engine, which automatically picks the best "Max Connections per Server" setting for stable and compatible downloads.
+- Lerxu ships with the XferCore download engine, which automatically picks the best "Max Connections per Server" setting for stable and compatible downloads.
 - Each task supports up to 128 concurrent segments (32 connections per server by default), backed by a built-in disk cache for smoother parallel downloads.
 - Note: Real concurrency for single-source downloads depends on the segment count; torrent and multi-mirror downloads can stack concurrency for faster overall speed.
 
@@ -89,7 +89,7 @@ A modern download manager powered by the XferCore engine, optimized for Windows,
 
 ### Video Download
 - **Online Video Download (Browser Extension)**: Recognize web videos via the browser extension and send them to the app with one click to create download tasks
-- **Download Takeover**: Clicks on download links on web pages (e.g., links with a download attribute or common file extensions) can be handed over to LinkCore, with support for excluding specific sites or file types and Alt+Click to bypass
+- **Download Takeover**: Clicks on download links on web pages (e.g., links with a download attribute or common file extensions) can be handed over to Lerxu, with support for excluding specific sites or file types and Alt+Click to bypass
 - **Video Recognition**: Supports multiple video formats and automatically distinguishes audio streams from video streams
 - **Unified Task Management**: Video resources appear as regular download tasks in the task list, supporting the same pause/resume/delete management experience as other tasks
 - **Merge Progress Display**: Audio/video that needs merging enters a "merging" state with visible progress after download, and correctly merges when multiple segmented videos are sent at once
@@ -122,7 +122,7 @@ A modern download manager powered by the XferCore engine, optimized for Windows,
 
 ## Supported Platforms
 
-LinkCore currently supports the following platforms:
+Lerxu currently supports the following platforms:
 - **Windows** (10, 11)
 - **macOS** (Intel, x64; Apple Silicon, arm64)
 - **Linux** (x64, arm64)
@@ -131,13 +131,13 @@ LinkCore currently supports the following platforms:
 
 ### Windows
 
-1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore/releases) page
-2. Download the latest `LinkCore-Setup-x.y.z.exe` installer
+1. Visit the [GitHub Releases](https://github.com/MochengCK/Lerxu/releases) page
+2. Download the latest `Lerxu-Setup-x.y.z.exe` installer
 3. Run the installer and follow the on-screen instructions
 
 ### macOS
 
-1. Visit the [GitHub Releases](https://github.com/MochengCK/LinkCore/releases) page
+1. Visit the [GitHub Releases](https://github.com/MochengCK/Lerxu/releases) page
 2. Download `*.dmg` (x64/arm64) or `*-mac.zip` / `*-arm64-mac.zip` (x64/arm64)
 3. Using `*.dmg`: Double-click to open, drag the app to `/Applications`
 4. Using `*.zip`: Extract and move the app to `/Applications`
@@ -147,12 +147,12 @@ LinkCore currently supports the following platforms:
 
 - AppImage (Recommended):
   1. Download `*.AppImage` (`x64` or `arm64`)
-  2. Grant execute permission: `chmod +x LinkCore-*.AppImage`
-  3. Run: `./LinkCore-*.AppImage`
+  2. Grant execute permission: `chmod +x Lerxu-*.AppImage`
+  3. Run: `./Lerxu-*.AppImage`
 
 - Debian/Ubuntu (`.deb` package):
-  1. Download `linkcore_*_amd64.deb` or `linkcore_*_arm64.deb`
-  2. Install: `sudo dpkg -i linkcore_*.deb`
+  1. Download `lerxu_*_amd64.deb` or `lerxu_*_arm64.deb`
+  2. Install: `sudo dpkg -i lerxu_*.deb`
   3. If dependency issues occur: `sudo apt -f install`
 
 - Other distributions: Use the AppImage method.
@@ -169,8 +169,8 @@ LinkCore currently supports the following platforms:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/MochengCK/LinkCore.git
-   cd LinkCore
+   git clone https://github.com/MochengCK/Lerxu.git
+   cd Lerxu
    ```
 
 2. Install dependencies:
@@ -191,7 +191,7 @@ LinkCore currently supports the following platforms:
 ### Project Structure
 
 ```
-LinkCore/
+Lerxu/
 ├── src/                  # Main source code
 │   ├── main/             # Electron main process
 │   ├── renderer/         # Electron renderer process (Vue.js)
@@ -234,7 +234,7 @@ Contributions are welcome! Whether you're fixing bugs, adding new features, or i
 
 If you encounter any issues or have questions:
 
-- Submit an [issue](https://github.com/MochengCK/LinkCore/issues/new/choose) on GitHub
+- Submit an [issue](https://github.com/MochengCK/Lerxu/issues/new/choose) on GitHub
 - Join our community for discussion and support
 
 ## License

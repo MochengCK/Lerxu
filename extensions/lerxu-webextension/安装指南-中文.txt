@@ -1,4 +1,4 @@
-# LinkCore 浏览器扩展安装指南
+# Lerxu 浏览器扩展安装指南
 
 ## 安装步骤
 
@@ -14,9 +14,9 @@
    - 点击开关将其开启（显示为蓝色）
 
 4. **拖拽安装扩展程序**
-   - 将保存的`linkcore-webextension`文件夹直接拖拽到浏览器窗口中
+   - 将保存的`lerxu-webextension`文件夹直接拖拽到浏览器窗口中
 
-   - 或者点击"加载已解压的扩展程序"按钮，选择桌面上的`linkcore-webextension`文件夹
+   - 或者点击"加载已解压的扩展程序"按钮，选择桌面上的`lerxu-webextension`文件夹
    - 点击"选择文件夹"完成安装
 
 **推荐方法**：直接将文件夹拖入浏览器窗口进行安装，更加快捷方便！
@@ -37,7 +37,7 @@
 
 ### Q: 扩展安装后无法正常工作？
 A: 请检查以下事项：
-- 确保LinkCore下载管理器正在运行
+- 确保Lerxu下载管理器正在运行
 - 检查浏览器是否已重启
 - 确认扩展已正确启用
 
@@ -45,6 +45,6 @@ A: 请检查以下事项：
 A: 当有新版本时，请重新下载并安装最新版本的扩展文件夹
 
 ### Q: 如何卸载扩展？
-A: 在`chrome://extensions/`页面找到LinkCore扩展，点击"移除"按钮
+A: 在`chrome://extensions/`页面找到Lerxu扩展，点击"移除"按钮
 
-如有问题请访问：https://github.com/MochengCK/LinkCore/issues
+如有问题请访问：https://github.com/MochengCK/Lerxu/issues

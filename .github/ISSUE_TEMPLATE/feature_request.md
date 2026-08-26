@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea for LinkCore Download Manager
+about: Suggest an idea for Lerxu Download Manager
 title: "[Feature] "
 labels: enhancement
 assignees: ''

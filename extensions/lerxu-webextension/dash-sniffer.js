@@ -5,7 +5,7 @@
   const DEBUG = true
   const log = (...args) => {
     if (DEBUG) {
-      console.log('[LinkCore Sniffer]', ...args)
+      console.log('[Lerxu Sniffer]', ...args)
     }
   }
 
@@ -192,7 +192,7 @@
     // 尝试配对M4S视频和音频
     combineDashResources()
     
-    window.dispatchEvent(new CustomEvent('linkcore-resources-updated', {
+    window.dispatchEvent(new CustomEvent('lerxu-resources-updated', {
       detail: {
         video: sniffedResources.video,
         audio: sniffedResources.audio,
@@ -426,12 +426,12 @@
   }
 
   // 监听来自页面的获取资源请求
-  window.addEventListener('linkcore-get-resources', () => {
+  window.addEventListener('lerxu-get-resources', () => {
     notifyResourceUpdate()
   })
 
   // 暴露清除资源的方法
-  window.addEventListener('linkcore-clear-resources', () => {
+  window.addEventListener('lerxu-clear-resources', () => {
     log('Clearing resources from dash-sniffer')
     
     sniffedResources.video = []

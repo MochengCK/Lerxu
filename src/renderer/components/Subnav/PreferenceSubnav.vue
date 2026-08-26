@@ -181,7 +181,7 @@ function showMessage (type, message) {
   if (hasMsgSupport()) {
     instance.proxy.$msg[type](message)
   } else {
-    console.log(`[LinkCore] Update message: ${type} - ${message}`)
+    console.log(`[Lerxu] Update message: ${type} - ${message}`)
     if (type === 'error') {
       alert(message)
     }
@@ -221,7 +221,7 @@ function checkForUpdates () {
   ipcRenderer.once('update-available', onUpdateAvailable)
 
   const timeout = setTimeout(() => {
-    console.log('[LinkCore] Update check timed out')
+    console.log('[Lerxu] Update check timed out')
     ipcRenderer.removeListener('update-error', onUpdateError)
     ipcRenderer.removeListener('update-not-available', onUpdateNotAvailable)
     ipcRenderer.removeListener('update-available', onUpdateAvailable)
@@ -232,7 +232,7 @@ function checkForUpdates () {
 
   const clearTimeoutListener = () => {
     clearTimeout(timeout)
-    console.log('[LinkCore] Update check completed, clearing timeout')
+    console.log('[Lerxu] Update check completed, clearing timeout')
     ipcRenderer.removeListener('update-error', clearTimeoutListener)
     ipcRenderer.removeListener('update-not-available', clearTimeoutListener)
     ipcRenderer.removeListener('update-available', clearTimeoutListener)
@@ -241,7 +241,7 @@ function checkForUpdates () {
   ipcRenderer.once('update-not-available', clearTimeoutListener)
   ipcRenderer.once('update-available', clearTimeoutListener)
 
-  console.log('[LinkCore] Sending check for updates command')
+  console.log('[Lerxu] Sending check for updates command')
   ipcRenderer.send('command', 'application:check-for-updates')
 }
 
@@ -293,7 +293,7 @@ function downloadUpdate () {
   ipcRenderer.on('update-error', onDownloadError)
   ipcRenderer.on('update-cancelled', onDownloadCancelled)
 
-  console.log('[LinkCore] Sending download update command')
+  console.log('[Lerxu] Sending download update command')
   ipcRenderer.send('command', 'application:download-update')
 }
 
@@ -302,7 +302,7 @@ onMounted(async () => {
     const appConfig = await ipcRenderer.invoke('get-app-config')
     appVersion.value = appConfig.version
   } catch (error) {
-    console.error('[LinkCore] Failed to get app version:', error)
+    console.error('[Lerxu] Failed to get app version:', error)
   }
 
   try {
@@ -347,7 +347,7 @@ onMounted(async () => {
       }
     }
   } catch (error) {
-    console.error('[LinkCore] Failed to get update status:', error)
+    console.error('[Lerxu] Failed to get update status:', error)
   }
 
   updateSliderFromDom()

@@ -23,7 +23,7 @@ export default class ExceptionHandler {
     const { showDialog } = this.options
     process.on('uncaughtException', (err) => {
       const { message, stack } = err
-      logger.error(`[LinkCore] Uncaught exception: ${message}`)
+      logger.error(`[Lerxu] Uncaught exception: ${message}`)
       logger.error(stack)
 
       // 兜底清理钩子（如杀掉引擎进程），由外部注入。

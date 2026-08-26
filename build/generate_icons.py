@@ -6,7 +6,7 @@ Usage:
   python3 build/generate_icons.py
 
 Sources:
-  - linkcore.png      -> app icon (icns, ico, png variants)
+  - lerxu.png      -> app icon (icns, ico, png variants)
   - bt.png            -> torrent file icon (icns, ico)
 """
 
@@ -115,7 +115,7 @@ def make_ico(src_png: Path, ico_path: Path, sizes=None):
 # --------------------------------------------------------------------------- #
 
 def generate_app_icon(src: Path):
-    """Generate all app-icon assets from linkcore.png."""
+    """Generate all app-icon assets from lerxu.png."""
     print(f"[app-icon] Source: {src.name} ({src.stat().st_size} bytes)")
 
     # 1. macOS iconset + icns  ->  build/icon.iconset, build/icon.icns
@@ -162,7 +162,7 @@ def generate_torrent_icon(src: Path):
 
 
 def main():
-    app_src = BUILD_DIR / "sources" / "linkcore.png"
+    app_src = BUILD_DIR / "sources" / "lerxu.png"
     bt_src = BUILD_DIR / "sources" / "bt.png"
 
     if not app_src.exists():

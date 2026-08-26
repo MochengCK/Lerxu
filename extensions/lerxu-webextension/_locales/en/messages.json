@@ -1,18 +1,18 @@
 {
   "extensionName": {
-    "message": "LinkCore",
+    "message": "Lerxu",
     "description": "Name of the extension"
   },
   "extensionDescription": {
-    "message": "Deeply integrated browser extension for LinkCore",
+    "message": "Deeply integrated browser extension for Lerxu",
     "description": "Description of the extension"
   },
   "actionTitle": {
-    "message": "LinkCore",
+    "message": "Lerxu",
     "description": "Title for browser action"
   },
   "popupTitle": {
-    "message": "LinkCore",
+    "message": "Lerxu",
     "description": "Title in popup header"
   },
   "rpcAddress": {
@@ -52,7 +52,7 @@
     "description": "Connection status when disconnected"
   },
   "contextMenuDownload": {
-    "message": "Download with LinkCore",
+    "message": "Download with Lerxu",
     "description": "Context menu item text"
   },
   "labelExcludeCurrentSite": {

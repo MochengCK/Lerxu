@@ -129,16 +129,16 @@ export const peerIdParser = (str) => {
     return UNKNOWN_PEERID_NAME
   }
 
-  // 优先检查 XferCore/LinkCore，在 bittorrent-peerid 解析之前
+  // 优先检查 XferCore/Lerxu，在 bittorrent-peerid 解析之前
   // 这样可以避免 XC 前缀被错误识别为其他客户端
   let decodedStr
   try {
     decodedStr = safePercentDecode(str)
 
-    // 检查是否是 XferCore 或 LinkCore
-    if (decodedStr && (decodedStr.startsWith('XferCore') || decodedStr.startsWith('LinkCore'))) {
+    // 检查是否是 XferCore 或 Lerxu
+    if (decodedStr && (decodedStr.startsWith('XferCore') || decodedStr.startsWith('Lerxu'))) {
       // 尝试提取版本号，格式如 "XferCore/1.5.1"
-      const match = decodedStr.match(/^(XferCore|LinkCore)\/?([\d.]+)?/)
+      const match = decodedStr.match(/^(XferCore|Lerxu)\/?([\d.]+)?/)
       if (match) {
         const version = match[2]
         return version ? `XferCore v${version}` : 'XferCore'
@@ -936,7 +936,7 @@ export const checkIsNeedRestart = (changed = {}) => {
   const changedKeys = new Set(Object.keys(kebabCaseChanged))
   const matched = needRestartKeys.filter(key => changedKeys.has(key))
   if (matched.length > 0) {
-    console.warn('[LinkCore] checkIsNeedRestart matched keys:', matched, 'all changedKeys:', [...changedKeys])
+    console.warn('[Lerxu] checkIsNeedRestart matched keys:', matched, 'all changedKeys:', [...changedKeys])
   }
   return matched.length > 0
 }

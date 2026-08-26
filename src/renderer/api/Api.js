@@ -331,18 +331,18 @@ export default class Api {
     const config = {}
 
     if (!isEmpty(user)) {
-      console.info('[LinkCore] save user config: ', user)
+      console.info('[Lerxu] save user config: ', user)
       config.user = user
     }
 
     if (!isEmpty(system)) {
-      console.info('[LinkCore] save system config: ', system)
+      console.info('[Lerxu] save system config: ', system)
       config.system = system
       this.updateActiveTaskOption(system)
     }
 
     if (!isEmpty(others)) {
-      console.info('[LinkCore] save config found illegal key: ', others)
+      console.info('[Lerxu] save config found illegal key: ', others)
     }
 
     ipcRenderer.send('command', 'application:save-preference', config)
@@ -723,7 +723,7 @@ export default class Api {
         ['aria2.tellActive', ...activeArgs],
         ['aria2.tellWaiting', ...waitingArgs]
       ]).then(async (data) => {
-        console.log('[LinkCore] fetch downloading task list data:', data)
+        console.log('[Lerxu] fetch downloading task list data:', data)
         let result = mergeTaskResult(data)
         result = this._mergeHistoryToTasks(result)
         result = await this._enrichProgressFromControlFiles(result)
@@ -733,7 +733,7 @@ export default class Api {
         })
         resolve(result)
       }).catch((err) => {
-        console.log('[LinkCore] fetch downloading task list fail:', err)
+        console.log('[Lerxu] fetch downloading task list fail:', err)
         reject(err)
       })
     })
@@ -810,7 +810,7 @@ export default class Api {
 
         return result
       }).catch((err) => {
-        console.log('[LinkCore] fetch all task list fail:', err)
+        console.log('[Lerxu] fetch all task list fail:', err)
         throw err
       })
     }
@@ -858,7 +858,7 @@ export default class Api {
           return merged.filter(task => !looksLikeBilibiliDashPart(task))
         })
         .catch(err => {
-          console.log('[LinkCore] fetch stopped task list fail, fallback to history:', err)
+          console.log('[Lerxu] fetch stopped task list fail, fallback to history:', err)
           const history = taskHistory.getHistory()
           return history
             .filter(task => isHistoryStoppedStatus(task && task.status))
@@ -875,7 +875,7 @@ export default class Api {
     const args = compactUndefined([gid, keys])
     return this.client.call('tellStatus', ...args)
       .catch((error) => {
-        console.log('[LinkCore] fetchTaskItem fail:', error.message)
+        console.log('[Lerxu] fetchTaskItem fail:', error.message)
         // 返回一个空对象或者重新抛出错误，让上层调用者处理
         return Promise.reject(error)
       })
@@ -890,7 +890,7 @@ export default class Api {
         ['aria2.tellStatus', ...statusArgs],
         ['aria2.getPeers', ...peersArgs]
       ]).then((data) => {
-        console.log('[LinkCore] fetchTaskItemWithPeers:', data)
+        console.log('[Lerxu] fetchTaskItemWithPeers:', data)
 
         // multicall 返回的是 [result1, result2]，每个result是 [value] 或 value
         // 需要处理两种可能的格式
@@ -903,8 +903,8 @@ export default class Api {
           peers = Array.isArray(data[1]) ? data[1][0] : data[1]
         }
 
-        console.log('[LinkCore] fetchTaskItemWithPeers.result:', result)
-        console.log('[LinkCore] fetchTaskItemWithPeers.peers:', peers)
+        console.log('[Lerxu] fetchTaskItemWithPeers.result:', result)
+        console.log('[Lerxu] fetchTaskItemWithPeers.peers:', peers)
 
         // 确保result存在再设置peers
         if (result) {
@@ -914,7 +914,7 @@ export default class Api {
           reject(new Error('No task data returned'))
         }
       }).catch((err) => {
-        console.log('[LinkCore] fetchTaskItemWithPeers fail:', err.message)
+        console.log('[Lerxu] fetchTaskItemWithPeers fail:', err.message)
         reject(err)
       })
     })
@@ -959,7 +959,7 @@ export default class Api {
     const args = compactUndefined([gid])
     return this.client.call('getServers', ...args)
       .catch((error) => {
-        console.log('[LinkCore] fetchTaskServers fail:', error.message)
+        console.log('[Lerxu] fetchTaskServers fail:', error.message)
         return []
       })
   }
@@ -970,7 +970,7 @@ export default class Api {
     const args = compactUndefined([gid])
     return this.client.call('getTrackers', ...args)
       .catch((error) => {
-        console.log('[LinkCore] fetchTaskTrackers fail:', error.message)
+        console.log('[Lerxu] fetchTaskTrackers fail:', error.message)
         return []
       })
   }
@@ -1142,7 +1142,7 @@ export default class Api {
   // 优先级管理相关方法
   getPriorityStatus () {
     return ipcRenderer.invoke('priority:status').catch(err => {
-      console.warn('[LinkCore] getPriorityStatus failed:', err.message)
+      console.warn('[Lerxu] getPriorityStatus failed:', err.message)
       return { success: false, error: err.message }
     })
   }
@@ -1150,7 +1150,7 @@ export default class Api {
   // 触发优先级重新平衡（当用户修改任务优先级后调用）
   rebalancePriority () {
     return ipcRenderer.invoke('priority:rebalance').catch(err => {
-      console.warn('[LinkCore] rebalancePriority failed:', err.message)
+      console.warn('[Lerxu] rebalancePriority failed:', err.message)
       return { success: false, error: err.message }
     })
   }

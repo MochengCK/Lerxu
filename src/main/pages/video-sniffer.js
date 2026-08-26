@@ -2,7 +2,7 @@
   'use strict'
 
   const log = (...args) => {
-    console.log('[LinkCore:VideoSniffer]', ...args)
+    console.log('[Lerxu:VideoSniffer]', ...args)
   }
 
   log('========== Script loaded! ==========')
@@ -28,7 +28,7 @@
         translations = module.default || {}
         log('Translations loaded for locale:', locale)
       } catch (importError) {
-        console.error('[LinkCore:VideoSniffer] Failed to import translations:', importError)
+        console.error('[Lerxu:VideoSniffer] Failed to import translations:', importError)
         const response = await fetch(localePath)
         if (response.ok) {
           const text = await response.text()
@@ -42,7 +42,7 @@
         }
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSniffer] Failed to load translations:', e)
+      console.error('[Lerxu:VideoSniffer] Failed to load translations:', e)
     }
   }
 
@@ -89,11 +89,11 @@
             }
           }
         }).catch((e) => {
-          console.error('[LinkCore:VideoSniffer] Failed to get theme:', e)
+          console.error('[Lerxu:VideoSniffer] Failed to get theme:', e)
         })
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSniffer] Failed to get theme:', e)
+      console.error('[Lerxu:VideoSniffer] Failed to get theme:', e)
     }
   }
 
@@ -107,7 +107,7 @@
         log('Loaded settings from localStorage:', config)
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSniffer] Failed to load settings:', e)
+      console.error('[Lerxu:VideoSniffer] Failed to load settings:', e)
     }
 
     try {
@@ -120,11 +120,11 @@
             updateUI()
           }
         }).catch((e) => {
-          console.error('[LinkCore:VideoSniffer] Failed to load settings from main process:', e)
+          console.error('[Lerxu:VideoSniffer] Failed to load settings from main process:', e)
         })
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSniffer] Failed to load settings from main process:', e)
+      console.error('[Lerxu:VideoSniffer] Failed to load settings from main process:', e)
     }
   }
 
@@ -144,10 +144,10 @@
           log('Settings sent via IPC (legacy):', config)
         }
       } catch (e) {
-        console.error('[LinkCore:VideoSniffer] Failed to send settings via IPC:', e)
+        console.error('[Lerxu:VideoSniffer] Failed to send settings via IPC:', e)
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSniffer] Failed to save settings:', e)
+      console.error('[Lerxu:VideoSniffer] Failed to save settings:', e)
     }
   }
 
@@ -218,7 +218,7 @@
         }
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSniffer] Failed to adjust window size:', e)
+      console.error('[Lerxu:VideoSniffer] Failed to adjust window size:', e)
     }
   }
 
@@ -235,7 +235,7 @@
     const saveBtn = document.getElementById('saveBtn')
 
     if (pageTitle) {
-      pageTitle.textContent = `${t('video-sniffer-settings-title')} - LinkCore`
+      pageTitle.textContent = `${t('video-sniffer-settings-title')} - Lerxu`
     }
 
     if (titleText) {
@@ -302,7 +302,7 @@
             currentLocale = appLocale
           }
         } catch (e) {
-          console.error('[LinkCore:VideoSniffer] Failed to get app config:', e)
+          console.error('[Lerxu:VideoSniffer] Failed to get app config:', e)
         }
 
         const win = new BrowserWindow({
@@ -340,7 +340,7 @@
         })
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSniffer] Failed to open add format window:', e)
+      console.error('[Lerxu:VideoSniffer] Failed to open add format window:', e)
     }
   }
 
@@ -360,7 +360,7 @@
           })
         }
       } catch (e) {
-        console.error('[LinkCore:VideoSniffer] Failed to show dialog:', e)
+        console.error('[Lerxu:VideoSniffer] Failed to show dialog:', e)
       }
       return
     }
@@ -396,7 +396,7 @@
         await loadTranslations(locale)
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSniffer] Failed to get locale:', e)
+      console.error('[Lerxu:VideoSniffer] Failed to get locale:', e)
     }
   }
 
@@ -425,7 +425,7 @@
             }
           }
         } catch (e) {
-          console.error('[LinkCore:VideoSniffer] Failed to minimize window:', e)
+          console.error('[Lerxu:VideoSniffer] Failed to minimize window:', e)
         }
       })
     }
@@ -441,7 +441,7 @@
             }
           }
         } catch (e) {
-          console.error('[LinkCore:VideoSniffer] Failed to close window:', e)
+          console.error('[Lerxu:VideoSniffer] Failed to close window:', e)
           window.close()
         }
       })
@@ -540,7 +540,7 @@
               log('Sent current theme to child window:', appConfig.theme)
             }
           } catch (e) {
-            console.error('[LinkCore:VideoSniffer] Failed to get current theme for child window:', e)
+            console.error('[Lerxu:VideoSniffer] Failed to get current theme for child window:', e)
           }
         })
 
@@ -555,12 +555,12 @@
               log('Sent current locale to child window:', appLocale)
             }
           } catch (e) {
-            console.error('[LinkCore:VideoSniffer] Failed to get current locale for child window:', e)
+            console.error('[Lerxu:VideoSniffer] Failed to get current locale for child window:', e)
           }
         })
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSniffer] Failed to listen for theme changes:', e)
+      console.error('[Lerxu:VideoSniffer] Failed to listen for theme changes:', e)
     }
 
     // 处理语言变化
@@ -575,7 +575,7 @@
         // 通知所有子窗口语言变化
         notifyChildWindowsLocale({ locale: newLocale })
       } catch (e) {
-        console.error('[LinkCore:VideoSniffer] Failed to handle locale change:', e)
+        console.error('[Lerxu:VideoSniffer] Failed to handle locale change:', e)
       }
     }
 
@@ -599,7 +599,7 @@
           })
         }
       } catch (e) {
-        console.error('[LinkCore:VideoSniffer] Failed to notify child windows:', e)
+        console.error('[Lerxu:VideoSniffer] Failed to notify child windows:', e)
       }
     }
 
@@ -623,7 +623,7 @@
           })
         }
       } catch (e) {
-        console.error('[LinkCore:VideoSniffer] Failed to notify child windows locale:', e)
+        console.error('[Lerxu:VideoSniffer] Failed to notify child windows locale:', e)
       }
     }
   })

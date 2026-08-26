@@ -1,5 +1,5 @@
 export default {
-  'official-website': 'LinkCore Website',
+  'official-website': 'Lerxu Website',
   'release-notes': 'Release Notes...',
   'report-problem': 'Report Problem',
   'toggle-dev-tools': 'Toggle Developer Tools',

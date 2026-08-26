@@ -1,4 +1,4 @@
-# LinkCore Browser Extension Installation Guide
+# Lerxu Browser Extension Installation Guide
 
 ## Installation Steps
 
@@ -14,8 +14,8 @@
    - Click the toggle to enable it (it will turn blue)
 
 4. **Drag and Drop Installation**
-   - Drag the `linkcore-webextension` folder from your desktop directly into the browser window
-   - Or click the "Load unpacked extension" button and select the `linkcore-webextension` folder on your desktop
+   - Drag the `lerxu-webextension` folder from your desktop directly into the browser window
+   - Or click the "Load unpacked extension" button and select the `lerxu-webextension` folder on your desktop
    - Click "Select Folder" to complete the installation
 
 **Recommended Method**: Drag the folder directly into the browser window for faster and more convenient installation!
@@ -37,14 +37,14 @@ During installation, you may see a warning "This extension is not listed in the 
 After installation, the extension provides the following features:
 - One-click download of media files from web pages
 - Support for multiple file formats (video, audio, images, etc.)
-- Seamless integration with LinkCore
+- Seamless integration with Lerxu
 - Smart recognition of download links
 
 ## Frequently Asked Questions
 
 ### Q: Extension not working after installation?
 A: Please check the following:
-- Ensure LinkCore is running
+- Ensure Lerxu is running
 - Check if browser has been restarted
 - Confirm extension is properly enabled
 
@@ -52,6 +52,6 @@ A: Please check the following:
 A: When a new version is available, re-download and install the latest extension folder
 
 ### Q: How to uninstall the extension?
-A: Go to `chrome://extensions/` page, find LinkCore extension, and click "Remove" button
+A: Go to `chrome://extensions/` page, find Lerxu extension, and click "Remove" button
 
-Technical Support: https://github.com/MochengCK/LinkCore/issues
+Technical Support: https://github.com/MochengCK/Lerxu/issues

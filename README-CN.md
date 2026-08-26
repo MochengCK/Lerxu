@@ -7,21 +7,21 @@
 </div>
 
 <p align="center">
-  <img src="./screenshots/linkcore-banner.png" width="1100" alt="LinkCore Logo" />
+  <img src="./screenshots/lerxu-banner.png" width="1100" alt="Lerxu Logo" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/MochengCK/LinkCore/releases">
-    <img src="https://img.shields.io/github/v/release/MochengCK/LinkCore.svg?style=for-the-badge" alt="GitHub release" />
+  <a href="https://github.com/MochengCK/Lerxu/releases">
+    <img src="https://img.shields.io/github/v/release/MochengCK/Lerxu.svg?style=for-the-badge" alt="GitHub release" />
   </a>
-  <a href="https://github.com/MochengCK/LinkCore/releases">
-    <img src="https://img.shields.io/github/downloads/MochengCK/LinkCore/total.svg?style=for-the-badge" alt="Total Downloads" />
+  <a href="https://github.com/MochengCK/Lerxu/releases">
+    <img src="https://img.shields.io/github/downloads/MochengCK/Lerxu/total.svg?style=for-the-badge" alt="Total Downloads" />
   </a>
   <a href="#支持平台">
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg?style=for-the-badge" alt="Support Platforms" />
   </a>
-  <a href="https://github.com/MochengCK/LinkCore/blob/master/LICENSE">
-    <img src="https://img.shields.io/github/license/MochengCK/LinkCore.svg?style=for-the-badge" alt="License" />
+  <a href="https://github.com/MochengCK/Lerxu/blob/master/LICENSE">
+    <img src="https://img.shields.io/github/license/MochengCK/Lerxu.svg?style=for-the-badge" alt="License" />
   </a>
 </p>
 
@@ -35,7 +35,7 @@
   <tr>
     <td align="center" width="50%">
       <img
-        src="./screenshots/linkcore-screenshot-light.png"
+        src="./screenshots/lerxu-screenshot-light.png"
         alt="浅色模式 - 任务管理界面"
         style="max-width: 100%;"
       />
@@ -43,7 +43,7 @@
     </td>
     <td align="center" width="50%">
       <img
-        src="./screenshots/linkcore-screenshot-task.png"
+        src="./screenshots/lerxu-screenshot-task.png"
         alt="深色模式 - 任务管理界面"
         style="max-width: 100%;"
       />
@@ -94,7 +94,7 @@
 ### 视频下载
 
 - **在线视频下载（浏览器扩展）**：通过浏览器扩展识别网页视频，一键发送到应用创建下载任务
-- **下载接管**：网页中的下载链接（如设置了下载属性或以常见文件格式结尾的链接）点击后可直接转交 LinkCore 接管，支持排除指定网站或文件类型、Alt+点击放行
+- **下载接管**：网页中的下载链接（如设置了下载属性或以常见文件格式结尾的链接）点击后可直接转交 Lerxu 接管，支持排除指定网站或文件类型、Alt+点击放行
 - **视频识别**：支持多种视频格式，自动区分音频流与视频流
 - **统一任务管理**：视频资源以普通下载任务进入任务列表，支持与其他任务一致的暂停/恢复/删除等管理体验
 - **合并进度展示**：需要合并的音视频下载完成后进入"合并中"状态并显示合并进度，一次发送多个分段视频也能正确合并
@@ -130,7 +130,7 @@
 
 ## 支持平台
 
-LinkCore 目前支持以下平台：
+Lerxu 目前支持以下平台：
 
 - **Windows** (10, 11)
 - **macOS**（Intel，x64；Apple Silicon，arm64）
@@ -140,13 +140,13 @@ LinkCore 目前支持以下平台：
 
 ### Windows
 
-1. 访问 [GitHub Releases](https://github.com/MochengCK/LinkCore/releases) 页面
-2. 下载最新版本的 `LinkCore-Setup-x.y.z.exe` 安装程序
+1. 访问 [GitHub Releases](https://github.com/MochengCK/Lerxu/releases) 页面
+2. 下载最新版本的 `Lerxu-Setup-x.y.z.exe` 安装程序
 3. 运行安装程序并按照屏幕提示完成安装
 
 ### macOS
 
-1. 访问 [GitHub Releases](https://github.com/MochengCK/LinkCore/releases) 页面
+1. 访问 [GitHub Releases](https://github.com/MochengCK/Lerxu/releases) 页面
 2. 下载 `*.dmg`（x64/arm64）或 `*-mac.zip` / `*-arm64-mac.zip`（x64/arm64）
 3. 使用 `*.dmg`：双击打开，将应用拖拽到 `/Applications`
 4. 使用 `*.zip`：解压后将应用移动到 `/Applications`
@@ -156,12 +156,12 @@ LinkCore 目前支持以下平台：
 
 - AppImage（通用推荐）：
   1. 下载 `*.AppImage`（`x64` 或 `arm64`）
-  2. 赋予可执行权限：`chmod +x LinkCore-*.AppImage`
-  3. 运行：`./LinkCore-*.AppImage`
+  2. 赋予可执行权限：`chmod +x Lerxu-*.AppImage`
+  3. 运行：`./Lerxu-*.AppImage`
 
 - Debian/Ubuntu（`.deb` 包）：
-  1. 下载 `linkcore_*_amd64.deb` 或 `linkcore_*_arm64.deb`
-  2. 安装：`sudo dpkg -i linkcore_*.deb`
+  1. 下载 `lerxu_*_amd64.deb` 或 `lerxu_*_arm64.deb`
+  2. 安装：`sudo dpkg -i lerxu_*.deb`
   3. 如有依赖问题：`sudo apt -f install`
 
 - 其他发行版：优先使用 AppImage 方式。
@@ -178,8 +178,8 @@ LinkCore 目前支持以下平台：
 
 1. 克隆仓库：
    ```bash
-   git clone https://github.com/MochengCK/LinkCore.git
-   cd LinkCore
+   git clone https://github.com/MochengCK/Lerxu.git
+   cd Lerxu
    ```
 
 2. 安装依赖：
@@ -200,7 +200,7 @@ LinkCore 目前支持以下平台：
 ### 项目结构
 
 ```
-LinkCore/
+Lerxu/
 ├── src/                  # 主要源代码
 │   ├── main/             # Electron 主进程
 │   ├── renderer/         # Electron 渲染进程（Vue.js）
@@ -243,7 +243,7 @@ LinkCore/
 
 如果您遇到任何问题或有疑问：
 
-- 在 GitHub 上 [提交 issue](https://github.com/MochengCK/LinkCore/issues/new/choose)
+- 在 GitHub 上 [提交 issue](https://github.com/MochengCK/Lerxu/issues/new/choose)
 - 加入我们的社区进行讨论和获取支持
 
 ## 许可证

@@ -59,7 +59,7 @@ export default class EngineClient {
    * 避免 Chromium 走系统代理导致本地 RPC 端口被拒。
    */
   connect () {
-    logger.info('[LinkCore] main engine client connect', this.options)
+    logger.info('[Lerxu] main engine client connect', this.options)
     const { host, port, secret } = this.options
     const client = new Aria2({ host, port, secret })
 
@@ -69,7 +69,7 @@ export default class EngineClient {
     // 引擎未启动 / 崩溃时 socket 会 emit('error')，
     // 必须监听防止 EventEmitter 抛未捕获异常导致应用崩溃
     client.on('error', (err) => {
-      logger.warn('[LinkCore] engine websocket error:', err && err.message ? err.message : err)
+      logger.warn('[Lerxu] engine websocket error:', err && err.message ? err.message : err)
     })
 
     // 断线自动重连（引擎崩溃重启 / 网络波动）
@@ -81,7 +81,7 @@ export default class EngineClient {
     })
 
     client.open().catch((err) => {
-      logger.warn('[LinkCore] engine websocket connect fail:', err && err.message ? err.message : err)
+      logger.warn('[Lerxu] engine websocket connect fail:', err && err.message ? err.message : err)
     })
 
     this.client = client
@@ -111,7 +111,7 @@ export default class EngineClient {
     }
     this._reconnectAttempts += 1
     const delay = Math.min(1000 * Math.pow(2, this._reconnectAttempts - 1), 15000)
-    logger.warn(`[LinkCore] engine websocket disconnected, reconnect in ${delay}ms (attempt ${this._reconnectAttempts})`)
+    logger.warn(`[Lerxu] engine websocket disconnected, reconnect in ${delay}ms (attempt ${this._reconnectAttempts})`)
     this._reconnectTimer = setTimeout(() => {
       this._reconnectTimer = null
       this.reconnect()
@@ -124,7 +124,7 @@ export default class EngineClient {
       const client = new Aria2({ host, port, secret })
       this.bindEngineEvents(client)
       client.on('error', (err) => {
-        logger.warn('[LinkCore] engine websocket error:', err && err.message ? err.message : err)
+        logger.warn('[Lerxu] engine websocket error:', err && err.message ? err.message : err)
       })
       client.on('close', () => {
         if (this._intentionalClose) {
@@ -136,13 +136,13 @@ export default class EngineClient {
       this.client = client
       EngineClient.client = client
       this._reconnectAttempts = 0
-      logger.info('[LinkCore] engine websocket reconnected')
+      logger.info('[Lerxu] engine websocket reconnected')
       // 通知渲染进程连接已恢复（用于刷新断线期间的数据）
       if (this._eventForwarder) {
         this._eventForwarder('reconnect')
       }
     } catch (err) {
-      logger.warn('[LinkCore] engine websocket reconnect fail:', err && err.message ? err.message : err)
+      logger.warn('[Lerxu] engine websocket reconnect fail:', err && err.message ? err.message : err)
       this.scheduleReconnect()
     }
   }
@@ -155,7 +155,7 @@ export default class EngineClient {
       return null
     }
     return this.client.call(method, ...args).catch((err) => {
-      logger.warn('[LinkCore] call client fail:', err.message)
+      logger.warn('[Lerxu] call client fail:', err.message)
       return null
     })
   }
@@ -178,7 +178,7 @@ export default class EngineClient {
   }
 
   async changeGlobalOption (options) {
-    logger.info('[LinkCore] change engine global option:', options)
+    logger.info('[Lerxu] change engine global option:', options)
     const normalizedOptions = { ...options }
     // Deduplicate bt-tracker URLs before sending to the engine so it
     // never wastes announce cycles on duplicate trackers.
@@ -229,7 +229,7 @@ export default class EngineClient {
         client.removeAllListeners && client.removeAllListeners()
         client.close && client.close()
       } catch (err) {
-        logger.warn('[LinkCore] engine client close fail:', err && err.message ? err.message : err)
+        logger.warn('[Lerxu] engine client close fail:', err && err.message ? err.message : err)
       }
     }
   }

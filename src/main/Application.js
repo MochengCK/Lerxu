@@ -170,16 +170,16 @@ export default class Application extends EventEmitter {
       const { bypass, scope = [] } = proxy
 
       if (proxyMode === PROXY_MODE.SYSTEM && scope.includes(PROXY_SCOPES.DOWNLOAD)) {
-        logger.info('[LinkCore] System proxy mode enabled, fetching system proxy...')
+        logger.info('[Lerxu] System proxy mode enabled, fetching system proxy...')
         const systemProxy = await getSystemHttpProxy()
         if (systemProxy) {
-          logger.info('[LinkCore] System proxy detected:', systemProxy)
+          logger.info('[Lerxu] System proxy detected:', systemProxy)
           this.configManager.setSystemConfig({
             'all-proxy': systemProxy,
             'no-proxy': bypass || ''
           })
         } else {
-          logger.warn('[LinkCore] No system proxy detected, downloads will use direct connection')
+          logger.warn('[Lerxu] No system proxy detected, downloads will use direct connection')
           this.configManager.setSystemConfig({
             'all-proxy': '',
             'no-proxy': ''
@@ -187,14 +187,14 @@ export default class Application extends EventEmitter {
         }
       }
     } catch (error) {
-      logger.warn('[LinkCore] Failed to initialize system proxy:', error.message)
+      logger.warn('[Lerxu] Failed to initialize system proxy:', error.message)
     }
   }
 
   // ===== 浏览器扩展通信:公共处理逻辑(HTTP 与 WebSocket 共用) =====
 
   // 验证扩展授权签名(挑战码 + extensionId + timestamp → SHA-256)
-  // 供 HTTP /linkcore/authorize 与 WebSocket 连接认证共用
+  // 供 HTTP /lerxu/authorize 与 WebSocket 连接认证共用
   _verifyExtensionAuthorize (payload) {
     const { challenge, signature, extensionId, timestamp } = payload
 
@@ -239,7 +239,7 @@ export default class Application extends EventEmitter {
     return { ok: true }
   }
 
-  // 读取扩展配置(与 /linkcore/ext-config GET 一致)
+  // 读取扩展配置(与 /lerxu/ext-config GET 一致)
   _getExtensionConfig () {
     const interceptAllDownloads = !!this.configManager.getUserConfig('extension-intercept-all-downloads', false)
     const silentDownload = !!this.configManager.getUserConfig('extension-silent-download', false)
@@ -282,7 +282,7 @@ export default class Application extends EventEmitter {
     }
   }
 
-  // 更新扩展配置(与 /linkcore/ext-config POST 一致)
+  // 更新扩展配置(与 /lerxu/ext-config POST 一致)
   _setExtensionConfig (payload) {
     if (payload.excludeDomains !== undefined) {
       // 直接使用完整列表替换现有配置,支持添加和移除操作
@@ -319,7 +319,7 @@ export default class Application extends EventEmitter {
     }
   }
 
-  // 添加下载任务(与 /linkcore/add POST 一致),返回 { ok, dialog } 或 { ok: false, error }
+  // 添加下载任务(与 /lerxu/add POST 一致),返回 { ok, dialog } 或 { ok: false, error }
   async _handleExtensionAdd (payload) {
     const { url, referer, headers, suggestedFilename } = payload
     const downloadUrl = `${url || ''}`.trim()
@@ -404,9 +404,9 @@ export default class Application extends EventEmitter {
     // 导致目标服务器返回 403（旧版扩展曾附带该头）。
     finalHeaders = finalHeaders.filter(h => !(typeof h === 'string' && /^origin\s*:/i.test(h.trim())))
     if (!finalHeaders.length) {
-      finalHeaders = ['X-LinkCore-Source: BrowserExtension']
-    } else if (!finalHeaders.some(h => typeof h === 'string' && /^x-linkcore-source\s*:/i.test(h.trim()))) {
-      finalHeaders = [...finalHeaders, 'X-LinkCore-Source: BrowserExtension']
+      finalHeaders = ['X-Lerxu-Source: BrowserExtension']
+    } else if (!finalHeaders.some(h => typeof h === 'string' && /^x-lerxu-source\s*:/i.test(h.trim()))) {
+      finalHeaders = [...finalHeaders, 'X-Lerxu-Source: BrowserExtension']
     }
 
     const options = { header: finalHeaders }
@@ -488,7 +488,7 @@ export default class Application extends EventEmitter {
     return { ok: true, dialog: false }
   }
 
-  // 活动任务列表(与 /linkcore/tasks GET 一致)
+  // 活动任务列表(与 /lerxu/tasks GET 一致)
   async _getExtensionTasks () {
     const keys = ['gid', 'status', 'totalLength', 'completedLength', 'downloadSpeed', 'uploadSpeed', 'files']
     const data = await this.engineClient.call('tellActive', keys) || []
@@ -528,7 +528,7 @@ export default class Application extends EventEmitter {
           return
         }
 
-        if (url.startsWith('/linkcore/handshake')) {
+        if (url.startsWith('/lerxu/handshake')) {
           const challenge = randomBytes(16).toString('hex')
           const expiresAt = Date.now() + 30000 // 30秒过期，给网络慢的情况留足够时间
           this.challenges.set(challenge, {
@@ -545,7 +545,7 @@ export default class Application extends EventEmitter {
           return
         }
 
-        if (url.startsWith('/linkcore/authorize')) {
+        if (url.startsWith('/lerxu/authorize')) {
           if (req.method !== 'POST') {
             res.writeHead(405, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'Method not allowed' }))
@@ -600,7 +600,7 @@ export default class Application extends EventEmitter {
           return
         }
 
-        if (url.startsWith('/linkcore/ext-config')) {
+        if (url.startsWith('/lerxu/ext-config')) {
           if (req.method === 'GET') {
             try {
               const data = this._getExtensionConfig()
@@ -634,7 +634,7 @@ export default class Application extends EventEmitter {
                 res.writeHead(200, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({ ok: true }))
               } catch (err) {
-                console.error('[LinkCore] Failed to update ext config:', err)
+                console.error('[Lerxu] Failed to update ext config:', err)
                 res.writeHead(500, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({ ok: false }))
               }
@@ -643,7 +643,7 @@ export default class Application extends EventEmitter {
           return
         }
 
-        if (url.startsWith('/linkcore/locale')) {
+        if (url.startsWith('/lerxu/locale')) {
           const locale = this.configManager.getLocale()
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ locale }))
@@ -722,14 +722,14 @@ export default class Application extends EventEmitter {
           return
         }
 
-        if (url.startsWith('/linkcore/version')) {
+        if (url.startsWith('/lerxu/version')) {
           const version = app.getVersion()
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ version }))
           return
         }
 
-        if (url.startsWith('/linkcore/tasks')) {
+        if (url.startsWith('/lerxu/tasks')) {
           (async () => {
             try {
               const data = await this._getExtensionTasks()
@@ -743,7 +743,7 @@ export default class Application extends EventEmitter {
           return
         }
 
-        if (url.startsWith('/linkcore/add')) {
+        if (url.startsWith('/lerxu/add')) {
           let body = ''
           req.on('data', (chunk) => {
             body += chunk
@@ -767,7 +767,7 @@ export default class Application extends EventEmitter {
           return
         }
 
-        if (url.startsWith('/linkcore/health')) {
+        if (url.startsWith('/lerxu/health')) {
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ ok: true }))
           return
@@ -787,21 +787,21 @@ export default class Application extends EventEmitter {
 
       // 添加错误处理
       server.on('error', (err) => {
-        logger.error('[LinkCore] App HTTP server error:', err && err.message ? err.message : err)
+        logger.error('[Lerxu] App HTTP server error:', err && err.message ? err.message : err)
         if (err.code === 'EADDRINUSE') {
-          logger.error(`[LinkCore] Port ${APP_HTTP_PORT} is already in use. Browser extension connection will not work.`)
+          logger.error(`[Lerxu] Port ${APP_HTTP_PORT} is already in use. Browser extension connection will not work.`)
         }
       })
 
       server.listen(APP_HTTP_PORT, '127.0.0.1', () => {
-        logger.info(`[LinkCore] App HTTP server listening at http://127.0.0.1:${APP_HTTP_PORT}/`)
+        logger.info(`[Lerxu] App HTTP server listening at http://127.0.0.1:${APP_HTTP_PORT}/`)
       })
       this.httpServer = server
 
       // WebSocket 通道(浏览器扩展主通道),挂在同一 HTTP server 上
       this._initExtensionWebSocket(server)
     } catch (e) {
-      logger.warn('[LinkCore] Failed to start app HTTP server:', e && e.message ? e.message : e)
+      logger.warn('[Lerxu] Failed to start app HTTP server:', e && e.message ? e.message : e)
     }
   }
 
@@ -821,7 +821,7 @@ export default class Application extends EventEmitter {
         // 来源校验:只允许浏览器扩展连接(Chrome: chrome-extension://, Firefox: moz-extension://)
         const origin = req.headers.origin || ''
         if (!origin.startsWith('chrome-extension://') && !origin.startsWith('moz-extension://')) {
-          logger.warn('[LinkCore] WebSocket rejected, forbidden origin:', origin || '(none)')
+          logger.warn('[Lerxu] WebSocket rejected, forbidden origin:', origin || '(none)')
           ws.close(1008, 'Forbidden origin')
           return
         }
@@ -854,14 +854,14 @@ export default class Application extends EventEmitter {
             if (msg.type === 'authorize') {
               const verifyResult = this._verifyExtensionAuthorize(msg)
               if (!verifyResult.ok) {
-                logger.warn('[LinkCore] WebSocket authorization failed:', verifyResult.error)
+                logger.warn('[Lerxu] WebSocket authorization failed:', verifyResult.error)
                 ws.close(1008, verifyResult.error)
                 return
               }
               this.challenges.delete(msg.challenge)
               ws.isAuthenticated = true
               clearTimeout(ws.authTimer)
-              console.log('[LinkCore] WebSocket extension authorized')
+              console.log('[Lerxu] WebSocket extension authorized')
               ws.send(JSON.stringify({ type: 'authorized' }))
             }
             return
@@ -884,12 +884,12 @@ export default class Application extends EventEmitter {
       })
 
       wss.on('error', (err) => {
-        logger.error('[LinkCore] WebSocket server error:', err && err.message ? err.message : err)
+        logger.error('[Lerxu] WebSocket server error:', err && err.message ? err.message : err)
       })
 
-      logger.info(`[LinkCore] WebSocket server ready at ws://127.0.0.1:${APP_HTTP_PORT}/ws`)
+      logger.info(`[Lerxu] WebSocket server ready at ws://127.0.0.1:${APP_HTTP_PORT}/ws`)
     } catch (e) {
-      logger.warn('[LinkCore] Failed to start WebSocket server:', e && e.message ? e.message : e)
+      logger.warn('[Lerxu] Failed to start WebSocket server:', e && e.message ? e.message : e)
     }
   }
 
@@ -923,14 +923,14 @@ export default class Application extends EventEmitter {
 
   async autoFetchEngineInfo () {
     try {
-      logger.info('[LinkCore] Auto fetching engine info on app startup')
+      logger.info('[Lerxu] Auto fetching engine info on app startup')
       const engineInfo = await this.getEngineVersionInfo()
-      logger.info('[LinkCore] Engine info fetched successfully:', engineInfo)
+      logger.info('[Lerxu] Engine info fetched successfully:', engineInfo)
 
       // 发送引擎信息到所有窗口
       this.sendCommandToAll('engine-version-info', engineInfo)
     } catch (error) {
-      logger.warn('[LinkCore] Failed to fetch engine info on startup:', error.message)
+      logger.warn('[Lerxu] Failed to fetch engine info on startup:', error.message)
       // 发送错误信息到前端
       this.sendCommandToAll('engine-version-info', {
         error: error.message,
@@ -945,10 +945,10 @@ export default class Application extends EventEmitter {
 
   async autoFetchEngineList () {
     try {
-      logger.info('[LinkCore] Auto fetching engine list on app startup')
+      logger.info('[Lerxu] Auto fetching engine list on app startup')
       const { platform, arch } = process
       const engineList = getEngineList(platform, arch)
-      logger.info('[LinkCore] Engine list fetched successfully:', engineList)
+      logger.info('[Lerxu] Engine list fetched successfully:', engineList)
 
       // 发送引擎列表到所有窗口
       this.sendCommandToAll('engine-list', {
@@ -958,7 +958,7 @@ export default class Application extends EventEmitter {
         timestamp: Date.now()
       })
     } catch (error) {
-      logger.warn('[LinkCore] Failed to fetch engine list on startup:', error.message)
+      logger.warn('[Lerxu] Failed to fetch engine list on startup:', error.message)
       // 发送错误信息到前端
       this.sendCommandToAll('engine-list', {
         error: error.message,
@@ -992,10 +992,10 @@ export default class Application extends EventEmitter {
           formats: Array.isArray(savedFormats) ? savedFormats : ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
           autoCombine: savedAutoCombine !== undefined ? savedAutoCombine : true
         }
-        logger.log('[LinkCore] Video sniffer config loaded from disk:', this._videoSnifferConfig)
+        logger.log('[Lerxu] Video sniffer config loaded from disk:', this._videoSnifferConfig)
       }
     } catch (e) {
-      logger.warn('[LinkCore] Failed to load video sniffer config from disk:', e)
+      logger.warn('[Lerxu] Failed to load video sniffer config from disk:', e)
     }
   }
 
@@ -1005,7 +1005,7 @@ export default class Application extends EventEmitter {
         this.configListeners[key]()
       })
     } catch (e) {
-      logger.warn('[LinkCore] offConfigListeners===>', e)
+      logger.warn('[Lerxu] offConfigListeners===>', e)
     }
     this.configListeners = {}
   }
@@ -1017,7 +1017,7 @@ export default class Application extends EventEmitter {
     logger.transports.file.level = logLevel
 
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
       logger.transports.file.level = newValue
     })
 
@@ -1026,10 +1026,10 @@ export default class Application extends EventEmitter {
     const keymapKey = 'custom-keymap:menu'
     this.configListeners[keymapKey] = userConfig.onDidChange('custom-keymap', async (newValue, oldValue) => {
       try {
-        logger.info('[LinkCore] detected custom-keymap change, rebuilding application menu')
+        logger.info('[Lerxu] detected custom-keymap change, rebuilding application menu')
         this.menuManager && this.menuManager.setup()
       } catch (e) {
-        logger.warn('[LinkCore] rebuild menu failed after custom-keymap change:', e && e.message ? e.message : e)
+        logger.warn('[Lerxu] rebuild menu failed after custom-keymap change:', e && e.message ? e.message : e)
       }
     })
   }
@@ -1098,12 +1098,12 @@ export default class Application extends EventEmitter {
   }
 
   async stopEngine () {
-    logger.info('[LinkCore] stopEngine===>')
+    logger.info('[Lerxu] stopEngine===>')
     try {
       // 引擎已停止（如 will-quit 已调用 engine.stop()）时跳过所有 RPC 调用，
       // 避免 fetch failed 噪声和 undefined is not iterable 崩溃。
       if (!this.engine || !this.engine.instance) {
-        logger.info('[LinkCore] Engine already stopped, skipping RPC shutdown')
+        logger.info('[Lerxu] Engine already stopped, skipping RPC shutdown')
         return
       }
 
@@ -1126,13 +1126,13 @@ export default class Application extends EventEmitter {
           wait(1200)
         ])
       }
-      logger.info('[LinkCore] stopEngine.engine.stop===>')
+      logger.info('[Lerxu] stopEngine.engine.stop===>')
       // 直接 await engine.stop()，确保 app.exit() 前子进程已收到信号。
       // 原实现用 setImmediate 调度，但 quit() 紧接着调用 app.exit() 同步
       // 退出主进程，setImmediate 回调永不执行，导致引擎子进程变孤儿。
       await this.engine.stop()
     } catch (err) {
-      logger.warn('[LinkCore] shutdown engine fail: ', err.message)
+      logger.warn('[Lerxu] shutdown engine fail: ', err.message)
     } finally {
       // no finally
     }
@@ -1247,7 +1247,7 @@ export default class Application extends EventEmitter {
 
       return suggestedFilename
     } catch (err) {
-      logger.warn('[LinkCore] Failed to generate unique task name:', err.message)
+      logger.warn('[Lerxu] Failed to generate unique task name:', err.message)
       return suggestedFilename
     }
   }
@@ -1292,7 +1292,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'tray-speedometer'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
       this.trayManager.handleSpeedometerEnableChange(newValue)
     })
   }
@@ -1301,11 +1301,11 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'custom-keymap'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
       if (this.menuManager) {
         this.menuManager.setup(this.locale)
       } else {
-        logger.warn('[LinkCore] menuManager not initialized')
+        logger.warn('[Lerxu] menuManager not initialized')
       }
     })
   }
@@ -1320,7 +1320,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'open-at-login'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
       if (is.linux()) {
         return
       }
@@ -1337,17 +1337,17 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'protocols'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
 
       if (!newValue || isEqual(newValue, oldValue)) {
         return
       }
 
-      logger.info('[LinkCore] setup protocols client:', newValue)
+      logger.info('[Lerxu] setup protocols client:', newValue)
       if (this.protocolManager) {
         this.protocolManager.setup(newValue)
       } else {
-        logger.warn('[LinkCore] protocolManager not initialized')
+        logger.warn('[Lerxu] protocolManager not initialized')
       }
     })
   }
@@ -1356,7 +1356,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'run-mode'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
       this.trayManager.handleRunModeChange(newValue)
 
       if (newValue !== APP_RUN_MODE.TRAY) {
@@ -1373,7 +1373,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'proxy'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
       this.updateManager.setupProxy(newValue)
 
       const { server, bypass, scope = [] } = newValue
@@ -1426,14 +1426,14 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'locale'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
       this.localeManager.changeLanguageByLocale(newValue)
         .then(() => {
           this.menuManager.handleLocaleChange(newValue)
           this.trayManager.handleLocaleChange(newValue)
         })
         .catch((err) => {
-          logger.warn('[LinkCore] failed to apply locale change:', err)
+          logger.warn('[Lerxu] failed to apply locale change:', err)
         })
       const resolvedLocale = getLanguage(newValue)
       this.sendCommandToAll('application:update-locale', { locale: resolvedLocale })
@@ -1444,7 +1444,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'theme'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
       this.themeManager.updateSystemTheme(newValue)
       this.sendCommandToAll('application:update-theme', { theme: newValue })
     })
@@ -1454,7 +1454,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'mac-native-transparent'
     this.configListeners[key] = userConfig.onDidChange(key, (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
       if (this.windowManager && typeof this.windowManager.applyNativeTransparent === 'function') {
         this.windowManager.applyNativeTransparent(!!newValue)
       }
@@ -1465,7 +1465,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'auto-check-update'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
       if (this.updateManager && typeof this.updateManager.setAutoCheckEnabled === 'function') {
         this.updateManager.setAutoCheckEnabled(!!newValue)
       }
@@ -1476,7 +1476,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'show-progress-bar'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue, oldValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue, oldValue)
 
       if (newValue) {
         this.bindProgressChange()
@@ -1511,7 +1511,7 @@ export default class Application extends EventEmitter {
     try {
       await this.upnp.map(dhtPort)
     } catch (e) {
-      logger.warn('[LinkCore] start UPnP mapping fail', e.message)
+      logger.warn('[Lerxu] start UPnP mapping fail', e.message)
     }
   }
 
@@ -1521,7 +1521,7 @@ export default class Application extends EventEmitter {
     try {
       await this.upnp.unmap(dhtPort)
     } catch (e) {
-      logger.warn('[LinkCore] stop UPnP mapping fail', e)
+      logger.warn('[Lerxu] stop UPnP mapping fail', e)
     }
   }
 
@@ -1533,7 +1533,7 @@ export default class Application extends EventEmitter {
 
     watchKeys.forEach((key) => {
       this.configListeners[key] = systemConfig.onDidChange(key, async (newValue, oldValue) => {
-        logger.info('[LinkCore] detected port change event:', key, newValue, oldValue)
+        logger.info('[Lerxu] detected port change event:', key, newValue, oldValue)
         const enable = this.configManager.getUserConfig('enable-upnp')
         if (!enable) {
           return
@@ -1546,7 +1546,7 @@ export default class Application extends EventEmitter {
         try {
           await Promise.allSettled(promises)
         } catch (e) {
-          logger.info('[LinkCore] change UPnP port mapping failed:', e)
+          logger.info('[Lerxu] change UPnP port mapping failed:', e)
         }
       })
     })
@@ -1556,7 +1556,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'enable-upnp'
     this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info('[LinkCore] detected enable-upnp value change event:', newValue, oldValue)
+      logger.info('[Lerxu] detected enable-upnp value change event:', newValue, oldValue)
       if (newValue) {
         this.startUPnPMapping()
       } else {
@@ -1582,7 +1582,7 @@ export default class Application extends EventEmitter {
 
     setTimeout(() => {
       fetchBtTrackerFromSource(source, proxy).then((data) => {
-        logger.warn('[LinkCore] auto sync tracker data:', data)
+        logger.warn('[Lerxu] auto sync tracker data:', data)
         if (!data || data.length === 0) {
           return
         }
@@ -1601,7 +1601,7 @@ export default class Application extends EventEmitter {
           }
         })
       }).catch((err) => {
-        logger.warn('[LinkCore] auto sync tracker failed:', err.message)
+        logger.warn('[Lerxu] auto sync tracker failed:', err.message)
       })
     }, 500)
   }
@@ -1619,7 +1619,7 @@ export default class Application extends EventEmitter {
 
     // 使用新的高级检查函数
     const result = checkIsNeedRunAdvanced(enable, lastTime, interval, customTime)
-    logger.info('[LinkCore] auto sync tracker checkIsNeedRunAdvanced:', result, 'interval:', interval, 'customTime:', customTime)
+    logger.info('[Lerxu] auto sync tracker checkIsNeedRunAdvanced:', result, 'interval:', interval, 'customTime:', customTime)
     if (!result) {
       return
     }
@@ -1637,7 +1637,7 @@ export default class Application extends EventEmitter {
 
     setTimeout(() => {
       fetchEd2kServersFromSource(source, proxy).then((servers) => {
-        logger.warn('[LinkCore] auto sync ed2k servers:', servers.length)
+        logger.warn('[Lerxu] auto sync ed2k servers:', servers.length)
         if (!servers || servers.length === 0) {
           return
         }
@@ -1653,7 +1653,7 @@ export default class Application extends EventEmitter {
           }
         })
       }).catch((err) => {
-        logger.warn('[LinkCore] auto sync ed2k servers failed:', err.message)
+        logger.warn('[Lerxu] auto sync ed2k servers failed:', err.message)
       })
     }, 500)
   }
@@ -1668,7 +1668,7 @@ export default class Application extends EventEmitter {
     const interval = customInterval ? customInterval * ONE_HOUR : AUTO_SYNC_ED2K_SERVER_INTERVAL
 
     const result = checkIsNeedRunAdvanced(enable, lastTime, interval, customTime)
-    logger.info('[LinkCore] auto sync ed2k servers checkIsNeedRunAdvanced:', result, 'interval:', interval, 'customTime:', customTime)
+    logger.info('[Lerxu] auto sync ed2k servers checkIsNeedRunAdvanced:', result, 'interval:', interval, 'customTime:', customTime)
     if (!result) {
       return
     }
@@ -1706,14 +1706,14 @@ export default class Application extends EventEmitter {
         // 额外检查：如果是BT任务但没有文件信息，也跳过
         // 这种情况可能是元数据正在获取中
         if (bittorrent && (!files || files.length === 0)) {
-          logger.info(`[LinkCore] Skipping BT task ${task.gid} - no files info yet`)
+          logger.info(`[Lerxu] Skipping BT task ${task.gid} - no files info yet`)
           continue
         }
 
         // 检查是否是元数据任务（名称以[METADATA]开头）
         const taskName = files && files.length > 0 && files[0].path ? files[0].path : ''
         if (taskName.includes('[METADATA]')) {
-          logger.info(`[LinkCore] Skipping metadata task ${task.gid}`)
+          logger.info(`[Lerxu] Skipping metadata task ${task.gid}`)
           continue
         }
 
@@ -1724,13 +1724,13 @@ export default class Application extends EventEmitter {
       for (const gid of tasksToResume) {
         try {
           await this.engineClient.call('unpause', gid)
-          logger.info(`[LinkCore] Resumed task: ${gid}`)
+          logger.info(`[Lerxu] Resumed task: ${gid}`)
         } catch (err) {
-          logger.warn(`[LinkCore] Failed to resume task ${gid}:`, err.message)
+          logger.warn(`[Lerxu] Failed to resume task ${gid}:`, err.message)
         }
       }
     } catch (error) {
-      logger.warn('[LinkCore] Failed to auto resume tasks:', error.message)
+      logger.warn('[Lerxu] Failed to auto resume tasks:', error.message)
       // 如果出错，不要回退到 unpauseAll，因为这可能会恢复不应该恢复的任务
     }
   }
@@ -1785,7 +1785,7 @@ export default class Application extends EventEmitter {
 
       if (allWindowsHidden && !this.isAppInBackground) {
         this.isAppInBackground = true
-        logger.info('[LinkCore] App entered background, releasing memory')
+        logger.info('[Lerxu] App entered background, releasing memory')
         this.releaseBackgroundMemory()
       }
     })
@@ -1794,7 +1794,7 @@ export default class Application extends EventEmitter {
     app.on('browser-window-focus', () => {
       if (this.isAppInBackground) {
         this.isAppInBackground = false
-        logger.info('[LinkCore] App returned to foreground')
+        logger.info('[Lerxu] App returned to foreground')
       }
     })
 
@@ -1808,7 +1808,7 @@ export default class Application extends EventEmitter {
         })
         if (allWindowsHidden && !this.isAppInBackground) {
           this.isAppInBackground = true
-          logger.info('[LinkCore] All windows hidden/minimized, releasing memory')
+          logger.info('[Lerxu] All windows hidden/minimized, releasing memory')
           this.releaseBackgroundMemory()
         }
       }, 100)
@@ -1837,12 +1837,12 @@ export default class Application extends EventEmitter {
       // Force garbage collection if available
       if (global.gc) {
         global.gc()
-        logger.info('[LinkCore] Forced garbage collection')
+        logger.info('[Lerxu] Forced garbage collection')
       }
 
-      logger.info('[LinkCore] Background memory release completed')
+      logger.info('[Lerxu] Background memory release completed')
     } catch (err) {
-      logger.warn('[LinkCore] Failed to release background memory:', err.message)
+      logger.warn('[Lerxu] Failed to release background memory:', err.message)
     }
   }
 
@@ -1865,13 +1865,13 @@ export default class Application extends EventEmitter {
     try {
       await this._initPromise
     } catch (err) {
-      logger.error('[LinkCore] Application init failed, cannot start:', err)
+      logger.error('[Lerxu] Application init failed, cannot start:', err)
       return
     }
 
     const win = this.showPage(page, options)
     if (!win) {
-      logger.error('[LinkCore] showPage returned null, cannot start')
+      logger.error('[Lerxu] showPage returned null, cannot start')
       return
     }
 
@@ -1893,18 +1893,18 @@ export default class Application extends EventEmitter {
     try {
       await this._initPromise
     } catch (err) {
-      logger.info('[LinkCore] Retrying init after previous failure:', err.message)
+      logger.info('[Lerxu] Retrying init after previous failure:', err.message)
       this._initPromise = this.init()
       try {
         await this._initPromise
       } catch (retryErr) {
-        logger.error('[LinkCore] Retry init failed:', retryErr.message)
+        logger.error('[Lerxu] Retry init failed:', retryErr.message)
         return
       }
     }
 
     if (!this.windowManager) {
-      logger.error('[LinkCore] windowManager still not initialized after retry')
+      logger.error('[Lerxu] windowManager still not initialized after retry')
       return
     }
 
@@ -1953,7 +1953,7 @@ export default class Application extends EventEmitter {
 
   showPage (page, options = {}) {
     if (!this.windowManager) {
-      logger.error('[LinkCore] windowManager is not initialized, cannot show page:', page)
+      logger.error('[Lerxu] windowManager is not initialized, cannot show page:', page)
       return null
     }
     const { openedAtLogin } = options
@@ -1965,7 +1965,7 @@ export default class Application extends EventEmitter {
 
   show (page = 'index') {
     if (!this.windowManager) {
-      logger.error('[LinkCore] windowManager is not initialized, cannot show:', page)
+      logger.error('[Lerxu] windowManager is not initialized, cannot show:', page)
       return
     }
     this.windowManager.showWindow(page)
@@ -2005,7 +2005,7 @@ export default class Application extends EventEmitter {
     const { userConfig } = this.configManager
     const key = 'clipboard-auto-open-add-task'
     this.configListeners[key] = userConfig.onDidChange(key, (newValue) => {
-      logger.info(`[LinkCore] detected ${key} value change event:`, newValue)
+      logger.info(`[Lerxu] detected ${key} value change event:`, newValue)
       if (newValue) {
         this.startClipboardAutoOpenWatch()
       } else {
@@ -2208,7 +2208,7 @@ export default class Application extends EventEmitter {
         promises.push(new Promise((resolve) => {
           // 先强制销毁所有活跃连接
           if (this.httpConnections) {
-            logger.info(`[LinkCore] Destroying ${this.httpConnections.size} active HTTP connections`)
+            logger.info(`[Lerxu] Destroying ${this.httpConnections.size} active HTTP connections`)
             this.httpConnections.forEach(conn => {
               conn.destroy()
             })
@@ -2217,14 +2217,14 @@ export default class Application extends EventEmitter {
 
           // 设置超时，如果1秒内没有关闭就强制resolve
           const timeout = setTimeout(() => {
-            logger.warn('[LinkCore] HTTP server close timeout, forcing shutdown')
+            logger.warn('[Lerxu] HTTP server close timeout, forcing shutdown')
             resolve()
           }, 1000)
 
           // 关闭服务器
           this.httpServer.close(() => {
             clearTimeout(timeout)
-            logger.info('[LinkCore] App HTTP server closed gracefully')
+            logger.info('[Lerxu] App HTTP server closed gracefully')
             resolve()
           })
         }))
@@ -2232,7 +2232,7 @@ export default class Application extends EventEmitter {
 
       return promises
     } catch (err) {
-      logger.warn('[LinkCore] stop error: ', err.message)
+      logger.warn('[Lerxu] stop error: ', err.message)
       // 必须返回数组，否则 Promise.allSettled(undefined) 会抛错导致 quit 失败
       return []
     }
@@ -2245,7 +2245,7 @@ export default class Application extends EventEmitter {
   async pauseTasksBeforeExit (reason) {
     const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms))
     try {
-      logger.info(`[LinkCore] Pausing tasks before ${reason}`)
+      logger.info(`[Lerxu] Pausing tasks before ${reason}`)
       const [activeTasks, waitingTasks] = await Promise.all([
         this.engineClient.call('tellActive'),
         this.engineClient.call('tellWaiting', 0, 1000)
@@ -2255,10 +2255,10 @@ export default class Application extends EventEmitter {
         ...(Array.isArray(waitingTasks) ? waitingTasks : [])
       ]
       if (tasks.length === 0) {
-        logger.info('[LinkCore] No active or waiting tasks found')
+        logger.info('[Lerxu] No active or waiting tasks found')
         return
       }
-      logger.info(`[LinkCore] Found ${tasks.length} active/waiting tasks, pausing them...`)
+      logger.info(`[Lerxu] Found ${tasks.length} active/waiting tasks, pausing them...`)
       const pausePromises = tasks.map(task => {
         const gid = task && task.gid
         if (!gid) {
@@ -2268,10 +2268,10 @@ export default class Application extends EventEmitter {
         return this.engineClient.call(method, gid)
       })
       await Promise.allSettled(pausePromises)
-      logger.info('[LinkCore] All active/waiting tasks paused')
+      logger.info('[Lerxu] All active/waiting tasks paused')
       await wait(500)
     } catch (error) {
-      logger.warn('[LinkCore] Failed to pause tasks:', error.message)
+      logger.warn('[Lerxu] Failed to pause tasks:', error.message)
     }
   }
 
@@ -2309,7 +2309,7 @@ export default class Application extends EventEmitter {
     const autoPurgeRecord = this.configManager.getUserConfig('auto-purge-record', false)
     if (autoPurgeRecord) {
       try {
-        logger.info('[LinkCore] Auto-purging download records before quit')
+        logger.info('[Lerxu] Auto-purging download records before quit')
         // 清除 aria2 引擎中的下载记录
         if (engineRunning) {
           await this.engineClient.call('purgeDownloadResult')
@@ -2318,15 +2318,15 @@ export default class Application extends EventEmitter {
         // 清除本地存储的历史记录
         this.getTaskHistoryStore().set('tasks', [])
         this.getTaskHistoryStore().set('deletedGids', [])
-        logger.info('[LinkCore] Download records purged successfully')
+        logger.info('[Lerxu] Download records purged successfully')
       } catch (error) {
-        logger.warn('[LinkCore] Failed to purge download records:', error.message)
+        logger.warn('[Lerxu] Failed to purge download records:', error.message)
       }
     } else {
       // 如果未启用自动清除，则在退出前保存所有任务到历史记录
       if (engineRunning) {
         try {
-          logger.info('[LinkCore] Saving all tasks to history before quit')
+          logger.info('[Lerxu] Saving all tasks to history before quit')
           // 获取所有任务（包括活跃、等待和已停止的任务），三路并行拉取
           const allTasks = await Promise.all([
             this.engineClient.call('tellActive'),
@@ -2341,7 +2341,7 @@ export default class Application extends EventEmitter {
               ]
             })
             .catch(error => {
-              logger.warn('[LinkCore] Failed to fetch all tasks before quit:', error.message)
+              logger.warn('[Lerxu] Failed to fetch all tasks before quit:', error.message)
               return []
             })
 
@@ -2410,10 +2410,10 @@ export default class Application extends EventEmitter {
             }
 
             taskHistoryStore.set('tasks', updatedHistory)
-            logger.info(`[LinkCore] Saved ${tasksToSave.length} tasks to history before quit`)
+            logger.info(`[Lerxu] Saved ${tasksToSave.length} tasks to history before quit`)
           }
         } catch (error) {
-          logger.warn('[LinkCore] Failed to save tasks to history before quit:', error.message)
+          logger.warn('[Lerxu] Failed to save tasks to history before quit:', error.message)
         }
       }
     }
@@ -2493,7 +2493,7 @@ export default class Application extends EventEmitter {
     const name = basename(filePath)
     readFile(filePath, (err, data) => {
       if (err) {
-        logger.warn(`[LinkCore] read file error: ${filePath}`, err.message)
+        logger.warn(`[Lerxu] read file error: ${filePath}`, err.message)
         return
       }
       const dataURL = Buffer.from(data).toString('base64')
@@ -2596,7 +2596,7 @@ export default class Application extends EventEmitter {
     this._resetSessionTimer = setTimeout(async () => {
       this._resetSessionTimer = null
       unlink(sessionPath, (err) => {
-        logger.info('[LinkCore] Removed the download seesion file:', err)
+        logger.info('[Lerxu] Removed the download seesion file:', err)
       })
 
       await this.engine.start()
@@ -2604,22 +2604,22 @@ export default class Application extends EventEmitter {
   }
 
   savePreference (config = {}) {
-    logger.info('[LinkCore] save preference:', config)
+    logger.info('[Lerxu] save preference:', config)
     const { system, user } = config
     if (!isEmpty(system)) {
-      console.info('[LinkCore] main save system config: ', system)
+      console.info('[Lerxu] main save system config: ', system)
       this.configManager.setSystemConfig(system)
       // 热更新运行中的引擎。部分键是引擎 startup-only 选项（如
       // enable-dht / dht-listen-port），changeGlobalOption 会返回错误
       // —— 静默忽略即可：持久化配置在下次引擎启动时经 getStartArgs
       // 生效，不应因热更新失败影响保存流程。
       this.engineClient.changeGlobalOption(system).catch((e) => {
-        logger.warn('[LinkCore] changeGlobalOption (best-effort) failed:', e && e.message)
+        logger.warn('[Lerxu] changeGlobalOption (best-effort) failed:', e && e.message)
       })
     }
 
     if (!isEmpty(user)) {
-      console.info('[LinkCore] main save user config: ', user)
+      console.info('[Lerxu] main save user config: ', user)
       this.configManager.setUserConfig(user)
       // NAT/传输类开关（enable-upnp / enable-utp / enable-nat-pmp）属于
       // userKeys（Engine.js 从 userConfig 注入启动参数），引擎侧现已
@@ -2635,7 +2635,7 @@ export default class Application extends EventEmitter {
       }
       if (!isEmpty(hotNat)) {
         this.engineClient.changeGlobalOption(hotNat).catch((e) => {
-          logger.warn('[LinkCore] changeGlobalOption (NAT/transport) failed:', e && e.message)
+          logger.warn('[Lerxu] changeGlobalOption (NAT/transport) failed:', e && e.message)
         })
       }
       if (
@@ -2789,7 +2789,7 @@ export default class Application extends EventEmitter {
           ...extra
         })
       } catch (e) {
-        logger.warn('[LinkCore] send security-scan-status failed:', e.message)
+        logger.warn('[Lerxu] send security-scan-status failed:', e.message)
       }
     }
 
@@ -2807,7 +2807,7 @@ export default class Application extends EventEmitter {
 
       // 检查文件是否存在
       if (!fs.existsSync(filePath)) {
-        logger.warn('[LinkCore] Security scan: file not found:', filePath)
+        logger.warn('[Lerxu] Security scan: file not found:', filePath)
         sendStatus('failed', { reason: 'file-not-found' })
         return
       }
@@ -2818,7 +2818,7 @@ export default class Application extends EventEmitter {
       if (securityScanTool === 'custom') {
         // 使用自定义杀毒软件
         if (!customSecurityScanPath || !fs.existsSync(customSecurityScanPath)) {
-          logger.warn('[LinkCore] Security scan: custom antivirus not found:', customSecurityScanPath)
+          logger.warn('[Lerxu] Security scan: custom antivirus not found:', customSecurityScanPath)
           sendStatus('failed', { reason: 'custom-tool-not-found' })
           return
         }
@@ -2838,7 +2838,7 @@ export default class Application extends EventEmitter {
             try { return fs.existsSync(p) } catch (_) { return false }
           })
           if (!mpCmd) {
-            logger.warn('[LinkCore] Security scan: MpCmdRun.exe not found on Windows, skipping scan')
+            logger.warn('[Lerxu] Security scan: MpCmdRun.exe not found on Windows, skipping scan')
             sendStatus('skipped', { reason: 'defender-tool-not-found' })
             return
           }
@@ -2860,18 +2860,18 @@ export default class Application extends EventEmitter {
             scanCommand = 'clamscan'
             scanArgs = ['--no-summary', filePath]
           } catch (e) {
-            logger.warn('[LinkCore] Security scan: clamscan not found on Linux, skipping scan')
+            logger.warn('[Lerxu] Security scan: clamscan not found on Linux, skipping scan')
             sendStatus('skipped', { reason: 'clamscan-not-installed' })
             return
           }
         } else {
-          logger.warn('[LinkCore] Security scan: unsupported platform')
+          logger.warn('[Lerxu] Security scan: unsupported platform')
           sendStatus('skipped', { reason: 'unsupported-platform' })
           return
         }
       }
 
-      logger.info('[LinkCore] Starting security scan:', filePath)
+      logger.info('[Lerxu] Starting security scan:', filePath)
       sendStatus('running')
 
       const scanProcess = spawn(scanCommand, scanArgs, {
@@ -2888,12 +2888,12 @@ export default class Application extends EventEmitter {
       }
 
       scanProcess.on('error', (error) => {
-        logger.warn('[LinkCore] Security scan error:', error.message)
+        logger.warn('[Lerxu] Security scan error:', error.message)
         sendStatus('failed', { reason: 'process-error', error: error.message })
       })
 
       scanProcess.on('exit', (code) => {
-        logger.info('[LinkCore] Security scan exited with code:', code, '| stderr:', stderr)
+        logger.info('[Lerxu] Security scan exited with code:', code, '| stderr:', stderr)
         if (is.macOS()) {
           // xattr -p com.apple.quarantine：0 = 文件带隔离标记（外部来源，
           // 需用户注意），1 = 无隔离标记（本地/安全）
@@ -2925,7 +2925,7 @@ export default class Application extends EventEmitter {
         }
       })
     } catch (error) {
-      logger.error('[LinkCore] Security scan failed:', error.message)
+      logger.error('[Lerxu] Security scan failed:', error.message)
       sendStatus('failed', { reason: 'exception', error: error.message })
     }
   }
@@ -2976,7 +2976,7 @@ export default class Application extends EventEmitter {
           this._taskPlanCheckTimer = null
           this.checkTaskPlanIdle().catch((e) => {
             this._taskPlanTriggered = false
-            logger.warn('[LinkCore] checkTaskPlanIdle failed:', e && e.message ? e.message : e)
+            logger.warn('[Lerxu] checkTaskPlanIdle failed:', e && e.message ? e.message : e)
           })
         }, delay)
         return
@@ -3000,7 +3000,7 @@ export default class Application extends EventEmitter {
         this._taskPlanScheduleTimer = null
         this.triggerScheduledTaskPlan().catch((e) => {
           this._taskPlanTriggered = false
-          logger.warn('[LinkCore] triggerScheduledTaskPlan failed:', e && e.message ? e.message : e)
+          logger.warn('[Lerxu] triggerScheduledTaskPlan failed:', e && e.message ? e.message : e)
         })
       }, delayMs)
       if (this._taskPlanScheduleTimer && typeof this._taskPlanScheduleTimer.unref === 'function') {
@@ -3022,7 +3022,7 @@ export default class Application extends EventEmitter {
       this._taskPlanCheckTimer = null
       this.checkTaskPlan().catch((e) => {
         this._taskPlanTriggered = false
-        logger.warn('[LinkCore] checkTaskPlan failed:', e && e.message ? e.message : e)
+        logger.warn('[Lerxu] checkTaskPlan failed:', e && e.message ? e.message : e)
       })
     }, delay)
   }
@@ -3148,7 +3148,7 @@ export default class Application extends EventEmitter {
       }).unref()
       return true
     } catch (e) {
-      logger.warn('[LinkCore] spawnDetached failed:', e && e.message ? e.message : e)
+      logger.warn('[Lerxu] spawnDetached failed:', e && e.message ? e.message : e)
       return false
     }
   }
@@ -3371,11 +3371,11 @@ export default class Application extends EventEmitter {
       if (is.dev() || is.mas() || !protocols) {
         return
       }
-      logger.info('[LinkCore] setup protocols client:', protocols)
+      logger.info('[Lerxu] setup protocols client:', protocols)
       if (this.protocolManager) {
         this.protocolManager.setup(protocols)
       } else {
-        logger.warn('[LinkCore] protocolManager not initialized')
+        logger.warn('[Lerxu] protocolManager not initialized')
       }
     })
 
@@ -3396,7 +3396,7 @@ export default class Application extends EventEmitter {
         const versionInfo = await this.getEngineVersionInfo()
         this.sendCommandToAll('engine-version-info', versionInfo)
       } catch (error) {
-        logger.error('[LinkCore] Failed to get engine version info:', error)
+        logger.error('[Lerxu] Failed to get engine version info:', error)
         this.sendCommandToAll('engine-version-info', {
           error: error.message,
           version: 'Unknown',
@@ -3412,7 +3412,7 @@ export default class Application extends EventEmitter {
       try {
         const { platform, arch } = process
         const engineList = getEngineList(platform, arch)
-        logger.info('[LinkCore] Engine list retrieved:', engineList)
+        logger.info('[Lerxu] Engine list retrieved:', engineList)
         this.sendCommandToAll('engine-list', {
           engines: engineList,
           platform,
@@ -3420,7 +3420,7 @@ export default class Application extends EventEmitter {
           timestamp: Date.now()
         })
       } catch (error) {
-        logger.error('[LinkCore] Failed to get engine list:', error)
+        logger.error('[Lerxu] Failed to get engine list:', error)
         this.sendCommandToAll('engine-list', {
           error: error.message,
           engines: [],
@@ -3433,7 +3433,7 @@ export default class Application extends EventEmitter {
 
     this.on('application:reveal-in-folder', (data) => {
       const { gid, path } = data
-      logger.info('[LinkCore] application:reveal-in-folder===>', path)
+      logger.info('[Lerxu] application:reveal-in-folder===>', path)
       if (path) {
         showItemInFolder(path)
       }
@@ -3443,17 +3443,17 @@ export default class Application extends EventEmitter {
     })
 
     this.on('help:official-website', () => {
-      const url = 'https://github.com/MochengCK/LinkCore'
+      const url = 'https://github.com/MochengCK/Lerxu'
       this.openExternal(url)
     })
 
     this.on('help:release-notes', () => {
-      const url = 'https://github.com/MochengCK/LinkCore/releases'
+      const url = 'https://github.com/MochengCK/Lerxu/releases'
       this.openExternal(url)
     })
 
     this.on('help:report-problem', () => {
-      const url = 'https://github.com/MochengCK/LinkCore/issues'
+      const url = 'https://github.com/MochengCK/Lerxu/issues'
       this.openExternal(url)
     })
   }
@@ -3504,10 +3504,10 @@ export default class Application extends EventEmitter {
         binPath: engineBinPath
       }
 
-      logger.info('[LinkCore] Engine version info:', versionInfo)
+      logger.info('[Lerxu] Engine version info:', versionInfo)
       return versionInfo
     } catch (error) {
-      logger.error('[LinkCore] Failed to get engine version info:', error)
+      logger.error('[Lerxu] Failed to get engine version info:', error)
       throw error
     }
   }
@@ -3616,7 +3616,7 @@ export default class Application extends EventEmitter {
       try {
         this.dockManager.openDock(path)
       } catch (e) {
-        logger.warn('[LinkCore] openDock failed:', e.message)
+        logger.warn('[Lerxu] openDock failed:', e.message)
       }
       this._taskPlanHasCompletionSinceEnabled = true
 
@@ -3627,7 +3627,7 @@ export default class Application extends EventEmitter {
         try {
           app.addRecentDocument(path)
         } catch (e) {
-          logger.warn('[LinkCore] addRecentDocument failed:', e.message)
+          logger.warn('[Lerxu] addRecentDocument failed:', e.message)
         }
       }
       this.scheduleCheckTaskPlan()
@@ -3720,7 +3720,7 @@ export default class Application extends EventEmitter {
           } else if (clickAction === 'execute-file') {
             if (path) {
               shell.openPath(path).catch((error) => {
-                logger.warn('[LinkCore] Failed to execute file from notification:', error && error.message ? error.message : error)
+                logger.warn('[Lerxu] Failed to execute file from notification:', error && error.message ? error.message : error)
                 shell.showItemInFolder(path)
               })
             }
@@ -3728,13 +3728,13 @@ export default class Application extends EventEmitter {
             shell.showItemInFolder(path)
           }
         } catch (e) {
-          logger.warn('[LinkCore] Failed to handle notification click:', e.message)
+          logger.warn('[Lerxu] Failed to handle notification click:', e.message)
         }
       })
       notify.show()
-      logger.info(`[LinkCore] Task complete notification shown: ${title} / ${taskName}`)
+      logger.info(`[Lerxu] Task complete notification shown: ${title} / ${taskName}`)
     } catch (e) {
-      logger.warn('[LinkCore] Failed to show task complete notification:', e.message)
+      logger.warn('[Lerxu] Failed to show task complete notification:', e.message)
     }
   }
 
@@ -3746,12 +3746,12 @@ export default class Application extends EventEmitter {
     this._ipcMessagesRegistered = true
 
     ipcMain.on('command', (event, command, ...args) => {
-      logger.log('[LinkCore] ipc receive command', command, ...args)
+      logger.log('[Lerxu] ipc receive command', command, ...args)
       this.emit(command, ...args)
     })
 
     ipcMain.on('event', (event, eventName, ...args) => {
-      logger.log('[LinkCore] ipc receive event', eventName, ...args)
+      logger.log('[Lerxu] ipc receive event', eventName, ...args)
       this.emit(eventName, ...args)
     })
 
@@ -3763,7 +3763,7 @@ export default class Application extends EventEmitter {
           win.minimize()
         }
       } catch (e) {
-        logger.warn('[LinkCore] Failed to minimize progress window:', e.message)
+        logger.warn('[Lerxu] Failed to minimize progress window:', e.message)
       }
     })
 
@@ -3775,7 +3775,7 @@ export default class Application extends EventEmitter {
           win.close()
         }
       } catch (e) {
-        logger.warn('[LinkCore] Failed to close progress window:', e.message)
+        logger.warn('[Lerxu] Failed to close progress window:', e.message)
       }
     })
 
@@ -3787,7 +3787,7 @@ export default class Application extends EventEmitter {
           win.close()
         }
       } catch (e) {
-        logger.warn('[LinkCore] Failed to close completed task window:', e.message)
+        logger.warn('[Lerxu] Failed to close completed task window:', e.message)
       }
     })
 
@@ -3804,7 +3804,7 @@ export default class Application extends EventEmitter {
           win.close()
         }
       } catch (e) {
-        logger.warn('[LinkCore] Failed to open completed task folder:', e.message)
+        logger.warn('[Lerxu] Failed to open completed task folder:', e.message)
       }
     })
 
@@ -3821,7 +3821,7 @@ export default class Application extends EventEmitter {
           win.close()
         }
       } catch (e) {
-        logger.warn('[LinkCore] Failed to open completed task file:', e.message)
+        logger.warn('[Lerxu] Failed to open completed task file:', e.message)
       }
     })
 
@@ -3833,7 +3833,7 @@ export default class Application extends EventEmitter {
           win.minimize()
         }
       } catch (e) {
-        logger.warn('[LinkCore] Failed to minimize completed task window:', e.message)
+        logger.warn('[Lerxu] Failed to minimize completed task window:', e.message)
       }
     })
 
@@ -3871,7 +3871,7 @@ export default class Application extends EventEmitter {
 
     // Handle video-sniffer-settings-updated
     ipcMain.on('video-sniffer-settings-updated', (event, settings) => {
-      logger.log('[LinkCore] Video sniffer settings updated:', settings)
+      logger.log('[Lerxu] Video sniffer settings updated:', settings)
 
       this._videoSnifferConfig = {
         enabled: settings.enabled,
@@ -3879,24 +3879,24 @@ export default class Application extends EventEmitter {
         autoCombine: settings.autoCombine
       }
 
-      logger.log('[LinkCore] Video sniffer config updated in main process:', this._videoSnifferConfig)
+      logger.log('[Lerxu] Video sniffer config updated in main process:', this._videoSnifferConfig)
 
       this.configManager.setUserConfig({
         'video-sniffer-enabled': settings.enabled,
         'video-sniffer-formats': settings.formats,
         'video-sniffer-auto-combine': settings.autoCombine
       })
-      logger.log('[LinkCore] Video sniffer config saved to disk')
+      logger.log('[Lerxu] Video sniffer config saved to disk')
     })
 
     // Handle file-categories-settings-updated
     ipcMain.on('file-categories-settings-updated', (event, categories) => {
-      logger.log('[LinkCore] File categories settings updated:', categories)
+      logger.log('[Lerxu] File categories settings updated:', categories)
 
       this.configManager.setUserConfig({
         'file-categories': categories
       })
-      logger.log('[LinkCore] File categories config saved to disk')
+      logger.log('[Lerxu] File categories config saved to disk')
     })
   }
 
@@ -3965,7 +3965,7 @@ export default class Application extends EventEmitter {
           return this.updateManager.getStatus()
         }
       } catch (e) {
-        logger.warn('[LinkCore] get-update-status failed:', e.message)
+        logger.warn('[Lerxu] get-update-status failed:', e.message)
       }
       return {
         isChecking: false,
@@ -3989,7 +3989,7 @@ export default class Application extends EventEmitter {
       try {
         const { platform, arch } = process
         const engines = getEngineList(platform, arch)
-        logger.info('[LinkCore] IPC get-engine-list:', engines)
+        logger.info('[Lerxu] IPC get-engine-list:', engines)
         return {
           success: true,
           engines,
@@ -3998,7 +3998,7 @@ export default class Application extends EventEmitter {
           timestamp: Date.now()
         }
       } catch (error) {
-        logger.error('[LinkCore] IPC get-engine-list failed:', error)
+        logger.error('[Lerxu] IPC get-engine-list failed:', error)
         return {
           success: false,
           error: error.message,
@@ -4019,7 +4019,7 @@ export default class Application extends EventEmitter {
           return { width: size[0], height: size[1] }
         }
       } catch (e) {
-        logger.warn('[LinkCore] Failed to get progress window size:', e.message)
+        logger.warn('[Lerxu] Failed to get progress window size:', e.message)
       }
       return null
     })
@@ -4037,7 +4037,7 @@ export default class Application extends EventEmitter {
           return { success: true }
         }
       } catch (e) {
-        logger.warn('[LinkCore] Failed to resize progress window:', e.message)
+        logger.warn('[Lerxu] Failed to resize progress window:', e.message)
       }
       return { success: false }
     })
@@ -4051,7 +4051,7 @@ export default class Application extends EventEmitter {
           return { success: true }
         }
       } catch (e) {
-        logger.warn('[LinkCore] Failed to set progress window always on top:', e.message)
+        logger.warn('[Lerxu] Failed to set progress window always on top:', e.message)
       }
       return { success: false }
     })
@@ -4063,7 +4063,7 @@ export default class Application extends EventEmitter {
       try {
         return clipboard.readText()
       } catch (e) {
-        logger.warn('[LinkCore] clipboard read failed:', e.message)
+        logger.warn('[Lerxu] clipboard read failed:', e.message)
         return ''
       }
     })
@@ -4072,7 +4072,7 @@ export default class Application extends EventEmitter {
         clipboard.writeText(`${text || ''}`)
         return true
       } catch (e) {
-        logger.warn('[LinkCore] clipboard write failed:', e.message)
+        logger.warn('[Lerxu] clipboard write failed:', e.message)
         return false
       }
     })
@@ -4314,7 +4314,7 @@ export default class Application extends EventEmitter {
 
         return tasks || []
       } catch (err) {
-        logger.warn('[LinkCore] Failed to get task list:', err.message)
+        logger.warn('[Lerxu] Failed to get task list:', err.message)
         return []
       }
     })
@@ -4359,7 +4359,7 @@ export default class Application extends EventEmitter {
       try {
         return await this.repairDownloadFilePermission(filePath)
       } catch (err) {
-        logger.warn('[LinkCore] repair-download-file-permission IPC failed:', err && err.message ? err.message : err)
+        logger.warn('[Lerxu] repair-download-file-permission IPC failed:', err && err.message ? err.message : err)
         return { repaired: false, reason: 'exception' }
       }
     })
@@ -4517,7 +4517,7 @@ export default class Application extends EventEmitter {
         log.push(`open-r-error:${err.code || err.message}`)
       }
       if (readable) {
-        const tempPath = resolve(dirname(pathToRepair), `.${basename(pathToRepair)}.linkcore-repair`)
+        const tempPath = resolve(dirname(pathToRepair), `.${basename(pathToRepair)}.lerxu-repair`)
         try { fs.rmSync(tempPath, { force: true }) } catch (_) {}
         try {
           // APFS 克隆（瞬时），失败时回退普通复制
@@ -4576,7 +4576,7 @@ export default class Application extends EventEmitter {
 
       return { repaired: result.repaired, method: result.method, reason: result.reason, log }
     } catch (err) {
-      logger.warn('[LinkCore] repair download file permission failed:', err && err.message ? err.message : err)
+      logger.warn('[Lerxu] repair download file permission failed:', err && err.message ? err.message : err)
       return { repaired: false, reason: 'exception', log }
     }
   }
@@ -4619,7 +4619,7 @@ export default class Application extends EventEmitter {
       if (timeout > 10000) {
         clearInterval(this._updateStatusWatchTimer)
         this._updateStatusWatchTimer = null
-        logger.warn('[LinkCore] Timed out waiting for main window to send update status')
+        logger.warn('[Lerxu] Timed out waiting for main window to send update status')
       }
     }, 200)
     this._updateStatusWatchStartedAt = Date.now()
@@ -4642,7 +4642,7 @@ export default class Application extends EventEmitter {
       // 用户已手动升级后该状态会过期，清除并通知无更新，避免误显示
       const validUpdate = updateAvailable && !!newVersion && UpdateManager.isNewerVersion(newVersion, app.getVersion())
 
-      logger.info('[LinkCore] Loading saved update status:', {
+      logger.info('[Lerxu] Loading saved update status:', {
         updateAvailable,
         validUpdate,
         newVersion,
@@ -4680,7 +4680,7 @@ export default class Application extends EventEmitter {
         })
       }
     } catch (error) {
-      logger.warn('[LinkCore] Failed to load and send update status:', error.message)
+      logger.warn('[Lerxu] Failed to load and send update status:', error.message)
     }
   }
 

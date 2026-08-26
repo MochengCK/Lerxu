@@ -294,10 +294,10 @@ export default class WindowManager extends EventEmitter {
           window.setBackgroundColor(opaqueBg)
         }
       } catch (err) {
-        logger.warn(`[LinkCore] applyNativeTransparent failed (${page}): ${err && err.message ? err.message : err}`)
+        logger.warn(`[Lerxu] applyNativeTransparent failed (${page}): ${err && err.message ? err.message : err}`)
       }
     }
-    logger.info(`[LinkCore] native transparent window material: ${flag ? 'on' : 'off'}`)
+    logger.info(`[Lerxu] native transparent window material: ${flag ? 'on' : 'off'}`)
   }
 
   /**
@@ -322,7 +322,7 @@ export default class WindowManager extends EventEmitter {
         window.setVisualEffectState('active')
       }
     } catch (err) {
-      logger.warn(`[LinkCore] reapplyVibrancy failed: ${err && err.message ? err.message : err}`)
+      logger.warn(`[Lerxu] reapplyVibrancy failed: ${err && err.message ? err.message : err}`)
     }
   }
 
@@ -368,7 +368,7 @@ export default class WindowManager extends EventEmitter {
       state.recoverCount = 0
     }
     if (state.recoverCount >= 3) {
-      logger.error(`[LinkCore] window recovery halted (too frequent): page=${page} reason=${reason}`)
+      logger.error(`[Lerxu] window recovery halted (too frequent): page=${page} reason=${reason}`)
       return
     }
 
@@ -385,7 +385,7 @@ export default class WindowManager extends EventEmitter {
         state.recoverCount += 1
         window.loadURL(pageOptions.url)
       } catch (e) {
-        logger.error(`[LinkCore] window reload failed: page=${page} reason=${reason} message=${e && e.message ? e.message : e}`)
+        logger.error(`[Lerxu] window reload failed: page=${page} reason=${reason} message=${e && e.message ? e.message : e}`)
       }
     }, 1200)
   }
@@ -398,7 +398,7 @@ export default class WindowManager extends EventEmitter {
 
     window.on('unresponsive', () => {
       state.lastUnresponsiveAt = Date.now()
-      logger.warn(`[LinkCore] window unresponsive: page=${page}`)
+      logger.warn(`[Lerxu] window unresponsive: page=${page}`)
       this.scheduleWindowReload(page, window, pageOptions, 'unresponsive')
     })
 
@@ -411,7 +411,7 @@ export default class WindowManager extends EventEmitter {
       window.webContents.on('render-process-gone', (_event, details) => {
         const reason = details && details.reason ? details.reason : 'unknown'
         const exitCode = details && typeof details.exitCode !== 'undefined' ? details.exitCode : ''
-        logger.error(`[LinkCore] render-process-gone: page=${page} reason=${reason} exitCode=${exitCode}`)
+        logger.error(`[Lerxu] render-process-gone: page=${page} reason=${reason} exitCode=${exitCode}`)
         this.scheduleWindowReload(page, window, pageOptions, `render-process-gone:${reason}`)
       })
 
@@ -419,7 +419,7 @@ export default class WindowManager extends EventEmitter {
         if (!isMainFrame) {
           return
         }
-        logger.warn(`[LinkCore] did-fail-load: page=${page} code=${errorCode} desc=${errorDescription} url=${validatedURL}`)
+        logger.warn(`[Lerxu] did-fail-load: page=${page} code=${errorCode} desc=${errorDescription} url=${validatedURL}`)
         this.scheduleWindowReload(page, window, pageOptions, `did-fail-load:${errorCode}`)
       })
     }
@@ -463,7 +463,7 @@ export default class WindowManager extends EventEmitter {
   clearWindows () {
     // Clear all windows from the registry
     this.windows = {}
-    logger.info('[LinkCore] All windows cleared from registry')
+    logger.info('[Lerxu] All windows cleared from registry')
   }
 
   bindAfterClosed (page, window) {
@@ -672,7 +672,7 @@ export default class WindowManager extends EventEmitter {
     if (!window || window.isDestroyed()) {
       return
     }
-    logger.info('[LinkCore] send command to:', command, ...args)
+    logger.info('[Lerxu] send command to:', command, ...args)
     window.webContents.send('command', command, ...args)
   }
 

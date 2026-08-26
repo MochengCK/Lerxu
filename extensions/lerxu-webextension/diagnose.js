@@ -23,7 +23,7 @@
   // 2. 检查客户端 API
   console.log('2️⃣ 检查客户端 API:')
   try {
-    const response = await fetch('http://127.0.0.1:16900/linkcore/locale')
+    const response = await fetch('http://127.0.0.1:16900/lerxu/locale')
     if (response.ok) {
       const data = await response.json()
       console.log('  ✅ 客户端已连接')
@@ -34,7 +34,7 @@
     }
   } catch (e) {
     console.log('  ❌ 无法连接客户端:', e.message)
-    console.log('  请确保 LinkCore 客户端正在运行')
+    console.log('  请确保 Lerxu 客户端正在运行')
   }
   console.log('')
   

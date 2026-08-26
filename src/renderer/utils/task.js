@@ -43,7 +43,7 @@ const buildHeaderForUri = (form, uri, explicit = {}) => {
     result.push(`Authorization: ${authorization}`)
   }
   if (fromBrowserExtension) {
-    result.push('X-LinkCore-Source: BrowserExtension')
+    result.push('X-Lerxu-Source: BrowserExtension')
   }
 
   return result
@@ -133,7 +133,7 @@ export const buildHeader = (form, uris = []) => {
   }
 
   if (fromBrowserExtension) {
-    result.push('X-LinkCore-Source: BrowserExtension')
+    result.push('X-Lerxu-Source: BrowserExtension')
   }
 
   return result

@@ -3,10 +3,10 @@
  * ====================================
  *
  * 功能:
- *   - 统一应用名称: [LinkCore]
- *   - 自动前缀: 所有日志自动添加 [LinkCore] 前缀
+ *   - 统一应用名称: [Lerxu]
+ *   - 自动前缀: 所有日志自动添加 [Lerxu] 前缀
  *   - 分级日志: debug / info / warn / error
- *   - 模块标签: 可选的模块标签 (如 [LinkCore:Engine])
+ *   - 模块标签: 可选的模块标签 (如 [Lerxu:Engine])
  *   - 文件 + 控制台双通道输出
  *   - 开发/生产环境自动切换日志级别
  *
@@ -14,14 +14,14 @@
  *   import log from '@/core/LogManager'
  *
  *   // 基本用法
- *   log.info('Engine started')        // → [LinkCore] Engine started
- *   log.warn('Port already in use')   // → [LinkCore] Port already in use
- *   log.error('Engine crashed', err)  // → [LinkCore] Engine crashed: Error(...)
+ *   log.info('Engine started')        // → [Lerxu] Engine started
+ *   log.warn('Port already in use')   // → [Lerxu] Port already in use
+ *   log.error('Engine crashed', err)  // → [Lerxu] Engine crashed: Error(...)
  *
  *   // 模块标签
  *   const engineLog = log.module('Engine')
- *   engineLog.info('Started')         // → [LinkCore:Engine] Started
- *   engineLog.error('Failed', err)   // → [LinkCore:Engine] Failed: Error(...)
+ *   engineLog.info('Started')         // → [Lerxu:Engine] Started
+ *   engineLog.error('Failed', err)   // → [Lerxu:Engine] Failed: Error(...)
  */
 
 import { join } from 'node:path'
@@ -34,7 +34,7 @@ import { IS_PORTABLE, PORTABLE_EXECUTABLE_DIR } from '@shared/constants'
    配置
    ============================================================ */
 
-const APP_NAME = 'LinkCore'
+const APP_NAME = 'Lerxu'
 const PROD_LEVEL = 'info'
 const DEV_LEVEL = 'silly'
 
@@ -90,7 +90,7 @@ function formatArgs (args) {
 }
 
 /**
- * 格式化消息（直接透传，消息中已包含 [LinkCore] 前缀）
+ * 格式化消息（直接透传，消息中已包含 [Lerxu] 前缀）
  * @param {string} moduleTag - 可选的模块标签（未使用，保留兼容）
  * @param {Array} args - 原始参数
  * @returns {string} 格式化后的完整消息

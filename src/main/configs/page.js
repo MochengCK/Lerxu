@@ -25,7 +25,7 @@ const getPreferenceUrl = () => {
 export default {
   index: {
     attrs: {
-      title: 'LinkCore',
+      title: 'Lerxu',
       width: 1100,
       height: 750,
       minWidth: 480,

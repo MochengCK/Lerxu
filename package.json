@@ -1,8 +1,8 @@
 {
-  "name": "linkcore",
+  "name": "lerxu",
   "version": "v3.1.0-Beta2",
-  "description": "LinkCore",
-  "homepage": "https://github.com/MochengCK/LinkCore",
+  "description": "Lerxu",
+  "homepage": "https://github.com/MochengCK/Lerxu",
   "author": {
     "name": "MochengCK",
     "email": "mocheng@example.com"
@@ -16,7 +16,7 @@
   "main": "./dist/electron/index.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/MochengCK/LinkCore.git"
+    "url": "https://github.com/MochengCK/Lerxu.git"
   },
   "scripts": {
     "release": "npm run build -- --publish onTagOrDraft",

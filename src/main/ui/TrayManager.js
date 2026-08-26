@@ -173,7 +173,7 @@ export default class TrayManager extends EventEmitter {
     // tray.setPressedImage(inverseIcon)
 
     if (!this.macOS) {
-      tray.setToolTip('LinkCore')
+      tray.setToolTip('Lerxu')
     }
   }
 
@@ -382,7 +382,7 @@ export default class TrayManager extends EventEmitter {
   }
 
   destroy () {
-    logger.info('[LinkCore] TrayManager.destroy')
+    logger.info('[Lerxu] TrayManager.destroy')
     if (!tray) {
       return
     }

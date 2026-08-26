@@ -72,13 +72,13 @@ function ensureTrayWorker () {
     switch (type) {
       case 'initialized':
       case 'log':
-        console.log('[LinkCore] Log from Tray Worker: ', payload)
+        console.log('[Lerxu] Log from Tray Worker: ', payload)
         break
       case 'tray:drawed':
         updateTray(payload)
         break
       default:
-        console.warn('[LinkCore] Tray Worker unhandled message type:', type, payload)
+        console.warn('[Lerxu] Tray Worker unhandled message type:', type, payload)
     }
   })
   trayWorker.value = worker

@@ -207,7 +207,7 @@ export const useAppStore = defineStore('app', () => {
         clearTimeout(timeoutId)
 
         if (info && info.error) {
-          console.error('[LinkCore] Failed to fetch engine info:', info.error)
+          console.error('[Lerxu] Failed to fetch engine info:', info.error)
           reject(new Error(info.error))
           return
         }
@@ -218,7 +218,7 @@ export const useAppStore = defineStore('app', () => {
 
       const timeoutId = setTimeout(() => {
         ipcRenderer.removeListener('command', handleEngineInfo)
-        console.warn('[LinkCore] Timeout fetching engine info')
+        console.warn('[Lerxu] Timeout fetching engine info')
         reject(new Error('Timeout fetching engine info'))
       }, 5000)
 
@@ -292,7 +292,7 @@ export const useAppStore = defineStore('app', () => {
         clearTimeout(timeoutId)
 
         if (engineListData && engineListData.error) {
-          console.error('[LinkCore] Failed to fetch engine list:', engineListData.error)
+          console.error('[Lerxu] Failed to fetch engine list:', engineListData.error)
           reject(new Error(engineListData.error))
           return
         }
@@ -303,7 +303,7 @@ export const useAppStore = defineStore('app', () => {
 
       const timeoutId = setTimeout(() => {
         ipcRenderer.removeListener('command', handleEngineList)
-        console.warn('[LinkCore] Timeout fetching engine list')
+        console.warn('[Lerxu] Timeout fetching engine list')
         reject(new Error('Timeout fetching engine list'))
       }, 5000)
 

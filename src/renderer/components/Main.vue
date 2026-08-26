@@ -570,7 +570,7 @@ onBeforeUnmount(() => {
         try {
           await moveTaskFilesToTrash(task, downloadingFileSuffix, config)
         } catch (err) {
-          console.warn('[LinkCore] deleteTaskFilesFromProgress error:', err)
+          console.warn('[Lerxu] deleteTaskFilesFromProgress error:', err)
           const taskName = (task && task.name) ? task.name : (task && task.gid ? task.gid : '')
           msg.error(`删除文件失败: ${taskName}`)
         }
@@ -603,7 +603,7 @@ onBeforeUnmount(() => {
               taskForDeletion = { ...originalTask, ...fresh }
             }
           } catch (e) {
-            console.warn('[LinkCore] Failed to fetch fresh task for deletion:', e.message)
+            console.warn('[Lerxu] Failed to fetch fresh task for deletion:', e.message)
           }
           // 预获取引擎选项（dir + out），避免任务被 aria2 删除后 getOption 失败导致文件路径无法解析
           try {
@@ -612,7 +612,7 @@ onBeforeUnmount(() => {
               taskForDeletion = { ...taskForDeletion, _engineOptions: opt }
             }
           } catch (e) {
-            console.warn('[LinkCore] Failed to pre-fetch getOption for deletion:', e.message)
+            console.warn('[Lerxu] Failed to pre-fetch getOption for deletion:', e.message)
           }
           return taskForDeletion
         }
@@ -905,7 +905,7 @@ onBeforeUnmount(() => {
               } catch (e) {}
             }, 100)
           } catch (e) {
-            console.warn('[LinkCore] Failed to activate existing progress window:', e.message)
+            console.warn('[Lerxu] Failed to activate existing progress window:', e.message)
           }
           updateProgressWindow(task)
           return
@@ -1027,7 +1027,7 @@ onBeforeUnmount(() => {
               } catch (e) {}
             }, 100)
           } catch (e) {
-            console.warn('[LinkCore] Failed to activate progress window:', e.message)
+            console.warn('[Lerxu] Failed to activate progress window:', e.message)
           }
           updateProgressWindow(task)
         })
@@ -1106,17 +1106,17 @@ onBeforeUnmount(() => {
       // Open a window to show task completion notification
       function openCompletedTaskWindow(task) {
         try {
-        console.log('[LinkCore] openCompletedTaskWindow called:', task)
+        console.log('[Lerxu] openCompletedTaskWindow called:', task)
         if (!task) {
-          console.log('[LinkCore] No task provided')
+          console.log('[Lerxu] No task provided')
           return
         }
         const gid = task && task.gid ? `${task.gid}` : ''
         if (!gid) {
-          console.log('[LinkCore] No gid found in task')
+          console.log('[Lerxu] No gid found in task')
           return
         }
-        console.log('[LinkCore] Opening completed task window for gid:', gid)
+        console.log('[Lerxu] Opening completed task window for gid:', gid)
 
         // Check if already showing a window for this task
         const existingWindow = completedTaskWindows.value.get(gid)
@@ -1226,11 +1226,11 @@ onBeforeUnmount(() => {
               } catch (e) {}
             }, 100)
           } catch (e) {
-            console.warn('[LinkCore] Failed to set always on top:', e.message)
+            console.warn('[Lerxu] Failed to set always on top:', e.message)
           }
         })
       } catch (e) {
-        console.error('[LinkCore] Failed to open completed task window:', e)
+        console.error('[Lerxu] Failed to open completed task window:', e)
       }
       }
 
@@ -1377,7 +1377,7 @@ function handleTaskListChange(list) {
           })
         })
         .catch(err => {
-          console.warn('[LinkCore] Failed to check disappeared tasks:', err)
+          console.warn('[Lerxu] Failed to check disappeared tasks:', err)
         })
     }
   }

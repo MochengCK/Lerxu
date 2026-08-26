@@ -11,8 +11,8 @@
  *
  * 拦截后:
  *   - preventDefault() + stopPropagation() 阻止浏览器导航
- *   - 通过 chrome.runtime.sendMessage 发送到 background.js → LinkCore
- *   - 如果 LinkCore 不可用，回退到浏览器原生下载
+ *   - 通过 chrome.runtime.sendMessage 发送到 background.js → Lerxu
+ *   - 如果 Lerxu 不可用，回退到浏览器原生下载
  *
  * 注意: 服务器端通过 Content-Disposition: attachment 触发的下载
  *       仍由 background.js 的 downloads.onCreated + webRequest 三层兜底处理。
@@ -180,7 +180,7 @@
     event.stopPropagation()
     event.stopImmediatePropagation()
 
-    // 发送到 background.js → LinkCore
+    // 发送到 background.js → Lerxu
     const suggestedFilename = link.getAttribute('download') || ''
     const referer = window.location.href
 
@@ -191,7 +191,7 @@
       suggestedFilename: suggestedFilename
     }, (response) => {
       if (!response || !response.ok) {
-        // LinkCore 不可用，回退到浏览器下载
+        // Lerxu 不可用，回退到浏览器下载
         // 使用 <a download> 的方式重新触发，避免被拦截
         const fallbackLink = document.createElement('a')
         fallbackLink.href = url

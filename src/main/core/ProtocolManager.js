@@ -45,7 +45,7 @@ export default class ProtocolManager extends EventEmitter {
   }
 
   handle (url) {
-    logger.info(`[LinkCore] protocol url: ${url}`)
+    logger.info(`[Lerxu] protocol url: ${url}`)
 
     if (
       url.toLowerCase().startsWith('ftp:') ||
@@ -82,11 +82,11 @@ export default class ProtocolManager extends EventEmitter {
     try {
       parsed = new URL(url)
     } catch (err) {
-      logger.warn('[LinkCore] malformed protocol url, ignored:', url, err && err.message ? err.message : err)
+      logger.warn('[Lerxu] malformed protocol url, ignored:', url, err && err.message ? err.message : err)
       return
     }
     const { host, search } = parsed
-    logger.info('[LinkCore] protocol parsed:', parsed, host)
+    logger.info('[Lerxu] protocol parsed:', parsed, host)
 
     const command = protocolMap[host]
     if (!command) {

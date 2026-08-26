@@ -854,7 +854,7 @@ onMounted(async () => {
       }
     }
   } catch (e) {
-    console.warn('[LinkCore] Failed to get update status:', e)
+    console.warn('[Lerxu] Failed to get update status:', e)
   }
 })
 
@@ -1334,7 +1334,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
         if (hasMsgSupport()) {
           msg[type](message)
         } else {
-          console.log(`[LinkCore] Update message: ${type} - ${message}`)
+          console.log(`[Lerxu] Update message: ${type} - ${message}`)
           if (type === 'error') {
             alert(message)
           }
@@ -1474,10 +1474,10 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
             onCheckUpdateClick()
           } catch (checkErr) {
             // 检查流程异常不影响渠道切换本身
-            console.error('[LinkCore] Trigger update check after channel switch failed:', checkErr)
+            console.error('[Lerxu] Trigger update check after channel switch failed:', checkErr)
           }
         } catch (e) {
-          console.error('[LinkCore] Save update channel failed:', e)
+          console.error('[Lerxu] Save update channel failed:', e)
           form.value.updateChannel = original
           msg.error(t('preferences.save-fail-message'))
         }
@@ -1564,7 +1564,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
         try {
           ipcRenderer.send('command', 'application:open-external', href)
         } catch (e) {
-          console.error('[LinkCore] open external url failed:', href, e)
+          console.error('[Lerxu] open external url failed:', href, e)
         }
       }
       function getEngineMaxConnection(engineBinary) {
@@ -1578,12 +1578,12 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
       function submitForm(formName) {
         const formRef = advancedForm.value
         if (!formRef) {
-          console.error('[LinkCore] form ref not found:', formName)
+          console.error('[Lerxu] form ref not found:', formName)
           return false
         }
         formRef.validate((valid) => {
           if (!valid) {
-            console.error('[LinkCore] preference form valid:', valid)
+            console.error('[Lerxu] preference form valid:', valid)
             return false
           }
 
@@ -1624,7 +1624,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
             data.rpcListenPort = rpcDefaultPort.value
           }
 
-          console.log('[LinkCore] preference changed data:', data)
+          console.log('[Lerxu] preference changed data:', data)
 
           // 检查是否需要重启
           const needRelaunch = isRenderer && (
@@ -1663,7 +1663,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
               }
             })
             .catch((e) => {
-              console.error('[LinkCore] Save preference failed:', e)
+              console.error('[Lerxu] Save preference failed:', e)
               msg.error(t('preferences.save-fail-message'))
               changedConfig.advanced = {}
               changedConfig.basic = {}
@@ -1722,7 +1722,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
 
         // 设置超时处理，防止无限期等待
         const timeout = setTimeout(() => {
-          console.log('[LinkCore] Update check timed out')
+          console.log('[Lerxu] Update check timed out')
           // 移除所有临时事件监听器
           ipcRenderer.removeListener('update-error', onUpdateError)
           ipcRenderer.removeListener('update-not-available', onUpdateNotAvailable)
@@ -1736,7 +1736,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
         // 监听任何更新事件，清除超时
         const clearTimeoutListener = () => {
           clearTimeout(timeout)
-          console.log('[LinkCore] Update check completed, clearing timeout')
+          console.log('[Lerxu] Update check completed, clearing timeout')
           // 移除清除超时的监听器
           ipcRenderer.removeListener('update-error', clearTimeoutListener)
           ipcRenderer.removeListener('update-not-available', clearTimeoutListener)
@@ -1747,7 +1747,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
         ipcRenderer.once('update-available', clearTimeoutListener)
 
         // 发送检查更新命令
-        console.log('[LinkCore] Sending check for updates command')
+        console.log('[Lerxu] Sending check for updates command')
         ipcRenderer.send('command', 'application:check-for-updates')
 
         // 更新最后检查时间
@@ -1855,7 +1855,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
                 walkAndSanitize(root, sanitizedDoc)
                 return sanitizedRoot.innerHTML
               } catch (e) {
-                console.warn('[LinkCore] Failed to sanitize clipboard HTML:', e)
+                console.warn('[Lerxu] Failed to sanitize clipboard HTML:', e)
                 return dirtyHtml
               }
             }
@@ -1871,7 +1871,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
             message: buildReleaseNotesHtml(rawReleaseNotes) || 'No release notes available.'
           })
         } catch (e) {
-          console.error('[LinkCore] Failed to preview update:', e)
+          console.error('[Lerxu] Failed to preview update:', e)
           msg.error(t('preferences.update-preview-fail'))
         }
       }

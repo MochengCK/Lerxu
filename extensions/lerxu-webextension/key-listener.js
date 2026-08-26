@@ -14,15 +14,15 @@ const sendToggleAutoHijackOverride = () => {
 }
 
 const buttonLocaleTexts = {
-  en: 'Download with LinkCore',
-  zh_CN: '使用 LinkCore 下载',
-  zh_TW: '使用 LinkCore 下載',
-  ja: 'LinkCore でダウンロード',
-  ko: 'LinkCore로 다운로드',
-  es: 'Descargar con LinkCore',
-  fr: 'Télécharger avec LinkCore',
-  de: 'Mit LinkCore herunterladen',
-  ru: 'Скачать с LinkCore'
+  en: 'Download with Lerxu',
+  zh_CN: '使用 Lerxu 下载',
+  zh_TW: '使用 Lerxu 下載',
+  ja: 'Lerxu でダウンロード',
+  ko: 'Lerxu로 다운로드',
+  es: 'Descargar con Lerxu',
+  fr: 'Télécharger avec Lerxu',
+  de: 'Mit Lerxu herunterladen',
+  ru: 'Скачать с Lerxu'
 }
 
 const normalizeButtonLocale = (locale) => {
@@ -180,7 +180,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   const broadcastClearResourcesToFrames = () => {
     try {
-      const msg = { type: 'linkcore-clear-resources', at: Date.now() }
+      const msg = { type: 'lerxu-clear-resources', at: Date.now() }
       try {
         const iframes = document.querySelectorAll('iframe')
         iframes.forEach(iframe => {
@@ -287,9 +287,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   const updateMainButtonResourceCount = () => {
     try {
-      const btn = document.getElementById('linkcore-bilibili-download-btn')
+      const btn = document.getElementById('lerxu-bilibili-download-btn')
       if (!btn) return
-      const countSpan = btn.querySelector('.linkcore-resource-count')
+      const countSpan = btn.querySelector('.lerxu-resource-count')
       if (!countSpan) return
 
       let scoped = getUniversalScopedResources().resources
@@ -397,7 +397,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   log('Setting up event listeners...')
 
   // 只在 document 上监听（因为 video-sniffer.js 在 document 上触发）
-  document.addEventListener('linkcore-resources-updated', (event) => {
+  document.addEventListener('lerxu-resources-updated', (event) => {
     log('Resources updated:', event.detail)
     const next = event.detail || { video: [], audio: [], m4s: [], combined: [], total: 0 }
     if (shouldIgnoreResourcesUpdateAfterClear(next)) {
@@ -414,7 +414,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     
     // 检查按钮是否被用户关闭，如果关闭则不显示
     if (!isButtonClosedByUser() && sniffedResources.total > 0) {
-      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper') || document.getElementById('linkcore-download-btn-wrapper')
+      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper') || document.getElementById('lerxu-download-btn-wrapper')
       if (wrapper) {
         wrapper.style.display = 'block'
         wrapper.style.visibility = 'visible'
@@ -429,11 +429,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 监听来自 iframe 的消息
   window.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'linkcore-clear-resources') {
-      window.dispatchEvent(new Event('linkcore-clear-resources'))
+    if (event.data && event.data.type === 'lerxu-clear-resources') {
+      window.dispatchEvent(new Event('lerxu-clear-resources'))
       return
     }
-    if (event.data && event.data.type === 'linkcore-resources-updated') {
+    if (event.data && event.data.type === 'lerxu-resources-updated') {
       log('Received message from iframe:', event.data.data)
       const next = event.data.data || { video: [], audio: [], m4s: [], combined: [], total: 0 }
       if (shouldIgnoreResourcesUpdateAfterClear(next)) {
@@ -450,7 +450,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       
       // 检查按钮是否被用户关闭，如果关闭则不显示
       if (!isButtonClosedByUser() && sniffedResources.total > 0) {
-        const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper') || document.getElementById('linkcore-download-btn-wrapper')
+        const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper') || document.getElementById('lerxu-download-btn-wrapper')
         if (wrapper) {
           wrapper.style.display = 'block'
           wrapper.style.visibility = 'visible'
@@ -465,7 +465,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   })
 
   // 监听清除资源事件
-  window.addEventListener('linkcore-clear-resources', () => {
+  window.addEventListener('lerxu-clear-resources', () => {
     log('Clearing resources')
     lastExplicitClearAt = Date.now()
     const beforeCount = sniffedResources.total || 0
@@ -489,7 +489,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     log('Resources and backup cleared, was:', beforeCount, 'now: 0')
     
     // 关闭下拉框
-    const dropdown = document.getElementById('linkcore-resource-dropdown')
+    const dropdown = document.getElementById('lerxu-resource-dropdown')
     if (dropdown) {
       dropdown.style.display = 'none'
     }
@@ -521,9 +521,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       if (navClearTimer) clearTimeout(navClearTimer)
       navClearTimer = setTimeout(() => {
         navClearTimer = null
-        window.dispatchEvent(new Event('linkcore-clear-resources'))
+        window.dispatchEvent(new Event('lerxu-clear-resources'))
         setTimeout(() => {
-          window.dispatchEvent(new Event('linkcore-get-resources'))
+          window.dispatchEvent(new Event('lerxu-get-resources'))
         }, 200)
       }, 80)
     } catch (e) {}
@@ -712,7 +712,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const getVideoContextIdFromElement = (video) => {
     try {
       if (!video) return ''
-      return video.getAttribute('data-linkcore-video-context-id') || ''
+      return video.getAttribute('data-lerxu-video-context-id') || ''
     } catch (e) {
       return ''
     }
@@ -721,7 +721,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const getVideoLastActiveAt = (video) => {
     try {
       if (!video) return 0
-      const raw = video.getAttribute('data-linkcore-video-last-active') || ''
+      const raw = video.getAttribute('data-lerxu-video-last-active') || ''
       const n = Number(raw)
       return Number.isFinite(n) ? n : 0
     } catch (e) {
@@ -801,8 +801,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const collectUniversalButtonWrappers = () => {
     try {
       const list = []
-      document.querySelectorAll('#linkcore-bilibili-download-btn-wrapper').forEach(el => list.push(el))
-      document.querySelectorAll('#linkcore-download-btn-wrapper').forEach(el => list.push(el))
+      document.querySelectorAll('#lerxu-bilibili-download-btn-wrapper').forEach(el => list.push(el))
+      document.querySelectorAll('#lerxu-download-btn-wrapper').forEach(el => list.push(el))
       return list.filter(Boolean)
     } catch (e) {
       return []
@@ -1010,7 +1010,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   const removePerVideoButtons = () => {
     try {
-      const list = document.querySelectorAll('.linkcore-video-sniff-btn-wrapper')
+      const list = document.querySelectorAll('.lerxu-video-sniff-btn-wrapper')
       list.forEach(el => el.remove())
     } catch (e) {}
   }
@@ -1088,11 +1088,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     try {
       if (!video || !contextId) return false
 
-      const wrapperId = `linkcore-video-sniff-btn-wrapper-${contextId}`
+      const wrapperId = `lerxu-video-sniff-btn-wrapper-${contextId}`
       const existing = document.getElementById(wrapperId)
       if (existing) {
         // 视频元素可能被站点重建，始终引用最新的 video 节点
-        existing._linkcoreVideo = video
+        existing._lerxuVideo = video
         return true
       }
 
@@ -1102,8 +1102,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       // body，用 fixed 定位跟随视频可视区域。
       const wrapper = document.createElement('div')
       wrapper.id = wrapperId
-      wrapper.className = 'linkcore-video-sniff-btn-wrapper'
-      wrapper._linkcoreVideo = video
+      wrapper.className = 'lerxu-video-sniff-btn-wrapper'
+      wrapper._lerxuVideo = video
       const wStyle = wrapper.style
       wStyle.position = 'fixed'
       wStyle.top = '0px'
@@ -1222,7 +1222,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 视频不可见、被移除或尺寸过小时隐藏按钮，避免遮挡页面。
   const syncPerVideoButtonPosition = (wrapper) => {
     try {
-      const video = wrapper && wrapper._linkcoreVideo
+      const video = wrapper && wrapper._lerxuVideo
       if (!wrapper || !video) return
       if (!video.isConnected || !document.contains(wrapper)) {
         wrapper.style.display = 'none'
@@ -1249,7 +1249,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 没有按钮时几乎零开销（一次 querySelectorAll）。
   setInterval(() => {
     try {
-      const wrappers = document.querySelectorAll('.linkcore-video-sniff-btn-wrapper')
+      const wrappers = document.querySelectorAll('.lerxu-video-sniff-btn-wrapper')
       if (!wrappers || wrappers.length === 0) return
       wrappers.forEach(syncPerVideoButtonPosition)
     } catch (e) {}
@@ -1339,17 +1339,17 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }
       })
 
-      const existing = document.querySelectorAll('.linkcore-video-sniff-btn-wrapper')
+      const existing = document.querySelectorAll('.lerxu-video-sniff-btn-wrapper')
       existing.forEach(el => {
         const id = el && el.id ? `${el.id}` : ''
-        const m = id.match(/^linkcore-video-sniff-btn-wrapper-(.+)$/)
+        const m = id.match(/^lerxu-video-sniff-btn-wrapper-(.+)$/)
         const contextId = m && m[1] ? m[1] : ''
         if (contextId && !createdContextIds.has(contextId)) {
           el.remove()
         }
       })
 
-      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
       if (wrapper) wrapper.style.display = 'none'
     } catch (e) {}
   }
@@ -1445,9 +1445,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         'zh_TW': '未檢測到視頻資源'
       },
       'rightClickTip': {
-        'en': 'Tip: Right-click on links and select "Download with LinkCore"',
-        'zh_CN': '提示：右键点击页面上的链接，选择"使用 LinkCore 下载"',
-        'zh_TW': '提示：右鍵點擊頁面上的鏈接，選擇"使用 LinkCore 下載"'
+        'en': 'Tip: Right-click on links and select "Download with Lerxu"',
+        'zh_CN': '提示：右键点击页面上的链接，选择"使用 Lerxu 下载"',
+        'zh_TW': '提示：右鍵點擊頁面上的鏈接，選擇"使用 Lerxu 下載"'
       },
       'complete': {
         'en': 'Complete',
@@ -1500,7 +1500,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           updateResourceList()
           
           // 更新按钮文本
-          const btn = document.getElementById('linkcore-bilibili-download-btn')
+          const btn = document.getElementById('lerxu-bilibili-download-btn')
           if (btn) {
             applyClientLocaleToButton(btn)
           }
@@ -1518,7 +1518,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           updateResourceList()
           
           // 更新按钮文本
-          const btn = document.getElementById('linkcore-bilibili-download-btn')
+          const btn = document.getElementById('lerxu-bilibili-download-btn')
           if (btn) {
             applyClientLocaleToButton(btn)
           }
@@ -1554,7 +1554,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 创建资源选择下拉框
   const createResourceDropdown = () => {
     const dropdown = document.createElement('div')
-    dropdown.id = 'linkcore-resource-dropdown'
+    dropdown.id = 'lerxu-resource-dropdown'
     const dStyle = dropdown.style
     dStyle.position = 'fixed'  // 使用 fixed 定位，不受容器限制
     dStyle.top = '0'
@@ -1573,14 +1573,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 顶部固定区域（放置清空按钮）
     const header = document.createElement('div')
-    header.id = 'linkcore-dropdown-header'
+    header.id = 'lerxu-dropdown-header'
     const hStyle = header.style
     hStyle.flexShrink = '0'
     hStyle.flexGrow = '0'
 
     // 内容区域
     const content = document.createElement('div')
-    content.id = 'linkcore-resource-list'
+    content.id = 'lerxu-resource-list'
     const cStyle = content.style
     cStyle.flexGrow = '1'
     cStyle.maxHeight = '400px'
@@ -1595,18 +1595,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     // 添加自定义滚动条样式
     const style = document.createElement('style')
     style.textContent = `
-      #linkcore-resource-list::-webkit-scrollbar {
+      #lerxu-resource-list::-webkit-scrollbar {
         width: 6px;
         height: 6px;
       }
-      #linkcore-resource-list::-webkit-scrollbar-track {
+      #lerxu-resource-list::-webkit-scrollbar-track {
         background: transparent;
       }
-      #linkcore-resource-list::-webkit-scrollbar-thumb {
+      #lerxu-resource-list::-webkit-scrollbar-thumb {
         background: rgba(0, 0, 0, 0.2);
         border-radius: 3px;
       }
-      #linkcore-resource-list::-webkit-scrollbar-thumb:hover {
+      #lerxu-resource-list::-webkit-scrollbar-thumb:hover {
         background: rgba(0, 0, 0, 0.3);
       }
     `
@@ -1620,7 +1620,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   const createDropdownControls = (viewResources, referer) => {
     const container = document.createElement('div')
-    container.id = 'linkcore-dropdown-controls'
+    container.id = 'lerxu-dropdown-controls'
     const cStyle = container.style
     cStyle.position = 'relative'
     cStyle.display = 'flex'
@@ -1634,7 +1634,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     cStyle.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)'
 
     const clearBtn = document.createElement('div')
-    clearBtn.id = 'linkcore-clear-resources-btn'
+    clearBtn.id = 'lerxu-clear-resources-btn'
     const clearStyle = clearBtn.style
     clearStyle.flex = '1 1 0'
     clearStyle.minWidth = '0'
@@ -1658,9 +1658,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     clearBtn.addEventListener('click', () => {
       log('Clear button clicked')
-      window.dispatchEvent(new Event('linkcore-clear-resources'))
+      window.dispatchEvent(new Event('lerxu-clear-resources'))
       broadcastClearResourcesToFrames()
-      const dropdown = document.getElementById('linkcore-resource-dropdown')
+      const dropdown = document.getElementById('lerxu-resource-dropdown')
       if (dropdown) dropdown.style.display = 'none'
     })
 
@@ -1670,7 +1670,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     clearBtn.appendChild(clearText)
 
     const downloadAllBtn = document.createElement('div')
-    downloadAllBtn.id = 'linkcore-download-all-btn'
+    downloadAllBtn.id = 'lerxu-download-all-btn'
     const dStyle = downloadAllBtn.style
     dStyle.flex = '1 1 0'
     dStyle.minWidth = '0'
@@ -1731,7 +1731,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       } catch (e) {
       }
 
-      const dropdown = document.getElementById('linkcore-resource-dropdown')
+      const dropdown = document.getElementById('lerxu-resource-dropdown')
       if (dropdown) dropdown.style.display = 'none'
     })
 
@@ -1767,7 +1767,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     log('M4S count:', viewResources.m4s?.length || 0)
     log('Combined count:', viewResources.combined?.length || 0)
     
-    const content = document.getElementById('linkcore-resource-list')
+    const content = document.getElementById('lerxu-resource-list')
     if (!content) {
       log('Resource list container not found')
       return
@@ -1788,7 +1788,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const referer = window.location.href
 
     // 如果有资源，添加顶部浮动控制组件
-    const header = document.getElementById('linkcore-dropdown-header')
+    const header = document.getElementById('lerxu-dropdown-header')
     if (header) {
       header.innerHTML = ''
       if (hasAnySniffedResources(viewResources)) {
@@ -2095,7 +2095,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       // 同时下载视频和音频
       sendResourceToClient(resource.videoUrl, referer, videoFilename)
       sendResourceToClient(resource.audioUrl, referer, audioFilename)
-      const dropdown = document.getElementById('linkcore-resource-dropdown')
+      const dropdown = document.getElementById('lerxu-resource-dropdown')
       if (dropdown) dropdown.style.display = 'none'
     })
 
@@ -2252,7 +2252,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       }
 
       sendResourceToClient(resource.url, referer, filename)
-      const dropdown = document.getElementById('linkcore-resource-dropdown')
+      const dropdown = document.getElementById('lerxu-resource-dropdown')
       if (dropdown) dropdown.style.display = 'none'
     })
 
@@ -2286,7 +2286,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     sendResourceToClient(resource.url, referer, filename)
-    const dropdown = document.getElementById('linkcore-resource-dropdown')
+    const dropdown = document.getElementById('lerxu-resource-dropdown')
     if (dropdown) dropdown.style.display = 'none'
   }
 
@@ -2315,7 +2315,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     sendResourceToClient(resource.videoUrl, referer, videoFilename)
     sendResourceToClient(resource.audioUrl, referer, audioFilename)
-    const dropdown = document.getElementById('linkcore-resource-dropdown')
+    const dropdown = document.getElementById('lerxu-resource-dropdown')
     if (dropdown) dropdown.style.display = 'none'
   }
 
@@ -2380,7 +2380,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 显示资源选择下拉框
   const showResourceDropdown = () => {
-    const dropdown = document.getElementById('linkcore-resource-dropdown')
+    const dropdown = document.getElementById('lerxu-resource-dropdown')
     if (dropdown) {
       if (dropdown.style.display === 'flex') {
         dropdown.style.display = 'none'
@@ -2401,7 +2401,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 调整下拉框位置，确保在屏幕内
   const adjustDropdownPosition = (dropdown) => {
-    const btn = document.getElementById('linkcore-bilibili-download-btn')
+    const btn = document.getElementById('lerxu-bilibili-download-btn')
     if (!btn) return
 
     const btnRect = btn.getBoundingClientRect()
@@ -2443,10 +2443,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 点击其他地方关闭下拉框
   document.addEventListener('click', (e) => {
-    const dropdown = document.getElementById('linkcore-resource-dropdown')
-    const btn = document.getElementById('linkcore-bilibili-download-btn')
+    const dropdown = document.getElementById('lerxu-resource-dropdown')
+    const btn = document.getElementById('lerxu-bilibili-download-btn')
     if (dropdown && dropdown.style.display === 'flex') {
-      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
       if (wrapper && !wrapper.contains(e.target)) {
         dropdown.style.display = 'none'
       }
@@ -2456,12 +2456,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 检查按钮是否被用户关闭
   const isButtonClosedByUser = () => {
     // 检查全局标记
-    if (window.linkcoreButtonClosed) return true
+    if (window.lerxuButtonClosed) return true
     
     // 检查wrapper上的标记
-    const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+    const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
     if (wrapper && wrapper.getAttribute('data-user-closed') === 'true') {
-      window.linkcoreButtonClosed = true
+      window.lerxuButtonClosed = true
       return true
     }
     
@@ -2475,11 +2475,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 更新按钮显示状态
   const updateButtonVisibility = () => {
     if (perVideoModeActive) {
-      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
       if (wrapper) wrapper.style.display = 'none'
       return
     }
-    const btn = document.getElementById('linkcore-download-btn')
+    const btn = document.getElementById('lerxu-download-btn')
     const { resources: viewResources } = getUniversalScopedResources()
     log('Update button visibility, btn:', !!btn, 'total:', viewResources.total, 'sniffer enabled:', videoSnifferConfig.enabled, 'config loaded:', videoSnifferConfig.loaded)
     if (!btn) return
@@ -2585,7 +2585,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 按钮稳定性检查 - 确保有资源且嗅探器启用时按钮始终可见
   const ensureButtonStability = () => {
-    const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+    const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
     const isButtonClosed = isButtonClosedByUser()
 
     if (perVideoModeActive) {
@@ -2633,7 +2633,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     clearHideTimeout()
     // 隐藏延迟，给用户时间操作
     hideButtonTimeout = setTimeout(() => {
-      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
       const isButtonClosed = isButtonClosedByUser()
       
       // 无资源或嗅探器禁用时强制隐藏（无视拖拽/固定状态，但尊重悬停和用户关闭状态）
@@ -2659,7 +2659,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     if (perVideoModeActive) {
-      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
       if (wrapper) wrapper.style.display = 'none'
     }
 
@@ -2716,7 +2716,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const containerChanged = currentContainer !== container || currentContainerSelector !== containerSelector
 
     // 如果按钮已存在且（容器未变化 或 位置已锁定），不重新创建
-    const existingBtn = document.getElementById('linkcore-bilibili-download-btn')
+    const existingBtn = document.getElementById('lerxu-bilibili-download-btn')
     if (existingBtn && (!containerChanged || positionLocked)) {
       log('Button already exists, skipping recreation. containerChanged:', containerChanged, 'positionLocked:', positionLocked)
       return
@@ -2725,10 +2725,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     // 如果按钮已存在且容器变化，先删除它
     if (existingBtn) {
       const existingWrapper = existingBtn.parentElement
-      if (existingWrapper && existingWrapper.id === 'linkcore-bilibili-download-btn-wrapper') {
+      if (existingWrapper && existingWrapper.id === 'lerxu-bilibili-download-btn-wrapper') {
         log('Removing existing button and dropdown to create new one, containerChanged:', containerChanged)
         // 不要在UI重置时清除资源，导致闪烁
-        // window.dispatchEvent(new Event('linkcore-clear-resources'))
+        // window.dispatchEvent(new Event('lerxu-clear-resources'))
         // 直接删除整个wrapper（包括按钮和dropdown）
         existingWrapper.remove()
       }
@@ -2763,7 +2763,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     log('Container dimensions:', container.offsetWidth, 'x', container.offsetHeight)
 
     const wrapper = document.createElement('div')
-    wrapper.id = 'linkcore-bilibili-download-btn-wrapper'
+    wrapper.id = 'lerxu-bilibili-download-btn-wrapper'
     const wStyle = wrapper.style
 
     // 根据容器类型设置位置
@@ -2852,8 +2852,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     const btn = document.createElement('button')
-    btn.id = 'linkcore-bilibili-download-btn'
-    let label = 'Download with LinkCore'
+    btn.id = 'lerxu-bilibili-download-btn'
+    let label = 'Download with Lerxu'
     try {
       if (chrome && chrome.i18n && chrome.i18n.getMessage) {
         const msg = chrome.i18n.getMessage('contextMenuDownload')
@@ -2883,7 +2883,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 创建关闭按钮
     const closeBtn = document.createElement('button')
-    closeBtn.id = 'linkcore-close-btn'
+    closeBtn.id = 'lerxu-close-btn'
     closeBtn.textContent = '×'
     closeBtn.title = 'Close'
     const closeStyle = closeBtn.style
@@ -2923,7 +2923,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     icon.appendChild(path)
 
     const countSpan = document.createElement('span')
-    countSpan.className = 'linkcore-resource-count'
+    countSpan.className = 'lerxu-resource-count'
     const countStyle = countSpan.style
     countStyle.display = 'inline-block'
     countStyle.minWidth = '16px'
@@ -2953,7 +2953,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       wrapper.setAttribute('data-user-closed', 'true')
       
       // 设置全局关闭标记，防止按钮重新出现
-      window.linkcoreButtonClosed = true
+      window.lerxuButtonClosed = true
       
       log('Download button closed by user')
     })
@@ -3053,7 +3053,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         wStyle.right = 'auto'
 
         // 下拉框跟随按钮移动
-        const dropdown = document.getElementById('linkcore-resource-dropdown')
+        const dropdown = document.getElementById('lerxu-resource-dropdown')
         if (dropdown && dropdown.style.display === 'flex') {
           adjustDropdownPosition(dropdown)
         }
@@ -3121,7 +3121,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     log('Wrapper position:', wrapper.style.position, 'top:', wrapper.style.top, 'right:', wrapper.style.right)
     log('Current sniffedResources:', sniffedResources)
     log('Button element:', btn)
-    const btnInDom = document.getElementById('linkcore-bilibili-download-btn')
+    const btnInDom = document.getElementById('lerxu-bilibili-download-btn')
     log('Button in DOM:', btnInDom)
     if (btnInDom) {
       const rect = btnInDom.getBoundingClientRect()
@@ -3149,7 +3149,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         updateButtonVisibility()
       } else {
         log('No resources yet, requesting...')
-        window.dispatchEvent(new Event('linkcore-get-resources'))
+        window.dispatchEvent(new Event('lerxu-get-resources'))
       }
     }, 500)
 
@@ -3289,7 +3289,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const updateButtonPositionToContainer = (container) => {
     if (!container) return
 
-    const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+    const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
     if (!wrapper) return
 
     // 如果按钮已被用户关闭，不更新位置也不显示
@@ -3428,8 +3428,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const addVideoHoverListeners = () => {
     const videos = document.querySelectorAll('video')
     videos.forEach(video => {
-      if (video._linkcoreHoverListenerAdded) return
-      video._linkcoreHoverListenerAdded = true
+      if (video._lerxuHoverListenerAdded) return
+      video._lerxuHoverListenerAdded = true
 
       // 当视频开始播放时（通常是悬停触发的预览播放）
       video.addEventListener('play', () => {
@@ -3475,8 +3475,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     // 也监听可能的视频容器
     const videoContainers = document.querySelectorAll('[class*="video-card"], [class*="player"], [class*="xgplayer"], [class*="video-item"], [class*="feed-item"]')
     videoContainers.forEach(container => {
-      if (container._linkcoreHoverListenerAdded) return
-      container._linkcoreHoverListenerAdded = true
+      if (container._lerxuHoverListenerAdded) return
+      container._lerxuHoverListenerAdded = true
 
       container.addEventListener('mouseenter', () => {
         // 检查容器内是否有视频元素
@@ -3521,7 +3521,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       }
 
       // 如果容器被移除但有资源，保持按钮显示但重置锁定
-      const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
       if (sniffedResources && sniffedResources.total > 0) {
         if (!hasBeenDragged) {
           positionLocked = false
@@ -3565,7 +3565,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
         // 更宽松的恢复策略：如果有资源且按钮存在，保持显示
         if (!recovered) {
-          const wrapper = document.getElementById('linkcore-bilibili-download-btn-wrapper')
+          const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
           const isButtonClosed = isButtonClosedByUser()
           if (wrapper && sniffedResources && sniffedResources.total > 0 && !isButtonClosed) {
             // 有资源且未被用户关闭时不隐藏按钮，只是重置位置锁定
@@ -3903,11 +3903,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 显示合集下载悬浮面板
   const showCollectionDownloadDialog = (videos, collectionTitle) => {
     // 移除已存在的面板
-    const existing = document.getElementById('linkcore-collection-panel')
+    const existing = document.getElementById('lerxu-collection-panel')
     if (existing) existing.remove()
 
     // 获取下载合集按钮的位置
-    const downloadBtnEl = document.getElementById('linkcore-collection-download-btn')
+    const downloadBtnEl = document.getElementById('lerxu-collection-download-btn')
     let btnRect = { bottom: 0, left: 0, width: 0 }
     if (downloadBtnEl) {
       btnRect = downloadBtnEl.getBoundingClientRect()
@@ -3918,7 +3918,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 创建悬浮面板（精简：无标题栏、无底部栏、无分割线）
     const panel = document.createElement('div')
-    panel.id = 'linkcore-collection-panel'
+    panel.id = 'lerxu-collection-panel'
     const pStyle = panel.style
     pStyle.position = 'absolute'
     pStyle.backgroundColor = '#fff'
@@ -3942,9 +3942,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     // 滚动条样式
     const scrollStyle = document.createElement('style')
     scrollStyle.textContent = `
-      #linkcore-collection-panel .col-list::-webkit-scrollbar { width: 4px; }
-      #linkcore-collection-panel .col-list::-webkit-scrollbar-track { background: transparent; }
-      #linkcore-collection-panel .col-list::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 2px; }
+      #lerxu-collection-panel .col-list::-webkit-scrollbar { width: 4px; }
+      #lerxu-collection-panel .col-list::-webkit-scrollbar-track { background: transparent; }
+      #lerxu-collection-panel .col-list::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 2px; }
     `
     panel.appendChild(scrollStyle)
 
@@ -4093,7 +4093,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       closePanel()
 
-      const btnTextEl = document.querySelector('#linkcore-collection-download-btn span')
+      const btnTextEl = document.querySelector('#lerxu-collection-download-btn span')
       const oldText = btnTextEl ? btnTextEl.textContent : ''
 
       const referer = window.location.href || ''
@@ -4188,17 +4188,17 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   let collectionAnchorNextDetectAt = 0
   const collectionFollowLoop = () => {
     try {
-      const btn = document.getElementById('linkcore-collection-download-btn')
+      const btn = document.getElementById('lerxu-collection-download-btn')
       if (!btn || !btn.isConnected) {
         collectionFollowRaf = 0
         collectionFollowLast = null
         return
       }
-      let anchor = btn._linkcoreSubscribeBtn
+      let anchor = btn._lerxuSubscribeBtn
       if ((!anchor || !anchor.isConnected) && Date.now() >= collectionAnchorNextDetectAt) {
         const { subscribeBtn } = detectBilibiliCollection()
         anchor = subscribeBtn
-        btn._linkcoreSubscribeBtn = anchor
+        btn._lerxuSubscribeBtn = anchor
         // detect 失败时节流，避免每帧做全量 DOM 查询
         collectionAnchorNextDetectAt = Date.now() + (anchor ? 0 : 1000)
       }
@@ -4206,7 +4206,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         const rect = anchor.getBoundingClientRect()
         const scrollX = window.scrollX || window.pageXOffset || 0
         const scrollY = window.scrollY || window.pageYOffset || 0
-        const width = (btn._linkcoreWidth = btn.offsetWidth || btn._linkcoreWidth || 50)
+        const width = (btn._lerxuWidth = btn.offsetWidth || btn._lerxuWidth || 50)
         const next = {
           top: rect.top + scrollY,
           left: Math.max(0, rect.left + scrollX - width - 4),
@@ -4235,7 +4235,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     try {
       const { subscribeBtn, videoItems, collectionTitle, exists } = detectBilibiliCollection()
 
-      const existingBtn = document.getElementById('linkcore-collection-download-btn')
+      const existingBtn = document.getElementById('lerxu-collection-download-btn')
 
       if (!exists || !subscribeBtn) {
         // 没有合集，移除已存在的按钮
@@ -4249,7 +4249,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       // 如果已经存在且未变化，不重复创建，但仍要同步位置并确保跟随循环在跑
       // （打开弹幕列表等布局变化会把合集组件顶下去，按钮需跟随）
       if (existingBtn && existingBtn.getAttribute('data-collection-title') === collectionTitle) {
-        existingBtn._linkcoreSubscribeBtn = subscribeBtn
+        existingBtn._lerxuSubscribeBtn = subscribeBtn
         syncCollectionButtonPosition(existingBtn, subscribeBtn)
         ensureCollectionFollowRunning()
         return
@@ -4262,9 +4262,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       // 创建全新的下载按钮（独立元素，不插入Vue管理的DOM，避免干扰B站渲染）
       const downloadBtn = document.createElement('div')
-      downloadBtn.id = 'linkcore-collection-download-btn'
+      downloadBtn.id = 'lerxu-collection-download-btn'
       downloadBtn.setAttribute('data-collection-title', collectionTitle || '')
-      downloadBtn.setAttribute('data-linkcore-btn', 'collection-download')
+      downloadBtn.setAttribute('data-lerxu-btn', 'collection-download')
 
       // 创建按钮内容
       const btnText = document.createElement('span')
@@ -4302,7 +4302,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       // 使用 absolute 定位（跟随页面滚动，不干扰 Vue DOM），保存锚点
       // 引用并启动实时跟随循环（弹幕列表展开等布局变化）
-      downloadBtn._linkcoreSubscribeBtn = subscribeBtn
+      downloadBtn._lerxuSubscribeBtn = subscribeBtn
       syncCollectionButtonPosition(downloadBtn, subscribeBtn)
       ensureCollectionFollowRunning()
 
@@ -4314,7 +4314,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         e.stopPropagation()
 
         // 如果面板已存在，关闭它（切换关闭）
-        const existingPanel = document.getElementById('linkcore-collection-panel')
+        const existingPanel = document.getElementById('lerxu-collection-panel')
         if (existingPanel) {
           existingPanel.remove()
           return

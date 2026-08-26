@@ -530,7 +530,7 @@ function showAddTaskDialog (uri, options = {}) {
     header,
     ...rest
   } = options
-  console.log('[LinkCore] show add task dialog options: ', options)
+  console.log('[Lerxu] show add task dialog options: ', options)
   const headers = parseHeader(header)
   const newOptions = {
     ...rest,
@@ -547,7 +547,7 @@ async function deleteTaskFiles (task) {
   try {
     await moveTaskFilesToTrash(task, downloadingFileSuffix, config)
   } catch (err) {
-    console.warn('[LinkCore] deleteTaskFiles error:', err)
+    console.warn('[Lerxu] deleteTaskFiles error:', err)
     const taskName = (task && task.name) ? task.name : (task && task.gid ? task.gid : '')
     msg.error(`删除文件失败: ${taskName}`)
   }
@@ -573,7 +573,7 @@ async function removeTask (task, taskName, isRemoveWithFiles = false) {
         taskForDeletion = { ...task, ...fresh }
       }
     } catch (e) {
-      console.warn('[LinkCore] Failed to fetch fresh task for deletion:', e.message)
+      console.warn('[Lerxu] Failed to fetch fresh task for deletion:', e.message)
     }
     try {
       const opt = await api.getOption({ gid: task.gid })
@@ -581,7 +581,7 @@ async function removeTask (task, taskName, isRemoveWithFiles = false) {
         taskForDeletion = { ...taskForDeletion, _engineOptions: opt }
       }
     } catch (e) {
-      console.warn('[LinkCore] Failed to pre-fetch getOption for deletion:', e.message)
+      console.warn('[Lerxu] Failed to pre-fetch getOption for deletion:', e.message)
     }
   }
   await taskStore.forcePauseTask(task)
@@ -615,7 +615,7 @@ async function removeTaskRecord (task, taskName, isRemoveWithFiles = false) {
         taskForDeletion = { ...task, ...fresh }
       }
     } catch (e) {
-      console.warn('[LinkCore] Failed to fetch fresh task for deletion:', e.message)
+      console.warn('[Lerxu] Failed to fetch fresh task for deletion:', e.message)
     }
     try {
       const opt = await api.getOption({ gid: task.gid })
@@ -623,7 +623,7 @@ async function removeTaskRecord (task, taskName, isRemoveWithFiles = false) {
         taskForDeletion = { ...taskForDeletion, _engineOptions: opt }
       }
     } catch (e) {
-      console.warn('[LinkCore] Failed to pre-fetch getOption for deletion:', e.message)
+      console.warn('[Lerxu] Failed to pre-fetch getOption for deletion:', e.message)
     }
   }
   await taskStore.forcePauseTask(task)
@@ -692,7 +692,7 @@ async function removeTasks (taskList, isRemoveWithFiles = false) {
           enrichedTask = { ...task, ...fresh }
         }
       } catch (e) {
-        console.warn('[LinkCore] batch: failed to fetch fresh task for deletion:', e.message)
+        console.warn('[Lerxu] batch: failed to fetch fresh task for deletion:', e.message)
       }
       try {
         const opt = await api.getOption({ gid: task.gid })
@@ -700,7 +700,7 @@ async function removeTasks (taskList, isRemoveWithFiles = false) {
           enrichedTask = { ...enrichedTask, _engineOptions: opt }
         }
       } catch (e) {
-        console.warn('[LinkCore] batch: failed to pre-fetch getOption for deletion:', e.message)
+        console.warn('[Lerxu] batch: failed to pre-fetch getOption for deletion:', e.message)
       }
       return enrichedTask
     }))
@@ -725,10 +725,10 @@ function batchDeleteTaskFiles (taskList) {
   Promise.allSettled(promises).then(results => {
     const failures = results.filter(r => r.status === 'rejected')
     if (failures.length > 0) {
-      console.warn('[LinkCore] batch delete task files - failures:', failures)
+      console.warn('[Lerxu] batch delete task files - failures:', failures)
       msg.error(`部分文件删除失败（${failures.length}个）`)
     }
-    console.log('[LinkCore] batch delete task files: ', results)
+    console.log('[Lerxu] batch delete task files: ', results)
   })
 }
 
@@ -779,7 +779,7 @@ function handleRestartTask (payload) {
   const uri = getTaskUri(task)
   taskStore.getTaskOption(gid)
     .then((data) => {
-      console.log('[LinkCore] get task option:', data)
+      console.log('[Lerxu] get task option:', data)
       const { dir, header, split } = data
       const options = {
         dir,

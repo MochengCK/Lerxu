@@ -1,6 +1,6 @@
 ---
 name: 新功能请求
-about: 你期望 LinkCore Download Manager 未来添加的新功能
+about: 你期望 Lerxu Download Manager 未来添加的新功能
 title: "[功能建议] "
 labels: enhancement
 assignees: ''

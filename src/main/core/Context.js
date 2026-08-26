@@ -42,7 +42,7 @@ export default class Context {
       'aria2-log-dir': getAria2LogDir()
     }
 
-    logger.info('[LinkCore] Context.init===>', this.context)
+    logger.info('[Lerxu] Context.init===>', this.context)
   }
 
   get (key) {

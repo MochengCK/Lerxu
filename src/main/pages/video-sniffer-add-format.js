@@ -2,7 +2,7 @@
   'use strict'
 
   const log = (...args) => {
-    console.log('[LinkCore:VideoSnifferFormat]', ...args)
+    console.log('[Lerxu:VideoSnifferFormat]', ...args)
   }
 
   log('========== Script loaded! ==========')
@@ -19,10 +19,10 @@
         translations = module.default || {}
         log('Translations loaded for locale:', locale)
       } catch (importError) {
-        console.error('[LinkCore:VideoSnifferFormat] Failed to import translations:', importError)
+        console.error('[Lerxu:VideoSnifferFormat] Failed to import translations:', importError)
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSnifferFormat] Failed to load translations:', e)
+      console.error('[Lerxu:VideoSnifferFormat] Failed to load translations:', e)
     }
   }
 
@@ -69,11 +69,11 @@
             }
           }
         }).catch((e) => {
-          console.error('[LinkCore:VideoSnifferFormat] Failed to get theme:', e)
+          console.error('[Lerxu:VideoSnifferFormat] Failed to get theme:', e)
         })
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSnifferFormat] Failed to get theme:', e)
+      console.error('[Lerxu:VideoSnifferFormat] Failed to get theme:', e)
     }
   }
 
@@ -92,7 +92,7 @@
         }
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSnifferFormat] Failed to sync theme from parent:', e)
+      console.error('[Lerxu:VideoSnifferFormat] Failed to sync theme from parent:', e)
     }
   }
 
@@ -111,7 +111,7 @@
         }
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSnifferFormat] Failed to sync locale from parent:', e)
+      console.error('[Lerxu:VideoSnifferFormat] Failed to sync locale from parent:', e)
     }
   }
 
@@ -124,7 +124,7 @@
       applyTranslations()
       log('Locale changed and translations applied:', locale)
     } catch (e) {
-      console.error('[LinkCore:VideoSnifferFormat] Failed to handle locale change:', e)
+      console.error('[Lerxu:VideoSnifferFormat] Failed to handle locale change:', e)
     }
   }
 
@@ -166,7 +166,7 @@
         await loadTranslations(locale)
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSnifferFormat] Failed to get locale:', e)
+      console.error('[Lerxu:VideoSnifferFormat] Failed to get locale:', e)
     }
   }
 
@@ -197,7 +197,7 @@
             }
           }
         } catch (e) {
-          console.error('[LinkCore:VideoSnifferFormat] Failed to close window:', e)
+          console.error('[Lerxu:VideoSnifferFormat] Failed to close window:', e)
           window.close()
         }
       })
@@ -216,11 +216,11 @@
               parentWindow.webContents.send('video-sniffer-format-added', format)
               log('Format sent via IPC:', format)
             } else {
-              console.error('[LinkCore:VideoSnifferFormat] No parent window found')
+              console.error('[Lerxu:VideoSnifferFormat] No parent window found')
             }
           }
         } catch (e) {
-          console.error('[LinkCore:VideoSnifferFormat] Failed to send format via IPC:', e)
+          console.error('[Lerxu:VideoSnifferFormat] Failed to send format via IPC:', e)
         }
       }
       try {
@@ -232,7 +232,7 @@
           }
         }
       } catch (e) {
-        console.error('[LinkCore:VideoSnifferFormat] Failed to close window:', e)
+        console.error('[Lerxu:VideoSnifferFormat] Failed to close window:', e)
         window.close()
       }
     }
@@ -247,7 +247,7 @@
           }
         }
       } catch (e) {
-        console.error('[LinkCore:VideoSnifferFormat] Failed to close window:', e)
+        console.error('[Lerxu:VideoSnifferFormat] Failed to close window:', e)
         window.close()
       }
     }
@@ -403,7 +403,7 @@
         })
       }
     } catch (e) {
-      console.error('[LinkCore:VideoSnifferFormat] Failed to listen for theme changes:', e)
+      console.error('[Lerxu:VideoSnifferFormat] Failed to listen for theme changes:', e)
     }
 
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
@@ -417,11 +417,11 @@
               log('System theme changed:', isDark ? 'dark' : 'light')
             }
           }).catch((err) => {
-            console.error('[LinkCore:VideoSnifferFormat] Failed to get app config:', err)
+            console.error('[Lerxu:VideoSnifferFormat] Failed to get app config:', err)
           })
         }
       } catch (e) {
-        console.error('[LinkCore:VideoSnifferFormat] Failed to handle system theme change:', e)
+        console.error('[Lerxu:VideoSnifferFormat] Failed to handle system theme change:', e)
       }
     })
   })

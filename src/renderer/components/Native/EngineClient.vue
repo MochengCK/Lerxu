@@ -175,10 +175,10 @@ watch(progress, (val) => {
             try {
               if (existsSync(controlPath)) {
                 unlinkSync(controlPath)
-                console.log(`[LinkCore] Cleaned up engine control file: ${controlPath}`)
+                console.log(`[Lerxu] Cleaned up engine control file: ${controlPath}`)
               }
             } catch (e) {
-              console.warn(`[LinkCore] Failed to remove engine control file ${controlPath}:`, e && e.message ? e.message : e)
+              console.warn(`[Lerxu] Failed to remove engine control file ${controlPath}:`, e && e.message ? e.message : e)
             }
           })
         })
@@ -277,7 +277,7 @@ const dir = dirname(filePath)
               if (!isBilibiliPart && looksLikeBilibiliSource(referer, headers)) {
                 isBilibiliPart = true
               }
-              const fromHeader = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`))
+              const fromHeader = headers.some(h => /X-Lerxu-Source\s*:\s*BrowserExtension/i.test(`${h}`))
               const fromBrowserExtension = fromHeader || fromHistory
               if (fromBrowserExtension) {
                 const key = buildBrowserStartNotifyKey(task, cfg)
@@ -401,7 +401,7 @@ const dir = dirname(filePath)
             }
             const taskName = getTaskName(task)
             const { errorCode, errorMessage } = task
-            console.error(`[LinkCore] download error gid: ${gid}, #${errorCode}, ${errorMessage}`)
+            console.error(`[Lerxu] download error gid: ${gid}, #${errorCode}, ${errorMessage}`)
             const reason = resolveErrorReason(errorCode, errorMessage)
             const message = reason
               ? t('task.download-error-with-reason', { taskName, reason })
@@ -418,7 +418,7 @@ const dir = dirname(filePath)
 
             // 对BT任务添加额外的错误处理和恢复机制
             if (isBt) {
-              console.warn('[LinkCore] BT task error detected:', {
+              console.warn('[Lerxu] BT task error detected:', {
                 gid,
                 taskName,
                 errorCode,
@@ -530,10 +530,10 @@ const dir = dirname(filePath)
         try {
           const res = await ipcRenderer.invoke('application:repair-download-file-permission', filePath)
           const ok = !!(res && res.repaired)
-          console.info(`[LinkCore] repair download file permission gid=${gid} path=${filePath}:`, res)
+          console.info(`[Lerxu] repair download file permission gid=${gid} path=${filePath}:`, res)
           return ok
         } catch (err) {
-          console.warn('[LinkCore] repair download file permission IPC failed:', err)
+          console.warn('[Lerxu] repair download file permission IPC failed:', err)
           return false
         }
       }
@@ -607,10 +607,10 @@ const dir = dirname(filePath)
 
           const taskName = getTaskName(task)
           msg.warning(t('task.auto-referer-fallback', { taskName }))
-          console.info(`[LinkCore] 403 auto referer fallback: ${gid} -> ${nextGid} (${uri})`)
+          console.info(`[Lerxu] 403 auto referer fallback: ${gid} -> ${nextGid} (${uri})`)
           return true
         } catch (e) {
-          console.warn('[LinkCore] auto referer fallback failed:', e)
+          console.warn('[Lerxu] auto referer fallback failed:', e)
           return false
         }
       }
@@ -631,7 +631,7 @@ const dir = dirname(filePath)
             try {
               unlinkSync(segmentPath)
             } catch (e) {
-              console.warn('[LinkCore] Failed to remove segment file:', segmentPath, e)
+              console.warn('[Lerxu] Failed to remove segment file:', segmentPath, e)
             }
           }
 
@@ -663,7 +663,7 @@ const dir = dirname(filePath)
           msg.warning('检测到任务续传文件损坏，已尝试自动重建任务')
           return true
         } catch (e) {
-          console.warn('[LinkCore] Auto repair segment file failed:', e)
+          console.warn('[Lerxu] Auto repair segment file failed:', e)
           return false
         }
       }
@@ -748,7 +748,7 @@ const dir = dirname(filePath)
                   const hs = opt && opt.header ? opt.header : []
                   const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
                   const referer = opt && opt.referer ? `${opt.referer}` : ''
-                  fromSupportedSource = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`)) ||
+                  fromSupportedSource = headers.some(h => /X-Lerxu-Source\s*:\s*BrowserExtension/i.test(`${h}`)) ||
                     looksLikeBilibiliSource(referer, headers)
                 }
                 if (fromSupportedSource) {
@@ -774,7 +774,7 @@ const dir = dirname(filePath)
             const isMetadataTask = taskName.startsWith('[METADATA]')
             if (isMetadataTask) {
               // 元数据任务完成后不保存到历史记录
-              console.log('[LinkCore] Metadata task completed, skipping history save:', gid, taskName)
+              console.log('[Lerxu] Metadata task completed, skipping history save:', gid, taskName)
             } else {
               const files = Array.isArray(task && task.files) ? task.files : []
               const baseFile = files.length > 0 ? files[0] : null
@@ -1083,7 +1083,7 @@ const dir = dirname(filePath)
           for (const e0 of entries) {
             const e = e0 ? `${e0}` : ''
             if (!e || e.toLowerCase().endsWith('.xfer')) continue
-            if (e.startsWith('.') && e.includes('.linkcore-merging-')) continue
+            if (e.startsWith('.') && e.includes('.lerxu-merging-')) continue
             const pendingBySuffix = !!(downloadingFileSuffix && e.endsWith(downloadingFileSuffix))
             const eNoSuffix = stripDownloadingSuffixFromFilename(e, downloadingFileSuffix)
             const ext = getDashExtFromFilename(eNoSuffix)
@@ -1306,7 +1306,7 @@ writeFileSync(skipFlagPath, '1')
           clearMergeRetryTimer(mergeGid)
           if (attempt >= maxAttempts) {
             // 超过最大重试次数，放弃等待，标记为完成
-            console.warn(`[LinkCore] Merge retry exhausted for ${mergeGid} after ${maxAttempts} attempts`)
+            console.warn(`[Lerxu] Merge retry exhausted for ${mergeGid} after ${maxAttempts} attempts`)
             taskStore.removeFromMergingList(mergeGid)
             taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
             taskStore.fetchList()
@@ -1344,7 +1344,7 @@ writeFileSync(skipFlagPath, '1')
               taskStore.fetchList()
             }
           } catch (e) {
-            console.warn(`[LinkCore] Merge retry ${attempt + 1} failed:`, e)
+            console.warn(`[Lerxu] Merge retry ${attempt + 1} failed:`, e)
             _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
           }
         }, 3000)
@@ -1463,7 +1463,7 @@ writeFileSync(skipFlagPath, '1')
         })
       }
       async function mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, progressGid = '') {
-        const tempPath = resolve(dirname(outputPath), `.${basename(outputPath)}.linkcore-merging-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`)
+        const tempPath = resolve(dirname(outputPath), `.${basename(outputPath)}.lerxu-merging-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`)
         try {
           try {
             await runFfmpegMux(ffmpegPath, videoPath, audioPath, tempPath, progressGid)
@@ -1491,12 +1491,12 @@ writeFileSync(skipFlagPath, '1')
         const inputs = new Set((inputPaths || []).filter(Boolean).map(path => resolve(path)))
         for (let i = 0; i < 1000; i++) {
           const rand = Math.random().toString(36).slice(2, 10)
-          const candidate = resolve(dir, `.linkcore-merging-${rand}.mp4`)
+          const candidate = resolve(dir, `.lerxu-merging-${rand}.mp4`)
           if (!inputs.has(candidate) && !existsSync(candidate)) {
             return candidate
           }
         }
-        const fallback = resolve(dir, `.linkcore-merging-${Date.now()}.mp4`)
+        const fallback = resolve(dir, `.lerxu-merging-${Date.now()}.mp4`)
         return fallback
       }
       function forceDeleteFileSync(filePath) {
@@ -1608,7 +1608,7 @@ writeFileSync(skipFlagPath, '1')
             const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
-            console.warn(`[LinkCore] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+            console.warn(`[Lerxu] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
             return { isBilibiliPart: true, mergedPath: '' }
           }
         }
@@ -1655,7 +1655,7 @@ writeFileSync(skipFlagPath, '1')
           const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
           return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
         } catch (e) {
-          console.warn(`[LinkCore] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+          console.warn(`[Lerxu] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
           return { isBilibiliPart: true, mergedPath: '' }
         }
       }
@@ -1677,7 +1677,7 @@ writeFileSync(skipFlagPath, '1')
               const hs = opt && opt.header ? opt.header : []
               const headers = Array.isArray(hs) ? hs : (typeof hs === 'string' ? [hs] : [])
               const referer = opt && opt.referer ? `${opt.referer}` : ''
-              fromSupportedSource = headers.some(h => /X-LinkCore-Source\s*:\s*BrowserExtension/i.test(`${h}`)) ||
+              fromSupportedSource = headers.some(h => /X-Lerxu-Source\s*:\s*BrowserExtension/i.test(`${h}`)) ||
                 looksLikeBilibiliSource(referer, headers)
             } catch (_) {
               fromSupportedSource = false
@@ -1810,7 +1810,7 @@ writeFileSync(skipFlagPath, '1')
             const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
-            console.warn(`[LinkCore] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+            console.warn(`[Lerxu] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
             return { isBilibiliPart: true, mergedPath: '' }
           }
         } catch (_) {
@@ -2102,7 +2102,7 @@ writeFileSync(skipFlagPath, '1')
                 const m4sBase = info && info.type === 'm4s' && info.base ? `${info.base}` : ''
                 for (const se of scanEntries) {
                   const sen = se ? `${se}` : ''
-                  if (!sen || (sen.startsWith('.') && sen.includes('.linkcore-merging-'))) continue
+                  if (!sen || (sen.startsWith('.') && sen.includes('.lerxu-merging-'))) continue
                   const raw = scanSuffix ? stripDownloadingSuffixFromFilename(sen, scanSuffix) : sen
                   const ext = getDashExtFromFilename(raw)
                   if (!ext) continue
@@ -2552,9 +2552,9 @@ writeFileSync(skipFlagPath, '1')
         if (!existsSync(targetDir)) {
           try {
             mkdirSync(targetDir, { recursive: true })
-            console.log(`[LinkCore] Created target directory: ${targetDir}`)
+            console.log(`[Lerxu] Created target directory: ${targetDir}`)
           } catch (error) {
-            console.warn(`[LinkCore] Failed to create target directory: ${error.message}`)
+            console.warn(`[Lerxu] Failed to create target directory: ${error.message}`)
           }
         }
       }
@@ -2677,7 +2677,7 @@ writeFileSync(skipFlagPath, '1')
           if (fixedPath !== currentPath && existsSync(currentPath)) {
             const okFix = await renameWithRetry(currentPath, fixedPath)
             if (okFix) {
-              console.log(`[LinkCore] Fixed file name structure: ${currentPath} -> ${fixedPath}`)
+              console.log(`[Lerxu] Fixed file name structure: ${currentPath} -> ${fixedPath}`)
               cleanupAria2ControlFiles([currentPath, fixedPath])
               pathToProcess = fixedPath
             }
@@ -2690,7 +2690,7 @@ writeFileSync(skipFlagPath, '1')
           if (existsSync(pathToProcess) && originalPath) {
             const ok = await renameWithRetry(pathToProcess, originalPath)
             if (ok && existsSync(originalPath)) {
-              console.log(`[LinkCore] Removed downloading suffix: ${pathToProcess} -> ${originalPath}`)
+              console.log(`[Lerxu] Removed downloading suffix: ${pathToProcess} -> ${originalPath}`)
               cleanupAria2ControlFiles([pathToProcess, originalPath, desiredPath])
               return originalPath
             }
@@ -2710,7 +2710,7 @@ writeFileSync(skipFlagPath, '1')
             if (targetPath) {
               const ok = await renameWithRetry(suffixedPath, targetPath)
               if (ok && existsSync(targetPath)) {
-                console.log(`[LinkCore] Removed downloading suffix: ${suffixedPath} -> ${targetPath}`)
+                console.log(`[Lerxu] Removed downloading suffix: ${suffixedPath} -> ${targetPath}`)
                 cleanupAria2ControlFiles([suffixedPath, targetPath])
                 return targetPath
               }
@@ -2723,18 +2723,18 @@ writeFileSync(skipFlagPath, '1')
         const cfg = preferenceConfig.value || {}
         const autoCategorizeEnabled = cfg.autoCategorizeFiles
 
-        console.log('[LinkCore] Auto categorize check - enabled:', autoCategorizeEnabled)
+        console.log('[Lerxu] Auto categorize check - enabled:', autoCategorizeEnabled)
 
         if (!autoCategorizeEnabled) {
-          console.log('[LinkCore] Auto categorize files is disabled')
+          console.log('[Lerxu] Auto categorize files is disabled')
           return
         }
 
         const categories = cfg.fileCategories
-        console.log('[LinkCore] Auto categorize categories:', categories)
+        console.log('[Lerxu] Auto categorize categories:', categories)
 
         if (!categories || Object.keys(categories).length === 0) {
-          console.log('[LinkCore] No file categories configured, skip auto categorize')
+          console.log('[Lerxu] No file categories configured, skip auto categorize')
           return
         }
 
@@ -2800,25 +2800,25 @@ writeFileSync(skipFlagPath, '1')
                   if (fixedPath !== filePath) {
                     const renameOk = renamePreserveTimes(filePath, fixedPath)
                     if (renameOk) {
-                      console.log(`[LinkCore] Fixed BT file name structure: ${filePath} -> ${fixedPath}`)
+                      console.log(`[Lerxu] Fixed BT file name structure: ${filePath} -> ${fixedPath}`)
                       cleanupAria2ControlFiles([filePath, fixedPath])
                       pathToProcess = fixedPath
                     } else {
-                      console.warn(`[LinkCore] Failed to fix BT file name structure: ${filePath} -> ${fixedPath}`)
+                      console.warn(`[Lerxu] Failed to fix BT file name structure: ${filePath} -> ${fixedPath}`)
                     }
                   }
 
                   const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
                   const ok = renamePreserveTimes(pathToProcess, originalPath)
                   if (ok) {
-                    console.log(`[LinkCore] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
+                    console.log(`[Lerxu] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
                     cleanupAria2ControlFiles([pathToProcess, originalPath])
                     filePath = originalPath
                   }
                 }
               }
             } catch (error) {
-              console.warn(`[LinkCore] Failed to normalize downloading suffix before categorize: ${error.message}`)
+              console.warn(`[Lerxu] Failed to normalize downloading suffix before categorize: ${error.message}`)
             }
 
             if (!existsSync(filePath)) {
@@ -2835,10 +2835,10 @@ writeFileSync(skipFlagPath, '1')
 
               const result = autoCategorizeFile(filePath, baseDir, categories)
               if (result) {
-                console.log(`[LinkCore] File categorized successfully: ${filePath}`)
+                console.log(`[Lerxu] File categorized successfully: ${filePath}`)
               }
             } catch (error) {
-              console.error(`[LinkCore] Error during auto categorization: ${error.message}`)
+              console.error(`[Lerxu] Error during auto categorization: ${error.message}`)
             }
           })
 
@@ -2861,18 +2861,18 @@ writeFileSync(skipFlagPath, '1')
                 if (fixedPath !== filePath) {
                   const renameOk = renamePreserveTimes(filePath, fixedPath)
                   if (renameOk) {
-                    console.log(`[LinkCore] Fixed file name structure before categorize: ${filePath} -> ${fixedPath}`)
+                    console.log(`[Lerxu] Fixed file name structure before categorize: ${filePath} -> ${fixedPath}`)
                     cleanupAria2ControlFiles([filePath, fixedPath])
                     pathToProcess = fixedPath
                   } else {
-                    console.warn(`[LinkCore] Failed to fix file name structure before categorize: ${filePath} -> ${fixedPath}`)
+                    console.warn(`[Lerxu] Failed to fix file name structure before categorize: ${filePath} -> ${fixedPath}`)
                   }
                 }
 
                 const originalPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
                 const ok = renamePreserveTimes(pathToProcess, originalPath)
                 if (ok) {
-                  console.log(`[LinkCore] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
+                  console.log(`[Lerxu] Removed downloading suffix before categorize: ${pathToProcess} -> ${originalPath}`)
                   cleanupAria2ControlFiles([pathToProcess, originalPath])
                   filePath = originalPath
                 }
@@ -2886,7 +2886,7 @@ writeFileSync(skipFlagPath, '1')
                   if (fixedSuffixedPath !== suffixedPath && existsSync(suffixedPath)) {
                     const renameOk = renamePreserveTimes(suffixedPath, fixedSuffixedPath)
                     if (renameOk) {
-                      console.log(`[LinkCore] Fixed suffixed file name structure: ${suffixedPath} -> ${fixedSuffixedPath}`)
+                      console.log(`[Lerxu] Fixed suffixed file name structure: ${suffixedPath} -> ${fixedSuffixedPath}`)
                       cleanupAria2ControlFiles([suffixedPath, fixedSuffixedPath])
                       pathToProcess = fixedSuffixedPath
                     }
@@ -2895,7 +2895,7 @@ writeFileSync(skipFlagPath, '1')
                   const targetPath = pathToProcess.slice(0, -downloadingFileSuffix.length)
                   const ok = renamePreserveTimes(pathToProcess, targetPath)
                   if (ok) {
-                    console.log(`[LinkCore] Restored downloading suffix before categorize: ${pathToProcess} -> ${targetPath}`)
+                    console.log(`[Lerxu] Restored downloading suffix before categorize: ${pathToProcess} -> ${targetPath}`)
                     cleanupAria2ControlFiles([pathToProcess, targetPath])
                     filePath = targetPath
                   }
@@ -2903,12 +2903,12 @@ writeFileSync(skipFlagPath, '1')
               }
             }
           } catch (error) {
-            console.warn(`[LinkCore] Failed to normalize downloading suffix before categorize: ${error.message}`)
+            console.warn(`[Lerxu] Failed to normalize downloading suffix before categorize: ${error.message}`)
           }
         }
 
         if (!existsSync(filePath)) {
-          console.warn(`[LinkCore] File not found for categorization: ${filePath}`)
+          console.warn(`[Lerxu] File not found for categorization: ${filePath}`)
           return
         }
 
@@ -2917,18 +2917,18 @@ writeFileSync(skipFlagPath, '1')
           const dirName = basename(baseDir)
 
           if (categoryNames.includes(dirName)) {
-            console.log(`[LinkCore] File already in category directory: ${filePath}`)
+            console.log(`[Lerxu] File already in category directory: ${filePath}`)
             return
           }
 
           const result = autoCategorizeDownloadedFile(filePath, baseDir, categories)
           if (result) {
-            console.log(`[LinkCore] File categorized successfully: ${filePath}`)
+            console.log(`[Lerxu] File categorized successfully: ${filePath}`)
           } else {
-            console.warn('[LinkCore] File categorization failed or file already in category')
+            console.warn('[Lerxu] File categorization failed or file already in category')
           }
         } catch (error) {
-          console.error(`[LinkCore] Error during auto categorization: ${error.message}`)
+          console.error(`[Lerxu] Error during auto categorization: ${error.message}`)
         }
       }
       function setFileMtimeOnComplete(task, manualPath = null) {
@@ -2945,7 +2945,7 @@ writeFileSync(skipFlagPath, '1')
           const now = new Date()
           utimesSync(filePath, now, now)
         } catch (error) {
-          console.warn(`[LinkCore] Failed to set file mtime on complete: ${error.message}`)
+          console.warn(`[Lerxu] Failed to set file mtime on complete: ${error.message}`)
         }
       }
       function showTaskCompleteNotify(task, isBT, path) {
@@ -3028,7 +3028,7 @@ writeFileSync(skipFlagPath, '1')
           } catch (err) {
             // 单次轮询的同步异常不能中断轮询循环，
             // 否则任务列表会永久停止刷新（startPolling 不再被调用）
-            console.error('[LinkCore] polling error, loop continues:', err)
+            console.error('[Lerxu] polling error, loop continues:', err)
           }
           startPolling()
         }, interval.value)
@@ -3044,7 +3044,7 @@ writeFileSync(skipFlagPath, '1')
           try {
             polling()
           } catch (err) {
-            console.error('[LinkCore] polling error, loop continues:', err)
+            console.error('[Lerxu] polling error, loop continues:', err)
           }
           startPolling()
         }, 0)
@@ -3128,7 +3128,7 @@ writeFileSync(skipFlagPath, '1')
           if (existsSync(suffixedPath) && !existsSync(finalPath)) {
             const ok = renamePreserveTimes(suffixedPath, finalPath)
             if (ok) {
-              console.log(`[LinkCore] Restored suffix near completion: ${suffixedPath} -> ${finalPath}`)
+              console.log(`[Lerxu] Restored suffix near completion: ${suffixedPath} -> ${finalPath}`)
               cleanupAria2ControlFiles([suffixedPath, finalPath])
             }
           }
@@ -3176,21 +3176,21 @@ writeFileSync(skipFlagPath, '1')
 try {
 unlinkSync(finalPath)
                     } catch (e) {
-                      console.warn(`[LinkCore] Failed to remove empty file: ${finalPath}`, e)
+                      console.warn(`[Lerxu] Failed to remove empty file: ${finalPath}`, e)
                     }
                   }
 
                   const ok = renamePreserveTimes(suffixedPath, finalPath)
                   if (ok) {
-                    console.log(`[LinkCore] Restored suffix on startup: ${suffixedPath} -> ${finalPath}`)
+                    console.log(`[Lerxu] Restored suffix on startup: ${suffixedPath} -> ${finalPath}`)
                     cleanupAria2ControlFiles([suffixedPath, finalPath])
                   } else {
-                    console.warn(`[LinkCore] Failed to restore suffix on startup: ${suffixedPath} -> ${finalPath}`)
+                    console.warn(`[Lerxu] Failed to restore suffix on startup: ${suffixedPath} -> ${finalPath}`)
                   }
                 }
               }
             } catch (err) {
-              console.warn(`[LinkCore] restoreSuffixFilesForActiveTasks error for task ${task.gid}:`, err)
+              console.warn(`[Lerxu] restoreSuffixFilesForActiveTasks error for task ${task.gid}:`, err)
             }
           })
         })
@@ -3656,11 +3656,11 @@ unlinkSync(finalPath)
         case 1: // 网络错误
           if (/timeout|timed out/i.test(msg)) {
             // 连接超时，等待后重试
-            console.log(`[LinkCore] BT task ${gid} timeout, will retry in 10 seconds`)
+            console.log(`[Lerxu] BT task ${gid} timeout, will retry in 10 seconds`)
             scheduleRetry(10000)
           } else if (/connection refused|refused/i.test(msg)) {
             // 连接被拒绝，可能是tracker问题，稍后重试
-            console.log(`[LinkCore] BT task ${gid} connection refused, will retry in 30 seconds`)
+            console.log(`[Lerxu] BT task ${gid} connection refused, will retry in 30 seconds`)
             scheduleRetry(30000)
           }
           break
@@ -3682,7 +3682,7 @@ unlinkSync(finalPath)
                 repaired = await tryRepairDownloadFilePermission(gid, failedPath)
               }
               if (repaired) {
-                console.log(`[LinkCore] BT task ${gid} file permission repaired, resuming now`)
+                console.log(`[Lerxu] BT task ${gid} file permission repaired, resuming now`)
                 scheduleRetry(2000)
                 break
               }
@@ -3696,7 +3696,7 @@ unlinkSync(finalPath)
             } else {
               msg.warning(t('task.error-reason-permission'))
             }
-            console.log(`[LinkCore] BT task ${gid} permission denied, will retry in 120 seconds`)
+            console.log(`[Lerxu] BT task ${gid} permission denied, will retry in 120 seconds`)
             scheduleRetry(120000)
           } else if (/No space left|disk full/i.test(msg)) {
             msg.warning('磁盘空间不足，请清理磁盘空间后重新开始下载')
@@ -3714,7 +3714,7 @@ unlinkSync(finalPath)
         default:
           // 其他错误，短时间后重试
           if (code > 0) {
-            console.log(`[LinkCore] BT task ${gid} error ${code}, will retry in 60 seconds`)
+            console.log(`[Lerxu] BT task ${gid} error ${code}, will retry in 60 seconds`)
             scheduleRetry(60000)
           }
         }
@@ -3903,7 +3903,7 @@ unlinkSync(finalPath)
             }
             _resumedErrorFixedGids.add(gid)
 
-            console.log(`[LinkCore] Stopping auto-resumed errored task ${gid} (engine status: ${task.status || ''})`)
+            console.log(`[Lerxu] Stopping auto-resumed errored task ${gid} (engine status: ${task.status || ''})`)
             // 从引擎队列移除（不删除文件），保留本地历史记录，
             // 任务将以 error 状态从历史记录中恢复显示
             try {
@@ -3942,7 +3942,7 @@ onMounted(() => {
         // 引擎启动早期可能尚未就绪（主进程 RPC 走 HTTP 兜底），
         // 获取失败不应产生未捕获的 Promise 异常，静默降级即可
         appStore.fetchEngineInfo().catch((err) => {
-          console.warn('[LinkCore] fetch engine info failed:', err && err.message ? err.message : err)
+          console.warn('[Lerxu] fetch engine info failed:', err && err.message ? err.message : err)
         })
         appStore.fetchEngineOptions()
 

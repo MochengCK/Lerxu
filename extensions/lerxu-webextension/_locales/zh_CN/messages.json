@@ -1,18 +1,18 @@
 {
   "extensionName": {
-    "message": "LinkCore",
+    "message": "Lerxu",
     "description": "扩展名称"
   },
   "extensionDescription": {
-    "message": "LinkCore 深度集成浏览器插件",
+    "message": "Lerxu 深度集成浏览器插件",
     "description": "扩展描述"
   },
   "actionTitle": {
-    "message": "LinkCore",
+    "message": "Lerxu",
     "description": "浏览器操作标题"
   },
   "popupTitle": {
-    "message": "LinkCore",
+    "message": "Lerxu",
     "description": "弹窗标题"
   },
   "rpcAddress": {
@@ -52,7 +52,7 @@
     "description": "连接状态:未连接"
   },
   "contextMenuDownload": {
-    "message": "使用 LinkCore 下载",
+    "message": "使用 Lerxu 下载",
     "description": "右键菜单项文本"
   },
   "labelExcludeCurrentSite": {

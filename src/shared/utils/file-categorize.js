@@ -74,12 +74,12 @@ export const createCategoryDirectory = (categorizedDir) => {
   try {
     if (!existsSync(categorizedDir)) {
       mkdirSync(categorizedDir, { recursive: true })
-      console.log(`[LinkCore] Created category directory: ${categorizedDir}`)
+      console.log(`[Lerxu] Created category directory: ${categorizedDir}`)
       return true
     }
     return false
   } catch (error) {
-    console.warn(`[LinkCore] Failed to create category directory: ${error.message}`)
+    console.warn(`[Lerxu] Failed to create category directory: ${error.message}`)
     return false
   }
 }
@@ -103,17 +103,17 @@ export const moveFileToCategory = (originalPath, categorizedPath) => {
           utimesSync(categorizedPath, at, mt)
         }
       } catch (_) {}
-      console.log(`[LinkCore] Moved file to category: ${originalPath} -> ${categorizedPath}`)
+      console.log(`[Lerxu] Moved file to category: ${originalPath} -> ${categorizedPath}`)
       return true
     } else if (existsSync(categorizedPath)) {
-      console.log(`[LinkCore] File already exists in category: ${categorizedPath}`)
+      console.log(`[Lerxu] File already exists in category: ${categorizedPath}`)
       return false
     } else {
-      console.warn(`[LinkCore] Original file not found: ${originalPath}`)
+      console.warn(`[Lerxu] Original file not found: ${originalPath}`)
       return false
     }
   } catch (error) {
-    console.warn(`[LinkCore] Failed to move file to category: ${error.message}`)
+    console.warn(`[Lerxu] Failed to move file to category: ${error.message}`)
     return false
   }
 }
@@ -127,7 +127,7 @@ export const autoCategorizeDownloadedFile = (filePath, baseDir, categories = DEF
 
   // 如果文件已经在分类文件夹中，不需要移动
   if (dirname(filePath) === dirname(categorizedInfo.categorizedPath)) {
-    console.log(`[LinkCore] File already in category folder: ${filePath}`)
+    console.log(`[Lerxu] File already in category folder: ${filePath}`)
     return false
   }
 

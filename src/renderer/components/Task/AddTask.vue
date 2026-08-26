@@ -1080,7 +1080,7 @@ async function addTask (type, formData) {
   } else if (type === 'metalink') {
     // @TODO addMetalink
   } else {
-    console.error('[LinkCore] Add task fail', formData)
+    console.error('[Lerxu] Add task fail', formData)
   }
 }
 

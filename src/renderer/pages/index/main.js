@@ -155,7 +155,7 @@ function init (config, options = {}) {
       const appStore = useAppStore()
       appStore.updateCurrentPage(page)
     } catch (e) {
-      console.warn('[LinkCore] Failed to update current page:', e)
+      console.warn('[Lerxu] Failed to update current page:', e)
     }
   })
 
@@ -175,7 +175,7 @@ function init (config, options = {}) {
 const preferenceStore = usePreferenceStore(pinia)
 preferenceStore.fetchPreference()
   .then((config) => {
-    console.info('[LinkCore] load preference:', config)
+    console.info('[Lerxu] load preference:', config)
     if (!isPreferenceWindow) {
       const taskStore = useTaskStore(pinia)
       taskStore.initializeViewMode(config)

@@ -56,7 +56,7 @@ export default class Engine {
 
   async _doStart () {
     const pidPath = getEnginePidPath()
-    logger.info('[LinkCore] Engine pid path:', pidPath)
+    logger.info('[Lerxu] Engine pid path:', pidPath)
 
     if (this.instance) {
       return
@@ -87,8 +87,8 @@ export default class Engine {
     await this.prepareDhtBootstrap()
 
     const enableEngineLogs = is.dev() || is.linux() || is.windows()
-    logger.info('[LinkCore] engine bin path:', binPath)
-    logger.info('[LinkCore] engine start args:', args)
+    logger.info('[Lerxu] engine bin path:', binPath)
+    logger.info('[Lerxu] engine start args:', args)
 
     // 获取引擎所在目录作为工作目录
     const engineDir = require('path').dirname(binPath)
@@ -99,10 +99,10 @@ export default class Engine {
     })
 
     this.instance.on('error', (err) => {
-      logger.error('[LinkCore] engine process error:', err && err.message ? err.message : err)
+      logger.error('[Lerxu] engine process error:', err && err.message ? err.message : err)
     })
     if (typeof this.instance.pid !== 'number') {
-      logger.error('[LinkCore] engine process pid is invalid:', this.instance.pid)
+      logger.error('[Lerxu] engine process pid is invalid:', this.instance.pid)
       const e = new Error(this.i18n.t('app.engine-damaged-message'))
       e.details = [
         `platform=${platform} arch=${arch}`,
@@ -116,15 +116,15 @@ export default class Engine {
     this.writePidFile(pidPath, pid)
 
     this.instance.once('close', (code, signal) => {
-      logger.warn('[LinkCore] engine process exited:', code, signal)
+      logger.warn('[Lerxu] engine process exited:', code, signal)
       try {
         unlink(pidPath, (err) => {
           if (err) {
-            logger.warn(`[LinkCore] Unlink engine process pid file failed: ${err}`)
+            logger.warn(`[Lerxu] Unlink engine process pid file failed: ${err}`)
           }
         })
       } catch (err) {
-        logger.warn(`[LinkCore] Unlink engine process pid file failed: ${err}`)
+        logger.warn(`[Lerxu] Unlink engine process pid file failed: ${err}`)
       }
 
       // 清理实例引用
@@ -136,11 +136,11 @@ export default class Engine {
 
     if (enableEngineLogs) {
       this.instance.stdout.on('data', (data) => {
-        logger.log('[LinkCore] engine stdout===>', data.toString())
+        logger.log('[Lerxu] engine stdout===>', data.toString())
       })
 
       this.instance.stderr.on('data', (data) => {
-        logger.error('[LinkCore] engine stderr===>', data.toString())
+        logger.error('[Lerxu] engine stderr===>', data.toString())
       })
     }
 
@@ -172,7 +172,7 @@ export default class Engine {
       const results = await Promise.all(tasks)
       results.forEach((r) => {
         if (r && r.created) {
-          logger.info(`[LinkCore] DHT routing table pre-seeded with ${r.nodes} bootstrap nodes`)
+          logger.info(`[Lerxu] DHT routing table pre-seeded with ${r.nodes} bootstrap nodes`)
         }
       })
     })()
@@ -184,7 +184,7 @@ export default class Engine {
         new Promise((resolve) => setTimeout(resolve, 4000))
       ])
     } catch (e) {
-      logger.warn('[LinkCore] DHT bootstrap pre-seed skipped:', e && e.message ? e.message : e)
+      logger.warn('[Lerxu] DHT bootstrap pre-seed skipped:', e && e.message ? e.message : e)
     }
   }
 
@@ -217,7 +217,7 @@ export default class Engine {
     // 这些信号默认不会触发 Electron 的 before-quit/will-quit 事件，
     // 不注册的话引擎会直接变孤儿。
     const onSignal = (signal) => {
-      logger.warn(`[LinkCore] Received ${signal}, stopping engine before exit`)
+      logger.warn(`[Lerxu] Received ${signal}, stopping engine before exit`)
       // 同步发 SIGTERM，给 aria2 保存 session 的机会
       this.stop(1500).finally(() => {
         // 信号处理后立即退出（不能阻塞太久，系统关机有超时）
@@ -231,7 +231,7 @@ export default class Engine {
     // 不主动 process.exit：上报/弹窗由 ExceptionHandler 统一负责，
     // 普通异常不应直接杀掉整个应用；若进程真的退出，'exit' 处理器会兜底。
     process.on('uncaughtException', (err) => {
-      logger.error('[LinkCore] Uncaught exception, killing engine:', err && err.message)
+      logger.error('[Lerxu] Uncaught exception, killing engine:', err && err.message)
       onExit()
     })
   }
@@ -329,7 +329,7 @@ export default class Engine {
       try {
         copyFileSync(p, destPath)
       } catch (e) {
-        logger.warn('[LinkCore] Copy engine to userData failed:', e && e.message ? e.message : e)
+        logger.warn('[Lerxu] Copy engine to userData failed:', e && e.message ? e.message : e)
         const err = new Error(this.i18n.t('app.engine-damaged-message'))
         err.details = [
           `platform=${platform} arch=${arch}`,
@@ -348,9 +348,9 @@ export default class Engine {
           const destLib = join(destDir, 'lib')
           try {
             cpSync(srcLib, destLib, { recursive: true, force: true })
-            logger.info('[LinkCore] Copied engine lib directory to userData:', destLib)
+            logger.info('[Lerxu] Copied engine lib directory to userData:', destLib)
           } catch (e) {
-            logger.warn('[LinkCore] Copy engine lib directory failed:', e && e.message ? e.message : e)
+            logger.warn('[Lerxu] Copy engine lib directory failed:', e && e.message ? e.message : e)
           }
         }
       }
@@ -383,7 +383,7 @@ export default class Engine {
       ].join('\n')
       throw err
     } catch (e) {
-      logger.warn('[LinkCore] prepareEngineBinary failed:', e && e.message ? e.message : e)
+      logger.warn('[Lerxu] prepareEngineBinary failed:', e && e.message ? e.message : e)
       lastError = e
     }
 
@@ -405,7 +405,7 @@ export default class Engine {
   // 调用方应 await 本方法，确保 app.exit() 前子进程已被清理，否则引擎会
   // 变成孤儿进程继续占用端口、写 session 文件。
   stop (timeout = 3000) {
-    logger.info('[LinkCore] engine.stop.instance')
+    logger.info('[Lerxu] engine.stop.instance')
     if (!this.instance) {
       return Promise.resolve()
     }
@@ -432,7 +432,7 @@ export default class Engine {
 
       // 子进程退出时（无论正常还是被信号杀掉）触发 close 事件
       instance.once('close', (code, signal) => {
-        logger.info('[LinkCore] engine process closed during stop:', code, signal)
+        logger.info('[Lerxu] engine process closed during stop:', code, signal)
         finish()
       })
 
@@ -440,7 +440,7 @@ export default class Engine {
       try {
         instance.kill('SIGTERM')
       } catch (err) {
-        logger.warn('[LinkCore] engine SIGTERM failed:', err && err.message)
+        logger.warn('[Lerxu] engine SIGTERM failed:', err && err.message)
         finish()
         return
       }
@@ -449,11 +449,11 @@ export default class Engine {
       // BT 种子校验）导致 SIGTERM 被忽略、进程永不退出
       killTimer = setTimeout(() => {
         if (!settled) {
-          logger.warn(`[LinkCore] engine SIGTERM timeout after ${timeout}ms, sending SIGKILL`)
+          logger.warn(`[Lerxu] engine SIGTERM timeout after ${timeout}ms, sending SIGKILL`)
           try {
             instance.kill('SIGKILL')
           } catch (err) {
-            logger.warn('[LinkCore] engine SIGKILL failed:', err && err.message)
+            logger.warn('[Lerxu] engine SIGKILL failed:', err && err.message)
             // 即使 SIGKILL 失败也 resolve，避免阻塞退出流程
             finish()
           }
@@ -465,7 +465,7 @@ export default class Engine {
   writePidFile (pidPath, pid) {
     writeFile(pidPath, pid, (err) => {
       if (err) {
-        logger.error(`[LinkCore] Write engine process pid failed: ${err}`)
+        logger.error(`[Lerxu] Write engine process pid failed: ${err}`)
       }
     })
   }
@@ -474,7 +474,7 @@ export default class Engine {
   checkAndRestartEngine (exitCode, signal) {
     // 主动停止（应用退出/手动停止）时不重启，避免 SIGKILL 兜底被误判为崩溃
     if (this._stopping) {
-      logger.info('[LinkCore] Engine stopped intentionally, not restarting')
+      logger.info('[Lerxu] Engine stopped intentionally, not restarting')
       if (this.restartTimer) {
         clearTimeout(this.restartTimer)
         this.restartTimer = null
@@ -487,21 +487,21 @@ export default class Engine {
 
     // 如果是正常退出或收到SIGTERM，不重启
     if (signal === 'SIGTERM' || exitCode === 0) {
-      logger.info('[LinkCore] Engine exited normally, not restarting')
+      logger.info('[Lerxu] Engine exited normally, not restarting')
       Engine.restartAttempts = 0
       return
     }
 
     // 检查重启条件
     if (Engine.restartAttempts >= Engine.maxRestartAttempts) {
-      logger.error(`[LinkCore] Engine restart attempts (${Engine.restartAttempts}) exceeded maximum (${Engine.maxRestartAttempts})`)
+      logger.error(`[Lerxu] Engine restart attempts (${Engine.restartAttempts}) exceeded maximum (${Engine.maxRestartAttempts})`)
       return
     }
 
     // 如果距离上次重启时间太短，延迟重启
     if (timeSinceLastRestart < 5000) {
       const delay = 5000 - timeSinceLastRestart
-      logger.warn(`[LinkCore] Engine crash detected, will restart in ${delay}ms (attempt ${Engine.restartAttempts + 1}/${Engine.maxRestartAttempts})`)
+      logger.warn(`[Lerxu] Engine crash detected, will restart in ${delay}ms (attempt ${Engine.restartAttempts + 1}/${Engine.maxRestartAttempts})`)
 
       if (this.restartTimer) {
         clearTimeout(this.restartTimer)
@@ -511,7 +511,7 @@ export default class Engine {
         this.performEngineRestart()
       }, delay)
     } else {
-      logger.warn(`[LinkCore] Engine crash detected, restarting immediately (attempt ${Engine.restartAttempts + 1}/${Engine.maxRestartAttempts})`)
+      logger.warn(`[Lerxu] Engine crash detected, restarting immediately (attempt ${Engine.restartAttempts + 1}/${Engine.maxRestartAttempts})`)
       this.performEngineRestart()
     }
   }
@@ -523,14 +523,14 @@ export default class Engine {
     try {
       // 清理可能残留的旧进程
       this.killStaleProcess(getEnginePidPath()).then(() => {
-        logger.info('[LinkCore] Starting automatic engine restart')
+        logger.info('[Lerxu] Starting automatic engine restart')
         this.start().then(() => {
           // 引擎成功重启后复位计数，使 maxRestartAttempts 仅针对"连续崩溃"生效，
           // 而非整个应用生命周期的累计崩溃次数，避免恢复后仍因历史计数而停摆
           Engine.restartAttempts = 0
-          logger.info('[LinkCore] Engine restarted successfully, restart attempts reset')
+          logger.info('[Lerxu] Engine restarted successfully, restart attempts reset')
         }).catch((error) => {
-          logger.error('[LinkCore] Failed to restart engine:', error.message)
+          logger.error('[Lerxu] Failed to restart engine:', error.message)
           // 如果重启失败，指数退避延迟下一次尝试
           const delay = Math.pow(2, Engine.restartAttempts) * 1000
           if (Engine.restartAttempts < Engine.maxRestartAttempts) {
@@ -541,7 +541,7 @@ export default class Engine {
         })
       })
     } catch (error) {
-      logger.error('[LinkCore] Error during engine restart:', error.message)
+      logger.error('[Lerxu] Error during engine restart:', error.message)
     }
   }
 
@@ -574,7 +574,7 @@ export default class Engine {
           unlink(pidPath, () => resolve(false))
           return
         }
-        logger.warn(`[LinkCore] Found stale engine process pid=${pid}, killing it`)
+        logger.warn(`[Lerxu] Found stale engine process pid=${pid}, killing it`)
         // 先 SIGTERM 优雅关闭，1.5s 后 SIGKILL 兜底
         try {
           process.kill(pid, 'SIGTERM')
@@ -616,12 +616,12 @@ export default class Engine {
 
     // 直接使用 xfercore 作为引擎，不再支持多引擎选择
     binName = getEngineBin(platform)
-    logger.info(`[LinkCore] Using engine: ${binName}`)
+    logger.info(`[Lerxu] Using engine: ${binName}`)
 
     const result = resolve(enginePath, binName)
     const binIsExist = existsSync(result)
     if (!binIsExist) {
-      logger.error('[LinkCore] engine bin is not exist:', result)
+      logger.error('[Lerxu] engine bin is not exist:', result)
       const e = new Error(this.i18n.t('app.engine-missing-message'))
       e.details = [
         `platform=${platform} arch=${arch}`,

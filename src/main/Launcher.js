@@ -61,7 +61,7 @@ export default class Launcher extends EventEmitter {
       this.handleAppLaunchArgv(process.argv)
     }
 
-    logger.info('[LinkCore] openedAtLogin:', this.openedAtLogin)
+    logger.info('[Lerxu] openedAtLogin:', this.openedAtLogin)
 
     this.handleAppEvents()
   }
@@ -92,7 +92,7 @@ export default class Launcher extends EventEmitter {
       return
     }
     app.on('open-url', (event, url) => {
-      logger.info(`[LinkCore] open-url: ${url}`)
+      logger.info(`[Lerxu] open-url: ${url}`)
       event.preventDefault()
       this.url = url
       this.sendUrlToApplication()
@@ -109,7 +109,7 @@ export default class Launcher extends EventEmitter {
       return
     }
     app.on('open-file', (event, path) => {
-      logger.info(`[LinkCore] open-file: ${path}`)
+      logger.info(`[Lerxu] open-file: ${path}`)
       event.preventDefault()
       this.file = path
       this.sendFileToApplication()
@@ -122,12 +122,12 @@ export default class Launcher extends EventEmitter {
    * @param {array} argv
    */
   handleAppLaunchArgv (argv) {
-    logger.info('[LinkCore] handleAppLaunchArgv:', argv)
+    logger.info('[Lerxu] handleAppLaunchArgv:', argv)
 
     // args: array, extra: map
     const { args, extra } = splitArgv(argv)
-    logger.info('[LinkCore] split argv args:', args)
-    logger.info('[LinkCore] split argv extra:', extra)
+    logger.info('[Lerxu] split argv args:', args)
+    logger.info('[Lerxu] split argv extra:', extra)
     if (extra['--opened-at-login'] === '1') {
       this.openedAtLogin = true
     }
@@ -177,7 +177,7 @@ export default class Launcher extends EventEmitter {
 
     app.on('activate', () => {
       if (global.application) {
-        logger.info('[LinkCore] activate')
+        logger.info('[Lerxu] activate')
         global.application.handleActivate()
       }
     })
@@ -185,7 +185,7 @@ export default class Launcher extends EventEmitter {
 
   handleAppWillQuit () {
     app.on('will-quit', (event) => {
-      logger.info('[LinkCore] will-quit')
+      logger.info('[Lerxu] will-quit')
       // 如果 Application.quit() 已经处理了引擎关闭（engine.instance 为 null），
       // 则直接退出，不重复操作。
       if (!global.application || !global.application.engine || !global.application.engine.instance) {
@@ -195,7 +195,7 @@ export default class Launcher extends EventEmitter {
       // will-quit 可以为异步：preventDefault 后在 stopEngine 完成再 exit。
       // 这样引擎能收到 SIGTERM、保存 session，不会变成孤儿进程。
       event.preventDefault()
-      logger.info('[LinkCore] will-quit.engine.stop (async)')
+      logger.info('[Lerxu] will-quit.engine.stop (async)')
       global.application.stopEngine().finally(() => {
         app.exit(0)
       })

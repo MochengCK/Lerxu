@@ -18,7 +18,7 @@ const execAsync = promisify(exec)
 
 // 配置
 const GITHUB_OWNER = 'MochengCK'
-const GITHUB_REPO = 'LinkCore'
+const GITHUB_REPO = 'Lerxu'
 const CURRENT_VERSION = app.getVersion()
 
 // GitHub 镜像列表，按优先级排序
@@ -157,7 +157,7 @@ async function fetchReleaseList (axiosConfig = {}) {
     try {
       const response = await axios.get(url, {
         ...config,
-        headers: { Accept: 'application/vnd.github.v3+json', 'User-Agent': 'LinkCore-UpdateCheck' }
+        headers: { Accept: 'application/vnd.github.v3+json', 'User-Agent': 'Lerxu-UpdateCheck' }
       })
       if (response.status === 200 && Array.isArray(response.data) && response.data.length > 0) {
         _releaseListCache = { data: response.data, time: Date.now() }
@@ -165,7 +165,7 @@ async function fetchReleaseList (axiosConfig = {}) {
       }
     } catch (err) {
       lastError = err
-      logger.warn(`[LinkCore] Releases API failed: ${url} - ${err.message}`)
+      logger.warn(`[Lerxu] Releases API failed: ${url} - ${err.message}`)
     }
   }
   for (const url of atomUrls) {
@@ -177,14 +177,14 @@ async function fetchReleaseList (axiosConfig = {}) {
       if (response.status === 200 && typeof response.data === 'string') {
         const releases = parseReleasesAtom(response.data)
         if (releases.length > 0) {
-          logger.info(`[LinkCore] Release list fetched via Atom feed: ${url} (${releases.length} entries)`)
+          logger.info(`[Lerxu] Release list fetched via Atom feed: ${url} (${releases.length} entries)`)
           _releaseListCache = { data: releases, time: Date.now() }
           return releases
         }
       }
     } catch (err) {
       lastError = err
-      logger.warn(`[LinkCore] Releases Atom feed failed: ${url} - ${err.message}`)
+      logger.warn(`[Lerxu] Releases Atom feed failed: ${url} - ${err.message}`)
     }
   }
   if (lastError) {
@@ -257,14 +257,14 @@ async function fetchReleaseNotes (version, axiosConfig = {}, preferExactTag = fa
 
   for (const url of apiUrls) {
     try {
-      logger.info(`[LinkCore] Fetching release notes: ${url}`)
+      logger.info(`[Lerxu] Fetching release notes: ${url}`)
       const response = await axios.get(url, config)
       if (response.data && response.data.body) {
-        logger.info('[LinkCore] Release notes fetched successfully')
+        logger.info('[Lerxu] Release notes fetched successfully')
         return response.data.body
       }
     } catch (err) {
-      logger.warn(`[LinkCore] Release notes fetch failed: ${url} - ${err.message}`)
+      logger.warn(`[Lerxu] Release notes fetch failed: ${url} - ${err.message}`)
       continue
     }
   }
@@ -284,11 +284,11 @@ async function fetchReleaseNotes (version, axiosConfig = {}, preferExactTag = fa
         const entry = parseReleasesAtom(response.data)
           .find(e => e.tag_name && e.tag_name.toLowerCase().replace(/^v/, '') === target)
         if (entry && entry.body) {
-          logger.info(`[LinkCore] Release notes fetched via Atom feed: ${url}`)
+          logger.info(`[Lerxu] Release notes fetched via Atom feed: ${url}`)
           return entry.body
         }
       } catch (err) {
-        logger.warn(`[LinkCore] Release notes Atom feed failed: ${url} - ${err.message}`)
+        logger.warn(`[Lerxu] Release notes Atom feed failed: ${url} - ${err.message}`)
       }
     }
   } catch (_) {}
@@ -303,7 +303,7 @@ async function fetchFromMirrors (urls, axiosConfig = {}) {
   let lastError = null
   for (const url of urls) {
     try {
-      logger.info(`[LinkCore] Trying: ${url}`)
+      logger.info(`[Lerxu] Trying: ${url}`)
       const response = await axios.get(url, {
         timeout: 15000,
         responseType: 'text',
@@ -311,12 +311,12 @@ async function fetchFromMirrors (urls, axiosConfig = {}) {
         ...axiosConfig
       })
       if (response.status === 200) {
-        logger.info(`[LinkCore] Success: ${url}`)
+        logger.info(`[Lerxu] Success: ${url}`)
         return { data: response.data, url }
       }
     } catch (err) {
       lastError = err
-      logger.warn(`[LinkCore] Failed: ${url} - ${err.message}`)
+      logger.warn(`[Lerxu] Failed: ${url} - ${err.message}`)
       continue
     }
   }
@@ -465,7 +465,7 @@ export default class UpdateManager extends EventEmitter {
     }
     this._autoCheckTimer = null
 
-    logger.info('[LinkCore] UpdateManager initialized')
+    logger.info('[Lerxu] UpdateManager initialized')
     this.init()
   }
 
@@ -543,7 +543,7 @@ export default class UpdateManager extends EventEmitter {
               password: proxyPassword
             }
           }
-          logger.info(`[LinkCore] Using custom proxy: ${proxyProtocol}://${proxyHost}:${proxyPort}`)
+          logger.info(`[Lerxu] Using custom proxy: ${proxyProtocol}://${proxyHost}:${proxyPort}`)
         } else if (mode === 'system') {
           // 系统代理：axios 不会自动读取 macOS/Windows 系统偏好设置里的
           // 代理，必须用 Electron session.resolveProxy() 解析后显式设置。
@@ -556,9 +556,9 @@ export default class UpdateManager extends EventEmitter {
                 const agent = new SocksProxyAgent(`socks${this._systemProxy.protocol === 'socks4' ? '4' : '5'}://${this._systemProxy.host}:${this._systemProxy.port}`)
                 config.httpAgent = agent
                 config.httpsAgent = agent
-                logger.info(`[LinkCore] Using system SOCKS proxy: ${this._systemProxy.protocol}://${this._systemProxy.host}:${this._systemProxy.port}`)
+                logger.info(`[Lerxu] Using system SOCKS proxy: ${this._systemProxy.protocol}://${this._systemProxy.host}:${this._systemProxy.port}`)
               } catch (e) {
-                logger.warn(`[LinkCore] socks-proxy-agent unavailable, system SOCKS proxy skipped: ${e.message}`)
+                logger.warn(`[Lerxu] socks-proxy-agent unavailable, system SOCKS proxy skipped: ${e.message}`)
               }
             } else {
               config.proxy = {
@@ -566,10 +566,10 @@ export default class UpdateManager extends EventEmitter {
                 host: this._systemProxy.host,
                 port: this._systemProxy.port
               }
-              logger.info(`[LinkCore] Using system proxy: ${this._systemProxy.protocol}://${this._systemProxy.host}:${this._systemProxy.port}`)
+              logger.info(`[Lerxu] Using system proxy: ${this._systemProxy.protocol}://${this._systemProxy.host}:${this._systemProxy.port}`)
             }
           } else {
-            logger.warn('[LinkCore] System proxy not resolved, requests will go direct')
+            logger.warn('[Lerxu] System proxy not resolved, requests will go direct')
           }
         } else if (mode === 'none') {
           // 显式禁用代理：axios 1.x 默认会读取 HTTP_PROXY/HTTPS_PROXY
@@ -603,12 +603,12 @@ export default class UpdateManager extends EventEmitter {
       const result = await ses.resolveProxy('https://github.com/')
       this._systemProxy = parseProxyString(result)
       if (this._systemProxy) {
-        logger.info(`[LinkCore] System proxy resolved: ${result}`)
+        logger.info(`[Lerxu] System proxy resolved: ${result}`)
       } else {
-        logger.info(`[LinkCore] System proxy resolved as DIRECT/unsupported: ${result}`)
+        logger.info(`[Lerxu] System proxy resolved as DIRECT/unsupported: ${result}`)
       }
     } catch (err) {
-      logger.warn(`[LinkCore] Failed to resolve system proxy: ${err.message}`)
+      logger.warn(`[Lerxu] Failed to resolve system proxy: ${err.message}`)
       this._systemProxy = null
     }
   }
@@ -663,7 +663,7 @@ export default class UpdateManager extends EventEmitter {
         // 否则跳过本次自动检查（已有待下载的新版本，无需反复检查）。
         const savedVersion = cfg.getUserConfig('new-version')
         if (!savedVersion || !isNewerVersion(savedVersion, CURRENT_VERSION)) {
-          logger.info(`[LinkCore] Clearing stale update-available state (${savedVersion || 'none'}), resuming auto check`)
+          logger.info(`[Lerxu] Clearing stale update-available state (${savedVersion || 'none'}), resuming auto check`)
           cfg.setUserConfig({ 'update-available': false, 'new-version': '', 'release-notes': '' })
         } else {
           return
@@ -718,7 +718,7 @@ export default class UpdateManager extends EventEmitter {
           }
         }
       } catch (e) {
-        logger.warn(`[LinkCore] Failed to read update-channel, fallback to stable: ${e.message}`)
+        logger.warn(`[Lerxu] Failed to read update-channel, fallback to stable: ${e.message}`)
       }
 
       let urls
@@ -734,7 +734,7 @@ export default class UpdateManager extends EventEmitter {
           if (pick && pick.tagName) {
             urls = buildTaggedYmlUrls(pick.tagName)
             channelPrerelease = !!pick.prerelease
-            logger.info(`[LinkCore] Update channel "${channel}" targeting ${pick.tagName} (prerelease=${pick.prerelease})`)
+            logger.info(`[Lerxu] Update channel "${channel}" targeting ${pick.tagName} (prerelease=${pick.prerelease})`)
           }
         } else if (channel === 'stable') {
           // stable 渠道：显式挑选最新正式版（非 pre-release、非草稿），
@@ -745,12 +745,12 @@ export default class UpdateManager extends EventEmitter {
           const pick = pickReleaseByChannel(stableReleases, 'stable')
           if (pick && pick.tagName) {
             urls = buildTaggedYmlUrls(pick.tagName)
-            logger.info(`[LinkCore] Update channel "stable" targeting ${pick.tagName}`)
+            logger.info(`[Lerxu] Update channel "stable" targeting ${pick.tagName}`)
           }
         }
       } catch (err) {
         releaseListAvailable = false
-        logger.warn(`[LinkCore] Channel "${channel}" release lookup failed, falling back to default URLs: ${err.message}`)
+        logger.warn(`[Lerxu] Channel "${channel}" release lookup failed, falling back to default URLs: ${err.message}`)
       }
       if (!urls) {
         // beta/all 渠道拿不到发布列表时（API 限流/网络异常），回退到
@@ -775,7 +775,7 @@ export default class UpdateManager extends EventEmitter {
       // 只要版本号带 pre-release 标识就不提示更新，
       // 保证稳定版渠道永远只看到正式版。
       if (channel === 'stable' && isPrereleaseVersion(info.version)) {
-        logger.info(`[LinkCore] Stable channel ignored pre-release yml version: ${info.version}`)
+        logger.info(`[Lerxu] Stable channel ignored pre-release yml version: ${info.version}`)
         this.isChecking = false
         this._notifyWindows('update-not-available')
         this.emit('update-not-available', info)
@@ -788,7 +788,7 @@ export default class UpdateManager extends EventEmitter {
       // 只要版本号不带 pre-release 标识就不提示更新，
       // 保证 Beta 渠道永远只看到测试版；想升级正式版请切换 stable 渠道。
       if (channel === 'beta' && !isPrereleaseVersion(info.version)) {
-        logger.info(`[LinkCore] Beta channel ignored stable yml version: ${info.version}`)
+        logger.info(`[Lerxu] Beta channel ignored stable yml version: ${info.version}`)
         this.isChecking = false
         this._notifyWindows('update-not-available')
         this.emit('update-not-available', info)
@@ -832,7 +832,7 @@ export default class UpdateManager extends EventEmitter {
       this.isChecking = false
       const errMsg = err?.message || `${err}`
       this._lastCheckError = errMsg
-      logger.warn(`[LinkCore] Check failed: ${errMsg}`)
+      logger.warn(`[Lerxu] Check failed: ${errMsg}`)
       this._notifyWindows('update-error', errMsg)
       this.emit('update-error', err)
     }
@@ -849,7 +849,7 @@ export default class UpdateManager extends EventEmitter {
     const platform = process.platform // darwin, win32, linux
     const arch = process.arch // x64, arm64
 
-    logger.info(`[LinkCore] Platform: ${platform}/${arch}, available files: ${info.files.map(f => f.url).join(', ')}`)
+    logger.info(`[Lerxu] Platform: ${platform}/${arch}, available files: ${info.files.map(f => f.url).join(', ')}`)
 
     let asset = null
     if (platform === 'darwin') {
@@ -880,7 +880,7 @@ export default class UpdateManager extends EventEmitter {
       asset = matchArch(zipFiles, arch)
       if (!asset && zipFiles.length > 0) {
         asset = zipFiles[0]
-        logger.warn(`[LinkCore] No ${arch} ZIP found, falling back to first ZIP: ${asset.url}`)
+        logger.warn(`[Lerxu] No ${arch} ZIP found, falling back to first ZIP: ${asset.url}`)
       }
 
       // 如果没有 ZIP，再尝试 DMG
@@ -888,14 +888,14 @@ export default class UpdateManager extends EventEmitter {
         asset = matchArch(dmgFiles, arch)
         if (!asset && dmgFiles.length > 0) {
           asset = dmgFiles[0]
-          logger.warn(`[LinkCore] No ${arch} DMG found, falling back to first DMG: ${asset.url}`)
+          logger.warn(`[Lerxu] No ${arch} DMG found, falling back to first DMG: ${asset.url}`)
         }
       }
 
       // 最后回退到任意 macOS 文件
       if (!asset && allMacFiles.length > 0) {
         asset = allMacFiles[0]
-        logger.warn(`[LinkCore] No matching mac file found, falling back to: ${asset.url}`)
+        logger.warn(`[Lerxu] No matching mac file found, falling back to: ${asset.url}`)
       }
     } else if (platform === 'win32') {
       asset = info.files.find(f => (f.url || '').toLowerCase().endsWith('.exe'))
@@ -904,7 +904,7 @@ export default class UpdateManager extends EventEmitter {
     }
 
     if (!asset) {
-      logger.warn(`[LinkCore] No matching file found for ${platform}/${arch} in release v${info.version}. Files: ${info.files.map(f => f.url).join(', ')}`)
+      logger.warn(`[Lerxu] No matching file found for ${platform}/${arch} in release v${info.version}. Files: ${info.files.map(f => f.url).join(', ')}`)
       return false
     }
 
@@ -927,7 +927,7 @@ export default class UpdateManager extends EventEmitter {
     this._downloadSize = asset.size || 0
     this._downloadedFileType = fileType
 
-    logger.info(`[LinkCore] Update available: ${info.version} (current: ${CURRENT_VERSION}), selected: ${filename}`)
+    logger.info(`[Lerxu] Update available: ${info.version} (current: ${CURRENT_VERSION}), selected: ${filename}`)
     return true
   }
 
@@ -991,7 +991,7 @@ export default class UpdateManager extends EventEmitter {
       // 是从持久化配置恢复的。先尝试从配置直接恢复，避免重新联网检查；
       // 恢复失败再重新检查。
       if (!this._restoreUpdateInfoFromConfig()) {
-        logger.info('[LinkCore] No persisted update info, re-checking for updates before download...')
+        logger.info('[Lerxu] No persisted update info, re-checking for updates before download...')
         this.autoCheckData.userCheck = true
         try {
           await this.check()
@@ -1039,7 +1039,7 @@ export default class UpdateManager extends EventEmitter {
       }
 
       try {
-        logger.info(`[LinkCore] Downloading: ${url}`)
+        logger.info(`[Lerxu] Downloading: ${url}`)
         const tmpFile = resolve(tmpdir(), basename(url))
 
         // 清理旧文件
@@ -1130,14 +1130,14 @@ export default class UpdateManager extends EventEmitter {
 
         // 验证 SHA512
         if (this._downloadSha512) {
-          logger.info('[LinkCore] Verifying SHA512...')
+          logger.info('[Lerxu] Verifying SHA512...')
           const valid = await verifySha512(tmpFile, this._downloadSha512)
           if (!valid) {
-            logger.warn(`[LinkCore] SHA512 mismatch for: ${url}`)
+            logger.warn(`[Lerxu] SHA512 mismatch for: ${url}`)
             try { unlinkSync(tmpFile) } catch (_) {}
             continue // 尝试下一个镜像
           }
-          logger.info('[LinkCore] SHA512 verified')
+          logger.info('[Lerxu] SHA512 verified')
         }
 
         // 下载成功，自动触发安装（用户已点击下载即表示确认）
@@ -1152,13 +1152,13 @@ export default class UpdateManager extends EventEmitter {
         }
         this.emit('update-downloaded', data)
         this._notifyWindows('update-downloaded', data)
-        logger.info(`[LinkCore] Download complete: ${tmpFile}, type: ${this._downloadedFileType}, auto-installing...`)
+        logger.info(`[Lerxu] Download complete: ${tmpFile}, type: ${this._downloadedFileType}, auto-installing...`)
 
         // 延迟一小段时间让UI更新后，自动执行安装
         setTimeout(() => {
           if (!this._isInstalling) {
             Promise.resolve(this.quitAndInstall()).catch((err) => {
-              logger.error('[LinkCore] auto quitAndInstall failed:', err && err.message ? err.message : err)
+              logger.error('[Lerxu] auto quitAndInstall failed:', err && err.message ? err.message : err)
             })
           }
         }, 500)
@@ -1171,7 +1171,7 @@ export default class UpdateManager extends EventEmitter {
           this._notifyWindows('update-cancelled')
           return
         }
-        logger.warn(`[LinkCore] Download failed from ${url}: ${err.message}`)
+        logger.warn(`[Lerxu] Download failed from ${url}: ${err.message}`)
       }
     }
 
@@ -1179,7 +1179,7 @@ export default class UpdateManager extends EventEmitter {
     this.isDownloading = false
     this._currentProgress = null
     const errMsg = 'All download sources failed, please check your network connection'
-    logger.warn(`[LinkCore] ${errMsg}`)
+    logger.warn(`[Lerxu] ${errMsg}`)
     this._notifyWindows('update-error', errMsg)
     this.emit('update-error', new Error(errMsg))
   }
@@ -1209,7 +1209,7 @@ export default class UpdateManager extends EventEmitter {
    */
   async quitAndInstall () {
     if (!this._downloadedFile) {
-      logger.warn('[LinkCore] No downloaded file to install')
+      logger.warn('[Lerxu] No downloaded file to install')
       this._notifyWindows('update-error', 'No update file downloaded')
       return
     }
@@ -1217,7 +1217,7 @@ export default class UpdateManager extends EventEmitter {
     const fileType = this._downloadedFileType
     const downloadedFile = this._downloadedFile
 
-    logger.info(`[LinkCore] Starting install: ${downloadedFile} (${fileType})`)
+    logger.info(`[Lerxu] Starting install: ${downloadedFile} (${fileType})`)
     this._isInstalling = true
 
     try {
@@ -1227,11 +1227,11 @@ export default class UpdateManager extends EventEmitter {
       // 执行安装前回调（停止引擎等）
       if (typeof this._beforeInstallCallback === 'function') {
         try {
-          logger.info('[LinkCore] Running before-install callback...')
+          logger.info('[Lerxu] Running before-install callback...')
           await this._beforeInstallCallback()
-          logger.info('[LinkCore] Before-install callback completed')
+          logger.info('[Lerxu] Before-install callback completed')
         } catch (err) {
-          logger.warn('[LinkCore] Before-install callback error:', err.message)
+          logger.warn('[Lerxu] Before-install callback error:', err.message)
         }
       }
 
@@ -1251,7 +1251,7 @@ export default class UpdateManager extends EventEmitter {
       }
     } catch (err) {
       this._isInstalling = false
-      logger.error(`[LinkCore] Install failed: ${err.message}`)
+      logger.error(`[Lerxu] Install failed: ${err.message}`)
       this._notifyWindows('update-error', `Install failed: ${err.message}`)
       this.emit('update-error', err)
     }
@@ -1261,11 +1261,11 @@ export default class UpdateManager extends EventEmitter {
    * macOS: 安装 DMG 文件
    */
   async _installDmg (dmgPath) {
-    logger.info('[LinkCore] Installing DMG...')
+    logger.info('[Lerxu] Installing DMG...')
 
     // 挂载 DMG
     const { stdout: attachOutput } = await execAsync(`hdiutil attach -nobrowse -noautoopen "${dmgPath}"`)
-    logger.info(`[LinkCore] hdiutil attach output: ${attachOutput}`)
+    logger.info(`[Lerxu] hdiutil attach output: ${attachOutput}`)
 
     // 解析挂载点（通常是 /Volumes/xxx）
     const mountMatch = attachOutput.match(/\/Volumes\/[^\n]+/)
@@ -1273,7 +1273,7 @@ export default class UpdateManager extends EventEmitter {
       throw new Error('Could not find mounted volume')
     }
     const mountPoint = mountMatch[0].trim()
-    logger.info(`[LinkCore] Mount point: ${mountPoint}`)
+    logger.info(`[Lerxu] Mount point: ${mountPoint}`)
 
     try {
       // 在挂载点中查找 .app 文件
@@ -1286,19 +1286,19 @@ export default class UpdateManager extends EventEmitter {
       const sourceApp = join(mountPoint, appFile)
       const targetApp = join('/Applications', appFile)
 
-      logger.info(`[LinkCore] Copying ${sourceApp} to ${targetApp}`)
+      logger.info(`[Lerxu] Copying ${sourceApp} to ${targetApp}`)
 
       // 如果目标已存在，先删除（需要权限，会提示用户输入密码）
       try {
         // 使用 ditto 复制（保留权限和符号链接）
         await execAsync(`ditto "${sourceApp}" "${targetApp}"`)
-        logger.info('[LinkCore] App copied successfully')
+        logger.info('[Lerxu] App copied successfully')
       } catch (copyErr) {
         // 如果复制失败（可能是权限问题），使用 osascript 提示认证
-        logger.warn(`[LinkCore] Copy failed, trying with privileges: ${copyErr.message}`)
+        logger.warn(`[Lerxu] Copy failed, trying with privileges: ${copyErr.message}`)
         const script = `do shell script "ditto \\"${sourceApp}\\" \\"${targetApp}\\"" with administrator privileges`
         await execAsync(`osascript -e '${script}'`)
-        logger.info('[LinkCore] App copied with admin privileges')
+        logger.info('[Lerxu] App copied with admin privileges')
       }
 
       // 卸载 DMG
@@ -1307,7 +1307,7 @@ export default class UpdateManager extends EventEmitter {
       } catch (_) {}
 
       // 打开新版本
-      logger.info('[LinkCore] Relaunching new version...')
+      logger.info('[Lerxu] Relaunching new version...')
       this._relaunchApp(targetApp)
     } catch (err) {
       // 确保卸载 DMG
@@ -1322,12 +1322,12 @@ export default class UpdateManager extends EventEmitter {
    * macOS: 安装 ZIP 更新包（优先方案，静默安装）
    */
   async _installMacZip (zipPath) {
-    logger.info('[LinkCore] Installing ZIP update (silent replace)...')
+    logger.info('[Lerxu] Installing ZIP update (silent replace)...')
     const appPath = app.getAppPath()
     const appBundlePath = dirname(dirname(dirname(appPath))) // 从 app.asar 向上找 .app 包
-    logger.info(`[LinkCore] Current app bundle: ${appBundlePath}`)
+    logger.info(`[Lerxu] Current app bundle: ${appBundlePath}`)
 
-    const tmpExtractDir = join(tmpdir(), `linkcore-update-${Date.now()}`)
+    const tmpExtractDir = join(tmpdir(), `lerxu-update-${Date.now()}`)
     mkdirSync(tmpExtractDir, { recursive: true })
 
     try {
@@ -1355,20 +1355,20 @@ export default class UpdateManager extends EventEmitter {
         throw new Error('No .app found in ZIP')
       }
 
-      logger.info(`[LinkCore] New app: ${newAppPath}`)
+      logger.info(`[Lerxu] New app: ${newAppPath}`)
 
       // 尝试静默替换（ditto保留权限和符号链接）
       try {
         await execAsync(`ditto "${newAppPath}" "${appBundlePath}"`)
-        logger.info('[LinkCore] App replaced successfully with ditto')
+        logger.info('[Lerxu] App replaced successfully with ditto')
       } catch (copyErr) {
-        logger.warn(`[LinkCore] Silent copy failed, trying with privileges: ${copyErr.message}`)
+        logger.warn(`[Lerxu] Silent copy failed, trying with privileges: ${copyErr.message}`)
         // 如果权限不足，提示用户输入密码进行认证
         const escapedSource = newAppPath.replace(/"/g, '\\"')
         const escapedTarget = appBundlePath.replace(/"/g, '\\"')
         const script = `do shell script "ditto \\"${escapedSource}\\" \\"${escapedTarget}\\"" with administrator privileges`
         await execAsync(`osascript -e '${script}'`)
-        logger.info('[LinkCore] App replaced with admin privileges')
+        logger.info('[Lerxu] App replaced with admin privileges')
       }
 
       this._relaunchApp(appBundlePath)
@@ -1384,7 +1384,7 @@ export default class UpdateManager extends EventEmitter {
    * Windows: 安装 EXE 文件
    */
   async _installExe (exePath) {
-    logger.info('[LinkCore] Installing EXE...')
+    logger.info('[Lerxu] Installing EXE...')
     const { spawn } = require('node:child_process')
     spawn(exePath, ['/S', '--force-run'], {
       detached: true,
@@ -1400,7 +1400,7 @@ export default class UpdateManager extends EventEmitter {
    * Linux: 安装 AppImage
    */
   async _installLinux (filePath) {
-    logger.info('[LinkCore] Installing Linux update...')
+    logger.info('[Lerxu] Installing Linux update...')
     const currentAppImage = process.env.APPIMAGE ? `${process.env.APPIMAGE}` : ''
     const fs = require('node:fs')
     const path = require('node:path')
@@ -1428,11 +1428,11 @@ export default class UpdateManager extends EventEmitter {
         fs.accessSync(currentAppImage, fs.constants.W_OK)
         fs.copyFileSync(filePath, currentAppImage)
         ensureExecutable(currentAppImage)
-        logger.info('[LinkCore] AppImage replaced, relaunching...')
+        logger.info('[Lerxu] AppImage replaced, relaunching...')
         spawnDetached(currentAppImage)
         return
       } catch (err) {
-        logger.warn('[LinkCore] Cannot replace AppImage in-place:', err.message)
+        logger.warn('[Lerxu] Cannot replace AppImage in-place:', err.message)
       }
     }
 
@@ -1453,7 +1453,7 @@ export default class UpdateManager extends EventEmitter {
    * 重新启动应用
    */
   _relaunchApp (appPath) {
-    logger.info(`[LinkCore] Relaunching app: ${appPath}`)
+    logger.info(`[Lerxu] Relaunching app: ${appPath}`)
 
     // 使用 open 命令启动应用，通过 shell 确保完全脱离当前进程
     // 使用双 fork 策略：先启动一个 shell 脚本，延迟打开应用，然后退出
@@ -1474,7 +1474,7 @@ export default class UpdateManager extends EventEmitter {
         stdio: 'ignore'
       }, (err) => {
         if (err) {
-          logger.warn(`[LinkCore] Relaunch script failed, falling back to direct spawn: ${err.message}`)
+          logger.warn(`[Lerxu] Relaunch script failed, falling back to direct spawn: ${err.message}`)
           // 回退方案：直接 spawn open
           const { spawn } = require('node:child_process')
           const child = spawn('open', [appPath], {
@@ -1485,7 +1485,7 @@ export default class UpdateManager extends EventEmitter {
         }
       })
     } catch (err) {
-      logger.warn(`[LinkCore] Relaunch error: ${err.message}`)
+      logger.warn(`[Lerxu] Relaunch error: ${err.message}`)
       // 最终回退
       const { spawn } = require('node:child_process')
       const child = spawn('open', [appPath], {
@@ -1497,7 +1497,7 @@ export default class UpdateManager extends EventEmitter {
 
     // 延迟更长时间确保新应用启动后再退出
     setTimeout(() => {
-      logger.info('[LinkCore] Exiting for update...')
+      logger.info('[Lerxu] Exiting for update...')
       app.exit(0)
     }, 1500)
   }
@@ -1558,10 +1558,10 @@ export default class UpdateManager extends EventEmitter {
           size: f.size || 0
         }))
       }
-      logger.info(`[LinkCore] Restored update info from config: v${info.version}`)
+      logger.info(`[Lerxu] Restored update info from config: v${info.version}`)
       return this._applyUpdateInfo(info)
     } catch (err) {
-      logger.warn(`[LinkCore] Failed to restore update info from config: ${err.message}`)
+      logger.warn(`[Lerxu] Failed to restore update info from config: ${err.message}`)
       return false
     }
   }

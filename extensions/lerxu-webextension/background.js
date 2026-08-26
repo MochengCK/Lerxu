@@ -54,8 +54,8 @@ try {
 let extConfigTimer = null
 let extConfigSyncedOnce = false
 const AUTO_HIJACK_OVERRIDE_KEY = 'autoHijackTemporarilyDisabled'
-const SESSION_TOKEN_KEY = 'linkcoreSessionToken'
-const TOKEN_VERSION_KEY = 'linkcoreTokenVersion'
+const SESSION_TOKEN_KEY = 'lerxuSessionToken'
+const TOKEN_VERSION_KEY = 'lerxuTokenVersion'
 // 回退到浏览器下载的 URL 集合，防止接管循环（取消→重新下载→取消→...）
 // 使用 Map 记录时间戳，定期清理过期条目
 // 注意:命中后不再立即 delete——回退窗口期内(10s)所有匹配下载项一律放行,
@@ -189,7 +189,7 @@ const fetchHandshake = async () => {
     const hosts = ['127.0.0.1', 'localhost']
     // 并行探测两个 host,任一成功即返回,避免串行等待放大接管延迟
     const results = await Promise.allSettled(hosts.map(h => {
-      const url = `http://${h}:${CHANNEL_PORT}/linkcore/handshake`
+      const url = `http://${h}:${CHANNEL_PORT}/lerxu/handshake`
       return fetchWithTimeout(url, { method: 'GET' }, 1500)
     }))
     for (const r of results) {
@@ -229,7 +229,7 @@ const authorizeWithChallenge = async (challenge) => {
     // 并行提交签名:两个 host 同时探测,任一成功即返回。
     // 应用侧 challenge 一次性使用,竞态失败方会收到 401,由 allSettled 忽略
     const results = await Promise.allSettled(hosts.map(h => {
-      const url = `http://${h}:${CHANNEL_PORT}/linkcore/authorize`
+      const url = `http://${h}:${CHANNEL_PORT}/lerxu/authorize`
       return fetchWithTimeout(url, {
         method: 'POST',
         headers: {
@@ -466,7 +466,7 @@ const wsConnect = () => {
   }
 }
 
-// HTTP 兜底通道:按 type 映射回原 /linkcore/* 端点
+// HTTP 兜底通道:按 type 映射回原 /lerxu/* 端点
 const httpChannelRequest = async (type, params, timeout) => {
   try {
     switch (type) {
@@ -480,19 +480,19 @@ const httpChannelRequest = async (type, params, timeout) => {
         // 服务器可能已处理任务但响应慢/丢包,盲重发会产生重复任务。
         // 改为延长单次超时 + singleHost(只试一个 host),宁缺毋滥,
         // 失败由调用方(addUriFromContent/executeTakeover)走回退流程。
-        const ok = await tryChannel('/linkcore/add', { ...reqOptions, singleHost: true }, Math.max(timeout, 3000))
+        const ok = await tryChannel('/lerxu/add', { ...reqOptions, singleHost: true }, Math.max(timeout, 3000))
         if (!ok) return { ok: false }
         const data = await ok.resp.json().catch(() => ({}))
         return { ok: !!(data && data.ok), data }
       }
       case 'ext-config-get': {
-        const ok = await tryChannel('/linkcore/ext-config', { method: 'GET' }, timeout)
+        const ok = await tryChannel('/lerxu/ext-config', { method: 'GET' }, timeout)
         if (!ok || !ok.resp || !ok.resp.ok) return { ok: false }
         const data = await ok.resp.json().catch(() => null)
         return { ok: !!data, data }
       }
       case 'ext-config-set': {
-        const ok = await tryChannel('/linkcore/ext-config', {
+        const ok = await tryChannel('/lerxu/ext-config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params || {})
@@ -500,25 +500,25 @@ const httpChannelRequest = async (type, params, timeout) => {
         return { ok: !!(ok && ok.resp && ok.resp.ok) }
       }
       case 'locale': {
-        const ok = await tryChannel('/linkcore/locale', { method: 'GET' }, timeout)
+        const ok = await tryChannel('/lerxu/locale', { method: 'GET' }, timeout)
         if (!ok || !ok.resp || !ok.resp.ok) return { ok: false }
         const data = await ok.resp.json().catch(() => null)
         return { ok: !!data, data }
       }
       case 'tasks': {
-        const ok = await tryChannel('/linkcore/tasks', { method: 'GET' }, timeout)
+        const ok = await tryChannel('/lerxu/tasks', { method: 'GET' }, timeout)
         if (!ok || !ok.resp || !ok.resp.ok) return { ok: false, data: { tasks: [] } }
         const data = await ok.resp.json().catch(() => null)
         return { ok: !!data, data: data || { tasks: [] } }
       }
       case 'version': {
-        const ok = await tryChannel('/linkcore/version', { method: 'GET' }, timeout)
+        const ok = await tryChannel('/lerxu/version', { method: 'GET' }, timeout)
         if (!ok || !ok.resp || !ok.resp.ok) return { ok: false }
         const data = await ok.resp.json().catch(() => null)
         return { ok: !!data, data }
       }
       case 'health': {
-        const ok = await tryChannel('/linkcore/health', { method: 'GET' }, timeout)
+        const ok = await tryChannel('/lerxu/health', { method: 'GET' }, timeout)
         return { ok: !!(ok && ok.resp && ok.resp.ok) }
       }
       default:
@@ -624,7 +624,7 @@ let cachedHost = null
 
 const tryChannel = async (path, options = {}, timeout = 1000, allowRetry = true) => {
   // 对于需要认证的请求，先确保 token 有效
-  if (!path.startsWith('/linkcore/handshake') && !path.startsWith('/linkcore/authorize')) {
+  if (!path.startsWith('/lerxu/handshake') && !path.startsWith('/lerxu/authorize')) {
     const tokenValid = await ensureSessionToken()
     if (!tokenValid) {
       console.log('[Background] Failed to ensure session token')
@@ -647,7 +647,7 @@ const tryChannel = async (path, options = {}, timeout = 1000, allowRetry = true)
       const headers = { ...options.headers }
 
       // 只在非认证相关的请求中添加 Authorization header
-      if (sessionToken && !path.startsWith('/linkcore/handshake') && !path.startsWith('/linkcore/authorize')) {
+      if (sessionToken && !path.startsWith('/lerxu/handshake') && !path.startsWith('/lerxu/authorize')) {
         headers['Authorization'] = `Bearer ${sessionToken}`
         if (tokenVersion !== null) {
           headers['X-Token-Version'] = tokenVersion.toString()
@@ -729,7 +729,7 @@ const validateTokenWithHealthCheck = async () => {
     const hosts = ['127.0.0.1', 'localhost']
     for (const h of hosts) {
       try {
-        const url = `http://${h}:${CHANNEL_PORT}/linkcore/health`
+        const url = `http://${h}:${CHANNEL_PORT}/lerxu/health`
         const resp = await fetchWithTimeout(url, {
           method: 'GET',
           headers: {
@@ -1031,7 +1031,7 @@ const addUri = async (url, referer, suggestedFilename, extraHeaders) => {
   }
 }
 const getHeadersForUrl = async (url, referer) => {
-  const hs = ['X-LinkCore-Source: BrowserExtension']
+  const hs = ['X-Lerxu-Source: BrowserExtension']
   try {
     const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : ''
     if (ua) hs.push(`User-Agent: ${ua}`)
@@ -1088,7 +1088,7 @@ const initializeBackground = async () => {
 
 chrome.runtime.onInstalled.addListener(async () => {
   chrome.contextMenus.create({
-    id: 'linkcore-download',
+    id: 'lerxu-download',
     title: chrome.i18n.getMessage('contextMenuDownload'),
     contexts: ['link', 'page', 'selection', 'image', 'video', 'audio']
   })
@@ -1229,20 +1229,20 @@ const stopLocalePolling = () => {
 // 更新右键菜单
 const updateContextMenu = (locale) => {
   const menuTexts = {
-    en: 'Download with LinkCore',
-    zh_CN: '使用 LinkCore 下载',
-    zh_TW: '使用 LinkCore 下載',
-    ja: 'LinkCore でダウンロード',
-    ko: 'LinkCore로 다운로드',
-    es: 'Descargar con LinkCore',
-    fr: 'Télécharger avec LinkCore',
-    de: 'Mit LinkCore herunterladen',
-    ru: 'Скачать с LinkCore'
+    en: 'Download with Lerxu',
+    zh_CN: '使用 Lerxu 下载',
+    zh_TW: '使用 Lerxu 下載',
+    ja: 'Lerxu でダウンロード',
+    ko: 'Lerxu로 다운로드',
+    es: 'Descargar con Lerxu',
+    fr: 'Télécharger avec Lerxu',
+    de: 'Mit Lerxu herunterladen',
+    ru: 'Скачать с Lerxu'
   }
   
   const title = menuTexts[locale] || menuTexts.en
   
-  chrome.contextMenus.update('linkcore-download', {
+  chrome.contextMenus.update('lerxu-download', {
     title: title
   }, () => {
     if (chrome.runtime.lastError) {

@@ -329,11 +329,11 @@
       if (!video || video.tagName !== 'VIDEO') return null
       let id = videoContextMap.get(video)
       if (!id) {
-        const existing = video.getAttribute('data-linkcore-video-context-id')
+        const existing = video.getAttribute('data-lerxu-video-context-id')
         id = existing || `vc_${Date.now()}_${videoContextSeq++}`
         videoContextMap.set(video, id)
         try {
-          video.setAttribute('data-linkcore-video-context-id', id)
+          video.setAttribute('data-lerxu-video-context-id', id)
         } catch (e) {}
         if (!videoContextState.has(id)) {
           videoContextState.set(id, { lastActiveAt: 0, lastSrc: '', isPlaying: false })
@@ -346,7 +346,7 @@
           const src = video.currentSrc || video.src || ''
           if (src) st.lastSrc = src
           try {
-            video.setAttribute('data-linkcore-video-last-active', `${st.lastActiveAt}`)
+            video.setAttribute('data-lerxu-video-last-active', `${st.lastActiveAt}`)
           } catch (e) {}
         }
         const markPlaying = () => {
@@ -2115,7 +2115,7 @@
       configLoaded: configLoaded
     })
 
-    const event = new CustomEvent('linkcore-resources-updated', {
+    const event = new CustomEvent('lerxu-resources-updated', {
       detail: {
         video: sniffedResources.video,
         audio: sniffedResources.audio,
@@ -2133,7 +2133,7 @@
       if (window.top !== window) {
         // In iframe, sending message to parent
         window.top.postMessage({
-          type: 'linkcore-resources-updated',
+          type: 'lerxu-resources-updated',
           data: {
             video: sniffedResources.video,
             audio: sniffedResources.audio,
@@ -2429,8 +2429,8 @@
     const videos = document.querySelectorAll('video')
     videos.forEach(video => {
       ensureVideoContext(video)
-      if (!video._linkcoreObserved) {
-        video._linkcoreObserved = true
+      if (!video._lerxuObserved) {
+        video._lerxuObserved = true
         const mimeType = video.getAttribute('type') || ''
         video.addEventListener('loadstart', () => {
           const src = video.src || video.currentSrc
@@ -2485,21 +2485,21 @@
   // MutationObserver installed
 
   // 监听资源请求
-  window.addEventListener('linkcore-get-resources', () => {
+  window.addEventListener('lerxu-get-resources', () => {
     // Resource request received
     requestUIUpdate(true)
   })
 
   window.addEventListener('message', (event) => {
     try {
-      if (event && event.data && event.data.type === 'linkcore-clear-resources') {
-        window.dispatchEvent(new Event('linkcore-clear-resources'))
+      if (event && event.data && event.data.type === 'lerxu-clear-resources') {
+        window.dispatchEvent(new Event('lerxu-clear-resources'))
       }
     } catch (e) {}
   })
 
   // 监听清除资源事件（当切换到不同的视频预览时触发）
-  window.addEventListener('linkcore-clear-resources', () => {
+  window.addEventListener('lerxu-clear-resources', () => {
     // Clear resources request received
     // 添加保护：只有在确实需要清除时才清除
     const currentResourceCount = sniffedResources.video.length + sniffedResources.audio.length

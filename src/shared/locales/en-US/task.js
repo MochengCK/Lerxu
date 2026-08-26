@@ -302,7 +302,7 @@ export default {
   'error-reason-not-found': 'Resource not found or link is invalid',
   'error-reason-disk-full': 'Disk space is full',
   'error-reason-permission': 'No permission to write to target directory',
-  'error-reason-permission-macos': 'macOS privacy permission was reset by the app update. Allow LinkCore to access the Downloads folder in System Settings > Privacy & Security > Files & Folders; the task will retry automatically',
+  'error-reason-permission-macos': 'macOS privacy permission was reset by the app update. Allow Lerxu to access the Downloads folder in System Settings > Privacy & Security > Files & Folders; the task will retry automatically',
   'error-reason-disk': 'File write failed (disk or permission issue)',
   'error-reason-generic': 'Unknown error',
   'pause': 'Pause',
