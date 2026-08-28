@@ -867,8 +867,9 @@ const dir = dirname(filePath)
             gid: mergeGid,
             progress: { waitingForPair: true }
           })
-          // 启动重试：每隔3秒重新扫描配对文件，最多重试20次（60秒）
-          _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, 0, 20)
+          // 启动重试：前5次每3秒，之后每10秒，最多重试60次（约10分钟）
+          // 重试耗尽后仍保留 MERGING 状态，等配对文件完成时被动触发合并
+          _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, 0, 60)
         }
 
         // 合并完成后，通过 mergeKey 清理所有相关任务并恢复 COMPLETE 状态
@@ -1302,14 +1303,19 @@ writeFileSync(skipFlagPath, '1')
         if (!mergingList.includes(mergeGid)) {
           return
         }
+        if (attempt >= maxAttempts) {
+          // 超过最大重试次数，不再主动重试，但仍保留在 mergingList 中。
+          // 当配对文件下载完成时会通过 onDownloadComplete 再次触发合并，
+          // 避免因两个文件下载完成时间差过大而跳过合并。
+          console.warn(`[Lerxu] Merge retry exhausted for ${mergeGid} after ${maxAttempts} attempts, keeping MERGING state for passive merge`)
+          return
+        }
+        // 指数退避：前5次每3秒，之后每10秒，确保长时间下载也能等到配对
+        const delay = attempt < 5 ? 3000 : 10000
         const timer = setTimeout(async () => {
           clearMergeRetryTimer(mergeGid)
-          if (attempt >= maxAttempts) {
-            // 超过最大重试次数，放弃等待，标记为完成
-            console.warn(`[Lerxu] Merge retry exhausted for ${mergeGid} after ${maxAttempts} attempts`)
-            taskStore.removeFromMergingList(mergeGid)
-            taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
-            taskStore.fetchList()
+          // 再次检查任务是否还在合并列表中
+          if (!taskStore.mergingList.includes(mergeGid)) {
             return
           }
           // 重新扫描配对文件
@@ -1347,7 +1353,7 @@ writeFileSync(skipFlagPath, '1')
             console.warn(`[Lerxu] Merge retry ${attempt + 1} failed:`, e)
             _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
           }
-        }, 3000)
+        }, delay)
         setMergeRetryTimer(mergeGid, timer)
       }
       function runDashMergeExclusive(key, merge) {
@@ -1565,7 +1571,8 @@ writeFileSync(skipFlagPath, '1')
             })
             .sort()
           if (group.length < 2) {
-            return { isBilibiliPart: true, mergedPath: '' }
+            // 配对文件尚未出现，返回 waitingForPair 以便重试机制继续等待
+            return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
           const parts = group.map(name => {
             const full = resolve(dir, name)
