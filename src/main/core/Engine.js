@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile } from 'node:fs'
+import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, readFileSync, unlink, unlinkSync, writeFile, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import is from 'electron-is'
 
@@ -664,6 +664,44 @@ export default class Engine {
   }
 
   /**
+   * 引擎通过 --input-file 恢复会话，任务级选项优先于全局选项。
+   * 全局把 bt-stop-timeout 置 0 后，会话里已固化的旧值（如 300）仍会
+   * 作用于恢复的任务，导致重启后零速度 5 分钟被强制停止报错。
+   * 启动前把会话中每个任务条目的该选项同步为当前配置值，0 则删除该行。
+   */
+  syncSessionBtStopTimeout (sessionPath) {
+    try {
+      const desired = Number(this.systemConfig && this.systemConfig['bt-stop-timeout']) || 0
+      const raw = readFileSync(sessionPath, 'utf8')
+      if (!raw || raw.indexOf('bt-stop-timeout=') === -1) {
+        return
+      }
+      const lines = raw.split('\n')
+      const updated = []
+      let changed = false
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        const m = line.match(/^(\s*)bt-stop-timeout=(\d+)\s*$/)
+        if (!m) {
+          updated.push(line)
+          continue
+        }
+        changed = true
+        if (desired > 0) {
+          updated.push(`${m[1]}bt-stop-timeout=${desired}`)
+        }
+        // desired 为 0：丢弃该行，恢复引擎默认（不自动停止）
+      }
+      if (changed) {
+        writeFileSync(sessionPath, updated.join('\n'))
+        logger.info(`[Lerxu] session bt-stop-timeout synced to ${desired}`)
+      }
+    } catch (e) {
+      logger.warn('[Lerxu] sync session bt-stop-timeout failed:', e && e.message ? e.message : e)
+    }
+  }
+
+  /**
    * 引擎启动前截断旧日志文件，防止日志无限增长占用磁盘
    * 如果日志文件超过 5MB，清空文件内容
    */
@@ -689,6 +727,9 @@ export default class Engine {
 
     const sessionPath = getSessionPath()
     const sessionIsExist = existsSync(sessionPath)
+    if (sessionIsExist) {
+      this.syncSessionBtStopTimeout(sessionPath)
+    }
 
     // 根据用户设置的日志级别映射到 aria2 日志级别，默认 warn
     const aria2LogLevel = this.getAria2LogLevel()

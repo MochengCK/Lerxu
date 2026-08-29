@@ -4,7 +4,6 @@
     :show-text="false"
     :status="isActive ? 'success' : undefined"
     :color="color"
-    :define-back-color="backColor"
     :class="{ 'is-pending-selection': pendingSelection }">
   </el-progress>
 </template>
@@ -68,16 +67,6 @@ const color = computed(() => {
     return '#f0ad4e'
   }
   return colors[props.status]
-})
-
-const backColor = computed(() => {
-  if (props.status === TASK_STATUS.ERROR) {
-    return '#FF6157'
-  }
-  if (props.pendingSelection) {
-    return '#F6C46B'
-  }
-  return ''
 })
 
 function startTicker () {
@@ -213,3 +202,18 @@ onBeforeUnmount(() => {
   stopTicker()
 })
 </script>
+
+<style lang="scss">
+/* 待选择文件的任务进度恒为 0，内条宽度按 percentage% 计算因此不可见，
+   仅靠 color 无法体现状态，需要把底槽一并染色 */
+.el-progress.is-pending-selection {
+  .el-progress-bar__outer {
+    background-color: #F6C46B;
+  }
+}
+
+/* 深色主题同样使用 100% 不透明度的橙色，保证待选择文件状态清晰可辨 */
+.theme-dark .el-progress.is-pending-selection .el-progress-bar__outer {
+  background-color: #F0AD4E;
+}
+</style>

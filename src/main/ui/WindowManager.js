@@ -194,7 +194,10 @@ export default class WindowManager extends EventEmitter {
       backgroundColor: getInitialBackgroundColor(this.userConfig),
       webPreferences: {
         contextIsolation: false,
-        backgroundThrottling: true,
+        // 关闭后台节流：渲染层承载引擎状态轮询与托盘速度计画布，
+        // 窗口隐藏/后台时若被 Chromium 节流冻结，托盘与 Dock 的
+        // 速度显示会过一会儿就停止更新。
+        backgroundThrottling: false,
         spellcheck: false,
         nodeIntegration: true,
         nodeIntegrationInWorker: true

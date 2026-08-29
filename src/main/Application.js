@@ -3247,6 +3247,11 @@ export default class Application extends EventEmitter {
       this.trayManager.updateTrayByImage(tray)
     })
 
+    this.on('application:update-dock-icon', (dock) => {
+      this.dockManager.setSpeedIcon(dock)
+      this.redrawDockProgress()
+    })
+
     this.on('application:relaunch', () => {
       this.relaunch()
     })
@@ -3604,7 +3609,6 @@ export default class Application extends EventEmitter {
     })
 
     this.on('speed-change', (speed) => {
-      this.dockManager.handleSpeedChange(speed)
       this.trayManager.handleSpeedChange(speed)
     })
 
@@ -3648,9 +3652,23 @@ export default class Application extends EventEmitter {
     if (!is.windows() && progress === 2) {
       progress = 0
     }
+    this._lastDockProgress = progress
     const win = this.windowManager.getWindow('index')
     if (win && !win.isDestroyed()) {
       win.setProgressBar(progress)
+    }
+  }
+
+  /// 重设 Dock 进度条：app.dock.setIcon 会重置 Dock 图块，
+  /// 叠加自绘速度图标后必须立即重设进度条，否则进度条随每次
+  /// 图标更新闪烁。
+  redrawDockProgress () {
+    if (this._lastDockProgress === undefined) {
+      return
+    }
+    const win = this.windowManager.getWindow('index')
+    if (win && !win.isDestroyed()) {
+      win.setProgressBar(this._lastDockProgress)
     }
   }
 

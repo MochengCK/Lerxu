@@ -108,6 +108,20 @@ export default defineConfig(({ command }) => {
           onstart(args) {
             args.reload()
           }
+        },
+        {
+          entry: resolve('src/renderer/workers/dock.worker.js'),
+          vite: {
+            resolve: {
+              alias: {
+                '@': resolve('src/renderer'),
+                '@shared': resolve('src/shared')
+              }
+            }
+          },
+          onstart(args) {
+            args.reload()
+          }
         }
       ]),
       renderer()

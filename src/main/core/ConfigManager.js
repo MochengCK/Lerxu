@@ -82,7 +82,9 @@ export default class ConfigManager {
         'bt-tracker-timeout': 10,
         'bt-enable-lpd': true,
         'enable-peer-exchange': true,
-        'bt-stop-timeout': 300,
+        // 0 = 禁用"零速度自动停止"：BT 任务常因暂无节点长时间零速度，
+        // 非 0 值会让任务被引擎强制停止并报错，不符合挂机预期
+        'bt-stop-timeout': 0,
         'bt-max-open-files': 200,
         'bt-metadata-only': false,
         'reuse-uri': true,
@@ -338,6 +340,15 @@ export default class ConfigManager {
     const currentSelector = this.systemConfig.get('stream-piece-selector')
     if (!currentSelector || currentSelector === 'geom') {
       this.setSystemConfig('stream-piece-selector', 'default')
+    }
+
+    // bt-stop-timeout 未在设置界面暴露，但旧版本曾把默认值 300 持久化进
+    // system.json（electron-store 的 defaults 不会覆盖已持久化的值，仅改
+    // 默认值无效）。非 0 值会让引擎在 BT 下载连续零速度一段时间后强制
+    // 停止任务并报错，无节点挂机场景必然触发，统一迁移为 0（禁用）。
+    const currentBtStopTimeout = this.systemConfig.get('bt-stop-timeout')
+    if (currentBtStopTimeout === undefined || Number(currentBtStopTimeout) > 0) {
+      this.setSystemConfig('bt-stop-timeout', 0)
     }
 
     // 将 retry-wait 迁移到 5，给 CDN 限流场景更多恢复时间

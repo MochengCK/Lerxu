@@ -134,6 +134,7 @@ export default class TrayManager extends EventEmitter {
     }
 
     file = nativeImage.createFromPath(join(__static, `./${key}`))
+    // macOS 菜单栏按系统规范以模板（单色）渲染，自动适配深浅色
     file.setTemplateImage(this.macOS)
     this.setCache(key, file)
     return file

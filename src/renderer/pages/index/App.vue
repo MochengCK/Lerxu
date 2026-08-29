@@ -24,6 +24,7 @@
         />
         <mo-ipc v-if="isRenderer && !isPreferenceWindow" />
         <mo-dynamic-tray v-if="enableTraySpeedometer && !isPreferenceWindow" />
+        <mo-dynamic-dock v-if="isMac && isRenderer && !isPreferenceWindow" />
       </div>
     </div>
   </el-config-provider>

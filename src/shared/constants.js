@@ -251,11 +251,14 @@ export const LOGIN_SETTING_OPTIONS = {
   ]
 }
 
+// 托盘速度计画布尺寸（单位 pt，渲染时 ×2 生成 Retina 像素）。
+// 图标与菜单栏同高（22pt）；速度文字 8pt，两行在画布内垂直居中
+// （tray.js 负责居中，高度无需为文字顶满）。
 export const TRAY_CANVAS_CONFIG = {
-  WIDTH: 66,
-  HEIGHT: 16,
-  ICON_WIDTH: 16,
-  ICON_HEIGHT: 16,
+  WIDTH: 70,
+  HEIGHT: 22,
+  ICON_WIDTH: 22,
+  ICON_HEIGHT: 22,
   TEXT_WIDTH: 46,
   TEXT_FONT_SIZE: 8
 }

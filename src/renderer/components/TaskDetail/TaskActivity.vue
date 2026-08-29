@@ -43,6 +43,7 @@
               :total="Number(task.totalLength)"
               :status="taskStatus"
               :speed="Number(task.downloadSpeed)"
+              :pending-selection="isPendingFileSelection"
             />
           </div>
           <div class="task-progress-percent">{{ percent }}</div>
@@ -189,6 +190,12 @@ const speedSamples = computed(() => {
 
 const isBT = computed(() => checkTaskIsBT(props.task))
 const isSeeder = computed(() => checkTaskIsSeeder(props.task))
+const isPendingFileSelection = computed(() => {
+  const gid = props.task && props.task.gid ? `${props.task.gid}` : ''
+  if (!gid) return false
+  const map = taskStore.pendingFileSelection || {}
+  return !!map[gid]
+})
 const taskStatus = computed(() => {
   if (isSeeder.value) {
     return TASK_STATUS.SEEDING
@@ -467,33 +474,35 @@ defineExpose({
 </script>
 
 <style lang="scss">
-.task-progress-static {
+.mo-task-activity .task-progress-static {
   width: 100%;
 }
 
-.task-progress-row {
+.mo-task-activity .task-progress-row {
   display: flex;
   align-items: center;
   width: 100%;
 }
 
-.task-progress-row .progress-wrapper {
+.mo-task-activity .task-progress-row .progress-wrapper {
   flex: 1;
   min-width: 0;
-  padding: 0.6875rem 0 0 0;
+  padding: 0;
 
   .el-progress {
     width: 100%;
   }
 }
 
-.task-progress-percent {
+// 类名与任务列表卡片中的 .task-progress-percent 相同，
+// 必须限定在本组件根类下，否则全局规则会污染卡片的间距
+.mo-task-activity .task-progress-percent {
   flex-shrink: 0;
   margin-left: 12px;
   white-space: nowrap;
 }
 
-.progress-wrapper {
+.mo-task-activity .progress-wrapper {
   width: 100%;
 
   .el-progress {
@@ -501,11 +510,11 @@ defineExpose({
   }
 }
 
-.task-time-remaining {
+.mo-task-activity .task-time-remaining {
   margin-left: 1rem;
 }
 
-.average-speed-samples {
+.mo-task-activity .average-speed-samples {
   margin-left: 0.5rem;
   color: #909399;
   font-size: 0.85em;

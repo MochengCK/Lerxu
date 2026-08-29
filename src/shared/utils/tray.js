@@ -63,12 +63,16 @@ export const draw = async ({
   ctx.fillStyle = textColor
 
   const uploadText = `${bytesToSize(uploadSpeed)}/s`
-  const uploadTextY = 0
-  ctx.fillText(uploadText, width, uploadTextY, textWidth)
-
   const downloadText = `${bytesToSize(downloadSpeed)}/s`
-  const downloadTextY = baseFontSize * scale + 0.5
-  ctx.fillText(downloadText, width, downloadTextY, textWidth)
+
+  // 两行文字整体垂直居中：固定贴顶布局在画布高于文字块时
+  // 会显得上偏（菜单栏里文字悬在上半部）。
+  const lineGap = baseFontSize * scale + 0.5
+  const textBlockHeight = lineGap + fontSize
+  const textTop = Math.max(0, Math.round((height - textBlockHeight) / 2))
+
+  ctx.fillText(uploadText, width, textTop, textWidth)
+  ctx.fillText(downloadText, width, textTop + lineGap, textWidth)
 
   const result = transferCanvasTo(canvas, resultType)
 

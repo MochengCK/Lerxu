@@ -627,7 +627,7 @@ const initForm = (config) => {
     // 兼容 kebab-case 配置键
     const parsedGithubMirrorUrls = githubMirrorUrls || config['github-mirror-urls']
     // 默认镜像列表（默认选择所有内置镜像）
-    const defaultMirrors = ['ghproxy.net']
+    const defaultMirrors = ['mirror.ghproxy.com', 'github.moeyy.xyz']
     // 兼容旧的kebab-case配置键
     const parsedEngineBinary = engineBinary || config['engine-binary'] || ''
     // 兼容旧版代理配置（旧版使用 enable 字段，新版使用 mode 字段）
@@ -676,6 +676,8 @@ const hideRpcSecret = ref(true)
 const proxyScopeOptions = ref(PROXY_SCOPE_OPTIONS)
 const rules = ref({})
 const builtinGithubMirrors = ref([
+  { value: 'mirror.ghproxy.com', label: 'mirror.ghproxy.com', latency: null, checking: false },
+  { value: 'github.moeyy.xyz', label: 'github.moeyy.xyz', latency: null, checking: false },
   { value: 'ghproxy.net', label: 'ghproxy.net', latency: null, checking: false }
 ])
 const githubMirrorCheckingAll = ref(false)
@@ -917,7 +919,8 @@ onMounted(async () => {
       async function checkGithubMirrorLatency(mirror) {
         // 使用一个小的测试文件来检测延迟
         // 使用 GitHub 的 favicon 或其他小文件
-        const testUrl = `https://${mirror.value}/https://raw.githubusercontent.com/github/explore/main/README.md`
+        // 使用 GitHub API 的极小响应来检测延迟，避免下载较大文件
+        const testUrl = `https://${mirror.value}/https://api.github.com/repos/github/explore`
         const startTime = Date.now()
 
         try {
@@ -946,7 +949,8 @@ onMounted(async () => {
           }
         } catch (error) {
           const latency = Date.now() - startTime
-          console.warn(`[GitHub Mirror] Check ${mirror.value} failed after ${latency}ms:`, error.message)
+          const isCertError = /cert|ERR_CERT/i.test(error.message || '')
+          console.warn(`[GitHub Mirror] Check ${mirror.value} failed after ${latency}ms:`, isCertError ? 'SSL certificate error (possibly expired)' : error.message)
           return -1
         }
       }

@@ -354,6 +354,7 @@ import {
   getFileExtension
 } from '@shared/utils'
 import { getTaskActualPath, getPathCandidates } from '@/utils/native'
+import { getTaskInfoHash } from '@/utils/task'
 import '@/components/Icons/task-start-line'
 import '@/components/Icons/task-pause-line'
 import '@/components/Icons/task-stop-line'
@@ -761,9 +762,7 @@ function onResumeClick () {
   const gid = task && task.gid ? `${task.gid}` : ''
   if (gid && pendingFileSelection.value && pendingFileSelection.value[gid]) {
     taskStore.clearPendingFileSelection(gid)
-    const bt = task && task.bittorrent
-    const infoHash = bt && bt.info && bt.info.hash ? `${bt.info.hash}` : ''
-    taskStore.confirmFileSelection({ gid, infoHash })
+    taskStore.confirmFileSelection({ gid, infoHash: getTaskInfoHash(task) })
   }
   commands.emit('resume-task', { task, taskName: taskName.value })
 }
@@ -815,16 +814,11 @@ function onConfirmFileSelection () {
   taskStore.changeTaskOption({ gid, options }).then(() => {
     selectFilesDialogVisible.value = false
     taskStore.clearPendingFileSelection(gid)
-    const bt = props.task && props.task.bittorrent
-    const infoHash = String(
-      (props.task && props.task.infoHash) ||
-        (bt && bt.info && bt.info.hash) ||
-        ''
-    ).trim()
+    const infoHash = getTaskInfoHash(props.task)
     taskStore.confirmFileSelection({ gid, infoHash })
     return api.resumeTask({ gid })
   }).catch(() => {
-    taskStore.setPendingFileSelection(gid)
+    taskStore.setPendingFileSelection(gid, getTaskInfoHash(props.task))
     instance.proxy.$msg.error(t('task.select-files-fail'))
   })
 }

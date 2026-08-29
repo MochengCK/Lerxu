@@ -22,12 +22,13 @@ const GITHUB_REPO = 'Lerxu'
 const CURRENT_VERSION = app.getVersion()
 
 // GitHub 镜像列表，按优先级排序
+// ghproxy.net 的 SSL 证书已过期（ERR_CERT_DATE_INVALID），降到最后
 const MIRROR_HOSTS = [
-  'ghproxy.net',
-  'ghproxy.com',
   'mirror.ghproxy.com',
+  'ghproxy.com',
+  'github.moeyy.xyz',
   'gh.ddlc.top',
-  'github.moeyy.xyz'
+  'ghproxy.net'
 ]
 
 /**

@@ -7,6 +7,7 @@ import { checkTaskIsBT, getFileNameFromFile, getFileExtension, getTaskUri, inter
 import taskHistory from '@/api/TaskHistory'
 import pendingFileSelectionStore from '@/api/PendingFileSelection'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
+import { getTaskInfoHash, isTaskPendingSelectionCandidate, isTaskPendingSelectionTarget, isTaskFileSelectionConfirmed } from '@/utils/task'
 import { useAppStore } from './app'
 import { usePreferenceStore } from './preference'
 
@@ -536,12 +537,19 @@ const mutations = {
     delete next[gid]
     this.magnetStatuses = next
   },
-  SET_PENDING_FILE_SELECTION(gid) {
-    this.pendingFileSelection = { ...this.pendingFileSelection, [gid]: true }
+  SET_PENDING_FILE_SELECTION(payload) {
+    const { gid, infoHash } = typeof payload === 'object' && payload !== null
+      ? { gid: payload.gid, infoHash: payload.infoHash }
+      : { gid: payload, infoHash: '' }
+    if (!gid) {
+      return
+    }
+    const hash = `${infoHash || ''}`.trim().toLowerCase()
+    this.pendingFileSelection = { ...this.pendingFileSelection, [gid]: hash || true }
     const confirmed = { ...this.confirmedFileSelection }
     delete confirmed[gid]
     this.confirmedFileSelection = confirmed
-    pendingFileSelectionStore.add(gid)
+    pendingFileSelectionStore.add(gid, hash)
     pendingFileSelectionStore.removeConfirmed(gid)
   },
   CLEAR_PENDING_FILE_SELECTION(gid) {
@@ -1559,8 +1567,8 @@ const actions = {
   clearMagnetStatus (gid) {
     this.CLEAR_MAGNET_STATUS(gid)
   },
-  setPendingFileSelection (gid) {
-    this.SET_PENDING_FILE_SELECTION(gid)
+  setPendingFileSelection (gid, infoHash) {
+    this.SET_PENDING_FILE_SELECTION({ gid, infoHash })
   },
   clearPendingFileSelection (gid) {
     this.CLEAR_PENDING_FILE_SELECTION(gid)
@@ -1575,10 +1583,14 @@ const actions = {
   },
   syncPendingFileSelection (tasks) {
     // 根据当前任务列表校验待选择文件状态:
-    // - pending(待选择): 仅保留仍为暂停状态的多文件 BT 任务，且未被用户确认过
-    // - confirmed(已确认选择): 只要任务仍存在（任意状态）就保留。
-    //   旧逻辑在任务非暂停（如下载中/重启后元数据重解析中）时会丢弃 confirmed，
-    //   导致重启后任务被重新标记回"待选择文件"。
+    // - pending(待选择): 保留仍为暂停态、BT 元数据就绪、多文件且无进度的任务；
+    //   判定只看任务自身状态（isTaskPendingSelectionCandidate），不读 confirmed
+    //   记录——同一 infoHash 的历史确认可能属于旧实例，若据此否决会让用户
+    //   尚未选择文件的新实例在重启后退回普通"暂停"。
+    //   记录值带 infoHash 时，gid 漂移后可改挂到同哈希的当前任务上，
+    //   暂时匹配不上的保留等待，避免重启后退回普通"暂停"显示
+    // - confirmed(已确认选择): 只要任务仍存在（任意状态）就保留，仅作历史
+    //   记录维护，不再参与待选择判定。
     const list = Array.isArray(tasks) ? tasks : []
     const existingGids = new Set()
     const validPendingGids = new Set()
@@ -1589,30 +1601,39 @@ const actions = {
       const status = `${task.status || ''}`
       if (status !== TASK_STATUS.PAUSED) return
       const bt = task.bittorrent
-      if (!bt || !bt.info) return
-      const files = Array.isArray(task.files) ? task.files : []
-      if (files.length > 1) {
+      const completed = Number(task.completedLength || 0)
+      if (!bt || !bt.info) {
+        // 重启后引擎可能仍在重新解析元数据（bittorrent.info 暂缺）：
+        // 此时清除待选择标记会让任务退回普通"暂停"显示。
+        // 仅保留无下载进度的任务——已有进度说明早已开始下载，
+        // 不属于待选择文件场景。
+        if (completed === 0) {
+          validPendingGids.add(gid)
+        }
+        return
+      }
+      // 以任务自身状态判定是否为待选择候选（paused/多文件/无进度）。
+      // 同一 infoHash 的历史 confirmed 记录不足以否决：用户可能对旧实例
+      // 确认过选择，而当前磁力实例尚未选择文件，重启后仍应标待选择
+      if (isTaskPendingSelectionCandidate(task)) {
         validPendingGids.add(gid)
       }
     })
     const current = this.pendingFileSelection || {}
     const confirmed = this.confirmedFileSelection || {}
-    // 用 infoHash 判断已确认（磁力 follow 后 gid 可能漂移，哈希稳定）
-    const confirmedHashes = new Set(
-      Object.values(confirmed)
-        .filter(v => typeof v === 'string')
-        .map(v => v.trim().toLowerCase())
-    )
-    const next = {}
-    const nextConfirmed = {}
-    Object.keys(current).forEach(gid => {
-      const task = list.find(t => `${t.gid || ''}` === gid)
-      const bt = task && task.bittorrent
-      const hash = task ? String(task.infoHash || (bt && bt.info && bt.info.hash) || '').trim().toLowerCase() : ''
-      if (validPendingGids.has(gid) && !confirmed[gid] && !(hash && confirmedHashes.has(hash))) {
-        next[gid] = true
+    const taskByHash = new Map()
+    list.forEach(task => {
+      const hash = getTaskInfoHash(task)
+      if (hash && !taskByHash.has(hash)) {
+        taskByHash.set(hash, task)
       }
     })
+    // 先处理 confirmed：磁力任务的 BT 阶段 gid 每次重启都会漂移，
+    // 已确认记录按 infoHash 改挂到当前同哈希任务上；若磁力尚未解析
+    // 完成（列表中暂时没有对应任务），保留原条目等待匹配，绝不能直接
+    // 丢弃。改挂结果同时用于抑制待选择标记——已确认过文件选择的任务
+    // 重启后不应再显示"待选择文件"
+    const nextConfirmed = {}
     Object.keys(confirmed).forEach(gid => {
       if (existingGids.has(gid)) {
         nextConfirmed[gid] = confirmed[gid]
@@ -1620,15 +1641,7 @@ const actions = {
       }
       const v = confirmed[gid]
       if (typeof v === 'string' && v.trim()) {
-        // 磁力任务的 BT 阶段 gid 每次重启都会漂移：会话文件保存的是
-        // 磁力 URI 与元数据任务的 gid，重启后重新 follow 会生成新 gid。
-        // 已确认记录按 infoHash 改挂到当前同哈希任务上；若磁力尚未
-        // 解析完成（列表中暂时没有对应任务），保留原条目等待匹配，
-        // 绝不能直接丢弃——否则重启后任务会退回"待选择文件"状态。
-        const hash = v.trim().toLowerCase()
-        const target = list.find(t => String(
-          (t && (t.infoHash || (t.bittorrent && t.bittorrent.info && t.bittorrent.info.hash))) || ''
-        ).trim().toLowerCase() === hash)
+        const target = taskByHash.get(v.trim().toLowerCase())
         if (target && target.gid) {
           nextConfirmed[`${target.gid}`] = v
         } else {
@@ -1637,7 +1650,50 @@ const actions = {
       }
       // 值为 true 的旧格式条目且任务已不存在 → 自然丢弃
     })
-    if (Object.keys(next).length !== Object.keys(current).length) {
+    const next = {}
+    const keepPending = (gid, hash) => {
+      // 同一哈希可能有多条历史 gid 记录，合并为一条
+      next[gid] = hash || true
+    }
+    Object.keys(current).forEach(gid => {
+      const storedHash = typeof current[gid] === 'string' ? current[gid].trim().toLowerCase() : ''
+      const task = list.find(t => `${t.gid || ''}` === gid)
+      const hash = getTaskInfoHash(task) || storedHash
+      if (validPendingGids.has(gid)) {
+        // 该任务已确认过文件选择（按 gid 或同哈希）时清除待选择标记：
+        // 选择结果已随会话保存，重启后应沿用而不是重新询问
+        if (task && isTaskFileSelectionConfirmed(nextConfirmed, task)) {
+          return
+        }
+        keepPending(gid, hash)
+        return
+      }
+      if (existingGids.has(gid)) {
+        // 任务仍在但已不属于待选择场景（已选文件/已有进度/非多文件）
+        return
+      }
+      if (!storedHash) {
+        // 无哈希可匹配且任务已消失 → 丢弃
+        return
+      }
+      if (isTaskFileSelectionConfirmed(nextConfirmed, { infoHash: storedHash })) {
+        // 该哈希已确认过文件选择，孤儿待选择记录作废
+        return
+      }
+      const target = taskByHash.get(storedHash)
+      const targetGid = target && target.gid ? `${target.gid}` : ''
+      if (targetGid && isTaskPendingSelectionTarget(target) && !nextConfirmed[targetGid]) {
+        keepPending(targetGid, storedHash)
+        return
+      }
+      // 磁力尚未重新解析完元数据（当前列表里还没有可比对的任务）：
+      // 保留原条目等待匹配，丢弃会让任务退回普通"暂停"显示
+      keepPending(gid, storedHash)
+    })
+    const pendingChanged =
+      Object.keys(next).length !== Object.keys(current).length ||
+      Object.keys(next).some(k => current[k] !== next[k])
+    if (pendingChanged) {
       this.REPLACE_PENDING_FILE_SELECTION(next)
     }
     const confirmedChanged =

@@ -19,6 +19,7 @@ import TitleBar from '@/components/Native/TitleBar'
 import EngineClient from '@/components/Native/EngineClient'
 import Ipc from '@/components/Native/Ipc'
 import DynamicTray from '@/components/Native/DynamicTray'
+import DynamicDock from '@/components/Native/DynamicDock'
 import SegmentedSlider from '@/components/SegmentedSlider/SegmentedSlider'
 import TaskSubnav from '@/components/Subnav/TaskSubnav'
 import TaskActions from '@/components/Task/TaskActions'
@@ -106,6 +107,7 @@ function init (config, options = {}) {
   app.component('mo-engine-client', EngineClient)
   app.component('mo-ipc', Ipc)
   app.component('mo-dynamic-tray', DynamicTray)
+  app.component('mo-dynamic-dock', DynamicDock)
   app.component('mo-segmented-slider', SegmentedSlider)
   app.component('mo-task-subnav', TaskSubnav)
   app.component('mo-task-actions', TaskActions)

@@ -1,12 +1,11 @@
 import is from 'electron-is'
 import { EventEmitter } from 'node:events'
-import { app } from 'electron'
-
-import { bytesToSize } from '@shared/utils'
+import { app, nativeImage } from 'electron'
 
 import {
   APP_RUN_MODE
 } from '@shared/constants'
+import { convertArrayBufferToBuffer } from '../utils/index'
 
 const enabled = is.macOS()
 
@@ -40,21 +39,18 @@ export default class DockManager extends EventEmitter {
     }
     : () => {}
 
-  // macOS setBadge not working
-  // @see https://github.com/electron/electron/issues/25745#issuecomment-702826143
-  setBadge = enabled
-    ? (text) => {
-      app.dock.setBadge(text)
+  // 渲染层合成的 Dock 图标（应用图标 + 上传/下载两个独立速度容器，
+  // 居中叠在图标上方）。系统 badge 长度受限会省略速度文本，
+  // 故改用自绘图标完整展示。
+  setSpeedIcon = enabled
+    ? (arrayBuffer) => {
+      const buffer = convertArrayBufferToBuffer(arrayBuffer)
+      const image = nativeImage.createFromBuffer(buffer, {
+        scaleFactor: 2
+      })
+      app.dock.setIcon(image)
     }
-    : (text) => {}
-
-  handleSpeedChange = enabled
-    ? (speed) => {
-      const { downloadSpeed } = speed
-      const text = downloadSpeed > 0 ? `${bytesToSize(downloadSpeed)}/s` : ''
-      this.setBadge(text)
-    }
-    : (text) => {}
+    : () => {}
 
   openDock = enabled
     ? (path) => {

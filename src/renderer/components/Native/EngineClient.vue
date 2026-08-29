@@ -23,7 +23,7 @@ import { useTaskStore } from '@/store/task'
 import { usePreferenceStore } from '@/store/preference'
 import { storeToRefs } from 'pinia'
 import { checkTaskIsBT, getTaskName, getTaskUri, isMagnetTask } from '@shared/utils'
-import { isTaskFileSelectionConfirmed } from '@/utils/task'
+import { isTaskPendingSelectionCandidate, isTaskPendingSelectionTarget, isTaskFileSelectionConfirmed, getTaskInfoHash } from '@/utils/task'
 import { TASK_STATUS } from '@shared/constants'
 import { spawn, spawnSync, execSync } from 'node:child_process'
 import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync, copyFileSync, writeFileSync } from 'node:fs'
@@ -82,9 +82,15 @@ let _bootTimer = null
 let _visibilityHandler = null
 let _bilibiliMergeNotified = new Set()
 let _dashMergeJobs = new Map()
+let _pendingSelectionNotified = new Set()
 let _pollingKickAt = 0
 let _btRetryTimers = new Map()
 let _resumedCompletedFixing = false
+let _resumedCompletedFixedGids = null
+let _resumedCompletedLastRun = 0
+let _resumedErrorFixing = false
+let _resumedErrorLastRun = 0
+let _resumedErrorFixedGids = null
 
 // --- Computed ---
 const isRenderer = is.renderer()
@@ -3083,19 +3089,26 @@ writeFileSync(skipFlagPath, '1')
           checkDataAccessStatus()
           fixResumedCompletedSuffixTasks().catch(() => {})
           fixResumedErroredTasks().catch(() => {})
+          // 待选择文件状态每轮补扫：磁力任务重启后先以暂停的磁力形态存在，
+          // 元数据重新解析完才会出现待选择的 BT 任务，只扫一次会漏掉
+          scanForPendingBtTasks()
           // 首次轮询后校验待选择文件状态，移除已不存在的任务条目
           if (!pendingFileSelectionSynced.value) {
-            pendingFileSelectionSynced.value = true
             // 用未过滤的全量列表校验：state.taskList 受当前列表类型
             // 与日期筛选影响，可能漏掉任务导致已确认记录被误删，
             // 进而在重启后把已选文件的任务重新标记为待选择。
-            api.fetchTaskList({ type: 'all' }).then((allList) => {
-              taskStore.syncPendingFileSelection(allList || [])
-              scanForPendingBtTasks()
-            }).catch(() => {
-              const list = taskStore.taskList || []
-              taskStore.syncPendingFileSelection(list)
-              scanForPendingBtTasks()
+            const hasStoredPending = Object.keys(taskStore.pendingFileSelection || {}).length > 0
+            const applySync = (list) => {
+              // 引擎启动早期可能返回空列表，此时校验会把仍待选择的记录清掉，
+              // 保持未同步状态到下一轮重试
+              if ((!Array.isArray(list) || list.length === 0) && hasStoredPending) {
+                return
+              }
+              pendingFileSelectionSynced.value = true
+              taskStore.syncPendingFileSelection(list || [])
+            }
+            api.fetchTaskList({ type: 'all' }).then(applySync).catch(() => {
+              applySync(taskStore.taskList || [])
             })
           }
         }).catch(() => {
@@ -3383,25 +3396,26 @@ unlinkSync(finalPath)
           return
         }
         magnetResolvedSet.value.add(gid)
-        // 用户此前已确认过文件选择的任务（confirmedFileSelection），
-        // 应用重启后引擎重新解析元数据时不应再回到"待选择文件"状态，
-        // 直接恢复下载即可（select-file 选项已随会话保存）。
-        // 注意：确认记录需在校验时实时读取——磁力重启后 gid 漂移，
-        // syncPendingFileSelection 会按 infoHash 把记录改挂到新 gid，
-        // 早于异步回调取快照会读到过期数据。
-        const getConfirmed = () => taskStore.confirmedFileSelection || {}
+        // 磁力任务 follow 出的 BT 任务：
+        // - 已确认过文件选择（按 gid 或同哈希）→ 直接恢复下载
+        // - 处于"待选择文件"候选（paused/多文件/无进度）→ 标记待选择
+        // - 不在候选（已有进度/非暂停）→ 恢复下载即可
         api.fetchTaskItem({ gid }).then((detail) => {
+          const confirmedNow = () => taskStore.confirmedFileSelection || {}
           const followedBy = detail && detail.followedBy ? detail.followedBy : []
           if (followedBy.length) {
             followedBy.forEach(newGid => {
               api.fetchTaskItem({ gid: newGid }).then((newTask) => {
-                const files = Array.isArray(newTask && newTask.files) ? newTask.files : []
+                const target = newTask || detail
+                const files = Array.isArray(target.files) ? target.files : []
                 if (files.length > 1) {
-                  if (isTaskFileSelectionConfirmed(getConfirmed(), newTask || detail)) {
+                  if (isTaskFileSelectionConfirmed(confirmedNow(), target)) {
                     api.resumeTask({ gid: newGid }).catch(() => {})
+                  } else if (isTaskPendingSelectionCandidate(target)) {
+                    taskStore.setPendingFileSelection(newGid, getTaskInfoHash(target))
+                    notifyPendingFileSelection(target)
                   } else {
-                    taskStore.setPendingFileSelection(newGid)
-                    notifyPendingFileSelection(newTask || detail)
+                    api.resumeTask({ gid: newGid }).catch(() => {})
                   }
                 } else {
                   api.resumeTask({ gid: newGid }).catch(() => {})
@@ -3414,11 +3428,13 @@ unlinkSync(finalPath)
             const files = Array.isArray(detail && detail.files) ? detail.files : []
             const bt = detail && detail.bittorrent ? detail.bittorrent : null
             if (bt && bt.info && files.length > 1 && detail.status === TASK_STATUS.PAUSED) {
-              if (isTaskFileSelectionConfirmed(getConfirmed(), detail)) {
+              if (isTaskFileSelectionConfirmed(confirmedNow(), detail)) {
                 api.resumeTask({ gid }).catch(() => {})
-              } else {
-                taskStore.setPendingFileSelection(gid)
+              } else if (isTaskPendingSelectionCandidate(detail)) {
+                taskStore.setPendingFileSelection(gid, getTaskInfoHash(detail))
                 notifyPendingFileSelection(detail)
+              } else {
+                api.resumeTask({ gid }).catch(() => {})
               }
             } else if (files.length <= 1 && detail.status === TASK_STATUS.PAUSED) {
               api.resumeTask({ gid }).catch(() => {})
@@ -3429,23 +3445,60 @@ unlinkSync(finalPath)
           scanForPendingBtTasks()
         })
       }
-      function scanForPendingBtTasks() {
-        const list = taskStore.taskList || []
+      function scanForPendingBtTasks(tasks) {
+        // taskList 只包含当前列表类型（侧栏 tab）与日期筛选下的任务，
+        // 待选择文件的任务处于暂停态，停在"下载中"页时会被漏掉；
+        // allTaskList 不受列表类型影响，用它才能保证重启后必定重新识别
+        const list = Array.isArray(tasks) ? tasks : (taskStore.allTaskList || [])
         const pending = taskStore.pendingFileSelection || {}
         const confirmed = taskStore.confirmedFileSelection || {}
+        // 孤儿记录按 infoHash 重挂：重启后引擎只恢复磁力任务本体
+        // （会话保存的是磁力条目），BT 阶段旧 gid 全部漂移。首轮校验
+        // 只做一次，错过引擎晚上报 infoHash / 元数据晚解析就再无机会，
+        // 因此每轮扫描都补做一次重挂
+        const hashToTask = new Map()
+        list.forEach(task => {
+          const hash = getTaskInfoHash(task)
+          if (hash && !hashToTask.has(hash)) {
+            hashToTask.set(hash, task)
+          }
+        })
+        const listGids = new Set(list.map(task => (task && task.gid ? `${task.gid}` : '')))
+        Object.keys(pending).forEach(gid => {
+          if (listGids.has(gid)) return
+          const stored = pending[gid]
+          const storedHash = typeof stored === 'string' ? `${stored}`.trim().toLowerCase() : ''
+          if (!storedHash) return
+          // 该哈希已确认过文件选择（记录可能挂在漂移前的旧 gid 上）：
+          // 选择结果已随会话保存，孤儿待选择记录直接作废，否则已选完
+          // 文件的任务重启后会被误标回"待选择文件"
+          if (isTaskFileSelectionConfirmed(confirmed, { infoHash: storedHash })) {
+            taskStore.clearPendingFileSelection(gid)
+            return
+          }
+          const target = hashToTask.get(storedHash)
+          const targetGid = target && target.gid ? `${target.gid}` : ''
+          if (!targetGid || targetGid === gid) return
+          if (!isTaskPendingSelectionTarget(target) || pending[targetGid] || isTaskFileSelectionConfirmed(confirmed, target)) {
+            taskStore.clearPendingFileSelection(gid)
+            return
+          }
+          taskStore.clearPendingFileSelection(gid)
+          taskStore.setPendingFileSelection(targetGid, storedHash)
+        })
+        const pendingNow = taskStore.pendingFileSelection || {}
         list.forEach(task => {
           const taskGid = task && task.gid ? `${task.gid}` : ''
-          if (!taskGid || pending[taskGid] || isTaskFileSelectionConfirmed(confirmed, task)) return
-          if (task.status !== TASK_STATUS.PAUSED) return
-          const bt = task.bittorrent
-          if (!bt || !bt.info) return
-          const files = Array.isArray(task.files) ? task.files : []
-          if (files.length <= 1) return
-          // 仅标记尚未开始下载的任务（completedLength 为 0），
-          // 避免将已选择文件、正在下载但被引擎暂停的任务误标记为待选择文件
-          const completed = Number(task.completedLength || 0)
-          if (completed > 0) return
-          taskStore.setPendingFileSelection(taskGid)
+          if (!taskGid || pendingNow[taskGid]) return
+          if (!isTaskPendingSelectionCandidate(task)) return
+          // 已确认过文件选择的任务（按 gid 或同哈希）不再标待选择：
+          // 选择结果已随会话保存，重启后应沿用而不是重新询问
+          if (isTaskFileSelectionConfirmed(confirmed, task)) return
+          taskStore.setPendingFileSelection(taskGid, getTaskInfoHash(task))
+          if (_pendingSelectionNotified.has(taskGid)) {
+            return
+          }
+          _pendingSelectionNotified.add(taskGid)
           notifyPendingFileSelection(task)
         })
       }
@@ -3938,6 +3991,11 @@ onMounted(() => {
       if (isPreferenceWindow()) {
         return
       }
+      // 重启后立即恢复"待选择文件"持久化状态：
+      // 否则首帧渲染时任务会按引擎状态显示为普通暂停，
+      // 进度条/文案的待选择区分要等到后续同步才生效。
+      taskStore.loadPendingFileSelection()
+
       // 绑定引擎推送事件（onDownloadStart 等），
       // 必须在轮询启动前完成，否则任务开始/完成等事件无法驱动即时刷新
       bindEngineEvents()
