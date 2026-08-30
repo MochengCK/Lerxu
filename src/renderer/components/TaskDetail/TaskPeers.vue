@@ -671,7 +671,7 @@ const peerOrderSeed = ref(1)
 const ipInfoCache = ref({})
 const contextMenuType = ref('')
 let contextMenuCloseHandler = null
-let contextMenuTimer = null
+let contextMenuEscHandler = null
 
 const peerTable = ref(null)
 
@@ -950,13 +950,13 @@ const groupedPeers = computed(() => {
 
 // Lifecycle
 onBeforeUnmount(() => {
-  if (contextMenuTimer) {
-    clearTimeout(contextMenuTimer)
-    contextMenuTimer = null
-  }
   if (contextMenuCloseHandler) {
-    document.removeEventListener('click', contextMenuCloseHandler)
+    document.removeEventListener('mousedown', contextMenuCloseHandler, true)
     contextMenuCloseHandler = null
+  }
+  if (contextMenuEscHandler) {
+    document.removeEventListener('keydown', contextMenuEscHandler, true)
+    contextMenuEscHandler = null
   }
 })
 
@@ -1505,23 +1505,32 @@ function openContextMenu (event, menuWidth, menuHeight) {
   contextMenuY.value = y
   contextMenuVisible.value = true
 
+  // 关闭监听：捕获阶段 + mousedown。冒泡阶段的 click 会被路径上任一
+  // stopPropagation 拦截，且延迟绑定存在关闭窗口；捕获阶段先于所有
+  // 目标元素处理器执行，点击任意菜单外区域都能可靠关闭。触发菜单的
+  // 那次 contextmenu 发生在本绑定之前，不会误关。
   if (contextMenuCloseHandler) {
-    document.removeEventListener('click', contextMenuCloseHandler)
+    document.removeEventListener('mousedown', contextMenuCloseHandler, true)
+  }
+  if (contextMenuEscHandler) {
+    document.removeEventListener('keydown', contextMenuEscHandler, true)
   }
   contextMenuCloseHandler = (e) => {
     const target = e && e.target
+    // 点击菜单自身内部 → 不关闭（让菜单项的 @click 自行处理后调用
+    // closeContextMenu）
     if (target && target.closest && target.closest('.mo-peer-context-menu')) {
       return
     }
     closeContextMenu()
   }
-  if (contextMenuTimer) {
-    clearTimeout(contextMenuTimer)
+  contextMenuEscHandler = (e) => {
+    if (e.key === 'Escape') {
+      closeContextMenu()
+    }
   }
-  contextMenuTimer = setTimeout(() => {
-    contextMenuTimer = null
-    document.addEventListener('click', contextMenuCloseHandler)
-  }, 100)
+  document.addEventListener('mousedown', contextMenuCloseHandler, true)
+  document.addEventListener('keydown', contextMenuEscHandler, true)
 }
 
 function closeContextMenu () {
@@ -1529,8 +1538,12 @@ function closeContextMenu () {
   contextMenuPeer.value = null
   contextMenuType.value = ''
   if (contextMenuCloseHandler) {
-    document.removeEventListener('click', contextMenuCloseHandler)
+    document.removeEventListener('mousedown', contextMenuCloseHandler, true)
     contextMenuCloseHandler = null
+  }
+  if (contextMenuEscHandler) {
+    document.removeEventListener('keydown', contextMenuEscHandler, true)
+    contextMenuEscHandler = null
   }
 }
 

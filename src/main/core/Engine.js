@@ -877,7 +877,8 @@ export default class Engine {
     const natTransportEngineKeys = [
       'enable-upnp',
       'enable-utp',
-      'enable-nat-pmp'
+      'enable-nat-pmp',
+      'bt-connect-protocol'
     ]
     for (const k of natTransportEngineKeys) {
       const v = this.userConfig[k]

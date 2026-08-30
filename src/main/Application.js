@@ -2626,7 +2626,7 @@ export default class Application extends EventEmitter {
       // 注册 changeGlobalOption 支持——这里单独热更新推送，让开关无需
       // 重启引擎即可生效（UPnP/NAT-PMP 的实际端口映射动作仍在引擎
       // 启动期执行，热更新仅更新配置值）。
-      const natTransportKeys = ['enable-upnp', 'enable-utp', 'enable-nat-pmp']
+      const natTransportKeys = ['enable-upnp', 'enable-utp', 'enable-nat-pmp', 'bt-connect-protocol']
       const hotNat = {}
       for (const k of natTransportKeys) {
         if (user[k] !== undefined) {

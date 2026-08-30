@@ -114,6 +114,7 @@ const userKeys = [
   'ed2k-auto-sync-server-time',
   'ed2k-last-sync-server-time',
   'enable-utp',
+  'bt-connect-protocol',
   'enable-nat-pmp'
 ]
 

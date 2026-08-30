@@ -1311,14 +1311,16 @@
           >
             <div class="toggle-row toggle-row--with-desc">
               <div class="toggle-row__text">
-                <span class="toggle-label">{{ t('preferences.enable-utp') }}</span>
+                <span class="toggle-label">{{ t('preferences.bt-connect-protocol') }}</span>
                 <div class="toggle-desc">
-                  {{ t('preferences.enable-utp-desc') }}
+                  {{ t('preferences.bt-connect-protocol-desc') }}
                 </div>
               </div>
-              <el-switch
-                v-model="form.enableUtp"
-                @change="(val) => onNatToggleChange('enableUtp', val)"
+              <mo-segmented-slider
+                :value="form.btConnectProtocol"
+                :options="btConnectProtocolOptions"
+                size="mini"
+                @change="onBtConnectProtocolChange"
               />
             </div>
           </el-col>
@@ -2404,6 +2406,15 @@ const normalizeTaskMultiSelectModifier = (value) => {
     return 'adaptive'
   }
 
+  // 连接协议：优先读 bt-connect-protocol；旧配置无此键时按 enable-utp
+  // 推导（true → both，false → tcp），保证升级后不回退默认值。
+  const normalizeBtConnectProtocol = (protocol, legacyEnableUtp) => {
+    if (protocol === 'both' || protocol === 'utp' || protocol === 'tcp') {
+      return protocol
+    }
+    return legacyEnableUtp === false ? 'tcp' : 'both'
+  }
+
   const BACKGROUND_UI_FROSTED_BLUR_SCOPE_OPTIONS = [
     'date-filter',
     'task-category-select',
@@ -2435,6 +2446,7 @@ const normalizeTaskMultiSelectModifier = (value) => {
       enablePeerExchange,
       enableUpnp,
       enableUtp,
+      btConnectProtocol,
       listenPort,
       autoPurgeRecord,
       btEncryptionMode,
@@ -2554,6 +2566,7 @@ const normalizeTaskMultiSelectModifier = (value) => {
       autoPurgeRecord: autoPurgeRecord || false,
       btAutoDownloadContent,
       btEncryptionMode: normalizeBtEncryptionMode(btEncryptionMode, config.btForceEncryption),
+      btConnectProtocol: normalizeBtConnectProtocol(btConnectProtocol, enableUtp),
       btMaxPeers: btMaxPeers !== undefined ? btMaxPeers : '128',
       btAutoBanPeer: btAutoBanPeer !== false && btAutoBanPeer !== 'false',
       btAutoBanBadData: btAutoBanBadData !== false && btAutoBanBadData !== 'false',
@@ -2815,6 +2828,13 @@ const formRefs = {}
           { value: 'none', label: t('preferences.bt-encryption-none') },
           { value: 'adaptive', label: t('preferences.bt-encryption-adaptive') },
           { value: 'force', label: t('preferences.bt-encryption-force') }
+        ]
+      })
+      const btConnectProtocolOptions = computed(() => {
+        return [
+          { value: 'both', label: t('preferences.bt-connect-protocol-both') },
+          { value: 'utp', label: t('preferences.bt-connect-protocol-utp') },
+          { value: 'tcp', label: t('preferences.bt-connect-protocol-tcp') }
         ]
       })
       const backgroundTypeOptions = computed(() => {
@@ -3529,7 +3549,7 @@ watch(trackerSourceConfigVisible, (visible) => {
       // 提示。任何异常都必须可见，不能静默失败（否则用户看到的就是
       // "点了没反应"）。
       // 生效方式（引擎已支持 changeGlobalOption 热更新）：
-      // - enable-utp：立即生效（出站/入站实时响应）
+      // - 连接协议（bt-connect-protocol）：由三态选择器处理，立即生效
       // - enable-dht / enable-dht6：关闭立即生效；重新开启在下一个
       //   BT 任务创建时恢复（DHTSetup）
       // - enable-peer-exchange / enable-lpd：立即生效
@@ -3743,6 +3763,13 @@ watch(trackerSourceConfigVisible, (visible) => {
         form.value.btEncryptionMode = mode
         form.value.btRequireCrypto = cfg['bt-require-crypto']
         form.value.btMinCryptoLevel = cfg['bt-min-crypto-level']
+        autoSaveForm()
+      }
+      function onBtConnectProtocolChange(mode) {
+        form.value.btConnectProtocol = mode
+        // uTP 传输保持托管（enable-utp=true），由 bt-connect-protocol
+        // 决定策略；这样在三种模式间热切换无需重启引擎。
+        form.value.enableUtp = true
         autoSaveForm()
       }
       function handleHistoryDirectorySelected(dir) {
