@@ -117,7 +117,6 @@ export default class ConfigManager {
         'max-overall-upload-limit': 0,
         'no-proxy': EMPTY_STRING,
         'pause-metadata': false,
-        'pause': true,
         'rpc-listen-port': ENGINE_RPC_PORT,
         'rpc-secret': EMPTY_STRING,
         'remote-time': true,
@@ -278,6 +277,16 @@ export default class ConfigManager {
       Object.keys(others).forEach(key => {
         this.systemConfig.delete(key)
       })
+    }
+
+    // 旧版本默认把 'pause': true 持久化进了 system store，启动时会变成
+    // --pause=true 全局参数：引擎经 --input-file 恢复会话时，该全局值会
+    // 污染所有未显式标注 pause 的任务条目，导致引擎任何一次重启（崩溃后
+    // 自动重启、应用重启）都把原本下载中的任务全部强制暂停。会话文件由
+    // save-session-interval 周期落盘、退出前也会整体暂停并保存，任务该不
+    // 该恢复由条目自身的 pause 标记决定，全局开关必须清除。
+    if (this.systemConfig.has('pause')) {
+      this.systemConfig.delete('pause')
     }
 
     const proxy = this.getUserConfig('proxy', { mode: PROXY_MODE.SYSTEM })

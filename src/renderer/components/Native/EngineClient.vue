@@ -682,6 +682,17 @@ const dir = dirname(filePath)
             if (!task) {
               return
             }
+            // 磁力任务的元数据下载完成时，引擎会立即派生新的 BT 任务
+            // （多文件种子会被暂停等待选择，单文件需前端恢复）。这里必须
+            // 走磁力解析处理，而不是普通下载完成流程。事件驱动补齐了轮询
+            // 检测的窗口漏洞：元数据在一个轮询周期内就解析完时，
+            // magnetZeroMap 从未记录过该任务，暂停的 BT 任务无人恢复，
+            // 表现为"下载中莫名自动暂停"。
+            const followedBy = Array.isArray(task.followedBy) ? task.followedBy : []
+            if (isMagnetTask(task) || followedBy.length > 0) {
+              handleMagnetResolved(task)
+              return
+            }
             return handleDownloadComplete(task, false)
           })
           .finally(() => {

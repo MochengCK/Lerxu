@@ -1412,8 +1412,10 @@ export default class UpdateManager extends EventEmitter {
 
     const spawnDetached = (p) => {
       ensureExecutable(p)
+      // 旧进程必须先退出再启动新版本，否则 16900 端口被旧进程占用，
+      // 新实例的浏览器扩展通道绑定失败。用 bash 延迟 2 秒后 exec。
       const { spawn } = require('node:child_process')
-      const child = spawn(p, [], {
+      const child = spawn('/bin/bash', ['-c', `sleep 2; exec "${p}"`], {
         detached: true,
         stdio: 'ignore',
         env: process.env
@@ -1456,13 +1458,17 @@ export default class UpdateManager extends EventEmitter {
   _relaunchApp (appPath) {
     logger.info(`[Lerxu] Relaunching app: ${appPath}`)
 
-    // 使用 open 命令启动应用，通过 shell 确保完全脱离当前进程
-    // 使用双 fork 策略：先启动一个 shell 脚本，延迟打开应用，然后退出
+    // 时序要求：旧进程必须先完全退出，新实例才能启动。否则：
+    //  1) macOS 上 open 对"运行中"的 bundle 只是激活旧实例，不会
+    //     拉起新进程，随后旧实例退出，应用直接消失；
+    //  2) 新旧实例并存时 16900 端口被旧进程占用，新实例的浏览器扩展
+    //     通道（HTTP/WS 服务）绑定失败。
+    // 因此先退出本进程（延迟 500ms 确保 relaunch 脚本已托管），
+    // 脚本等待 3 秒后再打开新版本，保证端口已释放。
     const relaunchScript = `
       nohup /bin/bash -c '
-        # 等待父进程退出
-        sleep 1
-        # 打开应用
+        # 等待旧进程完全退出、释放端口后再打开新版本
+        sleep 3
         open "${appPath}"
       ' >/dev/null 2>&1 &
       disown
@@ -1475,10 +1481,10 @@ export default class UpdateManager extends EventEmitter {
         stdio: 'ignore'
       }, (err) => {
         if (err) {
-          logger.warn(`[Lerxu] Relaunch script failed, falling back to direct spawn: ${err.message}`)
-          // 回退方案：直接 spawn open
+          logger.warn(`[Lerxu] Relaunch script failed, falling back to delayed spawn: ${err.message}`)
+          // 回退方案：延迟 spawn open，仍保证旧进程先退出
           const { spawn } = require('node:child_process')
-          const child = spawn('open', [appPath], {
+          const child = spawn('/bin/bash', ['-c', `sleep 3; open "${appPath}"`], {
             detached: true,
             stdio: 'ignore'
           })
@@ -1489,18 +1495,18 @@ export default class UpdateManager extends EventEmitter {
       logger.warn(`[Lerxu] Relaunch error: ${err.message}`)
       // 最终回退
       const { spawn } = require('node:child_process')
-      const child = spawn('open', [appPath], {
+      const child = spawn('/bin/bash', ['-c', `sleep 3; open "${appPath}"`], {
         detached: true,
         stdio: 'ignore'
       })
       child.unref()
     }
 
-    // 延迟更长时间确保新应用启动后再退出
+    // 尽快退出，让端口与单实例锁在新版本启动前释放
     setTimeout(() => {
       logger.info('[Lerxu] Exiting for update...')
       app.exit(0)
-    }, 1500)
+    }, 500)
   }
 
   // ===== 内部方法 =====

@@ -333,6 +333,7 @@ let wsAuthenticated = false
 let wsConnecting = false
 let wsReconnectDelay = 1000
 let wsReconnectTimer = null
+let wsConnectStartedAt = 0
 let wsSeq = 0
 const wsPending = new Map()
 
@@ -396,6 +397,9 @@ const handleWsDisconnect = () => {
     clearTimeout(wsReconnectTimer)
   }
   wsReconnectTimer = setTimeout(() => {
+    // 定时器已兑现，立即置空：看门狗用 !wsReconnectTimer 判断"没有排定的
+    // 重连"，残留的过期 id 会让看门狗永远认为重连已在路上而不再介入
+    wsReconnectTimer = null
     wsConnect()
     wsReconnectDelay = Math.min(wsReconnectDelay * 2, 8000)
   }, wsReconnectDelay)
@@ -406,10 +410,21 @@ const wsConnect = () => {
     return
   }
   wsConnecting = true
+  wsConnectStartedAt = Date.now()
   try {
     const ws = new WebSocket(`ws://127.0.0.1:${CHANNEL_PORT}${WS_PATH}`)
     wsSocket = ws
     wsAuthenticated = false
+
+    // 连接挂起保护：握手黑洞时 onclose 永不触发，退避重连链就此中断；
+    // 服务端异常时也可能连上却不发 challenge/authorized。
+    // 10 秒内未握手成功或未完成认证就主动 close，触发 onclose 回到重连链。
+    setTimeout(() => {
+      if (ws.readyState === WebSocket.CONNECTING ||
+          (ws.readyState === WebSocket.OPEN && !wsAuthenticated && wsSocket === ws)) {
+        try { ws.close() } catch (_) {}
+      }
+    }, 10000)
 
     ws.onmessage = (ev) => {
       let msg
@@ -455,7 +470,11 @@ const wsConnect = () => {
     }
 
     ws.onclose = () => {
-      handleWsDisconnect()
+      // 仅处理"当前"socket 的断开：看门狗强关旧连接并重连后，
+      // 旧 socket 的 close 回调可能迟到，误清掉新连接的状态
+      if (wsSocket === ws) {
+        handleWsDisconnect()
+      }
     }
 
     ws.onerror = () => {
@@ -464,6 +483,38 @@ const wsConnect = () => {
   } catch (e) {
     wsConnecting = false
   }
+}
+
+// === MV3 重连看门狗（chrome.alarms，系统级唤醒） ===
+// 应用更新期间程序会停机数分钟，Service Worker 里基于 setTimeout 的
+// 退避重连链可能被 Chrome 回收（MV3 SW 生命周期），导致程序恢复后
+// 扩展永远不再尝试连接——这正是"更新程序后扩展失效"的兜底修复点：
+// 每分钟由 alarm 唤醒检查，通道断开且没有排定的重连时主动重启重连。
+try {
+  const WS_WATCHDOG_ALARM = 'lerxu-ws-watchdog'
+  chrome.alarms.create(WS_WATCHDOG_ALARM, { periodInMinutes: 1 })
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== WS_WATCHDOG_ALARM) {
+      return
+    }
+    // CONNECTING 超过 15 秒视为挂起：握手黑洞时 onclose 不触发、
+    // wsConnecting 卡为 true，会同时挡住退避链与看门狗自身，
+    // 这里强制关闭并复位，让后续判断立刻发起重连
+    const rawState = wsSocket ? wsSocket.readyState : null
+    if (rawState === WebSocket.CONNECTING && wsConnectStartedAt > 0 &&
+        Date.now() - wsConnectStartedAt > 15000) {
+      try { wsSocket.close() } catch (_) {}
+      wsConnecting = false
+    }
+    const state = wsSocket ? wsSocket.readyState : null
+    const isDown = !wsSocket || state === WebSocket.CLOSED || state === WebSocket.CLOSING
+    if (isDown && !wsConnecting && !wsReconnectTimer) {
+      wsReconnectDelay = 1000
+      wsConnect()
+    }
+  })
+} catch (e) {
+  console.warn('[Background] WS watchdog unavailable:', e)
 }
 
 // HTTP 兜底通道:按 type 映射回原 /lerxu/* 端点

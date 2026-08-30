@@ -785,17 +785,34 @@ export default class Application extends EventEmitter {
         })
       })
 
-      // 添加错误处理
+      // 端口被占用（EADDRINUSE）时必须重试：更新重启时旧进程可能尚未
+      // 完全退出、仍持有 16900 端口，直接放弃会让浏览器扩展通道在
+      // 新实例里永久失效（用户只能手动重启应用恢复）。持续重试直到
+      // 拿到端口——旧进程退出后监听立即恢复。
+      let listenAttempt = 0
+      let retryTimer = null
+      const tryListen = () => {
+        retryTimer = null
+        listenAttempt += 1
+        server.listen(APP_HTTP_PORT, '127.0.0.1', () => {
+          listenAttempt = 0
+          logger.info(`[Lerxu] App HTTP server listening at http://127.0.0.1:${APP_HTTP_PORT}/`)
+        })
+      }
       server.on('error', (err) => {
         logger.error('[Lerxu] App HTTP server error:', err && err.message ? err.message : err)
         if (err.code === 'EADDRINUSE') {
-          logger.error(`[Lerxu] Port ${APP_HTTP_PORT} is already in use. Browser extension connection will not work.`)
+          logger.error(`[Lerxu] Port ${APP_HTTP_PORT} is already in use, will retry (browser extension channel waits for it).`)
         }
+        if (retryTimer) {
+          return
+        }
+        // 前几次快速重试（更新窗口通常几秒内释放端口），之后放慢
+        const delay = listenAttempt < 5 ? 2000 : 10000
+        retryTimer = setTimeout(tryListen, delay)
       })
 
-      server.listen(APP_HTTP_PORT, '127.0.0.1', () => {
-        logger.info(`[Lerxu] App HTTP server listening at http://127.0.0.1:${APP_HTTP_PORT}/`)
-      })
+      tryListen()
       this.httpServer = server
 
       // WebSocket 通道(浏览器扩展主通道),挂在同一 HTTP server 上
@@ -1412,10 +1429,22 @@ export default class Application extends EventEmitter {
       this.engineClient.call('changeGlobalOption', system)
 
       if (scope.includes(PROXY_SCOPES.DOWNLOAD)) {
+        // 代理生效需要重建现有连接：先全部暂停，200ms 后全部恢复。
+        // unpauseAll 失败会让所有任务永久停在暂停态（表现为"自动暂停"），
+        // 因此失败时重试一次；两步都捕获错误，避免未处理的 rejection。
         setTimeout(() => {
-          this.engineClient.call('pauseAll')
+          this.engineClient.call('pauseAll').catch((e) => {
+            logger.warn('[Lerxu] proxy change pauseAll failed:', e && e.message)
+          })
           setTimeout(() => {
-            this.engineClient.call('unpauseAll')
+            this.engineClient.call('unpauseAll').catch((e) => {
+              logger.warn('[Lerxu] proxy change unpauseAll failed, will retry:', e && e.message)
+              setTimeout(() => {
+                this.engineClient.call('unpauseAll').catch((e2) => {
+                  logger.error('[Lerxu] proxy change unpauseAll retry failed:', e2 && e2.message)
+                })
+              }, 1000)
+            })
           }, 200)
         }, 0)
       }
