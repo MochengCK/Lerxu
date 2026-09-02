@@ -184,6 +184,7 @@ export default {
   'github-mirror-add-success': 'Mirror added successfully',
   'checking': 'Checking',
   'github-mirror-timeout': 'Timeout',
+  'github-mirror-blocked': 'Reachable·Rejected',
 'bt-transport-protocol': 'Transport protocols',
   'bt-network-discovery': 'Network discovery',
   'bt-port-settings': 'Listen ports',

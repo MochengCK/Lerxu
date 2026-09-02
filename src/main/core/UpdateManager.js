@@ -22,14 +22,22 @@ const GITHUB_REPO = 'Lerxu'
 const CURRENT_VERSION = app.getVersion()
 
 // GitHub 镜像列表，按优先级排序
-// ghproxy.net 的 SSL 证书已过期（ERR_CERT_DATE_INVALID），降到最后
+// 2026-09 实测（本机代理环境，探测地址 raw.githubusercontent.com 与本仓库 latest-mac.yml）：
+//   已失效：mirror.ghproxy.com（DNS 已被污染，连接直接失败）
+//           ghproxy.com（已 301 迁往 ghfast.top，带路径时返回站点首页）
+//           github.moeyy.xyz（已下线）
+//   可用：gh-proxy.com / ghfast.top / gh.ddlc.top / gh.xmly.dev / cors.isteed.cc / ghproxy.net
 const MIRROR_HOSTS = [
-  'mirror.ghproxy.com',
-  'ghproxy.com',
-  'github.moeyy.xyz',
+  'gh-proxy.com',
+  'ghfast.top',
   'gh.ddlc.top',
+  'gh.xmly.dev',
+  'cors.isteed.cc',
   'ghproxy.net'
 ]
+
+// 已停服/已迁址的镜像：用户配置里即使保留了也不再使用
+const RETIRED_MIRROR_HOSTS = ['mirror.ghproxy.com', 'github.moeyy.xyz', 'ghproxy.com']
 
 /**
  * 构建 latest.yml 的下载 URL 列表（优先平台特定 YML，再通用 YML）
@@ -962,7 +970,7 @@ export default class UpdateManager extends EventEmitter {
           for (const host of userMirrors) {
             if (host && typeof host === 'string') {
               const cleanHost = host.replace(/^https?:\/\//, '').replace(/\/+$/, '')
-              if (cleanHost) {
+              if (cleanHost && !RETIRED_MIRROR_HOSTS.includes(cleanHost)) {
                 urls.push(`https://${cleanHost}/https://github.com/${ghPath}`)
               }
             }

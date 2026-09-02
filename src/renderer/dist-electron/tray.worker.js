@@ -1,1 +1,142 @@
-"use strict";process.env.PORTABLE_EXECUTABLE_DIR;const W={LIGHT:"light"},n={WIDTH:70,HEIGHT:22,ICON_WIDTH:22,ICON_HEIGHT:22,TEXT_WIDTH:46,TEXT_FONT_SIZE:8},I=t=>{const e=parseInt(t,10)||0,r=["B","KB","MB","GB","TB"];if(e===0)return"0 KB";const a=parseInt(Math.floor(Math.log(e)/Math.log(1024)),10);return`${(e/1024**a).toFixed(1)} ${r[a]}`},b="#000",A="#fff",D=n.WIDTH,O=n.HEIGHT,G=n.ICON_WIDTH,N=n.ICON_HEIGHT,L=n.TEXT_WIDTH,g=n.TEXT_FONT_SIZE,S="Arial",m=async({canvas:t,theme:e,icon:r,uploadSpeed:a,downloadSpeed:x,scale:s,resultType:y})=>{if(!t)throw new Error("canvas is required");const c=D*s,T=O*s,E=e===W.LIGHT?b:A,l=g*s+1,u=`${l}px "${S}"`,w=G*s,B=N*s,d=L*s;t.width!==c&&(t.width=c),t.height!==T&&(t.height=T);const o=t.getContext("2d");o.clearRect(0,0,t.width,t.height),r&&o.drawImage(r,0,0,w,B),o.font=u,o.textBaseline="top",o.textAlign="right",o.fillStyle=E;const _=`${I(a)}/s`,C=`${I(x)}/s`,h=g*s+.5,M=h+l,f=Math.max(0,Math.round((T-M)/2));return o.fillText(_,c,f,d),o.fillText(C,c,f+h,d),F(t,y)},F=(t,e)=>{switch(e){case"DATA_URL":return t.toDataURL();case"BLOB":return t.convertToBlob();case"BITMAP":return t.transferToImageBitmap();default:return t.convertToBlob()}};let H=0,i;const R=()=>{if(i)return i;const{WIDTH:t,HEIGHT:e}=n;return new OffscreenCanvas(t,e)},$=async t=>{self.postMessage({type:"log",payload:t}),i||(i=R());try{const e=await m({canvas:i,...t});self.postMessage({type:"tray:drawed",payload:{idx:H,tray:e}}),H+=1}catch(e){p(e.message)}},p=t=>{self.postMessage({type:"log",payload:t})};self.postMessage({type:"initialized",payload:Date.now()});self.addEventListener("message",t=>{const{type:e,payload:r}=t.data;switch(e){case"tray:draw":$(r);break;default:p(JSON.stringify(t.data))}});
+"use strict";
+process.env.PORTABLE_EXECUTABLE_DIR;
+const APP_THEME = {
+  LIGHT: "light"
+};
+const TRAY_CANVAS_CONFIG = {
+  WIDTH: 70,
+  HEIGHT: 22,
+  ICON_WIDTH: 22,
+  ICON_HEIGHT: 22,
+  TEXT_WIDTH: 46,
+  TEXT_FONT_SIZE: 8
+};
+const bytesToSize = (bytes) => {
+  const b = parseInt(bytes, 10) || 0;
+  const sizes = ["B", "KB", "MB", "GB", "TB"];
+  if (b === 0) {
+    return "0 KB";
+  }
+  const i = parseInt(Math.floor(Math.log(b) / Math.log(1024)), 10);
+  return `${(b / 1024 ** i).toFixed(1)} ${sizes[i]}`;
+};
+const lightTextColor = "#000";
+const darkTextColor = "#fff";
+const baseWidth = TRAY_CANVAS_CONFIG.WIDTH;
+const baseHeight = TRAY_CANVAS_CONFIG.HEIGHT;
+const baseIconWidth = TRAY_CANVAS_CONFIG.ICON_WIDTH;
+const baseIconHeight = TRAY_CANVAS_CONFIG.ICON_HEIGHT;
+const baseTextWidth = TRAY_CANVAS_CONFIG.TEXT_WIDTH;
+const baseFontSize = TRAY_CANVAS_CONFIG.TEXT_FONT_SIZE;
+const fontFamily = "Arial";
+const draw = async ({
+  canvas: canvas2,
+  theme,
+  icon,
+  uploadSpeed,
+  downloadSpeed,
+  scale,
+  resultType
+}) => {
+  if (!canvas2) {
+    throw new Error("canvas is required");
+  }
+  const width = baseWidth * scale;
+  const height = baseHeight * scale;
+  const textColor = theme === APP_THEME.LIGHT ? lightTextColor : darkTextColor;
+  const fontSize = baseFontSize * scale + 1;
+  const textFont = `${fontSize}px "${fontFamily}"`;
+  const iconWidth = baseIconWidth * scale;
+  const iconHeight = baseIconHeight * scale;
+  const textWidth = baseTextWidth * scale;
+  if (canvas2.width !== width) {
+    canvas2.width = width;
+  }
+  if (canvas2.height !== height) {
+    canvas2.height = height;
+  }
+  const ctx = canvas2.getContext("2d");
+  ctx.clearRect(0, 0, canvas2.width, canvas2.height);
+  if (icon) {
+    ctx.drawImage(icon, 0, 0, iconWidth, iconHeight);
+  }
+  ctx.font = textFont;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "right";
+  ctx.fillStyle = textColor;
+  const uploadText = `${bytesToSize(uploadSpeed)}/s`;
+  const downloadText = `${bytesToSize(downloadSpeed)}/s`;
+  const lineGap = baseFontSize * scale + 0.5;
+  const textBlockHeight = lineGap + fontSize;
+  const textTop = Math.max(0, Math.round((height - textBlockHeight) / 2));
+  ctx.fillText(uploadText, width, textTop, textWidth);
+  ctx.fillText(downloadText, width, textTop + lineGap, textWidth);
+  const result = transferCanvasTo(canvas2, resultType);
+  return result;
+};
+const transferCanvasTo = (canvas2, type) => {
+  switch (type) {
+    case "DATA_URL":
+      return canvas2.toDataURL();
+    case "BLOB":
+      return canvas2.convertToBlob();
+    case "BITMAP":
+      return canvas2.transferToImageBitmap();
+    default:
+      return canvas2.convertToBlob();
+  }
+};
+let idx = 0;
+let canvas;
+const initCanvas = () => {
+  if (canvas) {
+    return canvas;
+  }
+  const { WIDTH, HEIGHT } = TRAY_CANVAS_CONFIG;
+  return new OffscreenCanvas(WIDTH, HEIGHT);
+};
+const drawTray = async (payload) => {
+  self.postMessage({
+    type: "log",
+    payload
+  });
+  if (!canvas) {
+    canvas = initCanvas();
+  }
+  try {
+    const tray = await draw({
+      canvas,
+      ...payload
+    });
+    self.postMessage({
+      type: "tray:drawed",
+      payload: {
+        idx,
+        tray
+      }
+    });
+    idx += 1;
+  } catch (error) {
+    logger(error.message);
+  }
+};
+const logger = (text) => {
+  self.postMessage({
+    type: "log",
+    payload: text
+  });
+};
+self.postMessage({
+  type: "initialized",
+  payload: Date.now()
+});
+self.addEventListener("message", (event) => {
+  const { type, payload } = event.data;
+  switch (type) {
+    case "tray:draw":
+      drawTray(payload);
+      break;
+    default:
+      logger(JSON.stringify(event.data));
+  }
+});

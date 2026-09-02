@@ -192,6 +192,7 @@ export default {
   'github-mirror-add-success': '鏡像新增成功',
   'checking': '偵測中',
   'github-mirror-timeout': '逾時',
+  'github-mirror-blocked': '可達·被拒',
   'bt-transport-protocol': '傳輸協定',
   'bt-network-discovery': '網路發現',
   'bt-port-settings': '監聽埠',

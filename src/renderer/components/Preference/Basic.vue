@@ -1092,6 +1092,8 @@
                     class="track-source"
                     style="flex:1;"
                   >
+                    <!-- collapse-tags 保证只占一行；max-collapse-tags 由实际宽度动态计算
+                         （updateTrackerCollapse），一行内尽量多显示、右侧空间用满后才折叠 -->
                     <el-select
                       ref="trackerSelectRef"
                       v-model="form.trackerSource"
@@ -1100,6 +1102,7 @@
                       filterable
                       multiple
                       collapse-tags
+                      :max-collapse-tags="trackerMaxCollapse"
                       popper-class="tracker-source-popper"
                       style="width:100%;"
                       @change="onTrackerSourceChange"
@@ -2788,7 +2791,11 @@ const originalLocale = ref(preferenceConfig.value.locale)
 const hasNoResults = ref(false)
 const collapseTagsBackgroundUiOpacityScope = ref(false)
 const collapseTagsBackgroundUiFrostedBlurScope = ref(false)
-let textMeasureCanvas = null
+// measureTextWidth 内部按 ref 使用（.value），此处必须用 ref，裸值会在背景图
+// + 多选场景触发 computeScopeSelectCollapse 时抛 null.value TypeError
+const textMeasureCanvas = ref(null)
+// Tracker 多选可见 tag 数：collapse-tags 模式下动态控制，单行铺满可用宽度后再折叠为 "+N"
+const trackerMaxCollapse = ref(1)
 const extensionInput = ref('')
 const domainInput = ref('')
 const ed2kServersText = ref('')
@@ -3130,7 +3137,16 @@ watch(searchKeyword, (val) => {
 watch(() => props.category, () => {
   // 切换分类时立即同步过滤，不走 120ms 防抖。
   filterCards(searchKeyword.value, activeCategory.value)
+  // 进入 BT 页后 select 已挂载，刷新 Tracker 多选的折叠数量
+  if (props.category === 'bt') {
+    nextTick(() => { updateTrackerCollapse() })
+  }
 }, { immediate: true })
+
+// Tracker 源变化（勾选/取消/全选/重置/同步落库）后按宽度重算单行可见 tag 数
+watch(() => form.value.trackerSource, () => {
+  nextTick(() => { updateTrackerCollapse() })
+}, { deep: true })
 
 watch(() => form.value.extensionExcludeDomains, () => {
   // 当配置变化时，更新表单显示
@@ -4426,6 +4442,57 @@ watch(trackerSourceConfigVisible, (visible) => {
         if (m) return m[1]
         return u
       }
+      // 计算 Tracker 多选在单行内最多能完整显示的 tag 数量：
+      // 用 canvas 逐项测量 tag 文本宽度（口径与 computeScopeSelectCollapse 一致），
+      // 累加后若还能放下剩余项则全部显示，否则只显示能放下的前 N 个，其余折叠成 "+N"。
+      function updateTrackerCollapse() {
+        const refVal = trackerSelectRef.value
+        const el = refVal && (refVal.$el || refVal)
+        const total = Array.isArray(form.value.trackerSource) ? form.value.trackerSource.length : 0
+        if (!el || total === 0) {
+          trackerMaxCollapse.value = Math.max(1, total || 1)
+          return
+        }
+        const selection = el.querySelector('.el-select__selection')
+        if (!selection) return
+        const avail = selection.clientWidth
+        if (!avail) return
+        const tagEl = el.querySelector('.el-tag')
+        const font = tagEl ? window.getComputedStyle(tagEl).font : '12px sans-serif'
+        // 每个 tag 的文本外占位：左右内边距 + 关闭按钮 + 边框，约 34-44px
+        const TAG_EXTRA = 40
+        const GAP = 6
+        // 折叠 chip "+N" 自身宽度 + 右侧空隙预留；全部放得下时不显示 chip，无需预留
+        const collapseChipW = 44
+        const limit = avail - 12 // selection 左右内边距
+        let acc = 0
+        let visible = 0
+        const vals = form.value.trackerSource
+        // 尽量一行放满（不给 chip 预留），全部放得下则全部显示；
+        // 放不下时给 "+N" 预留位置，只显示能容纳的前 N 个
+        let allFit = true
+        for (let i = 0; i < total; i++) {
+          const w = measureTextWidth(deriveTrackerLabel(vals[i]), font) + TAG_EXTRA
+          if (acc + w + GAP > limit) { allFit = false; break }
+          acc += w + GAP
+          visible++
+        }
+        if (allFit) {
+          trackerMaxCollapse.value = total
+          return
+        }
+        // 需要折叠：重新按"预留 chip 宽度"计算可见数
+        const chipLimit = limit - collapseChipW
+        acc = 0
+        visible = 0
+        for (let i = 0; i < total; i++) {
+          const w = measureTextWidth(deriveTrackerLabel(vals[i]), font) + TAG_EXTRA
+          if (acc + w + GAP > chipLimit) break
+          acc += w + GAP
+          visible++
+        }
+        trackerMaxCollapse.value = Math.max(1, Math.min(visible, total - 1))
+      }
       function deriveTrackerGroup(u) {
         const s = `${u}`
         const m1 = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//i.exec(s)
@@ -4904,6 +4971,7 @@ watch(trackerSourceConfigVisible, (visible) => {
 onMounted(() => {
       rebuildTrackerSourceOptions()
       window.addEventListener('resize', updateUiScopeSelectCollapse)
+      window.addEventListener('resize', updateTrackerCollapse)
       updateUiScopeSelectCollapse()
       // 立即同步过滤卡片，避免组件首次挂载时所有分类卡片都可见
       // 导致 appearance 卡片（排在前 4 个）闪烁显示。
@@ -4927,6 +4995,7 @@ onBeforeUnmount(() => {
 
       document.removeEventListener('mousedown', handleTrackerSourceOutsideClick)
       window.removeEventListener('resize', updateUiScopeSelectCollapse)
+      window.removeEventListener('resize', updateTrackerCollapse)
       if (_filterTimer) {
         clearTimeout(_filterTimer)
       }

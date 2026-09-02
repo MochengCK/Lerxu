@@ -5,6 +5,7 @@ import { ipcRenderer } from 'electron'
 
 import api from '@/api'
 import {
+  changeKeysToCamelCase,
   getLangDirection,
   pushItemToFixedLengthArray,
   removeArrayItem
@@ -128,6 +129,14 @@ export const usePreferenceStore = defineStore('preference', () => {
     const taskStore = useTaskStore()
     taskStore.saveSession()
     updatePreference(filteredCfg)
+    // 主进程按 userKeys(kebab) 白名单落盘，渲染进程表单读的是 camelCase 键。
+    // 这里同步写入 camel 版本，保证 store 内 camel/kebab 双键同值——
+    // 否则 initForm 等以 camel 优先的读取会拿到广播回写前的旧值，
+    // 表现为"设置切页/重启后回退到旧值"。
+    const camelCfg = changeKeysToCamelCase(filteredCfg)
+    if (!isEmpty(camelCfg)) {
+      updatePreference(camelCfg)
+    }
     // api.savePreference 内部是 ipcRenderer.send（fire-and-forget）返回 undefined，
     // 这里统一包装成 Promise，避免调用方 .then() 崩溃
     return Promise.resolve(api.savePreference(filteredCfg))

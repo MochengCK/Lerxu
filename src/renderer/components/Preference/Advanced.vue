@@ -162,10 +162,15 @@
             <el-col class="form-item-sub" :span="24">
               <div class="github-mirror-row" style="display: flex; align-items: center; margin-bottom: 8px;">
                 <div style="flex: 1;">
+                  <!-- 与 Tracker 多选一致：collapse-tags 保证单行，可见数量按实际宽度动态计算
+                       （updateGithubMirrorCollapse），右侧空间用满后才折叠为 "+N" -->
                   <el-select
+                    ref="githubMirrorSelectRef"
                     v-model="form.githubMirrorUrls"
                     multiple
                     filterable
+                    collapse-tags
+                    :max-collapse-tags="githubMirrorMaxCollapse"
                     :placeholder="t('preferences.github-mirror-select-placeholder')"
                     @change="onGithubMirrorChange"
                     style="width: 100%;"
@@ -183,7 +188,7 @@
                             <el-icon class="is-loading"><Loading /></el-icon> {{ t('preferences.checking') }}
                           </span>
                           <span v-else-if="mirror.latency !== null" :style="{ color: getLatencyColor(mirror.latency), fontWeight: '500' }">
-                            {{ formatLatency(mirror.latency) }}
+                            {{ formatLatency(mirror) }}
                           </span>
                         </span>
                       </el-option>
@@ -530,7 +535,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import is from 'electron-is'
 import { app, dialog, shell } from '@electron/remote'
@@ -600,6 +605,17 @@ const { engineInfo: storeEngineInfo } = storeToRefs(appStore)
 
 
 
+// 已停服/已迁址的旧内置镜像（2026-09 实测确认）：
+// mirror.ghproxy.com、github.moeyy.xyz 域名已被 DNS 污染且无响应；
+// ghproxy.com 已 301 迁往 ghfast.top，带完整路径时只返回站点首页。
+const RETIRED_GITHUB_MIRRORS = ['mirror.ghproxy.com', 'github.moeyy.xyz', 'ghproxy.com']
+
+// 首次进入时若检测到"配置里只剩已停服旧镜像"，会用新默认列表替换并落盘一次
+const githubMirrorMigrationPending = ref(false)
+// 镜像多选单行可见 tag 数：collapse-tags 模式下动态控制，铺满可用宽度后再折叠
+const githubMirrorMaxCollapse = ref(1)
+const githubMirrorSelectRef = ref(null)
+
 const initForm = (config) => {
     const {
       autoCheckUpdate,
@@ -623,11 +639,16 @@ const initForm = (config) => {
       : config['update-channel']
     const updateChannel = rawChannel === 'latest' ? 'stable' : (rawChannel || 'stable')
     // 兼容旧的单个镜像配置
-    const githubMirrorUrl = config.githubMirrorUrl || config['github-mirror-url']
-    // 兼容 kebab-case 配置键
-    const parsedGithubMirrorUrls = githubMirrorUrls || config['github-mirror-urls']
+    const githubMirrorUrl = config.githubMirrorUrl !== undefined ? config.githubMirrorUrl : config['github-mirror-url']
+    // 兼容 kebab-case 配置键：以键"是否存在"为准，而不是 `||`——
+    // `camel || kebab` 里空数组是 truthy，若 camel 残留旧值会掩盖 kebab 新值；
+    // preferenceStore.save 现已同步双键，任一非空键都代表最新状态。
+    const parsedGithubMirrorUrls = githubMirrorUrls !== undefined && githubMirrorUrls !== null
+      ? githubMirrorUrls
+      : config['github-mirror-urls']
     // 默认镜像列表（默认选择所有内置镜像）
-    const defaultMirrors = ['mirror.ghproxy.com', 'github.moeyy.xyz']
+    // 2026-09 实测可用：mirror.ghproxy.com 与 github.moeyy.xyz 已下线，不再默认选中
+    const defaultMirrors = ['gh-proxy.com', 'ghfast.top']
     // 兼容旧的kebab-case配置键
     const parsedEngineBinary = engineBinary || config['engine-binary'] || ''
     // 兼容旧版代理配置（旧版使用 enable 字段，新版使用 mode 字段）
@@ -645,6 +666,18 @@ const initForm = (config) => {
       activeOptimizationInterval: 5
     }
     const clonedScheduler = { ...defaultScheduler, ...(scheduler || {}) }
+    const savedMirrors = Array.isArray(parsedGithubMirrorUrls) ? parsedGithubMirrorUrls : []
+    // 是否"显式配置过"镜像：键存在即是显式配置（包括 [] = 用户刻意不用镜像）。
+    // 不能把 [] 当"没配置"再回退默认列表——否则用户清空选择后一旦切页/重启，
+    // 界面又弹回默认镜像，表现为"选择后变回默认设置"。
+    const hasExplicitMirrorConfig = Array.isArray(parsedGithubMirrorUrls)
+    // 已保存的旧内置镜像如果全部停服，自动回退到新的默认镜像（并在 onMounted 落盘），
+    // 避免配置里留一堆死链；空数组不在此列，属于用户的有意选择，保持原样。
+    const aliveSavedMirrors = savedMirrors.filter(host => !RETIRED_GITHUB_MIRRORS.includes(host))
+    const needsGithubMirrorMigration = hasExplicitMirrorConfig &&
+      savedMirrors.length > 0 && aliveSavedMirrors.length === 0
+    githubMirrorMigrationPending.value = needsGithubMirrorMigration
+    const effectiveSavedMirrors = needsGithubMirrorMigration ? defaultMirrors : savedMirrors
     const result = {
       autoCheckUpdate,
       updateChannel,
@@ -659,8 +692,8 @@ const initForm = (config) => {
       useProxy,
       userAgent,
       engineBinary: parsedEngineBinary,
-      githubMirrorUrls: Array.isArray(parsedGithubMirrorUrls) && parsedGithubMirrorUrls.length > 0
-        ? parsedGithubMirrorUrls
+      githubMirrorUrls: hasExplicitMirrorConfig
+        ? effectiveSavedMirrors
         : (githubMirrorUrl ? [githubMirrorUrl] : defaultMirrors)
     }
     return result
@@ -676,9 +709,13 @@ const hideRpcSecret = ref(true)
 const proxyScopeOptions = ref(PROXY_SCOPE_OPTIONS)
 const rules = ref({})
 const builtinGithubMirrors = ref([
-  { value: 'mirror.ghproxy.com', label: 'mirror.ghproxy.com', latency: null, checking: false },
-  { value: 'github.moeyy.xyz', label: 'github.moeyy.xyz', latency: null, checking: false },
-  { value: 'ghproxy.net', label: 'ghproxy.net', latency: null, checking: false }
+  { value: 'gh-proxy.com', label: 'gh-proxy.com', latency: null, statusCode: null, checking: false },
+  { value: 'ghfast.top', label: 'ghfast.top', latency: null, statusCode: null, checking: false },
+  { value: 'gh.ddlc.top', label: 'gh.ddlc.top', latency: null, statusCode: null, checking: false },
+  { value: 'gh.xmly.dev', label: 'gh.xmly.dev', latency: null, statusCode: null, checking: false },
+  { value: 'cors.isteed.cc', label: 'cors.isteed.cc', latency: null, statusCode: null, checking: false },
+  { value: 'ghproxy.net', label: 'ghproxy.net', latency: null, statusCode: null, checking: false },
+  { value: 'gh.llkk.cc', label: 'gh.llkk.cc', latency: null, statusCode: null, checking: false }
 ])
 const githubMirrorCheckingAll = ref(false)
 let mirrorCheckTimeout = null
@@ -792,9 +829,15 @@ watch(searchKeyword, (val) => {
 }, { immediate: true })
 watch(() => props.category, () => {
   applyFilters(searchKeyword.value)
+  // 切回高级页后 select 已挂载，刷新镜像多选单行折叠数
+  nextTick(() => { updateGithubMirrorCollapse() })
 }, { immediate: true })
 watch(form, () => {
   autoSaveForm()
+}, { deep: true })
+// 镜像选择变化（含迁移落盘）后按宽度重算单行可见 tag 数
+watch(() => form.value.githubMirrorUrls, () => {
+  nextTick(() => { updateGithubMirrorCollapse() })
 }, { deep: true })
 watch(() => form.value.rpcListenPort, (val) => {
   const url = buildRpcUrl({ port: form.value.rpcListenPort, secret: val })
@@ -816,6 +859,13 @@ onMounted(async () => {
       checkSelectedGithubMirrors().catch(() => {})
     }, 1000)
   }
+  // 旧镜像全部停服时 initForm 已用新默认列表替换，这里落盘一次完成迁移
+  if (githubMirrorMigrationPending.value) {
+    persistGithubMirrorsNow()
+  }
+  // 注册 resize 更新镜像多选折叠数（组件挂载后 select 已渲染）
+  window.addEventListener('resize', handleGithubMirrorResize)
+  nextTick(() => { updateGithubMirrorCollapse() })
   try {
     const appConfig = await ipcRenderer.invoke('get-app-config')
     appVersion.value = appConfig.version
@@ -858,6 +908,10 @@ onMounted(async () => {
   } catch (e) {
     console.warn('[Lerxu] Failed to get update status:', e)
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleGithubMirrorResize)
 })
 
 // --- Methods ---
@@ -915,12 +969,71 @@ onMounted(async () => {
         }
       }
 
+      // GitHub 镜像多选：单行内按实际宽度显示尽可能多的 tag（与 Tracker 方案一致）。
+      // canvas 逐项测量选中镜像 label（host）宽度，放得下全部则全显，
+      // 放不下则预留 "+N" chip 宽度、只显示前 N 个。
+      function updateGithubMirrorCollapse() {
+        const total = Array.isArray(form.value.githubMirrorUrls) ? form.value.githubMirrorUrls.length : 0
+        if (total === 0) {
+          githubMirrorMaxCollapse.value = 1
+          return
+        }
+        const selectRefVal = githubMirrorSelectRef.value
+        const selectEl = selectRefVal && (selectRefVal.$el || selectRefVal)
+        if (!selectEl) return
+        const selection = selectEl.querySelector('.el-select__selection')
+        if (!selection) return
+        const avail = selection.clientWidth
+        if (!avail) return
+        const tagEl = selectEl.querySelector('.el-tag')
+        const font = tagEl ? window.getComputedStyle(tagEl).font : '12px sans-serif'
+        const labelOf = (val) => {
+          const hit = builtinGithubMirrors.value.find(m => m.value === val)
+          return hit ? hit.label : val
+        }
+        // tag 文本外占位：内边距 + 关闭按钮 + 边框 ≈ 40px；tag 间距 6px；"+N" chip 预留 44px
+        const TAG_EXTRA = 40
+        const GAP = 6
+        const collapseChipW = 44
+        const limit = avail - 12
+        let acc = 0
+        let visible = 0
+        let allFit = true
+        const vals = form.value.githubMirrorUrls
+        for (let i = 0; i < total; i++) {
+          const w = measureTextWidth(labelOf(vals[i]), font) + TAG_EXTRA
+          if (acc + w + GAP > limit) { allFit = false; break }
+          acc += w + GAP
+          visible++
+        }
+        if (allFit) {
+          githubMirrorMaxCollapse.value = total
+          return
+        }
+        const chipLimit = limit - collapseChipW
+        acc = 0
+        visible = 0
+        for (let i = 0; i < total; i++) {
+          const w = measureTextWidth(labelOf(vals[i]), font) + TAG_EXTRA
+          if (acc + w + GAP > chipLimit) break
+          acc += w + GAP
+          visible++
+        }
+        githubMirrorMaxCollapse.value = Math.max(1, Math.min(visible, total - 1))
+      }
+      function handleGithubMirrorResize() {
+        updateGithubMirrorCollapse()
+      }
+
       // GitHub 镜像延迟检测
+      // 探针必须是「普通文件」而不是 GitHub API：
+      // 1) api.github.com 有严格的速率限制（未认证 60 次/小时/IP），公共镜像出口 IP 长期被打满，
+      //    返回 403 会让在线的镜像被误判为不可用；
+      // 2) 部分镜像（如 ghproxy.net / ghfast.top）只代理文件类地址，API 路径直接返回 "Invalid input."；
+      // 3) raw.githubusercontent.com 的响应都带 access-control-allow-origin: *，渲染进程 fetch 能正常读取。
+      const MIRROR_PROBE_PATH = 'https://raw.githubusercontent.com/github/explore/main/README.md'
       async function checkGithubMirrorLatency(mirror) {
-        // 使用一个小的测试文件来检测延迟
-        // 使用 GitHub 的 favicon 或其他小文件
-        // 使用 GitHub API 的极小响应来检测延迟，避免下载较大文件
-        const testUrl = `https://${mirror.value}/https://api.github.com/repos/github/explore`
+        const testUrl = `https://${mirror.value}/${MIRROR_PROBE_PATH}`
         const startTime = Date.now()
 
         try {
@@ -933,20 +1046,23 @@ onMounted(async () => {
             signal: controller.signal,
             cache: 'no-cache',
             mode: 'cors',
+            redirect: 'follow',
             credentials: 'omit'
           })
 
           clearTimeout(timeoutId)
+          mirror.statusCode = response.status
 
           // 检查响应状态
           if (response.ok) {
             const latency = Date.now() - startTime
             console.log(`[GitHub Mirror] ${mirror.value} latency: ${latency}ms`)
             return latency
-          } else {
-            console.warn(`[GitHub Mirror] ${mirror.value} returned status: ${response.status}`)
-            return -1
           }
+          // 收到了 HTTP 响应，说明镜像本身在线，只是拒绝/不代理这个地址（403/404/429 等），
+          // 不能等同于「超时不可用」，用 -2 单独标记
+          console.warn(`[GitHub Mirror] ${mirror.value} returned status: ${response.status}`)
+          return -2
         } catch (error) {
           const latency = Date.now() - startTime
           const isCertError = /cert|ERR_CERT/i.test(error.message || '')
@@ -1100,8 +1216,8 @@ onMounted(async () => {
         const currentUrls = form.value.githubMirrorUrls || []
         form.value.githubMirrorUrls = [...currentUrls, mirrorUrl]
 
-        // 保存配置
-        autoSaveForm()
+        // 保存配置（立即落盘，与镜像下拉选择一致）
+        persistGithubMirrorsNow()
 
         // 关闭弹窗
         closeGithubMirrorPopup()
@@ -1109,9 +1225,25 @@ onMounted(async () => {
         // 提示添加成功
         msg.success(t('preferences.github-mirror-add-success'))
       }
+      function persistGithubMirrorsNow () {
+        // 与 update-channel 同理：镜像选择立即落盘，不走 800ms 防抖。
+        // 防抖窗口内若用户切页/关闭设置窗口，保存请求未发出，重开后就会
+        // 回退到旧值（叠加"空列表被默认列表顶替/双键不同步"的旧逻辑，
+        // 正是"选择后变回默认设置"的根因）。立即保存 + 同步 formOriginal，
+        // 让随后的防抖 diff 为空、不会重复写盘。
+        const next = Array.isArray(form.value.githubMirrorUrls) ? [...form.value.githubMirrorUrls] : []
+        preferenceStore.save({ 'github-mirror-urls': next })
+          .then(() => {
+            formOriginal.value = cloneDeep(form.value)
+            githubMirrorMigrationPending.value = false
+          })
+          .catch((e) => {
+            console.error('[Lerxu] Save GitHub mirrors failed:', e)
+          })
+      }
       function onGithubMirrorChange(newValue) {
-        // 保存配置
-        autoSaveForm()
+        // 保存配置（立即落盘）
+        persistGithubMirrorsNow()
 
         // 找出新添加的镜像（在新列表中但不在旧列表中的）
         const previousUrls = previousGithubMirrorUrls.value || []
@@ -1157,9 +1289,15 @@ onMounted(async () => {
 
         await Promise.all(checkPromises)
       }
-      function formatLatency(latency) {
-        if (latency === null) {
+      function formatLatency(mirror) {
+        const latency = typeof mirror === 'object' && mirror !== null ? mirror.latency : mirror
+        if (latency === null || latency === undefined) {
           return ''
+        }
+        // -2：镜像可达，但拒绝/不代理探针地址（如 403 限流），不是镜像故障
+        if (latency === -2) {
+          const code = typeof mirror === 'object' ? mirror.statusCode : null
+          return code ? `${t('preferences.github-mirror-blocked')} (${code})` : t('preferences.github-mirror-blocked')
         }
         if (latency < 0) {
           return t('preferences.github-mirror-timeout')
@@ -1170,6 +1308,9 @@ onMounted(async () => {
         return `${(latency / 1000).toFixed(2)}s`
       }
       function getLatencyColor(latency) {
+        if (latency === -2) {
+          return '#E6A23C' // 橙色 - 可达但目标被拒
+        }
         if (latency < 0) {
           return '#F56C6C' // 红色 - 失败
         }
