@@ -88,6 +88,14 @@ export default class Application extends EventEmitter {
       this.cleanupExpiredSessionTokens()
     }, 60000) // 每分钟清理一次
 
+    // 早期就绪 Promise：窗口创建只依赖 init 前半段（配置/菜单/窗口管理器/
+    // IPC handler），后半段的引擎启动、系统代理解析、RPC 获取等耗时步骤
+    // 在后台继续，让主窗口在启动后尽快可见，而不是等整个 init 完成。
+    this._earlyInitPromise = new Promise((resolve, reject) => {
+      this._earlyInitResolve = resolve
+      this._earlyInitReject = reject
+    })
+
     this._initPromise = this.init()
   }
 
@@ -99,26 +107,39 @@ export default class Application extends EventEmitter {
   }
 
   async init () {
-    this.initContext()
-
-    this.initConfigManager()
-
-    this.setupLogger()
-
-    this.initLocaleManager()
-
-    this.setupApplicationMenu()
-
-    this.initWindowManager()
-
-    // IPC handler 必须在任何窗口创建前注册：
+    // ===== 早期阶段（窗口创建的充分条件）=====
+    // 以下步骤全部同步且轻量：配置/日志/多语言/菜单/窗口管理器/IPC handler。
+    // handleIpcInvokes 必须在任何窗口创建前注册：
     // macOS 首次启动会触发 activate，可能在 init 后半段（引擎启动耗时数秒）
     // 就打开窗口，若此时 handler 未注册，渲染进程 bootstrap 调用
     // get-app-config 会直接失败导致前端永远不挂载。
     // 各 handler 内部已对未就绪组件做守卫，提前注册是安全的。
-    this.handleIpcInvokes()
+    try {
+      this.initContext()
 
-    this.initUPnPManager()
+      this.initConfigManager()
+
+      this.setupLogger()
+
+      this.initLocaleManager()
+
+      this.setupApplicationMenu()
+
+      this.initWindowManager()
+
+      this.handleIpcInvokes()
+
+      this.initUPnPManager()
+    } catch (err) {
+      this._earlyInitReject(err)
+      throw err
+    }
+    // 早期初始化完成：此后创建窗口是安全的（渲染进程 bootstrap 所需的
+    // get-app-config 只依赖 configManager/context；engine:rpc 带未就绪
+    // 守卫，渲染进程轮询对引擎未就绪有静默降级与重连机制）。
+    this._earlyInitResolve()
+
+    // ===== 晚期阶段（耗时，后台进行，不阻塞窗口显示）=====
 
     // 在启动引擎前，如果使用系统代理模式，先获取系统代理地址
     await this.initSystemProxyIfNeeded()
@@ -1891,8 +1912,10 @@ export default class Application extends EventEmitter {
   }
 
   async start (page, options = {}) {
+    // 只等早期初始化：引擎启动、系统代理解析等耗时步骤在后台继续，
+    // 主窗口先行创建并显示，渲染进程对引擎未就绪有降级与重连机制。
     try {
-      await this._initPromise
+      await this._earlyInitPromise
     } catch (err) {
       logger.error('[Lerxu] Application init failed, cannot start:', err)
       return
@@ -1923,6 +1946,11 @@ export default class Application extends EventEmitter {
       await this._initPromise
     } catch (err) {
       logger.info('[Lerxu] Retrying init after previous failure:', err.message)
+      // 早期 Promise 已 settle（reject），重试前重建，保持与构造函数一致的状态机
+      this._earlyInitPromise = new Promise((resolve, reject) => {
+        this._earlyInitResolve = resolve
+        this._earlyInitReject = reject
+      })
       this._initPromise = this.init()
       try {
         await this._initPromise
@@ -3901,9 +3929,19 @@ export default class Application extends EventEmitter {
     // Handle open-preference-window
     ipcMain.on('open-preference-window', (event, payload = {}) => {
       const { category } = payload || {}
+      // 窗口已打开时重复触发是复用已有窗口：下发刷新命令让渲染进程
+      // 重新拉取配置（Basic.vue 监听该命令并重建表单），避免显示
+      // 被外部（扩展/托盘/其他窗口）修改的过期设置。
+      // 窗口关闭即销毁（bindCloseToHide: false），新窗口加载期间
+      // isLoading 为 true，此分支自动跳过。
+      const prev = this.windowManager.getWindow('preference')
+      const reused = !!(prev && !(typeof prev.isDestroyed === 'function' && prev.isDestroyed()))
       const win = this.windowManager.openWindow('preference', {
         hidden: false
       })
+      if (win && reused && !win.webContents.isLoading()) {
+        win.webContents.send('command', 'preference:update-from-extension')
+      }
       if (win && category) {
         const sendNavigateCommand = () => {
           win.webContents.send('command', 'application:open-preference-category', { category })

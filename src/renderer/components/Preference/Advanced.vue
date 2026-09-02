@@ -2009,12 +2009,16 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
             return sanitized
           }
 
-          // Show preview dialog with release notes
-          dialog.showMessageBox({
-            type: 'info',
-            title: 'Update Preview',
-            message: buildReleaseNotesHtml(rawReleaseNotes) || 'No release notes available.'
-          })
+          // 打开内置预览层展示更新日志（releaseNotes 由主进程 update-available 事件下发、
+          // 持久化到 config 'release-notes'，组件挂载时恢复）
+          const raw = releaseNotes.value || ''
+          const html = buildReleaseNotesHtml(raw)
+          if (!html) {
+            msg.info(t('preferences.update-preview-empty'))
+            return
+          }
+          updatePreviewContent.value = html
+          updatePreviewVisible.value = true
         } catch (e) {
           console.error('[Lerxu] Failed to preview update:', e)
           msg.error(t('preferences.update-preview-fail'))

@@ -13,7 +13,9 @@ initialize()
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
 
 // TEMP-DEBUG: 调试用远程调试端口，排查后删除
-app.commandLine.appendSwitch('remote-debugging-port', '9222')
+// 可用 LERXU_DEBUG_PORT 覆盖：本机已运行打包版（占用 9222）时，
+// dev 实例需用别的端口才能挂 CDP。
+app.commandLine.appendSwitch('remote-debugging-port', process.env.LERXU_DEBUG_PORT || '9222')
 
 /**
  * 兼容旧 electron-vue 的 __static 全局（TrayManager / TouchBarManager /

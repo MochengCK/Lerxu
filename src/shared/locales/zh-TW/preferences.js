@@ -253,6 +253,8 @@ export default {
   'restart-to-apply': '該設定將於應用程式重新啟動後生效',
   'auto-check-update': '自動檢查更新',
   'last-check-update-time': '上次檢查更新時間',
+  'update-preview-fail': '更新預覽失敗，請重試',
+  'update-preview-empty': '此版本暫無更新說明',
   'undo-change': '撤回更改',
   'engine': '引擎',
   'engine-select': '引擎選擇',

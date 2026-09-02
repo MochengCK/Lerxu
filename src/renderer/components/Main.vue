@@ -1213,20 +1213,26 @@ onBeforeUnmount(() => {
             }
           }
 
-          win.show()
-          win.focus()
-          // Keep on top briefly then allow normal stacking
-          try {
-            win.setAlwaysOnTop(true)
-            setTimeout(() => {
-              try {
-                if (isAliveWindow(win)) {
-                  win.setAlwaysOnTop(false)
-                }
-              } catch (e) {}
-            }, 100)
-          } catch (e) {
-            console.warn('[Lerxu] Failed to set always on top:', e.message)
+          if (isMac) {
+            // macOS：下载完成弹窗是独立提示窗。show()/focus() 会把处于后台的
+            // 应用整体激活，macOS 随之把主窗口一并提到最前——这正是用户看到的
+            // “弹窗出现时主窗口也被置前”。改用 showInactive() 只显示弹窗、
+            // 不激活应用/不动主窗口层级，并用 floating 层级让弹窗浮于最前，
+            // 常驻直到用户点击关闭或处理（打开文件夹等）。
+            win.showInactive()
+            try {
+              win.setAlwaysOnTop(true, 'floating')
+            } catch (e) {
+              win.setAlwaysOnTop(true)
+            }
+          } else {
+            win.show()
+            win.focus()
+            try {
+              win.setAlwaysOnTop(true)
+            } catch (e) {
+              console.warn('[Lerxu] Failed to set always on top:', e.message)
+            }
           }
         })
       } catch (e) {

@@ -140,7 +140,13 @@ export default defineConfig(({ command }) => {
       outDir: resolve('dist/electron'),
       emptyOutDir: false,
       rollupOptions: {
-        input: resolve('src/renderer/index.html')
+        // 多页构建：index.html 为主窗口完整 SPA；
+        // preference.html 为偏好设置独立轻量 bundle（入口 pages/preference/main.js），
+        // 窗口关闭即销毁的场景下重开仍能快速加载。
+        input: {
+          index: resolve('src/renderer/index.html'),
+          preference: resolve('src/renderer/preference.html')
+        }
       },
       minify: 'terser',
       terserOptions: {

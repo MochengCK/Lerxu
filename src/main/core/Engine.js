@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn, execFile } from 'node:child_process'
 import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, readFileSync, unlink, unlinkSync, writeFile, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import is from 'electron-is'
@@ -73,9 +73,10 @@ export default class Engine {
     this.truncateAria2Log()
 
     const originBinPath = this.getEngineBinPath()
-    // 二进制可用性检查（xattr/版本探测）含多个最长 3~5s 的同步子进程，
-    // 同一会话内缓存结果，避免引擎重启时重复阻塞主进程。
-    const binPath = this._preparedBinPath || this.prepareEngineBinary(originBinPath)
+    // 二进制可用性检查（xattr/版本探测）为异步子进程调用，不阻塞主进程
+    // 事件循环（主窗口此时已先行创建，阻塞会冻结渲染进程 bootstrap）；
+    // 同一会话内缓存结果，避免引擎重启时重复探测。
+    const binPath = this._preparedBinPath || await this.prepareEngineBinary(originBinPath)
     if (binPath) {
       this._preparedBinPath = binPath
     }
@@ -236,24 +237,31 @@ export default class Engine {
     })
   }
 
-  prepareEngineBinary (originBinPath) {
+  async prepareEngineBinary (originBinPath) {
     const p = originBinPath ? resolve(`${originBinPath}`) : ''
     if (!p || platform === 'win32') {
       return p
     }
 
-    const tryUnquarantine = (fp) => {
+    // 异步执行子进程（带超时），resolve 而不 reject，调用方按 error 判断。
+    // 原实现用 spawnSync，最长 3~5s 的同步等待会冻结主进程事件循环，
+    // 阻塞渲染进程 bootstrap 的同步 IPC（get-app-config）。
+    const execFileAsync = (cmd, args, options = {}) => new Promise((resolve) => {
+      execFile(cmd, args, { windowsHide: true, encoding: 'utf8', ...options }, (error, stdout, stderr) => {
+        resolve({ error, stdout, stderr })
+      })
+    })
+
+    const tryUnquarantine = async (fp) => {
       if (!is.macOS() || !fp) {
         return
       }
       const args = ['-dr', 'com.apple.quarantine', fp]
-      try {
-        spawnSync('xattr', args, { windowsHide: true, timeout: 3000 })
+      const r = await execFileAsync('xattr', args, { timeout: 3000 })
+      if (!r.error) {
         return
-      } catch (_) {}
-      try {
-        spawnSync('/usr/bin/xattr', args, { windowsHide: true, timeout: 3000 })
-      } catch (_) {}
+      }
+      await execFileAsync('/usr/bin/xattr', args, { timeout: 3000 })
     }
 
     const canExecute = (fp) => {
@@ -265,33 +273,25 @@ export default class Engine {
       }
     }
 
-    const runVersionCheck = (fp) => {
+    const runVersionCheck = async (fp) => {
       if (!is.macOS() || !fp) {
         return { ok: true, detail: '' }
       }
-      try {
-        const r = spawnSync(fp, ['--version'], {
-          windowsHide: true,
-          timeout: 5000,
-          encoding: 'utf8',
-          maxBuffer: 1024 * 128,
-          stdio: ['ignore', 'pipe', 'pipe']
-        })
-        if (r && r.error) {
-          const c = r.error && r.error.code ? String(r.error.code) : ''
-          return { ok: false, detail: `spawn_error=${r.error.message}${c ? ` code=${c}` : ''}` }
+      const r = await execFileAsync(fp, ['--version'], {
+        timeout: 5000,
+        maxBuffer: 1024 * 128
+      })
+      if (r.error) {
+        const code = typeof r.error.code !== 'undefined' ? String(r.error.code) : ''
+        const signal = r.error.signal ? String(r.error.signal) : ''
+        const stderr = r.stderr ? String(r.stderr).trim() : ''
+        const stderrLine = stderr ? `\nstderr=${stderr.slice(0, 600)}` : ''
+        return {
+          ok: false,
+          detail: `spawn_or_exit_error=${r.error.message}${code ? ` code=${code}` : ''}${signal ? ` signal=${signal}` : ''}${stderrLine}`
         }
-        if (!r || r.status !== 0) {
-          const status = r && typeof r.status === 'number' ? String(r.status) : 'unknown'
-          const signal = r && r.signal ? String(r.signal) : ''
-          const stderr = r && r.stderr ? String(r.stderr).trim() : ''
-          const stderrLine = stderr ? `\nstderr=${stderr.slice(0, 600)}` : ''
-          return { ok: false, detail: `exit_status=${status}${signal ? ` signal=${signal}` : ''}${stderrLine}` }
-        }
-        return { ok: true, detail: '' }
-      } catch (e) {
-        return { ok: false, detail: `exception=${e && e.message ? e.message : String(e)}` }
       }
+      return { ok: true, detail: '' }
     }
 
     const tryChmod = (fp) => {
@@ -310,9 +310,9 @@ export default class Engine {
       }
     }
 
-    tryUnquarantine(p)
+    await tryUnquarantine(p)
     tryChmod(p)
-    const originalCheck = canExecute(p) ? runVersionCheck(p) : { ok: false, detail: 'not_executable' }
+    const originalCheck = canExecute(p) ? await runVersionCheck(p) : { ok: false, detail: 'not_executable' }
     if (canExecute(p) && originalCheck.ok) {
       return p
     }
@@ -356,10 +356,10 @@ export default class Engine {
       }
 
       tryChmod(destPath)
-      tryUnquarantine(destPath)
+      await tryUnquarantine(destPath)
 
       if (canExecute(destPath)) {
-        const copiedCheck = runVersionCheck(destPath)
+        const copiedCheck = await runVersionCheck(destPath)
         if (copiedCheck.ok) {
           return destPath
         }

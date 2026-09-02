@@ -46,7 +46,6 @@ import i18n from '@/plugins/i18n'
 import { createMsg } from '@/components/Msg'
 import { useAppStore } from '@/store/app'
 import { usePreferenceStore } from '@/store/preference'
-import { useTaskStore } from '@/store/task'
 import { storeToRefs } from 'pinia'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -58,10 +57,20 @@ const instance = getCurrentInstance()
 
 const appStore = useAppStore()
 const preferenceStore = usePreferenceStore()
-const taskStore = useTaskStore()
 
 const { systemTheme, addTaskVisible, titleBarText, taskPlanVisible } = storeToRefs(appStore)
-const { taskDetailVisible } = storeToRefs(taskStore)
+// taskDetailVisible 只与主窗口相关（根节点 is-task-detail-open 类名）。
+// 偏好设置独立 bundle 通过全局标记跳过 task store 引入：
+// 该 store 会连带引擎 API、TaskHistory 等大量主窗口代码。
+// 主窗口按需动态加载，类名行为保持不变。
+const taskDetailVisible = ref(false)
+if (!window.__LERXU_PREFERENCE_BUNDLE__) {
+  import('@/store/task').then(({ useTaskStore }) => {
+    const taskStore = useTaskStore()
+    const { taskDetailVisible: visible } = storeToRefs(taskStore)
+    watch(visible, (v) => { taskDetailVisible.value = v }, { immediate: true })
+  })
+}
 const { config: preferenceConfig, theme, locale, direction } = storeToRefs(preferenceStore)
 
 const UI_FROSTED_BLUR_SCOPES = [

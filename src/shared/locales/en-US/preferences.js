@@ -253,6 +253,8 @@ export default {
   'restart-to-apply': 'This setting takes effect after the app restarts',
   'auto-check-update': 'Automatically check for updates',
   'last-check-update-time': 'Last checked for an update',
+  'update-preview-fail': 'Failed to preview update, please try again',
+  'update-preview-empty': 'No release notes for this version',
   
   'undo-change': 'Undo Change',
   'engine': 'Engine',
