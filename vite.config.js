@@ -91,7 +91,17 @@ export default defineConfig(({ command }) => {
           },
           onstart(args) {
             if (isServe) {
-              args.startup()
+              // 宿主终端的语言 shim 会向 node 进程注入 ELECTRON_RUN_AS_NODE=1
+              // 与 NODE_OPTIONS（--require shim），二者被 Electron 子进程继承后
+              // 会使 electron.exe 降级为纯 Node 模式运行（require('electron')
+              // 落盘解析，主进程抛 "Cannot read properties of undefined
+              // (reading 'getVersion')"）。启动 Electron 前必须剥除这些变量。
+              const {
+                ELECTRON_RUN_AS_NODE: _ern,
+                NODE_OPTIONS: _no,
+                ...electronEnv
+              } = process.env
+              args.startup(['.', '--no-sandbox'], { env: electronEnv })
             }
           }
         },
@@ -140,12 +150,11 @@ export default defineConfig(({ command }) => {
       outDir: resolve('dist/electron'),
       emptyOutDir: false,
       rollupOptions: {
-        // 多页构建：index.html 为主窗口完整 SPA；
-        // preference.html 为偏好设置独立轻量 bundle（入口 pages/preference/main.js），
-        // 窗口关闭即销毁的场景下重开仍能快速加载。
+        // 单页构建：index.html 为主窗口完整 SPA。
+        // 偏好设置已内嵌在主窗口 SPA 中（/preference 路由），
+        // 不再单独构建 preference.html 轻量 bundle。
         input: {
-          index: resolve('src/renderer/index.html'),
-          preference: resolve('src/renderer/preference.html')
+          index: resolve('src/renderer/index.html')
         }
       },
       minify: 'terser',

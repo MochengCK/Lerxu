@@ -4,7 +4,7 @@
     <div
       id="app"
       :style="appRootStyle"
-      :class="{ 'has-custom-titlebar': showWindowActions, 'show-window-actions': showWindowActions, 'is-preference-window': isPreferenceWindow, 'is-task-detail-open': taskDetailVisible, 'is-add-task-open': addTaskVisible, 'is-task-plan-open': taskPlanVisible, 'is-mac': isMac }"
+      :class="{ 'has-custom-titlebar': showWindowActions, 'show-window-actions': showWindowActions, 'is-task-detail-open': taskDetailVisible, 'is-add-task-open': addTaskVisible, 'is-task-plan-open': taskPlanVisible, 'is-mac': isMac }"
     >
       <div
         v-if="shouldUseBackgroundImage"
@@ -19,12 +19,11 @@
       <div class="app-content">
         <router-view />
         <mo-engine-client
-          v-if="!isPreferenceWindow"
           :secret="rpcSecret"
         />
-        <mo-ipc v-if="isRenderer && !isPreferenceWindow" />
-        <mo-dynamic-tray v-if="enableTraySpeedometer && !isPreferenceWindow" />
-        <mo-dynamic-dock v-if="isMac && isRenderer && !isPreferenceWindow" />
+        <mo-ipc v-if="isRenderer" />
+        <mo-dynamic-tray v-if="enableTraySpeedometer" />
+        <mo-dynamic-dock v-if="isMac && isRenderer" />
       </div>
     </div>
   </el-config-provider>
@@ -46,12 +45,12 @@ import i18n from '@/plugins/i18n'
 import { createMsg } from '@/components/Msg'
 import { useAppStore } from '@/store/app'
 import { usePreferenceStore } from '@/store/preference'
+import { useTaskStore } from '@/store/task'
 import { storeToRefs } from 'pinia'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 
 const { t } = i18n.global
 const msg = createMsg(ElMessage, { showClose: true })
-const route = useRoute()
 const router = useRouter()
 const instance = getCurrentInstance()
 
@@ -59,18 +58,9 @@ const appStore = useAppStore()
 const preferenceStore = usePreferenceStore()
 
 const { systemTheme, addTaskVisible, titleBarText, taskPlanVisible } = storeToRefs(appStore)
-// taskDetailVisible 只与主窗口相关（根节点 is-task-detail-open 类名）。
-// 偏好设置独立 bundle 通过全局标记跳过 task store 引入：
-// 该 store 会连带引擎 API、TaskHistory 等大量主窗口代码。
-// 主窗口按需动态加载，类名行为保持不变。
-const taskDetailVisible = ref(false)
-if (!window.__LERXU_PREFERENCE_BUNDLE__) {
-  import('@/store/task').then(({ useTaskStore }) => {
-    const taskStore = useTaskStore()
-    const { taskDetailVisible: visible } = storeToRefs(taskStore)
-    watch(visible, (v) => { taskDetailVisible.value = v }, { immediate: true })
-  })
-}
+// taskDetailVisible 只与主窗口相关（根节点 is-task-detail-open 类名）
+const taskStore = useTaskStore()
+const { taskDetailVisible } = storeToRefs(taskStore)
 const { config: preferenceConfig, theme, locale, direction } = storeToRefs(preferenceStore)
 
 const UI_FROSTED_BLUR_SCOPES = [
@@ -88,30 +78,11 @@ const isMounted = ref(false)
 let _updateMessageShown = false
 let _downloadStartNotified = false
 let _handleWindowResize = null
-let _preferenceCommandHandler = null
 let _updateHandlers = {}
 
 // --- Computed ---
 const isMac = computed(() => is.macOS())
 const isRenderer = computed(() => is.renderer())
-
-const isPreferenceWindow = computed(() => {
-  const path = `${route.path || ''}`
-  const hashPath = typeof window !== 'undefined' && window.location && window.location.hash
-    ? `${window.location.hash}`
-    : ''
-  return path.startsWith('/preference-window') || hashPath.startsWith('#/preference-window')
-})
-
-const isTaskPage = computed(() => {
-  const path = `${route.path || ''}`
-  const hashPath = typeof window !== 'undefined' && window.location && window.location.hash
-    ? `${window.location.hash}`
-    : ''
-  const hashRoute = hashPath.startsWith('#') ? hashPath.slice(1) : hashPath
-  const targetPath = path || hashRoute
-  return targetPath.startsWith('/task')
-})
 
 const showWindowActions = computed(() => (is.windows() || is.linux()) && preferenceConfig.value.hideAppMenu)
 const runMode = computed(() => preferenceConfig.value.runMode)
@@ -143,7 +114,6 @@ const backgroundClass = computed(() => {
 const nativeTransparentClass = computed(() => {
   const enabled = macNativeTransparent.value === undefined ? false : !!macNativeTransparent.value
   if (!isMac.value || !enabled) return ''
-  if (isPreferenceWindow.value && !isMounted.value) return ''
   return 'mac-native-transparent'
 })
 
@@ -257,37 +227,6 @@ const enableTraySpeedometer = computed(() => {
 })
 
 // --- Methods ---
-function updateWindowTitle () {
-  if (!isPreferenceWindow.value) return
-  if (typeof document === 'undefined') return
-  document.title = t('subnav.preferences')
-}
-
-function handlePreferenceCommand (command, ...args) {
-  if (!isPreferenceWindow.value) return
-  if (command === 'application:update-system-theme') {
-    const data = args[0]
-    if (data && data.theme) {
-      appStore.updateSystemTheme(data.theme)
-    }
-    return
-  }
-  if (command === 'application:update-theme') {
-    const data = args[0]
-    if (data && data.theme) {
-      preferenceStore.updateAppTheme(data.theme)
-    }
-    return
-  }
-  if (command === 'application:open-preference-category') {
-    const data = args[0]
-    if (data && data.category) {
-      router.push({ path: `/preference-window/${data.category}` }).catch(err => {
-        console.log(err)
-      })
-    }
-  }
-}
 
 function bringMainWindowToFront () {
   try {
@@ -339,7 +278,6 @@ watch(locale, (val) => {
   getLocaleManager().changeLanguage(lng)
   // composition 模式下 locale 是 computed ref，需用 .value 赋值
   i18n.global.locale.value = lng
-  updateWindowTitle()
 })
 watch(backgroundClass, () => updateRootClassName())
 watch(nativeTransparentClass, () => updateRootClassName())
@@ -368,17 +306,10 @@ onMounted(() => {
   _updateMessageShown = false
   isMounted.value = true
   updateRootClassName()
-  updateWindowTitle()
   if (typeof window !== 'undefined') {
     handleWindowResize()
     _handleWindowResize = () => handleWindowResize()
     window.addEventListener('resize', _handleWindowResize)
-  }
-  if (isRenderer.value && isPreferenceWindow.value) {
-    _preferenceCommandHandler = (event, command, ...args) => {
-      handlePreferenceCommand(command, ...args)
-    }
-    ipcRenderer.on('command', _preferenceCommandHandler)
   }
 
   const onUpdateAvailable = (event, version, releaseNotes) => {
@@ -402,7 +333,10 @@ onMounted(() => {
             duration: 10000,
             showClose: true,
             onClick: () => {
-              ipcRenderer.send('open-preference-window', { category: 'advanced' })
+              // 更新详情入口：内嵌偏好设置的「高级」页
+              router.push({ path: '/preference/advanced' }).catch(err => {
+                console.log(err)
+              })
             }
           })
           window.localStorage.setItem(key, v)
@@ -436,7 +370,7 @@ onMounted(() => {
       total: progress.total || 0,
       transferred: progress.transferred || 0
     })
-    if (!isPreferenceWindow.value && percent > 0 && !_downloadStartNotified) {
+    if (percent > 0 && !_downloadStartNotified) {
       _downloadStartNotified = true
       downloadMsgInstance.value = msg({
         message: '正在下载更新...',
@@ -461,9 +395,7 @@ onMounted(() => {
       try { downloadMsgInstance.value.close() } catch (e) {}
       downloadMsgInstance.value = null
     }
-    if (!isPreferenceWindow.value) {
-      msg.success('更新下载完成，准备重启到新版本...')
-    }
+    msg.success('更新下载完成，准备重启到新版本...')
   }
   const onDownloadError = (_event, errMsg) => {
     preferenceStore.updateIsDownloadingUpdate(false)
@@ -474,9 +406,7 @@ onMounted(() => {
       try { downloadMsgInstance.value.close() } catch (e) {}
       downloadMsgInstance.value = null
     }
-    if (!isPreferenceWindow.value) {
-      msg.error(errMsg || t('app.update-error-message'))
-    }
+    msg.error(errMsg || t('app.update-error-message'))
   }
   const onDownloadCancelled = () => {
     preferenceStore.updateIsDownloadingUpdate(false)
@@ -505,9 +435,6 @@ onUnmounted(() => {
   if (typeof window !== 'undefined' && _handleWindowResize) {
     window.removeEventListener('resize', _handleWindowResize)
     _handleWindowResize = null
-  }
-  if (_preferenceCommandHandler) {
-    ipcRenderer.removeListener('command', _preferenceCommandHandler)
   }
   const h = _updateHandlers || {}
   if (h.onUpdateAvailable) ipcRenderer.removeListener('update-available', h.onUpdateAvailable)
@@ -545,11 +472,6 @@ onUnmounted(() => {
 }
 
 .has-custom-titlebar .app-content {
-  height: 100%;
-}
-
-.is-preference-window.has-custom-titlebar .app-content {
-  padding-top: 0;
   height: 100%;
 }
 </style>

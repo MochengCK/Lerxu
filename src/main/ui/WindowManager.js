@@ -87,9 +87,9 @@ export default class WindowManager extends EventEmitter {
    * userConfig 必须按需实时读取（getter），不能在构造时保存快照引用：
    * electron-store(conf) 的 store getter 每次都从磁盘重新读取并返回
    * 全新对象，构造时保存的引用永远停留在启动时的配置。否则用户开启
-   * mac-native-transparent 后，偏好设置窗口销毁重建（bindCloseToHide
-   * 为 false）时 resolveVibrancy 读到旧快照，under-window 透明材质
-   * 丢失。同理影响 hide-app-menu / keep-window-state / auto-hide-window。
+   * mac-native-transparent 后窗口重建/隐藏再显示时 resolveVibrancy
+   * 读到旧快照，under-window 透明材质丢失。同理影响 hide-app-menu /
+   * keep-window-state / auto-hide-window。
    */
   constructor (options = {}) {
     super()
@@ -265,15 +265,14 @@ export default class WindowManager extends EventEmitter {
    * 动态切换原生透明背景（macOS）：
    * 开启 → under-window vibrancy 窗口材质 + 全透明窗口背景；
    * 关闭 → 移除 vibrancy 并恢复不透明主题背景色。
-   * 主窗口与偏好设置窗口同时处理，渲染层通过
-   * mac-native-transparent 根类同步半透明内容样式。
+   * 渲染层通过 mac-native-transparent 根类同步半透明内容样式。
    */
   applyNativeTransparent (enabled) {
     if (!is.macOS()) {
       return
     }
     const flag = !!enabled
-    const pages = ['index', 'preference']
+    const pages = ['index']
     const opaqueBg = resolveEffectiveTheme(this.userConfig) === APP_THEME.DARK ? '#1e2228' : '#f0f4f8'
     for (const page of pages) {
       const window = this.getWindow(page)

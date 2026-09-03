@@ -2,12 +2,6 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 
 import Main from '@/components/Main.vue'
 import TaskIndex from '@/components/Task/TaskView.vue'
-import { preferenceWindowRoute } from './preferenceRoutes'
-
-const isPreferenceWindow = typeof window !== 'undefined' &&
-  window.location &&
-  window.location.hash &&
-  window.location.hash.startsWith('#/preference-window')
 
 const mainRoute = {
   path: '/',
@@ -34,20 +28,25 @@ const mainRoute = {
         status: 'date',
         filterDate: route.params.date
       })
+    },
+    {
+      // 偏好设置（内嵌视图）：复用 TaskView 布局，左侧任务导航保持不变，
+      // 仅内容区切换为「顶部分类标签栏 + 设置表单」的设置视图。
+      // /preference 与 /preference/:category 共用一个路由记录，
+      // category 缺省为 basic（见 TaskView 内的 computed）。
+      path: '/preference/:category?',
+      name: 'preference',
+      component: TaskIndex,
+      props: () => ({})
     }
   ]
 }
 
 // Vue Router 4: '*' wildcard changed to '/:pathMatch(.*)*'
-const routes = isPreferenceWindow
-  ? [
-    preferenceWindowRoute,
-    { path: '/:pathMatch(.*)*', redirect: '/preference-window' }
-  ]
-  : [
-    mainRoute,
-    { path: '/:pathMatch(.*)*', redirect: '/' }
-  ]
+const routes = [
+  mainRoute,
+  { path: '/:pathMatch(.*)*', redirect: '/' }
+]
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -63,34 +62,9 @@ router.afterEach((to) => {
       const appStore = useAppStore()
       appStore.updateCurrentPage(page)
     } catch (e) {
-      // Pinia not yet initialized during SSR or initial bootstrap
+      // Pinia not yet initialized during initial bootstrap
     }
   })
-})
-
-router.beforeEach((to, from, next) => {
-  let page = '/task'
-
-  if (isPreferenceWindow && !to.path.startsWith('/preference-window')) {
-    next('/preference-window')
-    return
-  }
-
-  if (!isPreferenceWindow && to.path.startsWith('/preference-window')) {
-    next('/task')
-    return
-  }
-
-  if (!isPreferenceWindow && to.path.startsWith('/preference')) {
-    next('/task')
-    return
-  }
-
-  if (to.path.startsWith('/preference')) {
-    page = '/preference'
-  }
-
-  next()
 })
 
 export default router

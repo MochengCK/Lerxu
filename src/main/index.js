@@ -27,10 +27,11 @@ global.__static = app.isPackaged ? __dirname : join(__dirname, '../../static')
 
 /**
  * Fix Windows notification func
- * appId defined in .electron-vue/webpack.main.config.js
+ * appId 定义见 electron-builder.json（迁移到 vite 后 webpack 全局常量不再存在，
+ * 此处以字面量对齐 "appId": "app.lerxu.native"）
  */
 if (is.windows()) {
-  app.setAppUserModelId(appId)
+  app.setAppUserModelId('app.lerxu.native')
 }
 
 global.launcher = new Launcher()

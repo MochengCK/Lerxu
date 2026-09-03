@@ -1,5 +1,4 @@
 import { ElMessage as Message } from 'element-plus'
-import { ipcRenderer } from 'electron'
 
 import router from '@/router'
 import { useAppStore, usePreferenceStore, useTaskStore } from '@/store'
@@ -153,17 +152,17 @@ const navigateTaskList = (payload = {}) => {
   })
 }
 
+// 偏好设置内嵌在主窗口中：直接路由跳转到 /preference 页面，
+// 不再通过 IPC 打开独立偏好设置窗口
 const navigatePreferences = () => {
-  ipcRenderer.send('open-preference-window')
+  router.push({ path: '/preference' }).catch(err => {
+    console.log(err)
+  })
 }
 
 const openPreferenceCategory = (payload = {}) => {
   const { category = 'advanced' } = payload || {}
-  const hash = typeof window !== 'undefined' && window.location && window.location.hash
-    ? `${window.location.hash}`
-    : ''
-  const base = hash.startsWith('#/preference-window') ? '/preference-window' : '/preference'
-  router.push({ path: `${base}/${category}` }).catch(err => {
+  router.push({ path: `/preference/${category}` }).catch(err => {
     console.log(err)
   })
 }

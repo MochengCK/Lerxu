@@ -3,42 +3,64 @@
     class="main panel"
     direction="horizontal"
   >
-    <!-- 三栏布局的左侧固定导航 -->
+    <!-- 三栏布局的左侧固定导航（进入偏好设置时保持不变，仅钉住当前选项） -->
     <el-aside width="220px" class="subnav three-column-subnav" :class="{ 'is-auto-hide-aside': autoHideAside, 'is-proximity-hovered': isSubnavProximityHovered }">
-      <mo-task-subnav :current="status" />
+      <mo-task-subnav :current="activeStatus" />
     </el-aside>
 
     <el-container
       class="content panel"
       direction="vertical"
     >
-      <el-header
-        class="panel-header task-panel-header"
-        height="44"
-      >
-        <mo-task-actions
-          :dateFilter="taskActionsDateFilter"
-          @date-filter-click="onDateFilterClick"
-          @date-filter-hover="onDateFilterHover"
-          @date-filter-leave="onDateFilterLeave"
+      <!-- 偏好设置视图：内容区顶部分类导航（通用分段滑块按钮） + 设置表单 -->
+      <template v-if="isPreferencePage">
+        <el-header
+          class="panel-header preference-view-header"
+          height="44"
         >
-          <div class="task-search-box" :class="{ 'is-focused': isSearchFocused }">
-            <el-icon class="task-search-icon"><Search /></el-icon>
-            <input
-              ref="taskSearchInput"
-              type="text"
-              class="task-search-input"
-              :placeholder="t('task.search-tasks')"
-              v-model="taskSearchQuery"
-              @focus="onSearchFocus"
-              @blur="onSearchBlur"
+          <div class="preference-view-nav">
+            <mo-segmented-slider
+              class="preference-view-slider"
+              :model-value="preferenceCategory"
+              :options="preferenceNavOptions"
+              @update:model-value="navPreference"
             />
           </div>
-        </mo-task-actions>
-      </el-header>
-      <el-main class="panel-content" @contextmenu="onTaskPageContextMenu">
-        <mo-task-list :category="categoryFilter" :keyword="taskSearchQuery" />
-      </el-main>
+        </el-header>
+        <component
+          :is="preferenceFormComponent"
+          :category="preferenceCategory"
+        />
+      </template>
+      <template v-else>
+        <el-header
+          class="panel-header task-panel-header"
+          height="44"
+        >
+          <mo-task-actions
+            :dateFilter="taskActionsDateFilter"
+            @date-filter-click="onDateFilterClick"
+            @date-filter-hover="onDateFilterHover"
+            @date-filter-leave="onDateFilterLeave"
+          >
+            <div class="task-search-box" :class="{ 'is-focused': isSearchFocused }">
+              <el-icon class="task-search-icon"><Search /></el-icon>
+              <input
+                ref="taskSearchInput"
+                type="text"
+                class="task-search-input"
+                :placeholder="t('task.search-tasks')"
+                v-model="taskSearchQuery"
+                @focus="onSearchFocus"
+                @blur="onSearchBlur"
+              />
+            </div>
+          </mo-task-actions>
+        </el-header>
+        <el-main class="panel-content" @contextmenu="onTaskPageContextMenu">
+          <mo-task-list :category="categoryFilter" :keyword="taskSearchQuery" />
+        </el-main>
+      </template>
     </el-container>
 
     <transition name="popup-scale">
@@ -58,7 +80,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick, getCurrentInstance } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick, getCurrentInstance, defineAsyncComponent } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { dialog, Menu, getCurrentWindow } from '@electron/remote'
 import { ipcRenderer } from 'electron'
 import { ElMessage } from 'element-plus'
@@ -93,11 +116,13 @@ import { clearMergeRetryTimer } from '@/utils/mergeRetryManager'
 
 const { t } = i18n.global
 const msg = createMsg(ElMessage, { showClose: true })
+const router = useRouter()
+const route = useRoute()
 
 const props = defineProps({
   status: {
     type: String,
-    default: 'all'
+    default: null
   },
   filterDate: {
     type: String,
@@ -109,6 +134,50 @@ const taskStore = useTaskStore()
 const appStore = useAppStore()
 const preferenceStore = usePreferenceStore()
 const { config: preferenceConfig } = storeToRefs(preferenceStore)
+
+// --- 偏好设置内嵌视图 ---
+// 设置表单按需异步加载（与旧路由懒加载策略一致，不增主包体积）
+const PreferenceBasic = defineAsyncComponent(() => import('@/components/Preference/Basic.vue'))
+const PreferenceAdvanced = defineAsyncComponent(() => import('@/components/Preference/Advanced.vue'))
+const PreferenceLab = defineAsyncComponent(() => import('@/components/Preference/Lab.vue'))
+const moSegmentedSlider = defineAsyncComponent(() => import('@/components/SegmentedSlider/SegmentedSlider'))
+
+const isPreferencePage = computed(() => `${route.path || ''}`.startsWith('/preference'))
+
+const preferenceCategory = computed(() => {
+  const category = route.params.category
+  return typeof category === 'string' && category ? category : 'basic'
+})
+
+// 分类列表与旧独立窗口的偏好子导航保持一致（不含实验室入口），
+// 顶部导航使用通用分段滑块按钮（mo-segmented-slider）
+const preferenceNavOptions = computed(() => [
+  { value: 'basic', label: t('preferences.basic') },
+  { value: 'appearance', label: t('preferences.appearance') },
+  { value: 'transfer', label: t('preferences.transfer-settings') },
+  { value: 'bt', label: t('preferences.bt-settings') },
+  { value: 'ed2k', label: t('preferences.ed2k-settings') },
+  { value: 'task', label: t('preferences.task-manage') },
+  { value: 'file', label: t('preferences.file-manage') },
+  { value: 'advanced', label: t('preferences.advanced') }
+])
+
+const preferenceFormComponent = computed(() => {
+  switch (preferenceCategory.value) {
+    case 'advanced':
+      return PreferenceAdvanced
+    case 'lab':
+      return PreferenceLab
+    default:
+      return PreferenceBasic
+  }
+})
+
+function navPreference (category = 'basic') {
+  router.push({ path: `/preference/${category}` }).catch(err => {
+    console.log(err)
+  })
+}
 
 // --- Store refs ---
 const { taskList, currentList, selectedGidList, taskDetailVisible, searchKeyword: taskSearchKeyword, filterDate: storeFilterDate } = storeToRefs(taskStore)
@@ -184,7 +253,25 @@ const blockCategoryHoverOpen = computed(() => !!(taskDetailVisible.value || addT
 const taskCounts = computed(() => taskStore.filteredTaskCounts)
 
 // --- Watchers ---
-watch(() => props.status, () => onStatusChange())
+// 进入偏好设置视图时（/preference/:category? 路由复用本组件，status 无 props），
+// 不触发任务列表切换，保持进入前的列表状态
+watch(() => props.status, () => {
+  if (isPreferencePage.value) return
+  onStatusChange()
+})
+
+// 侧边栏高亮钉住：偏好设置视图下保持进入前的任务选项
+const lastTaskStatus = ref(props.status || 'all')
+watch(() => props.status, (val) => {
+  if (val && !isPreferencePage.value) {
+    lastTaskStatus.value = val
+  }
+})
+const activeStatus = computed(() => {
+  // 偏好设置视图：任务选项全部停止高亮（侧边栏偏好项自身呈激活态）
+  if (isPreferencePage.value) return ''
+  return props.status || lastTaskStatus.value
+})
 watch(blockCategoryHoverOpen, (val) => {
   if (val) {
     forceCloseCategorySelect()
@@ -923,7 +1010,10 @@ function handleShowTaskInfo (payload) {
 }
 
 function openPreference () {
-  ipcRenderer.send('open-preference-window')
+  // 偏好设置内嵌在主窗口中：路由跳转到 /preference
+  router.push({ path: '/preference' }).catch(err => {
+    console.log(err)
+  })
 }
 
 function onSearchFocus () {
@@ -948,7 +1038,10 @@ function handleDocumentClick (event) {
 }
 
 // --- Lifecycle ---
-changeCurrentList()
+// 冷启动直接落在偏好设置视图时，不初始化任务列表切换（保持任务页原状态）
+if (!isPreferencePage.value) {
+  changeCurrentList()
+}
 
 onMounted(() => {
   if (typeof window !== 'undefined') {
@@ -1045,10 +1138,51 @@ onUnmounted(() => {
 
 /* 任务页面 panel-header：移除外层边框，改为内部独立容器 */
 .content.panel .panel-header.task-panel-header {
+border: none !important;
+padding: 0 !important;
+margin: 6px 0 0;
+height: 44px !important;
+}
+
+/* ── 偏好设置内嵌视图：内容区顶部分类导航（通用分段滑块按钮） ──
+   几何参数与任务视图顶部控制按钮（.task-actions）完全一致：
+   absolute top:6px, height:28px, 左右 padding 6px（≥568px 时 14px） */
+.content.panel .panel-header.preference-view-header {
   border: none !important;
   padding: 0 !important;
   margin: 6px 0 0;
   height: 44px !important;
+  box-sizing: border-box;
+}
+
+.preference-view-nav {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  right: 0;
+  height: 28px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media only screen and (min-width: 568px) {
+  .preference-view-nav {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+}
+
+.preference-view-slider {
+  flex-shrink: 0;
 }
 
 /* 宽屏下与 task-list 的 14px 左右 padding 对齐（见 Default.scss 媒体查询） */
@@ -1205,5 +1339,226 @@ onUnmounted(() => {
 
 .dialog-footer .el-button {
   margin-left: 10px;
+}
+
+/* ── 以下为偏好设置表单样式（自旧 PreferencePanel.vue 迁移，
+      偏好设置内嵌视图继续使用） ── */
+
+/* macOS 原生透明背景：偏好设置卡片百分百不透明，保持纯色背景 */
+html.mac-native-transparent .form-preference .preference-card {
+  background-color: var(--lc-bg-panel, #ffffff);
+  backdrop-filter: none;
+}
+
+html.mac-native-transparent.theme-dark .form-preference .preference-card {
+  background-color: var(--lc-bg-panel, #262a31);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* 加 .content.panel 前缀提高特异性：主题 Index.scss 在 main.js 中晚于路由导入，
+   若与组件样式同特异性，注入顺序变化会导致表单间距不稳定（实测被覆盖）。 */
+.content.panel .form-preference {
+  /* 顶部 8px 与任务视图「顶部控制按钮 → 任务卡片」的间距
+     （.task-list padding-top: 8px）保持一致 */
+  padding: 8px 6px 24px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+
+  /* 宽屏左右间距与顶部导航（task-actions 14px）一致 */
+  @media only screen and (min-width: 568px) {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .preference-card {
+    background: transparent;
+    border-radius: 8px;
+    padding: 20px 24px;
+    border: 1px solid var(--el-border-color-light);
+    transition: all 0.3s ease;
+  }
+
+  .card-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--el-border-color-light);
+    letter-spacing: 0.3px;
+  }
+
+  .card-content {
+    padding-top: 0;
+  }
+
+  .el-switch__label {
+    font-weight: normal;
+    color: var(--el-text-color-regular);
+    &.is-active {
+      color: var(--el-text-color-regular);
+    }
+  }
+
+  .el-checkbox__input.is-checked + .el-checkbox__label {
+    color: var(--el-text-color-regular);
+  }
+
+  .el-form-item {
+    a {
+      color: var(--el-text-color-regular);
+      text-decoration: none;
+      &:hover {
+        color: var(--el-text-color-primary);
+        text-decoration: underline;
+      }
+      &:active {
+        color: var(--el-text-color-primary);
+      }
+    }
+  }
+
+  .el-form-item.el-form-item--mini {
+    margin-bottom: 16px;
+  }
+
+  .el-form-item__content {
+    color: var(--el-text-color-regular);
+    line-height: 1.6;
+    /* Element Plus 的 .el-form-item__content 默认 display:flex; align-items:center; flex-wrap:wrap,
+       但直接子元素（el-row、el-col、div 等）不会自动占满宽度，
+       会被 inline-flex 压缩为内容宽度。这里确保每个直接子元素占满宽度，
+       使多行内容正确垂直堆叠，同时不破坏 EP 默认的 flex-wrap 行为。 */
+    & > * {
+      flex-basis: 100%;
+    }
+  }
+
+  .form-item-sub {
+    margin-bottom: 12px;
+    line-height: 1.6;
+    &:last-of-type {
+      margin-bottom: 0;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+
+      .toggle-label {
+        font-size: 13px;
+        color: var(--el-text-color-secondary);
+        flex: 1;
+        min-width: 0;
+      }
+
+      &.toggle-row--with-desc {
+        align-items: center;
+
+        .toggle-row__text {
+          flex: 1;
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .toggle-desc {
+          font-size: 12px;
+          color: var(--el-text-color-secondary);
+          line-height: 1.4;
+          opacity: 0.7;
+        }
+      }
+    }
+
+    .sub-row-reverse {
+      display: flex;
+      align-items: center;
+      flex-direction: row-reverse;
+      justify-content: flex-end;
+      gap: 10px;
+
+      .sub-row-label {
+        font-size: 13px;
+        color: var(--el-text-color-secondary);
+      }
+    }
+  }
+
+  .form-item-sub-sub {
+    margin-left: 24px;
+    margin-bottom: 10px;
+    padding-left: 12px;
+    border-left: 2px solid var(--el-border-color-lighter);
+    line-height: 1.6;
+
+    .el-radio-group {
+      .el-radio__label {
+        font-size: 13px;
+        color: var(--el-text-color-secondary);
+      }
+    }
+  }
+
+  .el-form-item__info {
+    line-height: 1.6;
+    margin-top: 6px;
+  }
+
+  .el-button {
+    border-radius: 8px;
+  }
+
+  .el-button--small {
+    border-radius: 6px;
+  }
+}
+
+.theme-light.has-app-background-image .form-preference {
+  .preference-card {
+    background-color: transparent;
+    backdrop-filter: blur(var(--app-ui-frosted-blur-preference-card, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-preference-card, var(--app-ui-frosted-blur, 0px)));
+    overflow: hidden;
+  }
+}
+
+/* Dark theme styles */
+.theme-dark .form-preference {
+  .preference-card {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .card-title {
+    color: var(--lc-text-primary);
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.theme-dark.has-app-background-image .form-preference {
+  .preference-card {
+    background-color: transparent;
+    backdrop-filter: blur(var(--app-ui-frosted-blur-preference-card, var(--app-ui-frosted-blur, 0px)));
+    -webkit-backdrop-filter: blur(var(--app-ui-frosted-blur-preference-card, var(--app-ui-frosted-blur, 0px)));
+    overflow: hidden;
+  }
+}
+
+/* 宽屏下的左右间距已在上方 .content.panel .form-preference 的媒体查询中
+   与顶部导航（task-actions 14px）对齐 */
+
+.form-actions {
+  position: sticky;
+  bottom: 0;
+  left: auto;
+  z-index: 10;
+  width: -webkit-fill-available;
+  box-sizing: border-box;
+  padding: 24px 16px;
 }
 </style>

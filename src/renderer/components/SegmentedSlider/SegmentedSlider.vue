@@ -215,7 +215,10 @@ defineExpose({ updateIndicator })
   .lc-segmented {
     position: relative;
     display: inline-flex;
-    align-items: center;
+    /* 顶对齐而非居中：指示器绝对定位在 padding-box top:2px、高 22px，
+       项高同为 22px，顶对齐才能与高亮完全重合（居中会下移 1px，
+       视觉上高亮向上偏移） */
+    align-items: flex-start;
     padding: 2px;
     background-color: transparent;
     border: 1px solid var(--lc-task-item-border);

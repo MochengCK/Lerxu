@@ -1536,10 +1536,9 @@ html.mac-native-transparent body {
     padding-right: 14px;
   }
 
-  .form-preference {
-    padding-left: 36px;
-    padding-right: 36px;
-  }
+  /* 偏好设置表单的内嵌样式由 TaskView.vue 的
+     .content.panel .form-preference 规则统一提供（含左右间距），
+     这里不再单独声明，避免两处规则因注入顺序不同而互相覆盖。 */
 
   .form-actions {
     padding: 24px 36px;

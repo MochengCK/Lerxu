@@ -37,23 +37,15 @@
     <% } %>
 
     <!-- macOS 原生透明背景：UI 加载前同步读取配置，若开启则保持
-         html/body 透明，避免窗口加载瞬间闪现不透明背景色。
-         仅对主窗口（index）提前透明——偏好设置窗口需等待 Vue 渲染
-         出带不透明背景的内容区后再由 App.vue 切换透明，否则在 Vue
-         渲染前窗口完全透明、内容不可见。 -->
+         html/body 透明，避免窗口加载瞬间闪现不透明背景色。 -->
     <script>
       try {
         if (process.platform === 'darwin') {
           var config = require('electron').ipcRenderer.sendSync('get-app-config')
           if (config && config['mac-native-transparent']) {
-            var isPreferenceWindow = typeof window !== 'undefined' &&
-              window.location && window.location.hash &&
-              window.location.hash.indexOf('preference-window') !== -1
-            if (!isPreferenceWindow) {
-              document.documentElement.className = 'mac-native-transparent'
-              document.documentElement.style.backgroundColor = 'transparent'
-              document.body.style.backgroundColor = 'transparent'
-            }
+            document.documentElement.className = 'mac-native-transparent'
+            document.documentElement.style.backgroundColor = 'transparent'
+            document.body.style.backgroundColor = 'transparent'
           }
         }
       } catch (e) {}

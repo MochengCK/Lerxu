@@ -7,7 +7,7 @@
       <ul class="task-nav-list">
         <li
           @click="() => nav('all')"
-          :class="[ current === 'all' ? 'active' : '' ]"
+          :class="[ !isPreferenceActive && current === 'all' ? 'active' : '' ]"
         >
           <i class="subnav-icon">
             <mo-icon name="subnav-all" width="20" height="20" />
@@ -17,7 +17,7 @@
         </li>
         <li
           @click="() => nav('active')"
-          :class="[ current === 'active' ? 'active' : '' ]"
+          :class="[ !isPreferenceActive && current === 'active' ? 'active' : '' ]"
         >
           <i class="subnav-icon">
             <mo-icon name="subnav-active" width="20" height="20" />
@@ -27,7 +27,7 @@
         </li>
         <li
           @click="() => nav('waiting')"
-          :class="[ current === 'waiting' ? 'active' : '' ]"
+          :class="[ !isPreferenceActive && current === 'waiting' ? 'active' : '' ]"
         >
           <i class="subnav-icon">
             <mo-icon name="subnav-waiting" width="20" height="20" />
@@ -37,7 +37,7 @@
         </li>
         <li
           @click="() => nav('stopped')"
-          :class="[ current === 'stopped' ? 'active' : '' ]"
+          :class="[ !isPreferenceActive && current === 'stopped' ? 'active' : '' ]"
         >
           <i class="subnav-icon">
             <mo-icon name="subnav-stopped" width="20" height="20" />
@@ -62,7 +62,7 @@
           v-for="cat in categories"
           :key="cat.value || 'all'"
           @click="() => selectCategory(cat.value)"
-          :class="[ categoryFilter === cat.value ? 'active' : '' ]"
+          :class="[ !isPreferenceActive && categoryFilter === cat.value ? 'active' : '' ]"
         >
           <i class="subnav-icon">
             <mo-icon :name="cat.icon" width="20" height="20" />
@@ -92,12 +92,22 @@
     <ul class="preference-nav-list">
       <li
         class="preference-item"
+        :class="{ 'is-preference-active': isPreferenceActive }"
         @click="openPreference"
       >
         <i class="subnav-icon">
           <mo-icon name="menu-preference" width="20" height="20" />
         </i>
         <span>{{ t('subnav.preferences') }}</span>
+        <!-- 内嵌偏好设置视图时显示返回图标：回到进入偏好设置前的任务选项 -->
+        <i
+          v-if="isPreferenceActive"
+          class="preference-back"
+          :title="t('subnav.task-list')"
+          @click.stop="backToLastTask"
+        >
+          <mo-icon name="chevron-left" width="14" height="14" />
+        </i>
       </li>
     </ul>
     </div>
@@ -105,10 +115,9 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
-import { ipcRenderer } from 'electron'
 import { bytesToSize } from '@shared/utils'
 import { useAppStore, useTaskStore } from '@/store'
 import { storeToRefs } from 'pinia'
@@ -119,6 +128,7 @@ import '@/components/Icons/subnav-waiting'
 import '@/components/Icons/subnav-stopped'
 import '@/components/Icons/subnav-type-all'
 import '@/components/Icons/menu-preference'
+import '@/components/Icons/chevron-left'
 import '@/components/Icons/subnav-archives'
 import '@/components/Icons/subnav-programs'
 import '@/components/Icons/subnav-videos'
@@ -136,6 +146,7 @@ const props = defineProps({
 defineOptions({ name: 'mo-task-subnav' })
 
 const router = useRouter()
+const route = useRoute()
 const { t } = i18n.global
 
 const appStore = useAppStore()
@@ -185,7 +196,33 @@ function selectCategory (value) {
 }
 
 function openPreference () {
-  ipcRenderer.send('open-preference-window')
+  // 已在偏好设置视图时再次点击：直接返回之前的任务选项（与右侧返回图标等效）
+  if (isPreferenceActive.value) {
+    backToLastTask()
+    return
+  }
+  router.push({ path: '/preference' }).catch(err => {
+    console.log(err)
+  })
+}
+
+// 是否处于内嵌偏好设置视图
+const isPreferenceActive = computed(() => `${route.path || ''}`.startsWith('/preference'))
+
+// 记住最近一次停留的任务列表路由，用于返回图标
+const lastTaskPath = ref(
+  `${route.path || ''}`.startsWith('/task') ? route.path : '/task/all'
+)
+watch(() => route.path, (path) => {
+  if (path && path.startsWith('/task')) {
+    lastTaskPath.value = path
+  }
+})
+
+function backToLastTask () {
+  router.push({ path: lastTaskPath.value }).catch(err => {
+    console.log(err)
+  })
 }
 </script>
 
@@ -401,6 +438,41 @@ function openPreference () {
         svg {
           width: 16px !important;
           height: 16px !important;
+        }
+      }
+
+      /* 内嵌偏好设置视图：偏好设置项呈激活态，右侧出现返回图标 */
+      &.is-preference-active {
+        background-color: var(--lc-subnav-active-item-bg, rgba(0, 0, 0, 0.12));
+
+        .subnav-icon svg,
+        span {
+          color: var(--lc-subnav-active-text, inherit);
+        }
+      }
+
+      .preference-back {
+        margin-left: auto;
+        margin-right: -2px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        flex-shrink: 0;
+        cursor: pointer;
+        color: var(--lc-text-secondary, inherit);
+        transition: background-color 0.2s ease, color 0.2s ease;
+
+        &:hover {
+          background-color: var(--lc-subnav-hover-bg, rgba(0, 0, 0, 0.1));
+          color: var(--lc-text-primary, inherit);
+        }
+
+        svg {
+          width: 14px !important;
+          height: 14px !important;
         }
       }
     }

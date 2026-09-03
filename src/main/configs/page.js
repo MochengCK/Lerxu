@@ -15,15 +15,8 @@ const getVideoSnifferAddFormatUrl = () => getPageUrl('video-sniffer-add-format.h
 
 const getFileCategoriesUrl = () => getPageUrl('file-categories.html')
 
-/* 偏好设置窗口使用独立轻量 bundle（preference.html，多页构建产物），
-   不加载主窗口完整 SPA（index.html#/preference-window 旧方式）。
-   窗口关闭即销毁，重开时轻量 bundle 保证加载速度。 */
-const getPreferenceUrl = () => {
-  if (is.dev()) {
-    return 'http://localhost:9080/preference.html'
-  }
-  return `file://${path.join(__dirname, 'preference.html').replace(/\\/g, '/')}`
-}
+/* 偏好设置已内嵌在主窗口 SPA 中（/preference 路由），
+   不再打开独立窗口，因此没有对应的 page 配置。 */
 
 export default {
   index: {
@@ -39,27 +32,6 @@ export default {
     bindCloseToHide: true,
     openDevTools: is.dev(),
     url: is.dev() ? 'http://localhost:9080' : `file://${path.join(__dirname, 'index.html').replace(/\\/g, '/')}`
-  },
-  preference: {
-    attrs: {
-      title: '偏好设置',
-      width: 900,
-      height: 650,
-      minWidth: 780,
-      minHeight: 560,
-      resizable: true,
-      maximizable: true,
-      minimizable: true
-      // macOS 透明由 vibrancy + backgroundColor 透明处理，
-      // 不使用 transparent: true（会导致偏好设置窗口在 Vue 渲染前
-      // 完全透明，背景不可见）
-    },
-    // 关闭即销毁，释放渲染进程内存。
-    // 打开速度由独立轻量 bundle（preference.html）保证，
-    // 不再加载主窗口的完整 SPA。
-    bindCloseToHide: false,
-    openDevTools: is.dev(),
-    url: getPreferenceUrl()
   },
   'video-detection-settings': {
     attrs: {

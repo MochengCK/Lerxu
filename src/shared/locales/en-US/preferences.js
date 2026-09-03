@@ -285,6 +285,9 @@ export default {
   'extension-min-file-size': 'Minimum file size',
   'video-detection-settings': 'Video Sniffer Settings',
   'extension-file-not-found': 'Extension file does not exist, please check the file path',
+  'extension-open-failed': 'Failed to launch the browser. Please open {{url}} manually and load the extension',
+  'extension-open-manual': 'Edge was not opened automatically: please paste {{url}} into the Edge address bar and press Enter to open the extensions page (URL copied to clipboard)',
+  'extension-open-running': 'Browser is already running: switch to its window, paste {{url}} into the address bar and press Enter (URL copied to clipboard)',
 
   'video-merge': 'Video Merge',
   'ffmpeg-status': 'FFmpeg Status',

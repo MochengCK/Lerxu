@@ -4099,9 +4099,9 @@ watch(trackerSourceConfigVisible, (visible) => {
       }
 
       // 点击浏览器按钮：跳转到对应浏览器的扩展管理页面，
-      // 同时在文件管理器中打开扩展目录的父目录并高亮扩展文件夹，
-      // 方便用户在浏览器"加载已解压的扩展程序"时选中该目录。
-      function openBrowserExtension (browser) {
+      // 并在文件管理器中打开扩展目录，方便用户在浏览器
+      // "加载已解压的扩展程序"时选中该目录。
+      async function openBrowserExtension (browser) {
         const extensionDir = getExtensionDir()
 
         if (!fs.existsSync(extensionDir)) {
@@ -4109,13 +4109,37 @@ watch(trackerSourceConfigVisible, (visible) => {
           return
         }
 
-        // 通过主进程在文件管理器中定位并高亮扩展文件夹
-        // 必须在主进程执行：@electron/remote 的 shell.showItemInFolder 在渲染进程中行为不一致
-        ipcRenderer.invoke('reveal-extension-dir', { dir: extensionDir })
+        const extensionUrl = browser === 'edge' ? 'edge://extensions/' : 'chrome://extensions/'
 
-        // 通过主进程用命令行启动浏览器并跳转到扩展管理页面
-        // shell.openExternal 无法打开 chrome:// 等浏览器内部协议
-        ipcRenderer.invoke('open-browser-extension-page', { browser })
+        // 先启动浏览器并跳转到扩展管理页面
+        // shell.openExternal 无法打开 chrome:// 等浏览器内部协议，
+        // 由主进程负责启动（Windows 下优先直接调用浏览器可执行文件）
+        let result = null
+        try {
+          result = await ipcRenderer.invoke('open-browser-extension-page', { browser })
+        } catch (e) {}
+
+        if (result && result.ok === false) {
+          msg.error(t('preferences.extension-open-failed', { url: extensionUrl }))
+        } else if (result && result.navigated === false) {
+          // Windows 版 Edge 会丢弃命令行传入的 edge:// URL（安全过滤），
+          // 因此 Edge 不做任何拉起；Chrome 已在运行时也只激活不导航。
+          // 两种情况都把地址复制到剪贴板，提示用户粘贴到地址栏打开。
+          try { clipboard.writeText(extensionUrl) } catch (e) {}
+          if (result.running) {
+            msg.warning(t('preferences.extension-open-running', { url: extensionUrl }))
+          } else {
+            msg.warning(t('preferences.extension-open-manual', { url: extensionUrl }))
+          }
+        }
+
+        // 延迟后再打开扩展目录：让资源管理器窗口在浏览器之后出现、
+        // 位于最前，方便拖拽加载。此前"先开目录再延迟二次激活"的
+        // 方式在 Windows 下会开出两个相同的目录窗口（explorer 带路径
+        // 参数是新开窗口而非聚焦已有窗口），已移除。
+        setTimeout(() => {
+          ipcRenderer.invoke('reveal-extension-dir', { dir: extensionDir })
+        }, 1500)
       }
       function openVideoDetectionSettings() {
         ipcRenderer.send('open-video-detection-settings')
@@ -4582,7 +4606,7 @@ watch(trackerSourceConfigVisible, (visible) => {
         document.removeEventListener('mousedown', handleTrackerSourceOutsideClick)
       }
       function onTrackerDropdownVisibleChange(visible) {
-        trackerDropdownVisible = visible
+        trackerDropdownVisible.value = visible
       }
       function onTrackerSourceChange() {
         autoSaveForm()
@@ -4591,7 +4615,7 @@ watch(trackerSourceConfigVisible, (visible) => {
       function toggleTrackerDropdown() {
         const selectRef = trackerSelectRef.value
         if (selectRef) {
-          if (trackerDropdownVisible) {
+          if (trackerDropdownVisible.value) {
             selectRef.blur()
           } else {
             selectRef.focus()

@@ -285,6 +285,9 @@ export default {
   'extension-min-file-size': '最小文件大小',
   'video-detection-settings': '视频嗅探设置',
   'extension-file-not-found': '扩展文件不存在，请检查文件路径',
+  'extension-open-failed': '无法启动浏览器，请手动打开 {{url}} 并加载扩展',
+  'extension-open-manual': '未自动打开 Edge：请将 {{url}} 粘贴到 Edge 地址栏并回车，打开扩展管理页面（地址已复制到剪贴板）',
+  'extension-open-running': '浏览器已在运行：请切换到浏览器窗口，将 {{url}} 粘贴到地址栏并回车（地址已复制到剪贴板）',
 
   'video-merge': '视频合并',
   'ffmpeg-status': 'FFmpeg 状态',

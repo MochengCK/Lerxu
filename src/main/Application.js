@@ -2028,6 +2028,39 @@ export default class Application extends EventEmitter {
     this.windowManager.showWindow(page)
   }
 
+  /**
+   * 打开偏好设置（内嵌模式）。
+   * 偏好设置不再使用独立窗口：将主窗口带到前台，并让渲染层
+   * 路由切换到 /preference（指定 category 时定位到对应分类）。
+   */
+  openPreference (payload = {}) {
+    if (!this.windowManager) {
+      logger.error('[Lerxu] windowManager is not initialized, cannot open preference')
+      return
+    }
+    const { category } = payload || {}
+    this.windowManager.bringToFront('index')
+    const win = this.windowManager.getWindow('index')
+    if (!win || (typeof win.isDestroyed === 'function' && win.isDestroyed())) {
+      return
+    }
+    const sendNavigateCommand = () => {
+      if (win.isDestroyed()) {
+        return
+      }
+      if (category) {
+        this.windowManager.sendCommandTo(win, 'application:open-preference-category', { category })
+      } else {
+        this.windowManager.sendCommandTo(win, 'application:preferences')
+      }
+    }
+    if (win.webContents.isLoading()) {
+      win.webContents.once('did-finish-load', sendNavigateCommand)
+    } else {
+      sendNavigateCommand()
+    }
+  }
+
   startClipboardAutoOpenWatch () {
     if (this._clipboardWatchTimer) {
       return
@@ -3300,6 +3333,17 @@ export default class Application extends EventEmitter {
   handleCommands () {
     this.on('application:save-preference', this.savePreference)
 
+    // 偏好设置内嵌在主窗口中（/preference 路由）：菜单/托盘/快捷键/协议
+    // 触发的命令在主进程统一处理——先把主窗口带到前台，再下发导航命令，
+    // 不再打开独立的偏好设置窗口。
+    this.on('application:preferences', (payload) => {
+      this.openPreference(payload)
+    })
+
+    this.on('application:open-preference-category', (payload) => {
+      this.openPreference(payload)
+    })
+
     this.on('application:update-tray', (tray) => {
       this.trayManager.updateTrayByImage(tray)
     })
@@ -3927,31 +3971,10 @@ export default class Application extends EventEmitter {
     })
 
     // Handle open-preference-window
+    // 偏好设置已内嵌在主窗口中（/preference 路由）：保留该 IPC 频道
+    // 兼容既有调用方（更新提醒点击等），统一转发到内嵌导航逻辑。
     ipcMain.on('open-preference-window', (event, payload = {}) => {
-      const { category } = payload || {}
-      // 窗口已打开时重复触发是复用已有窗口：下发刷新命令让渲染进程
-      // 重新拉取配置（Basic.vue 监听该命令并重建表单），避免显示
-      // 被外部（扩展/托盘/其他窗口）修改的过期设置。
-      // 窗口关闭即销毁（bindCloseToHide: false），新窗口加载期间
-      // isLoading 为 true，此分支自动跳过。
-      const prev = this.windowManager.getWindow('preference')
-      const reused = !!(prev && !(typeof prev.isDestroyed === 'function' && prev.isDestroyed()))
-      const win = this.windowManager.openWindow('preference', {
-        hidden: false
-      })
-      if (win && reused && !win.webContents.isLoading()) {
-        win.webContents.send('command', 'preference:update-from-extension')
-      }
-      if (win && category) {
-        const sendNavigateCommand = () => {
-          win.webContents.send('command', 'application:open-preference-category', { category })
-        }
-        if (win.webContents.isLoading()) {
-          win.webContents.once('did-finish-load', sendNavigateCommand)
-        } else {
-          sendNavigateCommand()
-        }
-      }
+      this.openPreference(payload)
     })
 
     // Handle video-sniffer-settings-updated
@@ -4162,25 +4185,26 @@ export default class Application extends EventEmitter {
       }
     })
 
-    // 在文件管理器中打开扩展目录本身，并确保文件管理器窗口在最前面
-    // 必须在主进程执行：@electron/remote 的 shell 在渲染进程中行为不一致
+    // 在文件管理器中打开扩展目录本身（仅打开一次）
+    // 必须在主进程执行：@electron/remote 的 shell 在渲染进程中行为不一致。
+    // 注意：不要再通过 explorer/Finder/xdg-open 二次"激活"——它们带路径
+    // 参数时会新开一个窗口而不是聚焦已有窗口，曾导致出现两个相同的
+    // 扩展目录窗口；渲染层已改为先启动浏览器、延迟后再打开本目录，
+    // 文件管理器自然位于浏览器窗口之上。
     ipcMain.handle('reveal-extension-dir', async (_event, payload = {}) => {
       const dir = payload && payload.dir ? String(payload.dir) : ''
       if (!dir) return false
-      // 打开扩展目录本身
-      shell.openPath(dir)
-      // 延迟后再次激活，确保文件管理器窗口在最前面而非被浏览器覆盖
-      setTimeout(() => {
-        const platform = process.platform
-        if (platform === 'darwin') {
-          spawn('open', ['-a', 'Finder', dir], { detached: true, stdio: 'ignore' }).unref()
-        } else if (platform === 'win32') {
-          spawn('explorer', [dir], { detached: true, stdio: 'ignore' }).unref()
-        } else if (platform === 'linux') {
-          spawn('xdg-open', [dir], { detached: true, stdio: 'ignore' }).unref()
+      try {
+        const result = await shell.openPath(dir)
+        if (result) {
+          logger.warn(`[Lerxu] openPath(${dir}) failed: ${result}`)
+          return false
         }
-      }, 800)
-      return true
+        return true
+      } catch (e) {
+        logger.warn('[Lerxu] reveal-extension-dir failed:', e && e.message ? e.message : e)
+        return false
+      }
     })
 
     // 打开浏览器扩展管理页面（chrome://extensions、edge://extensions）
@@ -4188,11 +4212,12 @@ export default class Application extends EventEmitter {
     ipcMain.handle('open-browser-extension-page', async (_event, payload = {}) => {
       const browser = payload.browser || 'chrome'
       const platform = process.platform
+      const extensionUrl = browser === 'edge' ? 'edge://extensions/' : 'chrome://extensions/'
 
       // 各平台启动浏览器的命令
       // macOS: open -a "App Name" url
-      // Windows: start "title" chrome://...  → 系统会用对应浏览器打开其协议
-      //         但更可靠的方式是直接调用浏览器可执行路径 + url
+      // Windows: 优先直接调用浏览器可执行文件 + url（见下方 candidates），
+      //          回退到 start 协议方式
       // Linux: 尝试多个可能的二进制名称
       const targets = {
         darwin: {
@@ -4200,9 +4225,11 @@ export default class Application extends EventEmitter {
           edge: ['open', ['-a', 'Microsoft Edge', 'edge://extensions/']]
         },
         win32: {
-          // Windows: 使用 start 命令，第一个 "" 是窗口标题占位符
-          // chrome:// 会被系统识别为 Chrome 的协议并由 Chrome 打开
-          // edge:// 会被系统识别为 Edge 的协议并由 Edge 打开
+          // Windows 兜底方式：依赖系统协议关联。Windows 默认【不注册】
+          // edge:///chrome:// 这两个内部协议（HKCR 下无键），ShellExecute
+          // 找不到关联程序时会【静默失败】（浏览器不打开且无报错）。
+          // 因此仅在通过 App Paths 注册表与常见路径都找不到浏览器
+          // 可执行文件时才走到这里。
           chrome: ['cmd', ['/c', 'start', '', 'chrome://extensions/']],
           edge: ['cmd', ['/c', 'start', '', 'edge://extensions/']]
         },
@@ -4214,15 +4241,153 @@ export default class Application extends EventEmitter {
       const platformTargets = targets[platform]
       if (!platformTargets || !platformTargets[browser]) {
         logger.warn(`[Lerxu] Unsupported browser/platform: ${browser}/${platform}`)
-        return false
+        return { ok: false }
       }
+
+      // Windows 处理：
+      // - Edge：不做任何拉起/激活。Windows 版 Edge 会丢弃命令行传入的
+      //   edge:// URL（实测全新实例与已运行实例一致，纯安全过滤），
+      //   拉起浏览器只会多出新标签页/窗口且无法导航，没有意义。
+      //   返回 navigated:false，由渲染层复制地址并提示用户手动打开。
+      // - Chrome：先探测运行态——已运行时裸启动仅激活已有窗口（不重复
+      //   开窗）；未运行时定位可执行文件并携带 URL 启动（chrome:// 全新
+      //   启动可直接导航）。
+      // 不依赖 edge:///chrome:// 协议注册：Windows 默认不注册这两个内部
+      // 协议，"cmd start 协议激活"会在 ShellExecute 阶段静默失败。
+      if (platform === 'win32') {
+        if (browser === 'edge') {
+          return { ok: true, navigated: false }
+        }
+
+        // tasklist 探测浏览器是否已有进程在运行（约百毫秒级，2s 超时兜底）
+        const isBrowserRunning = (processName) => new Promise((resolve) => {
+          let settled = false
+          const finish = (value) => {
+            if (settled) return
+            settled = true
+            resolve(value)
+          }
+          try {
+            const child = spawn('tasklist', ['/FI', `IMAGENAME eq ${processName}`, '/FO', 'CSV', '/NH'], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+            let out = ''
+            child.stdout.on('data', (chunk) => { out += chunk.toString() })
+            child.on('error', () => finish(false))
+            child.on('close', () => finish(out.toLowerCase().indexOf(processName) !== -1))
+            setTimeout(() => {
+              finish(false)
+              try { child.kill() } catch (_) {}
+            }, 2000)
+          } catch (_) {
+            finish(false)
+          }
+        })
+
+        // 通过 App Paths 注册表（HKLM → HKCU）与常见安装路径定位浏览器
+        const locateBrowserExe = (processName) => new Promise((resolve) => {
+          let settled = false
+          const finish = (value) => {
+            if (settled) return
+            settled = true
+            resolve(value)
+          }
+          const readAppPaths = (hive) => new Promise((resolveHive) => {
+            let out = ''
+            let hiveSettled = false
+            const finishHive = (value) => {
+              if (hiveSettled) return
+              hiveSettled = true
+              resolveHive(value)
+            }
+            try {
+              const child = spawn('reg', ['query', `${hive}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\${processName}`, '/ve'], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true })
+              child.stdout.on('data', (chunk) => { out += chunk.toString() })
+              child.on('error', () => finishHive(''))
+              child.on('close', (code) => {
+                if (code !== 0) return finishHive('')
+                const m = out.match(/REG_SZ\s+(\S.+\.exe)/i)
+                finishHive(m ? m[1].trim() : '')
+              })
+              setTimeout(() => {
+                finishHive('')
+                try { child.kill() } catch (_) {}
+              }, 2000)
+            } catch (_) {
+              finishHive('')
+            }
+          })
+          ;(async () => {
+            const exeFromRegistry =
+              (await readAppPaths('HKEY_LOCAL_MACHINE')) ||
+              (await readAppPaths('HKEY_CURRENT_USER'))
+            if (exeFromRegistry && existsSync(exeFromRegistry)) return finish(exeFromRegistry)
+
+            const env = process.env || {}
+            const exeCandidates = {
+              chrome: [
+                env['ProgramFiles'] ? join(env['ProgramFiles'], 'Google', 'Chrome', 'Application', 'chrome.exe') : '',
+                env['ProgramFiles(x86)'] ? join(env['ProgramFiles(x86)'], 'Google', 'Chrome', 'Application', 'chrome.exe') : '',
+                env['LocalAppData'] ? join(env['LocalAppData'], 'Google', 'Chrome', 'Application', 'chrome.exe') : ''
+              ],
+              edge: [
+                env['ProgramFiles(x86)'] ? join(env['ProgramFiles(x86)'], 'Microsoft', 'Edge', 'Application', 'msedge.exe') : '',
+                env['ProgramFiles'] ? join(env['ProgramFiles'], 'Microsoft', 'Edge', 'Application', 'msedge.exe') : '',
+                env['LocalAppData'] ? join(env['LocalAppData'], 'Microsoft', 'Edge', 'Application', 'msedge.exe') : ''
+              ]
+            }
+            for (const exe of (exeCandidates[browser] || [])) {
+              try {
+                if (exe && existsSync(exe)) return finish(exe)
+              } catch (_) {
+                // 单个候选路径探测失败不中断，继续尝试下一个
+              }
+            }
+            finish('')
+          })()
+        })
+
+        const processName = 'chrome.exe'
+        const running = await isBrowserRunning(processName)
+
+        // Chrome 已有进程在运行：不再携带 URL 拉起，避免"重复打开"。
+        // 裸启动（无参数）仅激活已有窗口——实测窗口数不变；若只是
+        // 后台进程（无窗口），会开出一个新窗口供用户操作。
+        if (running) {
+          const exeRunning = await locateBrowserExe(processName)
+          if (exeRunning) {
+            try {
+              spawn(exeRunning, [], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+            } catch (e) {
+              logger.warn(`[Lerxu] Failed to activate running ${browser}:`, e && e.message ? e.message : e)
+            }
+          }
+          return { ok: true, navigated: false, running: true }
+        }
+
+        const exe = await locateBrowserExe(processName)
+        if (exe) {
+          try {
+            spawn(exe, [extensionUrl], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+            // chrome:// 在全新启动下可正常导航（已运行的实例经由
+            // ProcessSingleton 转发会丢弃 chrome://，因此运行态走上面分支）
+            return { ok: true, navigated: true }
+          } catch (e) {
+            logger.warn(`[Lerxu] Failed to launch ${browser} via exe:`, e && e.message ? e.message : e)
+            return { ok: false }
+          }
+        } else {
+          logger.warn(`[Lerxu] ${browser} executable not found via App Paths or default locations, fallback to protocol start`)
+        }
+      }
+
       const [cmd, args] = platformTargets[browser]
       try {
-        spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref()
-        return true
+        spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+        // win32 的协议回退依赖 edge:///chrome:// 注册（Windows 默认不注册），
+        // 大概率只拉起浏览器不导航；其余平台按可导航处理。
+        return { ok: true, navigated: platform !== 'win32' }
       } catch (e) {
         logger.warn(`[Lerxu] Failed to open ${browser} extensions page:`, e && e.message ? e.message : e)
-        return false
+        return { ok: false }
       }
     })
 

@@ -4,11 +4,14 @@
       v-if="showActions"
       class="title-bar-logo"
       :class="{ 'is-open': logoMenuVisible }"
+      aria-label="Lerxu"
       @click.stop="toggleLogoMenu"
     >
-      <span class="title-bar-logo__text">
-        <span class="title-bar-logo__text-strong">Link</span><span class="title-bar-logo__text-soft">Core</span>
-      </span>
+      <!-- 纯文字 wordmark：Ler 深色 + xu 主题色，同字重同基线，
+           阅读动线从文字色自然流向品牌色，无需图形元素即可成立 -->
+      <span
+        class="title-bar-logo__text"
+      ><span class="title-bar-logo__text-main">Ler</span><span class="title-bar-logo__text-accent">xu</span></span>
       <svg class="title-bar-logo__chevron" viewBox="0 0 12 12" aria-hidden="true">
         <path class="title-bar-logo__chevron-path" d="M2.5 4.5L6 8l3.5-3.5" />
       </svg>
@@ -39,7 +42,8 @@
                     v-else
                     :key="`${menu.id}-${index}`"
                     class="title-bar-logo__submenu-item"
-                    @click="handleMenuAction(item)"
+                    :class="{ 'is-disabled': item.disabled }"
+                    @click.stop="handleMenuAction(item)"
                   >
                     <span>{{ item.label }}</span>
                   </div>
@@ -80,6 +84,9 @@ import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛�
 import { getCurrentWindow } from '@electron/remote'
 import { ipcRenderer } from 'electron'
 import { commands } from '@/components/CommandManager/instance'
+import { TASK_STATUS } from '@shared/constants'
+import { useTaskStore } from '@/store/task'
+import { storeToRefs } from 'pinia'
 import '@/components/Icons/win-minimize'
 import '@/components/Icons/win-maximize'
 import '@/components/Icons/win-close'
@@ -97,14 +104,38 @@ const activeMenu = ref('')
 
 const win = computed(() => getCurrentWindow())
 
-const menuBarItems = computed(() => [
+// 选中任务驱动菜单可用性：未选中任何任务时，暂停/继续/删除等
+// 针对选中项的操作一律禁用（灰色不可点）
+const taskStore = useTaskStore()
+const { selectedGidList } = storeToRefs(taskStore)
+const hasSelectedTasks = computed(() => selectedGidList.value.length > 0)
+
+// 「暂停/恢复全部」基于全部任务列表判断是否存在可操作目标：
+// aria2 pauseAll 作用于 active/waiting，unpauseAll 只作用于 paused；
+// 没有可执行目标时菜单项同样禁用
+const hasPausableTasks = computed(() =>
+  taskStore.allTaskList.some(task =>
+    [TASK_STATUS.ACTIVE, TASK_STATUS.WAITING].includes(task.status)
+  )
+)
+const hasResumableTasks = computed(() =>
+  taskStore.allTaskList.some(task => task.status === TASK_STATUS.PAUSED)
+)
+
+const menuBarItems = computed(() => {
+  const needSelection = !hasSelectedTasks.value
+  return [
   {
     id: 'file',
     label: t('menu.file'),
     items: [
+      { label: t('task.new-task'), command: 'application:new-task' },
+      { label: t('task.new-bt-task'), command: 'application:new-bt-task' },
+      { label: t('task.open-torrent-file'), command: 'application:open-file' },
+      { separator: true },
+      { label: t('app.show'), command: 'application:show' },
       { label: t('app.preferences'), command: 'application:preferences' },
       { label: t('app.check-for-updates'), command: 'application:check-for-updates' },
-      { label: t('app.show'), command: 'application:show' },
       { separator: true },
       { label: t('app.quit'), command: 'application:quit' }
     ]
@@ -113,20 +144,17 @@ const menuBarItems = computed(() => [
     id: 'task',
     label: t('menu.task'),
     items: [
-      { label: t('task.new-task'), command: 'application:new-task' },
-      { label: t('task.new-bt-task'), command: 'application:new-bt-task' },
-      { label: t('task.open-torrent-file'), command: 'application:open-file' },
-      { separator: true },
       { label: t('app.task-list'), command: 'application:task-list' },
-      { label: t('task.pause-task'), command: 'application:pause-task' },
-      { label: t('task.resume-task'), command: 'application:resume-task' },
-      { label: t('task.delete-task'), command: 'application:delete-task' },
-      { label: t('task.move-task-up'), command: 'application:move-task-up' },
-      { label: t('task.move-task-down'), command: 'application:move-task-down' },
       { separator: true },
-      { label: t('task.pause-all-task'), command: 'application:pause-all-task' },
-      { label: t('task.resume-all-task'), command: 'application:resume-all-task' },
-      { label: t('task.select-all-task'), command: 'application:select-all-task' },
+      { label: t('task.pause-task'), command: 'application:pause-task', disabled: needSelection },
+      { label: t('task.resume-task'), command: 'application:resume-task', disabled: needSelection },
+      { label: t('task.delete-task'), command: 'application:delete-task', disabled: needSelection },
+      { label: t('task.move-task-up'), command: 'application:move-task-up', disabled: needSelection },
+      { label: t('task.move-task-down'), command: 'application:move-task-down', disabled: needSelection },
+      { separator: true },
+      { label: t('task.pause-all-task'), command: 'application:pause-all-task', disabled: !hasPausableTasks.value },
+      { label: t('task.resume-all-task'), command: 'application:resume-all-task', disabled: !hasResumableTasks.value },
+      { label: t('task.select-all-task'), command: 'application:select-all-task', disabled: taskStore.allTaskList.length === 0 },
       { separator: true },
       { label: t('task.clear-recent-tasks'), command: 'application:clear-recent-tasks' }
     ]
@@ -170,7 +198,8 @@ const menuBarItems = computed(() => [
       { label: t('help.toggle-dev-tools'), role: 'toggledevtools' }
     ]
   }
-])
+  ]
+})
 
 let _handleDocumentClick = null
 let _appObserver = null
@@ -181,15 +210,25 @@ const observeAppClass = () => {
   const modalFlags = ['is-add-task-open', 'is-task-detail-open', 'is-task-plan-open']
   _appObserver = new MutationObserver(() => {
     if (modalFlags.some(cls => appEl.classList.contains(cls))) {
-      logoMenuVisible.value = false
-      activeMenu.value = ''
+      closeLogoMenu()
     }
   })
   _appObserver.observe(appEl, { attributes: true, attributeFilter: ['class'] })
 }
 
+// 关闭快捷弹窗时必须同步重置 activeMenu，否则残留的二级弹窗状态
+// 会在下次打开时让子菜单立即处于展开状态
+const closeLogoMenu = () => {
+  logoMenuVisible.value = false
+  activeMenu.value = ''
+}
+
 const toggleLogoMenu = () => {
-  logoMenuVisible.value = !logoMenuVisible.value
+  if (logoMenuVisible.value) {
+    closeLogoMenu()
+  } else {
+    logoMenuVisible.value = true
+  }
 }
 
 const handleMenuMouseLeave = (e) => {
@@ -209,7 +248,9 @@ const handleSubmenuMouseLeave = (e) => {
 }
 
 const handleMenuAction = (item) => {
-  logoMenuVisible.value = false
+  // 禁用项（如未选中任务时的暂停/继续/删除）不可触发
+  if (item.disabled) return
+  closeLogoMenu()
   if (item.command) {
     if (!commands.execute(item.command)) {
       ipcRenderer.send('command', item.command)
@@ -246,7 +287,7 @@ const handleClose = () => win.value.close()
 onMounted(() => {
   _handleDocumentClick = () => {
     if (logoMenuVisible.value) {
-      logoMenuVisible.value = false
+      closeLogoMenu()
     }
   }
   document.addEventListener('click', _handleDocumentClick)
@@ -276,7 +317,10 @@ onBeforeUnmount(() => {
   background: transparent;
   background-color: transparent;
   isolation: isolate;
-  z-index: 5000;
+  /* 20000：远高于 Element Plus popper 的全局递增 z-index（自 2000 起只增不减），
+     避免长期使用后设置页下拉等弹层盖住标题栏；
+     弹窗打开时由下方 .is-*-open 规则压回 5000，让遮罩正常覆盖 */
+  z-index: 20000;
   pointer-events: none;
   .title-bar-dragger {
     margin: 0;
@@ -315,7 +359,7 @@ onBeforeUnmount(() => {
     list-style: none;
     padding: 0;
     margin: 0;
-    z-index: 5100;
+    z-index: 20010;
     font-size: 0;
     pointer-events: auto;
     -webkit-app-region: no-drag;
@@ -356,7 +400,6 @@ onBeforeUnmount(() => {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   height: 38px;
   padding: 0 14px;
   align-self: flex-start;
@@ -378,21 +421,30 @@ onBeforeUnmount(() => {
   &.is-open::before {
     background-color: rgba(26, 35, 50, 0.1);
   }
+  /* 纯文字 wordmark：同一字体同一字重，ler 文字色 + xu 主题色，
+     颜色沿阅读方向自然过渡，无图形元素，天然一体 */
   &__text {
     position: relative;
     z-index: 1;
+    /* 标题栏视觉中心略高于几何中心，文字整体上移以对齐视觉重心 */
+    margin-top: -2px;
     display: inline-flex;
     align-items: baseline;
-    margin-top: -1px;
-    font-family: 'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    font-size: 16px;
-    font-weight: 800;
-    letter-spacing: -0.2px;
+    font-family: 'Inter', 'Segoe UI Variable Display', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 15.5px;
+    font-weight: 750;
+    letter-spacing: -0.02em;
     line-height: 1;
-    color: var(--lc-color-primary);
+    transition: color 0.2s ease, opacity 0.2s ease;
   }
-  &__text-strong { font-weight: 800; }
-  &__text-soft { font-weight: 600; opacity: 0.72; }
+  &__text-main {
+    color: var(--lc-text-primary);
+    transition: color 0.2s ease;
+  }
+  &__text-accent {
+    color: var(--lc-color-primary);
+    transition: color 0.2s ease;
+  }
   &__chevron {
     position: relative;
     z-index: 1;
@@ -400,7 +452,8 @@ onBeforeUnmount(() => {
     height: 10px;
     display: block;
     align-self: center;
-    margin-top: 0px;
+    margin-top: -1px;
+    margin-left: 7px;
     transition: transform 0.2s ease;
   }
   &.is-open .title-bar-logo__chevron { transform: rotate(180deg); }
@@ -420,7 +473,7 @@ onBeforeUnmount(() => {
     border-radius: var(--lc-radius-dropdown);
     background-color: var(--lc-bg-popover);
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
-    z-index: 5200;
+    z-index: 20020;
     pointer-events: auto;
     -webkit-app-region: no-drag;
   }
@@ -484,17 +537,24 @@ onBeforeUnmount(() => {
     user-select: none;
     transition: background-color 0.15s ease;
     &:hover { background-color: var(--lc-bg-hover); }
+    /* 禁用项：无选中任务时的暂停/继续/删除等，灰色且完全不可交互 */
+    &.is-disabled {
+      color: var(--lc-text-disabled);
+      cursor: default;
+      pointer-events: none;
+    }
   }
   &__submenu-separator {
     height: 1px;
-    margin: 4px 8px;
-    background-color: var(--lc-border-lighter);
+    margin: 3px 10px;
+    /* border-light 介于默认的 border-lighter（几乎不可见）与 border-base（过重）之间 */
+    background-color: var(--lc-border-light);
   }
   &__menu-footer { padding: 2px 0 2px; }
   &__separator {
     height: 1px;
-    margin: 4px 10px;
-    background-color: var(--lc-border-lighter);
+    margin: 3px 10px;
+    background-color: var(--lc-border-light);
   }
 }
 .submenu-pop-enter-active,
@@ -557,15 +617,22 @@ onBeforeUnmount(() => {
 .is-task-plan-open .title-bar .window-actions:hover { opacity: 1; }
 .is-preference-window .title-bar .title-bar-dragger { margin-left: 220px; }
 .is-preference-window .title-bar {
-  background: transparent;
-  background-color: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border-bottom: none;
+  /* 偏好设置窗口下，标题栏取色与内容面板（--lc-bg-panel）一致：
+     明色为白、暗色为深蓝灰，避免顶部出现与程序背景脱节的纯黑/纯白条带。
+     用 !important 压住通用的 .show-window-actions { background: transparent }，
+     这是偏好设置窗口下的确定性设计决策。 */
+  background: var(--lc-bg-panel) !important;
+  background-color: var(--lc-bg-panel) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-bottom: none !important;
 }
 html.mac-native-transparent .is-preference-window .title-bar {
-  backdrop-filter: blur(12px) saturate(150%);
-  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  /* 偏好设置窗口即使在 macOS 原生透明模式下也保持纯色，
+     防止毛玻璃出现与内容面板不同的色相 */
+  background-color: var(--lc-bg-panel);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 @media only screen and (min-width: 568px) {
   .title-bar {

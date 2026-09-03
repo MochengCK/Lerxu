@@ -27,7 +27,6 @@ import { ref, computed, onMounted, onBeforeUnmount, getCurrentInstance } from 'v
 import { useRoute, useRouter } from 'vue-router'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 import is from 'electron-is'
-import { ipcRenderer } from 'electron'
 import { useAppStore, usePreferenceStore } from '@/store'
 import { storeToRefs } from 'pinia'
 import '@/components/Icons/menu-preference'
@@ -90,10 +89,7 @@ function handleMouseMove (event) {
 }
 
 function nav (page) {
-  if (page === '/preference') {
-    ipcRenderer.send('open-preference-window')
-    return
-  }
+  // 偏好设置内嵌在主窗口中：/preference 与其他页面一样直接路由跳转
   router.push({ path: page }).catch(err => {
     console.log(err)
   })

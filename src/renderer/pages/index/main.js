@@ -35,7 +35,6 @@ import TaskProgress from '@/components/Task/TaskProgress'
 import TaskProgressInfo from '@/components/Task/TaskProgressInfo'
 import TaskStatus from '@/components/Task/TaskStatus'
 import CustomDatePicker from '@/components/Task/DatePicker'
-import PreferenceSubnav from '@/components/Subnav/PreferenceSubnav'
 import { createMsg } from '@/components/Msg'
 import { commands } from '@/components/CommandManager/instance'
 import { setupIcons } from '@/plugins/icons'
@@ -66,14 +65,7 @@ import '@/components/Theme/Index.scss'
 // Create a single Pinia instance shared across the app lifecycle
 const pinia = createPinia()
 
-const isPreferenceWindow = typeof window !== 'undefined' &&
-  window.location &&
-  window.location.hash &&
-  window.location.hash.startsWith('#/preference-window')
-
-function init (config, options = {}) {
-  const { isPreferenceWindow } = options
-
+function init (config) {
   const app = createApp(App)
 
   // Pinia state management (reuse the instance created at module load)
@@ -130,7 +122,6 @@ function init (config, options = {}) {
   app.component('mo-task-general', TaskGeneral)
   app.component('mo-task-trackers', TaskTrackers)
   app.component('mo-custom-date-picker', CustomDatePicker)
-  app.component('mo-preference-subnav', PreferenceSubnav)
 
   // Register all Element Plus icons globally
   setupIcons(app)
@@ -161,10 +152,8 @@ function init (config, options = {}) {
     }
   })
 
-  if (!isPreferenceWindow) {
-    global.app.commands = commands
-    import('./commands')
-  }
+  global.app.commands = commands
+  import('./commands')
 
   setTimeout(() => {
     loading.close()
@@ -178,12 +167,10 @@ const preferenceStore = usePreferenceStore(pinia)
 preferenceStore.fetchPreference()
   .then((config) => {
     console.info('[Lerxu] load preference:', config)
-    if (!isPreferenceWindow) {
-      const taskStore = useTaskStore(pinia)
-      taskStore.initializeViewMode(config)
-      taskStore.initializeFilterDate(config)
-    }
-    init(config, { isPreferenceWindow })
+    const taskStore = useTaskStore(pinia)
+    taskStore.initializeViewMode(config)
+    taskStore.initializeFilterDate(config)
+    init(config)
   })
   .catch((err) => {
     alert(err)
