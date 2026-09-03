@@ -68,7 +68,6 @@ runs:
 
     - name: Run engine tests (RPC / HTTP download / BT download)
       shell: bash
-      timeout-minutes: 10
       run: |
         # ENGINE_DIR 由上方 Locate 步骤写入 GITHUB_ENV，本步骤可直接引用
         # Linux 打包引擎依赖 lib/ 内动态库（与应用 wrapper 的 LD_LIBRARY_PATH 行为一致）
@@ -79,7 +78,6 @@ runs:
 
     - name: Run app smoke test (launch app / engine RPC / HTTP download)
       shell: bash
-      timeout-minutes: 8
       run: |
         # APP_BIN 由上方 Locate 步骤写入 GITHUB_ENV，本步骤可直接引用
         if [ "$RUNNER_OS" = "Linux" ]; then

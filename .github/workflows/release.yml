@@ -148,6 +148,7 @@ jobs:
       # 任一失败则本步骤失败，Publish 不会执行
       - name: Post-build runtime tests (engine / HTTP / BT / app smoke)
         uses: ./.github/actions/app-tests
+        timeout-minutes: 20
 
       - name: Upload build logs on failure
         if: failure()
