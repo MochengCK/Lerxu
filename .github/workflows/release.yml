@@ -6,35 +6,25 @@ permissions:
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ main ]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  pre-clean:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      - name: Delete existing release by tag
-        uses: actions/github-script@v7
-        env:
-          TAG_NAME: ${{ github.ref_name }}
-        with:
-          script: |
-            const tag = process.env.TAG_NAME
-            const { owner, repo } = context.repo
-            try {
-              const release = await github.rest.repos.getReleaseByTag({ owner, repo, tag })
-              await github.rest.repos.deleteRelease({ owner, repo, release_id: release.data.id })
-            } catch (e) {
-              core.info(`skip delete: ${e.message}`)
-            }
-  build-test-and-release:
-    needs: pre-clean
+  build:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: win32
+          - os: macos-latest
+            platform: darwin
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
 
@@ -103,8 +93,16 @@ jobs:
           echo ""
           echo "✓ Build verification passed!"
 
-      # 先构建全部安装器但不发布（--publish never 仍会生成 latest*.yml），
-      # 测试通过后才在下方 Publish 步骤上传
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # 先构建全部安装器但不发布（--publish never），
+      # 测试通过后才在 release job 中统一上传到同一草稿
       - name: Build installers with electron-builder (no publish)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -113,9 +111,7 @@ jobs:
           DEBUG: 'electron-builder'
         run: |
           echo "Starting electron-builder..."
-          # 确保日志文件存在，即使 electron-builder 崩溃前没有任何输出
           touch electron-builder.log
-          # 使用 set -o pipefail 确保管道中 electron-builder 的非零退出码被捕获
           set -o pipefail
           npx electron-builder --publish never 2>&1 | tee electron-builder.log
           EXIT_CODE=$?
@@ -145,7 +141,7 @@ jobs:
         shell: bash
 
       # 构建后运行时测试（引擎 RPC / HTTP 下载 / BT 下载 / 应用冒烟），
-      # 任一失败则本步骤失败，Publish 不会执行
+      # 任一失败则本步骤失败，产物不会上传
       - name: Post-build runtime tests (engine / HTTP / BT / app smoke)
         uses: ./.github/actions/app-tests
         timeout-minutes: 20
@@ -154,7 +150,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v5
         with:
-          name: build-logs-${{ matrix.os }}
+          name: build-logs-${{ matrix.platform }}
           path: |
             electron-builder.log
             *.log
@@ -166,7 +162,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v5
         with:
-          name: app-logs-release-${{ matrix.os }}
+          name: app-logs-release-${{ matrix.platform }}
           path: |
             ~/Library/Application Support/lerxu/logs/
             ~/Library/Application Support/Lerxu/logs/
@@ -177,13 +173,49 @@ jobs:
           if-no-files-found: 'ignore'
           retention-days: 7
 
-      # 测试通过后以 draft 方式发布（与原 electron-builder onTagOrDraft
-      # 的默认 releaseType=draft 语义一致），由维护者审阅后手动转正
-      - name: Publish draft release
+      # 将本平台构建产物上传为 Actions artifact，
+      # 由下游 release job 收集后统一上传到同一草稿
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v5
+        with:
+          name: release-artifacts-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/*.blockmap
+            release/latest*.yml
+          if-no-files-found: 'error'
+          retention-days: 7
+
+  # 收集所有平台产物，统一上传到同一版本的草稿 release
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Read version
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: release-artifacts-*
+          merge-multiple: true
+          path: release/
+
+      - name: Verify artifacts
+        shell: bash
         run: |
           set -e
           shopt -s nullglob
@@ -197,11 +229,78 @@ jobs:
             done
           done
           if [ ${#files[@]} -eq 0 ]; then
-            echo "::error::No release artifacts found in release/"
+            echo "::error::No release artifacts found"
             ls -la release/ || true
             exit 1
           fi
-          echo "Publishing ${#files[@]} artifacts as draft release ${TAG_NAME}:"
+          echo "Found ${#files[@]} artifacts:"
           printf '  %s\n' "${files[@]}"
-          gh release create "$TAG_NAME" --draft --title "$TAG_NAME" "${files[@]}"
-          echo "✓ Draft release ${TAG_NAME} created"
+
+      - name: Create or update draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          shopt -s nullglob
+
+          VERSION="$VERSION"
+          echo "Looking for existing release with tag $VERSION ..."
+
+          # 查找已有 release（草稿或已发布），如果存在则复用
+          RELEASE_ID=""
+          IS_DRAFT=""
+          ALREADY_PUBLISHED="false"
+
+          # 通过 gh release view 查找
+          if gh release view "$VERSION" > /dev/null 2>&1; then
+            # 获取 release 详情
+            RELEASE_JSON=$(gh release view "$VERSION" --json id,isDraft,tagName)
+            RELEASE_ID=$(echo "$RELEASE_JSON" | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).id")
+            IS_DRAFT=$(echo "$RELEASE_JSON" | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).isDraft")
+
+            if [ "$IS_DRAFT" = "false" ]; then
+              echo "Release $VERSION is already published — skipping upload to avoid overwriting."
+              echo "ALREADY_PUBLISHED=true" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "Found existing draft release (ID: $RELEASE_ID), will upload artifacts to it."
+          else
+            echo "No existing release found for $VERSION, creating a new draft ..."
+            gh release create "$VERSION" \
+              --draft \
+              --title "$VERSION" \
+              --notes ""
+            echo "Created new draft release for $VERSION"
+          fi
+
+          # 收集所有产物文件
+          files=()
+          for pattern in \
+            release/*.exe release/*.dmg release/*.zip \
+            release/*.AppImage release/*.deb \
+            release/*.blockmap release/latest*.yml; do
+            for f in $pattern; do
+              files+=("$f")
+            done
+          done
+
+          echo "Uploading ${#files[@]} artifacts to release $VERSION:"
+          printf '  %s\n' "${files[@]}"
+
+          # 上传产物到 release（已存在则追加，不覆盖草稿的 body 内容）
+          # gh release upload 对已有同名文件会报错，先删除旧的再上传
+          # 使用 --clobber 选项允许覆盖同名产物
+          gh release upload "$VERSION" "${files[@]}" --clobber
+
+          echo "✓ All artifacts uploaded to release $VERSION"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          if [ "$ALREADY_PUBLISHED" = "true" ]; then
+            echo "ℹ️ Release $VERSION is already published, skipped uploading."
+          else
+            echo "✓ Draft release $VERSION updated with all platform artifacts."
+          fi
