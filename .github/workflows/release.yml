@@ -29,13 +29,14 @@ jobs:
             } catch (e) {
               core.info(`skip delete: ${e.message}`)
             }
-  build-and-release:
+  build-test-and-release:
     needs: pre-clean
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -67,7 +68,7 @@ jobs:
         run: |
           echo "Checking dist/electron directory..."
           ls -la dist/electron/ 2>/dev/null || dir dist\\electron\\ || echo "Directory listing failed"
-          
+
           echo ""
           echo "Checking for index.js (main process)..."
           if [ -f "dist/electron/index.js" ]; then
@@ -79,7 +80,7 @@ jobs:
             find dist -type f 2>/dev/null || echo "find command failed"
             exit 1
           fi
-          
+
           echo ""
           echo "Checking for assets directory (renderer)..."
           if [ -d "dist/electron/assets" ]; then
@@ -88,7 +89,7 @@ jobs:
           else
             echo "⚠ assets directory not found (may be normal if renderer is bundled differently)"
           fi
-          
+
           echo ""
           echo "Checking for shared/locales (main process assets)..."
           if [ -d "dist/electron/shared/locales" ]; then
@@ -98,11 +99,13 @@ jobs:
             echo "✗ shared/locales not found"
             exit 1
           fi
-          
+
           echo ""
           echo "✓ Build verification passed!"
 
-      - name: Build and publish with electron-builder
+      # 先构建全部安装器但不发布（--publish never 仍会生成 latest*.yml），
+      # 测试通过后才在下方 Publish 步骤上传
+      - name: Build installers with electron-builder (no publish)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -114,7 +117,7 @@ jobs:
           touch electron-builder.log
           # 使用 set -o pipefail 确保管道中 electron-builder 的非零退出码被捕获
           set -o pipefail
-          npx electron-builder --publish onTagOrDraft 2>&1 | tee electron-builder.log
+          npx electron-builder --publish never 2>&1 | tee electron-builder.log
           EXIT_CODE=$?
           set +o pipefail
           if [ $EXIT_CODE -ne 0 ]; then
@@ -141,6 +144,11 @@ jobs:
           fi
         shell: bash
 
+      # 构建后运行时测试（引擎 RPC / HTTP 下载 / BT 下载 / 应用冒烟），
+      # 任一失败则本步骤失败，Publish 不会执行
+      - name: Post-build runtime tests (engine / HTTP / BT / app smoke)
+        uses: ./.github/actions/app-tests
+
       - name: Upload build logs on failure
         if: failure()
         uses: actions/upload-artifact@v5
@@ -152,3 +160,47 @@ jobs:
             release/*.yml
           if-no-files-found: 'ignore'
           retention-days: 7
+
+      - name: Upload app logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: app-logs-release-${{ matrix.os }}
+          path: |
+            ~/Library/Application Support/lerxu/logs/
+            ~/Library/Application Support/Lerxu/logs/
+            ~/.config/lerxu/logs/
+            ~/.config/Lerxu/logs/
+            /c/Users/runneradmin/AppData/Roaming/lerxu/logs/
+            /c/Users/runneradmin/AppData/Roaming/Lerxu/logs/
+          if-no-files-found: 'ignore'
+          retention-days: 7
+
+      # 测试通过后以 draft 方式发布（与原 electron-builder onTagOrDraft
+      # 的默认 releaseType=draft 语义一致），由维护者审阅后手动转正
+      - name: Publish draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -e
+          shopt -s nullglob
+          files=()
+          for pattern in \
+            release/*.exe release/*.dmg release/*.zip \
+            release/*.AppImage release/*.deb \
+            release/*.blockmap release/latest*.yml; do
+            for f in $pattern; do
+              files+=("$f")
+            done
+          done
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No release artifacts found in release/"
+            ls -la release/ || true
+            exit 1
+          fi
+          echo "Publishing ${#files[@]} artifacts as draft release ${TAG_NAME}:"
+          printf '  %s\n' "${files[@]}"
+          gh release create "$TAG_NAME" --draft --title "$TAG_NAME" "${files[@]}"
+          echo "✓ Draft release ${TAG_NAME} created"

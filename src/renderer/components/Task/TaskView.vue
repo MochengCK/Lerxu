@@ -1,6 +1,7 @@
 <template>
   <el-container
     class="main panel"
+    :class="{ 'preference-panel': isPreferencePage }"
     direction="horizontal"
   >
     <!-- 三栏布局的左侧固定导航（进入偏好设置时保持不变，仅钉住当前选项） -->
@@ -10,6 +11,7 @@
 
     <el-container
       class="content panel"
+      :class="{ 'preference-panel': isPreferencePage }"
       direction="vertical"
     >
       <!-- 偏好设置视图：内容区顶部分类导航（通用分段滑块按钮） + 设置表单 -->

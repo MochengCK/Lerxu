@@ -2666,45 +2666,164 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
   }
 }
 
-/* 版本条：独立样式（不依赖侧边栏全局 .version-item），
-   点击区域明确、悬停有视觉反馈 */
+/* 版本条（更新条）：完整状态样式。
+   原先定义在侧边栏 PreferenceSubnav.vue（全局 .version-item），偏好设置内嵌
+   主窗口后该文件被移除，样式随之丢失，只剩一个灰边框素条。
+   现独立收敛到本组件：默认半透明低调、悬停显形；
+   检查中（蓝）/ 有新版（绿）/ 下载中（橙）/ 已下载（绿底）各有配色与呼吸动画 */
 .preference-card .version-item {
   cursor: pointer;
-  border: 1px solid var(--lc-border-color, #dcdfe6);
+  transition: all 0.3s ease;
+  border: 1px solid #000;
   border-radius: 12px;
-  padding: 10px 12px;
-  margin-top: 12px;
+  padding: 8px 12px;
+  margin-top: 10px;
   font-size: 13px;
+  background-color: transparent;
   color: var(--lc-text-primary, #303133);
-  transition: border-color 0.2s ease, opacity 0.2s ease;
+  opacity: 0.5;
 
   &:hover {
+    background-color: transparent;
     border-color: #c6e2ff;
+    opacity: 1;
   }
 
   &.is-checking {
-    color: var(--lc-text-secondary, #909399);
+    cursor: not-allowed;
+    opacity: 1;
+    border-color: #409eff;
+    animation: version-pulse 1s infinite;
+
+    &:hover {
+      border-color: #409eff;
+      background-color: transparent;
+    }
   }
 
   &.update-available {
     color: #67c23a;
     font-weight: bold;
     border-color: #c2e7b0;
+    background-color: transparent;
+    opacity: 1;
+    animation: version-pulse-green 1s infinite;
+
+    &:hover {
+      background-color: transparent;
+      border-color: #a5d6a7;
+      opacity: 1;
+    }
   }
 
   &.downloading {
-    /* 下载进度文字：浅色模式黑色、深色模式白色（跟随主题文字色），
-       不固定为 Element 主题蓝，保证两种模式下可读 */
-    color: var(--lc-text-primary, #303133);
-  }
+    cursor: not-allowed;
+    color: #e6a23c;
+    font-weight: bold;
+    border-color: #f0c78a;
+    background-color: transparent;
+    opacity: 1;
+    animation: version-pulse-orange 1s infinite;
 
-  &.downloaded {
-    color: #67c23a;
+    &:hover {
+      background-color: transparent;
+      border-color: #f0c78a;
+      opacity: 1;
+    }
   }
 
   &.is-disabled {
-    cursor: default;
-    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  &.downloaded {
+    cursor: pointer;
+    color: #67c23a;
+    font-weight: bold;
+    border-color: #c2e7b0;
+    background-color: rgba(103, 194, 58, 0.1);
+    opacity: 1;
+
+    &:hover {
+      background-color: rgba(103, 194, 58, 0.15);
+      border-color: #67c23a;
+    }
+  }
+
+  span {
+    font-family: monospace;
+    display: block;
+    text-align: center;
+  }
+
+  /* 深色模式适配：黑边框换白边框、文字换白，状态边框色保持 */
+  .theme-dark & {
+    border-color: #fff;
+    color: #fff;
+
+    &:hover {
+      border-color: #c6e2ff;
+    }
+  }
+
+  .theme-dark &.update-available {
+    border-color: #a5d6a7;
+
+    &:hover {
+      border-color: #a5d6a7;
+    }
+  }
+
+  .theme-dark &.is-checking {
+    border-color: #409eff;
+
+    &:hover {
+      border-color: #409eff;
+    }
+  }
+
+  .theme-dark &.downloading {
+    border-color: #f0c78a;
+
+    &:hover {
+      border-color: #f0c78a;
+    }
+  }
+}
+
+@keyframes version-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(64, 158, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0);
+  }
+}
+
+@keyframes version-pulse-green {
+  0% {
+    box-shadow: 0 0 0 0 rgba(103, 194, 58, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(103, 194, 58, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(103, 194, 58, 0);
+  }
+}
+
+@keyframes version-pulse-orange {
+  0% {
+    box-shadow: 0 0 0 0 rgba(230, 162, 60, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(230, 162, 60, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(230, 162, 60, 0);
   }
 }
 

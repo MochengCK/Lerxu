@@ -26,15 +26,22 @@
    左侧侧边栏与顶部留白即透出系统毛玻璃，而内层任务视图
    （.content.panel 白色面板）保持不透明不受影响。
 
-   偏好设置窗口的背景色与内容显示区（白色卡片）保持一致，
-   开启透明背景时整个偏好设置窗口透出系统材质。
+   偏好设置已内嵌主窗口：根容器（.main.panel）沿用主窗口的 --lc-bg-main，
+   让侧边栏与顶部标题栏区域保持独立颜色；内容区仍为白色卡片面板。
+   旧版独立偏好设置窗口的 .main.panel.preference-panel 同色背景规则已移除，
+   否则根容器会与内容面板同色，侧边栏/标题栏失去层次。
 -------------------------- */
-.main.panel.preference-panel {
-  background-color: var(--lc-bg-panel);
+/* 偏好设置内容区隔离为独立 stacking context：
+   页面内的 mo-extend-select（z-index 9999）等高层级元素只在内容区内部比较，
+   不再盖过 body 直挂的新建任务弹窗（el-overlay/el-dialog）与遮罩。
+   注意：isolation 必须加在内容区而不是 .main.panel 根容器上——
+   透明模式下根容器上的 stacking context 会破坏侧边栏/标题栏
+   backdrop-filter 对系统材质的采样，毛玻璃会失效。 */
+.content.panel.preference-panel {
+  isolation: isolate;
 }
 
-html.mac-native-transparent .main.panel,
-html.mac-native-transparent .main.panel.preference-panel {
+html.mac-native-transparent .main.panel {
   background-color: transparent;
 }
 

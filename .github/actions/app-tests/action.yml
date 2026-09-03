@@ -1,0 +1,90 @@
+name: 'Lerxu Post-build Tests'
+description: >
+  对打包产物执行运行时测试：定位 unpacked 应用与打包后引擎，
+  依次执行引擎测试（RPC 探活 / HTTP 下载 / BT 下载闭环）与
+  应用冒烟测试（启动应用 → 引擎 RPC 鉴权 → 经应用引擎的 HTTP 下载）。
+  需要在 electron-builder 构建完成的同一工作区内调用。
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Locate unpacked app and packaged engine
+      shell: bash
+      run: |
+        set -e
+        case "$RUNNER_OS" in
+          Windows)
+            ENGINE_DIR="release/win-unpacked/resources/engine"
+            APP_BIN="release/win-unpacked/Lerxu.exe"
+            ;;
+          Linux)
+            ENGINE_DIR="release/linux-unpacked/resources/engine"
+            APP_BIN="release/linux-unpacked/lerxu"
+            ;;
+          macOS)
+            HOST_ARCH="$(uname -m)"
+            APP_BIN=""
+            for dir in "mac-${HOST_ARCH}" mac; do
+              candidate="release/${dir}/Lerxu.app/Contents/MacOS/Lerxu"
+              if [ -f "$candidate" ]; then APP_BIN="$candidate"; break; fi
+            done
+            if [ -z "$APP_BIN" ]; then
+              APP_BIN="$(find release -maxdepth 4 -path 'mac*/Lerxu.app/Contents/MacOS/Lerxu' 2>/dev/null | head -1)"
+            fi
+            [ -n "$APP_BIN" ] || { echo "::error::macOS unpacked app not found under release/"; ls -la release/ || true; exit 1; }
+            # <...>/Lerxu.app/Contents/MacOS/Lerxu -> <...>/Lerxu.app/Contents/Resources/engine
+            APP_CONTENTS="$(dirname "$(dirname "$APP_BIN")")"
+            ENGINE_DIR="${APP_CONTENTS}/Resources/engine"
+            ;;
+          *)
+            echo "::error::Unsupported RUNNER_OS: $RUNNER_OS"
+            exit 1
+            ;;
+        esac
+
+        echo "ENGINE_DIR=$ENGINE_DIR" >> "$GITHUB_ENV"
+        echo "APP_BIN=$APP_BIN" >> "$GITHUB_ENV"
+
+        for f in "$ENGINE_DIR/aria2.conf" "$APP_BIN"; do
+          if [ ! -e "$f" ]; then
+            echo "::error::Required build artifact missing: $f"
+            ls -la "$ENGINE_DIR" 2>/dev/null || true
+            exit 1
+          fi
+        done
+        echo "Located engine: $ENGINE_DIR"
+        echo "Located app binary: $APP_BIN"
+
+    - name: Install Linux GUI dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -e
+        sudo apt-get update -qq
+        sudo apt-get install -y xvfb libnotify4 libnss3 libxss1 libgbm1
+        # Ubuntu 24.04 使用 t64 后缀包名，22.04 回退到旧名
+        sudo apt-get install -y libgtk-3-0t64 libasound2t64 2>/dev/null \
+          || sudo apt-get install -y libgtk-3-0 libasound2
+
+    - name: Run engine tests (RPC / HTTP download / BT download)
+      shell: bash
+      timeout-minutes: 10
+      run: |
+        # ENGINE_DIR 由上方 Locate 步骤写入 GITHUB_ENV，本步骤可直接引用
+        # Linux 打包引擎依赖 lib/ 内动态库（与应用 wrapper 的 LD_LIBRARY_PATH 行为一致）
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          export LD_LIBRARY_PATH="$ENGINE_DIR/lib:${LD_LIBRARY_PATH:-}"
+        fi
+        node test/engine/run.js --engine-dir "$ENGINE_DIR"
+
+    - name: Run app smoke test (launch app / engine RPC / HTTP download)
+      shell: bash
+      timeout-minutes: 8
+      run: |
+        # APP_BIN 由上方 Locate 步骤写入 GITHUB_ENV，本步骤可直接引用
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          # 无头环境：虚拟显示器下启动 Electron 应用
+          xvfb-run -a -s "-screen 0 1280x800x24" node test/app/run.js --app "$APP_BIN"
+        else
+          node test/app/run.js --app "$APP_BIN"
+        fi

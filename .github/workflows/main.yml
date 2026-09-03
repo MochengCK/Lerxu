@@ -11,32 +11,37 @@ on:
   schedule:
     # 每周一早上6点运行完整测试
     - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # 代码质量检查
   lint-and-typecheck:
     name: Lint & Type Check
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
-      
+
     - name: Setup Node.js
       uses: actions/setup-node@v5
       with:
         node-version: '22'
         cache: 'npm'
-        
+
     - name: Install dependencies
       run: npm ci --legacy-peer-deps
-      
+
     - name: Run ESLint
       run: npm run lint
-      
+
     - name: Check package.json syntax
       run: node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
-      
+
     - name: Verify build configuration
       run: |
         node -e "
@@ -46,9 +51,25 @@ jobs:
           console.log('Electron builder config verified');
         "
 
-  # 多平台构建测试
-  build-test:
-    name: Build Test (${{ matrix.os }})
+    - name: Verify engine artifacts (all platforms)
+      run: |
+        # 各发布组合的引擎二进制必须随仓库存在（缺失告警，交由构建运行时测试兜底）
+        for platform in darwin/x64 darwin/arm64 win32/x64 linux/x64 linux/arm64; do
+          bin="extra/${platform}/engine/xfercore"
+          if [ -f "$bin" ]; then
+            echo "Engine found: $bin"
+          else
+            echo "::warning::Engine binary missing: $bin"
+          fi
+        done
+
+  # 多平台构建 + 运行时测试
+  # 构建完成后立即在同一台 runner 上执行：
+  #   1. 引擎测试 —— 对打包后的引擎二进制验证 RPC 探活、HTTP 下载、BT 下载（本地闭环 swarm）
+  #   2. 应用冒烟 —— 启动打包后的应用，验证「应用主进程 → 引擎子进程 → RPC」链路，
+  #      并经应用引擎做一次 HTTP 下载端到端校验
+  build-and-test:
+    name: Build & Runtime Test (${{ matrix.os }})
     needs: lint-and-typecheck
     strategy:
       fail-fast: false
@@ -61,98 +82,64 @@ jobs:
             platform: win32
           - os: macos-latest
             platform: darwin
-    
+
     runs-on: ${{ matrix.os }}
-    
+    timeout-minutes: 60
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
-      
+
     - name: Setup Node.js
       uses: actions/setup-node@v5
       with:
         node-version: '22'
         cache: 'npm'
-        
+
     - name: Install dependencies
       run: npm ci --legacy-peer-deps
 
-    - name: Build application
+    - name: Build application (unpacked)
       run: npm run build:dir
       env:
         # 禁用代码签名和公证以加速测试
         CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         SKIP_NOTARIZE: 'true'
-        
-    - name: Verify build artifacts
-      run: |
-        if [ "${{ matrix.platform }}" = "linux" ]; then
-          ls -la dist/
-          echo "Linux build artifacts verified"
-        elif [ "${{ matrix.platform }}" = "win32" ]; then
-          ls -la dist/
-          echo "Windows build artifacts verified"
-        elif [ "${{ matrix.platform }}" = "darwin" ]; then
-          ls -la dist/
-          echo "macOS build artifacts verified"
-        fi
 
-  # 开发环境测试
-  dev-test:
-    name: Development Environment Test
-    needs: lint-and-typecheck
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v5
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v5
+    - name: Post-build runtime tests (engine / HTTP / BT / app smoke)
+      uses: ./.github/actions/app-tests
+
+    - name: Upload app logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v5
       with:
-        node-version: '22'
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: npm ci --legacy-peer-deps
-      
-    - name: Test webpack build (renderer)
-      run: npm run pack:renderer
-      
-    - name: Test webpack build (main)
-      run: npm run pack:main
-      
-    - name: Test development server startup
-      run: |
-        # 启动开发服务器并检查是否正常启动
-        timeout 30s npm run dev:renderer &
-        sleep 10
-        
-        # 检查进程是否在运行
-        if ps aux | grep -v grep | grep webpack; then
-          echo "Development server started successfully"
-          pkill -f webpack
-        else
-          echo "Development server failed to start"
-          exit 1
-        fi
+        name: app-logs-${{ matrix.platform }}
+        path: |
+          ~/Library/Application Support/lerxu/logs/
+          ~/Library/Application Support/Lerxu/logs/
+          ~/.config/lerxu/logs/
+          ~/.config/Lerxu/logs/
+          /c/Users/runneradmin/AppData/Roaming/lerxu/logs/
+          /c/Users/runneradmin/AppData/Roaming/Lerxu/logs/
+        if-no-files-found: 'ignore'
+        retention-days: 7
 
   # 扩展功能测试
   extension-test:
     name: Browser Extension Test
     needs: lint-and-typecheck
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
-      
+
     - name: Setup Node.js
       uses: actions/setup-node@v5
       with:
         node-version: '22'
         cache: 'npm'
-        
+
     - name: Test extension manifest
       run: |
         # 验证浏览器扩展的manifest文件
@@ -163,7 +150,7 @@ jobs:
           }
           console.log('Extension manifest validated:', manifest.name, manifest.version);
         "
-        
+
     - name: Verify extension locales
       run: |
         # 检查所有语言文件是否存在且格式正确
@@ -183,47 +170,13 @@ jobs:
           fi
         done
 
-  # 集成测试
-  integration-test:
-    name: Integration Test
-    needs: [build-test, dev-test, extension-test]
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v5
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v5
-      with:
-        node-version: '22'
-        cache: 'npm'
-        
-    - name: Install dependencies
-      run: npm ci --legacy-peer-deps
-      
-    - name: Run post-install script
-      run: npm run postinstall
-      
-    - name: Verify engine dependencies
-      run: |
-        # 检查引擎依赖文件是否存在
-        for platform in win32/x64 win32/ia32 linux/x64 linux/arm64 linux/armv7l darwin/x64 darwin/arm64; do
-          if [ -d "extra/$platform/engine" ]; then
-            echo "Engine dependencies found for $platform"
-            ls -la "extra/$platform/engine/"
-          else
-            echo "Warning: Engine dependencies not found for $platform"
-          fi
-        done
-
   # 最终报告
   test-report:
     name: Test Report
-    needs: [lint-and-typecheck, build-test, dev-test, extension-test, integration-test]
+    needs: [lint-and-typecheck, build-and-test, extension-test]
     runs-on: ubuntu-latest
     if: always()
-    
+
     steps:
     - name: Generate test report
       run: |
@@ -234,11 +187,11 @@ jobs:
         echo ""
         echo "Test Results:"
         echo "- Lint & Type Check: ${{ needs.lint-and-typecheck.result }}"
-        echo "- Build Test (Linux): ${{ needs.build-test.result }}"
-        echo "- Build Test (Windows): ${{ needs.build-test.result }}"
-        echo "- Build Test (macOS): ${{ needs.build-test.result }}"
-        echo "- Development Test: ${{ needs.dev-test.result }}"
+        echo "- Build & Runtime Test (Linux / Windows / macOS): ${{ needs.build-and-test.result }}"
+        echo "  - engine RPC probe: covered"
+        echo "  - HTTP download test: covered"
+        echo "  - BT download test (local swarm): covered"
+        echo "  - app smoke test (launch / engine rpc / http): covered"
         echo "- Extension Test: ${{ needs.extension-test.result }}"
-        echo "- Integration Test: ${{ needs.integration-test.result }}"
         echo ""
         echo "Overall Status: ${{ job.status }}"

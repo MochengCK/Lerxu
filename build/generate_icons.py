@@ -110,6 +110,27 @@ def make_ico(src_png: Path, ico_path: Path, sizes=None):
     )
 
 
+def make_linux_hicolor_icons(src: Path, dest_dir: Path, sizes=None):
+    """Generate Linux hicolor-compliant icon PNGs at standard sizes.
+
+    Files are named ``<size>x<size>.png`` so electron-builder's
+    ``linux.icon`` directory scan picks them up automatically and the
+    resulting AppImage / deb / rpm packages can install them to
+    ``/usr/share/icons/hicolor/<size>x<size>/apps/`` — matching the
+    coverage that ``L.icns`` provides for macOS so the Linux app icon
+    stays visually consistent across distros and icon-theme sizes.
+    """
+    if sizes is None:
+        sizes = [16, 32, 48, 64, 128, 256, 512]
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for s in sizes:
+        resize_png(src, dest_dir / f"{s}x{s}.png", s)
+    print(
+        f"[app-icon] Wrote Linux hicolor PNGs: "
+        + ", ".join(f"{s}x{s}.png" for s in sizes)
+    )
+
+
 # --------------------------------------------------------------------------- #
 #  Main
 # --------------------------------------------------------------------------- #
@@ -133,6 +154,11 @@ def generate_app_icon(src: Path):
     resize_png(src, STATIC_DIR / "L.png", 512)
     resize_png(src, STATIC_DIR / "L512.png", 512)
     print(f"[app-icon] Wrote static PNGs (L.png, L512.png, 512x512.png)")
+
+    # 3b. Linux hicolor PNGs (consumed by electron-builder `linux.icon`
+    # directory scan; keeps Linux rendering consistent with macOS's
+    # full iconset at every icon-theme size)
+    make_linux_hicolor_icons(src, STATIC_DIR)
 
     # 4. static/L.icns  (mac icon referenced by electron-builder.json)
     make_icns(iconset, STATIC_DIR / "L.icns")

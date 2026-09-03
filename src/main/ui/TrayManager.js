@@ -112,19 +112,21 @@ export default class TrayManager extends EventEmitter {
   }
 
   loadImagesForLinux () {
-    const { theme } = this
-    if (theme === APP_THEME.AUTO) {
-      this.normalIcon = this.getFromCacheOrCreateImage('mo-tray-dark-normal.png')
-      this.activeIcon = this.getFromCacheOrCreateImage('mo-tray-dark-active.png')
-    } else {
-      this.normalIcon = this.getFromCacheOrCreateImage(`mo-tray-${theme}-normal.png`)
-      this.activeIcon = this.getFromCacheOrCreateImage(`mo-tray-${theme}-active.png`)
-    }
+    // 与 macOS 保持一致：使用同一份托盘图标设计（mo-tray-light-normal@2x.png），
+    // 由系统/DE 按面板主题渲染为合适大小。不再做 active/inverse 切换，
+    // 避免 getIcons() 在浅色主题聚焦时返回 undefined。
+    this.normalIcon = this.getFromCacheOrCreateImage('mo-tray-light-normal@2x.png')
+    this.activeIcon = this.normalIcon
+    this.inverseNormalIcon = this.normalIcon
+    this.inverseActiveIcon = this.activeIcon
   }
 
   loadImagesForDefault () {
-    this.normalIcon = this.getFromCacheOrCreateImage('mo-tray-light-normal.png')
-    this.activeIcon = this.getFromCacheOrCreateImage('mo-tray-light-active.png')
+    // 与 macOS 保持一致：使用同一份托盘图标设计
+    this.normalIcon = this.getFromCacheOrCreateImage('mo-tray-light-normal@2x.png')
+    this.activeIcon = this.normalIcon
+    this.inverseNormalIcon = this.normalIcon
+    this.inverseActiveIcon = this.activeIcon
   }
 
   getFromCacheOrCreateImage (key) {

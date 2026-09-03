@@ -248,7 +248,24 @@ onMounted(() => {
   commands.on('show-task-progress', handleShowTaskProgress)
   commands.on('task-progress:control', handleTaskProgressControl)
   commands.on('task-progress:auto-open', handleTaskProgressAutoOpen)
+  preloadHeavyOverlays()
 })
+
+// 预热重型弹层组件：mo-task-detail / mo-add-task 均为 defineAsyncComponent，
+// 首次点击"任务详情/新建任务"时才拉取并解析 chunk，导致弹层延迟数秒才出现。
+// 启动空闲时提前触发同样的动态 import（模块 promise 全局共享），
+// 之后 defineAsyncComponent 立即 resolve，弹层即点即出。
+function preloadHeavyOverlays () {
+  const preload = () => {
+    import('@/components/TaskDetail/TaskDetailDrawer')
+    import('@/components/Task/AddTask')
+  }
+  if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(preload, { timeout: 3000 })
+  } else {
+    setTimeout(preload, 1500)
+  }
+}
 onBeforeUnmount(() => {
   if (_modalObserver) {
     try {
