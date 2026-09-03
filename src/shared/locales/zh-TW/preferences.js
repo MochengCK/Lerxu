@@ -234,6 +234,7 @@ export default {
   'rpc-listen-port': 'RPC 監聽埠',
   'rpc-secret': 'RPC 授權金鑰',
   'rpc-secret-tips': '查看說明文件',
+  'random-generate': '隨機生成',
   'developer': '開發者',
   'user-agent': 'User-Agent',
   'mock-user-agent': '模擬使用者代理（UA）',

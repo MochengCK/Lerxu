@@ -1466,16 +1466,23 @@
               :maxlength="8"
             >
               <template #append>
-                <i
-                  class="rpc-dice-btn"
-                  @click.prevent="onBtPortDiceClick"
+                <mo-hover-tip
+                  effect="dark"
+                  :content="t('preferences.random-generate')"
+                  placement="bottom"
+                  :open-delay="300"
                 >
-                  <mo-icon
-                    name="dice"
-                    width="12"
-                    height="12"
-                  />
-                </i>
+                  <i
+                    class="rpc-dice-btn"
+                    @click.prevent="onBtPortDiceClick"
+                  >
+                    <mo-icon
+                      name="dice"
+                      width="12"
+                      height="12"
+                    />
+                  </i>
+                </mo-hover-tip>
               </template>
             </el-input>
           </el-col>
@@ -1491,16 +1498,23 @@
               :maxlength="8"
             >
               <template #append>
-                <i
-                  class="rpc-dice-btn"
-                  @click.prevent="onDhtPortDiceClick"
+                <mo-hover-tip
+                  effect="dark"
+                  :content="t('preferences.random-generate')"
+                  placement="bottom"
+                  :open-delay="300"
                 >
-                  <mo-icon
-                    name="dice"
-                    width="12"
-                    height="12"
-                  />
-                </i>
+                  <i
+                    class="rpc-dice-btn"
+                    @click.prevent="onDhtPortDiceClick"
+                  >
+                    <mo-icon
+                      name="dice"
+                      width="12"
+                      height="12"
+                    />
+                  </i>
+                </mo-hover-tip>
               </template>
             </el-input>
           </el-col>
@@ -3137,15 +3151,22 @@ watch(searchKeyword, (val) => {
 watch(() => props.category, () => {
   // 切换分类时立即同步过滤，不走 120ms 防抖。
   filterCards(searchKeyword.value, activeCategory.value)
-  // 进入 BT 页后 select 已挂载，刷新 Tracker 多选的折叠数量
+  // 进入 BT 页后 el-select 通过 v-if 首次渲染，nextTick 后 DOM 已挂载但
+  // Element Plus 内部可能仍在异步初始化（如 popper 定位）。用双层 RAF
+  // 确保布局稳定后再计算折叠数量，同时 updateTrackerCollapse 内部还有
+  // RAF 重试机制兜底。
   if (props.category === 'bt') {
-    nextTick(() => { updateTrackerCollapse() })
+    nextTick(() => {
+      requestAnimationFrame(() => { updateTrackerCollapse() })
+    })
   }
 }, { immediate: true })
 
 // Tracker 源变化（勾选/取消/全选/重置/同步落库）后按宽度重算单行可见 tag 数
 watch(() => form.value.trackerSource, () => {
-  nextTick(() => { updateTrackerCollapse() })
+  nextTick(() => {
+    requestAnimationFrame(() => { updateTrackerCollapse() })
+  })
 }, { deep: true })
 
 watch(() => form.value.extensionExcludeDomains, () => {
@@ -4469,6 +4490,10 @@ watch(trackerSourceConfigVisible, (visible) => {
       // 计算 Tracker 多选在单行内最多能完整显示的 tag 数量：
       // 用 canvas 逐项测量 tag 文本宽度（口径与 computeScopeSelectCollapse 一致），
       // 累加后若还能放下剩余项则全部显示，否则只显示能放下的前 N 个，其余折叠成 "+N"。
+      // updateTrackerCollapse 可能在 v-if 首次渲染时被过早调用（el-select 内部 DOM 尚未完成）。
+      // _trackerCollapseRafId 用于在下一帧重试，确保布局稳定后才计算 tag 可见数。
+      let _trackerCollapseRafId = 0
+      let _trackerCollapseRetries = 0
       function updateTrackerCollapse() {
         const refVal = trackerSelectRef.value
         const el = refVal && (refVal.$el || refVal)
@@ -4478,7 +4503,25 @@ watch(trackerSourceConfigVisible, (visible) => {
           return
         }
         const selection = el.querySelector('.el-select__selection')
-        if (!selection) return
+        // el-select 通过 v-if 刚渲染时，内部 DOM（.el-select__selection / .el-tag）
+        // 可能尚未挂载或宽度为 0。用 requestAnimationFrame 延迟到下一帧重试，
+        // 最多重试 10 帧（约 160ms@60fps），覆盖 Element Plus 内部异步渲染周期。
+        if (!selection || !selection.clientWidth) {
+          if (_trackerCollapseRafId) cancelAnimationFrame(_trackerCollapseRafId)
+          _trackerCollapseRetries++
+          if (_trackerCollapseRetries > 10) {
+            _trackerCollapseRetries = 0
+            trackerMaxCollapse.value = Math.max(1, total - 1)
+            return
+          }
+          _trackerCollapseRafId = requestAnimationFrame(() => {
+            _trackerCollapseRafId = 0
+            updateTrackerCollapse()
+          })
+          return
+        }
+        // DOM 已就绪，重置重试计数
+        _trackerCollapseRetries = 0
         const avail = selection.clientWidth
         if (!avail) return
         const tagEl = el.querySelector('.el-tag')
@@ -4992,6 +5035,7 @@ watch(trackerSourceConfigVisible, (visible) => {
       }
 
 // --- Lifecycle ---
+let _trackerResizeObserver = null
 onMounted(() => {
       rebuildTrackerSourceOptions()
       window.addEventListener('resize', updateUiScopeSelectCollapse)
@@ -5013,6 +5057,23 @@ onMounted(() => {
         }
       }
       ipcRenderer.on('command', _extensionUpdateHandler)
+      // 初始即为 BT 分类时，el-select 通过 v-if 首次渲染，需等 DOM 就绪后计算折叠数
+      // updateTrackerCollapse 内部有 RAF 重试机制，安全调用
+      if (activeCategory.value === 'bt') {
+        nextTick(() => { updateTrackerCollapse() })
+      }
+      // 用 ResizeObserver 监听 el-select 容器尺寸变化（如窗口拖拽、侧边栏折叠），
+      // 比 window.resize 更精准地捕获 select 自身的宽度变化
+      nextTick(() => {
+        const refVal = trackerSelectRef.value
+        const el = refVal && (refVal.$el || refVal)
+        if (el && typeof ResizeObserver !== 'undefined') {
+          _trackerResizeObserver = new ResizeObserver(() => {
+            updateTrackerCollapse()
+          })
+          _trackerResizeObserver.observe(el)
+        }
+      })
 })
 
 onBeforeUnmount(() => {
@@ -5020,6 +5081,14 @@ onBeforeUnmount(() => {
       document.removeEventListener('mousedown', handleTrackerSourceOutsideClick)
       window.removeEventListener('resize', updateUiScopeSelectCollapse)
       window.removeEventListener('resize', updateTrackerCollapse)
+      if (_trackerResizeObserver) {
+        _trackerResizeObserver.disconnect()
+        _trackerResizeObserver = null
+      }
+      if (_trackerCollapseRafId) {
+        cancelAnimationFrame(_trackerCollapseRafId)
+        _trackerCollapseRafId = 0
+      }
       if (_filterTimer) {
         clearTimeout(_filterTimer)
       }
@@ -5644,38 +5713,6 @@ onBeforeUnmount(() => {
     box-shadow: 0 0 0 1px var(--el-border-color) inset;
   }
 
-  /* 下拉面板（teleport 到 body，需 :global，且无法继承 .speed-limit-row 上的变量，
-     故此处用字面值）中 KB/s、MB/s 选项保持与选择框等高，去掉文字上下的多余间距 */
-  :global(.speed-unit-popper.el-select__popper .el-select-dropdown__item) {
-    height: 28px;
-    line-height: 28px;
-    padding: 0 12px;
-  }
-
-  /* Tracker 多选下拉面板（teleport 到 body，须为整条 :global 平铺选择器，
-     否则内部子选择器会被拼接 [data-v] 而无法命中 body 下的面板）：
-     列表容器默认 padding: 6px 0，使内容与面板上/下边缘产生比左右更大的间隙，
-     清零使四周间隙一致 */
-  :global(.tracker-source-popper.el-select__popper .el-select-dropdown__list) {
-    padding: 0;
-  }
-
-  :global(.tracker-source-popper.el-select__popper .el-select-dropdown__item) {
-    height: 28px;
-    line-height: 28px;
-    padding: 0 12px;
-  }
-
-  :global(.tracker-source-popper.el-select__popper .el-select-group__title) {
-    line-height: 20px;
-    padding: 4px 12px;
-  }
-
-  /* 限速单位下拉面板同样清零列表容器的上下 padding */
-  :global(.speed-unit-popper.el-select__popper .el-select-dropdown__list) {
-    padding: 0;
-  }
-
   /* 一体式圆角：输入框去掉右侧圆角，选择框去掉左侧圆角 */
   .el-input-number.is-controls-right .el-input__wrapper {
     border-top-right-radius: 0;
@@ -5689,5 +5726,57 @@ onBeforeUnmount(() => {
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
   }
+}
+
+</style>
+
+<!-- 非 scoped 全局样式：el-select 下拉面板通过 teleport 挂载到 body，
+     scoped 样式（即使 :global）在某些编译器版本下可能无法正确穿透到 body 下的元素。
+     使用独立的非 scoped <style> 块确保这些样式真正全局生效。 -->
+<style lang="scss">
+/* === el-select 下拉面板全局样式 ===
+   下拉面板通过 teleport 挂载到 body，必须使用非 scoped <style>。
+   Element Plus 的 .el-select-dropdown 默认有 padding: 6px 0，
+   .el-select-dropdown__list 也有默认 padding，两者叠加导致
+   下拉框顶部和底部出现间距。以下清零这两层 padding 使内容完整显示。 */
+
+/* 下拉面板容器自身 padding 清零 */
+.tracker-source-popper.el-select__popper .el-select-dropdown,
+.speed-unit-popper.el-select__popper .el-select-dropdown {
+  padding: 0;
+}
+
+/* 列表容器 padding 清零 */
+.tracker-source-popper.el-select__popper .el-select-dropdown__list,
+.speed-unit-popper.el-select__popper .el-select-dropdown__list {
+  padding: 0;
+}
+
+/* Tracker 多选下拉面板：选项行高 28px，与限速单位选择框一致 */
+.tracker-source-popper.el-select__popper .el-select-dropdown__item {
+  height: 28px;
+  line-height: 28px;
+  padding: 0 12px;
+}
+
+/* Tracker 多选下拉面板：分组标题 */
+.tracker-source-popper.el-select__popper .el-select-group__title {
+  line-height: 20px;
+  padding: 4px 12px;
+}
+
+/* 限速单位下拉面板：选项行高 28px */
+.speed-unit-popper.el-select__popper .el-select-dropdown__item {
+  height: 28px;
+  line-height: 28px;
+  padding: 0 12px;
+}
+
+/* mo-hover-tip trigger 在 el-input append 内撑满，使骰子图标居中 */
+.el-input-group__append .lc-hover-tip__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
 }
 </style>

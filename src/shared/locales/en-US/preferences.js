@@ -234,6 +234,7 @@ export default {
   'rpc-listen-port': 'RPC Listen Port',
   'rpc-secret': 'RPC Secret',
   'rpc-secret-tips': 'View RPC Secret Manual',
+  'random-generate': 'Random Generate',
   'developer': 'Developer',
   'user-agent': 'User-Agent',
   'mock-user-agent': 'Mock User-Agent',

@@ -14,8 +14,8 @@
       :class="{ 'preference-panel': isPreferencePage }"
       direction="vertical"
     >
-      <!-- 偏好设置视图：内容区顶部分类导航（通用分段滑块按钮） + 设置表单 -->
-      <template v-if="isPreferencePage">
+      <!-- 偏好设置视图：内容区顶部分类导航 + 搜索设置 + 设置表单 -->
+      <div v-if="isPreferencePage" class="view-switch-content">
         <el-header
           class="panel-header preference-view-header"
           height="44"
@@ -27,13 +27,26 @@
               :options="preferenceNavOptions"
               @update:model-value="navPreference"
             />
+            <div class="preference-search-box" :class="{ 'is-focused': isPreferenceSearchFocused }">
+              <el-icon class="preference-search-icon"><Search /></el-icon>
+              <input
+                ref="preferenceSearchInput"
+                type="text"
+                class="preference-search-input"
+                :placeholder="t('preferences.search-settings')"
+                v-model="preferenceSearchKeyword"
+                @focus="isPreferenceSearchFocused = true"
+                @blur="onPreferenceSearchBlur"
+                @input="onPreferenceSearchInput"
+              />
+            </div>
           </div>
         </el-header>
         <component
           :is="preferenceFormComponent"
           :category="preferenceCategory"
         />
-      </template>
+      </div>
       <template v-else>
         <el-header
           class="panel-header task-panel-header"
@@ -83,6 +96,8 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick, getCurrentInstance, defineAsyncComponent } from 'vue'
+// 偏好设置表单同步导入：避免 defineAsyncComponent 在 dev 模式下导致
+// 组件 JS 与 scoped CSS 分离加载，首次渲染时样式未就绪（FOUC）。
 import { useRouter, useRoute } from 'vue-router'
 import { dialog, Menu, getCurrentWindow } from '@electron/remote'
 import { ipcRenderer } from 'electron'
@@ -138,10 +153,14 @@ const preferenceStore = usePreferenceStore()
 const { config: preferenceConfig } = storeToRefs(preferenceStore)
 
 // --- 偏好设置内嵌视图 ---
-// 设置表单按需异步加载（与旧路由懒加载策略一致，不增主包体积）
-const PreferenceBasic = defineAsyncComponent(() => import('@/components/Preference/Basic.vue'))
-const PreferenceAdvanced = defineAsyncComponent(() => import('@/components/Preference/Advanced.vue'))
-const PreferenceLab = defineAsyncComponent(() => import('@/components/Preference/Lab.vue'))
+// 同步导入偏好设置表单组件：defineAsyncComponent 在 Vite dev 模式下会将
+// .vue 文件的 JS 和 scoped CSS 拆分为两个模块异步加载，JS 先于 CSS 到达
+// 时组件首次渲染无样式（FOUC），需等 CSS 加载完毕后样式才自动应用。
+// 同步导入确保 JS + CSS 在同一模块图内一起加载，消除样式延迟。
+// mo-segmented-slider 仍保持异步（其样式为全局非 scoped，无此问题）。
+import PreferenceBasic from '@/components/Preference/Basic.vue'
+import PreferenceAdvanced from '@/components/Preference/Advanced.vue'
+import PreferenceLab from '@/components/Preference/Lab.vue'
 const moSegmentedSlider = defineAsyncComponent(() => import('@/components/SegmentedSlider/SegmentedSlider'))
 
 const isPreferencePage = computed(() => `${route.path || ''}`.startsWith('/preference'))
@@ -200,6 +219,17 @@ const hoverDate = ref(null)
 const isSubnavProximityHovered = ref(false)
 const isSearchFocused = ref(false)
 const taskSearchInput = ref(null)
+// --- 偏好设置搜索 ---
+// 搜索框写入 preferenceStore.searchKeyword，Basic/Advanced 组件内部已有
+// watch(searchKeyword) + watch(props.category) 自动调用 filterCards 过滤卡片。
+// TaskView 只需负责：1) 将关键词写入 store 2) 用索引找到匹配分类并跳转。
+const isPreferenceSearchFocused = ref(false)
+const preferenceSearchInput = ref(null)
+const preferenceSearchKeyword = computed({
+  get: () => preferenceStore.searchKeyword,
+  set: (val) => preferenceStore.updateSearchKeyword(val)
+})
+let preferenceSearchTimer = null
 const categorySelect = ref(null)
 const dateFilterBtn = ref(null)
 let _subnavMouseRaf = null
@@ -1028,6 +1058,138 @@ function onSearchBlur () {
   }
 }
 
+// --- 偏好设置搜索 ---
+function onPreferenceSearchBlur () {
+  if (!preferenceSearchKeyword.value) {
+    isPreferenceSearchFocused.value = false
+  }
+}
+
+// 预建搜索索引：每个分类对应一组可搜索的 i18n key（卡片标题 + 表单标签 + 开关文本）
+// 翻译后的文本用于匹配用户输入的关键词。
+const preferenceSearchIndex = computed(() => {
+  return {
+    basic: [
+      'preferences.run-mode', 'preferences.language', 'preferences.shortcuts',
+      'preferences.startup', 'preferences.browser-extensions',
+      'preferences.open-at-login', 'preferences.auto-resume-all',
+      'preferences.keep-window-state',
+      'preferences.extension-intercept-all-downloads',
+      'preferences.extension-shift-toggle-enabled',
+      'preferences.extension-silent-download'
+    ],
+    appearance: [
+      'preferences.theme', 'preferences.ui', 'preferences.background-image-select',
+      'preferences.background-image-opacity',
+      'preferences.background-image-frosted-strength',
+      'preferences.background-ui-opacity', 'preferences.background-ui-opacity-scope',
+      'preferences.background-ui-frosted-strength', 'preferences.background-ui-frosted-scope',
+      'preferences.task-detail-frosted-strength',
+      'preferences.hide-app-menu', 'preferences.auto-hide-window',
+      'preferences.mac-native-transparent', 'preferences.show-progress-bar',
+      'preferences.show-task-type-badge', 'preferences.task-detail-default-transparent',
+      'preferences.tray-speedometer'
+    ],
+    transfer: [
+      'preferences.default-dir', 'preferences.speed-limit',
+      'preferences.transfer-speed-download'
+    ],
+    bt: [
+      'preferences.bt-options', 'preferences.bt-seeding-settings',
+      'preferences.bt-tracker', 'preferences.bt-transport-protocol',
+      'preferences.bt-network-discovery', 'preferences.bt-port-settings',
+      'preferences.bt-connections',
+      'preferences.seed-ratio', 'preferences.seed-time', 'preferences.keep-seeding',
+      'preferences.enable-dht', 'preferences.enable-dht6', 'preferences.enable-lpd',
+      'preferences.enable-peer-exchange', 'preferences.enable-upnp',
+      'preferences.enable-nat-pmp', 'preferences.bt-connect-protocol',
+      'preferences.bt-save-metadata', 'preferences.bt-auto-download-content',
+      'preferences.auto-sync-tracker', 'preferences.bt-auto-ban-bad-data',
+      'preferences.bt-auto-ban-peer', 'preferences.bt-auto-ban-snubbing',
+      'preferences.bt-auto-ban-zero-progress'
+    ],
+    ed2k: [
+      'preferences.ed2k-options', 'preferences.ed2k-source-discovery',
+      'preferences.ed2k-server-subscription',
+      'preferences.ed2k-listen-port', 'preferences.ed2k-max-connections',
+      'preferences.ed2k-connection-timeout', 'preferences.ed2k-max-sources',
+      'preferences.ed2k-source-exchange-interval',
+      'preferences.ed2k-auto-sync-server', 'preferences.ed2k-kad',
+      'preferences.ed2k-server-source', 'preferences.ed2k-source-exchange',
+      'preferences.ed2k-auto-sync-server-interval'
+    ],
+    task: [
+      'preferences.task-behavior', 'preferences.clipboard-settings',
+      'preferences.max-concurrent-downloads', 'preferences.max-connection-per-server',
+      'preferences.continue', 'preferences.new-task-show-downloading',
+      'preferences.no-confirm-before-delete-task',
+      'preferences.auto-purge-record', 'preferences.show-task-completed-window',
+      'preferences.task-completed-notify', 'preferences.clipboard-auto-paste',
+      'preferences.clipboard-auto-open-add-task',
+      'preferences.auto-open-task-progress-window'
+    ],
+    file: [
+      'preferences.file-handling', 'preferences.security',
+      'preferences.auto-categorize-files', 'preferences.set-file-mtime-on-complete',
+      'preferences.enable-security-scan', 'preferences.security-scan-tool',
+      'preferences.custom-security-scan-path', 'preferences.downloading-file-suffix'
+    ],
+    advanced: [
+      'preferences.auto-update', 'preferences.proxy', 'preferences.github-mirror',
+      'preferences.rpc', 'preferences.download-protocol', 'preferences.engine',
+      'preferences.video-merge', 'preferences.user-agent', 'preferences.developer'
+    ]
+  }
+})
+
+// 搜索分类顺序与顶部导航一致
+const preferenceSearchOrder = ['basic', 'appearance', 'transfer', 'bt', 'ed2k', 'task', 'file', 'advanced']
+
+// 搜索防抖 + store 驱动：写入 preferenceStore.searchKeyword 后，
+// Basic/Advanced 组件的 watch(searchKeyword) 会自动过滤卡片。
+// TaskView 只需负责用索引找到匹配分类并路由跳转。
+function onPreferenceSearchInput () {
+  if (preferenceSearchTimer) {
+    clearTimeout(preferenceSearchTimer)
+  }
+  preferenceSearchTimer = setTimeout(() => {
+    searchPreferences()
+  }, 200)
+}
+
+function searchPreferences () {
+  const keyword = (preferenceSearchKeyword.value || '').trim().toLowerCase()
+
+  // 1. 将关键词写入 store —— Basic/Advanced 组件的 watch 会自动过滤当前分类的卡片
+  preferenceStore.updateSearchKeyword(keyword)
+
+  // 无关键词：不需要跳转分类，组件内部会自动恢复全部卡片
+  if (!keyword) return
+
+  // 2. 在搜索索引中找到第一个匹配的分类
+  const index = preferenceSearchIndex.value
+  let matchedCategory = null
+  for (const cat of preferenceSearchOrder) {
+    const keys = index[cat] || []
+    const matched = keys.some(key => {
+      const text = t(key).toLowerCase()
+      return text.includes(keyword)
+    })
+    if (matched) {
+      matchedCategory = cat
+      break
+    }
+  }
+
+  // 3. 找到匹配分类且不是当前分类 → 路由跳转
+  //    跳转后 Basic/Advanced 的 watch(() => props.category) 会自动调用
+  //    applyFilters(searchKeyword.value)，在新的分类内过滤卡片。
+  //    全部由 Vue 响应式系统驱动，不需要任何 DOM 操作。
+  if (matchedCategory && preferenceCategory.value !== matchedCategory) {
+    router.push({ path: `/preference/${matchedCategory}` }).catch(() => {})
+  }
+}
+
 function handleDocumentClick (event) {
   const el = instance.proxy.$el
   const searchBox = el && el.querySelector('.task-search-box')
@@ -1167,9 +1329,7 @@ height: 44px !important;
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
+  overflow: hidden;
 
   &::-webkit-scrollbar {
     display: none;
@@ -1562,5 +1722,67 @@ html.mac-native-transparent.theme-dark .form-preference .preference-card {
   width: -webkit-fill-available;
   box-sizing: border-box;
   padding: 24px 16px;
+}
+
+/* === 偏好设置搜索框：与任务搜索框样式一致 === */
+.preference-search-box {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--lc-task-item-border);
+  border-radius: 8px;
+  background-color: transparent;
+  box-sizing: border-box;
+  padding: 0 8px;
+  margin-left: 12px;
+  transition: border-color 0.2s ease;
+
+  &:focus-within,
+  &.is-focused {
+    border-color: var(--el-color-primary);
+  }
+
+  .preference-search-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--lc-task-action);
+    margin-right: 6px;
+  }
+
+  .preference-search-input {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 13px;
+    color: var(--lc-text-regular, #333);
+    height: 100%;
+    min-width: 0;
+
+    &::placeholder {
+      color: var(--lc-text-secondary, #999);
+      opacity: 0.6;
+    }
+  }
+}
+
+.theme-dark .preference-search-box {
+  .preference-search-icon {
+    color: var(--lc-text-secondary, #999);
+  }
+  .preference-search-input {
+    color: var(--lc-text-regular, #ddd);
+  }
+}
+
+/* === 页面切换动画：任务 ↔ 偏好设置 === */
+.view-switch-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 </style>

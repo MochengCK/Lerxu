@@ -100,14 +100,22 @@
         </i>
         <span>{{ t('subnav.preferences') }}</span>
         <!-- 内嵌偏好设置视图时显示返回图标：回到进入偏好设置前的任务选项 -->
-        <i
-          v-if="isPreferenceActive"
-          class="preference-back"
-          :title="t('subnav.task-list')"
-          @click.stop="backToLastTask"
-        >
-          <mo-icon name="chevron-left" width="14" height="14" />
-        </i>
+        <Transition name="preference-back">
+          <i
+            v-if="isPreferenceActive"
+            class="preference-back"
+            @click.stop="backToLastTask"
+          >
+            <mo-hover-tip
+              effect="dark"
+              :content="t('subnav.back')"
+              placement="right"
+              :open-delay="300"
+            >
+              <mo-icon name="chevron-left" width="14" height="14" />
+            </mo-hover-tip>
+          </i>
+        </Transition>
       </li>
     </ul>
     </div>
@@ -470,10 +478,34 @@ function backToLastTask () {
           color: var(--lc-text-primary, inherit);
         }
 
+        /* mo-hover-tip 的 trigger span 需撑满父容器以使图标垂直居中 */
+        .lc-hover-tip__trigger {
+          width: 100%;
+          height: 100%;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
         svg {
           width: 14px !important;
           height: 14px !important;
         }
+      }
+
+      /* 返回按钮出现/消失动画：从右侧滑入/滑出 + 淡入/淡出 */
+      .preference-back-enter-active {
+        transition: opacity 0.25s cubic-bezier(0.34, 1.2, 0.64, 1),
+                    transform 0.25s cubic-bezier(0.34, 1.2, 0.64, 1);
+      }
+      .preference-back-leave-active {
+        transition: opacity 0.18s cubic-bezier(0.4, 0, 1, 1),
+                    transform 0.18s cubic-bezier(0.4, 0, 1, 1);
+      }
+      .preference-back-enter-from,
+      .preference-back-leave-to {
+        opacity: 0;
+        transform: translateX(8px) scale(0.8);
       }
     }
   }

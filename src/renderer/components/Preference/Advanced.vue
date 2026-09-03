@@ -276,9 +276,16 @@
                   @change="onRpcListenPortChange"
                 >
                   <template #append>
-                    <i class="rpc-dice-btn" @click.prevent="onRpcPortDiceClick">
-                      <mo-icon name="dice" width="12" height="12" />
-                    </i>
+                    <mo-hover-tip
+                      effect="dark"
+                      :content="t('preferences.random-generate')"
+                      placement="bottom"
+                      :open-delay="300"
+                    >
+                      <i class="rpc-dice-btn" @click.prevent="onRpcPortDiceClick">
+                        <mo-icon name="dice" width="12" height="12" />
+                      </i>
+                    </mo-hover-tip>
                   </template>
                 </el-input>
               </el-col>
@@ -293,9 +300,16 @@
                   v-model="form.rpcSecret"
                 >
                   <template #append>
-                    <i class="rpc-dice-btn" @click.prevent="onRpcSecretDiceClick">
-                      <mo-icon name="dice" width="12" height="12" />
-                    </i>
+                    <mo-hover-tip
+                      effect="dark"
+                      :content="t('preferences.random-generate')"
+                      placement="bottom"
+                      :open-delay="300"
+                    >
+                      <i class="rpc-dice-btn" @click.prevent="onRpcSecretDiceClick">
+                        <mo-icon name="dice" width="12" height="12" />
+                      </i>
+                    </mo-hover-tip>
                   </template>
                 </el-input>
                 <div class="el-form-item__info" style="margin-top: 8px;">
@@ -2039,6 +2053,14 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
   svg {
     display: block;
   }
+}
+
+/* mo-hover-tip trigger 在 append 内撑满，使图标居中 */
+.el-input-group__append .lc-hover-tip__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
 }
 
 /* RPC 端口/密钥输入框 append 区域：分割线右移、内边距加大，
