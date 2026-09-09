@@ -8,11 +8,7 @@
     "email": "mocheng@example.com"
   },
   "copyright": "Copyright© 2024 MochengCK",
-  "original_author": {
-    "name": "Dr_rOot",
-    "email": "agalwood.net@gmail.com"
-  },
-  "license": "MIT",
+  "license": "Apache-2.0",
   "main": "./dist/electron/index.js",
   "repository": {
     "type": "git",

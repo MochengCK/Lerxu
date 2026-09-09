@@ -239,4 +239,4 @@ If you encounter any issues or have questions:
 
 ## License
 
-This project is open-sourced under the [MIT License](LICENSE).
+This project is open-sourced under the [Apache License 2.0](LICENSE).
