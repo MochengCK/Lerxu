@@ -18,7 +18,7 @@
     <img src="https://img.shields.io/github/downloads/MochengCK/Lerxu/total.svg?style=for-the-badge" alt="Total Downloads" />
   </a>
   <a href="#supported-platforms">
-    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg?style=for-the-badge" alt="Support Platforms" />
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-lightgrey.svg?style=for-the-badge" alt="Support Platforms" />
   </a>
   <a href="https://github.com/MochengCK/Lerxu/blob/master/LICENSE">
     <img src="https://img.shields.io/github/license/MochengCK/Lerxu.svg?style=for-the-badge" alt="License" />
@@ -27,7 +27,7 @@
 
 ## Introduction
 
-A modern download manager powered by the XferCore engine, optimized for Windows, macOS, and Linux. Supports HTTP, FTP, BitTorrent, Magnet links, and ED2K (eDonkey) links with professional-grade features including multi-method ED2K source discovery, automatic port mapping, automatic tracker server updates, task prioritization, batch management, and advanced download presets.
+A modern download manager powered by the in-house XferRust engine (native Rust implementation), optimized for Windows, macOS, Linux, and Android. Supports HTTP(S), FTP/SFTP, BitTorrent, and magnet links with professional-grade features including uTP transport, automatic port mapping, automatic tracker synchronization, task prioritization, batch management, and advanced download presets.
 
 ## Screenshots
 
@@ -54,60 +54,68 @@ A modern download manager powered by the XferCore engine, optimized for Windows,
 
 ## Engine & Connections
 
-- Lerxu ships with the XferCore download engine, which automatically picks the best "Max Connections per Server" setting for stable and compatible downloads.
-- Each task supports up to 128 concurrent segments (32 connections per server by default), backed by a built-in disk cache for smoother parallel downloads.
+- Lerxu ships with the XferRust download engine (native Rust implementation), which automatically picks the best "Max Connections per Server" strategy for stable and compatible downloads.
+- Each task supports up to 128 concurrent segments (32 connections per server by default), backed by a built-in 128M disk cache and connection reuse for smoother parallel downloads.
+- The engine restarts automatically after a crash, with task and session state restored; unfinished tasks stay paused after restart and can be resumed manually.
 - Note: Real concurrency for single-source downloads depends on the segment count; torrent and multi-mirror downloads can stack concurrency for faster overall speed.
 
 ## Core Features
 
 ### Performance & Reliability
 - **High-speed Downloads**: Optimized for maximum download performance, with a built-in disk cache and connection reuse for smoother multi-task downloads
-- **Multi-threaded Support**: Up to 128 threads per task
+- **Multi-threaded Support**: Up to 128 concurrent segments per task
 - **Concurrent Downloads**: Manage up to 10 download tasks simultaneously
-- **Stable Connections**: Robust error handling and automatic retry mechanism
+- **Stable Connections**: Robust error handling, automatic retry, and resume support
+- **Crash Self-healing**: The engine restarts automatically after an abnormal exit, restoring task state
 - **Memory Optimization**: Automatically releases memory when all windows are hidden or minimized
 
 ### Protocol Support
-- **HTTP/HTTPS**: Download directly from websites, with multi-connection acceleration
+- **HTTP/HTTPS**: Download directly from websites, with multi-connection acceleration, Gzip, Keep-Alive, and resume support
 - **FTP/SFTP**: Transfer files from FTP servers
-- **BitTorrent**: Full torrent file support with selective downloading; built-in tracker servers for out-of-the-box use
-- **Magnet Links**: Direct downloads without .torrent files
-- **ED2K (eDonkey)**: Native support for eDonkey links, discovering sources via eDonkey servers, source exchange, and the KAD network
-
-### ED2K Downloads
-- **Multi-method Source Discovery**: Find sources in parallel via eDonkey servers, source exchange (server-independent), and the KAD network (experimental)
-- **Server Subscription**: Subscribe to server list files, with manual sync or automatic sync on a configurable schedule; 9 popular eDonkey servers are built in
-- **Configurable Parameters**: Listen port (default 4662), max connections, connection timeout, and max sources per file
-- **ED2K Task Details**: View file info and a live source list in task details, including per-source status, queue position, and available pieces
+- **BitTorrent**: Full torrent file support with selective downloading; uTP/TCP dual transport, DHT, LPD, PeX, and encryption work out of the box
+- **Magnet Links**: Direct downloads without .torrent files; choose files freely once metadata is ready
+- **ED2K (eDonkey)**: ed2k:// link recognition and browser takeover are kept; native ED2K download capability is on hold
+- **Thunder**: thunder:// link protocol takeover
 
 ### BitTorrent / Magnet Links
-- **Transport Protocols**: Supports multiple transport protocols for more stable and faster downloads
-- **Network Discovery**: Automatically opens network ports to improve connection success
-- **Built-in Tracker Servers**: Pre-configured tracker servers so downloads work out of the box
-- **Multiple Built-in Nodes**: Multiple built-in network nodes for more reliable connections
-- **Auto Cleanup**: Automatically cleans up long-unresponsive connections to keep downloads efficient
+- **Transport Protocols**: uTP (BEP 29) and TCP dual stack, configurable as "uTP-first with TCP fallback / uTP-only / TCP-only", with runtime hot switching
+- **Port Mapping**: Automatic UPnP and NAT-PMP mapping for the BT listen port to improve connection success
+- **Network Discovery**: DHT (IPv4/IPv6 dual stack), Local Peer Discovery (LPD), and Peer Exchange (PeX)
+- **Built-in Trackers & Auto Sync**: Pre-configured tracker servers plus subscription-based scheduled updates, so downloads work out of the box
+- **BT Encryption**: Adaptive / forced encryption modes for compatibility with various network environments
+- **Peer Management & Anti-leech**: Live peer list in task details (client identification, piece progress), manual peer banning, and automatic banning of misbehaving peers
+- **File Selection**: Freely choose which files to download for magnet and torrent tasks once metadata is ready
+- **Seeding Control**: Set share-ratio and seeding-time goals; auto-pause or keep seeding on completion
 
 ### Video Download
 - **Online Video Download (Browser Extension)**: Recognize web videos via the browser extension and send them to the app with one click to create download tasks
-- **Download Takeover**: Clicks on download links on web pages (e.g., links with a download attribute or common file extensions) can be handed over to Lerxu, with support for excluding specific sites or file types and Alt+Click to bypass
-- **Video Recognition**: Supports multiple video formats and automatically distinguishes audio streams from video streams
+- **Download Takeover**: Clicks on download links on web pages (e.g., links with a download attribute or common file extensions) can be handed over to Lerxu, with support for excluding specific sites or file types and a shortcut to temporarily bypass
+- **Video Recognition**: Supports multiple video formats (including DASH) and automatically distinguishes audio streams from video streams
 - **Unified Task Management**: Video resources appear as regular download tasks in the task list, supporting the same pause/resume/delete management experience as other tasks
 - **Merge Progress Display**: Audio/video that needs merging enters a "merging" state with visible progress after download, and correctly merges when multiple segmented videos are sent at once
 
 ### User Experience
-- **Clean Interface**: Modern, intuitive design with dark mode support
+- **Clean Interface**: Modern, intuitive design with dark / light / system-following themes
+- **Custom Background**: Background images and solid colors, UI opacity, frosted-glass blur (native macOS Vibrancy transparency)
+- **Native Experience**: Custom title bar on Windows / Linux; preferences embedded in the main window for faster startup
+- **Live Speed Display**: The macOS tray icon and Dock icon show both download and upload speeds, with a brand-new tray icon
+- **Task Details Drawer**: Overview, activity, connections, peers, trackers, files, and BT piece map in one place
+- **Clipboard Auto-paste**: Copied download links are automatically filled into the new-task dialog
 - **System Tray Integration**: Quick access and status monitoring
-- **Download Notifications**: Real-time alerts when downloads complete
+- **Download Notifications**: Real-time alerts when downloads complete, with configurable click actions
 - **Speed Control**: Set upload and download speed limits
-- **File Management**: Organize downloaded files by category and location
+- **File Management**: Organize downloaded files by category and location, with favorite and recent directories
+- **Multilingual**: Simplified Chinese, Traditional Chinese, and English
 
 ### Advanced Features
-- **Tracker Server Updates**: Daily automatic tracker server list updates for improved torrent performance
-- **Automatic Port Mapping**: Automatically opens network ports for better connectivity
-- **Custom Download Identity**: Customize the download request identity for enhanced compatibility
-- **Task Scheduling**: Set download times and priorities
+- **Tracker Auto Sync**: Automatic scheduled tracker list updates for improved torrent performance
+- **Automatic Port Mapping**: UPnP and NAT-PMP automatically open network ports
+- **Custom Download Identity**: Customize the download request identity (User-Agent) for enhanced compatibility
+- **Task Scheduling**: Schedule download task start/pause actions
 - **Batch Downloads**: Import and export download lists
-- **Update Channels**: Choose between stable, preview (beta), or latest release channels, with automatic installation after the update package downloads
+- **Download Security Scan**: Scan completed files with the system antivirus tool or a custom scanner
+- **Proxy Support**: System proxy or custom proxy, applied per download scope
+- **Update Channels**: Choose between stable, preview, or all release channels, with automatic installation after the update package downloads
 
 ### Unique Features
 - **File Categorization**: Auto-sort files by type
@@ -115,7 +123,6 @@ A modern download manager powered by the XferCore engine, optimized for Windows,
 - **Task Priority**: Set task priority values to influence download order and resource allocation
 - **Custom Download File Extension**: Customize the file extension for in-progress downloads
 - **Set File Modification Date to Completion Time**: Optionally set downloaded file modification dates to match completion time
-- **eDonkey Server Auto-update**: Periodically updates the eDonkey server list for smoother source discovery
 - **Advanced Option Presets**: Name, save, apply, and delete presets for advanced options
 - **Link Input Optimization**: Auto-deduplicate links; auto-newline and cursor positioning after paste or autofill
 - **Custom Shortcuts**: Set or reset shortcuts for common commands in the "Preferences > Basic > Shortcuts" card
@@ -123,9 +130,10 @@ A modern download manager powered by the XferCore engine, optimized for Windows,
 ## Supported Platforms
 
 Lerxu currently supports the following platforms:
-- **Windows** (10, 11)
-- **macOS** (Intel, x64; Apple Silicon, arm64)
+- **Windows** (10, 11) x64
+- **macOS** (Intel x64; Apple Silicon arm64)
 - **Linux** (x64, arm64)
+- **Android** (arm64): shares the same XferRust engine as the desktop app, built with Kotlin + Compose
 
 ## Installation
 
@@ -157,12 +165,18 @@ Lerxu currently supports the following platforms:
 
 - Other distributions: Use the AppImage method.
 
+### Android
+
+1. Clone this repository and enter the `Android/` directory
+2. Open and build with Android Studio, or run: `./gradlew :app:assembleDebug`
+3. Install the generated APK on an arm64 device
+
 ## Development Guide
 
 ### Prerequisites
 
-- Node.js (v16.0.0 or higher)
-- npm or yarn
+- Node.js (v22.12.0 or higher)
+- npm
 - Git
 
 ### Setup
@@ -194,10 +208,14 @@ Lerxu currently supports the following platforms:
 Lerxu/
 ├── src/                  # Main source code
 │   ├── main/             # Electron main process
-│   ├── renderer/         # Electron renderer process (Vue.js)
-│   └── shared/           # Shared utilities
+│   ├── renderer/         # Electron renderer process (Vue 3)
+│   └── shared/           # Shared utilities and the XferRust protocol adapter
+├── extra/                # Built-in XferRust engine binaries per platform
+├── extensions/           # Browser extension (video sniffing & download takeover)
+├── Android/              # Android client (Kotlin + Compose)
+├── XferRust/             # XferRust download engine source (Rust)
 ├── static/               # Static assets
-├── .electron-vue/        # Electron-Vue configuration
+├── build/                # Packaging hooks and platform icons
 ├── screenshots/          # Documentation screenshots
 ├── package.json          # Project configuration
 └── README.md             # Project documentation
@@ -226,9 +244,9 @@ Contributions are welcome! Whether you're fixing bugs, adding new features, or i
 ## Acknowledgments
 
 - This project is based on the agalwood open-source project [Motrix](https://github.com/agalwood/Motrix), with extensive modifications and feature extensions
-- UI Framework: [Vue.js](https://vuejs.org/)
+- UI Framework: [Vue.js](https://vuejs.org/) + [Element Plus](https://element-plus.org/)
 - Desktop Framework: [Electron](https://www.electronjs.org/)
-- Download Engine: [XferCore](https://github.com/MochengCK/XferCore) (deeply customized from [aria2](https://github.com/aria2/aria2))
+- Download Engine: [XferRust](https://github.com/MochengCK/XferRust) (in-house Rust download engine)
 
 ## Support
 
