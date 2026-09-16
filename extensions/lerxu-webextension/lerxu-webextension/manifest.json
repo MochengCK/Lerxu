@@ -33,6 +33,7 @@
         "<all_urls>"
       ],
       "js": [
+        "firefox-compat.js",
         "video-sniffer.js",
         "key-listener.js",
         "download-interceptor.js"

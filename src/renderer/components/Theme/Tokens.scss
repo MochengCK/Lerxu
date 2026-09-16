@@ -109,7 +109,8 @@
   --lc-aside-text: #ffffff;
   --lc-subnav-title: var(--lc-text-primary);
   --lc-subnav-text: var(--lc-text-secondary);
-  --lc-subnav-active-text: var(--lc-color-primary);
+  /* 侧边栏选中项文字：保持正常文字色（不再用主题蓝） */
+  --lc-subnav-active-text: var(--lc-text-primary);
   --lc-subnav-active-bg: rgba(0, 0, 0, 0.12);
   --lc-subnav-border: var(--lc-border-base);
   --lc-subnav-hover-bg: rgba(0, 0, 0, 0.06);
@@ -137,6 +138,10 @@
   /* Preference
   -------------------------- */
   --lc-preference-text: var(--lc-text-regular);
+  /* 偏好设置弹窗：整窗统一底色 + 卡片微色调分层（无描边、无横线分隔） */
+  --lc-preference-surface: #ffffff;
+  --lc-preference-card: #f2f5f9;
+  --lc-preference-inset: #e8eef5;
 
   /* Graphic
   -------------------------- */
@@ -147,6 +152,8 @@
   --lc-graphic-atom-2: #40c463;
   --lc-graphic-atom-3: #30a14e;
   --lc-graphic-atom-4: #39d353;
+  /* 未选择（未勾选的文件所在分片，不参与下载） */
+  --lc-graphic-atom-5: #b9c4d2;
 
   /* Form
   -------------------------- */
@@ -308,7 +315,7 @@
   --lc-aside-text: #ffffff;
   --lc-subnav-title: #e8eaed;
   --lc-subnav-text: #8b95a3;
-  --lc-subnav-active-text: #4a9eff;
+  --lc-subnav-active-text: var(--lc-text-primary);
   --lc-subnav-active-bg: rgba(255, 255, 255, 0.15);
   --lc-subnav-border: #3d424d;
   --lc-subnav-hover-bg: rgba(255, 255, 255, 0.14);
@@ -336,6 +343,10 @@
   /* Preference
   -------------------------- */
   --lc-preference-text: #c4cad3;
+  /* 偏好设置弹窗：整窗统一底色 + 卡片微色调分层（无描边、无横线分隔） */
+  --lc-preference-surface: #23272e;
+  --lc-preference-card: #2b3038;
+  --lc-preference-inset: #1e2228;
 
   /* Graphic
   -------------------------- */
@@ -346,6 +357,8 @@
   --lc-graphic-atom-2: #006d32;
   --lc-graphic-atom-3: #26a641;
   --lc-graphic-atom-4: #39d353;
+  /* 未选择（未勾选的文件所在分片，不参与下载） */
+  --lc-graphic-atom-5: #4a5766;
 
   /* Form
   -------------------------- */

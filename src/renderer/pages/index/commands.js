@@ -152,19 +152,17 @@ const navigateTaskList = (payload = {}) => {
   })
 }
 
-// 偏好设置内嵌在主窗口中：直接路由跳转到 /preference 页面，
-// 不再通过 IPC 打开独立偏好设置窗口
+// 偏好设置已改为内嵌弹窗：通过 app store 控制弹窗显示，
+// 不再通过路由跳转到 /preference 页面
 const navigatePreferences = () => {
-  router.push({ path: '/preference' }).catch(err => {
-    console.log(err)
-  })
+  const appStore = useAppStore()
+  appStore.showPreferenceDialog()
 }
 
 const openPreferenceCategory = (payload = {}) => {
   const { category = 'advanced' } = payload || {}
-  router.push({ path: `/preference/${category}` }).catch(err => {
-    console.log(err)
-  })
+  const appStore = useAppStore()
+  appStore.showPreferenceDialog(category)
 }
 
 const showUnderDevelopmentMessage = () => {

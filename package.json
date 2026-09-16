@@ -1,6 +1,6 @@
 {
   "name": "lerxu",
-  "version": "v3.1.0",
+  "version": "v3.2.0-Beta1",
   "description": "Lerxu",
   "homepage": "https://github.com/MochengCK/Lerxu",
   "author": {
@@ -22,6 +22,9 @@
     "build:github": "vite build",
     "build:dir": "vite build && electron-builder --dir",
     "preview": "vite preview",
+    "build:extension": "node scripts/build-extension.js",
+    "test:extension": "node test/extension/run.js",
+    "lint:extension": "npx --yes web-ext@8 lint --source-dir $(ls dist/extension/artifacts/lerxu-webextension-firefox-*.zip | head -1)",
     "lint": "eslint --ext .js,.vue -f ./node_modules/eslint-friendly-formatter src",
     "lint:fix": "eslint --ext .js,.vue -f ./node_modules/eslint-friendly-formatter --fix src",
     "postinstall": "electron-builder install-app-deps"

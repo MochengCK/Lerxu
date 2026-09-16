@@ -412,7 +412,7 @@ const dir = dirname(filePath)
             const message = reason
               ? t('task.download-error-with-reason', { taskName, reason })
               : t('task.download-error-message', { taskName })
-            const link = `<a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Error#${errorCode}" rel="noopener noreferrer">${errorCode}</a>`
+            const link = `${errorCode}`
 
             const msg = `${errorMessage || ''}`
             const segmentPath = extractSegmentFilePath(msg)
@@ -2532,6 +2532,20 @@ writeFileSync(skipFlagPath, '1')
             return
           }
 
+          // 检查是否为元数据任务 - 这些任务不应该保存到历史记录
+          const taskName = task && task.name ? `${task.name}` : ''
+          const isMetadataTask = taskName.startsWith('[METADATA]')
+
+          // 引擎直供平均速度优先（与进度窗口/任务详情同源），
+          // 无该字段的旧引擎再回退本地采样均值
+          if (task && task.averageSpeed != null) {
+            const v = Number(task.averageSpeed)
+            if (Number.isFinite(v) && v >= 0 && !isMetadataTask) {
+              taskHistory.updateTask(gid, { averageDownloadSpeed: v, averageSpeedSampleCount: 0 }, task)
+            }
+            return
+          }
+
           const map = taskStore.taskSpeedSamples || {}
           const samples = Array.isArray(map[gid]) ? map[gid] : []
           if (samples.length === 0) {
@@ -2561,9 +2575,6 @@ writeFileSync(skipFlagPath, '1')
             .map(it => (it.durationMs > 0 ? (it.bytes * 1000) / it.durationMs : 0))
             .filter(v => Number.isFinite(v) && v > 0).length
 
-          // 检查是否为元数据任务 - 这些任务不应该保存到历史记录
-          const taskName = task && task.name ? `${task.name}` : ''
-          const isMetadataTask = taskName.startsWith('[METADATA]')
           if (!isMetadataTask) {
             taskHistory.updateTask(gid, { averageDownloadSpeed: avg, averageSpeedSampleCount: count }, task)
           }
@@ -3348,7 +3359,16 @@ unlinkSync(finalPath)
             // 读取上一状态用于趋势判断
             const prev = (taskStore.magnetStatuses || {})[gid] || {}
             const prevPeers = Number(prev.peerCount || 0)
-            const peerCount = Number((task.peers || []).length || prevPeers)
+            // peers 形态两种：分组对象 {connected,attempting,banned,disconnected}
+            // （详情抽屉轮询写入）或扁平数组（旧兜底）——统一计数
+            const peersList = task.peers
+            const rawPeerCount = Array.isArray(peersList)
+              ? peersList.length
+              : (peersList && typeof peersList === 'object'
+                ? ['connected', 'attempting', 'banned', 'disconnected']
+                  .reduce((n, k) => n + (Array.isArray(peersList[k]) ? peersList[k].length : 0), 0)
+                : 0)
+            const peerCount = rawPeerCount > 0 ? rawPeerCount : prevPeers
             let peerTrend = 'flat'
             if (peerCount > prevPeers) peerTrend = 'up'
             else if (peerCount < prevPeers) peerTrend = 'down'
@@ -3506,14 +3526,19 @@ unlinkSync(finalPath)
           // 选择结果已随会话保存，重启后应沿用而不是重新询问
           if (isTaskFileSelectionConfirmed(confirmed, task)) return
           taskStore.setPendingFileSelection(taskGid, getTaskInfoHash(task))
-          if (_pendingSelectionNotified.has(taskGid)) {
-            return
-          }
-          _pendingSelectionNotified.add(taskGid)
           notifyPendingFileSelection(task)
         })
       }
       function notifyPendingFileSelection(task) {
+        const gid = task && task.gid ? `${task.gid}` : ''
+        // 两条路径都会走到这里（handleMagnetResolved / scanForPendingBtTasks），
+        // 去重必须收在函数内：磁力进入待选择状态的同一次轮询里两处都可能触发，
+        // 只靠 scan 侧的 _pendingSelectionNotified 会连弹两个就绪通知
+        if (!gid || _pendingSelectionNotified.has(gid)) {
+          return
+        }
+        _pendingSelectionNotified.add(gid)
+
         const message = t('task.pending-file-selection-message', {
           taskName: getTaskName(task)
         })

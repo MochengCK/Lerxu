@@ -1,3 +1,20 @@
+// === 浏览器兼容层加载（必须是后台脚本的第一步）===
+// Chromium：MV3 后台是单文件 Service Worker（manifest 的 service_worker 只
+//   接受一个路径），故在此用 importScripts 引入兼容层；
+// Firefox：manifest.firefox.json 用 background.scripts 数组按序加载
+//   （firefox-compat.js 已在数组首位），event page 中没有 importScripts，
+//   因此这里做存在性判断。
+// 兼容层职责：统一 chrome.* 命名空间（仅有 browser.* 的环境下用 Proxy 兜底
+// 包装为回调风格）、暴露 globalThis.LERXU_ENV（Firefox 标识 + Chromium 专有
+// 能力探测，如 downloads.setUiOptions / onDeterminingFilename）。
+if (typeof importScripts === 'function') {
+  try {
+    importScripts('firefox-compat.js')
+  } catch (e) {
+    console.warn('[Background] firefox-compat.js 加载失败:', e)
+  }
+}
+
 const defaults = {
   host: '127.0.0.1',
   port: 16800,
@@ -1994,30 +2011,35 @@ chrome.downloads.onCreated.addListener((item) => {
 // 接管分支的下载已被 cancel,suggest 会报 Download must be in progress,
 // try/catch 捕获不了 API 层的 runtime.lastError,必须显式读取以清除标记
 // (否则控制台打印 Unchecked runtime.lastError 噪音)
-try {
-  chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
-    const finishSuggest = () => {
-      try {
-        suggest()
-      } catch (e) {}
-      // 读取 lastError 清除错误标记,结果无害
-      void chrome.runtime.lastError
-    }
-    decideTakeover(item).then((decision) => {
-      applyUiForDecision(item, decision)
-      if (decision === 'intercept') {
-        executeTakeover(item)
+// onDeterminingFilename 是 Chromium 专有 API（Firefox 不提供），
+// 缺失时接管流程完全由 downloads.onCreated 路径承担（见下方 onCreated 注册），
+// 功能等价：只是接管发生在下载项创建之后，浏览器下载列表可能短暂出现条目。
+if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
+  try {
+    chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+      const finishSuggest = () => {
+        try {
+          suggest()
+        } catch (e) {}
+        // 读取 lastError 清除错误标记,结果无害
+        void chrome.runtime.lastError
       }
-      // 接管分支的下载已被 cancel,suggest 无效但无害;
-      // 不放行时缺省调用会导致浏览器等待文件名,下载挂起
-      finishSuggest()
-    }).catch(() => {
-      finishSuggest()
+      decideTakeover(item).then((decision) => {
+        applyUiForDecision(item, decision)
+        if (decision === 'intercept') {
+          executeTakeover(item)
+        }
+        // 接管分支的下载已被 cancel,suggest 无效但无害;
+        // 不放行时缺省调用会导致浏览器等待文件名,下载挂起
+        finishSuggest()
+      }).catch(() => {
+        finishSuggest()
+      })
+      return true
     })
-    return true
-  })
-} catch (e) {
-  console.log('[Background] onDeterminingFilename setup failed:', e)
+  } catch (e) {
+    console.log('[Background] onDeterminingFilename setup failed:', e)
+  }
 }
 
 // 放行的浏览器下载到达终态后,若没有其他进行中的放行下载,恢复气泡基线(隐藏)

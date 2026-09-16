@@ -24,8 +24,40 @@ src/renderer/dist-electron/*
 # Release output
 release/*
 
+# Extension build output (scripts/build-extension.js)
+dist/extension/
+
 # FluxCore engine source (binaries live in extra/)
 FluxCore/
+
+# XferRust engine repo (nested git repo, build artifacts stay out of this repo;
+# release binaries are deployed to extra/ and tracked there)
+# 必须锚定到仓库根目录：未锚定的 "XferRust/" 在 macOS（大小写不敏感）上会
+# 同时匹配 src/shared/xferrust/，导致引擎适配层（XferRust.js 等）被静默
+# 排除在版本控制之外，改动无法被 review / 回滚。
+/XferRust/
+
+# Android client：源码必须入库（CI 需构建 APK），仅忽略构建产物。
+# 具体构建产物规则见 Android/.gitignore（.gradle / .kotlin / build / local.properties 等）
+Android/.gradle/
+Android/.kotlin/
+Android/build/
+Android/app/build/
+Android/local.properties
+Android/.idea/
+Android/.DS_Store
+Android/**/.DS_Store
+Android/.cxx/
+Android/captures/
+
+# LinkCore website build output
+linkcore-site/
+
+# WorkBuddy project data (memory / skills / caches)
+.workbuddy/
+
+# CI release artifact extraction staging (xferrust-<platform>/)
+/xferrust-*/
 
 # Electron singleton runtime files
 SingletonCookie

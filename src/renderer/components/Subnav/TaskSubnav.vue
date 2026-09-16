@@ -7,7 +7,7 @@
       <ul class="task-nav-list">
         <li
           @click="() => nav('all')"
-          :class="[ !isPreferenceActive && current === 'all' ? 'active' : '' ]"
+          :class="[ current === 'all' ? 'active' : '' ]"
         >
           <i class="subnav-icon">
             <mo-icon name="subnav-all" width="20" height="20" />
@@ -17,7 +17,7 @@
         </li>
         <li
           @click="() => nav('active')"
-          :class="[ !isPreferenceActive && current === 'active' ? 'active' : '' ]"
+          :class="[ current === 'active' ? 'active' : '' ]"
         >
           <i class="subnav-icon">
             <mo-icon name="subnav-active" width="20" height="20" />
@@ -27,7 +27,7 @@
         </li>
         <li
           @click="() => nav('waiting')"
-          :class="[ !isPreferenceActive && current === 'waiting' ? 'active' : '' ]"
+          :class="[ current === 'waiting' ? 'active' : '' ]"
         >
           <i class="subnav-icon">
             <mo-icon name="subnav-waiting" width="20" height="20" />
@@ -37,7 +37,7 @@
         </li>
         <li
           @click="() => nav('stopped')"
-          :class="[ !isPreferenceActive && current === 'stopped' ? 'active' : '' ]"
+          :class="[ current === 'stopped' ? 'active' : '' ]"
         >
           <i class="subnav-icon">
             <mo-icon name="subnav-stopped" width="20" height="20" />
@@ -62,7 +62,7 @@
           v-for="cat in categories"
           :key="cat.value || 'all'"
           @click="() => selectCategory(cat.value)"
-          :class="[ !isPreferenceActive && categoryFilter === cat.value ? 'active' : '' ]"
+          :class="[ categoryFilter === cat.value ? 'active' : '' ]"
         >
           <i class="subnav-icon">
             <mo-icon :name="cat.icon" width="20" height="20" />
@@ -92,30 +92,12 @@
     <ul class="preference-nav-list">
       <li
         class="preference-item"
-        :class="{ 'is-preference-active': isPreferenceActive }"
         @click="openPreference"
       >
         <i class="subnav-icon">
           <mo-icon name="menu-preference" width="20" height="20" />
         </i>
         <span>{{ t('subnav.preferences') }}</span>
-        <!-- 内嵌偏好设置视图时显示返回图标：回到进入偏好设置前的任务选项 -->
-        <Transition name="preference-back">
-          <i
-            v-if="isPreferenceActive"
-            class="preference-back"
-            @click.stop="backToLastTask"
-          >
-            <mo-hover-tip
-              effect="dark"
-              :content="t('subnav.back')"
-              placement="right"
-              :open-delay="300"
-            >
-              <mo-icon name="chevron-left" width="14" height="14" />
-            </mo-hover-tip>
-          </i>
-        </Transition>
       </li>
     </ul>
     </div>
@@ -123,8 +105,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 import { bytesToSize } from '@shared/utils'
 import { useAppStore, useTaskStore } from '@/store'
@@ -136,7 +118,6 @@ import '@/components/Icons/subnav-waiting'
 import '@/components/Icons/subnav-stopped'
 import '@/components/Icons/subnav-type-all'
 import '@/components/Icons/menu-preference'
-import '@/components/Icons/chevron-left'
 import '@/components/Icons/subnav-archives'
 import '@/components/Icons/subnav-programs'
 import '@/components/Icons/subnav-videos'
@@ -154,12 +135,11 @@ const props = defineProps({
 defineOptions({ name: 'mo-task-subnav' })
 
 const router = useRouter()
-const route = useRoute()
 const { t } = i18n.global
 
 const appStore = useAppStore()
 const taskStore = useTaskStore()
-const { stat } = storeToRefs(appStore)
+const { stat, preferenceVisible } = storeToRefs(appStore)
 const { categoryFilter } = storeToRefs(taskStore)
 
 // 类型区的折叠状态持久化（localStorage），重启应用后保持上次状态
@@ -204,33 +184,12 @@ function selectCategory (value) {
 }
 
 function openPreference () {
-  // 已在偏好设置视图时再次点击：直接返回之前的任务选项（与右侧返回图标等效）
-  if (isPreferenceActive.value) {
-    backToLastTask()
+  // 偏好设置已改为内嵌弹窗：点击打开弹窗，已打开时关闭
+  if (preferenceVisible.value) {
+    appStore.hidePreferenceDialog()
     return
   }
-  router.push({ path: '/preference' }).catch(err => {
-    console.log(err)
-  })
-}
-
-// 是否处于内嵌偏好设置视图
-const isPreferenceActive = computed(() => `${route.path || ''}`.startsWith('/preference'))
-
-// 记住最近一次停留的任务列表路由，用于返回图标
-const lastTaskPath = ref(
-  `${route.path || ''}`.startsWith('/task') ? route.path : '/task/all'
-)
-watch(() => route.path, (path) => {
-  if (path && path.startsWith('/task')) {
-    lastTaskPath.value = path
-  }
-})
-
-function backToLastTask () {
-  router.push({ path: lastTaskPath.value }).catch(err => {
-    console.log(err)
-  })
+  appStore.showPreferenceDialog()
 }
 </script>
 
@@ -449,63 +408,11 @@ function backToLastTask () {
         }
       }
 
-      /* 内嵌偏好设置视图：偏好设置项呈激活态，右侧出现返回图标 */
-      &.is-preference-active {
-        background-color: var(--lc-subnav-active-item-bg, rgba(0, 0, 0, 0.12));
-
-        .subnav-icon svg,
-        span {
-          color: var(--lc-subnav-active-text, inherit);
-        }
-      }
-
-      .preference-back {
-        margin-left: auto;
-        margin-right: -2px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 20px;
-        height: 20px;
-        border-radius: 6px;
-        flex-shrink: 0;
-        cursor: pointer;
-        color: var(--lc-text-secondary, inherit);
-        transition: background-color 0.2s ease, color 0.2s ease;
-
-        &:hover {
-          background-color: var(--lc-subnav-hover-bg, rgba(0, 0, 0, 0.1));
-          color: var(--lc-text-primary, inherit);
-        }
-
-        /* mo-hover-tip 的 trigger span 需撑满父容器以使图标垂直居中 */
-        .lc-hover-tip__trigger {
-          width: 100%;
-          height: 100%;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        svg {
-          width: 14px !important;
-          height: 14px !important;
-        }
-      }
-
-      /* 返回按钮出现/消失动画：从右侧滑入/滑出 + 淡入/淡出 */
-      .preference-back-enter-active {
-        transition: opacity 0.25s cubic-bezier(0.34, 1.2, 0.64, 1),
-                    transform 0.25s cubic-bezier(0.34, 1.2, 0.64, 1);
-      }
-      .preference-back-leave-active {
-        transition: opacity 0.18s cubic-bezier(0.4, 0, 1, 1),
-                    transform 0.18s cubic-bezier(0.4, 0, 1, 1);
-      }
-      .preference-back-enter-from,
-      .preference-back-leave-to {
-        opacity: 0;
-        transform: translateX(8px) scale(0.8);
+      span:not(.subnav-count) {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
     }
   }

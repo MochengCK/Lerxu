@@ -57,7 +57,7 @@ export default class ConfigManager {
    *
    */
   initSystemConfig () {
-    const defaultEngineBinary = engineBinMap[process.platform] || 'xfercore'
+    const defaultEngineBinary = engineBinMap[process.platform] || 'xferrust'
     const enginePolicy = getEngineConnectionPolicy(defaultEngineBinary)
     const defaultConn = Number(enginePolicy && enginePolicy.defaultMax) || getMaxConnectionPerServer()
     this.systemConfig = new Store({
@@ -77,6 +77,7 @@ export default class ConfigManager {
         'bt-min-crypto-level': 'arc4',
         'bt-require-crypto': false,
         'bt-save-metadata': true,
+        'bt-load-saved-metadata': true,
         'bt-tracker': EMPTY_STRING,
         'bt-tracker-connect-timeout': 10,
         'bt-tracker-timeout': 10,
@@ -106,6 +107,7 @@ export default class ConfigManager {
         'dht-file-path6': getDhtPath(IP_VERSION.V6),
         'dht-listen-port': 26701,
         'dir': getUserDownloadsPath(),
+        'enable-dht': true,
         'enable-dht6': true,
         'follow-metalink': true,
         'follow-torrent': true,
@@ -133,7 +135,7 @@ export default class ConfigManager {
   }
 
   initUserConfig () {
-    const defaultEngineBinary = engineBinMap[process.platform] || 'xfercore'
+    const defaultEngineBinary = engineBinMap[process.platform] || 'xferrust'
     const enginePolicy = getEngineConnectionPolicy(defaultEngineBinary)
     this.userConfig = new Store({
       name: 'user',
@@ -174,7 +176,10 @@ export default class ConfigManager {
         'favorite-directories': [],
         'hide-app-menu': false,
         'history-directories': [],
-        'keep-seeding': false,
+        // BT 下载完成后进入做种（映射引擎全局选项 bt-seed-mode/bt-seed-ratio，
+        // 见 Engine.getStartArgs 与 Application.savePreference）。
+        // 默认开启：BT 客户端下载完成后应当做种，而不是直接转完成。
+        'keep-seeding': true,
         'stop-seeding-action': 'pause',
         'keep-window-state': false,
         'last-check-update-time': 0,
@@ -426,7 +431,7 @@ export default class ConfigManager {
 
   fixUserConfig () {
     // Fix the value of open-at-login when the user delete
-    // the Motrix self-starting item through startup management.
+    // the app self-starting item through startup management.
     const openAtLogin = app.getLoginItemSettings(LOGIN_SETTING_OPTIONS).openAtLogin
     if (this.getUserConfig('open-at-login') !== openAtLogin) {
       this.setUserConfig('open-at-login', openAtLogin)

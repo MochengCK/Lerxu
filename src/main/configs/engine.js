@@ -1,7 +1,7 @@
 export const engineBinMap = {
-  darwin: 'xfercore',
-  win32: 'xfercore.exe',
-  linux: 'xfercore'
+  darwin: 'xferrust',
+  win32: 'xferrust.exe',
+  linux: 'xferrust'
 }
 
 export const engineArchMap = {

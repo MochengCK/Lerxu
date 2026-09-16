@@ -1,5 +1,8 @@
 # Lerxu 浏览器扩展安装指南
 
+支持浏览器：Chrome、Edge、Opera 等 Chromium 内核浏览器，以及 Firefox。
+（Firefox 安装步骤见文末「Firefox 安装」一节）
+
 ## 安装步骤
 
 1. **打开Chrome浏览器**
@@ -46,5 +49,49 @@ A: 当有新版本时，请重新下载并安装最新版本的扩展文件夹
 
 ### Q: 如何卸载扩展？
 A: 在`chrome://extensions/`页面找到Lerxu扩展，点击"移除"按钮
+
+## Firefox 安装
+
+扩展在两个平台使用同一份代码，Firefox 包只在清单上有差异（后台用
+`background.scripts` 而非 `service_worker`，且不含 Chromium 专有的
+`downloads.ui` 权限）。
+
+### 临时安装（用于测试）
+
+1. 打开 Firefox，地址栏输入 `about:debugging#/runtime/this-firefox`
+2. 点击「临时载入附加组件…」
+3. 选择 `dist/extension/firefox/` 目录下的 `manifest.json`
+   （或 Firefox 安装包 `.xpi` 内的 manifest.json）
+4. 扩展立即生效，关闭 Firefox 后自动移除
+
+### 正式安装
+
+Firefox 正式安装需要扩展经过签名：
+
+1. 在仓库根目录打包：`npm run build:extension`
+   → 产出 `dist/extension/artifacts/lerxu-webextension-firefox-<版本>.zip`
+2. 把该 `.zip` 上传到 [AMO](https://addons.mozilla.org/developers/) 完成签名，安装签名后的扩展
+3. 或者使用 **Firefox Developer Edition / Nightly**：在 `about:config` 中把
+   `xpinstall.signatures.required` 设为 `false`，直接安装未签名包
+
+> ⚠️ 不要用「右键 → 压缩」或 Finder 直接压缩源码目录：那样包内会多出一层
+> `lerxu-webextension/` 目录与 macOS 的 `__MACOSX/`、`._*` 元数据，AMO 会拒绝并
+> 报 *"No manifest.json was found at the root of the extension"*。`npm run build:extension`
+> 已生成正确结构（扩展文件位于归档根目录）并在打包时自动校验。
+
+### Firefox 上的行为差异
+
+- 下载接管发生在 `downloads.onCreated`（Chromium 还可用
+  `downloads.onDeterminingFilename`，Firefox 未实现该事件）——因此 Firefox
+  下载列表中可能短暂出现下载条目，随后被 Lerxu 接管
+- 无法以编程方式隐藏浏览器下载气泡（`downloads.setUiOptions` 为 Chromium 专有）；
+  其余功能与 Chromium 完全一致
+- 站点权限：Firefox 127+ 在安装时即授予 `host_permissions`；若之后被撤销，
+  可在 `about:addons` → Lerxu → 权限 中重新授予
+- **数据收集同意提示**：Firefox 140+ 起，安装时（及 AMO 页面上）会显示扩展声明的
+  数据收集类型。本扩展声明 `browsingActivity`（浏览活动，即页面 URL）与
+  `websiteContent`（网页内容，即页面上的媒体 / 下载链接与请求信息），因为扩展需要
+  读取这些信息并交给本机运行的 Lerxu 应用创建下载任务。数据**只发往本机
+  （127.0.0.1），不上传任何远程服务器**，扩展也没有遥测。同意该声明才能安装与使用
 
 如有问题请访问：https://github.com/MochengCK/Lerxu/issues

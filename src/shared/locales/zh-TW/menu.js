@@ -1,5 +1,5 @@
 export default {
-  'app': 'Motrix',
+  'app': '聯芯下載管理器',
   'file': '檔案',
   'task': '任務',
   'edit': '編輯',

@@ -47,11 +47,9 @@ import { useAppStore } from '@/store/app'
 import { usePreferenceStore } from '@/store/preference'
 import { useTaskStore } from '@/store/task'
 import { storeToRefs } from 'pinia'
-import { useRouter } from 'vue-router'
 
 const { t } = i18n.global
 const msg = createMsg(ElMessage, { showClose: true })
-const router = useRouter()
 const instance = getCurrentInstance()
 
 const appStore = useAppStore()
@@ -320,7 +318,7 @@ onMounted(() => {
       preferenceStore.updateUpdateDownloaded(false)
       preferenceStore.updateNewVersion(version)
       preferenceStore.updateLastCheckUpdateTime(Date.now())
-      preferenceStore.updateReleaseNotes(releaseNotes || '')
+      preferenceStore.updateReleaseNotes(releaseNotes || preferenceStore.releaseNotes || '')
 
       const v = (version == null) ? '' : `${version}`.trim()
       if (v && typeof window !== 'undefined' && window.localStorage) {
@@ -333,10 +331,10 @@ onMounted(() => {
             duration: 10000,
             showClose: true,
             onClick: () => {
-              // 更新详情入口：内嵌偏好设置的「高级」页
-              router.push({ path: '/preference/advanced' }).catch(err => {
-                console.log(err)
-              })
+              // 更新详情入口：打开偏好设置弹窗并定位到「进阶」页。
+              // 注意：主窗口路由没有 /preference/advanced，router.push
+              // 会被兜底路由静默重定向回 /，表现为通知点击无响应。
+              appStore.showPreferenceDialog('advanced')
             }
           })
           window.localStorage.setItem(key, v)

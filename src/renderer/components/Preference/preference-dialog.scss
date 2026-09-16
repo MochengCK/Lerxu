@@ -1,0 +1,1464 @@
+/* ==========================================================================
+   Lerxu · 偏好设置弹窗设计系统
+   --------------------------------------------------------------------------
+   本文件是偏好设置弹窗唯一的样式来源（single source of truth）。
+   所有与设置弹窗相关的皮肤（外壳 / 侧边栏 / 卡片 / 行 / 控件）都写在这里，
+   Basic.vue 与 Advanced.vue 只保留各自业务独有的局部样式。
+
+   设计原则
+   1. 画布 + 卡片：内容区是可滚动的浅色画布，设置分组是浮在画布上的白卡片。
+   2. 一个分组 = 一张卡片：卡片标题永远在卡片内部（不再绝对定位到卡片外），
+      因此滚动到任意位置标题都不会被裁切。
+   3. 一行 = 一个设置项：左侧文案（标题 + 可选说明），右侧控件。
+      需要整行宽度的控件（文本框 / 文本域 / 下拉）自动切换为上下堆叠。
+   4. 尺寸统一：行高 42px、控件高 30px、圆角 8/12px、间距 4/8/12/16/20。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   0. 设计令牌（仅作用于弹窗内部，不污染全局）
+   -------------------------------------------------------------------------- */
+.el-dialog.preference-dialog {
+  --pref-radius-lg: 12px;
+  --pref-radius-md: 8px;
+  --pref-radius-sm: 6px;
+  --pref-control-h: 30px;
+  --pref-row-min-h: 42px;
+  --pref-gap: 10px;
+  --pref-pad-x: 20px;
+  /* 卡片标题（位于卡片外左上角）占用的高度：标题行高 + 与卡片的间距 */
+  --pref-title-h: 24px;
+
+  /* 整窗统一底色 */
+  --pref-surface: var(--lc-preference-surface, var(--lc-bg-panel, #ffffff));
+  /* 卡片、内嵌面板：同一底色上的两级微色调，不用描边也不用横线分隔 */
+  --pref-card: var(--lc-preference-card, #f2f5f9);
+  --pref-inset: var(--lc-preference-inset, #e8eef5);
+
+  --pref-line: var(--lc-border-light, #e2e8f0);
+  --pref-line-soft: var(--lc-border-lighter, #eef2f7);
+  --pref-text: var(--lc-text-primary, #2c3e50);
+  --pref-text-2: var(--lc-text-secondary, #5a6c7d);
+  --pref-hover: var(--lc-bg-hover, #f0f4f8);
+  --pref-accent: var(--lc-color-primary, #1a7fe0);
+  --pref-accent-soft: rgba(var(--lc-color-primary-rgb, 26, 127, 224), 0.1);
+}
+
+/* --------------------------------------------------------------------------
+   1. 外壳
+   -------------------------------------------------------------------------- */
+.el-dialog.preference-dialog {
+  width: min(900px, calc(100vw - 96px));
+  max-width: none;
+  min-width: 560px;
+  height: min(640px, calc(100vh - 96px));
+  max-height: none;
+  min-height: 420px;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  border: 1px solid var(--pref-line);
+  background-color: var(--pref-surface);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18), 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+
+.theme-dark .el-dialog.preference-dialog {
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* 遮罩：更柔和，突出弹窗本体 */
+.preference-dialog-overlay {
+  background-color: rgba(15, 23, 42, 0.32);
+  backdrop-filter: blur(2px);
+}
+
+.theme-dark .preference-dialog-overlay,
+.theme-dark.preference-dialog-overlay {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* --------------------------------------------------------------------------
+   2. 顶栏：标题 + 搜索 + 关闭
+   -------------------------------------------------------------------------- */
+.el-dialog.preference-dialog .el-dialog__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  height: 54px;
+  margin: 0;
+  padding: 0 14px 0 20px;
+  box-sizing: border-box;
+  /* 与弹窗同底色，且不用横线分隔顶栏与内容区 */
+  background-color: transparent;
+}
+
+.el-dialog.preference-dialog .preference-dialog-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--pref-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 关闭按钮：默认是绝对定位，这里改为 flex 项，与搜索框并排 */
+.el-dialog.preference-dialog .el-dialog__headerbtn {
+  position: static;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pref-text-2);
+  transition: background-color 0.16s ease, color 0.16s ease;
+
+  &:hover,
+  &:focus-visible {
+    background-color: var(--pref-hover);
+    color: var(--pref-text);
+  }
+
+  .el-dialog__close {
+    font-size: 15px;
+  }
+}
+
+/* 隐藏 el-dialog 可能出现的额外操作按钮 */
+.el-dialog.preference-dialog .el-dialog__headeractions,
+.el-dialog.preference-dialog .el-dialog__header-actions,
+.el-dialog.preference-dialog .el-dialog__headerbtn::before {
+  display: none !important;
+}
+
+/* 顶栏搜索框 */
+.pref-search {
+  flex: 0 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 216px;
+  height: 30px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border-radius: var(--pref-radius-md);
+  border: 1px solid var(--lc-border-base, #d3dde6);
+  background-color: transparent;
+  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+
+  &:hover {
+    border-color: var(--lc-border-hover, #8492a6);
+  }
+
+  &.is-focused {
+    border-color: var(--pref-accent);
+    box-shadow: 0 0 0 3px var(--pref-accent-soft);
+  }
+
+  &__icon {
+    flex: 0 0 auto;
+    margin-right: 6px;
+    font-size: 14px;
+    color: var(--pref-text-2);
+  }
+
+  &__input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 12.5px;
+    color: var(--pref-text);
+
+    &::placeholder {
+      color: var(--lc-text-placeholder, #8492a6);
+      opacity: 0.85;
+    }
+  }
+
+  &__clear {
+    flex: 0 0 auto;
+    margin-left: 4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--pref-text-2);
+    background-color: var(--pref-hover);
+    font-size: 10px;
+    transition: color 0.16s ease, background-color 0.16s ease;
+
+    &:hover {
+      color: var(--pref-text);
+      background-color: var(--lc-bg-active, #eef2f7);
+    }
+  }
+}
+
+/* --------------------------------------------------------------------------
+   3. 弹窗主体：侧边栏 + 内容画布
+   -------------------------------------------------------------------------- */
+.el-dialog.preference-dialog .el-dialog__body {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--lc-text-regular, #3d4d5c);
+  font-size: 13px;
+}
+
+.preference-dialog-body {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* --------------------------------------------------------------------------
+   4. 侧边栏导航
+   -------------------------------------------------------------------------- */
+.preference-sidebar {
+  flex: 0 0 196px;
+  width: 196px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 10px 12px;
+  box-sizing: border-box;
+  /* 与整窗同底色，不用横线/竖线切分区域 */
+  background-color: transparent;
+  overflow: hidden;
+}
+
+.preference-nav-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    border-radius: 2px;
+    background: var(--lc-scrollbar-thumb, rgba(26, 35, 50, 0.18));
+  }
+}
+
+/* 与主程序侧边栏（TaskSubnav 的 .task-nav-list li）保持完全一致的样式：
+   行高 32px、圆角 8px、左右内边距 10px、字号 13px、图标 16px，
+   悬停 / 选中使用同一组令牌（--lc-subnav-hover-bg / --lc-subnav-active-item-bg /
+   --lc-subnav-active-text），因此两个侧边栏的观感与交互反馈完全相同。 */
+.preference-nav-item {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  box-sizing: border-box;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--lc-subnav-text, var(--lc-text-regular, #3d4d5c));
+  transition: background-color 0.2s ease, color 0.2s ease;
+
+  &:hover:not(.is-active) {
+    background-color: var(--lc-subnav-hover-bg, rgba(0, 0, 0, 0.06));
+  }
+
+  &.is-active {
+    background-color: var(--lc-subnav-active-item-bg, rgba(0, 0, 0, 0.12));
+  }
+
+  &:hover,
+  &.is-active {
+    color: var(--lc-subnav-active-text, inherit);
+
+    .preference-nav-icon svg {
+      color: var(--lc-subnav-active-text, inherit);
+    }
+  }
+
+  .preference-nav-icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    color: inherit;
+    transition: color 0.2s ease;
+
+    svg {
+      width: 16px !important;
+      height: 16px !important;
+      display: block;
+    }
+  }
+
+  &:hover:not(.is-active) .preference-nav-icon {
+    color: var(--pref-text);
+  }
+
+  .preference-nav-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   5. 内容区
+   -------------------------------------------------------------------------- */
+.preference-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  /* 与整窗同底色 */
+  background-color: transparent;
+  scrollbar-gutter: stable;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 4px;
+    background-color: var(--lc-scrollbar-thumb, rgba(26, 35, 50, 0.25));
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: var(--lc-scrollbar-thumb, rgba(26, 35, 50, 0.4));
+  }
+}
+
+/* Basic/Advanced 的根节点是 el-main，去掉它默认的内边距 */
+.preference-content > .panel-content,
+.preference-content .panel-content {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* --------------------------------------------------------------------------
+   6. 分组：标题在卡片外左上角，卡片本体只有微色调、无描边无横线
+   -------------------------------------------------------------------------- */
+.preference-dialog .form-preference {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pref-gap);
+  margin: 0;
+  padding: 4px var(--pref-pad-x) 24px;
+  box-sizing: border-box;
+}
+
+.preference-card {
+  position: relative;
+  /* 为卡片外的标题预留空间：首张卡片的标题正好落在内容区顶部之内 */
+  margin: var(--pref-title-h) 0 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--pref-radius-lg);
+  background-color: var(--pref-card);
+  box-shadow: none;
+  /* 标题用绝对定位放在卡片上方，因此不能再裁剪溢出内容 */
+  overflow: visible;
+}
+
+/* 卡片标题：与手机端一致，独立显示在卡片左上角（卡片外） */
+.preference-card > .card-title {
+  position: absolute;
+  bottom: 100%;
+  left: 6px;
+  margin: 0;
+  padding: 0 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  letter-spacing: 0.2px;
+  text-transform: none;
+  color: var(--pref-text-2);
+  background-color: transparent;
+  border: none;
+  white-space: nowrap;
+}
+
+/* 标题行内含控件（如背景类型切换）时，标题区变成一条工具行 */
+.preference-card > .card-title.background-type-nav {
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 8px;
+  white-space: normal;
+}
+
+/* 工具条型分组：首行是操作控件而不是分组标题，留在卡片内部，
+   空正文时整张卡片就是这一行（不会剩下一条悬空的控件行或空条） */
+.preference-card--toolbar > .card-title.background-type-nav {
+  position: static;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  padding: 9px 12px;
+  border-radius: var(--pref-radius-lg);
+}
+
+.preference-card--toolbar:has(> .el-form-item) > .card-title.background-type-nav {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  padding-bottom: 9px;
+}
+
+/* 覆盖上面按「工具行标题」计算的外边距：该控件在卡片内部 */
+.preference-card:has(> .card-title.background-type-nav) {
+  margin-top: var(--pref-title-h);
+}
+
+/* 卡片正文内边距：让每一行自己带内边距，便于统一行高 */
+.preference-card > .el-form-item,
+.preference-card > .card-content > .el-form-item {
+  margin: 0;
+  padding: 5px 6px 9px;
+}
+
+/* 空正文（例如「背景」在纯色模式下没有任何子项）时收起，避免出现空白区域 */
+.preference-card > .el-form-item:has(> .el-form-item__content:empty) {
+  display: none;
+}
+
+.preference-card > .card-content {
+  padding: 0;
+}
+
+/* 卡片直接子级的分隔信息（如版本号） */
+.preference-card > .el-form-item:last-child {
+  padding-bottom: 9px;
+}
+
+/* 卡片尾部的说明文字（如 Tracker「最近更新时间」）：与上面 last-child
+   一致保留底部 9px，不再贴着卡片底边渲染 */
+.preference-card > .tracker-sync-time-note {
+  padding-bottom: 9px;
+}
+
+/* --------------------------------------------------------------------------
+   7. 行（设置项）
+   -------------------------------------------------------------------------- */
+.preference-dialog .form-preference .el-form-item {
+  margin-bottom: 0;
+}
+
+.preference-dialog .el-form-item__content {
+  /* 保持 Element Plus 默认的 wrap 行布局：el-col 的 flex-basis: 100%
+     依赖行方向才能表达「独占一行」；改成 column 会让 basis 变成高度基准 */
+  align-items: flex-start;
+  line-height: 1.5;
+  color: var(--lc-text-regular, #3d4d5c);
+  margin-left: 0 !important;
+
+  /* 每个直接子级独占一行 */
+  > * {
+    flex-basis: 100%;
+  }
+}
+
+.preference-dialog .el-form-item__label {
+  font-size: 13px;
+  color: var(--pref-text);
+  line-height: 1.5;
+  padding-right: 12px;
+}
+
+.preference-dialog .el-form-item__info {
+  display: block;
+  width: 100%;
+  flex-basis: 100%;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pref-text-2);
+}
+
+/* 基础行：左文案 + 右控件 */
+.preference-dialog .form-item-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  width: 100%;
+  min-height: var(--pref-row-min-h);
+  padding: 9px 10px;
+  box-sizing: border-box;
+  border-radius: var(--pref-radius-md);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pref-text);
+}
+
+/* 行内的容器型子元素（自定义包装 div）撑满可用宽度 */
+.preference-dialog .form-item-sub > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 行内链接（如 Chrome / Edge）：紧邻排列而不是被 space-between 推到两端 */
+.preference-dialog .form-item-sub:has(> .pref-link) {
+  justify-content: flex-start;
+  gap: 18px;
+}
+
+.preference-dialog .pref-link {
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: var(--pref-accent);
+  font-size: 13px;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+/* 字段级小标题（位于行内的分组说明） */
+.preference-dialog .pref-field-label {
+  width: 100%;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--pref-text);
+}
+
+/* 行的主文案：与 .toggle-label 视觉一致，用于非开关行 */
+.preference-dialog .pref-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pref-text);
+}
+
+/* 数值后面的单位 */
+.preference-dialog .pref-unit {
+  font-size: 12px;
+  color: var(--pref-text-2);
+}
+
+/* 快捷键重置按钮：左右内缩必须与其它卡片里的「行」一致
+   （卡片 6px + 行 10px = 16px），底部留白同样按行内边距对齐。 */
+.preference-dialog .shortcuts-reset-btn {
+  width: calc(100% - 20px);
+  margin: 4px 10px 9px;
+}
+
+/* 纯包装行（内部还有行）不需要自己的内边距 */
+.preference-dialog .form-item-sub:has(> .form-item-sub),
+.preference-dialog .form-item-sub:has(> .form-item-sub-sub) {
+  display: block;
+  padding: 0;
+  min-height: 0;
+}
+
+/* 整行宽度的控件自动改为上下堆叠。
+   排除两类行：--inline（左标题右控件）与网格行（含 el-input-number，
+   如速度限制「文案 + 数字框 + 单位」），否则堆叠规则会泄漏到网格行，
+   把右侧的单位下拉框整体往下推 7px。 */
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .el-input),
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .el-textarea),
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .el-select),
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .extension-tag-input),
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .tracker-source-popup-wrapper),
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .el-checkbox-group) {
+  display: block;
+}
+
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .el-input) > .el-input,
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .el-textarea) > .el-textarea,
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .el-select) > .el-select,
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .extension-tag-input) > .extension-tag-input,
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):not(:has(> .el-input-number)):has(> .el-checkbox-group) > .el-checkbox-group {
+  width: 100%;
+  margin-top: 7px;
+}
+
+.preference-dialog .form-item-sub:has(> .el-input) > .el-form-item__info,
+.preference-dialog .form-item-sub:has(> .el-select) > .el-form-item__info {
+  margin-top: 8px;
+}
+
+/* 行内控件统一间距。
+   注意：分段滑块的根类名是 .lc-segmented（不是 mo-*），漏掉它会被
+   上方 `.form-item-sub > div { flex: 1 1 auto }` 拉宽，滑块的框体被撑满整行，
+   内容只有自身宽度 → 右侧出现一块空白。这里显式固定为内容宽度。 */
+.preference-dialog .form-item-sub > .el-input-number,
+.preference-dialog .form-item-sub > .el-select,
+.preference-dialog .form-item-sub > .el-radio-group,
+.preference-dialog .form-item-sub > .el-button,
+.preference-dialog .form-item-sub > .lc-segmented,
+.preference-dialog .form-item-sub > .el-switch {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 100%;
+}
+
+/* 行内数字输入框：固定宽度，避免被 flex 挤压导致步进器错位。
+   这类行用 grid 布局，让「文案 + 数字框 + 单位」严格右对齐。 */
+.preference-dialog .form-item-sub:not(.form-item-sub--inline):has(> .el-input-number) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 8px;
+}
+
+.preference-dialog .form-item-sub > .el-input-number,
+.preference-dialog .el-input-number {
+  width: 132px;
+  flex: 0 0 auto;
+}
+
+.preference-dialog .el-input-number .el-input__inner {
+  text-align: center;
+}
+
+/* 行内单选组：紧跟文案左侧排列 */
+.preference-dialog .form-item-sub > .el-radio-group {
+  justify-content: flex-start;
+}
+
+/* --------------------------------------------------------------------------
+   8. 开关行（标签 + 说明 + 开关）
+   -------------------------------------------------------------------------- */
+.preference-dialog .form-item-sub > .toggle-row {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.preference-dialog .toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+
+  &__text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .toggle-label {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--pref-text);
+  }
+
+  .toggle-desc {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--pref-text-2);
+    opacity: 1;
+  }
+
+  &.toggle-row--with-desc {
+    align-items: center;
+  }
+}
+
+/* 反向行（开关在左、文案在右） */
+.preference-dialog .sub-row-reverse {
+  display: flex;
+  align-items: center;
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  gap: 10px;
+
+  .sub-row-label {
+    font-size: 13px;
+    color: var(--pref-text-2);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   9. 从属子行：缩进的内嵌面板
+   -------------------------------------------------------------------------- */
+.preference-dialog .form-item-sub-sub {
+  width: 100%;
+  margin: 2px 0 4px;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  border-radius: var(--pref-radius-md);
+  border-left: none;
+  background-color: var(--pref-inset);
+}
+
+.preference-dialog .form-item-sub-sub .form-item-sub {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.preference-dialog .form-item-sub-sub .el-radio__label {
+  font-size: 13px;
+  color: var(--lc-text-regular, #3d4d5c);
+}
+
+/* 开关打开后才出现的从属行：内嵌浅色面板 + 与普通行一致的对齐 */
+.preference-dialog .pref-subrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 8px;
+  width: 100%;
+  margin: 6px 0 2px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  border-radius: var(--pref-radius-md);
+  background-color: var(--pref-inset);
+  font-size: 13px;
+  color: var(--pref-text);
+}
+
+.preference-dialog .pref-subrow > .el-input {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin-top: 2px;
+}
+
+.preference-dialog .pref-subrow > .el-form-item__info {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+
+/* 行内嵌 el-form-item（带 label 的滑块 / 多选）：外层行改为块级，
+   内层 label 独占一行，控件铺满整行，避免 label 与控件互相重叠 */
+.preference-dialog .form-item-sub:has(> .el-form-item) {
+  display: block;
+}
+
+.preference-dialog .background-slider-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  margin: 0 !important;
+  padding: 0 !important;
+
+  .el-form-item__label {
+    width: auto !important;
+    padding: 0 0 6px;
+    text-align: left;
+    line-height: 1.5;
+    font-size: 13px;
+    color: var(--pref-text);
+  }
+
+  .el-form-item__content {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+}
+
+/* 行内嵌 el-form-item（无 label 的复杂控件）同样铺满 */
+.preference-dialog .form-item-sub > .el-form-item:not(.background-slider-item) {
+  width: 100%;
+  margin: 0;
+}
+
+/* --------------------------------------------------------------------------
+   10. 分隔线：已废弃
+   --------------------------------------------------------------------------
+   设置弹窗不再用横线划分区域：分组靠「卡片外的标题 + 卡片微色调」区分，
+   组内靠行间距区分。历史标记 .settings-divider 一律不渲染，
+   避免模板里残留的占位再次变成一条横杠或撑出空白。 */
+.preference-dialog .settings-divider,
+.preference-dialog .form-item-sub:has(> .settings-divider) {
+  display: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   11. 控件统一
+   -------------------------------------------------------------------------- */
+.preference-dialog {
+  /* 表单控件统一高度；Element Plus 通过该变量派生出输入框/选择框高度 */
+  --el-component-size-small: 28px;
+  --el-component-size: 30px;
+
+  .el-input__wrapper,
+  .el-select__wrapper,
+  .el-textarea__inner {
+    border-radius: var(--pref-radius-md);
+    transition: box-shadow 0.16s ease;
+  }
+
+  /* 输入框前后置区域（如「下载中文件后缀」前缀、复制按钮） */
+  .el-input-group__prepend,
+  .el-input-group__append {
+    background-color: transparent;
+    color: var(--pref-text-2);
+    transition: box-shadow 0.16s ease;
+  }
+
+  .el-input-group__prepend {
+    border-radius: var(--pref-radius-md) 0 0 var(--pref-radius-md);
+  }
+
+  .el-input-group__append {
+    border-radius: 0 var(--pref-radius-md) var(--pref-radius-md) 0;
+  }
+
+  .el-input-group--prepend .el-input__wrapper {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+
+  .el-input-group--append .el-input__wrapper {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .el-input__inner,
+  .el-textarea__inner {
+    font-size: 13px;
+  }
+
+  // 注意：不要在这里统一抬高 .el-select__wrapper 的 min-height。
+  // 小号选择框（.el-select--small）是 24px、小号输入框是 28px，但凡是
+  // 「数字框 + 单位下拉框」并排的行（速度限制）都由 Basic.vue 里
+  // :deep(.speed-limit-row) 的 --lc-speed-control-height 统一成 30px，
+  // 不需要全局兜底；反之全局抬到 28px 会把所有多选选择框（GitHub 镜像、
+  // BT 服务器 / Tracker 等）一起顶高，与其它输入框反而更不齐。
+
+  .el-button {
+    border-radius: var(--pref-radius-md);
+    font-weight: 400;
+  }
+
+  .el-button--small {
+    border-radius: var(--pref-radius-sm);
+  }
+
+  .el-switch {
+    flex: 0 0 auto;
+  }
+
+  .el-radio,
+  .el-checkbox {
+    height: 24px;
+    margin-right: 16px;
+  }
+
+  .el-radio__label,
+  .el-checkbox__label {
+    font-size: 13px;
+    color: var(--lc-text-regular, #3d4d5c);
+  }
+
+  .el-tag {
+    border-radius: var(--pref-radius-sm);
+  }
+
+  /* 表单内的说明文字统一色 */
+  .el-form-item__info,
+  .toggle-desc {
+    color: var(--pref-text-2);
+  }
+
+  /* 链接 */
+  .el-form-item a,
+  .preference-dialog a {
+    color: var(--pref-accent);
+    text-decoration: none;
+
+    &:hover {
+      color: var(--pref-accent);
+      text-decoration: underline;
+    }
+  }
+}
+
+/* 行尾次要按钮（如"重置/选择…"）：低调的描边按钮，不再用大色块 */
+.preference-dialog .pref-row-action.el-button,
+.preference-dialog .pref-row-action {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: var(--pref-radius-md);
+  border: 1px solid var(--lc-border-base, #d3dde6);
+  background-color: transparent;
+  color: var(--pref-text);
+  font-size: 12.5px;
+  transition: border-color 0.16s ease, color 0.16s ease, background-color 0.16s ease;
+
+  &:hover {
+    border-color: var(--pref-accent);
+    color: var(--pref-accent);
+    background-color: var(--pref-accent-soft);
+  }
+}
+
+/* 危险操作的文字链接 */
+.preference-dialog .pref-danger-link {
+  color: var(--lc-color-danger, #f56c6c);
+}
+
+/* 一行里并排多个次要操作按钮 */
+.preference-dialog .pref-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.preference-dialog .pref-row-action--danger {
+  color: var(--lc-color-danger, #f56c6c);
+
+  &:hover {
+    border-color: var(--lc-color-danger, #f56c6c);
+    color: var(--lc-color-danger, #f56c6c);
+    background-color: rgba(245, 108, 108, 0.08);
+  }
+}
+
+/* 只读信息块（如引擎信息）：标签在上、值在下，两列排布 */
+.preference-dialog .pref-info-block {
+  display: block;
+}
+
+.preference-dialog .pref-info-row {
+  margin: 0 0 12px !important;
+}
+
+.preference-dialog .pref-info-row:last-child {
+  margin-bottom: 0 !important;
+}
+
+.preference-dialog .pref-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+.preference-dialog .pref-info-label {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--pref-text-2);
+}
+
+.preference-dialog .pref-info-value {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pref-text);
+  word-break: break-word;
+}
+
+/* --------------------------------------------------------------------------
+   12. 局部组件（折叠面板 / 标签输入 / 空状态）
+   -------------------------------------------------------------------------- */
+.preference-dialog .extension-tag-input {
+  width: 100%;
+  margin-top: 7px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  min-height: 32px;
+  border: 1px solid var(--lc-border-base, #d3dde6);
+  border-radius: var(--pref-radius-md);
+  background-color: transparent;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+
+  &:hover {
+    border-color: var(--lc-border-hover, #8492a6);
+  }
+
+  &:focus-within {
+    border-color: var(--pref-accent);
+    box-shadow: 0 0 0 3px var(--pref-accent-soft);
+  }
+}
+
+/* 空状态 */
+.preference-dialog .no-results {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.preference-dialog .no-results-inner {
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+  padding: 168px 0 0;
+  background: transparent url('@/assets/no-settings.svg') top center no-repeat;
+  background-size: 148px auto;
+  text-align: center;
+  font-size: 13px;
+  color: var(--pref-text-2);
+}
+
+/* 搜索匹配过滤（由 PreferenceDialog 驱动） */
+.preference-dialog .is-search-hidden {
+  display: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   13. 滚动位置提示：内容区顶部/底部渐隐
+   -------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------
+   14. macOS 原生透明背景：弹窗保持不透明（使用偏好设置自己的统一底色）
+   -------------------------------------------------------------------------- */
+html.mac-native-transparent .el-dialog.preference-dialog {
+  background-color: var(--lc-preference-surface, var(--lc-bg-panel, #ffffff));
+}
+
+/* --------------------------------------------------------------------------
+   15. 窄窗口自适应
+   -------------------------------------------------------------------------- */
+@media (max-width: 720px) {
+  .preference-sidebar {
+    flex-basis: 168px;
+    width: 168px;
+  }
+
+  .el-dialog.preference-dialog {
+    --pref-pad-x: 14px;
+  }
+
+  .pref-search {
+    width: 160px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   16. 输入框组（prepend / append）边框高亮：与输入框本体严格同步
+   --------------------------------------------------------------------------
+   需求：输入框与它两侧的按钮（选择目录、随机生成、复制渠道地址……）在
+   悬停 / 聚焦时必须是「同一个框」，颜色一起变，不能出现「输入框亮了、
+   按钮没亮」的割裂。
+
+   这里把规则写在弹窗自身的作用域内并显式声明各状态颜色，不依赖全站
+   .el-input-group 规则是否生效（历史上正是因为依赖外部样式，出现过
+   按钮边框不跟随高亮的问题）。边框形状按组型绘制，避免左右出现重
+   复的「独立竖杠」：
+
+   - 仅 prepend：按钮画左/上/下三边，输入框画上/下/右三边
+   - 仅 append ：按钮画右/上/下三边，输入框画上/下/左三边
+   - 两者都有：两侧按钮各画外侧三边，输入框只画上/下
+   -------------------------------------------------------------------------- */
+.preference-dialog {
+  .el-input-group__prepend {
+    box-shadow: 1px 0 0 0 var(--lc-border-base) inset,
+                0 1px 0 0 var(--lc-border-base) inset,
+                0 -1px 0 0 var(--lc-border-base) inset !important;
+  }
+
+  .el-input-group__append {
+    box-shadow: 0 1px 0 0 var(--lc-border-base) inset,
+                0 -1px 0 0 var(--lc-border-base) inset,
+                -1px 0 0 0 var(--lc-border-base) inset !important;
+  }
+
+  /* 输入框与两侧按钮之间的分割线 */
+  .el-input-group__prepend::after,
+  .el-input-group__append::before {
+    background-color: var(--lc-border-base);
+    transition: background-color 0.16s ease;
+  }
+
+  /* 输入框本体：按组型只画对应的边 */
+  .el-input-group--prepend:not(.el-input-group--append) > .el-input__wrapper {
+    box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+                inset 0 -1px 0 0 var(--lc-border-base),
+                inset -1px 0 0 0 var(--lc-border-base) !important;
+  }
+
+  .el-input-group--append:not(.el-input-group--prepend) > .el-input__wrapper {
+    box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+                inset 0 -1px 0 0 var(--lc-border-base),
+                inset 1px 0 0 0 var(--lc-border-base) !important;
+  }
+
+  .el-input-group--prepend.el-input-group--append > .el-input__wrapper {
+    box-shadow: inset 0 1px 0 0 var(--lc-border-base),
+                inset 0 -1px 0 0 var(--lc-border-base) !important;
+  }
+
+  /* --- 悬停：鼠标落在输入框或任一侧按钮上，整组一起高亮 --- */
+  .el-input-group:hover:not(:has(.el-input__wrapper.is-focus)):not(.is-disabled) {
+    .el-input-group__prepend {
+      box-shadow: 1px 0 0 0 var(--lc-border-hover) inset,
+                  0 1px 0 0 var(--lc-border-hover) inset,
+                  0 -1px 0 0 var(--lc-border-hover) inset !important;
+    }
+
+    .el-input-group__append {
+      box-shadow: 0 1px 0 0 var(--lc-border-hover) inset,
+                  0 -1px 0 0 var(--lc-border-hover) inset,
+                  -1px 0 0 0 var(--lc-border-hover) inset !important;
+    }
+
+    .el-input-group__prepend::after,
+    .el-input-group__append::before {
+      background-color: var(--lc-border-hover) !important;
+    }
+
+    &.el-input-group--prepend:not(.el-input-group--append) > .el-input__wrapper {
+      box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+                  inset 0 -1px 0 0 var(--lc-border-hover),
+                  inset -1px 0 0 0 var(--lc-border-hover) !important;
+    }
+
+    &.el-input-group--append:not(.el-input-group--prepend) > .el-input__wrapper {
+      box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+                  inset 0 -1px 0 0 var(--lc-border-hover),
+                  inset 1px 0 0 0 var(--lc-border-hover) !important;
+    }
+
+    &.el-input-group--prepend.el-input-group--append > .el-input__wrapper {
+      box-shadow: inset 0 1px 0 0 var(--lc-border-hover),
+                  inset 0 -1px 0 0 var(--lc-border-hover) !important;
+    }
+  }
+
+  /* --- 聚焦：整组统一使用主题色，与输入框的聚焦高亮完全一致 --- */
+  .el-input-group:has(.el-input__wrapper.is-focus):not(.is-disabled) {
+    .el-input-group__prepend {
+      box-shadow: 1px 0 0 0 var(--lc-color-primary) inset,
+                  0 1px 0 0 var(--lc-color-primary) inset,
+                  0 -1px 0 0 var(--lc-color-primary) inset !important;
+    }
+
+    .el-input-group__append {
+      box-shadow: 0 1px 0 0 var(--lc-color-primary) inset,
+                  0 -1px 0 0 var(--lc-color-primary) inset,
+                  -1px 0 0 0 var(--lc-color-primary) inset !important;
+    }
+
+    .el-input-group__prepend::after,
+    .el-input-group__append::before {
+      background-color: var(--lc-color-primary) !important;
+    }
+
+    &.el-input-group--prepend:not(.el-input-group--append) > .el-input__wrapper {
+      box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+                  inset 0 -1px 0 0 var(--lc-color-primary),
+                  inset -1px 0 0 0 var(--lc-color-primary) !important;
+    }
+
+    &.el-input-group--append:not(.el-input-group--prepend) > .el-input__wrapper {
+      box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+                  inset 0 -1px 0 0 var(--lc-color-primary),
+                  inset 1px 0 0 0 var(--lc-color-primary) !important;
+    }
+
+    &.el-input-group--prepend.el-input-group--append > .el-input__wrapper {
+      box-shadow: inset 0 1px 0 0 var(--lc-color-primary),
+                  inset 0 -1px 0 0 var(--lc-color-primary) !important;
+    }
+  }
+}
+
+/* --------------------------------------------------------------------------
+   17. 更新条 + 检测时间行
+   --------------------------------------------------------------------------
+   「进阶 → 自动更新」卡片里的「当前版本 / 更新状态」横幅，及其下方的
+   「上次检查时间 + 预览更新」行。状态各有颜色 + 呼吸动画。
+
+   注意：
+   1. 这两条样式必须留在本文件（弹窗样式的唯一来源），不要放回
+      Advanced.vue 的局部样式里，否则一旦该 chunk 的样式顺序变化，
+      更新条就会退化成没有任何样式的一条灰边。
+   2. 选择器不带 .preference-dialog 前缀：容器可能不是弹窗，前缀会导致
+      整条样式失配。同理颜色只用全局主题令牌（--lc-*），不用仅定义在
+      .el-dialog.preference-dialog 上的 --pref-* 令牌。
+   -------------------------------------------------------------------------- */
+.preference-card .update-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  /* 左右外边距与上方选项行的文字/控件缩进一致（行内距 6px + 行内边距 10px = 16px） */
+  margin: 0 16px 9px;
+  padding: 9px 12px;
+  border: 1px solid var(--lc-border-light, #e2e8f0);
+  border-radius: 8px;
+  background-color: var(--lc-preference-inset, rgba(128, 128, 128, 0.08));
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--lc-text-secondary, #8a8a8a);
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+
+  .update-bar-text {
+    min-width: 0;
+    font-variant-numeric: tabular-nums;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &:hover {
+    border-color: var(--lc-color-primary, #1a7fe0);
+    color: var(--lc-color-primary, #1a7fe0);
+  }
+
+  &.is-checking {
+    cursor: not-allowed;
+    border-color: var(--lc-color-primary, #1a7fe0);
+    color: var(--lc-color-primary, #1a7fe0);
+    animation: pref-version-pulse 1.2s ease-out infinite;
+  }
+
+  &.update-available {
+    /* 有新版本：仅边框变绿 + 脉冲，文字与底色保持中性 */
+    border-color: var(--lc-color-success, #67c23a);
+    color: var(--lc-text-secondary, #8a8a8a);
+    animation: pref-version-pulse-success 1.2s ease-out infinite;
+  }
+
+  &.downloading {
+    cursor: not-allowed;
+    border-color: var(--lc-color-warning, #e6a23c);
+    color: var(--lc-color-warning, #e6a23c);
+    background-color: rgba(230, 162, 60, 0.1);
+    font-weight: 600;
+    animation: pref-version-pulse-warning 1.2s ease-out infinite;
+  }
+
+  &.downloaded {
+    border-color: var(--lc-color-success, #67c23a);
+    color: var(--lc-color-success, #67c23a);
+    background-color: rgba(103, 194, 58, 0.12);
+    font-weight: 600;
+  }
+
+  &.is-disabled {
+    cursor: not-allowed;
+  }
+}
+
+/* 检测时间 + 预览更新：左右间距与更新条及上方选项行对齐（6px 缩进 + 10px 内距） */
+.preference-card .auto-update-footer {
+  display: flex;
+  align-items: center;
+  /* 时间与"预览更新"作为一组整体居中，链接紧跟在时间右侧 */
+  justify-content: center;
+  gap: 10px;
+  margin: 0 6px 9px;
+  padding: 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lc-text-secondary, rgba(128, 128, 128, 0.9));
+}
+
+.preference-card .auto-update-time {
+  flex: 0 1 auto;
+  min-width: 0;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preference-card .action-link {
+  flex: none;
+  color: var(--lc-color-primary, #1a7fe0);
+  cursor: pointer;
+  font-weight: 500;
+
+  &:hover {
+    text-decoration: underline;
+  }
+
+  &.action-link--disabled {
+    color: var(--lc-text-secondary, rgba(128, 128, 128, 0.9));
+    cursor: not-allowed;
+    text-decoration: none;
+  }
+}
+
+@keyframes pref-version-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(var(--lc-color-primary-rgb, 26, 127, 224), 0.35); }
+  70% { box-shadow: 0 0 0 6px rgba(var(--lc-color-primary-rgb, 26, 127, 224), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--lc-color-primary-rgb, 26, 127, 224), 0); }
+}
+
+@keyframes pref-version-pulse-success {
+  0% { box-shadow: 0 0 0 0 rgba(103, 194, 58, 0.35); }
+  70% { box-shadow: 0 0 0 6px rgba(103, 194, 58, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(103, 194, 58, 0); }
+}
+
+@keyframes pref-version-pulse-warning {
+  0% { box-shadow: 0 0 0 0 rgba(230, 162, 60, 0.35); }
+  70% { box-shadow: 0 0 0 6px rgba(230, 162, 60, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(230, 162, 60, 0); }
+}
+
+
+/* --------------------------------------------------------------------------
+   18. 行内行：左标题 + 右控件
+   --------------------------------------------------------------------------
+   用于「短控件」行——下拉选择框、端口 / 密钥等短输入框。
+   标题在左，控件靠右，且只占右侧一段固定宽度，不再铺满整行。
+
+   长控件行（路径、文本域、Tracker、代理等）不加 --inline，仍保持
+   「标题在上、控件铺满」的堆叠布局。
+
+   用法：
+     <el-col class="form-item-sub form-item-sub--inline" :span="24">
+       {{ 标题 }} <el-input|el-select|mo-extend-select ... />
+     </el-col>
+   端口等更窄的控件再加 form-item-sub--inline-narrow。
+   -------------------------------------------------------------------------- */
+.preference-dialog .form-item-sub--inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+
+  /* 左侧文案：吃掉剩余空间，保持与其它行的标题左对齐。
+     支持「标题 + 副标题」两行（.pref-row-text），也兼容裸文案。 */
+  > .pref-row-label,
+  > .pref-row-text,
+  > .toggle-row {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* 右侧控件：固定宽度、靠右，不再铺满整行 */
+  > .el-input,
+  > .el-select,
+  > .lc-extend-select,
+  > .el-input-number,
+  > .el-date-editor,
+  > .el-time-picker,
+  > .el-cascader,
+  > .el-autocomplete {
+    flex: 0 0 auto !important;
+    width: var(--pref-inline-control-w, 180px) !important;
+    max-width: 100%;
+    margin-top: 0 !important;
+  }
+
+  > .el-form-item__info {
+    flex: 1 1 100%;
+    margin-top: 6px;
+  }
+}
+
+/* 端口 / 密钥这类短输入框：更窄一段 */
+.preference-dialog .form-item-sub--inline-narrow {
+  --pref-inline-control-w: 150px;
+}
+
+/* 路径这类需要读完整内容的控件：占右侧约一半宽度 */
+.preference-dialog .form-item-sub--inline-wide {
+  --pref-inline-control-w: 56%;
+}
+
+/* 行内行的「标题 + 副标题」文本块：与开关行的 .toggle-row__text 视觉一致 */
+.preference-dialog .pref-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+
+  > .pref-row-label {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--pref-text);
+  }
+
+  > .pref-row-desc {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--pref-text-2);
+  }
+}
+
+/* 语言 / 运行模式这类「标题即选项名」的卡片：标题在左、选择框在右 */
+.preference-dialog .background-type-nav > .background-type-nav__left {
+  font-size: 13px;
+  color: var(--pref-text);
+}
+
+.preference-dialog .background-type-nav > .background-type-nav__right .lc-extend-select,
+.preference-dialog .background-type-nav > .background-type-nav__right .el-select {
+  width: 180px;
+}
+
+/* --------------------------------------------------------------------------
+   19. 快捷键表：两列网格
+   --------------------------------------------------------------------------
+   原实现用 el-row + el-col(gutter) 分行。EP 的 gutter 通过「行负外边距 +
+   列内边距」实现，而行在弹窗里是 flex item（flex-basis: 100%），负外边距
+   只让左侧外扩、右侧被压缩，导致左侧留白 6px、右侧 14px 不一致。
+   这里改用 grid + column-gap：左右留白与卡片内边距完全一致。
+
+   同时补上与 .form-item-sub 行一致的外侧内边距，否则整张卡片的设置项会
+   贴着卡片边缘（左右只有 6px 的卡片内边距），与其它卡片明显不一致：
+     左右 6px（卡片）+ 10px（行）= 16px
+     上   5px（卡片）+  9px（行）= 14px
+     下   9px（卡片）+  9px（行）= 18px
+   行的上下内边距只取 4px（行间距 4 + 4 = 8px，保持表格紧凑），
+   首行与末行再单独补足外侧留白。
+   -------------------------------------------------------------------------- */
+.preference-dialog .shortcut-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 4px 10px;
+  box-sizing: border-box;
+}
+
+.preference-dialog .shortcut-grid > .el-input {
+  width: 100%;
+}
+
+.preference-dialog .shortcut-grid--head {
+  /* 首行再补 5px 顶部内边距，使卡片顶部留白与其它卡片一致（5 + 9 = 14px） */
+  padding-top: 9px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pref-text-2);
+}

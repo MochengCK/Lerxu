@@ -23,7 +23,7 @@
         </div>
         <div class="best-peer-item">
           <span class="best-peer-key">{{ t('task.task-peer-progress') }}:</span>
-          <span class="best-peer-value">{{ bitfieldToPercent(bestPeer.bitfield) }}%</span>
+          <span class="best-peer-value">{{ bitfieldToPercent(bestPeer.bitfield, false, peerNumPieces) }}%</span>
         </div>
         <div class="best-peer-item">
           <span class="best-peer-key">{{ t('task.task-peer-upload-speed') }}:</span>
@@ -62,9 +62,10 @@
               <span class="mo-peer-group-label">{{ scope.row.groupLabel }}</span>
             </template>
             <template v-else>
-              <!-- 所有peer都显示IP:Port格式，保持一致 -->
-              <mo-hover-tip effect="dark" :content="`${scope.row.ip}:${scope.row.port}`" placement="top" :open-delay="300" :disabled="!getOverflow(scope.row, 'host') || !scope.row.ip">
-                <span class="mo-peer-text" data-field="host" :data-row-id="scope.row.id" :class="{ 'is-truncated': getOverflow(scope.row, 'host') }" @mouseenter="handleTextOverflow($event, scope.row, 'host')">{{ `${scope.row.ip}:${scope.row.port}` }}</span>
+              <!-- 所有peer都显示IP:Port格式，保持一致；封禁条目按 IP 记录，
+                   无端口时只显示 IP（否则会渲染出 "1.2.3.4:"） -->
+              <mo-hover-tip effect="dark" :content="scope.row.port ? `${scope.row.ip}:${scope.row.port}` : `${scope.row.ip}`" placement="top" :open-delay="300" :disabled="!getOverflow(scope.row, 'host') || !scope.row.ip">
+                <span class="mo-peer-text" data-field="host" :data-row-id="scope.row.id" :class="{ 'is-truncated': getOverflow(scope.row, 'host') }" @mouseenter="handleTextOverflow($event, scope.row, 'host')">{{ scope.row.port ? `${scope.row.ip}:${scope.row.port}` : scope.row.ip }}</span>
               </mo-hover-tip>
             </template>
           </template>
@@ -104,7 +105,8 @@
           min-width="120">
           <template #default="scope">
             <template v-if="scope.row.status === 'banned'">
-              <span style="color: #f56c6c;">{{ formatDuration(scope.row.remainingTime) }}</span>
+              <!-- remainingTime 0 = 永久封禁，直接显示「永久」而非 0s -->
+              <span style="color: #f56c6c;">{{ scope.row.remainingTime > 0 ? formatDuration(scope.row.remainingTime) : t('task.ban-duration-forever') }}</span>
             </template>
             <template v-else-if="scope.row.status === 'attempting'">
               <span style="color: #909399;">{{ t('task.peer-status-attempting') }}</span>
@@ -132,7 +134,7 @@
               </mo-hover-tip>
             </template>
             <template v-else>
-              {{ getPeerStatus(scope.row) }}
+              {{ getPeerStatusShort(scope.row) }}
             </template>
           </template>
         </el-table-column>
@@ -195,7 +197,7 @@
           align="right"
           width="90">
           <template #default="scope">
-            {{ bitfieldToPercent(scope.row.bitfield, true) }}%
+            {{ bitfieldToPercent(scope.row.bitfield, true, peerNumPieces) }}%
           </template>
         </el-table-column>
         <el-table-column
@@ -702,6 +704,10 @@ const rowClassNameFn = computed(() => {
   }
 })
 
+// 任务真实分片数：对端完成度只按真实分片位统计（位图末 nibble 的填充位
+// 无对应分片，计入分母会让 seed 节点显示 95.83% 而不是 100%）
+const peerNumPieces = computed(() => Number(props.task && props.task.numPieces) || 0)
+
 const bestPeer = computed(() => {
   let peers = props.peers || {}
   if (Array.isArray(peers)) {
@@ -801,7 +807,7 @@ const groupedPeers = computed(() => {
             if (p.status !== 'attempting' && p.status !== 'banned' && p.status !== 'disconnected') {
               const up = Number(p.uploadSpeed) || 0
               const down = Number(p.downloadSpeed) || 0
-              const percent = bitfieldToPercent(p.bitfield)
+              const percent = bitfieldToPercent(p.bitfield, false, peerNumPieces.value)
               switch (filterMode.value) {
               case 'downloading':
                 return down > 0
@@ -839,8 +845,8 @@ const groupedPeers = computed(() => {
             const orderB = getPeerOrder(b)
 
             if (prop === 'bitfield') {
-              valA = bitfieldToPercent(valA)
-              valB = bitfieldToPercent(valB)
+              valA = bitfieldToPercent(valA, false, peerNumPieces.value)
+              valB = bitfieldToPercent(valB, false, peerNumPieces.value)
             }
 
             if (prop === 'ip') {
@@ -869,7 +875,7 @@ const groupedPeers = computed(() => {
             if (prop === 'status') {
               const getText = (p) => {
                 if (p.status === 'disconnected') return getPeerFailureSummaryText(p)
-                return getPeerStatus(p)
+                return getPeerStatusShort(p)
               }
               valA = getText(a)
               valB = getText(b)
@@ -1136,7 +1142,8 @@ function getPeerFailureSummaryText (peer) {
   if (tcp > 0) parts.push(`${tcpLabel} ${tcp}`)
   if (utp > 0) parts.push(`${utpLabel} ${utp}`)
   if (udp > 0) parts.push(`${udpLabel} ${udp}`)
-  return parts.length > 0 ? parts.join(' ') : `${tcpLabel} 0`
+  if (parts.length > 0) return parts.join(' ')
+  return `${tcpLabel} 0`
 }
 
 function getPeerFailureDetailText (peer) {
@@ -1241,33 +1248,40 @@ function getSafePeerIdPrefix (peer) {
   return prefix
 }
 
+/* 引擎给出的客户端描述（task.getPeers 的 client 字段）：BEP 10 扩展握手
+   自报的 "v" 优先（如 "qBittorrent/4.6.0"），否则由 peer_id 前缀解析并
+   自带版本（如 "qBittorrent 4.5.7" / "Unknown(FG)"）。 */
+function getEngineClientName (peer) {
+  if (typeof peer !== 'object' || !peer) return ''
+  const raw = peer.clientName || peer.client || peer.client_name || peer.userAgent || peer.agent || peer.name || ''
+  return `${raw}`.trim()
+}
+
 function isPeerClientUnknown (peer) {
   const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
   const result = peerIdParser(peerId)
   if (result !== 'task.peer-client-unknown') {
     return false
   }
-  const clientName = typeof peer === 'object' && peer
-    ? (peer.clientName || peer.client || peer.client_name || peer.userAgent || peer.agent || peer.name || '')
-    : ''
-  return !`${clientName}`.trim()
+  // 前端解析器认不出、引擎也没有可用描述才算「未知」
+  return !getEngineClientName(peer)
 }
 
 function renderPeerClient (peer) {
   const peerId = typeof peer === 'string' ? peer : (peer && peer.peerId)
   const result = peerIdParser(peerId)
-  if (result === 'task.peer-client-unknown') {
-    const clientName = typeof peer === 'object' && peer
-      ? (peer.clientName || peer.client || peer.client_name || peer.userAgent || peer.agent || peer.name || '')
-      : ''
-    const normalizedName = `${clientName}`.trim()
-    if (normalizedName) {
-      return `${normalizedName} / N/A`
-    }
-    const prefix = getSafePeerIdPrefix(peer)
-    return prefix || '-'
+  if (result !== 'task.peer-client-unknown') {
+    return result
   }
-  return result
+  // 前端解析器认不出（未知前缀 / 非 Azureus 风格 peerId）：改用引擎给的
+  // 描述兜底——它本身已带版本号，再拼 " / N/A" 只会让同一列一半带 N/A
+  // 一半不带（用户反馈的「客户端后面多个 N/A」正是如此）。
+  const engineName = getEngineClientName(peer)
+  if (engineName) {
+    return engineName
+  }
+  const prefix = getSafePeerIdPrefix(peer)
+  return prefix || '-'
 }
 
 function formatDuration (seconds) {
@@ -1368,6 +1382,8 @@ function getPeerSource (peer) {
   if (source === 'dht') return t('task.peer-source-dht')
   if (source === 'pex') return t('task.peer-source-pex')
   if (source === 'tracker') return t('task.peer-source-tracker')
+  if (source === 'holepunch') return t('task.peer-source-holepunch')
+  if (source === 'incoming') return t('task.peer-source-incoming')
   if (source === 'manual') return t('task.peer-source-manual')
   if (source === 'auto') return t('task.peer-source-auto')
   if (peer.localPeer === 'true' || peer.localPeer === true) return t('task.peer-source-lsd')
@@ -1418,16 +1434,42 @@ function getPeerEncryption (peer) {
   return t('task.peer-encryption-plaintext')
 }
 
-function getPeerStatus (peer) {
-  if (!peer) return '-'
+// 状态列短文案：下载中/上传中/做种中固定显示两个字（下载/上传/做种），
+// 多状态以「/」连接（如「下载/上传」）；其余状态（空闲/已封禁/连接中）
+// 无简写，直接用完整文案
+const PEER_STATUS_SHORT_KEY = {
+  downloading: 'task.peer-status-downloading-short',
+  uploading: 'task.peer-status-uploading-short',
+  seeding: 'task.peer-status-seeding-short'
+}
+
+function getPeerStates (peer) {
+  if (!peer) return []
+  if (Array.isArray(peer.peerStates) && peer.peerStates.length > 0) {
+    return peer.peerStates
+  }
   const status = `${peer.engineStatus || ''}`.toLowerCase()
-  if (status === 'banned') return t('task.peer-status-banned')
-  if (status === 'attempting') return t('task.peer-status-attempting')
-  if (status === 'downloading') return t('task.peer-status-downloading')
-  if (status === 'uploading') return t('task.peer-status-uploading')
-  if (status === 'seeding') return t('task.peer-status-seeding')
-  if (status === 'idle') return t('task.peer-status-idle')
-  return '-'
+  return status ? [status] : []
+}
+
+function getPeerStatusLabel (state) {
+  switch (state) {
+    case 'banned': return t('task.peer-status-banned')
+    case 'attempting': return t('task.peer-status-attempting')
+    case 'downloading': return t('task.peer-status-downloading')
+    case 'uploading': return t('task.peer-status-uploading')
+    case 'seeding': return t('task.peer-status-seeding')
+    case 'idle': return t('task.peer-status-idle')
+    default: return '-'
+  }
+}
+
+function getPeerStatusShort (peer) {
+  const states = getPeerStates(peer)
+  if (states.length === 0) return '-'
+  return states
+    .map((s) => (PEER_STATUS_SHORT_KEY[s] ? t(PEER_STATUS_SHORT_KEY[s]) : getPeerStatusLabel(s)))
+    .join('/')
 }
 
 function handleExpandChange (row, expanded) {

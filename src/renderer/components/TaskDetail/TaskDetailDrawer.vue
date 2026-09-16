@@ -311,7 +311,8 @@ const fileList = computed(() => {
     const extension = getFileExtension(name)
     return {
       idx: Number(item.index),
-      selected: item.selected === 'true',
+      // 引擎原生协议 selected 为布尔，aria2 兼容协议为 'true'/'false' 字符串
+      selected: item.selected === 'true' || item.selected === true,
       path: item.path,
       name,
       extension: extension ? `.${extension}` : '',

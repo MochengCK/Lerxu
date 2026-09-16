@@ -17,6 +17,9 @@
 
 <script setup>
 import { computed } from 'vue'
+import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
+
+const { t } = i18n.global
 
 const props = defineProps({
   status: {
@@ -55,6 +58,10 @@ const klass = computed(() => {
 })
 
 const statusLabel = computed(() => {
+  // 5 = 未选择（该格分片属于未勾选的文件，不需下载）——不是百分比
+  if (props.status === 5) {
+    return t('task.task-piece-not-selected')
+  }
   const percentages = [0, 25, 50, 75, 100]
   const percent = percentages[props.status] + '%'
   let speedStr = ''
@@ -93,5 +100,9 @@ function hideTooltip () {
 }
 .graphic-atom-s4 {
   fill: var(--lc-graphic-atom-4);
+}
+.graphic-atom-s5 {
+  /* 未选择（未勾选的文件所在分片）：中性蓝灰，区别于灰(未下载)与绿(已完成) */
+  fill: var(--lc-graphic-atom-5);
 }
 </style>

@@ -37,7 +37,7 @@
             </el-col>
           </el-form-item>
           <div
-            class="version-item"
+            class="update-bar"
             :class="{
               'update-available': updateAvailable && !updateDownloaded && !isDownloadingUpdate,
               'is-checking': isCheckingUpdate,
@@ -48,7 +48,7 @@
             :style="{ pointerEvents: isDownloadingUpdate ? 'none' : 'auto' }"
             @click="handleVersionItemClick"
           >
-            <span>{{ versionText }}</span>
+            <span class="update-bar-text">{{ versionText }}</span>
           </div>
           <div
             class="auto-update-footer"
@@ -63,10 +63,7 @@
             </span>
             <span
               class="action-link"
-              :class="{
-                'action-link--disabled': isCheckingUpdate,
-                'update-available': (updateAvailable || isDownloadingUpdate || updateDownloaded) && !isCheckingUpdate
-              }"
+              :class="{ 'action-link--disabled': isCheckingUpdate }"
               v-if="updateAvailable || isDownloadingUpdate || updateDownloaded"
               @click.prevent="isCheckingUpdate ? null : onPreviewUpdateClick()"
             >
@@ -75,28 +72,72 @@
           </div>
         </div>
 
+        <!-- 下载协议设置卡片 -->
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
+          <h3 class="card-title">{{ t('preferences.download-protocol') }}</h3>
+          <el-form-item size="small">
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.protocols-magnet') }}</span>
+                  <div class="toggle-desc">{{ t('preferences.protocols-magnet-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.protocols.magnet"
+                  @change="(val) => onProtocolsChange('magnet', val)"
+                />
+              </div>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="toggle-row toggle-row--with-desc">
+                <div class="toggle-row__text">
+                  <span class="toggle-label">{{ t('preferences.protocols-thunder') }}</span>
+                  <div class="toggle-desc">{{ t('preferences.protocols-thunder-desc') }}</div>
+                </div>
+                <el-switch
+                  v-model="form.protocols.thunder"
+                  @change="(val) => onProtocolsChange('thunder', val)"
+                />
+              </div>
+            </el-col>
+          </el-form-item>
+        </div>
+
         <!-- 代理设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ t('preferences.proxy') }}</h3>
           <el-form-item size="small">
-            <el-radio-group
-              v-model="form.proxy.mode"
-              @change="(val) => { onProxyModeChange(val); autoSaveForm(); }"
-            >
-<el-radio value="none">{{ t('preferences.proxy-mode-none') }}</el-radio>
-<el-radio value="system">{{ t('preferences.proxy-mode-system') }}</el-radio>
-<el-radio value="custom">{{ t('preferences.proxy-mode-custom') }}</el-radio>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item size="small" v-if="form.proxy.mode === 'system'" style="margin-top: -8px;">
-            <el-col class="form-item-sub" :span="24">
-              <div class="el-form-item__info proxy-system-info">
-                <el-icon><InfoFilled /></el-icon>
-                {{ t('preferences.proxy-system-tips') }}
+            <!-- 代理模式：左标题 + 副标题 / 右滑块按钮 -->
+            <el-col class="form-item-sub form-item-sub--inline" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.proxy-mode') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.proxy-mode-desc') }}</div>
               </div>
+              <mo-segmented-slider
+                :value="form.proxy.mode"
+                :options="proxyModeOptions"
+                size="mini"
+                @change="onProxyModeChangeAndSave"
+              />
+            </el-col>
+            <!-- 当前生效的代理端口：左侧标题用输入框前缀呈现，自定义代理模式下不显示 -->
+            <el-col
+              v-if="form.proxy.mode !== 'custom'"
+              class="form-item-sub"
+              :span="24"
+            >
+              <el-input
+                :model-value="activeProxyPort"
+                :placeholder="t('preferences.proxy-port-desc')"
+                readonly
+              >
+                <template #prepend>
+                  {{ t('preferences.proxy-port') }}
+                </template>
+              </el-input>
             </el-col>
           </el-form-item>
-          <el-form-item size="small" v-if="form.proxy.mode === 'custom'" style="margin-top: -8px;">
+          <el-form-item size="small" v-if="form.proxy.mode === 'custom'">
             <el-col
               class="form-item-sub"
               :xs="24"
@@ -146,10 +187,7 @@
                 />
               </el-select>
               <div class="el-form-item__info" style="margin-top: 8px;">
-                <a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Proxy" rel="noopener noreferrer">
-                  {{ t('preferences.proxy-tips') }}
-                  <mo-icon name="link" width="12" height="12" />
-                </a>
+                {{ t('preferences.proxy-tips') }}
               </div>
             </el-col>
           </el-form-item>
@@ -266,9 +304,12 @@
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ t('preferences.rpc') }}</h3>
           <el-form-item size="small">
-            <el-row style="margin-bottom: 8px;">
-              <el-col class="form-item-sub" :span="24">
-                {{ t('preferences.rpc-listen-port') }}
+            <el-row>
+              <el-col class="form-item-sub form-item-sub--inline form-item-sub--inline-narrow" :span="24">
+                <div class="pref-row-text">
+                  <span class="pref-row-label">{{ t('preferences.rpc-listen-port') }}</span>
+                  <div class="pref-row-desc">{{ t('preferences.rpc-listen-port-desc') }}</div>
+                </div>
                 <el-input
                   :placeholder="`${rpcDefaultPort}`"
                   :maxlength="8"
@@ -290,9 +331,12 @@
                 </el-input>
               </el-col>
             </el-row>
-            <el-row style="margin-bottom: 8px;">
-              <el-col class="form-item-sub" :span="24">
-                {{ t('preferences.rpc-secret') }}
+            <el-row>
+              <el-col class="form-item-sub form-item-sub--inline" :span="24">
+                <div class="pref-row-text">
+                  <span class="pref-row-label">{{ t('preferences.rpc-secret') }}</span>
+                  <div class="pref-row-desc">{{ t('preferences.rpc-secret-desc') }}</div>
+                </div>
                 <el-input
                   :show-password="hideRpcSecret"
                   placeholder="RPC Secret"
@@ -312,99 +356,32 @@
                     </mo-hover-tip>
                   </template>
                 </el-input>
-                <div class="el-form-item__info" style="margin-top: 8px;">
-                  <a target="_blank" href="https://github.com/agalwood/Motrix/wiki/RPC" rel="noopener noreferrer">
-                    {{ t('preferences.rpc-secret-tips') }}
-                    <mo-icon name="link" width="12" height="12" />
-                  </a>
-                </div>
               </el-col>
             </el-row>
           </el-form-item>
         </div>
 
+        <!-- 用户代理设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ t('preferences.download-protocol') }}</h3>
+          <h3 class="card-title">{{ t('preferences.user-agent') }}</h3>
           <el-form-item size="small">
             <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ t('preferences.protocols-magnet') }}</span>
-                  <div class="toggle-desc">{{ t('preferences.protocols-magnet-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.protocols.magnet"
-                  @change="(val) => onProtocolsChange('magnet', val)"
-                />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ t('preferences.protocols-thunder') }}</span>
-                  <div class="toggle-desc">{{ t('preferences.protocols-thunder-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.protocols.thunder"
-                  @change="(val) => onProtocolsChange('thunder', val)"
-                />
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ t('preferences.protocols-ed2k') }}</span>
-                  <div class="toggle-desc">{{ t('preferences.protocols-ed2k-desc') }}</div>
-                </div>
-                <el-switch
-                  v-model="form.protocols.ed2k"
-                  @change="(val) => onProtocolsChange('ed2k', val)"
-                />
-              </div>
-            </el-col>
-          </el-form-item>
-        </div>
-
-        <!-- 引擎信息卡片 -->
-        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ t('preferences.engine') }}</h3>
-          <el-form-item size="small">
-            <el-col class="form-item-sub" :span="24">
-              <el-row :gutter="16" style="margin-bottom: 12px;">
-                <el-col :span="24">
-                  <strong>{{ t('preferences.engine-select') }}:</strong>
-                  <mo-extend-select
-                    v-model="activeEngineBinary"
-                    disabled
-                    :options="[{ label: activeEngineBinary || '--', value: activeEngineBinary || '' }]"
-                    style="width: 100%; margin-top: 8px;"
-                  />
-                </el-col>
-              </el-row>
-              <el-row :gutter="16" style="margin-bottom: 12px;">
-                <el-col :span="8">
-                  <strong>{{ t('preferences.engine-version') }}:</strong>
-                  <div>{{ storeEngineInfo.version || '--' }}</div>
-                </el-col>
-                <el-col :span="8">
-                  <strong>{{ t('preferences.engine-architecture') }}:</strong>
-                  <div>{{ storeEngineInfo.architecture || '--' }}</div>
-                </el-col>
-                <el-col :span="8">
-                  <strong>{{ t('preferences.engine-features') }}:</strong>
-                  <div>{{ storeEngineInfo.features ? storeEngineInfo.features.join(', ') : '--' }}</div>
-                </el-col>
-              </el-row>
-              <el-row :gutter="16" style="margin-bottom: 12px;">
-                <el-col :span="12">
-                  <strong>{{ t('preferences.engine-dependencies') }}:</strong>
-                  <div>{{ storeEngineInfo.dependencies ? storeEngineInfo.dependencies.join(', ') : '--' }}</div>
-                </el-col>
-                <el-col :span="12">
-                  <strong>{{ t('preferences.engine-compile-info') }}:</strong>
-                  <div>{{ storeEngineInfo.compileInfo || '--' }}</div>
-                </el-col>
-              </el-row>
+              {{ t('preferences.mock-user-agent') }}
+              <el-input
+                type="textarea"
+                :rows="2"
+                auto-complete="off"
+                placeholder="User-Agent"
+                v-model="form.userAgent">
+              </el-input>
+              <mo-segmented-slider
+                ref="uaSegmented"
+                class="ua-segmented"
+                :value="activeUAValue"
+                :options="uaOptions"
+                size="mini"
+                @change="changeUA"
+              />
             </el-col>
           </el-form-item>
         </div>
@@ -434,27 +411,38 @@
           </el-form-item>
         </div>
 
-        <!-- 用户代理设置卡片 -->
+        <!-- 引擎信息卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ t('preferences.user-agent') }}</h3>
+          <h3 class="card-title">{{ t('preferences.engine') }}</h3>
           <el-form-item size="small">
-            <el-col class="form-item-sub" :span="24">
-              {{ t('preferences.mock-user-agent') }}
-              <el-input
-                type="textarea"
-                :rows="2"
-                auto-complete="off"
-                placeholder="User-Agent"
-                v-model="form.userAgent">
-              </el-input>
-              <mo-segmented-slider
-                ref="uaSegmented"
-                class="ua-segmented"
-                :value="activeUAValue"
-                :options="uaOptions"
-                size="mini"
-                @change="changeUA"
-              />
+            <el-col class="form-item-sub pref-info-block" :span="24">
+              <el-row :gutter="16" class="pref-info-row">
+                <el-col :span="24" class="pref-info-item">
+                  <span class="pref-info-label">{{ t('preferences.engine-select') }}</span>
+                  <mo-extend-select
+                    v-model="activeEngineBinary"
+                    disabled
+                    :options="[{ label: activeEngineBinary || '--', value: activeEngineBinary || '' }]"
+                    class="pref-info-value"
+                  />
+                </el-col>
+              </el-row>
+              <el-row :gutter="16" class="pref-info-row">
+                <el-col :span="12" class="pref-info-item">
+                  <span class="pref-info-label">{{ t('preferences.engine-version') }}</span>
+                  <span class="pref-info-value">{{ storeEngineInfo.version || '--' }}</span>
+                </el-col>
+                <el-col :span="12" class="pref-info-item">
+                  <span class="pref-info-label">{{ t('preferences.engine-architecture') }}</span>
+                  <span class="pref-info-value">{{ storeEngineInfo.architecture || '--' }}</span>
+                </el-col>
+              </el-row>
+              <el-row :gutter="16" class="pref-info-row">
+                <el-col :span="24" class="pref-info-item">
+                  <span class="pref-info-label">{{ t('preferences.engine-features') }}</span>
+                  <span class="pref-info-value">{{ engineFeaturesText }}</span>
+                </el-col>
+              </el-row>
             </el-col>
           </el-form-item>
         </div>
@@ -463,8 +451,11 @@
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ t('preferences.developer') }}</h3>
           <el-form-item size="small">
-            <el-col class="form-item-sub" :span="24">
-              {{ t('preferences.download-session-path') }}
+            <el-col class="form-item-sub form-item-sub--inline form-item-sub--inline-wide" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.download-session-path') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.download-session-path-desc') }}</div>
+              </div>
               <el-input placeholder="" disabled v-model="sessionPath">
                 <template #append>
                   <mo-show-in-folder
@@ -474,29 +465,35 @@
                 </template>
               </el-input>
             </el-col>
-            <el-col class="form-item-sub" :span="24">
-              {{ t('preferences.app-log-path') }}
-              <el-row :gutter="16">
-                <el-col :span="18">
-                  <el-input placeholder="" disabled v-model="logPath">
-                    <template #append>
-                      <mo-show-in-folder
-                        v-if="isRenderer"
-                        :path="logPath"
-                      />
-                    </template>
-                  </el-input>
-                </el-col>
-                <el-col :span="6">
-                  <mo-extend-select
-                    v-model="form.logLevel"
-                    :options="logLevels.map(item => ({ label: item, value: item }))"
+            <el-col class="form-item-sub form-item-sub--inline form-item-sub--inline-wide" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.app-log-path') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.app-log-path-desc') }}</div>
+              </div>
+              <el-input placeholder="" disabled v-model="logPath">
+                <template #append>
+                  <mo-show-in-folder
+                    v-if="isRenderer"
+                    :path="logPath"
                   />
-                </el-col>
-              </el-row>
+                </template>
+              </el-input>
             </el-col>
-            <el-col class="form-item-sub" :span="24">
-              {{ t('preferences.aria2-log-path') }}
+            <el-col class="form-item-sub form-item-sub--inline form-item-sub--inline-narrow" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.log-level') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.log-level-desc') }}</div>
+              </div>
+              <mo-extend-select
+                v-model="form.logLevel"
+                :options="logLevels.map(item => ({ label: item, value: item }))"
+              />
+            </el-col>
+            <el-col class="form-item-sub form-item-sub--inline form-item-sub--inline-wide" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.aria2-log-path') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.aria2-log-path-desc') }}</div>
+              </div>
               <el-input placeholder="" disabled v-model="aria2LogPath">
                 <template #append>
                   <mo-hover-tip
@@ -512,11 +509,11 @@
                 </template>
               </el-input>
             </el-col>
-            <el-col class="form-item-sub" :span="24">
-              <el-button plain type="warning" @click="() => onSessionResetClick()">
+            <el-col class="form-item-sub pref-action-row" :span="24">
+              <el-button class="pref-row-action" @click="() => onSessionResetClick()">
                 {{ t('preferences.session-reset') }}
               </el-button>
-              <el-button plain type="danger" @click="() => onFactoryResetClick()">
+              <el-button class="pref-row-action pref-row-action--danger" @click="() => onFactoryResetClick()">
                 {{ t('preferences.factory-reset') }}
               </el-button>
               </el-col>
@@ -721,6 +718,11 @@ const formOriginal = ref(initForm(preferenceConfig.value))
 const advancedForm = ref(null)
 const hideRpcSecret = ref(true)
 const proxyScopeOptions = ref(PROXY_SCOPE_OPTIONS)
+const proxyModeOptions = computed(() => [
+  { value: 'none', label: t('preferences.proxy-mode-none') },
+  { value: 'system', label: t('preferences.proxy-mode-system') },
+  { value: 'custom', label: t('preferences.proxy-mode-custom') }
+])
 const rules = ref({})
 const builtinGithubMirrors = ref([
   { value: 'gh-proxy.com', label: 'gh-proxy.com', latency: null, statusCode: null, checking: false },
@@ -782,6 +784,12 @@ const configEngineBinary = computed(() => {
 })
 const activeEngineBinary = computed(() => storeEngineInfo.value.binPath || configEngineBinary.value || '')
 const engineInfo = computed(() => storeEngineInfo.value)
+// 引擎自报的能力列表（engine.getVersion 的 features 字段），
+// 替代旧的硬编码 aria2 功能清单（FTP/Metalink 等并不属于本引擎）
+const engineFeaturesText = computed(() => {
+  const list = storeEngineInfo.value.enabledFeatures
+  return list && list.length > 0 ? list.join(', ') : '--'
+})
 const isRenderer = is.renderer()
 const activeCategory = computed(() => props.category || 'advanced')
 const title = computed(() => {
@@ -801,8 +809,7 @@ const subnavs = computed(() => {
     { key: 'bt', title: t('preferences.bt-settings'), route: `${base}/bt` },
     { key: 'task', title: t('preferences.task-manage'), route: `${base}/task` },
     { key: 'file', title: t('preferences.file-manage'), route: `${base}/file` },
-    { key: 'advanced', title: t('preferences.advanced'), route: `${base}/advanced` },
-    { key: 'lab', title: t('preferences.lab'), route: `${base}/lab` }
+    { key: 'advanced', title: t('preferences.advanced'), route: `${base}/advanced` }
   ]
 })
 const rpcDefaultPort = computed(() => ENGINE_RPC_PORT)
@@ -864,22 +871,10 @@ watch(() => form.value.rpcSecret, (val) => {
 
 // --- Lifecycle ---
 onMounted(async () => {
-  await fetchEngineList()
-  await fetchEngineInfo()
-  checkFfmpegStatus()
-  previousGithubMirrorUrls.value = [...(form.value.githubMirrorUrls || [])]
-  if (form.value.githubMirrorUrls && form.value.githubMirrorUrls.length > 0) {
-    setTimeout(() => {
-      checkSelectedGithubMirrors().catch(() => {})
-    }, 1000)
-  }
-  // 旧镜像全部停服时 initForm 已用新默认列表替换，这里落盘一次完成迁移
-  if (githubMirrorMigrationPending.value) {
-    persistGithubMirrorsNow()
-  }
-  // 注册 resize 更新镜像多选折叠数（组件挂载后 select 已渲染）
-  window.addEventListener('resize', handleGithubMirrorResize)
-  nextTick(() => { updateGithubMirrorCollapse() })
+  // 更新状态恢复必须先于引擎 RPC 执行：fetchEngineList/fetchEngineInfo
+  // 走引擎 RPC，引擎未就绪时 reject（"engine not ready"）会让 onMounted
+  // 整体中断，get-update-status 永远不会执行，重启后"预览更新"就会
+  // 一直显示"该版本暂无更新说明"。
   try {
     const appConfig = await ipcRenderer.invoke('get-app-config')
     appVersion.value = appConfig.version
@@ -922,6 +917,31 @@ onMounted(async () => {
   } catch (e) {
     console.warn('[Lerxu] Failed to get update status:', e)
   }
+  // 引擎相关 RPC 单独隔离：失败只降级对应信息展示，不再影响其它初始化
+  try {
+    await fetchEngineList()
+  } catch (e) {
+    console.warn('[Lerxu] Failed to fetch engine list:', e)
+  }
+  try {
+    await fetchEngineInfo()
+  } catch (e) {
+    console.warn('[Lerxu] Failed to fetch engine info:', e)
+  }
+  checkFfmpegStatus()
+  previousGithubMirrorUrls.value = [...(form.value.githubMirrorUrls || [])]
+  if (form.value.githubMirrorUrls && form.value.githubMirrorUrls.length > 0) {
+    setTimeout(() => {
+      checkSelectedGithubMirrors().catch(() => {})
+    }, 1000)
+  }
+  // 旧镜像全部停服时 initForm 已用新默认列表替换，这里落盘一次完成迁移
+  if (githubMirrorMigrationPending.value) {
+    persistGithubMirrorsNow()
+  }
+  // 注册 resize 更新镜像多选折叠数（组件挂载后 select 已渲染）
+  window.addEventListener('resize', handleGithubMirrorResize)
+  nextTick(() => { updateGithubMirrorCollapse() })
 })
 
 onBeforeUnmount(() => {
@@ -1050,33 +1070,49 @@ onBeforeUnmount(() => {
         const testUrl = `https://${mirror.value}/${MIRROR_PROBE_PATH}`
         const startTime = Date.now()
 
-        try {
-          // 在 Electron 中使用 fetch，但添加更宽松的选项
+        // 单次请求：mode 由调用方决定（cors / no-cors），统一 8 秒超时
+        const fetchOnce = async (mode) => {
           const controller = new AbortController()
-          const timeoutId = setTimeout(() => controller.abort(), 8000) // 增加到8秒超时
+          const timeoutId = setTimeout(() => controller.abort(), 8000)
+          try {
+            return await fetch(testUrl, {
+              method: 'GET',
+              signal: controller.signal,
+              cache: 'no-cache',
+              mode,
+              redirect: 'follow',
+              credentials: 'omit'
+            })
+          } finally {
+            clearTimeout(timeoutId)
+          }
+        }
 
-          const response = await fetch(testUrl, {
-            method: 'GET',
-            signal: controller.signal,
-            cache: 'no-cache',
-            mode: 'cors',
-            redirect: 'follow',
-            credentials: 'omit'
-          })
+        try {
+          // 首选 cors 模式：raw.githubusercontent.com 的回源响应带 ACAO:*，
+          // 可读取状态码精确判定（403/404/429 = 在线但拒绝代理，-2 单独标记）
+          try {
+            const response = await fetchOnce('cors')
+            mirror.statusCode = response.status
 
-          clearTimeout(timeoutId)
-          mirror.statusCode = response.status
-
-          // 检查响应状态
-          if (response.ok) {
+            if (response.ok) {
+              const latency = Date.now() - startTime
+              console.log(`[GitHub Mirror] ${mirror.value} latency: ${latency}ms`)
+              return latency
+            }
+            console.warn(`[GitHub Mirror] ${mirror.value} returned status: ${response.status}`)
+            return -2
+          } catch (corsError) {
+            // 部分镜像（如 gh.ddlc.top）不返回 ACAO 头，cors 模式必被浏览器拦截
+            // （Failed to fetch），但镜像本身在线。降级 no-cors 复测：opaque 响应
+            // 不可读内容与状态码，但「请求发出且有响应回来」足以完成延迟测量；
+            // 镜像真正不可达（DNS/断连/超时）时 no-cors 同样会 reject。
+            const response = await fetchOnce('no-cors')
             const latency = Date.now() - startTime
-            console.log(`[GitHub Mirror] ${mirror.value} latency: ${latency}ms`)
+            mirror.statusCode = 0 // opaque response 不可读状态码
+            console.log(`[GitHub Mirror] ${mirror.value} latency (no-cors, opaque): ${latency}ms`)
             return latency
           }
-          // 收到了 HTTP 响应，说明镜像本身在线，只是拒绝/不代理这个地址（403/404/429 等），
-          // 不能等同于「超时不可用」，用 -2 单独标记
-          console.warn(`[GitHub Mirror] ${mirror.value} returned status: ${response.status}`)
-          return -2
         } catch (error) {
           const latency = Date.now() - startTime
           const isCertError = /cert|ERR_CERT/i.test(error.message || '')
@@ -1464,8 +1500,11 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
       }
       function filterCards(keyword, category) {
         nextTick(() => {
-          if (!document.querySelector('.preference-panel')) return
-          const cards = document.querySelectorAll('.preference-card')
+          // 偏好设置已内嵌为主窗口内的弹窗，旧独立窗口的 .preference-panel 容器
+          // 早已不存在；这里改用弹窗根节点判断，否则过滤会被整段跳过。
+          const root = document.querySelector('.preference-dialog .preference-content')
+          if (!root) return
+          const cards = root.querySelectorAll('.preference-card')
           const k = (keyword || '').toLowerCase()
           let visibleCount = 0
           cards.forEach(card => {
@@ -1597,6 +1636,23 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
             submitForm('advancedForm')
           }
         }, 800)
+      }
+      // 当前实际生效的代理端口（系统代理模式下由主进程解析系统代理后写入 all-proxy）
+      const activeProxyPort = computed(() => {
+        const config = preferenceConfig.value || {}
+        const raw = `${config.allProxy || config['all-proxy'] || ''}`.trim()
+        if (!raw) return ''
+        const withoutScheme = raw.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+        const hostPart = withoutScheme.includes('@') ? withoutScheme.split('@').pop() : withoutScheme
+        const matched = hostPart.match(/:(\d{1,5})(?:[/?#]|$)/)
+        if (matched) return matched[1]
+        if (/^https:/i.test(raw)) return '443'
+        if (/^http:/i.test(raw)) return '80'
+        return ''
+      })
+      function onProxyModeChangeAndSave(mode) {
+        onProxyModeChange(mode)
+        autoSaveForm()
       }
       function onProxyModeChange(mode) {
         form.value.proxy = {
@@ -2666,186 +2722,6 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
       border-color: transparent !important;
       box-shadow: none !important;
     }
-  }
-}
-
-.auto-update-footer {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  padding-top: 12px;
-  gap: 8px;
-
-  /* "预览更新"与"上次检测更新时间"并排，大小一致 */
-  .action-link {
-    font-size: 12px;
-  }
-
-  .auto-update-time {
-    font-size: 12px;
-    color: var(--lc-text-secondary, #999);
-  }
-}
-
-/* 版本条（更新条）：完整状态样式。
-   原先定义在侧边栏 PreferenceSubnav.vue（全局 .version-item），偏好设置内嵌
-   主窗口后该文件被移除，样式随之丢失，只剩一个灰边框素条。
-   现独立收敛到本组件：默认半透明低调、悬停显形；
-   检查中（蓝）/ 有新版（绿）/ 下载中（橙）/ 已下载（绿底）各有配色与呼吸动画 */
-.preference-card .version-item {
-  cursor: pointer;
-  transition: all 0.3s ease;
-  border: 1px solid #000;
-  border-radius: 12px;
-  padding: 8px 12px;
-  margin-top: 10px;
-  font-size: 13px;
-  background-color: transparent;
-  color: var(--lc-text-primary, #303133);
-  opacity: 0.5;
-
-  &:hover {
-    background-color: transparent;
-    border-color: #c6e2ff;
-    opacity: 1;
-  }
-
-  &.is-checking {
-    cursor: not-allowed;
-    opacity: 1;
-    border-color: #409eff;
-    animation: version-pulse 1s infinite;
-
-    &:hover {
-      border-color: #409eff;
-      background-color: transparent;
-    }
-  }
-
-  &.update-available {
-    color: #67c23a;
-    font-weight: bold;
-    border-color: #c2e7b0;
-    background-color: transparent;
-    opacity: 1;
-    animation: version-pulse-green 1s infinite;
-
-    &:hover {
-      background-color: transparent;
-      border-color: #a5d6a7;
-      opacity: 1;
-    }
-  }
-
-  &.downloading {
-    cursor: not-allowed;
-    color: #e6a23c;
-    font-weight: bold;
-    border-color: #f0c78a;
-    background-color: transparent;
-    opacity: 1;
-    animation: version-pulse-orange 1s infinite;
-
-    &:hover {
-      background-color: transparent;
-      border-color: #f0c78a;
-      opacity: 1;
-    }
-  }
-
-  &.is-disabled {
-    cursor: not-allowed;
-  }
-
-  &.downloaded {
-    cursor: pointer;
-    color: #67c23a;
-    font-weight: bold;
-    border-color: #c2e7b0;
-    background-color: rgba(103, 194, 58, 0.1);
-    opacity: 1;
-
-    &:hover {
-      background-color: rgba(103, 194, 58, 0.15);
-      border-color: #67c23a;
-    }
-  }
-
-  span {
-    font-family: monospace;
-    display: block;
-    text-align: center;
-  }
-
-  /* 深色模式适配：黑边框换白边框、文字换白，状态边框色保持 */
-  .theme-dark & {
-    border-color: #fff;
-    color: #fff;
-
-    &:hover {
-      border-color: #c6e2ff;
-    }
-  }
-
-  .theme-dark &.update-available {
-    border-color: #a5d6a7;
-
-    &:hover {
-      border-color: #a5d6a7;
-    }
-  }
-
-  .theme-dark &.is-checking {
-    border-color: #409eff;
-
-    &:hover {
-      border-color: #409eff;
-    }
-  }
-
-  .theme-dark &.downloading {
-    border-color: #f0c78a;
-
-    &:hover {
-      border-color: #f0c78a;
-    }
-  }
-}
-
-@keyframes version-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.4);
-  }
-  70% {
-    box-shadow: 0 0 0 5px rgba(64, 158, 255, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0);
-  }
-}
-
-@keyframes version-pulse-green {
-  0% {
-    box-shadow: 0 0 0 0 rgba(103, 194, 58, 0.4);
-  }
-  70% {
-    box-shadow: 0 0 0 5px rgba(103, 194, 58, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(103, 194, 58, 0);
-  }
-}
-
-@keyframes version-pulse-orange {
-  0% {
-    box-shadow: 0 0 0 0 rgba(230, 162, 60, 0.4);
-  }
-  70% {
-    box-shadow: 0 0 0 5px rgba(230, 162, 60, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(230, 162, 60, 0);
   }
 }
 

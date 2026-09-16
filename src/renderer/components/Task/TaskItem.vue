@@ -22,6 +22,7 @@
         :status="taskStatus"
         :speed="Number(task.downloadSpeed)"
         :pending-selection="isPendingFileSelection"
+        :fetching-metadata="isFetchingMetadata"
       />
       <mo-task-progress-info :task="task" :view-mode="viewMode" />
     </div>
@@ -32,7 +33,7 @@
 import { ref, computed, watch, onMounted, nextTick, getCurrentInstance } from 'vue'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 import { basename } from 'node:path'
-import { checkTaskIsSeeder, getTaskName, ellipsis, isEd2kTask } from '@shared/utils'
+import { checkTaskIsSeeder, getTaskName, ellipsis, isEd2kTask, isMagnetTask } from '@shared/utils'
 import { TASK_STATUS } from '@shared/constants'
 import { openItem, getTaskActualPath } from '@/utils/native'
 import { commands } from '@/components/CommandManager/instance'
@@ -119,6 +120,13 @@ const isPendingFileSelection = computed(() => {
   return !!(pendingFileSelection.value && pendingFileSelection.value[gid])
 })
 
+// 正在获取元数据：磁力任务元数据就绪前（bittorrent 存在但没有 info）且处于
+// 活动态。用于给进度条挂"从左到右"的扫光动效（任务名此刻还是临时的）。
+const isFetchingMetadata = computed(() => {
+  const task = props.task || {}
+  return `${task.status || ''}` === TASK_STATUS.ACTIVE && isMagnetTask(task)
+})
+
 function getCompletedDisplayName (task) {
   const config = preferenceConfig.value || {}
   const suffix = config.downloadingFileSuffix || ''
@@ -140,6 +148,7 @@ const taskFullName = computed(() => {
   }
   return getTaskName(task, {
     defaultName: t('task.get-task-name'),
+    hashFallbackLabel: t('task.magnet-pending-name'),
     maxLen: -1
   })
 })
@@ -153,7 +162,8 @@ const taskName = computed(() => {
     return ellipsis(getCompletedDisplayName(task), 64)
   }
   return getTaskName(task, {
-    defaultName: t('task.get-task-name')
+    defaultName: t('task.get-task-name'),
+    hashFallbackLabel: t('task.magnet-pending-name')
   })
 })
 

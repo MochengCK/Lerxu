@@ -74,9 +74,6 @@
         <div class="task-speed-text" v-if="taskPriority > 0">
           <span>{{ t('task.priority-short') }} {{ taskPriority }}</span>
         </div>
-        <div class="task-speed-text hidden-sm-and-down" v-if="nearCompleteHintText">
-          <span>{{ nearCompleteHintText }}</span>
-        </div>
       </div>
       <div class="task-completion-time" v-else-if="isMerging">
         <span v-if="mergeProgressText">{{ mergeProgressText }}</span>
@@ -344,18 +341,6 @@ const taskPriority = computed(() => {
   const gid = props.task && props.task.gid
   const map = taskPriorities.value || {}
   return (gid && map[gid]) ? Number(map[gid]) : 0
-})
-
-const nearCompleteHintText = computed(() => {
-  const { totalLength, completedLength, downloadSpeed, status } = props.task
-  if (status !== TASK_STATUS.ACTIVE) return ''
-  const total = Number(totalLength)
-  const completed = Number(completedLength)
-  if (!(total > 0 && completed > 0)) return ''
-  const progress = calcProgress(total, completed, 2)
-  if (!(progress >= 99 && progress < 100)) return ''
-  if (Number(downloadSpeed) > 0) return ''
-  return t('task.near-complete-verifying')
 })
 
 const dataAccessHintText = computed(() => {

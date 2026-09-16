@@ -47,6 +47,8 @@ export const useAppStore = defineStore('app', () => {
   const addTaskTorrents = ref([])
   const addTaskOptions = ref({})
   const taskPlanVisible = ref(false)
+  const preferenceVisible = ref(false)
+  const preferenceCategory = ref('basic')
   const progress = ref(0)
   const isCheckingUpdate = ref(false)
   const isAsideHovered = ref(false)
@@ -124,6 +126,24 @@ export const useAppStore = defineStore('app', () => {
 
   function updateTaskPlanVisible (visible) {
     taskPlanVisible.value = visible
+  }
+
+  function updatePreferenceVisible (visible) {
+    preferenceVisible.value = visible
+  }
+
+  function updatePreferenceCategory (category) {
+    preferenceCategory.value = category || 'basic'
+  }
+
+  // 未显式指定分类时沿用上次浏览的分类，避免每次打开都跳回「基础设置」
+  function showPreferenceDialog (category) {
+    if (category) preferenceCategory.value = category
+    preferenceVisible.value = true
+  }
+
+  function hidePreferenceDialog () {
+    preferenceVisible.value = false
   }
 
   function updateInterval (millisecond) {
@@ -327,6 +347,8 @@ export const useAppStore = defineStore('app', () => {
     addTaskTorrents,
     addTaskOptions,
     taskPlanVisible,
+    preferenceVisible,
+    preferenceCategory,
     progress,
     isCheckingUpdate,
     isAsideHovered,
@@ -348,6 +370,10 @@ export const useAppStore = defineStore('app', () => {
     updateAddTaskOptions,
     resetAddTaskOptions,
     updateTaskPlanVisible,
+    updatePreferenceVisible,
+    updatePreferenceCategory,
+    showPreferenceDialog,
+    hidePreferenceDialog,
     updateInterval,
     increaseInterval,
     decreaseInterval,

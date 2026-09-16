@@ -1,0 +1,324 @@
+<resources>
+    <string name="app_name">Lerxu</string>
+
+    <!-- Engine notification -->
+    <string name="engine_notification_channel">Download Engine</string>
+    <string name="engine_notification_title">Lerxu Download Engine</string>
+    <string name="engine_notification_text">Engine running</string>
+    <string name="engine_starting_notification">Starting engine…</string>
+    <string name="engine_failed_notification">Engine failed to start</string>
+    <string name="engine_restarting_notification">Restarting engine…</string>
+    <string name="engine_start_failed_default">Engine failed to start, please check app permissions</string>
+    <string name="engine_start_failed">Engine failed to start</string>
+
+    <!-- Common -->
+    <string name="cancel">Cancel</string>
+    <string name="grant">Grant</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="pause">Pause</string>
+    <string name="resume">Resume</string>
+    <string name="retry">Retry</string>
+    <string name="copy">Copy</string>
+    <string name="close">Close</string>
+    <string name="back">Back</string>
+    <string name="refresh">Refresh</string>
+    <string name="add">Add</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_start">Get Started</string>
+    <string name="onboarding_welcome_tagline">Fast downloads · Clean and efficient</string>
+    <string name="onboarding_features_title">Powerful Features</string>
+    <string name="onboarding_features_subtitle">Built for various download scenarios</string>
+    <string name="onboarding_feature_http_title">HTTP/FTP Downloads</string>
+    <string name="onboarding_feature_http_desc">Multi-threaded segmented downloads with resume support, up to 128 connections</string>
+    <string name="onboarding_feature_bt_title">BT Torrents</string>
+    <string name="onboarding_feature_bt_desc">Full BT protocol support, DHT network, automatic tracker updates</string>
+    <string name="onboarding_feature_magnet_title">Magnet Links</string>
+    <string name="onboarding_feature_magnet_desc">Quickly fetch metadata via magnet links, start downloading with one tap</string>
+    <string name="onboarding_feature_smart_title">Smart Scheduling</string>
+    <string name="onboarding_feature_smart_desc">Adaptive segment selection, dynamic connection management, full bandwidth utilization</string>
+    <string name="onboarding_permission_title">Permission Settings</string>
+    <string name="onboarding_permission_subtitle">The following permissions are needed to download files normally</string>
+    <string name="onboarding_permission_storage_title">Storage Access</string>
+    <string name="onboarding_permission_storage_desc">Save downloaded files to device storage</string>
+    <string name="onboarding_permission_notification_title">Notifications</string>
+    <string name="onboarding_permission_notification_desc">Display download progress and engine status</string>
+    <string name="onboarding_permission_all_ready">All permissions ready</string>
+    <string name="onboarding_permission_granted">Granted</string>
+    <string name="onboarding_finish_title">All set!</string>
+    <string name="onboarding_finish_subtitle">Starting download engine…</string>
+
+    <!-- App Screen -->
+    <string name="settings">Settings</string>
+    <string name="download_speed">Download speed</string>
+    <string name="upload_speed">Upload speed</string>
+    <string name="sort">Sort</string>
+    <string name="add_task">Add task</string>
+    <string name="search">Search</string>
+    <string name="search_hint">Search tasks</string>
+    <string name="connecting">Connecting…</string>
+    <string name="exit_edit_mode">Exit edit mode</string>
+    <string name="selected_count">Selected %1$d</string>
+    <string name="select_all">Select All</string>
+    <string name="scope_all">All</string>
+    <string name="scope_active">Active</string>
+    <string name="scope_seeding">Seeding</string>
+    <string name="scope_waiting">Waiting</string>
+    <string name="scope_paused">Paused</string>
+    <string name="scope_stopped">Completed</string>
+    <string name="status_paused">Paused</string>
+    <string name="completed_at">Completed at %1$s</string>
+    <string name="error_at">Errored at %1$s</string>
+    <string name="no_tasks">No tasks yet</string>
+    <string name="engine_starting_screen">Starting engine…</string>
+    <string name="engine_starting_hint">First launch may take a few seconds</string>
+    <string name="connecting_engine">Connecting to engine…</string>
+
+    <!-- Task card status -->
+    <string name="status_active">Active</string>
+    <string name="status_seeding">Seeding</string>
+    <string name="status_waiting">Waiting</string>
+    <string name="status_complete">Complete</string>
+    <string name="status_error">Error</string>
+    <string name="status_removed">Removed</string>
+    <string name="status_awaiting_selection">Awaiting file selection</string>
+
+    <!-- Sort menu -->
+    <string name="sort_field_finished">Finished time</string>
+    <string name="sort_field_remaining">Remaining time</string>
+    <string name="sort_field_speed">Speed</string>
+    <string name="sort_field_size">Size</string>
+
+    <!-- Add task dialog -->
+    <string name="add_download_task">Add Download Task</string>
+    <string name="paste_link">Paste Link</string>
+    <string name="select_torrent_file">Select Torrent File</string>
+    <string name="url_placeholder">http/https/ftp/magnet link</string>
+    <string name="filename_optional">Filename (optional)</string>
+    <string name="save_to">Save to</string>
+    <string name="start_download">Start Download</string>
+    <string name="magnet">Magnet</string>
+    <string name="direct_link">Direct</string>
+    <string name="unknown">Unknown</string>
+    <string name="click_select_torrent">Tap to select .torrent file</string>
+    <string name="support_local_bt">Supports local BT torrent files</string>
+    <string name="read_torrent_failed">Failed to read torrent file: %1$s</string>
+    <string name="add_task_failed">Failed to add task: %1$s</string>
+
+    <!-- Delete confirm dialog -->
+    <string name="delete_one_task">Delete task?</string>
+    <string name="delete_multiple_tasks">Delete %1$d tasks?</string>
+    <string name="delete_with_files_msg">This will remove task records and delete downloaded files. This action cannot be undone.</string>
+    <string name="delete_record_only_msg">Only task records will be removed. Downloaded files will be kept.</string>
+    <string name="delete_local_files">Also delete local files</string>
+
+    <!-- Task detail -->
+    <string name="remaining">Remaining %1$s</string>
+    <string name="error_code_msg">Error %1$d: %2$s</string>
+    <string name="save_dir">Save to</string>
+    <string name="connections">Connections</string>
+    <string name="seeders">Seeders</string>
+    <string name="elapsed">Elapsed</string>
+    <string name="files_count">Files (%1$d)</string>
+    <string name="file_index">File %1$d</string>
+    <string name="copied_to_clipboard">Copied to clipboard</string>
+
+    <!-- Settings -->
+    <string name="settings_download">Downloads</string>
+    <string name="settings_save_dir">Save directory</string>
+    <string name="copied_save_dir">Save directory copied</string>
+    <string name="max_concurrent">Max concurrent tasks</string>
+    <string name="max_concurrent_desc">Excess tasks are automatically queued</string>
+    <string name="split_count">Connections per task</string>
+    <string name="split_count_desc">Number of download connections per task</string>
+    <string name="dl_limit">Download speed limit</string>
+    <string name="dl_limit_desc">Limit total download speed; tap the value to customize</string>
+    <string name="ul_limit">Upload speed limit</string>
+    <string name="ul_limit_desc">Limit total upload speed; tap the value to customize</string>
+    <string name="dl_unlimited">Unlimited</string>
+    <string name="per_server_connections">Per-server connections</string>
+    <string name="per_server_connections_desc">Max connections to one server; actual = min(this, split)</string>
+    <string name="custom_value">Custom</string>
+    <string name="custom_limit_title">Custom speed limit</string>
+    <string name="custom_limit_desc">K/M suffix allowed; bare number = KB/s; 0 = unlimited</string>
+    <string name="custom_limit_hint">e.g. 500K, 2M, 1.5M</string>
+    <string name="custom_limit_invalid">Invalid format</string>
+    <string name="confirm">Confirm</string>
+    <string name="bt_max_peers">BT max peers</string>
+    <string name="bt_max_peers_desc">Max peers per torrent</string>
+
+    <!-- BT encryption / protocol / seeding -->
+    <string name="bt_encryption">BT encryption</string>
+    <string name="bt_encryption_desc">MSE handshake mode with peers</string>
+    <string name="bt_encryption_adaptive">Prefer</string>
+    <string name="bt_encryption_force">Force</string>
+    <string name="bt_encryption_plain">Plain</string>
+    <string name="bt_protocol">Transfer protocol</string>
+    <string name="bt_protocol_desc">Transport used for peer connections</string>
+    <string name="bt_protocol_tcp_utp">TCP+uTP</string>
+    <string name="bt_protocol_tcp">TCP only</string>
+    <string name="bt_protocol_utp">uTP only</string>
+    <string name="bt_adaptive">Smart connection scheduling</string>
+    <string name="bt_adaptive_desc">Dynamically adjust peers by throughput benefit</string>
+    <string name="bt_seed_mode">Seed after completion</string>
+    <string name="bt_seed_mode_desc">Keep uploading after download finishes</string>
+    <string name="bt_seed_ratio">Seed stop ratio</string>
+    <string name="bt_seed_ratio_desc">Stop seeding when reaching this ratio</string>
+    <string name="seed_ratio_unlimited">Unlimited</string>
+    <string name="bt_listen_port">BT listen port</string>
+    <string name="bt_listen_port_desc">Applied to new BT tasks; falls back if occupied</string>
+    <string name="dht_listen_port">DHT listen port</string>
+    <string name="dht_listen_port_desc">Applied to new BT tasks; falls back if occupied</string>
+    <string name="port_random">Random</string>
+    <string name="port_dialog_desc">0 = random port (0-65535)</string>
+    <string name="port_dialog_hint">Port (0-65535)</string>
+    <string name="port_dialog_invalid">Port must be 0-65535</string>
+    <string name="bt_enable_lpd">Local peer discovery</string>
+    <string name="bt_enable_lpd_desc">Find peers on the same LAN via multicast (LPD)</string>
+    <string name="bt_port_mapping">Port mapping</string>
+    <string name="bt_port_mapping_desc">Set up UPnP/NAT-PMP mapping on your router</string>
+    <string name="settings_bt_section">BitTorrent</string>
+    <string name="settings_bt_servers">BT Servers</string>
+    <string name="auto_update_subscriptions">Auto-update subscriptions</string>
+    <string name="auto_update_subscriptions_desc">Engine periodically fetches subscription sources to sync latest trackers</string>
+    <string name="refresh_all_subscriptions">Refresh all subscriptions now</string>
+    <string name="refreshing_subscriptions">Fetching latest list from sources…</string>
+    <string name="refresh_subscriptions_desc">Re-fetch tracker list from all subscription sources</string>
+    <string name="trackers_updated">Updated, %1$d trackers</string>
+    <string name="refresh_failed">Refresh failed, please check network</string>
+    <string name="add_subscription">Add subscription source</string>
+    <string name="subscription_default_name">Subscription</string>
+    <string name="subscription_last_error">Last fetch failed: %1$s</string>
+    <string name="subscription_tracker_count">%1$d trackers · %2$s</string>
+    <string name="subscription_not_fetched">Not fetched yet</string>
+    <string name="refresh_subscription">Refresh subscription</string>
+    <string name="remove_subscription">Remove subscription</string>
+    <string name="remove_sub_confirm_title">Remove this subscription?</string>
+    <string name="remove_sub_confirm_msg">"%1$s" will stop auto-updating its trackers. This cannot be undone.</string>
+    <string name="add_subscription_dialog_title">Add Subscription Source</string>
+    <string name="add_subscription_dialog_desc">Subscription sources return plain-text tracker lists (one URL per line). The engine will automatically fetch and inject them into BT tasks.</string>
+    <string name="subscription_name_optional">Name (optional)</string>
+    <string name="subscription_url">Subscription URL</string>
+    <string name="subscription_url_hint">Must start with http:// or https://</string>
+    <string name="add_sub_failed">Add failed, please check network</string>
+    <string name="add_sub_partial">Added, but first fetch failed: %1$s</string>
+    <string name="add_sub_success">Added %1$d trackers</string>
+    <string name="settings_maintenance">Maintenance</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="theme">Theme</string>
+    <string name="theme_follow_system">Follow system</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_language">Language</string>
+    <string name="language">Language</string>
+    <string name="language_follow_system">Follow system</string>
+    <string name="purge_task_records">Purge task records</string>
+    <string name="purge_task_records_desc">Remove records of completed and errored tasks. Downloaded files will not be deleted.</string>
+    <string name="settings_about">About</string>
+    <string name="about_version">Version</string>
+    <string name="about_engine">Download Engine</string>
+    <string name="purge_confirm_title">Purge task records?</string>
+    <string name="purge_confirm_msg">This will remove records of completed and errored tasks. Downloaded files will not be deleted.</string>
+    <string name="purge_confirm_label">Purge</string>
+    <string name="purge_done">Completed task records purged</string>
+    <string name="decrease">Decrease</string>
+    <string name="increase">Increase</string>
+    <string name="prev_preset">Previous preset</string>
+    <string name="next_preset">Next preset</string>
+
+    <!-- Toast messages -->
+    <string name="toast_file_location_unknown">Cannot determine file location</string>
+    <string name="toast_is_directory">This task is a directory and cannot be opened directly</string>
+    <string name="toast_file_not_exist">File does not exist</string>
+    <string name="toast_no_app_to_open">No app available to open this file type</string>
+    <string name="toast_open_failed">Open failed: %1$s</string>
+
+    <!-- Engine error messages -->
+    <string name="error_extract_binary_failed">Failed to extract engine binary: %1$s</string>
+    <string name="error_no_exec_permission">Cannot set engine executable permission, please check device security policy</string>
+    <string name="error_engine_exit_code">Engine process exit code: %1$d</string>
+    <string name="error_engine_timeout">Engine startup timed out, RPC port not ready</string>
+    <string name="error_engine_start_exception">Engine start error: %1$s</string>
+    <string name="error_engine_start_default">Engine failed to start</string>
+
+    <!-- Time formatting -->
+    <string name="yesterday">Yesterday %1$s</string>
+    <string name="month_day">%1$d/%2$d %3$s</string>
+    <string name="today">Today %1$s</string>
+
+    <!-- Built-in BT subscription presets -->
+    <string name="preset_sub_xiu2_best">XIU2 Best Trackers</string>
+    <string name="preset_sub_ngosang_best">ngosang Best Trackers</string>
+    <string name="preset_sub_xiu2_all">XIU2 All Trackers</string>
+
+    <!-- App update check -->
+    <string name="auto_update_check">Auto update check</string>
+    <string name="auto_update_check_desc">Check GitHub Releases at startup, notify when a new version is out</string>
+    <string name="check_update_now">Check for updates</string>
+    <string name="check_update_now_desc">Manually check for the latest version</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_latest">Already up to date</string>
+    <string name="update_check_failed">Update check failed, check your network</string>
+    <string name="update_available">New version %1$s available</string>
+    <string name="update_notification_title">Lerxu %1$s available</string>
+    <string name="update_notification_text">Tap to view and download</string>
+    <string name="channel_update_name">App updates</string>
+    <!-- Task detail tabs -->
+    <string name="detail_tab_overview">Overview</string>
+    <string name="detail_tab_pieces">Pieces</string>
+    <string name="detail_tab_peers">Peers</string>
+    <string name="detail_tab_trackers">Trackers</string>
+    <string name="detail_tab_files">Files</string>
+    <string name="detail_gid">GID</string>
+    <string name="detail_avg_speed">Avg speed</string>
+    <string name="detail_seed_ratio">Share ratio</string>
+    <!-- Per-task speed limit -->
+    <string name="speed_limit">Speed limit</string>
+    <string name="speed_limit_edit">Edit per-task speed limit</string>
+    <string name="speed_limit_download">Download limit</string>
+    <string name="speed_limit_upload">Upload limit</string>
+    <string name="speed_limit_unlimited">Follow global</string>
+    <string name="speed_limit_hint">Leave empty to follow the global limit; a per-task limit takes priority and may be higher or lower. Accepts 1M / 500K / plain bytes</string>
+    <string name="speed_limit_saved">Speed limit updated</string>
+    <string name="speed_limit_failed">Failed to update speed limit</string>
+    <!-- Pieces -->
+    <string name="piece_progress">%1$d / %2$d pieces</string>
+    <string name="piece_length_label">Piece %1$s</string>
+    <string name="piece_done">Completed</string>
+    <string name="piece_pending">Pending</string>
+    <!-- Peers -->
+    <string name="peers_empty">No peers connected yet</string>
+    <string name="peer_unknown_client">Unknown client</string>
+    <string name="peer_seed_badge">Seed</string>
+    <string name="peer_disconnected">Disconnected</string>
+    <string name="peer_encrypted">Encrypted</string>
+    <string name="peer_choked">Choked</string>
+    <string name="ban_peer">Ban peer</string>
+    <string name="ban_10min">Ban for 10 minutes</string>
+    <string name="ban_1hour">Ban for 1 hour</string>
+    <string name="ban_permanent">Ban permanently</string>
+    <string name="ban_peer_done">Peer banned</string>
+    <string name="ban_peer_failed">Failed to ban peer</string>
+    <!-- Trackers -->
+    <string name="trackers_empty">No trackers</string>
+    <string name="tracker_working">Working</string>
+    <string name="tracker_not_working">Not working</string>
+    <string name="tracker_waiting">Waiting</string>
+    <string name="tracker_leechers">Leechers</string>
+    <string name="tracker_next_announce">Next announce %1$s</string>
+    <!-- Files -->
+    <string name="files_empty">No file info yet</string>
+    <string name="files_waiting_metadata">Waiting for metadata…</string>
+    <string name="apply_selection">Apply</string>
+    <string name="select_at_least_one">Select at least one file</string>
+    <string name="selection_applied">File selection updated</string>
+    <string name="selection_failed">Failed to update file selection</string>
+    <!-- Add-task file-selection flow -->
+    <string name="magnet_parsing">Fetching metadata…</string>
+    <string name="select_files_hint">Select the files to download</string>
+    <string name="metadata_parse_failed">Metadata fetch failed or timed out</string>
+    <string name="select_none">Deselect All</string>
+</resources>

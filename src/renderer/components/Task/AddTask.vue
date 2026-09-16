@@ -214,10 +214,7 @@
           </el-col>
           <el-col :span="8" :xs="24">
             <div class="help-link">
-              <a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Proxy" rel="noopener noreferrer">
-                {{ t('preferences.proxy-tips') }}
-                <mo-icon name="link" width="12" height="12" />
-              </a>
+              {{ t('preferences.proxy-tips') }}
             </div>
           </el-col>
         </el-row>

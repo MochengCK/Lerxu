@@ -28,16 +28,6 @@ const mainRoute = {
         status: 'date',
         filterDate: route.params.date
       })
-    },
-    {
-      // 偏好设置（内嵌视图）：复用 TaskView 布局，左侧任务导航保持不变，
-      // 仅内容区切换为「顶部分类标签栏 + 设置表单」的设置视图。
-      // /preference 与 /preference/:category 共用一个路由记录，
-      // category 缺省为 basic（见 TaskView 内的 computed）。
-      path: '/preference/:category?',
-      name: 'preference',
-      component: TaskIndex,
-      props: () => ({})
     }
   ]
 }
@@ -56,7 +46,7 @@ const router = createRouter({
 router.afterEach((to) => {
   // Store dispatch will be handled by the component layer after Pinia is initialized.
   // During migration, we use a lazy import to avoid circular dependency.
-  const page = to.path.startsWith('/preference') ? '/preference' : '/task'
+  const page = '/task'
   import('@/store').then(({ useAppStore }) => {
     try {
       const appStore = useAppStore()

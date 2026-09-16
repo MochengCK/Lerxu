@@ -91,6 +91,9 @@ const LIGHT_COLORS = {
   secondaryTextColor: '#8492a6',
   barBg: 'rgba(0, 0, 0, 0.06)',
   barInner: '#67c23a',
+  /* 待选择文件状态（与主列表 TaskProgress 的 is-pending-selection 保持一致） */
+  pendingBarBg: '#F6C46B',
+  pendingBarInner: '#f0ad4e',
   controlsBg: '#ffffff',
   controlsBorder: '#d3dde6',
   controlsDivider: 'rgba(26, 35, 50, 0.08)',
@@ -108,7 +111,8 @@ const LIGHT_COLORS = {
   tabActiveColor: '#ffffff',
 
   /* Pieces */
-  pieceColors: ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#39d353'],
+  /* 6 级：未下载 / 25% / 50% / 75% / 完成 / 未选择（未勾选文件的分片） */
+  pieceColors: ['#ebedf0', '#9be9a8', '#40c463', '#30a14e', '#39d353', '#b9c4d2'],
   pieceAtomOutline: 'rgba(26, 35, 50, 0.06)',
 
   /* Misc */
@@ -188,6 +192,9 @@ const DARK_COLORS = {
   secondaryTextColor: '#8b95a3',
   barBg: 'rgba(255, 255, 255, 0.1)',
   barInner: '#67c23a',
+  /* 深色下与主列表 Dark 侧的 is-pending-selection 同色 */
+  pendingBarBg: '#F0AD4E',
+  pendingBarInner: '#f0ad4e',
   controlsBg: '#363b44',
   controlsBorder: '#3d424d',
   controlsDivider: 'rgba(255, 255, 255, 0.06)',
@@ -205,7 +212,8 @@ const DARK_COLORS = {
   tabActiveColor: '#ffffff',
 
   /* Pieces */
-  pieceColors: ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353'],
+  /* 6 级：未下载 / 25% / 50% / 75% / 完成 / 未选择（未勾选文件的分片） */
+  pieceColors: ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353', '#4a5766'],
   pieceAtomOutline: 'transparent',
 
   /* Misc */
@@ -279,6 +287,8 @@ function getProgressWindowPayload (effectiveTheme) {
     metaColor: c.metaColor,
     barBg: c.barBg,
     barInner: c.barInner,
+    pendingBarBg: c.pendingBarBg,
+    pendingBarInner: c.pendingBarInner,
     controlsBg: c.controlsBg,
     controlsBorder: c.controlsBorder,
     controlsDivider: c.controlsDivider,

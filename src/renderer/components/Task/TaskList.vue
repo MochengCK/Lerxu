@@ -345,7 +345,11 @@ function getMultiTaskContextMenuTemplate (selectedGids = []) {
 function getTaskContextMenuTemplate (task, event) {
   const status = task && task.status ? task.status : ''
   const isSeeder = checkTaskIsSeeder(task)
-  const taskName = getTaskName(task, { defaultName: t('task.get-task-name'), maxLen: -1 })
+  const taskName = getTaskName(task, {
+    defaultName: t('task.get-task-name'),
+    hashFallbackLabel: t('task.magnet-pending-name'),
+    maxLen: -1
+  })
   let path = ''
   try {
     path = getTaskActualPath(task, preferenceConfig.value || {}) || ''

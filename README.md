@@ -88,7 +88,7 @@ A modern download manager powered by the in-house XferRust engine (native Rust i
 - **Seeding Control**: Set share-ratio and seeding-time goals; auto-pause or keep seeding on completion
 
 ### Video Download
-- **Online Video Download (Browser Extension)**: Recognize web videos via the browser extension and send them to the app with one click to create download tasks
+- **Online Video Download (Browser Extension)**: Recognize web videos via the browser extension and send them to the app with one click to create download tasks; works in Chrome, Edge, Opera and other Chromium-based browsers as well as Firefox
 - **Download Takeover**: Clicks on download links on web pages (e.g., links with a download attribute or common file extensions) can be handed over to Lerxu, with support for excluding specific sites or file types and a shortcut to temporarily bypass
 - **Video Recognition**: Supports multiple video formats (including DASH) and automatically distinguishes audio streams from video streams
 - **Unified Task Management**: Video resources appear as regular download tasks in the task list, supporting the same pause/resume/delete management experience as other tasks
@@ -133,7 +133,7 @@ Lerxu currently supports the following platforms:
 - **Windows** (10, 11) x64
 - **macOS** (Intel x64; Apple Silicon arm64)
 - **Linux** (x64, arm64)
-- **Android** (arm64): shares the same XferRust engine as the desktop app, built with Kotlin + Compose
+- **Android** (arm64): shares the same download engine as the desktop app, with a mobile-first interface
 
 ## Installation
 
@@ -167,9 +167,14 @@ Lerxu currently supports the following platforms:
 
 ### Android
 
-1. Clone this repository and enter the `Android/` directory
-2. Open and build with Android Studio, or run: `./gradlew :app:assembleDebug`
-3. Install the generated APK on an arm64 device
+**Install** (from the release page):
+
+1. Visit the [GitHub Releases](https://github.com/MochengCK/Lerxu/releases) page
+2. Download `app-release.apk` (signed) or `app-release-unsigned.apk` (unsigned); `app-debug.apk` is also handy for a quick try
+3. Install on an **arm64** device (the app only supports `arm64-v8a`)
+
+> The unsigned `app-release-unsigned.apk` must be signed before installing:
+> `apksigner sign --ks <your-keystore> --out Lerxu.apk app-release-unsigned.apk`
 
 ## Development Guide
 
@@ -178,6 +183,9 @@ Lerxu currently supports the following platforms:
 - Node.js (v22.12.0 or higher)
 - npm
 - Git
+
+> Extra tooling needed for the Android client or the browser extension (JDK 17 / Android SDK, etc.)
+> is listed in the [developer documentation](docs/DEVELOPMENT.en.md).
 
 ### Setup
 
@@ -206,20 +214,22 @@ Lerxu currently supports the following platforms:
 
 ```
 Lerxu/
-├── src/                  # Main source code
+├── src/                  # Application source
 │   ├── main/             # Electron main process
 │   ├── renderer/         # Electron renderer process (Vue 3)
-│   └── shared/           # Shared utilities and the XferRust protocol adapter
-├── extra/                # Built-in XferRust engine binaries per platform
+│   └── shared/           # Shared utilities and the engine protocol adapter
+├── extra/                # Built-in download engine binaries per platform
 ├── extensions/           # Browser extension (video sniffing & download takeover)
 ├── Android/              # Android client (Kotlin + Compose)
-├── XferRust/             # XferRust download engine source (Rust)
 ├── static/               # Static assets
 ├── build/                # Packaging hooks and platform icons
 ├── screenshots/          # Documentation screenshots
 ├── package.json          # Project configuration
 └── README.md             # Project documentation
 ```
+
+The engine source (a separate repository), build scripts, tests and CI configuration are covered in the
+[developer documentation](docs/DEVELOPMENT.en.md).
 
 ## Contributing
 

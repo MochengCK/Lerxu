@@ -212,6 +212,7 @@ const taskFullName = computed(() => {
   }
   return getTaskName(task, {
     defaultName: t('task.get-task-name'),
+    hashFallbackLabel: t('task.magnet-pending-name'),
     maxLen: -1
   })
 })

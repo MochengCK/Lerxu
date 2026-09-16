@@ -261,10 +261,7 @@
             </el-col>
             <el-col :span="8" :xs="24">
               <div class="help-link">
-                <a target="_blank" href="https://github.com/agalwood/Motrix/wiki/Proxy" rel="noopener noreferrer">
-                  {{ t('preferences.proxy-tips') }}
-                  <mo-icon name="link" width="12" height="12" />
-                </a>
+                {{ t('preferences.proxy-tips') }}
               </div>
             </el-col>
           </el-row>
@@ -334,8 +331,7 @@
 <script setup>
 import { ref, computed, getCurrentInstance, onBeforeUnmount, nextTick } from 'vue'
 import is from 'electron-is'
-import { createReadStream, existsSync, statSync } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { isAbsolute, resolve, basename } from 'node:path'
 import { clipboard } from 'electron'
 
@@ -599,16 +595,6 @@ function getActionLabel (action) {
   return labelMap[action] || action
 }
 
-function calculateHash (filePath, algorithm) {
-  return new Promise((resolve, reject) => {
-    const hash = createHash(algorithm)
-    const stream = createReadStream(filePath)
-    stream.on('error', reject)
-    stream.on('data', (chunk) => { hash.update(chunk) })
-    stream.on('end', () => { resolve(hash.digest('hex')) })
-  })
-}
-
 function clearVerifyHideTimer () {
   if (verifyHideTimer) {
     clearTimeout(verifyHideTimer)
@@ -678,83 +664,65 @@ async function onVerify (verifyType) {
   const { task } = props
   if (![TASK_STATUS.COMPLETE, TASK_STATUS.SEEDING].includes(taskStatus.value)) return
 
+  const gid = task && task.gid ? `${task.gid}` : ''
   const files = Array.isArray(task.files) ? task.files : []
-  if (!files.length) {
+  if (!gid || !files.length) {
     instance.proxy.$msg.error(t('task.verify-no-files'))
     return
   }
 
   instance.proxy.$msg.info(t('task.verify-start'))
 
-  const missing = []
-  const mismatched = []
-  const resolvedFiles = []
-
-  for (const file of files) {
-    const filePath = getActualFilePath(file && file.path ? file.path : '')
-    if (!filePath || !existsSync(filePath)) {
-      missing.push(filePath || '')
-      continue
-    }
-    resolvedFiles.push({ file, filePath })
-
-    const expected = Number(file && file.length ? file.length : 0)
-    if (expected > 0) {
-      try {
-        const st = statSync(filePath)
-        if (st && st.isFile && st.isFile() && Number.isFinite(st.size) && st.size !== expected) {
-          mismatched.push(filePath)
-        }
-      } catch (_) {
-        mismatched.push(filePath)
-      }
-    }
-  }
-
-  if (missing.length) {
-    instance.proxy.$msg.error(t('task.verify-missing-files', { count: missing.length }))
-    return
-  }
-
-  if (mismatched.length) {
-    instance.proxy.$msg.error(t('task.verify-size-mismatch', { count: mismatched.length }))
-    return
-  }
-
-  if (verifyType === 'size') {
-    instance.proxy.$msg.success(t('task.verify-success-multi', { count: files.length }))
-    return
-  }
-
+  // 校验逻辑全部在引擎侧执行（存在性 / 大小 / 流式哈希），前端只做交互：
+  // 发起请求、按结果提示、把摘要复制到剪贴板。
   const algorithm = typeof verifyType === 'string' && verifyType ? verifyType : 'sha256'
   const algorithmLabel = `${algorithm}`.toUpperCase()
 
-  if (resolvedFiles.length === 1) {
-    const singlePath = resolvedFiles[0].filePath
-    try {
-      const digest = await calculateHash(singlePath, algorithm)
-      try { clipboard.writeText(digest) } catch (_) {}
-      instance.proxy.$msg.success(t('task.verify-success-hash', { algorithm: algorithmLabel, hash: digest }))
-    } catch (_) {
-      instance.proxy.$msg.error(t('task.verify-hash-fail', { algorithm: algorithmLabel }))
-    }
-    return
-  }
-
-  const lines = []
+  let result
   try {
-    for (const it of resolvedFiles) {
-      const digest = await calculateHash(it.filePath, algorithm)
-      const label = (it.file && it.file.path ? `${it.file.path}` : basename(it.filePath)).replace(/\\/g, '/')
-      lines.push(`${digest}  ${label}`)
-    }
+    result = await api.verifyTaskFiles(gid, algorithm)
   } catch (_) {
     instance.proxy.$msg.error(t('task.verify-hash-fail', { algorithm: algorithmLabel }))
     return
   }
 
+  const status = result && result.status
+  if (status === 'missing') {
+    const count = Array.isArray(result.missing) ? result.missing.length : 0
+    instance.proxy.$msg.error(t('task.verify-missing-files', { count }))
+    return
+  }
+  if (status === 'sizeMismatch') {
+    const count = Array.isArray(result.mismatched) ? result.mismatched.length : 0
+    instance.proxy.$msg.error(t('task.verify-size-mismatch', { count }))
+    return
+  }
+  if (status !== 'ok') {
+    instance.proxy.$msg.error(t('task.verify-hash-fail', { algorithm: algorithmLabel }))
+    return
+  }
+
+  if (algorithm.toLowerCase() === 'size') {
+    instance.proxy.$msg.success(t('task.verify-success-multi', { count: Number(result.count) || files.length }))
+    return
+  }
+
+  const hashes = Array.isArray(result.hashes) ? result.hashes : []
+  if (!hashes.length) {
+    instance.proxy.$msg.error(t('task.verify-hash-fail', { algorithm: algorithmLabel }))
+    return
+  }
+
+  if (hashes.length === 1) {
+    const digest = hashes[0].digest
+    try { clipboard.writeText(digest) } catch (_) {}
+    instance.proxy.$msg.success(t('task.verify-success-hash', { algorithm: algorithmLabel, hash: digest }))
+    return
+  }
+
+  const lines = hashes.map(h => `${h.digest}  ${`${h.path}`.replace(/\\/g, '/')}`)
   try { clipboard.writeText(lines.join('\n')) } catch (_) {}
-  instance.proxy.$msg.success(t('task.verify-success-hash-list', { algorithm: algorithmLabel, count: resolvedFiles.length }))
+  instance.proxy.$msg.success(t('task.verify-success-hash-list', { algorithm: algorithmLabel, count: hashes.length }))
 }
 
 function onResumeClick () {

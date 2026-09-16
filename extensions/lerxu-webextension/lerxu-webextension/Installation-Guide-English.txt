@@ -1,5 +1,8 @@
 # Lerxu Browser Extension Installation Guide
 
+Supported browsers: Chrome, Edge, Opera and other Chromium-based browsers, plus Firefox.
+(Firefox steps are in the "Firefox Installation" section below.)
+
 ## Installation Steps
 
 1. **Open Chrome Browser**
@@ -53,5 +56,56 @@ A: When a new version is available, re-download and install the latest extension
 
 ### Q: How to uninstall the extension?
 A: Go to `chrome://extensions/` page, find Lerxu extension, and click "Remove" button
+
+## Firefox Installation
+
+The extension ships the same code for both platforms; the Firefox package only
+differs in its manifest (`background.scripts` instead of `service_worker`, and it
+omits the Chromium-only `downloads.ui` permission).
+
+### Temporary installation (for testing)
+
+1. Open Firefox and type `about:debugging#/runtime/this-firefox` in the address bar
+2. Click **Load Temporary Add-on…**
+3. Select `manifest.json` inside the `dist/extension/firefox/` directory
+   (or inside the Firefox `.xpi` package)
+4. The extension loads immediately and is removed when Firefox closes
+
+### Permanent installation
+
+Firefox requires signed add-ons for permanent installation:
+
+1. From the repository root run `npm run build:extension`
+   → produces `dist/extension/artifacts/lerxu-webextension-firefox-<version>.zip`
+2. Upload that `.zip` to [AMO](https://addons.mozilla.org/developers/) for signing,
+   then install the signed add-on
+3. Alternatively, in **Firefox Developer Edition / Nightly** set
+   `xpinstall.signatures.required` to `false` in `about:config` and install the
+   unsigned package directly
+
+> ⚠️ Do not zip the source directory by hand (right-click → Compress, or Finder):
+> the archive then contains a top-level `lerxu-webextension/` folder plus macOS
+> `__MACOSX/` and `._*` metadata, and AMO rejects it with *"No manifest.json was
+> found at the root of the extension"*. `npm run build:extension` produces the
+> correct layout (extension files at the archive root) and verifies it while packaging.
+
+### Behavior differences on Firefox
+
+- Takeover happens in `downloads.onCreated` (Chromium additionally uses
+  `downloads.onDeterminingFilename`, which Firefox does not implement) — a
+  download entry may therefore appear briefly in the Firefox download list
+  before Lerxu takes it over
+- The browser download bubble cannot be hidden programmatically
+  (`downloads.setUiOptions` is Chromium-only); all other features are identical
+- Requesting host permissions: on Firefox 127+ they are granted during install;
+  if you revoked them later, re-grant them from `about:addons` → Lerxu →
+  Permissions
+- **Data collection consent**: from Firefox 140 the install prompt (and the AMO
+  listing) shows the data types the extension declares. This extension declares
+  `browsingActivity` (page URLs) and `websiteContent` (media / download links and
+  request information found on pages), because it must read them to hand download
+  tasks to the locally running Lerxu app. Data goes **only to the local machine
+  (127.0.0.1) — nothing is uploaded to remote servers**, and there is no
+  telemetry. Accepting this declaration is required to install and use the add-on
 
 Technical Support: https://github.com/MochengCK/Lerxu/issues

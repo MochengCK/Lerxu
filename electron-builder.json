@@ -82,7 +82,6 @@
     "!src/**/*",
     "!doc/**/*",
     "!test/**/*",
-    "!.electron-vue/**/*",
     "!screenshots/**/*",
     "!scripts/**/*",
     "!build/**/*",
@@ -101,10 +100,9 @@
   ],
   "protocols": [
     {
-      "name": "Motrix Protocol",
+      "name": "Lerxu Protocol",
       "schemes": [
-        "mo",
-        "motrix"
+        "lerxu"
       ]
     },
     {

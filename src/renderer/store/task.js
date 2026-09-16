@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import api from '@/api'
 import { EMPTY_STRING, TASK_STATUS, AUDIO_SUFFIXES, DOCUMENT_SUFFIXES, IMAGE_SUFFIXES, SUB_SUFFIXES, VIDEO_SUFFIXES } from '@shared/constants'
-import { checkTaskIsBT, getFileNameFromFile, getFileExtension, getTaskUri, intersection, isGithubUrl, getGithubUrlsWithMirrors } from '@shared/utils'
+import { checkTaskIsBT, getFileNameFromFile, getFileExtension, getTaskUri, intersection, isGithubUrl, getGithubUrlsWithMirrors, repairMagnetDisplayName } from '@shared/utils'
 import taskHistory from '@/api/TaskHistory'
 import pendingFileSelectionStore from '@/api/PendingFileSelection'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
@@ -1084,7 +1084,10 @@ const actions = {
     const normalizedUris = Array.isArray(uris)
       ? uris.map((uri) => {
         const magnet = brokenTorrentUriToMagnet(uri)
-        const finalUri = magnet || uri
+        // 磁力的 dn 若不是合法 UTF-8（中文站点常用 GBK 百分号编码），引擎会
+        // 解出一串 U+FFFD（界面显示为乱码）。交给引擎前先规范成 UTF-8，
+        // 使任务名、文件选择、落盘目录名都取到正确名称。
+        const finalUri = magnet || repairMagnetDisplayName(uri)
 
         // 如果是 GitHub URL 且启用了镜像，返回镜像 URL 数组
         if (isGithubUrl(finalUri)) {
@@ -1148,6 +1151,11 @@ const actions = {
       }
       if (typeof normalizedOptions.btSeedUnverified === 'undefined') {
         normalizedOptions.btSeedUnverified = true
+      }
+      // 磁力流程全权交给引擎：元数据就绪后由引擎暂停进入文件选择阶段
+      // （多文件等待用户勾选；单文件引擎自动重启续下，不打断体验）
+      if (typeof normalizedOptions['bt-file-selection'] === 'undefined') {
+        normalizedOptions['bt-file-selection'] = 'true'
       }
     }
     const safeGetNameFromUri = (uri) => {

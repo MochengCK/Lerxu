@@ -54,5 +54,41 @@
   "contextMenuDownload": {
     "message": "使用 Lerxu 下載",
     "description": "右鍵選單項文字"
+  },
+  "labelExcludeCurrentSite": {
+    "message": "不接管此網站",
+    "description": "排除當前網站按鈕標籤"
+  },
+  "labelAdded": {
+    "message": "已新增",
+    "description": "網域已新增至排除清單"
+  },
+  "labelRemove": {
+    "message": "移除",
+    "description": "移除網域按鈕標籤"
+  },
+  "labelRemoved": {
+    "message": "已移除",
+    "description": "網域已從排除清單移除"
+  },
+  "labelFailed": {
+    "message": "操作失敗",
+    "description": "操作失敗提示"
+  },
+  "labelAdd": {
+    "message": "新增",
+    "description": "新增按鈕標籤"
+  },
+  "labelSuccess": {
+    "message": "成功",
+    "description": "操作成功提示"
+  },
+  "placeholderInputExt": {
+    "message": "輸入檔案副檔名",
+    "description": "輸入框佔位符"
+  },
+  "placeholderExample": {
+    "message": "範例: exe, zip, rar",
+    "description": "輸入框範例佔位符"
   }
 }

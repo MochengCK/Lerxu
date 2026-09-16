@@ -72,6 +72,9 @@
         :files="currentTaskFiles"
         :peers="currentTaskPeers"
       />
+      <mo-preference-dialog
+        v-if="preferenceVisible"
+      />
     </Teleport>
     <mo-dragger />
   </el-container>
@@ -82,6 +85,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import { dialog, BrowserWindow } from '@electron/remote'
 import { commands } from '@/components/CommandManager/instance'
 import { TASK_STATUS, APP_THEME } from '@shared/constants'
+import { parsePieceStatuses } from '@shared/utils/piece-status'
 import themeTokens from '@/utils/themeTokens'
 import api from '@/api'
 import { ipcRenderer } from 'electron'
@@ -108,6 +112,7 @@ import { storeToRefs } from 'pinia'
 // mo-engine-client, mo-extend-select are globally registered in main.js
 const moAddTask = defineAsyncComponent(() => import('@/components/Task/AddTask'))
 const moTaskDetail = defineAsyncComponent(() => import('@/components/TaskDetail/TaskDetailDrawer'))
+const moPreferenceDialog = defineAsyncComponent(() => import('@/components/Preference/PreferenceDialog'))
 const moDragger = defineAsyncComponent(() => import('@/components/Dragger/DragDropZone'))
 const moSegmentedSlider = defineAsyncComponent(() => import('@/components/SegmentedSlider/SegmentedSlider'))
 import { buildCompletedTaskWindowHtml } from '@/utils/completedWindowHtml'
@@ -121,7 +126,7 @@ const msg = createMsg(ElMessage, { showClose: true })
 const appStore = useAppStore()
 const taskStore = useTaskStore()
 const preferenceStore = usePreferenceStore()
-const { addTaskVisible, addTaskType, systemTheme } = storeToRefs(appStore)
+const { addTaskVisible, addTaskType, systemTheme, preferenceVisible } = storeToRefs(appStore)
 const { taskDetailVisible, currentTaskGid, currentTaskItem, currentTaskFiles, currentTaskPeers, selectedGidList, taskList, taskListRevision } = storeToRefs(taskStore)
 const { config: preferenceConfig } = storeToRefs(preferenceStore)
 
@@ -139,6 +144,41 @@ const progressTaskGids = ref(new Set())
 const completedTaskWindows = ref(new Map())
 let _modalObserver = null
 let taskStatusesInitialized = false
+
+// --- 单任务"完成后弹窗"偏好（独立进度窗口设置分类） ---
+// gid → boolean；未记录的任务默认 true（跟随全局 showTaskCompletedWindow）。
+// 持久化到 localStorage，跨应用重启保留。
+const COMPLETE_POPUP_PREFS_KEY = 'lerxu-progress-complete-popup-prefs'
+function loadCompletePopupPrefs () {
+  try {
+    const raw = localStorage.getItem(COMPLETE_POPUP_PREFS_KEY)
+    const obj = raw ? JSON.parse(raw) : {}
+    return obj && typeof obj === 'object' ? obj : {}
+  } catch (e) {
+    return {}
+  }
+}
+function isCompletePopupEnabled (gid) {
+  if (!gid) return true
+  const prefs = loadCompletePopupPrefs()
+  const v = prefs[gid]
+  return v === undefined ? true : !!v
+}
+function setCompletePopupPref (gid, enabled) {
+  if (!gid) return
+  const prefs = loadCompletePopupPrefs()
+  prefs[gid] = !!enabled
+  try {
+    localStorage.setItem(COMPLETE_POPUP_PREFS_KEY, JSON.stringify(prefs))
+  } catch (e) {}
+}
+function handleTaskProgressSetCompletePopup (payload) {
+  const data = payload || {}
+  const gid = data.gid ? `${data.gid}` : ''
+  if (gid && data.enabled !== undefined) {
+    setCompletePopupPref(gid, data.enabled)
+  }
+}
 
 // --- Computed ---
 const taskPlanVisible = computed({
@@ -247,6 +287,11 @@ onMounted(() => {
   } catch (e) {}
   commands.on('show-task-progress', handleShowTaskProgress)
   commands.on('task-progress:control', handleTaskProgressControl)
+  // 独立进度窗口"完成后弹窗"单任务开关：经主进程转发回主窗口的 IPC
+  // 命令由 Ipc.vue 走 commands.execute 分发（只查 register 注册表），
+  // 必须 register 而非 on——此前用 on 注册导致监听永远不触发，偏好
+  // 从未写入 localStorage，重启后勾选状态恢复为默认勾选。
+  commands.register('task-progress:set-complete-popup', handleTaskProgressSetCompletePopup)
   commands.on('task-progress:auto-open', handleTaskProgressAutoOpen)
   preloadHeavyOverlays()
 })
@@ -275,6 +320,7 @@ onBeforeUnmount(() => {
   }
   commands.off('show-task-progress', handleShowTaskProgress)
   commands.off('task-progress:control', handleTaskProgressControl)
+  commands.unregister('task-progress:set-complete-popup')
   commands.off('task-progress:auto-open', handleTaskProgressAutoOpen)
 })
 
@@ -480,6 +526,8 @@ onBeforeUnmount(() => {
                 metaColor,
                 barBg,
                 barInner,
+                pendingBarBg: tc.pendingBarBg,
+                pendingBarInner: tc.pendingBarInner,
                 controlsBg,
                 controlsBorder,
                 controlsDivider,
@@ -552,7 +600,8 @@ onBeforeUnmount(() => {
           return
         }
         const taskName = getTaskName(task, {
-          defaultName: t('task.get-task-name')
+          defaultName: t('task.get-task-name'),
+          hashFallbackLabel: t('task.magnet-pending-name')
         })
         if (action === 'pause') {
           msg.info(t('task.download-pause-message', { taskName }))
@@ -717,6 +766,7 @@ onBeforeUnmount(() => {
         const percent = total > 0 ? Math.floor((completed * 100) / total) : 0
         const title = getTaskName(taskData, {
           defaultName: t('task.get-task-name'),
+          hashFallbackLabel: t('task.magnet-pending-name'),
           maxLen: -1
         })
         const completedText = bytesToSize(completed, 2)
@@ -724,54 +774,58 @@ onBeforeUnmount(() => {
         const sizeText = totalText ? `${completedText} / ${totalText}` : completedText
         const speedValue = speed > 0 ? `${bytesToSize(speed, 2)}/s` : `${bytesToSize(0, 2)}/s`
 
-        // 计算平均速度
+        // 计算平均速度：引擎直供 averageSpeed（active 阶段实时累计、
+        // 随会话持久化，1Hz 刷新）；旧数据源（本地采样/历史均值）兜底
         const gid = taskData && taskData.gid ? `${taskData.gid}` : ''
-        const speedSamplesMap = taskStore.taskSpeedSamples || {}
-        const speedSamples = gid && Array.isArray(speedSamplesMap[gid]) ? speedSamplesMap[gid] : []
         let avgSpeed = 0
-        if (speedSamples.length > 0) {
-          const normalized = speedSamples
-            .map(s => {
-              if (typeof s === 'number') {
-                const spd = Number(s)
-                if (!Number.isFinite(spd) || spd < 0) return null
-                return { bytes: spd, durationMs: 1000 }
-              }
-              if (!s || typeof s !== 'object') return null
-              const bytes = Number(s.bytes)
-              const durationMs = Number(s.durationMs)
-              if (!Number.isFinite(bytes) || bytes < 0) return null
-              if (!Number.isFinite(durationMs) || durationMs <= 0) return null
-              return { bytes, durationMs }
-            })
-            .filter(Boolean)
-          if (normalized.length > 0) {
-            const totalBytes = normalized.reduce((sum, it) => sum + it.bytes, 0)
-            const totalDurationMs = normalized.reduce((sum, it) => sum + it.durationMs, 0)
-            avgSpeed = totalDurationMs > 0 ? Math.round((totalBytes * 1000) / totalDurationMs) : 0
-          }
-        } else if (taskData.averageDownloadSpeed != null) {
-          const v = Number(taskData.averageDownloadSpeed)
+        if (taskData.averageSpeed != null) {
+          const v = Number(taskData.averageSpeed)
           avgSpeed = Number.isFinite(v) && v >= 0 ? v : 0
+        } else {
+          const speedSamplesMap = taskStore.taskSpeedSamples || {}
+          const speedSamples = gid && Array.isArray(speedSamplesMap[gid]) ? speedSamplesMap[gid] : []
+          if (speedSamples.length > 0) {
+            const normalized = speedSamples
+              .map(s => {
+                if (typeof s === 'number') {
+                  const spd = Number(s)
+                  if (!Number.isFinite(spd) || spd < 0) return null
+                  return { bytes: spd, durationMs: 1000 }
+                }
+                if (!s || typeof s !== 'object') return null
+                const bytes = Number(s.bytes)
+                const durationMs = Number(s.durationMs)
+                if (!Number.isFinite(bytes) || bytes < 0) return null
+                if (!Number.isFinite(durationMs) || durationMs <= 0) return null
+                return { bytes, durationMs }
+              })
+              .filter(Boolean)
+            if (normalized.length > 0) {
+              const totalBytes = normalized.reduce((sum, it) => sum + it.bytes, 0)
+              const totalDurationMs = normalized.reduce((sum, it) => sum + it.durationMs, 0)
+              avgSpeed = totalDurationMs > 0 ? Math.round((totalBytes * 1000) / totalDurationMs) : 0
+            }
+          } else if (taskData.averageDownloadSpeed != null) {
+            const v = Number(taskData.averageDownloadSpeed)
+            avgSpeed = Number.isFinite(v) && v >= 0 ? v : 0
+          }
         }
         const avgSpeedValue = avgSpeed > 0 ? `${bytesToSize(avgSpeed, 2)}/s` : `${bytesToSize(0, 2)}/s`
 
-        // 解析分片进度 - 与任务详情活动图表 (TaskGraphic) 保持一致的 5 级分类
-        let piecesData = null
-        const bitfield = taskData.bitfield || ''
+        // 解析分片进度 - 与任务详情活动图表 (TaskGraphic) 保持一致的 6 级分类。
+        // 映射规则抽到 @shared/utils/piece-status 共享实现，与主进程
+        // task-progress:fetch 同源，避免两条数据流状态映射不一致闪烁；
+        // wantedBitfield 非空时，未选择文件覆盖的格显示为「未选择」，
+        // 与「未下载」区分（否则任务完成后末尾残留灰格）
         const numPieces = Number(taskData.numPieces || 0)
-        if (bitfield && numPieces > 0) {
-          const pieces = []
-          // bitfield 按字节补零，最后一个 nibble 可能只包含填充位，
-          // 只取真实分片对应的 nibble 数量 ceil(numPieces / 4)，避免
-          // 已完成任务末尾多渲染一个"未下载"的假分片。
-          const nibbleCount = Math.min(Math.ceil(numPieces / 4), bitfield.length)
-          for (let i = 0; i < nibbleCount; i++) {
-            const hex = parseInt(bitfield[i], 16)
-            // 与 TaskGraphic buildAtom 一致: Math.floor(hex / 4) → 0..3
-            // hex 0-3 → s0, 4-7 → s1, 8-11 → s2, 12-15 → s3
-            pieces.push(Math.floor(hex / 4))
-          }
+        const pieces = parsePieceStatuses(
+          taskData.bitfield,
+          taskData.partialBitfield,
+          numPieces,
+          taskData.wantedBitfield || ''
+        )
+        let piecesData = null
+        if (pieces) {
           piecesData = {
             numPieces,
             pieces,
@@ -810,18 +864,23 @@ onBeforeUnmount(() => {
         return {
           gid: taskData && taskData.gid ? `${taskData.gid}` : '',
           title,
+          status,
           percent,
           percentText: `${percent}%`,
           nameText: title,
           isPaused,
           pendingSelection,
+          // 单任务"完成后弹窗"偏好（进度窗口设置分类的 checkbox 初始值）
+          completePopupEnabled: isCompletePopupEnabled(gid),
           // 与主进程 task-progress:fetch 返回保持一致，
           // 避免事件推送缺字段时滑块按钮文本被清空导致宽度闪烁
           tabInfoText: t('task.task-progress-info'),
           tabPiecesText: t('task.task-pieces-progress'),
           piecesEmptyText: t('task.task-no-pieces-data'),
-          tabInfoShort: t('task.task-progress-info'),
-          tabPiecesShort: t('task.task-pieces-progress'),
+          // tab 按钮文案：信息/分片用完整文案，设置用短文案
+          tabInfoShort: t('task.task-progress-info-short'),
+          tabPiecesShort: t('task.task-pieces-progress-short'),
+          tabSettingsShort: t('task.task-settings-short'),
           sizeText: sizeText ? `${t('task.task-file-size')}: ${sizeText}` : '',
           speedText: `${t('task.task-download-speed')}: ${speedValue}`,
           avgSpeedText: `${t('task.task-average-speed')}: ${avgSpeedValue}`,
@@ -953,17 +1012,15 @@ onBeforeUnmount(() => {
           }
         } catch (e) {}
 
-        // 读取保存的窗口大小，如果没有就使用默认值
-        const savedProgressWindowSize = prefConfig.progressWindowSize || { width: 360, height: 230 }
-        const defaultWidth = Math.max(savedProgressWindowSize.width || 360, 360)
-        const defaultHeight = Math.max(savedProgressWindowSize.height || 230, 210)
+        // 窗口大小不允许手动拖拽调整，尺寸固定为 360x230；控制行 top 锚定
+        // （连接面板向下展开时按钮保持原位），tab 按钮用短文案避免横向溢出
+        const defaultWidth = 360
+        const defaultHeight = 230
 
         const win = new BrowserWindow({
           width: defaultWidth,
           height: defaultHeight,
-          resizable: true,
-          minWidth: 360,
-          minHeight: 220,
+          resizable: false,
           minimizable: true,
           maximizable: false,
           useContentSize: true,
@@ -1374,7 +1431,7 @@ function handleTaskListChange(list) {
       if (!gid) return
       const prevStatus = prev[gid]
       const currentStatus = task.status
-      if (prevStatus && currentStatus === TASK_STATUS.COMPLETE && prevStatus !== TASK_STATUS.COMPLETE) {
+      if (prevStatus && currentStatus === TASK_STATUS.COMPLETE && prevStatus !== TASK_STATUS.COMPLETE && isCompletePopupEnabled(gid)) {
         openCompletedTaskWindow(task)
       }
     })
@@ -1394,7 +1451,7 @@ function handleTaskListChange(list) {
           if (!Array.isArray(allTasks)) return
           disappearedGids.forEach(gid => {
             const task = allTasks.find(t => t && `${t.gid}` === gid)
-            if (task && task.status === TASK_STATUS.COMPLETE) {
+            if (task && task.status === TASK_STATUS.COMPLETE && isCompletePopupEnabled(gid)) {
               openCompletedTaskWindow(task)
             }
           })

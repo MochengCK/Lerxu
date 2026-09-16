@@ -8,37 +8,30 @@
       :model="form"
       :rules="rules"
     >
+      <!-- 主题与界面：主题为「左标题 + 副标题 / 右选择框」，其余为开关行 -->
       <div
         v-if="activeCategory === 'appearance'"
         class="preference-card"
         data-category="appearance"
       >
         <h3 class="card-title">
-          {{ t('preferences.theme') }}
+          {{ t('preferences.theme-and-ui') }}
         </h3>
         <el-form-item size="small">
           <el-col
-            class="form-item-sub"
+            class="form-item-sub form-item-sub--inline"
             :span="24"
           >
-            <mo-theme-switcher
-              ref="themeSwitcher"
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.theme') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.theme-desc') }}</div>
+            </div>
+            <mo-extend-select
               v-model="form.theme"
+              :options="themeOptions"
               @change="handleThemeChange"
             />
           </el-col>
-        </el-form-item>
-      </div>
-
-      <div
-        v-if="activeCategory === 'appearance'"
-        class="preference-card"
-        data-category="appearance"
-      >
-        <h3 class="card-title">
-          {{ t('preferences.ui') }}
-        </h3>
-        <el-form-item size="small">
           <el-col
             v-if="showHideAppMenuOption"
             class="form-item-sub"
@@ -182,10 +175,11 @@
         </el-form-item>
       </div>
 
-      <!-- 背景设置卡片 -->
+      <!-- 背景设置卡片：第一行是「纯色 / 图片」切换控件而非文字标题，
+           因此保留在卡片内部，纯色模式下整张卡片就是这一行工具条 -->
       <div
         v-if="activeCategory === 'appearance'"
-        class="preference-card"
+        class="preference-card preference-card--toolbar"
         data-category="appearance"
       >
         <div class="card-title background-type-nav">
@@ -200,8 +194,7 @@
           </div>
           <div class="background-type-nav__right">
             <el-button
-              type="primary"
-              size="small"
+              class="pref-row-action"
               @click.stop="selectBackgroundImage"
             >
               {{ t('preferences.background-image-select') }}
@@ -338,99 +331,47 @@
         </el-form-item>
       </div>
 
-      <!-- 运行模式卡片 (仅Mac) -->
+      <!-- 语言与运行模式：同一张卡片内「左标题 + 右选择框」 -->
       <div
-        v-if="isMac && activeCategory === 'basic'"
+        v-if="activeCategory === 'basic'"
         class="preference-card"
         data-category="basic"
       >
         <h3 class="card-title">
-          {{ t('preferences.run-mode') }}
+          {{ t('preferences.language-and-run-mode') }}
         </h3>
         <el-form-item size="small">
           <el-col
-            class="form-item-sub"
+            class="form-item-sub form-item-sub--inline"
             :span="24"
           >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.language') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.language-desc') }}</div>
+            </div>
+            <mo-extend-select
+              v-model="form.locale"
+              :options="locales.map(item => ({ label: item.value === 'auto' ? `${item.label} (${systemLocaleName})` : item.label, value: item.value }))"
+              :placeholder="t('preferences.change-language')"
+              class="language-select"
+              @change="handleLocaleChange(form.locale)"
+            />
+          </el-col>
+          <el-col
+            v-if="isMac"
+            class="form-item-sub form-item-sub--inline"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.run-mode') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.run-mode-desc') }}</div>
+            </div>
             <mo-extend-select
               v-model="form.runMode"
               :options="runModes"
               @change="autoSaveForm"
             />
           </el-col>
-        </el-form-item>
-      </div>
-
-      <!-- 语言设置卡片 -->
-      <div
-        v-if="activeCategory === 'basic'"
-        class="preference-card"
-        data-category="basic"
-      >
-        <h3 class="card-title">
-          {{ t('preferences.language') }}
-        </h3>
-        <div class="language-container">
-          <!-- 语言选择框 -->
-          <mo-extend-select
-            v-model="form.locale"
-            :options="locales.map(item => ({ label: item.value === 'auto' ? `${item.label} (${systemLocaleName})` : item.label, value: item.value }))"
-            :placeholder="t('preferences.change-language')"
-            class="language-select"
-            @change="handleLocaleChange(form.locale)"
-          />
-        </div>
-      </div>
-
-      <!-- 快捷键卡片 -->
-      <div
-        v-if="activeCategory === 'basic'"
-        class="preference-card"
-        data-category="basic"
-      >
-        <h3 class="card-title">
-          {{ t('preferences.shortcuts') }}
-        </h3>
-        <el-form-item size="small">
-          <el-row
-            :gutter="8"
-            style="margin-bottom: 8px;"
-          >
-            <el-col :span="12">
-              {{ t('preferences.shortcut-command') }}
-            </el-col>
-            <el-col :span="12">
-              {{ t('preferences.shortcut-keystroke') }}
-            </el-col>
-          </el-row>
-          <el-row
-            v-for="command in getShortcutCommands()"
-            :key="command"
-            :gutter="8"
-            style="margin-bottom: 8px;"
-          >
-            <el-col :span="12">
-              <el-input
-                :value="getCommandLabel(command)"
-                readonly
-              />
-            </el-col>
-            <el-col :span="12">
-              <el-input
-                :value="formatKeystrokeForDisplay(getKeystrokeByCommand(command))"
-                :placeholder="t('preferences.shortcut-placeholder')"
-                @keydown="handleShortcutKeydown(command, $event)"
-              />
-            </el-col>
-          </el-row>
-          <el-button
-            type="warning"
-            size="small"
-            style="width: 100%;"
-            @click="resetShortcuts"
-          >
-            {{ t('preferences.shortcut-reset-default') }}
-          </el-button>
         </el-form-item>
       </div>
 
@@ -499,11 +440,49 @@
         </el-form-item>
       </div>
 
-      <!-- 扩展卡片 -->
+      <!-- 快捷键卡片 -->
       <div
         v-if="activeCategory === 'basic'"
         class="preference-card"
         data-category="basic"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.shortcuts') }}
+        </h3>
+        <el-form-item size="small">
+          <div class="shortcut-grid shortcut-grid--head">
+            <span>{{ t('preferences.shortcut-command') }}</span>
+            <span>{{ t('preferences.shortcut-keystroke') }}</span>
+          </div>
+          <div
+            v-for="command in getShortcutCommands()"
+            :key="command"
+            class="shortcut-grid"
+          >
+            <el-input
+              :value="getCommandLabel(command)"
+              readonly
+            />
+            <el-input
+              :value="formatKeystrokeForDisplay(getKeystrokeByCommand(command))"
+              :placeholder="t('preferences.shortcut-placeholder')"
+              @keydown="handleShortcutKeydown(command, $event)"
+            />
+          </div>
+          <el-button
+            class="pref-row-action shortcuts-reset-btn"
+            @click="resetShortcuts"
+          >
+            {{ t('preferences.shortcut-reset-default') }}
+          </el-button>
+        </el-form-item>
+      </div>
+
+      <!-- 扩展：连接（渠道地址 + 浏览器入口） -->
+      <div
+        v-if="activeCategory === 'extension'"
+        class="preference-card"
+        data-category="extension"
       >
         <h3 class="card-title">
           {{ t('preferences.browser-extensions') }}
@@ -513,260 +492,290 @@
             class="form-item-sub"
             :span="24"
           >
-            <div class="form-item-sub">
-              {{ t('preferences.extension-channel') }}
-              <el-input
-                :value="appChannelUrl"
-                readonly
-              >
-                <template #append>
-                  <el-button
-                    class="extension-copy-btn"
-                    @click="copyChannelUrl"
-                  >
-                    <el-icon><DocumentCopy /></el-icon>
-                    {{ t('preferences.extension-copy-channel') }}
-                  </el-button>
-                </template>
-              </el-input>
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.extension-channel') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.extension-channel-desc') }}</div>
             </div>
-            <div
-              class="form-item-sub"
-              style="margin-top: 16px;"
+            <el-input
+              :value="appChannelUrl"
+              readonly
             >
-              <span
-                class="text-link"
-                style="color: #409EFF; cursor: pointer; text-decoration: underline; margin-right: 12px;"
-                @click="openBrowserExtension('chrome')"
-              >
-                Chrome
-              </span>
-              <span
-                class="text-link"
-                style="color: #409EFF; cursor: pointer; text-decoration: underline;"
-                @click="openBrowserExtension('edge')"
-              >
-                Edge
-              </span>
-            </div>
-            <div
-              class="form-item-sub"
-              style="margin-top: 12px;"
+              <template #append>
+                <el-button
+                  class="extension-copy-btn"
+                  @click="copyChannelUrl"
+                >
+                  <el-icon><DocumentCopy /></el-icon>
+                  {{ t('preferences.extension-copy-channel') }}
+                </el-button>
+              </template>
+            </el-input>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <span
+              class="text-link pref-link"
+              @click="openBrowserExtension('chrome')"
             >
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ t('preferences.extension-intercept-all-downloads') }}</span>
-                  <div class="toggle-desc">
-                    {{ t('preferences.extension-intercept-all-downloads-desc') }}
-                  </div>
+              Chrome
+            </span>
+            <span
+              class="text-link pref-link"
+              @click="openBrowserExtension('edge')"
+            >
+              Edge
+            </span>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 扩展：下载接管 -->
+      <div
+        v-if="activeCategory === 'extension'"
+        class="preference-card"
+        data-category="extension"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.extension-takeover') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.extension-intercept-all-downloads') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.extension-intercept-all-downloads-desc') }}
                 </div>
-                <el-switch
-                  v-model="form.extensionInterceptAllDownloads"
-                  @change="autoSaveForm"
-                />
               </div>
+              <el-switch
+                v-model="form.extensionInterceptAllDownloads"
+                @change="autoSaveForm"
+              />
             </div>
-            <div
-              class="form-item-sub"
-              style="margin-top: 4px;"
-            >
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ t('preferences.extension-silent-download') }}</span>
-                  <div class="toggle-desc">
-                    {{ t('preferences.extension-silent-download-desc') }}
-                  </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.extension-silent-download') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.extension-silent-download-desc') }}
                 </div>
-                <el-switch
-                  v-model="form.extensionSilentDownload"
-                  @change="autoSaveForm"
-                />
               </div>
+              <el-switch
+                v-model="form.extensionSilentDownload"
+                @change="autoSaveForm"
+              />
             </div>
-            <div
-              class="form-item-sub"
-              style="margin-top: 4px;"
-            >
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ t('preferences.extension-shift-toggle-enabled') }}</span>
-                  <div class="toggle-desc">
-                    {{ t('preferences.extension-shift-toggle-enabled-desc') }}
-                  </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.extension-shift-toggle-enabled') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.extension-shift-toggle-enabled-desc') }}
                 </div>
-                <el-switch
-                  v-model="form.extensionShiftToggleEnabled"
-                  @change="autoSaveForm"
-                />
               </div>
+              <el-switch
+                v-model="form.extensionShiftToggleEnabled"
+                @change="autoSaveForm"
+              />
             </div>
-            <div
-              class="settings-divider"
-              style="margin-top: 16px; margin-bottom: 8px;"
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.extension-min-file-size') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.extension-min-file-size-desc') }}</div>
+            </div>
+            <el-input-number
+              v-model="form.extensionMinFileSize"
+              controls-position="right"
+              :min="0"
+              :max="10240"
+              :step="1"
+              :precision="0"
+              size="small"
             />
+            <span class="pref-unit">MB</span>
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 扩展：过滤规则 -->
+      <div
+        v-if="activeCategory === 'extension'"
+        class="preference-card"
+        data-category="extension"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.extension-filters') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.extension-skip-file-extensions') }}
             <div
-              class="form-item-sub"
-              style="margin-top: 8px;"
+              class="extension-tag-input"
+              @click="focusExtensionInput"
             >
-              {{ t('preferences.extension-skip-file-extensions') }}
-              <div
-                class="extension-tag-input"
-                @click="focusExtensionInput"
+              <transition-group
+                name="tag-fade"
+                tag="div"
+                class="tags-container"
               >
-                <transition-group
-                  name="tag-fade"
-                  tag="div"
-                  class="tags-container"
-                >
-                  <el-tag
-                    v-for="ext in extensionTags"
-                    :key="ext"
-                    closable
-                    size="small"
-                    class="extension-tag"
-                    @close="removeExtension(ext)"
-                  >
-                    {{ ext }}
-                  </el-tag>
-                </transition-group>
-                <input
-                  ref="extensionInputRef"
-                  v-model="extensionInput"
-                  type="text"
-                  class="extension-input"
-                  :placeholder="extensionTags.length === 0 ? t('preferences.extension-skip-file-extensions-tips') : ''"
-                  @keydown.enter="addExtension"
-                  @keydown.delete="handleDeleteKey"
-                  @blur="addExtension"
-                >
-              </div>
-            </div>
-            <div
-              class="form-item-sub"
-              style="margin-top: 16px;"
-            >
-              {{ t('preferences.extension-exclude-domains') }}
-              <div
-                class="extension-tag-input"
-                @click="focusDomainInput"
-              >
-                <transition-group
-                  name="tag-fade"
-                  tag="div"
-                  class="tags-container"
-                >
-                  <el-tag
-                    v-for="domain in domainTags"
-                    :key="domain"
-                    closable
-                    size="small"
-                    class="extension-tag"
-                    @close="removeDomain(domain)"
-                  >
-                    {{ domain }}
-                  </el-tag>
-                </transition-group>
-                <input
-                  ref="domainInputRef"
-                  v-model="domainInput"
-                  type="text"
-                  class="extension-input"
-                  :placeholder="domainTags.length === 0 ? t('preferences.extension-exclude-domains-tips') : ''"
-                  @keydown.enter="addDomain"
-                  @keydown.delete="handleDomainDeleteKey"
-                  @blur="addDomain"
-                >
-              </div>
-            </div>
-            <div
-              class="form-item-sub"
-              style="margin-top: 16px;"
-            >
-              {{ t('preferences.extension-min-file-size') }}
-              <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
-                <el-input-number
-                  v-model="form.extensionMinFileSize"
-                  controls-position="right"
-                  :min="0"
-                  :max="10240"
-                  :step="1"
-                  :precision="0"
+                <el-tag
+                  v-for="ext in extensionTags"
+                  :key="ext"
+                  closable
                   size="small"
-                  style="flex: 1; max-width: 150px;"
-                />
-                <span style="color: var(--text-secondary);">MB</span>
-              </div>
-            </div>
-            <div
-              class="form-item-sub"
-              style="margin-top: 16px;"
-            >
-              <el-button
-                type="primary"
-                size="small"
-                class="video-detection-settings-btn"
-                style="width: 100%;"
-                @click="openVideoDetectionSettings"
+                  class="extension-tag"
+                  @close="removeExtension(ext)"
+                >
+                  {{ ext }}
+                </el-tag>
+              </transition-group>
+              <input
+                ref="extensionInputRef"
+                v-model="extensionInput"
+                type="text"
+                class="extension-input"
+                :placeholder="extensionTags.length === 0 ? t('preferences.extension-skip-file-extensions-tips') : ''"
+                @keydown.enter="addExtension"
+                @keydown.delete="handleDeleteKey"
+                @blur="addExtension"
               >
-                {{ t('preferences.video-detection-settings') }}
-              </el-button>
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            {{ t('preferences.extension-exclude-domains') }}
+            <div
+              class="extension-tag-input"
+              @click="focusDomainInput"
+            >
+              <transition-group
+                name="tag-fade"
+                tag="div"
+                class="tags-container"
+              >
+                <el-tag
+                  v-for="domain in domainTags"
+                  :key="domain"
+                  closable
+                  size="small"
+                  class="extension-tag"
+                  @close="removeDomain(domain)"
+                >
+                  {{ domain }}
+                </el-tag>
+              </transition-group>
+              <input
+                ref="domainInputRef"
+                v-model="domainInput"
+                type="text"
+                class="extension-input"
+                :placeholder="domainTags.length === 0 ? t('preferences.extension-exclude-domains-tips') : ''"
+                @keydown.enter="addDomain"
+                @keydown.delete="handleDomainDeleteKey"
+                @blur="addDomain"
+              >
             </div>
           </el-col>
         </el-form-item>
       </div>
 
-      <!-- 下载目录卡片 -->
+      <!-- 扩展：视频嗅探 -->
       <div
-        v-if="activeCategory === 'transfer'"
+        v-if="activeCategory === 'extension'"
         class="preference-card"
-        data-category="transfer"
+        data-category="extension"
       >
         <h3 class="card-title">
-          {{ t('preferences.default-dir') }}
+          {{ t('preferences.extension-video-sniff') }}
         </h3>
         <el-form-item size="small">
-          <el-input
-            v-model="form.dir"
-            placeholder=""
-            :readonly="isMas"
+          <el-col
+            class="form-item-sub pref-action-row"
+            :span="24"
           >
-            <template #prepend>
-              <mo-history-directory
-                @selected="handleHistoryDirectorySelected"
-              />
-            </template>
-            <template #append>
-              <mo-select-directory
-                v-if="isRenderer"
-                @selected="handleNativeDirectorySelected"
-              />
-            </template>
-          </el-input>
-          <div
-            v-if="isMas"
-            class="el-form-item__info"
-            style="margin-top: 8px;"
-          >
-            {{ t('preferences.mas-default-dir-tips') }}
-          </div>
+            <el-button
+              class="pref-row-action"
+              @click="openVideoDetectionSettings"
+            >
+              {{ t('preferences.video-detection-settings') }}
+            </el-button>
+          </el-col>
         </el-form-item>
       </div>
 
-      <!-- 传输设置卡片 -->
+      <!-- 下载：默认下载路径 + 速度限制（同一张卡片） -->
       <div
         v-if="activeCategory === 'transfer'"
         class="preference-card"
         data-category="transfer"
       >
         <h3 class="card-title">
-          {{ t('preferences.speed-limit') }}
+          {{ t('preferences.download-and-speed-limit') }}
         </h3>
         <el-form-item size="small">
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.default-dir') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.default-dir-desc') }}</div>
+            </div>
+            <el-input
+              v-model="form.dir"
+              placeholder=""
+              :readonly="isMas"
+            >
+              <template #prepend>
+                <mo-history-directory
+                  @selected="handleHistoryDirectorySelected"
+                />
+              </template>
+              <template #append>
+                <mo-select-directory
+                  v-if="isRenderer"
+                  @selected="handleNativeDirectorySelected"
+                />
+              </template>
+            </el-input>
+            <div
+              v-if="isMas"
+              class="el-form-item__info"
+              style="margin-top: 8px;"
+            >
+              {{ t('preferences.mas-default-dir-tips') }}
+            </div>
+          </el-col>
           <el-col
             class="form-item-sub speed-limit-row"
             :span="24"
           >
-            {{ t('preferences.transfer-speed-upload') }}
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.transfer-speed-upload') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.transfer-speed-upload-desc') }}</div>
+            </div>
             <el-input-number
               v-model="maxOverallUploadLimitParsed"
               controls-position="right"
@@ -793,7 +802,10 @@
             class="form-item-sub speed-limit-row"
             :span="24"
           >
-            {{ t('preferences.transfer-speed-download') }}
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.transfer-speed-download') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.transfer-speed-download-desc') }}</div>
+            </div>
             <el-input-number
               v-model="maxOverallDownloadLimitParsed"
               controls-position="right"
@@ -835,39 +847,11 @@
           >
             <div class="toggle-row toggle-row--with-desc">
               <div class="toggle-row__text">
-                <span class="toggle-label">{{ t('preferences.bt-save-metadata') }}</span>
+                <span class="toggle-label">{{ t('preferences.bt-encryption-mode') }}</span>
                 <div class="toggle-desc">
-                  {{ t('preferences.bt-save-metadata-desc') }}
+                  {{ t('preferences.bt-encryption-mode-desc') }}
                 </div>
               </div>
-              <el-switch
-                v-model="form.btSaveMetadata"
-                @change="autoSaveForm"
-              />
-            </div>
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div class="toggle-row toggle-row--with-desc">
-              <div class="toggle-row__text">
-                <span class="toggle-label">{{ t('preferences.bt-auto-download-content') }}</span>
-                <div class="toggle-desc">
-                  {{ t('preferences.bt-auto-download-content-desc') }}
-                </div>
-              </div>
-              <el-switch
-                v-model="form.btAutoDownloadContent"
-                @change="autoSaveForm"
-              />
-            </div>
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div class="bt-encryption-row">
               <mo-segmented-slider
                 ref="btEncryptionSegmented"
                 :value="form.btEncryptionMode"
@@ -881,79 +865,7 @@
             class="form-item-sub"
             :span="24"
           >
-            <div
-              class="settings-divider"
-              style="margin: 8px 0;"
-            />
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div class="bt-ban-collapse-header" @click="btBanSettingsExpanded = !btBanSettingsExpanded">
-              <span class="bt-ban-collapse-title">{{ t('preferences.bt-auto-ban-settings') }}</span>
-              <el-icon class="bt-ban-collapse-arrow" :class="{ 'is-expanded': btBanSettingsExpanded }">
-                <ArrowRight />
-              </el-icon>
-            </div>
-            <transition name="bt-ban-slide">
-              <div v-show="btBanSettingsExpanded" class="bt-ban-settings-body">
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ t('preferences.bt-auto-ban-peer') }}</span>
-                  <div class="toggle-desc">
-                    {{ t('preferences.bt-auto-ban-peer-desc') }}
-                  </div>
-                </div>
-                <el-switch
-                  v-model="form.btAutoBanPeer"
-                  @change="autoSaveForm"
-                />
-              </div>
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ t('preferences.bt-auto-ban-bad-data') }}</span>
-                  <div class="toggle-desc">
-                    {{ t('preferences.bt-auto-ban-bad-data-desc') }}
-                  </div>
-                </div>
-                <el-switch
-                  v-model="form.btAutoBanBadData"
-                  @change="autoSaveForm"
-                />
-              </div>
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ t('preferences.bt-auto-ban-zero-progress') }}</span>
-                  <div class="toggle-desc">
-                    {{ t('preferences.bt-auto-ban-zero-progress-desc') }}
-                  </div>
-                </div>
-                <el-switch
-                  v-model="form.btAutoBanZeroProgress"
-                  @change="autoSaveForm"
-                />
-              </div>
-              <div class="toggle-row toggle-row--with-desc">
-                <div class="toggle-row__text">
-                  <span class="toggle-label">{{ t('preferences.bt-auto-ban-snubbing') }}</span>
-                  <div class="toggle-desc">
-                    {{ t('preferences.bt-auto-ban-snubbing-desc') }}
-                  </div>
-                </div>
-                <el-switch
-                  v-model="form.btAutoBanSnubbing"
-                  @change="autoSaveForm"
-                />
-              </div>
-            </div>
-            </transition>
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
+            <div class="pref-field-label">
               {{ t('preferences.bt-ip-ban-list') }}
             </div>
             <el-input
@@ -1004,7 +916,10 @@
             class="form-item-sub"
             :span="24"
           >
-            {{ t('preferences.seed-ratio') }}
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.seed-ratio') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.seed-ratio-desc') }}</div>
+            </div>
             <el-input-number
               v-model="form.seedRatio"
               controls-position="right"
@@ -1020,8 +935,10 @@
             class="form-item-sub"
             :span="24"
           >
-            {{ t('preferences.seed-time') }}
-            ({{ t('preferences.seed-time-unit') }})
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.seed-time') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.seed-time-desc') }}</div>
+            </div>
             <el-input-number
               v-model="form.seedTime"
               controls-position="right"
@@ -1036,18 +953,23 @@
             class="form-item-sub"
             :span="24"
           >
-            {{ t('preferences.stop-seeding-action') }}
-            <el-radio-group
-              v-model="form.stopSeedingAction"
-              @change="autoSaveForm"
-            >
-              <el-radio value="pause">
-                {{ t('preferences.stop-seeding-action-pause') }}
-              </el-radio>
-              <el-radio value="complete">
-                {{ t('preferences.stop-seeding-action-complete') }}
-              </el-radio>
-            </el-radio-group>
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.stop-seeding-action') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.stop-seeding-action-desc') }}
+                </div>
+              </div>
+              <mo-segmented-slider
+                :value="form.stopSeedingAction"
+                :options="[
+                  { value: 'pause', label: t('preferences.stop-seeding-action-pause') },
+                  { value: 'complete', label: t('preferences.stop-seeding-action-complete') }
+                ]"
+                size="mini"
+                @change="onStopSeedingActionChange"
+              />
+            </div>
           </el-col>
         </el-form-item>
       </div>
@@ -1273,7 +1195,7 @@
           >
             <div
               class="sync-time-setting"
-              style="display: flex; align-items: center; margin-bottom: 12px;"
+              style="display: flex; align-items: center;"
             >
               <el-time-picker
                 v-model="form.autoSyncTrackerTime"
@@ -1287,14 +1209,19 @@
             </div>
           </div>
         </el-form-item>
+        <!-- 最近更新时间：作为时间选择框下方的说明文字直接展示（不再包
+             .form-item-sub 行容器——其 min-height/内边距会把间距撑大）。
+             与上方控件保持 9px：由 .preference-card > .el-form-item 的
+             padding-bottom 提供，故此处不再叠加 margin-top（对齐自动更新
+             卡片「更新条 ↔ 最近检测更新文字」的 9px）；
+             与卡片底边的间距由 .tracker-sync-time-note 的 padding-bottom
+             提供，避免说明文字贴边渲染。 -->
         <div
           v-if="form.lastSyncTrackerTime > 0"
-          class="form-item-sub"
-          style="margin-top: 16px; text-align: center;"
+          class="el-form-item__info tracker-sync-time-note"
+          style="margin-top: 0; text-align: center;"
         >
-          <div class="el-form-item__info">
-            {{ t('preferences.last-sync-tracker-time') }}: {{ new Date(form.lastSyncTrackerTime).toLocaleString() }}
-          </div>
+          {{ t('preferences.last-sync-tracker-time') }}: {{ new Date(form.lastSyncTrackerTime).toLocaleString() }}
         </div>
       </div>
 
@@ -1324,23 +1251,6 @@
                 :options="btConnectProtocolOptions"
                 size="mini"
                 @change="onBtConnectProtocolChange"
-              />
-            </div>
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div class="toggle-row toggle-row--with-desc">
-              <div class="toggle-row__text">
-                <span class="toggle-label">{{ t('preferences.enable-peer-exchange') }}</span>
-                <div class="toggle-desc">
-                  {{ t('preferences.enable-peer-exchange-desc') }}
-                </div>
-              </div>
-              <el-switch
-                v-model="form.enablePeerExchange"
-                @change="(val) => onNatToggleChange('enablePeerExchange', val)"
               />
             </div>
           </el-col>
@@ -1414,14 +1324,14 @@
           >
             <div class="toggle-row toggle-row--with-desc">
               <div class="toggle-row__text">
-                <span class="toggle-label">{{ t('preferences.enable-upnp') }}</span>
+                <span class="toggle-label">{{ t('preferences.enable-peer-exchange') }}</span>
                 <div class="toggle-desc">
-                  {{ t('preferences.enable-upnp-desc') }}
+                  {{ t('preferences.enable-peer-exchange-desc') }}
                 </div>
               </div>
               <el-switch
-                v-model="form.enableUpnp"
-                @change="(val) => onNatToggleChange('enableUpnp', val)"
+                v-model="form.enablePeerExchange"
+                @change="(val) => onNatToggleChange('enablePeerExchange', val)"
               />
             </div>
           </el-col>
@@ -1431,14 +1341,14 @@
           >
             <div class="toggle-row toggle-row--with-desc">
               <div class="toggle-row__text">
-                <span class="toggle-label">{{ t('preferences.enable-nat-pmp') }}</span>
+                <span class="toggle-label">{{ t('preferences.enable-upnp') }}</span>
                 <div class="toggle-desc">
-                  {{ t('preferences.enable-nat-pmp-desc') }}
+                  {{ t('preferences.enable-upnp-desc') }}
                 </div>
               </div>
               <el-switch
-                v-model="form.enableNatPmp"
-                @change="(val) => onNatToggleChange('enableNatPmp', val)"
+                v-model="form.enableUpnp"
+                @change="(val) => onNatToggleChange('enableUpnp', val)"
               />
             </div>
           </el-col>
@@ -1456,10 +1366,13 @@
         </h3>
         <el-form-item size="small">
           <el-col
-            class="form-item-sub"
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-narrow"
             :span="24"
           >
-            {{ t('preferences.bt-port') }}
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.bt-port') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.bt-port-desc') }}</div>
+            </div>
             <el-input
               v-model="form.listenPort"
               placeholder="BT Port"
@@ -1487,11 +1400,13 @@
             </el-input>
           </el-col>
           <el-col
-            class="form-item-sub"
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-narrow"
             :span="24"
-            style="margin-top: 8px;"
           >
-            {{ t('preferences.dht-port') }}
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.dht-port') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.dht-port-desc') }}</div>
+            </div>
             <el-input
               v-model="form.dhtListenPort"
               placeholder="DHT Port"
@@ -1532,10 +1447,13 @@
         </h3>
         <el-form-item size="small">
           <el-col
-            class="form-item-sub"
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-narrow"
             :span="24"
           >
-            {{ t('preferences.bt-max-peers') }}
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.bt-max-peers') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.bt-max-peers-desc') }}</div>
+            </div>
             <el-input
               v-model="form.btMaxPeers"
               :maxlength="5"
@@ -1545,378 +1463,34 @@
           <el-col
             class="form-item-sub"
             :span="24"
-            style="margin-top: 8px;"
           >
-            {{ t('preferences.disk-cache') }}
+            <div class="toggle-row toggle-row--with-desc">
+              <div class="toggle-row__text">
+                <span class="toggle-label">{{ t('preferences.bt-save-metadata') }}</span>
+                <div class="toggle-desc">
+                  {{ t('preferences.bt-save-metadata-desc') }}
+                </div>
+              </div>
+              <el-switch
+                v-model="form.btSaveMetadata"
+                @change="(val) => onNatToggleChange('btSaveMetadata', val)"
+              />
+            </div>
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.disk-cache') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.disk-cache-desc') }}</div>
+            </div>
             <el-input
               v-model="form.diskCache"
+              placeholder="128M"
               :maxlength="16"
               @change="autoSaveForm"
             />
-          </el-col>
-        </el-form-item>
-      </div>
-
-      <!-- ED2K设置卡片 -->
-      <div
-        v-if="activeCategory === 'ed2k'"
-        class="preference-card"
-        data-category="ed2k"
-      >
-        <h3 class="card-title">
-          {{ t('preferences.ed2k-options') }}
-        </h3>
-        <el-form-item size="small">
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            {{ t('preferences.ed2k-listen-port') }}
-            <el-input-number
-              v-model="form.ed2kListenPort"
-              controls-position="right"
-              :min="1024"
-              :max="65535"
-              :step="1"
-              :label="t('preferences.ed2k-listen-port')"
-              @change="autoSaveForm"
-            />
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            {{ t('preferences.ed2k-max-connections') }}
-            <el-input-number
-              v-model="form.ed2kMaxConnections"
-              controls-position="right"
-              :min="1"
-              :max="1000"
-              :step="1"
-              :label="t('preferences.ed2k-max-connections')"
-              @change="autoSaveForm"
-            />
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            {{ t('preferences.ed2k-connection-timeout') }}
-            <el-input-number
-              v-model="form.ed2kConnectionTimeout"
-              controls-position="right"
-              :min="5"
-              :max="300"
-              :step="5"
-              :label="t('preferences.ed2k-connection-timeout')"
-              @change="autoSaveForm"
-            />
-            <span style="margin-left: 8px;">{{ t('preferences.ed2k-seconds') }}</span>
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            {{ t('preferences.ed2k-max-sources') }}
-            <el-input-number
-              v-model="form.ed2kMaxSourcesPerFile"
-              controls-position="right"
-              :min="1"
-              :max="500"
-              :step="1"
-              :label="t('preferences.ed2k-max-sources')"
-              @change="autoSaveForm"
-            />
-          </el-col>
-        </el-form-item>
-      </div>
-
-      <div
-        v-if="activeCategory === 'ed2k'"
-        class="preference-card"
-        data-category="ed2k"
-      >
-        <h3 class="card-title">
-          {{ t('preferences.ed2k-source-discovery') }}
-        </h3>
-        <el-form-item size="small">
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div
-              class="el-form-item__info"
-              style="margin-bottom: 8px;"
-            />
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div class="toggle-row toggle-row--with-desc">
-              <div class="toggle-row__text">
-                <span class="toggle-label">{{ t('preferences.ed2k-server-source') }}</span>
-                <div class="toggle-desc">
-                  {{ t('preferences.ed2k-server-source-tips') }}
-                </div>
-              </div>
-              <el-switch
-                v-model="form.ed2kServerSourceEnabled"
-                @change="autoSaveForm"
-              />
-            </div>
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div class="toggle-row toggle-row--with-desc">
-              <div class="toggle-row__text">
-                <span class="toggle-label">{{ t('preferences.ed2k-source-exchange') }}</span>
-                <div class="toggle-desc">
-                  {{ t('preferences.ed2k-source-exchange-tips') }}
-                </div>
-              </div>
-              <el-switch
-                v-model="form.ed2kSourceExchangeEnabled"
-                @change="autoSaveForm"
-              />
-            </div>
-            <div
-              v-if="form.ed2kSourceExchangeEnabled"
-              style="margin-left: 24px; margin-top: 4px;"
-            >
-              {{ t('preferences.ed2k-source-exchange-interval') }}
-              <el-input-number
-                v-model="form.ed2kSourceExchangeInterval"
-                controls-position="right"
-                :min="30"
-                :max="3600"
-                :step="30"
-                size="small"
-                :label="t('preferences.ed2k-source-exchange-interval')"
-                @change="autoSaveForm"
-              />
-              <span style="margin-left: 4px;">{{ t('preferences.ed2k-seconds') }}</span>
-            </div>
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div class="toggle-row toggle-row--with-desc">
-              <div class="toggle-row__text">
-                <span class="toggle-label">{{ t('preferences.ed2k-kad') }}</span>
-                <div class="toggle-desc">
-                  {{ t('preferences.ed2k-kad-tips') }}
-                </div>
-              </div>
-              <el-switch
-                v-model="form.ed2kKadEnabled"
-                @change="autoSaveForm"
-              />
-            </div>
-            <div
-              v-if="form.ed2kKadEnabled"
-              style="margin-left: 24px; margin-top: 8px;"
-            >
-              <div style="margin-bottom: 4px;">
-                {{ t('preferences.ed2k-kad-bootstrap-nodes') }}
-              </div>
-              <el-input
-                v-model="form.ed2kKadBootstrapNodes"
-                size="small"
-                :placeholder="t('preferences.ed2k-kad-bootstrap-nodes-placeholder')"
-                @change="autoSaveForm"
-              />
-              <div
-                class="el-form-item__info"
-                style="margin-top: 4px;"
-              >
-                {{ t('preferences.ed2k-kad-bootstrap-nodes-tips') }}
-              </div>
-            </div>
-          </el-col>
-        </el-form-item>
-      </div>
-
-      <div
-        v-if="activeCategory === 'ed2k'"
-        class="preference-card"
-        data-category="ed2k"
-      >
-        <h3 class="card-title">
-          {{ t('preferences.ed2k-server-subscription') }}
-        </h3>
-        <el-form-item size="small">
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div
-              class="el-form-item__info"
-              style="margin-bottom: 8px;"
-            >
-              {{ t('preferences.ed2k-server-subscription-tips') }}
-            </div>
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div
-              class="extension-tag-input"
-              @click="focusEd2kSubscriptionInput"
-            >
-              <transition-group
-                name="tag-fade"
-                tag="div"
-                class="tags-container"
-              >
-                <el-tag
-                  v-for="url in form.ed2kServerSource"
-                  :key="url"
-                  closable
-                  size="small"
-                  class="extension-tag"
-                  @close="removeEd2kSubscription(url)"
-                >
-                  {{ url }}
-                </el-tag>
-              </transition-group>
-              <input
-                ref="ed2kSubscriptionInputRef"
-                v-model="ed2kSubscriptionInput"
-                type="text"
-                class="extension-input"
-                :placeholder="form.ed2kServerSource.length === 0 ? t('preferences.ed2k-server-source-placeholder') : ''"
-                @keydown.enter="addEd2kSubscription"
-                @keydown.delete="handleEd2kSubscriptionDeleteKey"
-                @blur="addEd2kSubscription"
-              >
-            </div>
-            <div
-              v-if="ed2kPresetSubscriptions.length > 0"
-              class="ed2k-preset-sources"
-            >
-              <span class="ed2k-preset-label">{{ t('preferences.ed2k-preset-sources') }}:</span>
-              <el-button
-                v-for="item in ed2kPresetSubscriptions"
-                :key="item.value"
-                size="small"
-                type="text"
-                class="ed2k-preset-btn"
-                @click="addPresetSubscription(item.value)"
-              >
-                + {{ item.label }}
-              </el-button>
-            </div>
-            <div style="margin-top: 8px;">
-              <el-button
-                size="small"
-                :loading="ed2kSyncing"
-                :disabled="form.ed2kServerSource.length === 0"
-                @click="syncEd2kServersFromSource"
-              >
-                <el-icon><Refresh /></el-icon>
-                {{ t('preferences.ed2k-sync-now') }}
-              </el-button>
-            </div>
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            <div class="toggle-row toggle-row--with-desc">
-              <div class="toggle-row__text">
-                <span class="toggle-label">{{ t('preferences.ed2k-auto-sync-server') }}</span>
-                <div class="toggle-desc">
-                  {{ t('preferences.ed2k-auto-sync-server-desc') }}
-                </div>
-              </div>
-              <el-switch
-                v-model="form.ed2kAutoSyncServer"
-                @change="autoSaveForm"
-              />
-            </div>
-          </el-col>
-          <el-col
-            v-if="form.ed2kAutoSyncServer"
-            class="form-item-sub-sub"
-            :span="24"
-          >
-            <div class="sub-row-reverse">
-              <el-time-picker
-                v-model="form.ed2kAutoSyncServerTime"
-                size="small"
-                format="HH:mm"
-                value-format="HH:mm"
-                :placeholder="t('preferences.ed2k-auto-sync-server-time')"
-                style="width: 120px;"
-                @change="autoSaveForm"
-              />
-              <el-input-number
-                v-model="form.ed2kAutoSyncServerInterval"
-                size="small"
-                :min="1"
-                :max="168"
-                :step="1"
-                :label="t('preferences.ed2k-auto-sync-server-interval')"
-                style="width: 110px; margin-right: 8px;"
-                @change="autoSaveForm"
-              />
-              <span class="sub-row-label">{{ t('preferences.ed2k-auto-sync-server-interval') }}</span>
-            </div>
-            <div
-              v-if="form.ed2kLastSyncServerTime > 0"
-              class="el-form-item__info"
-              style="margin-top: 4px;"
-            >
-              {{ t('preferences.ed2k-last-sync-server-time') }}: {{ formatSyncTime(form.ed2kLastSyncServerTime) }}
-            </div>
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
-            {{ t('preferences.ed2k-default-servers') }}
-            <div
-              class="extension-tag-input"
-              @click="focusEd2kServerInput"
-            >
-              <transition-group
-                name="tag-fade"
-                tag="div"
-                class="tags-container"
-              >
-                <el-tag
-                  v-for="server in ed2kServerTags"
-                  :key="server"
-                  closable
-                  size="small"
-                  class="extension-tag"
-                  @close="removeEd2kServer(server)"
-                >
-                  {{ server }}
-                </el-tag>
-              </transition-group>
-              <input
-                ref="ed2kServerInputRef"
-                v-model="ed2kServerInput"
-                type="text"
-                class="extension-input"
-                :placeholder="ed2kServerTags.length === 0 ? t('preferences.ed2k-default-servers-placeholder') : ''"
-                @keydown.enter="addEd2kServer"
-                @keydown.delete="handleEd2kServerDeleteKey"
-                @blur="addEd2kServer"
-              >
-            </div>
-            <div
-              class="el-form-item__info"
-              style="margin-top: 8px;"
-            >
-              {{ t('preferences.ed2k-default-servers-tips') }}
-            </div>
           </el-col>
         </el-form-item>
       </div>
@@ -1935,7 +1509,10 @@
             class="form-item-sub"
             :span="24"
           >
-            {{ t('preferences.max-concurrent-downloads') }}
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.max-concurrent-downloads') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.max-concurrent-downloads-desc') }}</div>
+            </div>
             <el-input-number
               v-model="form.maxConcurrentDownloads"
               controls-position="right"
@@ -1950,7 +1527,10 @@
             class="form-item-sub"
             :span="24"
           >
-            {{ t('preferences.max-connection-per-server') }}
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.max-connection-per-server') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.max-connection-per-server-desc') }}</div>
+            </div>
             <el-input-number
               v-model="form.maxConnectionPerServer"
               controls-position="right"
@@ -2168,7 +1748,6 @@
             <el-input
               v-model="form.downloadingFileSuffix"
               :placeholder="t('preferences.downloading-file-suffix-tips')"
-              :label="t('preferences.downloading-file-suffix')"
               @change="autoSaveForm"
             >
               <template #prepend>
@@ -2197,15 +1776,6 @@
             class="form-item-sub"
             :span="24"
           >
-            <div
-              class="settings-divider"
-              style="margin: 8px 0;"
-            />
-          </el-col>
-          <el-col
-            class="form-item-sub"
-            :span="24"
-          >
             <div class="toggle-row toggle-row--with-desc">
               <div class="toggle-row__text">
                 <span class="toggle-label">{{ t('preferences.auto-categorize-files') }}</span>
@@ -2218,11 +1788,9 @@
                 @change="autoSaveForm"
               />
             </div>
-            <div style="margin-top: 8px;">
+            <div class="edit-rules-btn">
               <el-button
-                type="primary"
-                size="small"
-                class="edit-rules-btn"
+                class="pref-row-action"
                 @click="openFileCategoriesSettings"
               >
                 <el-icon><Edit /></el-icon>
@@ -2455,24 +2023,19 @@ const normalizeTaskMultiSelectModifier = (value) => {
       autoHideWindow,
       btMaxPeers,
       dhtListenPort,
-      diskCache,
+      btEnableLpd,
       enableDht,
       enableDht6,
-      btEnableLpd,
-      enableNatPmp,
       enablePeerExchange,
       enableUpnp,
       enableUtp,
       btConnectProtocol,
       listenPort,
+      btSaveMetadata,
+      diskCache,
       autoPurgeRecord,
       btEncryptionMode,
       btIpBanList,
-      btSaveMetadata,
-      btAutoBanPeer,
-      btAutoBanBadData,
-      btAutoBanZeroProgress,
-      btAutoBanSnubbing,
       dir,
       downloadingFileSuffix,
       engineMaxConnectionPerServer,
@@ -2536,21 +2099,6 @@ const normalizeTaskMultiSelectModifier = (value) => {
       securityScanTool,
       customSecurityScanPath,
       showTaskTypeBadge,
-      ed2kListenPort,
-      ed2kMaxConnections,
-      ed2kConnectionTimeout,
-      ed2kMaxSourcesPerFile,
-      ed2kDefaultServers,
-      ed2kServerSourceEnabled,
-      ed2kSourceExchangeEnabled,
-      ed2kSourceExchangeInterval,
-      ed2kKadEnabled,
-      ed2kKadBootstrapNodes,
-      ed2kServerSource,
-      ed2kAutoSyncServer,
-      ed2kAutoSyncServerInterval,
-      ed2kAutoSyncServerTime,
-      ed2kLastSyncServerTime,
       autoSyncTracker,
       autoSyncTrackerInterval,
       autoSyncTrackerTime,
@@ -2574,33 +2122,23 @@ const normalizeTaskMultiSelectModifier = (value) => {
       normalizedMaxPerServer = normalizedEngineMax
     }
 
-    const btAutoDownloadContent = followTorrent &&
-      followMetalink &&
-      !pauseMetadata
-
     const result = {
       autoHideWindow,
       autoPurgeRecord: autoPurgeRecord || false,
-      btAutoDownloadContent,
       btEncryptionMode: normalizeBtEncryptionMode(btEncryptionMode, config.btForceEncryption),
       btConnectProtocol: normalizeBtConnectProtocol(btConnectProtocol, enableUtp),
       btMaxPeers: btMaxPeers !== undefined ? btMaxPeers : '128',
-      btAutoBanPeer: btAutoBanPeer !== false && btAutoBanPeer !== 'false',
-      btAutoBanBadData: btAutoBanBadData !== false && btAutoBanBadData !== 'false',
-      btAutoBanZeroProgress: btAutoBanZeroProgress !== false && btAutoBanZeroProgress !== 'false',
-      btAutoBanSnubbing: btAutoBanSnubbing !== false && btAutoBanSnubbing !== 'false',
       dhtListenPort,
-      diskCache: diskCache || '128M',
-      enableDht: enableDht === true,
-      enableDht6: enableDht6 === true,
       btEnableLpd: btEnableLpd === true,
-      enableNatPmp: enableNatPmp === true,
-      enablePeerExchange: enablePeerExchange === true,
+      enableDht: enableDht === undefined ? true : enableDht === true,
+      enableDht6: enableDht6 === undefined ? true : enableDht6 === true,
+      enablePeerExchange: enablePeerExchange === undefined ? true : enablePeerExchange === true,
       enableUpnp: enableUpnp === true,
       enableUtp: enableUtp === true,
       listenPort,
+      btSaveMetadata: btSaveMetadata === true,
+      diskCache: diskCache !== undefined ? diskCache : '128M',
       btIpBanList: normalizeBtIpBanList(btIpBanList),
-      btSaveMetadata,
       continue: config.continue,
       dir,
       downloadingFileSuffix,
@@ -2693,21 +2231,6 @@ const normalizeTaskMultiSelectModifier = (value) => {
       securityScanTool: securityScanTool || 'system',
       customSecurityScanPath: customSecurityScanPath || '',
       showTaskTypeBadge: showTaskTypeBadge === undefined ? false : !!showTaskTypeBadge,
-      ed2kListenPort: ed2kListenPort || 4662,
-      ed2kMaxConnections: ed2kMaxConnections || 200,
-      ed2kConnectionTimeout: ed2kConnectionTimeout || 30,
-      ed2kMaxSourcesPerFile: ed2kMaxSourcesPerFile || 100,
-      ed2kDefaultServers: ed2kDefaultServers || '',
-      ed2kServerSourceEnabled: ed2kServerSourceEnabled === undefined ? true : !!ed2kServerSourceEnabled,
-      ed2kSourceExchangeEnabled: ed2kSourceExchangeEnabled === undefined ? true : !!ed2kSourceExchangeEnabled,
-      ed2kSourceExchangeInterval: ed2kSourceExchangeInterval || 300,
-      ed2kKadEnabled: ed2kKadEnabled === undefined ? false : !!ed2kKadEnabled,
-      ed2kKadBootstrapNodes: ed2kKadBootstrapNodes || '',
-      ed2kServerSource: Array.isArray(ed2kServerSource) ? ed2kServerSource : [],
-      ed2kAutoSyncServer: ed2kAutoSyncServer === undefined ? false : !!ed2kAutoSyncServer,
-      ed2kAutoSyncServerInterval: ed2kAutoSyncServerInterval || 24,
-      ed2kAutoSyncServerTime: ed2kAutoSyncServerTime || '00:00',
-      ed2kLastSyncServerTime: ed2kLastSyncServerTime || 0,
       autoSyncTracker,
       autoSyncTrackerInterval: autoSyncTrackerInterval || config['auto-sync-tracker-interval'] || 12,
       autoSyncTrackerTime: autoSyncTrackerTime !== undefined ? autoSyncTrackerTime : (config['auto-sync-tracker-time'] !== undefined ? config['auto-sync-tracker-time'] : '00:00'),
@@ -2755,8 +2278,7 @@ import {
 import {
   APP_HTTP_PORT,
   APP_RUN_MODE,
-  BUILTIN_ED2K_SERVERS,
-  ED2K_SERVER_SOURCE_OPTIONS,
+  APP_THEME,
   EMPTY_STRING,
   ENGINE_MAX_CONCURRENT_DOWNLOADS,
   TRACKER_SOURCE_OPTIONS
@@ -2791,7 +2313,6 @@ const { searchKeyword } = storeToRefs(preferenceStore)
 // --- Data ---
 const form = ref(initForm(preferenceConfig.value))
 // BT 自动封禁策略折叠状态
-const btBanSettingsExpanded = ref(false)
 // 限速单位独立存储：不再从 form 值推导（'0' 表示不限速时单位会丢失，
 // 且 computed setter 无法写回状态导致下拉选择无效），由 v-model 直接写入
 const downloadUnit = ref(extractSpeedUnit(form.value.maxOverallDownloadLimit))
@@ -2812,11 +2333,6 @@ const textMeasureCanvas = ref(null)
 const trackerMaxCollapse = ref(1)
 const extensionInput = ref('')
 const domainInput = ref('')
-const ed2kServersText = ref('')
-const ed2kServerInput = ref('')
-const ed2kSubscriptionInput = ref('')
-const ed2kUpdatingForm = ref(false)
-const ed2kSyncing = ref(false)
 const trackerSourceOptions = ref([])
 const trackerSyncing = ref(false)
 const trackerSourceConfigVisible = ref(false)
@@ -2831,8 +2347,6 @@ const backgroundUiOpacityScopeSelectRef = ref(null)
 const backgroundUiFrostedBlurScopeSelectRef = ref(null)
 const extensionInputRef = ref(null)
 const domainInputRef = ref(null)
-const ed2kServerInputRef = ref(null)
-const ed2kSubscriptionInputRef = ref(null)
 const trackerSelectRef = ref(null)
 // 模板 ref="basicForm" 由 setup 中同名 ref 自动绑定（Options API 迁移遗留的 formRefs 映射未实现注册）
 const basicForm = ref(null)
@@ -2844,6 +2358,12 @@ const formRefs = {}
       const isMac = computed(() => is.macOS())
       const isMas = computed(() => is.mas())
       const isLinux = computed(() => is.linux())
+      // 主题选择框（原 mo-theme-switcher 的三态切换改为下拉选择）
+      const themeOptions = computed(() => [
+        { value: APP_THEME.AUTO, label: t('preferences.theme-auto') },
+        { value: APP_THEME.LIGHT, label: t('preferences.theme-light') },
+        { value: APP_THEME.DARK, label: t('preferences.theme-dark') }
+      ])
       const btEncryptionOptions = computed(() => {
         return [
           { value: 'none', label: t('preferences.bt-encryption-none') },
@@ -2896,28 +2416,6 @@ const formRefs = {}
           .split(/[\n,]+/)
           .map(domain => domain.trim())
           .filter(domain => domain.length > 0)
-      })
-      const ed2kServerTags = computed(() => {
-        const value = ed2kServersText.value || ''
-        if (!value.trim()) return BUILTIN_ED2K_SERVERS
-
-        // 支持换行符和逗号分隔
-        return value
-          .split(/[\n,]+/)
-          .map(s => s.trim())
-          .filter(s => s.length > 0)
-      })
-      const ed2kPresetSubscriptions = computed(() => {
-        const current = Array.isArray(form.value.ed2kServerSource) ? form.value.ed2kServerSource : []
-        const result = []
-        ED2K_SERVER_SOURCE_OPTIONS.forEach(group => {
-          group.options.forEach(opt => {
-            if (!current.includes(opt.value)) {
-              result.push({ value: opt.value, label: group.label })
-            }
-          })
-        })
-        return result
       })
       const maxOverallDownloadLimitParsed = computed({
         get () {
@@ -3024,11 +2522,6 @@ const formRefs = {}
             key: 'advanced',
             title: t('preferences.advanced'),
             route: `${base}/advanced`
-          },
-          {
-            key: 'lab',
-            title: t('preferences.lab'),
-            route: `${base}/lab`
           }
         ]
       })
@@ -3174,15 +2667,6 @@ watch(() => form.value.extensionExcludeDomains, () => {
   // 这个 watcher 确保从浏览器扩展添加的域名能实时显示在界面上
 })
 
-watch(() => form.value.ed2kDefaultServers, (val) => {
-  if (ed2kUpdatingForm.value) return
-  if (val) {
-    ed2kServersText.value = val
-  } else {
-    ed2kServersText.value = BUILTIN_ED2K_SERVERS.join('\n')
-  }
-})
-
 let _syncingFromStore = false
 
 watch(form, () => {
@@ -3306,8 +2790,9 @@ watch(trackerSourceConfigVisible, (visible) => {
       }
       function filterCards(keyword, category) {
         nextTick(() => {
-          if (!document) return
-          const cards = document.querySelectorAll('.preference-card, .preference-bottom-actions')
+          const root = document.querySelector('.preference-dialog .preference-content')
+          if (!root) return
+          const cards = root.querySelectorAll('.preference-card, .preference-bottom-actions')
           const k = (keyword || '').toLowerCase()
           let visibleCount = 0
           cards.forEach(card => {
@@ -3587,11 +3072,10 @@ watch(trackerSourceConfigVisible, (visible) => {
       // "点了没反应"）。
       // 生效方式（引擎已支持 changeGlobalOption 热更新）：
       // - 连接协议（bt-connect-protocol）：由三态选择器处理，立即生效
-      // - enable-dht / enable-dht6：关闭立即生效；重新开启在下一个
-      //   BT 任务创建时恢复（DHTSetup）
-      // - enable-peer-exchange / enable-lpd：立即生效
-      // - enable-upnp / enable-nat-pmp：端口映射在引擎启动时执行，
-      //   下次引擎启动生效
+      // 仅剩三类引擎真实支持的开关：
+      // - bt-enable-lpd：保存后引擎热应用（新任务生效）
+      // - enable-upnp → 引擎 bt-port-mapping（BT TCP 端口映射）+ 主进程
+      //   DHT UDP 端口映射（配置监听即时重映射）
       function onNatToggleChange(key, value) {
         const data = {}
         data[key] = value
@@ -3600,7 +3084,7 @@ watch(trackerSourceConfigVisible, (visible) => {
           .then(() => {
             appStore.fetchEngineOptions()
             formOriginal.value[key] = value
-            const restartOnNextBootKeys = ['enableUpnp', 'enableNatPmp']
+            const restartOnNextBootKeys = ['enableUpnp']
             if (restartOnNextBootKeys.includes(key)) {
               msg.info(t('preferences.restart-to-apply'))
             }
@@ -3809,6 +3293,10 @@ watch(trackerSourceConfigVisible, (visible) => {
         form.value.enableUtp = true
         autoSaveForm()
       }
+      function onStopSeedingActionChange(action) {
+        form.value.stopSeedingAction = action === 'complete' ? 'complete' : 'pause'
+        autoSaveForm()
+      }
       function handleHistoryDirectorySelected(dir) {
         form.value.dir = dir
         autoSaveForm()
@@ -3926,159 +3414,6 @@ watch(trackerSourceConfigVisible, (visible) => {
           const lastDomain = domainTags.value[domainTags.value.length - 1]
           removeDomain(lastDomain)
         }
-      }
-      function addEd2kServer() {
-        const input = ed2kServerInput.value.trim()
-        if (!input) return
-
-        // 分割输入（支持逗号、分号、空格等分隔符）
-        const newServers = input
-          .split(/[,，;；\s]+/)
-          .map(s => s.trim())
-          .filter(s => s.length > 0)
-
-        if (newServers.length === 0) {
-          ed2kServerInput.value = ''
-          return
-        }
-
-        // 确保每个服务器都有端口，没有则添加默认端口 4661
-        const normalizedServers = newServers.map(s => {
-          if (!s.includes(':')) {
-            return `${s}:4661`
-          }
-          return s
-        })
-
-        // 获取现有服务器列表
-        const existingServers = ed2kServerTags.value
-
-        // 合并并去重
-        const allServers = [...existingServers, ...normalizedServers]
-        const uniqueServers = Array.from(new Set(allServers))
-        const serverStr = uniqueServers.join('\n')
-
-        // 更新显示
-        ed2kServersText.value = serverStr
-
-        // 同步到表单，以便 autoSaveForm 能检测到变更
-        ed2kUpdatingForm.value = true
-        form.value.ed2kDefaultServers = convertLineToComma(serverStr)
-        ed2kUpdatingForm.value = false
-
-        // 清空输入框
-        ed2kServerInput.value = ''
-
-        // 保存
-        autoSaveForm()
-      }
-      function removeEd2kServer(server) {
-        // 从列表中移除指定服务器
-        const servers = ed2kServerTags.value.filter(s => s !== server)
-        const serverStr = servers.join('\n')
-
-        // 更新显示
-        ed2kServersText.value = serverStr
-
-        // 同步到表单，以便 autoSaveForm 能检测到变更
-        ed2kUpdatingForm.value = true
-        form.value.ed2kDefaultServers = convertLineToComma(serverStr)
-        ed2kUpdatingForm.value = false
-
-        // 保存
-        autoSaveForm()
-      }
-      function focusEd2kServerInput() {
-        // 点击容器时聚焦到输入框
-        nextTick(() => {
-          if (ed2kServerInputRef.value) {
-            ed2kServerInputRef.value.focus()
-          }
-        })
-      }
-      function handleEd2kServerDeleteKey(event) {
-        // 当输入框为空且按下删除键时，删除最后一个标签
-        if (ed2kServerInput.value === '' && ed2kServerTags.value.length > 0) {
-          event.preventDefault()
-          const lastServer = ed2kServerTags.value[ed2kServerTags.value.length - 1]
-          removeEd2kServer(lastServer)
-        }
-      }
-      function addEd2kSubscription() {
-        const input = ed2kSubscriptionInput.value.trim()
-        if (!input) return
-
-        const current = Array.isArray(form.value.ed2kServerSource) ? form.value.ed2kServerSource : []
-        if (!current.includes(input)) {
-          form.value.ed2kServerSource = [...current, input]
-          autoSaveForm()
-        }
-        ed2kSubscriptionInput.value = ''
-      }
-      function addPresetSubscription(url) {
-        const current = Array.isArray(form.value.ed2kServerSource) ? form.value.ed2kServerSource : []
-        if (!current.includes(url)) {
-          form.value.ed2kServerSource = [...current, url]
-          autoSaveForm()
-        }
-      }
-      function removeEd2kSubscription(url) {
-        const current = Array.isArray(form.value.ed2kServerSource) ? form.value.ed2kServerSource : []
-        form.value.ed2kServerSource = current.filter(s => s !== url)
-        autoSaveForm()
-      }
-      function focusEd2kSubscriptionInput() {
-        nextTick(() => {
-          if (ed2kSubscriptionInputRef.value) {
-            ed2kSubscriptionInputRef.value.focus()
-          }
-        })
-      }
-      function handleEd2kSubscriptionDeleteKey(event) {
-        const current = Array.isArray(form.value.ed2kServerSource) ? form.value.ed2kServerSource : []
-        if (ed2kSubscriptionInput.value === '' && current.length > 0) {
-          event.preventDefault()
-          const last = current[current.length - 1]
-          removeEd2kSubscription(last)
-        }
-      }
-      async function syncEd2kServersFromSource() {
-        const source = form.value.ed2kServerSource
-        if (!source || source.length === 0) {
-          return
-        }
-
-        ed2kSyncing.value = true
-        try {
-          const servers = await preferenceStore.fetchEd2kServers(source)
-          if (servers && servers.length > 0) {
-            // Merge with builtin servers and dedupe
-            const merged = [...new Set([...servers, ...BUILTIN_ED2K_SERVERS])]
-            const serverStr = merged.join(',')
-
-            ed2kUpdatingForm.value = true
-            form.value.ed2kDefaultServers = serverStr
-            form.value.ed2kLastSyncServerTime = Date.now()
-            ed2kUpdatingForm.value = false
-
-            ed2kServersText.value = convertCommaToLine(serverStr)
-            autoSaveForm()
-            msg.success(t('preferences.ed2k-sync-success'))
-          } else {
-            msg.warning(t('preferences.ed2k-sync-empty'))
-          }
-        } catch (error) {
-          console.error('[ED2K] sync servers failed:', error)
-          msg.error(t('preferences.ed2k-sync-fail'))
-        } finally {
-          ed2kSyncing.value = false
-        }
-      }
-      function formatSyncTime(timestamp) {
-        if (!timestamp) return ''
-        const d = new Date(timestamp)
-        const pad = (n) => String(n).padStart(2, '0')
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
       }
       function handleNativeDirectorySelected(dir) {
         form.value.dir = dir
@@ -4209,18 +3544,11 @@ watch(trackerSourceConfigVisible, (visible) => {
 
           const {
             autoHideWindow,
-            btAutoDownloadContent,
             btTracker,
             extensionSkipFileExtensions,
             extensionExcludeDomains,
             rpcListenPort
           } = data
-
-          if ('btAutoDownloadContent' in data) {
-            data.followTorrent = btAutoDownloadContent
-            data.followMetalink = btAutoDownloadContent
-            data.pauseMetadata = !btAutoDownloadContent
-          }
 
           if ('btEncryptionMode' in data) {
             const mode = data.btEncryptionMode
@@ -4239,19 +3567,6 @@ watch(trackerSourceConfigVisible, (visible) => {
             delete data.btMinCryptoLevel
           }
 
-          if ('btAutoBanPeer' in data) {
-            data['bt-auto-ban-peer'] = data.btAutoBanPeer ? 'true' : 'false'
-          }
-          if ('btAutoBanBadData' in data) {
-            data['bt-auto-ban-bad-data'] = data.btAutoBanBadData ? 'true' : 'false'
-          }
-          if ('btAutoBanZeroProgress' in data) {
-            data['bt-auto-ban-zero-progress'] = data.btAutoBanZeroProgress ? 'true' : 'false'
-          }
-          if ('btAutoBanSnubbing' in data) {
-            data['bt-auto-ban-snubbing'] = data.btAutoBanSnubbing ? 'true' : 'false'
-          }
-
           if (btTracker) {
             data.btTracker = reduceTrackerString(convertLineToComma(btTracker))
           }
@@ -4264,18 +3579,6 @@ watch(trackerSourceConfigVisible, (visible) => {
           if (extensionExcludeDomains) {
             // 将换行符格式转换为逗号分隔格式
             data.extensionExcludeDomains = convertLineToComma(extensionExcludeDomains)
-          }
-
-          // 仅在 ed2kDefaultServers 实际发生变化时才加入 data，
-          // 避免切换语言等无关操作触发不必要的 ed2k 配置写入
-          const currentServers = ed2kServerTags.value
-          const builtinStr = BUILTIN_ED2K_SERVERS.join(',')
-          const currentStr = currentServers.join(',')
-          const newEd2kServers = currentStr !== builtinStr
-            ? convertLineToComma(ed2kServersText.value)
-            : ''
-          if (newEd2kServers !== (formOriginal.value.ed2kDefaultServers || '')) {
-            data.ed2kDefaultServers = newEd2kServers
           }
 
           if (rpcListenPort === EMPTY_STRING) {
@@ -5045,11 +4348,6 @@ onMounted(() => {
       // 导致 appearance 卡片（排在前 4 个）闪烁显示。
       filterCards(searchKeyword.value, activeCategory.value)
       // 使用 ipcRenderer 直接监听从浏览器扩展更新配置的命令
-      if (form.value.ed2kDefaultServers) {
-        ed2kServersText.value = form.value.ed2kDefaultServers
-      } else {
-        ed2kServersText.value = BUILTIN_ED2K_SERVERS.join('\n')
-      }
       _extensionUpdateHandler = (event, command) => {
         if (command === 'preference:update-from-extension') {
           console.log('[Basic] Received preference:update-from-extension, syncing config...')
@@ -5261,31 +4559,6 @@ onBeforeUnmount(() => {
   }
 }
 
-.ed2k-preset-sources {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.ed2k-preset-label {
-  font-size: 12px;
-  color: var(--lc-text-secondary);
-  margin-right: 2px;
-}
-
-.ed2k-preset-btn {
-  padding: 2px 6px !important;
-  font-size: 12px !important;
-  color: var(--lc-color-primary) !important;
-
-  &:hover {
-    color: var(--lc-color-primary) !important;
-    text-decoration: underline;
-  }
-}
-
 .tag-input-container {
   margin-top: 8px;
   padding: 8px;
@@ -5380,26 +4653,11 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
-.no-results-inner {
-  width: 100%;
-  padding-top: 280px;
-  background: transparent url('@/assets/no-settings.svg') top center no-repeat;
-  background-size: 400px auto;
-  text-align: center;
-  font-size: 14px;
-  color: #666;
-}
+/* 空状态外观统一由 preference-dialog.scss 提供，这里只保留占位 */
 
- /* 编辑规则按钮优化样式 */
+ /* 编辑规则按钮：与设置行内的次要操作按钮保持一致的低调样式 */
 .edit-rules-btn {
-   margin-left: 8px;
-   padding: 6px 12px;
-   border-radius: 6px;
-   font-weight: 500;
-   transition: all 0.2s ease-in-out;
-   border: 1px solid transparent;
-  background: var(--primary-color, #409eff);
-  color: #fff;
+   margin-top: 8px;
 }
 
 /* 扩展通道地址输入框右侧复制按钮：修正视觉偏上，略微下移 */
@@ -5407,165 +4665,9 @@ onBeforeUnmount(() => {
   transform: translateY(1px);
 }
 
- /* 白天模式适配 */
- .theme-light .edit-rules-btn {
-   color: #000;
- }
+ /* 设置分隔线样式统一由 preference-dialog.scss 提供 */
 
-.theme-light .edit-rules-btn:hover {
-  color: #000;
-  background: linear-gradient(135deg, var(--primary-color, #409eff) 0%, var(--primary-color-light-1, #66b1ff) 100%);
-}
-
-.edit-rules-btn:hover {
-  background: linear-gradient(135deg, var(--primary-color, #409eff) 0%, var(--primary-color-light-1, #66b1ff) 100%);
-  border-color: var(--primary-color-light-1, #66b1ff);
-}
-
-.edit-rules-btn:active {
-  background: linear-gradient(135deg, var(--primary-color, #409eff) 0%, var(--primary-color-light-1, #66b1ff) 100%);
-  border-color: var(--primary-color-light-1, #66b1ff);
-}
-
- .edit-rules-btn .el-icon {
-   margin-right: 4px;
-   font-size: 12px;
- }
-
- /* 黑夜模式适配 */
-.theme-dark .edit-rules-btn {
-  background: var(--primary-color, #409eff);
-  border-color: transparent;
-  color: #fff;
-}
-
-.theme-dark .edit-rules-btn:hover {
-  background: linear-gradient(135deg, var(--primary-color, #409eff) 0%, var(--primary-color-light-1, #66b1ff) 100%);
-   border-color: var(--primary-color-light-1);
- }
-
- .theme-dark .edit-rules-btn:active {
-   background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-light-1) 100%);
-   border-color: var(--primary-color-light-1);
- }
-
- /* 确保按钮在信息文本中正确对齐 */
- .el-form-item__info .edit-rules-btn {
-   vertical-align: middle;
-   margin-top: -2px;
- }
-
- /* 设置分隔线样式 */
- .settings-divider {
-   height: 2px;
-   background: var(--border-color);
-   margin: 24px 0;
-   border-radius: 1px;
-   opacity: 0.8;
-   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
- }
-
- /* 暗色主题下的分隔线 */
- .theme-dark .settings-divider {
-   background: #4a4a4a;
-   box-shadow: 0 1px 2px rgba(255, 255, 255, 0.05);
- }
-
- /* BT 加密模式选择行 */
- .bt-encryption-row {
-   display: flex;
-   align-items: center;
-   gap: 16px;
-   flex-wrap: wrap;
- }
-
- /* BT 自动封禁策略折叠容器 */
- .bt-ban-collapse-header {
-   display: flex;
-   align-items: center;
-   justify-content: space-between;
-   padding: 6px 10px;
-   background: rgba(0, 0, 0, 0.03);
-   border-radius: 6px;
-   cursor: pointer;
-   user-select: none;
-   transition: background 0.2s;
- }
- .bt-ban-collapse-header:hover {
-   background: rgba(0, 0, 0, 0.06);
- }
- .bt-ban-collapse-title {
-   font-size: 13px;
-   font-weight: 500;
-   color: var(--lc-text-primary, #303133);
- }
- .bt-ban-collapse-arrow {
-   transition: transform 0.25s ease;
-   font-size: 12px;
-   color: var(--lc-text-secondary, #909399);
- }
- .bt-ban-collapse-arrow.is-expanded {
-   transform: rotate(90deg);
- }
- .bt-ban-settings-body {
-   padding: 8px 10px 4px;
-   overflow: hidden;
- }
- .bt-ban-settings-body .toggle-row {
-   margin-bottom: 10px;
- }
- .bt-ban-settings-body .toggle-row:last-child {
-   margin-bottom: 0;
- }
-
- /* 深色模式适配 */
- .theme-dark .bt-ban-collapse-header {
-   background: rgba(255, 255, 255, 0.04);
- }
- .theme-dark .bt-ban-collapse-header:hover {
-   background: rgba(255, 255, 255, 0.08);
- }
- .theme-dark .bt-ban-collapse-title {
-   color: var(--lc-text-primary, #dfe3e8);
- }
- .theme-dark .bt-ban-collapse-arrow {
-   color: var(--lc-text-secondary, #8d94a5);
- }
-
- /* 展开收起过渡动画 */
- .bt-ban-slide-enter-active,
- .bt-ban-slide-leave-active {
-   transition: max-height 0.28s ease, opacity 0.28s ease, padding 0.28s ease;
-   max-height: 500px;
-   overflow: hidden;
- }
- .bt-ban-slide-enter-from,
- .bt-ban-slide-leave-to {
-   max-height: 0;
-   opacity: 0;
-   padding-top: 0;
-   padding-bottom: 0;
- }
-
- /* 视频嗅探设置按钮样式 */
- .video-detection-settings-btn {
-   background: #409EFF;
-   border-color: #409EFF;
-   color: #fff;
-   transition: all 0.2s ease-in-out;
- }
-
- .video-detection-settings-btn:hover {
-   background: #66b1ff;
-   border-color: #66b1ff;
-   color: #fff;
- }
-
- .video-detection-settings-btn:active {
-  background: #3a8ee6;
-  border-color: #3a8ee6;
-  color: #fff;
-}
+ /* 视频嗅探设置按钮已改用统一的 pref-row-action 样式（见 preference-dialog.scss） */
 
 /* Local popup for adding tracker source (appears below the button) */
 .tracker-source-popup-wrapper {
@@ -5662,29 +4764,25 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 上传/下载限速行：输入框与单位选择框等高对齐、边缘贴合融为一体 */
+/* 上传/下载限速行：文案在左，数字框与单位选择框右对齐等高 */
 :deep(.speed-limit-row) {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px 92px;
   align-items: center;
-  flex-wrap: nowrap;
-  gap: 6px;
+  column-gap: 8px;
   width: 100%;
 
-  // 统一的控件高度，输入框与选择框都继承该变量，
-  // 避免 Element Plus 各自尺寸规则（如 select 默认 min-height: 32px）产生错位
-  --lc-speed-control-height: 28px;
+  --lc-speed-control-height: 30px;
 
-  /* 输入框：占满剩余宽度，内容锁定统一高度 */
   .el-input-number {
-    flex: 1;
+    width: 132px !important;
     min-width: 0;
-    /* 覆盖 Element Plus 内置的 width: 150px */
-    width: auto !important;
     --el-component-size: var(--lc-speed-control-height);
     --el-input-height: var(--lc-speed-control-height);
   }
 
-  .el-input-number .el-input__wrapper {
+  .el-input-number .el-input__wrapper,
+  .el-select .el-select__wrapper {
     box-sizing: border-box;
     min-height: var(--lc-speed-control-height);
     height: var(--lc-speed-control-height);
@@ -5696,35 +4794,14 @@ onBeforeUnmount(() => {
     text-align: center;
   }
 
-  /* 单位选择框：固定宽度，与输入框严格等高，圆角与光影与输入框一致 */
   .el-select {
-    flex-shrink: 0;
-    width: 100px;
-    --el-select-width: 100px;
-    margin-left: -6px;
+    width: 92px;
+    --el-select-width: 92px;
   }
 
   .el-select .el-select__wrapper {
-    box-sizing: border-box;
-    min-height: var(--lc-speed-control-height);
-    height: var(--lc-speed-control-height);
     padding: 0 8px;
     line-height: 20px;
-    box-shadow: 0 0 0 1px var(--el-border-color) inset;
-  }
-
-  /* 一体式圆角：输入框去掉右侧圆角，选择框去掉左侧圆角 */
-  .el-input-number.is-controls-right .el-input__wrapper {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    box-shadow: inset 0 1px 0 0 var(--el-border-color, var(--lc-border-base)),
-                inset 0 -1px 0 0 var(--el-border-color, var(--lc-border-base)),
-                inset 1px 0 0 0 var(--el-border-color, var(--lc-border-base));
-  }
-
-  .el-select .el-select__wrapper {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
   }
 }
 

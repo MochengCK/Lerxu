@@ -13,10 +13,14 @@ export default class ProtocolManager extends EventEmitter {
 
     // package.json:build.protocols[].schemes[]
     // options.protocols: { 'magnet': true, 'thunder': false }
+    // 兼容清理：旧版协议 scheme 键不再注册（防止历史配置残留）
+    const legacySchemes = new Set(['mo', 'motrix'])
+    const savedProtocols = Object.fromEntries(
+      Object.entries(options.protocols || {}).filter(([scheme]) => !legacySchemes.has(scheme))
+    )
     this.protocols = {
-      mo: true,
-      motrix: true,
-      ...options.protocols
+      lerxu: true,
+      ...savedProtocols
     }
 
     this.init()
@@ -59,10 +63,9 @@ export default class ProtocolManager extends EventEmitter {
     }
 
     if (
-      url.toLowerCase().startsWith('mo:') ||
-      url.toLowerCase().startsWith('motrix:')
+      url.toLowerCase().startsWith('lerxu:')
     ) {
-      return this.handleMoProtocol(url)
+      return this.handleAppProtocol(url)
     }
   }
 
@@ -77,7 +80,7 @@ export default class ProtocolManager extends EventEmitter {
     })
   }
 
-  handleMoProtocol (url) {
+  handleAppProtocol (url) {
     let parsed
     try {
       parsed = new URL(url)

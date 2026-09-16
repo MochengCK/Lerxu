@@ -84,8 +84,8 @@ export default class Launcher extends EventEmitter {
   /**
    * handleOpenUrl
    * Event 'open-url' macOS only
-   * "name": "Motrix Protocol",
-   * "schemes": ["mo", "motrix"]
+   * "name": "Lerxu Protocol",
+   * "schemes": ["lerxu"]
    */
   handleOpenUrl () {
     if (is.mas() || !is.macOS()) {

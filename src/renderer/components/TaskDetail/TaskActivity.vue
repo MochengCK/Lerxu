@@ -18,6 +18,8 @@
           <mo-task-graphic
             :outerWidth="graphicWidth"
             :bitfield="task.bitfield"
+            :partialBitfield="task.partialBitfield || ''"
+            :wantedBitfield="task.wantedBitfield || ''"
             :numPieces="Number(task.numPieces)"
             :downloadSpeed="Number(task.downloadSpeed)"
             :pieceLength="Number(task.pieceLength)"
@@ -44,6 +46,7 @@
               :status="taskStatus"
               :speed="Number(task.downloadSpeed)"
               :pending-selection="isPendingFileSelection"
+              :fetching-metadata="isFetchingMetadata"
             />
           </div>
           <div class="task-progress-percent">{{ percent }}</div>
@@ -120,6 +123,7 @@ import {
   calcRatio,
   checkTaskIsBT,
   checkTaskIsSeeder,
+  isMagnetTask,
   timeFormat,
   timeRemaining
 } from '@shared/utils'
@@ -196,6 +200,11 @@ const isPendingFileSelection = computed(() => {
   const map = taskStore.pendingFileSelection || {}
   return !!map[gid]
 })
+// 正在获取元数据：磁力任务元数据就绪前且处于活动态 → 进度条走扫光动效
+const isFetchingMetadata = computed(() => {
+  const task = props.task || {}
+  return `${task.status || ''}` === TASK_STATUS.ACTIVE && isMagnetTask(task)
+})
 const taskStatus = computed(() => {
   if (isSeeder.value) {
     return TASK_STATUS.SEEDING
@@ -218,7 +227,21 @@ const ratio = computed(() => {
   return calcRatio(totalLength, uploadLength)
 })
 
+// 引擎直供平均速度（active 阶段实时累计、随会话持久化，1Hz 刷新）；
+// 旧记录无该字段时回退本地采样/历史均值
+const engineAverageSpeed = computed(() => {
+  if (props.task && props.task.averageSpeed != null) {
+    const v = Number(props.task.averageSpeed)
+    return Number.isFinite(v) && v >= 0 ? v : null
+  }
+  return null
+})
+
 const averageDownloadSpeed = computed(() => {
+  if (engineAverageSpeed.value != null) {
+    return engineAverageSpeed.value
+  }
+
   if (!isActive.value && props.task && props.task.averageDownloadSpeed != null) {
     const v = Number(props.task.averageDownloadSpeed)
     return Number.isFinite(v) && v >= 0 ? v : 0
@@ -258,6 +281,10 @@ const averageDownloadSpeed = computed(() => {
 })
 
 const speedSampleCount = computed(() => {
+  // 引擎直供数据无采样点概念，隐藏"基于 N 个采样点"提示
+  if (engineAverageSpeed.value != null) {
+    return 0
+  }
   if (!isActive.value && props.task && props.task.averageSpeedSampleCount != null) {
     const v = Number(props.task.averageSpeedSampleCount)
     return Number.isFinite(v) && v >= 0 ? v : 0

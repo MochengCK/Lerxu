@@ -831,6 +831,11 @@ export default class UpdateManager extends EventEmitter {
       if (!releaseNotes) {
         releaseNotes = await fetchReleaseNotes(info.version, axiosConfig, channel !== 'stable')
       }
+      // 写回内存状态：get-update-status 需要向渲染端返回说明，
+      // 否则"下载中/已下载"态的预览更新会显示"暂无版本说明"
+      if (this._updateInfo) {
+        this._updateInfo.releaseNotes = releaseNotes
+      }
       this.isChecking = false
       // 第三参标识该更新是否为预发布版（Beta），供前端 UI 展示徽标
       this._notifyWindows('update-available', info.version, releaseNotes, channelPrerelease)
@@ -1535,6 +1540,7 @@ export default class UpdateManager extends EventEmitter {
           path: this._updateInfo.path || '',
           sha512: this._updateInfo.sha512 || '',
           releaseDate: this._updateInfo.releaseDate || '',
+          releaseNotes: releaseNotes || '',
           files: (this._updateInfo.files || []).map(f => ({
             url: f.url || '',
             sha512: f.sha512 || '',
@@ -1566,7 +1572,7 @@ export default class UpdateManager extends EventEmitter {
         path: saved.path || '',
         sha512: saved.sha512 || '',
         releaseDate: saved.releaseDate || '',
-        releaseNotes: '',
+        releaseNotes: saved.releaseNotes || '',
         files: saved.files.map(f => ({
           url: f.url || '',
           sha512: f.sha512 || '',

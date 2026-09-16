@@ -373,13 +373,24 @@ function resolveFaviconUrl (url) {
     const parsed = new URL(url)
     const host = parsed.hostname
     if (!host) return defaultFavicon
+    // IP 直连主机跳过 favicon 探测：公网 tracker IP 几乎都没有有效
+    // 证书，请求只会刷一屏 cert/404 报错，图标也必然走默认兜底
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      if (isIpLiteralHost(host)) return defaultFavicon
       return `${parsed.origin}/favicon.ico`
     }
+    if (isIpLiteralHost(host)) return defaultFavicon
     return `https://${host}/favicon.ico`
   } catch (e) {
     return defaultFavicon
   }
+}
+
+// IPv4 / IPv6 字面量（含 [::1] 方括号形式与 1.2.3.4 点分形式）
+function isIpLiteralHost (host = '') {
+  const h = `${host}`.trim().replace(/^\[|\]$/g, '')
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(h)) return true
+  return h.includes(':') && /^[0-9a-fA-F:]+$/.test(h)
 }
 
 function getFaviconUrl (url) {

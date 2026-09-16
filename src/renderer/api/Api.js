@@ -412,6 +412,16 @@ export default class Api {
     return this.client.call('changeOption', ...args)
   }
 
+  /**
+   * 任务文件校验（引擎侧执行：存在性/大小/哈希）。
+   * @param {string} gid 任务 gid
+   * @param {string} algorithm 'size' | 'md5' | 'sha1' | 'sha256' | 'sha512'
+   * @returns {Promise<{status:string,count:number,missing:string[],mismatched:string[],hashes:{path:string,digest:string}[]}>}
+   */
+  verifyTaskFiles (gid, algorithm = 'sha256') {
+    return this.client.call('verifyFiles', gid, algorithm)
+  }
+
   getGlobalStat () {
     return this.client.call('getGlobalStat')
   }
@@ -892,21 +902,30 @@ export default class Api {
         ['aria2.tellStatus', ...statusArgs],
         ['aria2.getPeers', ...peersArgs]
       ]).then((data) => {
-        console.log('[Lerxu] fetchTaskItemWithPeers:', data)
-
-        // multicall 返回的是 [result1, result2]，每个result是 [value] 或 value
-        // 需要处理两种可能的格式
+        // multicall 返回 [tellStatus结果, getPeers结果]。
+        // getPeers 形态分两种：
+        // - 适配层 groupPeers 变换后：{connected, attempting, banned, disconnected} 分组对象
+        // - 未变换的扁平 peer 数组（旧形态兜底）：TaskPeers 会视作 connected
+        // 注意不能取 data[1][0]：那是把数组首元素当结果（旧 multicall
+        // 包装语义残留），会导致 peers 永远是单个对象、表格整表空白。
         let result, peers
 
         if (Array.isArray(data) && data.length >= 2) {
           // 提取第一个结果（tellStatus）
           result = Array.isArray(data[0]) ? data[0][0] : data[0]
-          // 提取第二个结果（getPeers）
-          peers = Array.isArray(data[1]) ? data[1][0] : data[1]
+          const raw = Array.isArray(data[1]) ? data[1] : data[1]
+          if (Array.isArray(raw) && raw.length === 1 && raw[0] &&
+              typeof raw[0] === 'object' && 'connected' in raw[0]) {
+            // 旧 system.multicall 包装残留：[[分组对象]] → 解包
+            peers = raw[0]
+          } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+            // 分组对象（当前适配层形态）
+            peers = raw
+          } else {
+            // 扁平 peer 数组 / 空：原样传递（TaskPeers 兼容数组形态）
+            peers = Array.isArray(raw) ? raw : { connected: [], attempting: [], banned: [], disconnected: [] }
+          }
         }
-
-        console.log('[Lerxu] fetchTaskItemWithPeers.result:', result)
-        console.log('[Lerxu] fetchTaskItemWithPeers.peers:', peers)
 
         // 确保result存在再设置peers
         if (result) {
@@ -930,27 +949,27 @@ export default class Api {
 
   banPeer (params = {}) {
     const { gid, ip, duration } = params
-    console.log('[Motrix API] banPeer called with:', { gid, ip, duration, types: { gid: typeof gid, ip: typeof ip, duration: typeof duration } })
+    console.log('[Lerxu API] banPeer called with:', { gid, ip, duration, types: { gid: typeof gid, ip: typeof ip, duration: typeof duration } })
 
     // Ensure all parameters are the correct type
     const gidStr = String(gid)
     const ipStr = String(ip)
     const durationInt = Number(duration)
 
-    console.log('[Motrix API] banPeer converted:', { gidStr, ipStr, durationInt })
+    console.log('[Lerxu API] banPeer converted:', { gidStr, ipStr, durationInt })
 
     return this.client.call('aria2.banPeer', gidStr, ipStr, durationInt)
   }
 
   unbanPeer (params = {}) {
     const { gid, ip } = params
-    console.log('[Motrix API] unbanPeer called with:', { gid, ip, types: { gid: typeof gid, ip: typeof ip } })
+    console.log('[Lerxu API] unbanPeer called with:', { gid, ip, types: { gid: typeof gid, ip: typeof ip } })
 
     // Ensure all parameters are the correct type
     const gidStr = String(gid)
     const ipStr = String(ip)
 
-    console.log('[Motrix API] unbanPeer converted:', { gidStr, ipStr })
+    console.log('[Lerxu API] unbanPeer converted:', { gidStr, ipStr })
 
     return this.client.call('aria2.unbanPeer', gidStr, ipStr)
   }

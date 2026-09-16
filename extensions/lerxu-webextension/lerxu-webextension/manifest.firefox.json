@@ -1,0 +1,80 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extensionName__",
+  "version": "1.6.8",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "en",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "lerxu-webextension@lerxu.app",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": [
+          "browsingActivity",
+          "websiteContent"
+        ]
+      }
+    }
+  },
+  "permissions": [
+    "downloads",
+    "storage",
+    "contextMenus",
+    "cookies",
+    "webRequest",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "http://127.0.0.1/*",
+    "http://127.0.0.1:16900/*",
+    "http://localhost/*",
+    "http://localhost:16900/*",
+    "ws://127.0.0.1/*",
+    "ws://127.0.0.1:16900/*",
+    "ws://localhost/*",
+    "ws://localhost:16900/*"
+  ],
+  "background": {
+    "scripts": [
+      "firefox-compat.js",
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "firefox-compat.js",
+        "video-sniffer.js",
+        "key-listener.js",
+        "download-interceptor.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "commands": {
+    "toggle-bypass-downloads": {
+      "description": "Temporarily disable auto-hijack for next browser download"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "__MSG_actionTitle__",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}

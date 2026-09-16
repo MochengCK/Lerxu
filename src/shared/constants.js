@@ -52,6 +52,7 @@ export const ENGINE_CONNECTION_FALLBACK = {
 }
 export const ENGINE_CONNECTION_POLICY = {
   xfercore: { defaultMax: 32, max: 128, splitMax: 128 },
+  xferrust: { defaultMax: 32, max: 128, splitMax: 128 },
   'aria2-1.36.0': { defaultMax: 64, max: 64, splitMax: 64 },
   'aria2-1.37.0': { defaultMax: 16, max: 16, splitMax: 16 }
 }

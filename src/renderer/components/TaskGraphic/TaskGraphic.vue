@@ -26,9 +26,20 @@
 defineOptions({ name: 'mo-task-graphic' }) // 供父组件 [X.name]: X 注册
   import { computed } from 'vue'
   import Atom from './Atom.vue'
+  import { pieceCellStatus } from '@shared/utils/piece-status'
 
   const props = defineProps({
     bitfield: {
+      type: String,
+      default: ''
+    },
+    partialBitfield: {
+      type: String,
+      default: ''
+    },
+    // 需下载片位图（BT 部分选择文件时非空）：全 0 的格表示「未选择，
+    // 无需下载」，与「未下载」区分显示，避免任务完成后残留灰格
+    wantedBitfield: {
       type: String,
       default: ''
     },
@@ -101,15 +112,24 @@ defineOptions({ name: 'mo-task-graphic' }) // 供父组件 [X.name]: X 注册
 
   const box = computed(() => `0 0 ${width.value} ${height.value}`)
 
+  // 每格状态 0-5：映射规则与独立进度窗口共用一个权威实现
+  // （@shared/utils/piece-status），避免两条 1Hz 数据流出现颜色分叉。
   function buildAtom (index) {
     const hIndex = index + 1
     let chIndex = index % columnCount.value
     let rhIndex = parseInt((index / columnCount.value), 10)
     chIndex = chIndex < 0 ? 0 : chIndex
     rhIndex = rhIndex < 0 ? 0 : rhIndex
+    const status = pieceCellStatus(
+      index,
+      props.bitfield,
+      props.partialBitfield,
+      props.wantedBitfield,
+      props.numPieces
+    )
     const result = {
       id: `${hIndex}`,
-      status: Math.floor(parseInt(props.bitfield[index], 16) / 4),
+      status,
       x: chIndex * atomWG.value,
       y: offset.value + rhIndex * atomHG.value
     }

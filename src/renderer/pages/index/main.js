@@ -41,7 +41,6 @@ import { setupIcons } from '@/plugins/icons'
 
 // 低频组件异步注册（首次渲染时才加载，避免全部打进主 chunk）：
 // mo-add-task / mo-task-detail / mo-dragger 由 Main.vue 本地 defineAsyncComponent 提供，
-// mo-browser 由 Lab.vue 本地 import 提供，
 // 这里保留仍有全局标签使用点的异步注册。
 const SelectTorrent = defineAsyncComponent(() => import('@/components/Task/SelectTorrent'))
 const TaskGeneral = defineAsyncComponent(() => import('@/components/TaskDetail/TaskGeneral'))
@@ -51,8 +50,6 @@ const TaskTrackers = defineAsyncComponent(() => import('@/components/TaskDetail/
 // TaskActivity 模板用 <mo-task-graphic>（kebab 解析为 MoTaskGraphic，与本地 import 的
 // TaskGraphic 变量名不匹配），必须保留全局注册；异步化避免进主 chunk
 const TaskGraphic = defineAsyncComponent(() => import('@/components/TaskGraphic/TaskGraphic'))
-// Lab.vue 模板用 <mo-browser>（解析为 MoBrowser，本地 import 的 Browser 不匹配），同样保留全局异步注册
-const Browser = defineAsyncComponent(() => import('@/components/Browser/Browser'))
 
 import { usePreferenceStore } from '@/store'
 import { useTaskStore } from '@/store'
@@ -116,7 +113,6 @@ function init (config) {
   app.component('mo-task-progress-info', TaskProgressInfo)
   app.component('mo-task-status', TaskStatus)
   app.component('mo-task-graphic', TaskGraphic)
-  app.component('mo-browser', Browser)
   app.component('mo-task-connections', TaskConnections)
   app.component('mo-task-files', TaskFiles)
   app.component('mo-task-general', TaskGeneral)
@@ -137,16 +133,9 @@ function init (config) {
 
   // Initialize currentPage after router is ready
   router.isReady().then(() => {
-    const currentPath = router.currentRoute.value.path
-    let page = '/task'
-
-    if (currentPath.startsWith('/preference')) {
-      page = '/preference'
-    }
-
     try {
       const appStore = useAppStore()
-      appStore.updateCurrentPage(page)
+      appStore.updateCurrentPage('/task')
     } catch (e) {
       console.warn('[Lerxu] Failed to update current page:', e)
     }

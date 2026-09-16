@@ -50,7 +50,7 @@ export const getEngineConnectionPolicy = (engineBinary = '') => {
   if (ENGINE_CONNECTION_POLICY[key]) {
     return ENGINE_CONNECTION_POLICY[key]
   }
-  if (/xfercore/.test(normalized)) {
+  if (/xfercore|xferrust/.test(normalized)) {
     return ENGINE_CONNECTION_POLICY.xfercore
   }
   if (/1\.36\.0/.test(normalized)) {
@@ -77,7 +77,7 @@ export const extractSpeedUnit = (speed = '') => {
   return match[2]
 }
 
-export const bitfieldToPercent = (text, format = false) => {
+export const bitfieldToPercent = (text, format = false, numPieces = 0) => {
   if (!text || typeof text !== 'string') {
     return format ? '0.00' : 0
   }
@@ -94,9 +94,11 @@ export const bitfieldToPercent = (text, format = false) => {
       p >>= 1
     }
   }
-  // 1 byte = 8 bits, each hex char represents 4 bits
-  // So total bits is len * 4
-  const percentage = (one / (len * 4)) * 100
+  // 分母：位图按字节补零，末 nibble 可能存在无对应分片的填充位（恒 0）。
+  // 用 len*4 会让满位图算不到 100%（46 片铺 12 个 nibble → 95.83%，
+  // 表现为 seed 节点完成度不是 100%）；给出真实分片数时只按它统计
+  const total = Number(numPieces) > 0 ? Number(numPieces) : len * 4
+  const percentage = (Math.min(one, total) / total) * 100
   const result = parseFloat(percentage.toFixed(2))
 
   if (format) {
@@ -189,10 +191,14 @@ export const peerIdParser = (str) => {
 export const calcProgress = (totalLength, completedLength, decimal = 2) => {
   const total = parseInt(totalLength, 10)
   const completed = parseInt(completedLength, 10)
-  if (total === 0) {
+  if (!Number.isFinite(total) || total === 0) {
     return 0
   }
-  const percentage = completed / total * 100
+  // 夹取 0..100：分子分母来自引擎两个字段，若口径漂移（曾出现
+  // completedLength 因跨文件边界的片整片计入而略大于 totalLength，
+  // 界面显示 100.08%），进度条/百分比也不该显示超出 100 的值
+  const ratio = Number.isFinite(completed) ? completed / total : 0
+  const percentage = Math.min(100, Math.max(0, ratio * 100))
   const result = parseFloat(percentage.toFixed(decimal))
   return result
 }
@@ -314,13 +320,29 @@ export const getFileSelection = (files = []) => {
   return result
 }
 
+/**
+ * infoHash 前 8 位（大写），用于磁力任务在拿到元数据之前的展示占位。
+ * 只在 infoHash 形状合法（40 位或 32 位十六进制）时返回，其余返回空串。
+ */
+export const getTaskShortInfoHash = (task) => {
+  const raw = task && task.infoHash ? `${task.infoHash}`.trim() : ''
+  if (!/^[0-9a-fA-F]{32}$|^[0-9a-fA-F]{40}$/.test(raw)) {
+    return ''
+  }
+  return raw.slice(0, 8).toUpperCase()
+}
+
 export const getTaskName = (task, options = {}) => {
   const o = {
     defaultName: '',
     maxLen: 64, // -1: No limit length
+    // 无任何名称来源时的兜底模板（`{hash}` 会被替换为 infoHash 前 8 位）。
+    // 仅用于展示场景：以名称参与落盘（如 out / 目录名）时不要传，
+    // 否则会把目录名变成一串哈希。
+    hashFallbackLabel: '',
     ...options
   }
-  const { defaultName, maxLen } = o
+  const { defaultName, maxLen, hashFallbackLabel } = o
   let result = defaultName
   if (!task) {
     return result
@@ -336,6 +358,24 @@ export const getTaskName = (task, options = {}) => {
     const fileName = getFileNameFromFile(files[0])
     if (fileName) {
       result = ellipsis(fileName, maxLen)
+    }
+  } else if (task.filename) {
+    // 引擎原生协议：磁力任务元数据解析中 files 为空且无 bittorrent.info，
+    // filename 为磁力 dn 显示名，兜底避免任务列表出现空白名称
+    result = ellipsis(`${task.filename}`, maxLen)
+  }
+
+  // 磁力链接不带 dn 时，元数据就绪前引擎没有任何名称来源，界面只能停在
+  // “获取任务名中...”（元数据超时失败后也会一直停在这句）。展示场景传入
+  // hashFallbackLabel 后改用 infoHash 前 8 位，给一个稳定可读的名字。
+  if (hashFallbackLabel && result === defaultName) {
+    const shortHash = getTaskShortInfoHash(task)
+    if (shortHash) {
+      const template = `${hashFallbackLabel}`
+      // 文案里带 {{hash}} / {hash} 占位就就地替换，没带则当作前缀拼接
+      const replaced = template.replace(/\{\{hash\}\}|\{hash\}/g, shortHash)
+      const label = replaced === template ? `${template} ${shortHash}` : replaced
+      result = ellipsis(label, maxLen)
     }
   }
 
@@ -692,6 +732,88 @@ export const splitTaskLinks = (links = '') => {
   return result
 }
 
+// ---- 磁力链接显示名（dn）修复 ----
+
+// 严格模式：只用来判断 dn 的百分号字节是不是合法 UTF-8，不参与取值
+const STRICT_UTF8_DECODER = new TextDecoder('utf-8', { fatal: true })
+
+// GB18030 解码器（GBK 的超集）按需创建：运行环境不支持时保持 null，
+// 此时不改动链接，交由引擎按原样处理
+let gbDecoder = null
+let gbDecoderReady = false
+const getGbDecoder = () => {
+  if (!gbDecoderReady) {
+    gbDecoderReady = true
+    try {
+      gbDecoder = new TextDecoder('gb18030')
+    } catch (_) {
+      gbDecoder = null
+    }
+  }
+  return gbDecoder
+}
+
+// 把「百分号编码 + 原文字符」混合的值还原成字节序列
+const percentEncodedToBytes = (value = '') => {
+  const out = []
+  const encoder = new TextEncoder()
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i]
+    const hex = value.slice(i + 1, i + 3)
+    if (ch === '%' && /^[0-9a-fA-F]{2}$/.test(hex)) {
+      out.push(parseInt(hex, 16))
+      i += 2
+      continue
+    }
+    for (const byte of encoder.encode(ch)) {
+      out.push(byte)
+    }
+  }
+  return new Uint8Array(out)
+}
+
+/**
+ * 修复磁力链接 dn（显示名）的编码。
+ *
+ * 中文站点普遍用 GBK/GB18030 对 dn 做百分号编码（如 %B2%E2%CA%D4），而引擎按
+ * UTF-8 lossy 解码，会得到一串 U+FFFD（任务列表里显示为乱码）。这里在入站时
+ * 把非 UTF-8 的 dn 转成规范的 UTF-8 百分号形式：
+ * - dn 已是合法 UTF-8（含明文）→ 原样返回，不做任何改动；
+ * - 非 UTF-8 字节且能按 GB18030 解出可读文本 → 重新编码为 UTF-8 百分号形式；
+ * - 无法可靠解码 → 原样返回（宁可保留原值，也不猜错编码）。
+ */
+export const repairMagnetDisplayName = (uri = '') => {
+  const s = `${uri}`
+  if (!s.startsWith('magnet:?')) {
+    return s
+  }
+  return s.replace(/([?&]dn=)([^&]*)/i, (matched, prefix, value) => {
+    if (!value || !/%[0-9a-fA-F]{2}/.test(value)) {
+      return matched
+    }
+    const bytes = percentEncodedToBytes(value)
+    try {
+      STRICT_UTF8_DECODER.decode(bytes)
+      return matched
+    } catch (_) {}
+
+    const decoder = getGbDecoder()
+    if (!decoder) {
+      return matched
+    }
+    let decoded = ''
+    try {
+      decoded = decoder.decode(bytes)
+    } catch (_) {
+      return matched
+    }
+    if (!decoded || decoded.includes('\uFFFD')) {
+      return matched
+    }
+    return `${prefix}${encodeURIComponent(decoded)}`
+  })
+}
+
 export const sanitizeLink = (link = '') => {
   let s = `${link}`.trim()
   // 移除零宽字符、BOM、方向性标记
@@ -704,6 +826,8 @@ export const sanitizeLink = (link = '') => {
       const clean = ih.replace(/[^A-Za-z0-9]/g, '')
       return `${p1}${clean}`
     })
+    // 顺带修复非 UTF-8 的 dn，避免引擎存下乱码显示名
+    s = repairMagnetDisplayName(s)
   }
   return s
 }

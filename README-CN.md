@@ -92,7 +92,7 @@
 
 ### 视频下载
 
-- **在线视频下载（浏览器扩展）**：通过浏览器扩展识别网页视频，一键发送到应用创建下载任务
+- **在线视频下载（浏览器扩展）**：通过浏览器扩展识别网页视频，一键发送到应用创建下载任务；支持 Chrome、Edge、Opera 等 Chromium 内核浏览器与 Firefox
 - **下载接管**：网页中的下载链接（如设置了下载属性或以常见文件格式结尾的链接）点击后可直接转交 Lerxu 接管，支持排除指定网站或文件类型、快捷键临时放行
 - **视频识别**：支持多种视频格式（含 DASH），自动区分音频流与视频流
 - **统一任务管理**：视频资源以普通下载任务进入任务列表，支持与其他任务一致的暂停/恢复/删除等管理体验
@@ -141,7 +141,7 @@ Lerxu 目前支持以下平台：
 - **Windows** (10, 11) x64
 - **macOS**（Intel x64；Apple Silicon arm64）
 - **Linux** (x64, arm64)
-- **Android** (arm64)：与桌面版共用 XferRust 引擎，基于 Kotlin + Compose 构建
+- **Android** (arm64)：与桌面版共用同一下载引擎，界面针对移动端重新设计
 
 ## 安装方式
 
@@ -175,9 +175,14 @@ Lerxu 目前支持以下平台：
 
 ### Android
 
-1. 克隆本仓库，进入 `Android/` 目录
-2. 使用 Android Studio 打开并构建，或执行：`./gradlew :app:assembleDebug`
-3. 将生成的 APK 安装到 arm64 设备
+**安装**（从发布页）：
+
+1. 访问 [GitHub Releases](https://github.com/MochengCK/Lerxu/releases) 页面
+2. 下载 `app-release.apk`（已签名）或 `app-release-unsigned.apk`（未签名），也可用 `app-debug.apk` 快速体验
+3. 安装到 **arm64** 设备（应用仅支持 `arm64-v8a`）
+
+> 未签名的 `app-release-unsigned.apk` 安装前需自行签名：
+> `apksigner sign --ks <你的keystore> --out Lerxu.apk app-release-unsigned.apk`
 
 ## 开发指南
 
@@ -186,6 +191,8 @@ Lerxu 目前支持以下平台：
 - Node.js (v22.12.0 或更高版本)
 - npm
 - Git
+
+> 构建 Android 客户端或浏览器扩展所需的额外环境（JDK 17 / Android SDK 等），见 [开发文档](docs/DEVELOPMENT.md)。
 
 ### 设置开发环境
 
@@ -210,24 +217,27 @@ Lerxu 目前支持以下平台：
    npm run build
    ```
 
+桌面客户端的构建产物位于 `release/`。Android 客户端与浏览器扩展的构建方式见 [开发文档](docs/DEVELOPMENT.md)。
+
 ### 项目结构
 
 ```
 Lerxu/
-├── src/                  # 主要源代码
+├── src/                  # 应用源代码
 │   ├── main/             # Electron 主进程
 │   ├── renderer/         # Electron 渲染进程（Vue 3）
-│   └── shared/           # 共享工具与 XferRust 协议适配层
-├── extra/                # 各平台内置的 XferRust 引擎二进制
+│   └── shared/           # 共享工具与引擎协议适配层
+├── extra/                # 各平台内置的下载引擎二进制
 ├── extensions/           # 浏览器扩展（视频嗅探与下载接管）
 ├── Android/              # Android 客户端（Kotlin + Compose）
-├── XferRust/             # XferRust 下载引擎源码（Rust）
 ├── static/               # 静态资源
 ├── build/                # 打包钩子与平台图标
 ├── screenshots/          # 文档截图
 ├── package.json          # 项目配置
 └── README.md             # 项目文档
 ```
+
+引擎源码（独立仓库）、构建脚本、测试与 CI 配置的说明见 [开发文档](docs/DEVELOPMENT.md)。
 
 ## 参与贡献
 

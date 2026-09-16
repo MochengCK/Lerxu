@@ -1,6 +1,6 @@
 'use strict'
 
-import { Aria2 } from '@shared/aria2'
+import { XferRust } from '@shared/xferrust'
 
 import logger from './LogManager'
 import {
@@ -61,7 +61,9 @@ export default class EngineClient {
   connect () {
     logger.info('[Lerxu] main engine client connect', this.options)
     const { host, port, secret } = this.options
-    const client = new Aria2({ host, port, secret })
+    // 引擎原生 RPC 客户端（task.* / engine.* / events.*），
+    // 内部完成 aria2 风格调用面 → 原生协议的双向适配
+    const client = new XferRust({ host, port, secret })
 
     // 引擎通知事件（onDownloadStart 等）转发给渲染进程
     this.bindEngineEvents(client)
@@ -121,7 +123,7 @@ export default class EngineClient {
   async reconnect () {
     try {
       const { host, port, secret } = this.options
-      const client = new Aria2({ host, port, secret })
+      const client = new XferRust({ host, port, secret })
       this.bindEngineEvents(client)
       client.on('error', (err) => {
         logger.warn('[Lerxu] engine websocket error:', err && err.message ? err.message : err)

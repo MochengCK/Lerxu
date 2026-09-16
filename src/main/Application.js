@@ -23,6 +23,7 @@ import {
   TASK_STATUS
 } from '@shared/constants'
 import { bytesToSize, checkIsNeedRunAdvanced, detectResource, sanitizeLink, getTaskName, removeExtensionDot, timeFormat, timeRemaining } from '@shared/utils'
+import { parsePieceStatuses } from '@shared/utils/piece-status'
 import {
   deduplicateTrackers,
   fetchBtTrackerFromSource,
@@ -33,7 +34,7 @@ import { fetchEd2kServersFromSource } from '@shared/utils/ed2k'
 import { parseAria2ControlProgress } from './utils/aria2-control'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
 import { getLanguage } from '@shared/locales'
-import { showItemInFolder, getEngineList, mergeAria2Conf, getSystemHttpProxy } from './utils'
+import { showItemInFolder, getEngineList, getSystemHttpProxy } from './utils'
 import logger from './core/LogManager'
 import Context from './core/Context'
 import ConfigManager from './core/ConfigManager'
@@ -1098,10 +1099,6 @@ export default class Application extends EventEmitter {
     const self = this
 
     try {
-      // 智能合并 aria2.conf：更新未修改的配置项，添加新增项，移除已删除项
-      const { platform, arch } = process
-      mergeAria2Conf(platform, arch)
-
       // RPC secret 仅在首次启动时生成一次，防止未授权的外部 RPC 访问，
       // 后续启动不再重新生成；用户手动修改（包括清空）的值始终保留。
       // secret 通过 systemConfig 传递给 Engine（命令行参数）和 EngineClient。
@@ -1187,6 +1184,27 @@ export default class Application extends EventEmitter {
     this.engineClient.setEventForwarder((name, ...args) => {
       this.broadcastEngineEvent(name, ...args)
     })
+  }
+
+  /**
+   * 等待引擎客户端就绪（有界）。
+   *
+   * 主窗口的创建早于引擎就绪（见 init 中的早期/晚期阶段划分），渲染进程
+   * 启动期的引擎调用因此可能早于 initEngineClient 到达。返回已就绪的
+   * 客户端；超时仍未就绪则返回 null，由调用方按 engine not ready 降级。
+   */
+  async waitForEngineClient (timeout = 5000) {
+    if (this.engineClient) {
+      return this.engineClient
+    }
+    const deadline = Date.now() + timeout
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      if (this.engineClient) {
+        return this.engineClient
+      }
+    }
+    return null
   }
 
   broadcastEngineEvent (name, ...args) {
@@ -2029,9 +2047,9 @@ export default class Application extends EventEmitter {
   }
 
   /**
-   * 打开偏好设置（内嵌模式）。
-   * 偏好设置不再使用独立窗口：将主窗口带到前台，并让渲染层
-   * 路由切换到 /preference（指定 category 时定位到对应分类）。
+   * 打开偏好设置（内嵌弹窗模式）。
+   * 偏好设置使用内嵌弹窗显示：将主窗口带到前台，并让渲染层
+   * 打开偏好设置弹窗（指定 category 时定位到对应分类）。
    */
   openPreference (payload = {}) {
     if (!this.windowManager) {
@@ -2711,6 +2729,20 @@ export default class Application extends EventEmitter {
     if (!isEmpty(user)) {
       console.info('[Lerxu] main save user config: ', user)
       this.configManager.setUserConfig(user)
+      // 做种偏好（keep-seeding/seed-ratio 是应用层键，引擎只认
+      // bt-seed-mode/bt-seed-ratio）：保存后立即按当前配置推导并热推送，
+      // 语义与 Engine.getStartArgs 保持一致（keep-seeding=true 时分享率
+      // 0 = 不限）。失败静默——下次引擎启动经 CLI 参数生效。
+      const keepSeeding = this.configManager.getUserConfig('keep-seeding') === true
+      const seedRatio = keepSeeding
+        ? 0
+        : (Number(this.configManager.getSystemConfig('seed-ratio')) || 0)
+      this.engineClient.changeGlobalOption({
+        'bt-seed-mode': keepSeeding,
+        'bt-seed-ratio': seedRatio
+      }).catch((e) => {
+        logger.warn('[Lerxu] changeGlobalOption (seeding) failed:', e && e.message)
+      })
       // NAT/传输类开关（enable-upnp / enable-utp / enable-nat-pmp）属于
       // userKeys（Engine.js 从 userConfig 注入启动参数），引擎侧现已
       // 注册 changeGlobalOption 支持——这里单独热更新推送，让开关无需
@@ -3333,9 +3365,9 @@ export default class Application extends EventEmitter {
   handleCommands () {
     this.on('application:save-preference', this.savePreference)
 
-    // 偏好设置内嵌在主窗口中（/preference 路由）：菜单/托盘/快捷键/协议
+    // 偏好设置内嵌弹窗模式：菜单/托盘/快捷键/协议
     // 触发的命令在主进程统一处理——先把主窗口带到前台，再下发导航命令，
-    // 不再打开独立的偏好设置窗口。
+    // 渲染层接收命令后打开偏好设置弹窗。
     this.on('application:preferences', (payload) => {
       this.openPreference(payload)
     })
@@ -3495,6 +3527,16 @@ export default class Application extends EventEmitter {
         return
       }
       this.windowManager.sendCommandTo(window, 'task-progress:control', payload)
+    })
+
+    // 独立进度窗口"设置"分类：单任务"完成后是否弹出完成窗口"偏好，
+    // 由主窗口渲染进程持久化（localStorage）
+    this.on('task-progress:set-complete-popup', (payload = {}) => {
+      const window = this.windowManager.getWindow('index')
+      if (!window) {
+        return
+      }
+      this.windowManager.sendCommandTo(window, 'task-progress:set-complete-popup', payload)
     })
 
     this.on('engine:get-version-info', async () => {
@@ -4040,13 +4082,22 @@ export default class Application extends EventEmitter {
     // 以普通对象返回，由 IpcEngineClient 恢复为带 code 的 Error。
     ipcMain.handle('engine:rpc', async (event, payload) => {
       const { method, args } = payload || {}
-      if (!method || !this.engineClient) {
+      if (!method) {
+        return { ok: false, error: { message: 'engine rpc method is required' } }
+      }
+      // 主窗口在早期初始化阶段就已创建，而 initEngineClient 在
+      // startEngine（二进制探测 + spawn，可能耗时数秒）之后才执行。
+      // 渲染进程启动期的轮询会落在这个空窗内，此前直接回
+      // 'engine not ready' 会让渲染进程产生未捕获的 Promise rejection。
+      // 这里做有界等待：引擎客户端一就绪即放行，超时才按未就绪处理。
+      const client = await this.waitForEngineClient()
+      if (!client) {
         return { ok: false, error: { message: 'engine not ready' } }
       }
       try {
         const result = method === 'multicall'
-          ? await this.engineClient.multicall(args && args[0] ? args[0] : [])
-          : await this.engineClient.callForRenderer(method, ...(Array.isArray(args) ? args : []))
+          ? await client.multicall(args && args[0] ? args[0] : [])
+          : await client.callForRenderer(method, ...(Array.isArray(args) ? args : []))
         return { ok: true, result }
       } catch (err) {
         return {
@@ -4132,7 +4183,7 @@ export default class Application extends EventEmitter {
       return null
     })
 
-    // Resize progress window
+    // Resize progress window（仅连接面板开合；窗口高度固定，bottom 锚定布局与高度解耦）
     ipcMain.handle('resize-progress-window', async (event, payload) => {
       try {
         const { isPanelOpen, panelHeight, initialWidth } = payload || {}
@@ -4424,6 +4475,7 @@ export default class Application extends EventEmitter {
       const percent = total > 0 ? Math.floor((completed * 100) / total) : 0
       const title = getTaskName(task, {
         defaultName: this.i18n.t('task.get-task-name'),
+        hashFallbackLabel: this.i18n.t('task.magnet-pending-name'),
         maxLen: -1
       })
       const completedText = bytesToSize(completed, 2)
@@ -4431,11 +4483,15 @@ export default class Application extends EventEmitter {
       const sizeText = totalText ? `${this.i18n.t('task.task-file-size')}: ${completedText} / ${totalText}` : `${this.i18n.t('task.task-file-size')}: ${completedText}`
       const speedValue = speed > 0 ? `${bytesToSize(speed, 2)}/s` : `${bytesToSize(0, 2)}/s`
 
-      // 主进程独立维护速度采样，计算平均速度
-      // 这样即使不打开主窗口，独立进度窗口也能显示正确的平均速度
+      // 平均速度直取引擎 averageSpeed（active 阶段实时累计、随会话
+      // 持久化）；引擎未提供该字段时退回主进程本地采样
       const PROGRESS_SPEED_SAMPLE_MAX = 60 // 60 个采样点（约60秒）
       let avgSpeed = 0
-      if (status === TASK_STATUS.ACTIVE) {
+      if (task.averageSpeed != null) {
+        const v = Number(task.averageSpeed)
+        avgSpeed = Number.isFinite(v) && v >= 0 ? v : 0
+        this._progressSpeedSamples.delete(gid)
+      } else if (status === TASK_STATUS.ACTIVE) {
         const samples = this._progressSpeedSamples.get(gid) || []
         samples.push({ bytes: speed, durationMs: 1000 })
         while (samples.length > PROGRESS_SPEED_SAMPLE_MAX) {
@@ -4470,21 +4526,20 @@ export default class Application extends EventEmitter {
       }
 
       let piecesData = null
-      const bitfield = task.bitfield || ''
-      const numPieces = Number(task.numPieces || 0)
-      if (bitfield && numPieces > 0) {
-        const pieces = []
-        // bitfield 按字节补零，最后一个 nibble 可能只包含填充位，
-        // 只取真实分片对应的 nibble 数量 ceil(numPieces / 4)，避免
-        // 已完成任务末尾多渲染一个"未下载"的假分片。
-        const nibbleCount = Math.min(Math.ceil(numPieces / 4), bitfield.length)
-        for (let i = 0; i < nibbleCount; i++) {
-          const hex = parseInt(bitfield[i], 16)
-          // 与 TaskGraphic buildAtom 一致: Math.floor(hex / 4) → 0..3
-          pieces.push(Math.floor(hex / 4))
-        }
+      // 与 Main.vue 推送路径共用 @shared/utils/piece-status 的唯一映射实现
+      // （按格内已完成片数分级 + partialBitfield + wantedBitfield）。
+      // 此前这里用 Math.floor(hex/4) 且忽略 partialBitfield，与推送路径
+      // 不一致，导致独立进度窗口分片网格被两条 1Hz 数据流来回刷成不同
+      // 颜色（持续闪烁）。
+      const pieces = parsePieceStatuses(
+        task.bitfield,
+        task.partialBitfield,
+        Number(task.numPieces || 0),
+        task.wantedBitfield || ''
+      )
+      if (pieces) {
         piecesData = {
-          numPieces,
+          numPieces: Number(task.numPieces || 0),
           pieces,
           tabText: this.i18n.t('task.task-pieces-progress')
         }
@@ -4494,6 +4549,28 @@ export default class Application extends EventEmitter {
       const canPause = status === TASK_STATUS.ACTIVE && completed > 0
       const canResume = status === TASK_STATUS.WAITING || status === TASK_STATUS.PAUSED
       const canCancel = !doneStatuses.includes(status)
+
+      // 待选择文件标记必须与推送路径（Main.vue，读渲染层 pendingFileSelection）
+      // 同口径，否则两条 1Hz 数据流会互相覆盖：推送说橙色、轮询说蓝/灰，
+      // 独立进度窗口的进度条就每秒闪烁一次（与此前分片网格的闪烁同因）。
+      // 这里按任务自身状态就地判定，与渲染层 isTaskPendingSelectionCandidate 一致。
+      const pendingSelection = (() => {
+        if (status !== TASK_STATUS.PAUSED) {
+          return false
+        }
+        if (task.awaitingSelection === true || task.awaitingSelection === 'true') {
+          return true
+        }
+        const bt = task.bittorrent
+        if (!bt || !bt.info) {
+          return false
+        }
+        const files = Array.isArray(task.files) ? task.files : []
+        if (files.length <= 1) {
+          return false
+        }
+        return Number(task.completedLength || 0) <= 0
+      })()
 
       let connectionsData = null
       if (includeConnections && (status === TASK_STATUS.ACTIVE || status === TASK_STATUS.WAITING)) {
@@ -4556,16 +4633,20 @@ export default class Application extends EventEmitter {
         payload: {
           gid,
           title,
+          status,
           percent,
           percentText: `${percent}%`,
           nameText: title,
           isPaused,
+          pendingSelection,
           tabInfoText: this.i18n.t('task.task-progress-info'),
           tabConnectionsText: this.i18n.t('task.task-connections-detail'),
           tabPiecesText: this.i18n.t('task.task-pieces-progress'),
           piecesEmptyText: this.i18n.t('task.task-no-pieces-data'),
-          tabInfoShort: this.i18n.t('task.task-progress-info'),
-          tabPiecesShort: this.i18n.t('task.task-pieces-progress'),
+          // tab 按钮文案：信息/分片用完整文案，设置用短文案
+          tabInfoShort: this.i18n.t('task.task-progress-info-short'),
+          tabPiecesShort: this.i18n.t('task.task-pieces-progress-short'),
+          tabSettingsShort: this.i18n.t('task.task-settings-short'),
           sizeText,
           speedText: `${this.i18n.t('task.task-download-speed')}: ${speedValue}`,
           avgSpeedText: `${this.i18n.t('task.task-average-speed')}: ${avgSpeedValue}`,
@@ -4583,6 +4664,75 @@ export default class Application extends EventEmitter {
           showResume: true,
           showCancel: true
         }
+      }
+    })
+
+    // 独立进度窗口"设置"分类：读取单任务限速配置与任务类型。
+    // bittorrent 字段存在 → BT/磁力任务（可设上传+下载限速），
+    // 否则 HTTP/HTTPS 任务（仅下载限速）。
+    ipcMain.handle('task-progress:get-option', async (_event, payload = {}) => {
+      const gid = payload && payload.gid ? String(payload.gid) : ''
+      if (!gid) {
+        return { success: false, error: 'invalid-gid' }
+      }
+      try {
+        const task = await this.engineClient.call('tellStatus', gid)
+        if (!task || !task.gid) {
+          return { success: false, error: 'task-not-found' }
+        }
+        const isBT = !!task.bittorrent
+        let maxDownloadLimit = '0'
+        let maxUploadLimit = '0'
+        try {
+          const opt = await this.engineClient.call('getOption', gid)
+          if (opt) {
+            maxDownloadLimit = String(opt['max-download-limit'] != null ? opt['max-download-limit'] : '0')
+            maxUploadLimit = String(opt['max-upload-limit'] != null ? opt['max-upload-limit'] : '0')
+          }
+        } catch (e) {}
+        return {
+          success: true,
+          isBT,
+          maxDownloadLimit,
+          maxUploadLimit,
+          labels: {
+            download: this.i18n.t('task.task-speed-limit-download'),
+            upload: this.i18n.t('task.task-speed-limit-upload'),
+            save: this.i18n.t('task.task-speed-limit-save'),
+            saved: this.i18n.t('task.task-speed-limit-saved'),
+            invalid: this.i18n.t('task.task-speed-limit-invalid'),
+            unlimitedTip: this.i18n.t('task.task-speed-limit-unlimited-tip'),
+            completePopup: this.i18n.t('task.task-complete-popup')
+          }
+        }
+      } catch (e) {
+        return { success: false, error: e && e.message ? e.message : 'get-option-failed' }
+      }
+    })
+
+    // 独立进度窗口"设置"分类：保存单任务限速（热生效 + 会话持久化）。
+    // 任务级优先覆盖全局，未设置（"0"）跟随全局。
+    ipcMain.handle('task-progress:set-option', async (_event, payload = {}) => {
+      const gid = payload && payload.gid ? String(payload.gid) : ''
+      const options = payload && payload.options ? payload.options : null
+      if (!gid || !options || typeof options !== 'object') {
+        return { success: false, error: 'invalid-params' }
+      }
+      const allowed = {}
+      if (options['max-download-limit'] !== undefined) {
+        allowed['max-download-limit'] = String(options['max-download-limit'])
+      }
+      if (options['max-upload-limit'] !== undefined) {
+        allowed['max-upload-limit'] = String(options['max-upload-limit'])
+      }
+      if (Object.keys(allowed).length === 0) {
+        return { success: false, error: 'no-valid-options' }
+      }
+      try {
+        await this.engineClient.call('changeOption', gid, allowed)
+        return { success: true }
+      } catch (e) {
+        return { success: false, error: e && e.message ? e.message : 'set-option-failed' }
       }
     })
 
@@ -4951,6 +5101,9 @@ export default class Application extends EventEmitter {
       const updateAvailable = this.configManager.getUserConfig('update-available') || false
       const newVersion = this.configManager.getUserConfig('new-version') || ''
       const lastCheckUpdateTime = this.configManager.getUserConfig('last-check-update-time') || 0
+      // 上次检查时持久化的版本说明：重发 update-available 时必须一并下发，
+      // 否则渲染端监听器会用空说明覆盖已恢复的内容，预览更新就会显示"暂无版本说明"
+      const releaseNotes = this.configManager.getUserConfig('release-notes') || ''
 
       // 校验残留的"有新版本"是否仍有效（保存的版本号确实比当前版本新），
       // 用户已手动升级后该状态会过期，清除并通知无更新，避免误显示
@@ -4965,12 +5118,12 @@ export default class Application extends EventEmitter {
 
       // 发送更新状态给所有窗口
       if (validUpdate) {
-        // 如果检测到有新版本可用，发送update-available事件
+        // 如果检测到有新版本可用，发送update-available事件（携带持久化的版本说明）
         const windows = this.windowManager.getWindowList()
         windows.forEach(window => {
           try {
             if (window && !window.isDestroyed() && window.webContents) {
-              window.webContents.send('update-available', newVersion, '')
+              window.webContents.send('update-available', newVersion, releaseNotes)
             }
           } catch (_) {}
         })

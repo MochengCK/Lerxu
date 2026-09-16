@@ -349,12 +349,20 @@ export const isTaskFileSelectionConfirmed = (confirmedMap, task) => {
     typeof v === 'string' && v.trim().toLowerCase() === hash)
 }
 
+// 引擎侧"等待文件选择"标志（task.tell 的 awaitingSelection 字段，
+// 原生协议返回布尔，兼容层可能返回字符串）。磁力/种子任务元数据
+// 就绪后引擎自动暂停并置位，等用户勾选要下载的文件。
+export const isTaskAwaitingSelectionFlag = (task) => {
+  if (!task) return false
+  return task.awaitingSelection === true || task.awaitingSelection === 'true'
+}
+
 // 判定任务是否处于"待选择文件"形态（应用重启后用于补标记）。
 // 判定依据只有任务自身的客观状态：
 //   - paused（被引擎/前端暂停等待用户操作）
-//   - BT 元数据已解析（bittorrent.info 存在）
-//   - 多文件
-//   - 尚无下载进度（completedLength == 0）
+//   - 引擎 awaitingSelection 置位（首选，磁力/种子勾选流程的权威标志），
+//     或退化为启发式：BT 元数据已解析（bittorrent.info 存在）+ 多文件
+//     + 尚无下载进度（completedLength == 0）
 // 注意：不能把 files[].selected 部分选择 / 历史 confirmed 记录当作"已确认"
 // 的否定证据——磁力任务重启后这些选项会从旧会话继承（select-file/同
 // infoHash 的旧确认可能属于早已结束的实例），导致用户本次尚未选择文件
@@ -365,6 +373,9 @@ export const isTaskPendingSelectionCandidate = (task) => {
   }
   if (`${task.status || ''}` !== TASK_STATUS.PAUSED) {
     return false
+  }
+  if (isTaskAwaitingSelectionFlag(task)) {
+    return true
   }
   const bt = task.bittorrent
   if (!bt || !bt.info) {
@@ -378,10 +389,10 @@ export const isTaskPendingSelectionCandidate = (task) => {
 }
 
 // 判断任务能否作为"待选择文件"记录按 infoHash 重挂的目标。
-// 元数据已解析时沿用候选判定（暂停/多文件/无进度）；元数据尚未解析的
-// 暂停磁力任务（重启后引擎只恢复磁力本体且暂停态不会拉元数据）只要
-// 没有下载进度就允许挂上——否则重启后标记找不到落点，任务会退回
-// 普通"暂停"显示。
+// 引擎 awaitingSelection 置位时直接命中；元数据已解析时沿用候选判定
+// （暂停/多文件/无进度）；元数据尚未解析的暂停磁力任务（重启后引擎
+// 只恢复磁力本体且暂停态不会拉元数据）只要没有下载进度就允许挂上
+// ——否则重启后标记找不到落点，任务会退回普通"暂停"显示。
 export const isTaskPendingSelectionTarget = (task) => {
   if (!task) {
     return false
@@ -391,6 +402,9 @@ export const isTaskPendingSelectionTarget = (task) => {
   }
   if (Number(task.completedLength || 0) > 0) {
     return false
+  }
+  if (isTaskAwaitingSelectionFlag(task)) {
+    return true
   }
   const bt = task.bittorrent
   if (!bt || !bt.info) {

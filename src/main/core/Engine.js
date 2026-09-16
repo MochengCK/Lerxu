@@ -1,5 +1,5 @@
 import { spawn, execFile } from 'node:child_process'
-import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, readFileSync, unlink, unlinkSync, writeFile, writeFileSync } from 'node:fs'
+import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import is from 'electron-is'
 
@@ -9,16 +9,13 @@ import {
 } from '../ui/Locale'
 import {
   getEnginePidPath,
-  getAria2ConfPath,
   getSessionPath,
   getUserDataPath,
   getAria2LogPath,
-  transformConfig,
   getEngineBin,
   getEnginePath
 } from '../utils/index'
-import { ensureDhtRoutingTable } from '../utils/dht'
-import { getEngineConnectionPolicy, normalizeBtEncryptionOptions } from '@shared/utils'
+import { ENGINE_RPC_PORT } from '@shared/constants'
 
 const { platform, arch } = process
 
@@ -82,10 +79,6 @@ export default class Engine {
     }
 
     const args = this.getStartArgs(binPath)
-
-    // 首次启动时预热 DHT 路由表（预置引导节点），加速 DHT 网络接入。
-    // 必须在 spawn 引擎之前完成，失败静默跳过，不影响启动。
-    await this.prepareDhtBootstrap()
 
     const enableEngineLogs = is.dev() || is.linux() || is.windows()
     logger.info('[Lerxu] engine bin path:', binPath)
@@ -154,40 +147,9 @@ export default class Engine {
   }
 
   /**
-   * DHT 路由表预热。首次运行（dht.dat / dht6.dat 不存在）时，
-   * 预置公共 DHT 引导节点，让引擎启动后立即有可联系节点并强制
-   * bucket refresh，大幅加快磁链 / BT 任务的节点发现速度。
-   * 引擎运行后会自行维护路由表文件，此逻辑只在文件缺失时介入。
-   * 整个过程有超时保护，失败静默跳过，不阻塞引擎启动。
+   * DHT 路由表由 xferrust 引擎内部自管理（引导节点 / 状态文件），
+   * 应用侧不再预置 dht.dat。
    */
-  async prepareDhtBootstrap () {
-    const enabled = (v) => v !== false && v !== 'false'
-    const job = (async () => {
-      const tasks = []
-      if (enabled(this.systemConfig['enable-dht'])) {
-        tasks.push(ensureDhtRoutingTable(this.systemConfig['dht-file-path'], false))
-      }
-      if (enabled(this.systemConfig['enable-dht6'])) {
-        tasks.push(ensureDhtRoutingTable(this.systemConfig['dht-file-path6'], true))
-      }
-      const results = await Promise.all(tasks)
-      results.forEach((r) => {
-        if (r && r.created) {
-          logger.info(`[Lerxu] DHT routing table pre-seeded with ${r.nodes} bootstrap nodes`)
-        }
-      })
-    })()
-
-    try {
-      // 整体超时兜底：DNS 异常时最多等待 4 秒，不拖慢引擎启动
-      await Promise.race([
-        job,
-        new Promise((resolve) => setTimeout(resolve, 4000))
-      ])
-    } catch (e) {
-      logger.warn('[Lerxu] DHT bootstrap pre-seed skipped:', e && e.message ? e.message : e)
-    }
-  }
 
   // 注册进程级退出处理器，确保任何退出路径下引擎都会被清理：
   // 1. process.on('exit') — 主进程退出的最后机会，同步执行
@@ -614,7 +576,7 @@ export default class Engine {
     let binName = ''
     const enginePath = getEnginePath(platform, arch)
 
-    // 直接使用 xfercore 作为引擎，不再支持多引擎选择
+    // 直接使用 xferrust 作为引擎，不再支持多引擎选择
     binName = getEngineBin(platform)
     logger.info(`[Lerxu] Using engine: ${binName}`)
 
@@ -664,44 +626,6 @@ export default class Engine {
   }
 
   /**
-   * 引擎通过 --input-file 恢复会话，任务级选项优先于全局选项。
-   * 全局把 bt-stop-timeout 置 0 后，会话里已固化的旧值（如 300）仍会
-   * 作用于恢复的任务，导致重启后零速度 5 分钟被强制停止报错。
-   * 启动前把会话中每个任务条目的该选项同步为当前配置值，0 则删除该行。
-   */
-  syncSessionBtStopTimeout (sessionPath) {
-    try {
-      const desired = Number(this.systemConfig && this.systemConfig['bt-stop-timeout']) || 0
-      const raw = readFileSync(sessionPath, 'utf8')
-      if (!raw || raw.indexOf('bt-stop-timeout=') === -1) {
-        return
-      }
-      const lines = raw.split('\n')
-      const updated = []
-      let changed = false
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]
-        const m = line.match(/^(\s*)bt-stop-timeout=(\d+)\s*$/)
-        if (!m) {
-          updated.push(line)
-          continue
-        }
-        changed = true
-        if (desired > 0) {
-          updated.push(`${m[1]}bt-stop-timeout=${desired}`)
-        }
-        // desired 为 0：丢弃该行，恢复引擎默认（不自动停止）
-      }
-      if (changed) {
-        writeFileSync(sessionPath, updated.join('\n'))
-        logger.info(`[Lerxu] session bt-stop-timeout synced to ${desired}`)
-      }
-    } catch (e) {
-      logger.warn('[Lerxu] sync session bt-stop-timeout failed:', e && e.message ? e.message : e)
-    }
-  }
-
-  /**
    * 引擎启动前截断旧日志文件，防止日志无限增长占用磁盘
    * 如果日志文件超过 5MB，清空文件内容
    */
@@ -709,7 +633,7 @@ export default class Engine {
     const logPath = getAria2LogPath()
     try {
       if (existsSync(logPath)) {
-        // 引擎日志文件可能处于异常状态：xfercore 的 Logger 打开失败时
+        // 引擎日志文件可能处于异常状态：引擎的 Logger 打开失败时
         // 会直接报错退出（退出码 1/28），导致引擎反复重启后放弃，RPC
         // 端口一直无法连接。已确认"文件存在但引擎打不开"的状态无法靠
         // 内容校验（appendFileSync）识别，因此每次启动前直接删除，
@@ -721,176 +645,105 @@ export default class Engine {
     }
   }
 
+  /**
+   * xferrust 启动参数白名单。
+   * 引擎（0.3.x）命令行仅实现下列参数，未实现的 aria2 风格选项会被
+   * 引擎忽略并刷 WARN；其余用户配置一律经 RPC（engine.changeOptions）
+   * 热更新或由引擎原生会话持久化，不再通过命令行传递。
+   *
+   * 已实测支持：--log --log-level --save-session --input-file
+   *             --rpc-listen-port --rpc-secret --dir --max-concurrent-downloads
+   */
   getStartArgs (binPath) {
-    const confPath = getAria2ConfPath(platform, arch)
     const logPath = getAria2LogPath()
-
     const sessionPath = getSessionPath()
     const sessionIsExist = existsSync(sessionPath)
-    if (sessionIsExist) {
-      this.syncSessionBtStopTimeout(sessionPath)
-    }
 
-    // 根据用户设置的日志级别映射到 aria2 日志级别，默认 warn
-    const aria2LogLevel = this.getAria2LogLevel()
+    // 根据用户设置的日志级别映射到引擎日志级别，默认 warn
+    const logLevel = this.getAria2LogLevel()
 
-    // 添加日志路径和日志级别参数
-    let result = [
-      `--conf-path=${confPath}`,
-      `--save-session=${sessionPath}`,
+    const args = [
       `--log=${logPath}`,
-      `--log-level=${aria2LogLevel}`
+      `--log-level=${logLevel}`,
+      // 引擎原生 JSON 会话：退出保存任务与全局设置，启动恢复
+      `--save-session=${sessionPath}`
     ]
     if (sessionIsExist) {
-      result = [...result, `--input-file=${sessionPath}`]
+      args.push(`--input-file=${sessionPath}`)
     }
 
-    // 使用传入的 binPath 或重新获取
-    const enginePath = binPath || this.getEngineBinPath()
-    const enginePolicy = getEngineConnectionPolicy(enginePath)
-    const allowedMax = Math.max(0, Number(enginePolicy.max) || 16)
-    const defaultMax = Math.max(0, Number(enginePolicy.defaultMax) || allowedMax)
-    const splitMax = Math.max(0, Number(enginePolicy.splitMax) || allowedMax)
-    const extraConfig = {
-      ...this.systemConfig
+    // RPC 端口 / 密钥与 EngineClient 使用同一 systemConfig 来源，
+    // 保证主进程连接目标与引擎监听地址始终一致
+    const rpcPort = Number(this.systemConfig['rpc-listen-port']) || ENGINE_RPC_PORT
+    args.push(`--rpc-listen-port=${rpcPort}`)
+    const rpcSecret = this.systemConfig['rpc-secret']
+    if (rpcSecret) {
+      args.push(`--rpc-secret=${rpcSecret}`)
     }
 
-    const rawMax = this.systemConfig['max-connection-per-server']
-    let desiredMax = Number(rawMax)
-    if (!Number.isFinite(desiredMax) || desiredMax <= 0) {
-      desiredMax = defaultMax
-    }
-    extraConfig['max-connection-per-server'] = Math.min(desiredMax, allowedMax)
-    const desiredSplit = Number(this.systemConfig.split || 0)
-    // 确保 split 至少为 max-connection-per-server 的 2 倍，让连接在
-    // 整个下载过程中始终有新片段可下载，避免后期速度下降
-    const minSplitForSpeed = Math.max(extraConfig['max-connection-per-server'] * 2, 16)
-    const splitBaseline = Math.min(splitMax, Math.max(minSplitForSpeed, allowedMax >= 128 ? 128 : (allowedMax >= 64 ? 64 : 16)))
-    const baseSplit = desiredSplit >= splitBaseline ? desiredSplit : splitBaseline
-    extraConfig.split = Math.min(baseSplit, splitMax)
-
-    // === 下载速度保障：确保关键参数不被旧配置覆盖 ===
-    // min-split-size 过小会导致高带宽下每个分片的 HTTP Range 请求往返
-    // 开销占比过高，连接利用率下降（表现为"几秒后速度降低"）；
-    // 4M 是分片数与请求开销之间的平衡点
-    if (!extraConfig['min-split-size'] || extraConfig['min-split-size'] === '1M' || extraConfig['min-split-size'] === '1m') {
-      extraConfig['min-split-size'] = '4M'
-    }
-    // disk-cache 提供多连接并发写入的缓冲，避免高速下载时缓存被写满、
-    // aria2 等待落盘导致的周期性速度抖动
-    if (!extraConfig['disk-cache']) {
-      extraConfig['disk-cache'] = '128M'
-    }
-    // keep-alive 关闭会让每个分片请求都新建 TCP/TLS 连接，
-    // 高延迟网络下速度骤降，确保开启
-    if (extraConfig['enable-http-keep-alive'] === false || extraConfig['enable-http-keep-alive'] === 'false') {
-      extraConfig['enable-http-keep-alive'] = true
-    }
-    // geom 选择器会让后期片段越来越大，并行度递减，改为 default 保持均匀分片
-    if (!extraConfig['stream-piece-selector'] || extraConfig['stream-piece-selector'] === 'geom') {
-      extraConfig['stream-piece-selector'] = 'default'
-    }
-    // 删除 enable-http-pipelining，该选项会导致部分 HTTPS 服务器 TLS 握手失败
-    delete extraConfig['enable-http-pipelining']
-    // 确保 check-certificate 为 false，避免 HTTPS 证书验证导致下载失败
-    extraConfig['check-certificate'] = false
-
-    // === 下载容错保障：防止用户旧配置覆盖新的容错参数 ===
-    // lowest-speed-limit 过高会导致慢速 CDN（如 dl.hdslb.com）连接被过早中止
-    {
-      const sp = String(extraConfig['lowest-speed-limit'] || '')
-      const num = parseFloat(sp)
-      if (!sp || (!isNaN(num) && num > 1024)) {
-        extraConfig['lowest-speed-limit'] = '1K'
-      }
-    }
-    // retry-wait >= 5，给 CDN 限流场景更多恢复时间
-    {
-      const rw = Number(extraConfig['retry-wait'])
-      if (!Number.isFinite(rw) || rw < 5) {
-        extraConfig['retry-wait'] = 5
-      }
-    }
-    // timeout >= 60，避免大文件传输时连接被过早断开
-    {
-      const to = Number(extraConfig.timeout)
-      if (!Number.isFinite(to) || to < 60) {
-        extraConfig.timeout = 60
-      }
-    }
-    // connect-timeout >= 20，给慢速 DNS 解析更多时间
-    {
-      const ct = Number(extraConfig['connect-timeout'])
-      if (!Number.isFinite(ct) || ct < 20) {
-        extraConfig['connect-timeout'] = 20
-      }
+    const dir = this.systemConfig['dir']
+    if (dir) {
+      args.push(`--dir=${dir}`)
     }
 
-    const keepSeeding = this.userConfig['keep-seeding']
-    const seedRatio = this.systemConfig['seed-ratio']
-    if (keepSeeding || seedRatio === 0) {
-      extraConfig['seed-ratio'] = 0
-      delete extraConfig['seed-time']
+    const maxConcurrent = Number(this.systemConfig['max-concurrent-downloads'])
+    if (Number.isFinite(maxConcurrent) && maxConcurrent > 0) {
+      args.push(`--max-concurrent-downloads=${maxConcurrent}`)
     }
 
-    if (extraConfig['bt-encryption-mode'] !== undefined || extraConfig['bt-force-encryption'] !== undefined) {
-      // normalizeBtEncryptionOptions 会将应用层的 bt-encryption-mode/bt-force-encryption
-      // 转换为引擎原生选项（bt-require-crypto/bt-min-crypto-level），但 Object.assign
-      // 不会删除原对象中已存在的键，必须显式删除，否则引擎会收到无法识别的
-      // --bt-encryption-mode 参数而启动失败（退出码 28）。
-      delete extraConfig['bt-encryption-mode']
-      delete extraConfig['bt-force-encryption']
-      Object.assign(extraConfig, normalizeBtEncryptionOptions(extraConfig))
-    }
-
-    // ED2K engine options live in userConfig (they're user preferences),
-    // but the engine reads them via getOption() at startup. Merge them
-    // into the engine's command-line config so Ed2kDownloadCommand picks
-    // up the user's source-discovery settings (KAD, source exchange, etc.).
-    // These options are registered in OptionHandlerFactory.cc, so the
-    // engine accepts them on the command line.
-    const ed2kEngineKeys = [
-      'ed2k-enabled',
-      'ed2k-listen-port',
-      'ed2k-max-connections',
-      'ed2k-connection-timeout',
-      'ed2k-max-sources-per-file',
-      'ed2k-default-servers',
-      'ed2k-server-source-enabled',
-      'ed2k-source-exchange-enabled',
-      'ed2k-source-exchange-interval',
-      'ed2k-kad-enabled',
-      'ed2k-kad-bootstrap-nodes'
+    // BT 网络发现 / 磁盘缓存 / 磁力种子（系统配置，首次启动即生效；
+    // 运行中修改由 savePreference 经 changeGlobalOption 热更新推送）。
+    // 引擎 CLI 对 `--k=v` 直通注入 global_options，与应用层配置同源。
+    const btToggleKeys = [
+      'enable-dht',
+      'enable-dht6',
+      'enable-peer-exchange',
+      'bt-enable-lpd',
+      'bt-save-metadata',
+      'bt-load-saved-metadata'
     ]
-    for (const k of ed2kEngineKeys) {
-      if (this.userConfig[k] !== undefined) {
-        extraConfig[k] = this.userConfig[k]
-      }
-    }
-
-    // NAT traversal / transport toggles live in userConfig (UI layer) but
-    // are consumed by the engine at startup (BtSetup / UtpContext). Merge
-    // them explicitly so --enable-upnp / --enable-utp / --enable-nat-pmp
-    // reach the engine, while keeping them out of the system config that
-    // gets pushed via changeGlobalOption (the engine registers these as
-    // startup-only options and would reject runtime changes).
-    const natTransportEngineKeys = [
-      'enable-upnp',
-      'enable-utp',
-      'enable-nat-pmp',
-      'bt-connect-protocol'
-    ]
-    for (const k of natTransportEngineKeys) {
-      const v = this.userConfig[k]
+    for (const k of btToggleKeys) {
+      const v = this.systemConfig[k]
       if (v !== undefined) {
-        extraConfig[k] = v
+        args.push(`--${k}=${v === true || v === 'true' ? 'true' : 'false'}`)
       }
     }
+    const diskCache = this.systemConfig['disk-cache']
+    if (diskCache) {
+      args.push(`--disk-cache=${diskCache}`)
+    }
 
-    const extra = transformConfig(extraConfig)
-    result = [...result, ...extra]
+    // HTTP 客户端配置（user-agent / all-proxy / no-proxy）与续传开关：
+    // 启动即注入引擎全局选项（引擎 CLI 直通），运行中修改由
+    // savePreference 经 changeGlobalOption 热更新并重建 HTTP 客户端。
+    const userAgent = this.systemConfig['user-agent']
+    if (userAgent) {
+      args.push(`--user-agent=${userAgent}`)
+    }
+    const allProxy = this.systemConfig['all-proxy']
+    if (allProxy) {
+      args.push(`--all-proxy=${allProxy}`)
+    }
+    const noProxy = this.systemConfig['no-proxy']
+    if (noProxy) {
+      args.push(`--no-proxy=${noProxy}`)
+    }
+    const continueEnabled = this.systemConfig['continue']
+    if (continueEnabled !== undefined) {
+      args.push(`--continue=${continueEnabled === true || continueEnabled === 'true' ? 'true' : 'false'}`)
+    }
 
-    return result
+    // BT 做种（keep-seeding 为应用层开关；keep-seeding=true 时分享率 0 = 不限）。
+    // CLI 运行时选项会覆盖引擎会话里恢复的旧值，保证桌面端始终是做种语义的
+    // 唯一事实来源；运行时修改偏好则由 savePreference 热更新推送。
+    const keepSeeding = (this.userConfig && this.userConfig['keep-seeding']) === true
+    args.push(`--bt-seed-mode=${keepSeeding ? 'true' : 'false'}`)
+    const seedRatio = keepSeeding
+      ? 0
+      : (Number(this.systemConfig['seed-ratio']) || 0)
+    args.push(`--bt-seed-ratio=${seedRatio}`)
+
+    return args
   }
 
   isRunning (pid) {

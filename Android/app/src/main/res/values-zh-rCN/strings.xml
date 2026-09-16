@@ -1,0 +1,324 @@
+<resources>
+    <string name="app_name">Lerxu</string>
+
+    <!-- Engine notification -->
+    <string name="engine_notification_channel">下载引擎</string>
+    <string name="engine_notification_title">Lerxu 下载引擎</string>
+    <string name="engine_notification_text">引擎运行中</string>
+    <string name="engine_starting_notification">正在启动引擎…</string>
+    <string name="engine_failed_notification">引擎启动失败</string>
+    <string name="engine_restarting_notification">引擎重启中…</string>
+    <string name="engine_start_failed_default">引擎启动失败，请检查应用权限</string>
+    <string name="engine_start_failed">引擎启动失败</string>
+
+    <!-- Common -->
+    <string name="cancel">取消</string>
+    <string name="grant">授予</string>
+    <string name="save">保存</string>
+    <string name="delete">删除</string>
+    <string name="pause">暂停</string>
+    <string name="resume">继续</string>
+    <string name="retry">重试</string>
+    <string name="copy">复制</string>
+    <string name="close">关闭</string>
+    <string name="back">返回</string>
+    <string name="refresh">刷新</string>
+    <string name="add">添加</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_skip">跳过</string>
+    <string name="onboarding_next">下一步</string>
+    <string name="onboarding_start">开始使用</string>
+    <string name="onboarding_welcome_tagline">极速下载 · 简洁高效</string>
+    <string name="onboarding_features_title">强大功能</string>
+    <string name="onboarding_features_subtitle">为多种下载场景而生</string>
+    <string name="onboarding_feature_http_title">HTTP/FTP 下载</string>
+    <string name="onboarding_feature_http_desc">多线程分片下载，支持断点续传，最高 128 连接并发</string>
+    <string name="onboarding_feature_bt_title">BT 种子</string>
+    <string name="onboarding_feature_bt_desc">完整 BT 协议支持，DHT 网络，自动 Tracker 更新</string>
+    <string name="onboarding_feature_magnet_title">磁力链接</string>
+    <string name="onboarding_feature_magnet_desc">通过磁力链接快速获取元数据，一键开始下载</string>
+    <string name="onboarding_feature_smart_title">智能调度</string>
+    <string name="onboarding_feature_smart_desc">自适应分片选择，动态连接管理，带宽充分利用</string>
+    <string name="onboarding_permission_title">权限设置</string>
+    <string name="onboarding_permission_subtitle">为了正常下载文件，需要以下权限</string>
+    <string name="onboarding_permission_storage_title">存储访问</string>
+    <string name="onboarding_permission_storage_desc">保存下载的文件到设备存储</string>
+    <string name="onboarding_permission_notification_title">通知</string>
+    <string name="onboarding_permission_notification_desc">显示下载进度和引擎状态</string>
+    <string name="onboarding_permission_all_ready">所有权限已就绪</string>
+    <string name="onboarding_permission_granted">已授权</string>
+    <string name="onboarding_finish_title">一切就绪！</string>
+    <string name="onboarding_finish_subtitle">正在启动下载引擎…</string>
+
+    <!-- App Screen -->
+    <string name="settings">设置</string>
+    <string name="download_speed">下载速度</string>
+    <string name="upload_speed">上传速度</string>
+    <string name="sort">排序</string>
+    <string name="add_task">添加任务</string>
+    <string name="search">搜索</string>
+    <string name="search_hint">搜索任务</string>
+    <string name="connecting">连接中…</string>
+    <string name="exit_edit_mode">退出编辑模式</string>
+    <string name="selected_count">已选 %1$d</string>
+    <string name="select_all">全选</string>
+    <string name="scope_all">全部</string>
+    <string name="scope_active">进行中</string>
+    <string name="scope_seeding">做种中</string>
+    <string name="scope_waiting">等待中</string>
+    <string name="scope_paused">已暂停</string>
+    <string name="scope_stopped">已完成</string>
+    <string name="status_paused">已暂停</string>
+    <string name="completed_at">完成于 %1$s</string>
+    <string name="error_at">错误于 %1$s</string>
+    <string name="no_tasks">暂无任务</string>
+    <string name="engine_starting_screen">正在启动引擎…</string>
+    <string name="engine_starting_hint">首次启动可能需要数秒</string>
+    <string name="connecting_engine">正在连接引擎…</string>
+
+    <!-- Task card status -->
+    <string name="status_active">活动中</string>
+    <string name="status_seeding">做种中</string>
+    <string name="status_waiting">等待中</string>
+    <string name="status_complete">已完成</string>
+    <string name="status_error">错误</string>
+    <string name="status_removed">已移除</string>
+    <string name="status_awaiting_selection">待选择文件</string>
+
+    <!-- Sort menu -->
+    <string name="sort_field_finished">完成时间</string>
+    <string name="sort_field_remaining">剩余时间</string>
+    <string name="sort_field_speed">速度</string>
+    <string name="sort_field_size">大小</string>
+
+    <!-- Add task dialog -->
+    <string name="add_download_task">添加下载任务</string>
+    <string name="paste_link">粘贴链接</string>
+    <string name="select_torrent_file">选择种子文件</string>
+    <string name="url_placeholder">http/https/ftp/magnet 链接</string>
+    <string name="filename_optional">文件名（可选）</string>
+    <string name="save_to">保存到</string>
+    <string name="start_download">开始下载</string>
+    <string name="magnet">磁力</string>
+    <string name="direct_link">直链</string>
+    <string name="unknown">未知</string>
+    <string name="click_select_torrent">点击选择 .torrent 文件</string>
+    <string name="support_local_bt">支持本地 BT 种子文件</string>
+    <string name="read_torrent_failed">读取种子文件失败: %1$s</string>
+    <string name="add_task_failed">添加任务失败: %1$s</string>
+
+    <!-- Delete confirm dialog -->
+    <string name="delete_one_task">删除任务？</string>
+    <string name="delete_multiple_tasks">删除 %1$d 个任务？</string>
+    <string name="delete_with_files_msg">将移除任务记录并删除已下载的文件，此操作不可恢复。</string>
+    <string name="delete_record_only_msg">仅移除任务记录，已下载的文件会保留。</string>
+    <string name="delete_local_files">同时删除本地文件</string>
+
+    <!-- Task detail -->
+    <string name="remaining">剩余 %1$s</string>
+    <string name="error_code_msg">错误 %1$d: %2$s</string>
+    <string name="save_dir">保存目录</string>
+    <string name="connections">连接数</string>
+    <string name="seeders">种子节点</string>
+    <string name="elapsed">已用时</string>
+    <string name="files_count">文件 (%1$d)</string>
+    <string name="file_index">文件 %1$d</string>
+    <string name="copied_to_clipboard">已复制到剪贴板</string>
+
+    <!-- Settings -->
+    <string name="settings_download">下载</string>
+    <string name="settings_save_dir">保存目录</string>
+    <string name="copied_save_dir">已复制保存目录</string>
+    <string name="max_concurrent">同时下载任务数</string>
+    <string name="max_concurrent_desc">超出的任务自动排队等待</string>
+    <string name="split_count">单任务连接数</string>
+    <string name="split_count_desc">单个任务同时建立的下载连接数</string>
+    <string name="dl_limit">下载限速</string>
+    <string name="dl_limit_desc">限制总下载速度，保护带宽；点击档位数值可自定义</string>
+    <string name="ul_limit">上传限速</string>
+    <string name="ul_limit_desc">限制总上传速度（做种/分块上传）；点击档位数值可自定义</string>
+    <string name="dl_unlimited">不限速</string>
+    <string name="per_server_connections">单服务器连接数</string>
+    <string name="per_server_connections_desc">单个服务器的最大连接数，实际取与单任务连接数的较小值</string>
+    <string name="custom_value">自定义</string>
+    <string name="custom_limit_title">自定义限速</string>
+    <string name="custom_limit_desc">可用 K/M 后缀，无后缀按 KB/s；0 为不限速</string>
+    <string name="custom_limit_hint">例如：500K、2M、1.5M</string>
+    <string name="custom_limit_invalid">格式无效</string>
+    <string name="confirm">确认</string>
+    <string name="bt_max_peers">BT 最大节点数</string>
+    <string name="bt_max_peers_desc">单个种子最多同时连接的节点数</string>
+
+    <!-- BT 加密 / 协议 / 做种 -->
+    <string name="bt_encryption">BT 加密</string>
+    <string name="bt_encryption_desc">与节点之间的 MSE 加密握手方式</string>
+    <string name="bt_encryption_adaptive">常规</string>
+    <string name="bt_encryption_force">强制</string>
+    <string name="bt_encryption_plain">明文</string>
+    <string name="bt_protocol">传输协议</string>
+    <string name="bt_protocol_desc">节点连接使用的传输协议</string>
+    <string name="bt_protocol_tcp_utp">TCP+uTP</string>
+    <string name="bt_protocol_tcp">仅 TCP</string>
+    <string name="bt_protocol_utp">仅 uTP</string>
+    <string name="bt_adaptive">智能连接调度</string>
+    <string name="bt_adaptive_desc">按吞吐边际收益动态增减节点连接</string>
+    <string name="bt_seed_mode">完成后自动做种</string>
+    <string name="bt_seed_mode_desc">下载完成后继续上传分享</string>
+    <string name="bt_seed_ratio">停止做种分享率</string>
+    <string name="bt_seed_ratio_desc">达到该分享率后自动停止做种</string>
+    <string name="seed_ratio_unlimited">不限</string>
+    <string name="bt_listen_port">BT 监听端口</string>
+    <string name="bt_listen_port_desc">新建 BT 任务时生效，端口被占自动回退</string>
+    <string name="dht_listen_port">DHT 监听端口</string>
+    <string name="dht_listen_port_desc">新建 BT 任务时生效，端口被占自动回退</string>
+    <string name="port_random">随机</string>
+    <string name="port_dialog_desc">0 表示随机分配端口（0–65535）</string>
+    <string name="port_dialog_hint">端口号（0–65535）</string>
+    <string name="port_dialog_invalid">端口范围 0–65535</string>
+    <string name="bt_enable_lpd">本地节点发现</string>
+    <string name="bt_enable_lpd_desc">通过组播发现同一局域网内的节点（LPD）</string>
+    <string name="bt_port_mapping">端口映射</string>
+    <string name="bt_port_mapping_desc">自动在路由器上建立 UPnP/NAT-PMP 映射</string>
+    <string name="settings_bt_section">BitTorrent</string>
+    <string name="settings_bt_servers">BT 服务器</string>
+    <string name="auto_update_subscriptions">自动更新订阅</string>
+    <string name="auto_update_subscriptions_desc">引擎按周期拉取订阅源，同步最新 tracker</string>
+    <string name="refresh_all_subscriptions">立即更新全部订阅</string>
+    <string name="refreshing_subscriptions">正在从订阅源拉取最新列表…</string>
+    <string name="refresh_subscriptions_desc">从所有订阅源重新拉取 tracker 列表</string>
+    <string name="trackers_updated">已更新，共 %1$d 个 tracker</string>
+    <string name="refresh_failed">刷新失败，请检查网络</string>
+    <string name="add_subscription">添加订阅源</string>
+    <string name="subscription_default_name">订阅源</string>
+    <string name="subscription_last_error">上次拉取失败：%1$s</string>
+    <string name="subscription_tracker_count">%1$d 个 tracker · %2$s</string>
+    <string name="subscription_not_fetched">尚未拉取</string>
+    <string name="refresh_subscription">刷新订阅</string>
+    <string name="remove_subscription">删除订阅</string>
+    <string name="remove_sub_confirm_title">删除该订阅源？</string>
+    <string name="remove_sub_confirm_msg">删除后“%1$s”的 tracker 将不再自动更新，此操作无法撤销。</string>
+    <string name="add_subscription_dialog_title">添加订阅源</string>
+    <string name="add_subscription_dialog_desc">订阅源返回纯文本 tracker 列表（每行一个 URL），引擎会自动拉取并注入 BT 任务。</string>
+    <string name="subscription_name_optional">名称（可选）</string>
+    <string name="subscription_url">订阅链接</string>
+    <string name="subscription_url_hint">需以 http:// 或 https:// 开头</string>
+    <string name="add_sub_failed">添加失败，请检查网络</string>
+    <string name="add_sub_partial">已添加，但首次拉取失败：%1$s</string>
+    <string name="add_sub_success">已添加 %1$d 个 tracker</string>
+    <string name="settings_maintenance">维护</string>
+    <string name="settings_appearance">外观</string>
+    <string name="theme">主题</string>
+    <string name="theme_follow_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
+    <string name="settings_language">语言</string>
+    <string name="language">语言</string>
+    <string name="language_follow_system">跟随系统</string>
+    <string name="purge_task_records">清除任务记录</string>
+    <string name="purge_task_records_desc">移除已完成与出错任务的记录，不删除已下载的文件</string>
+    <string name="settings_about">关于</string>
+    <string name="about_version">版本</string>
+    <string name="about_engine">下载引擎</string>
+    <string name="purge_confirm_title">清除任务记录？</string>
+    <string name="purge_confirm_msg">将移除已完成与出错任务的记录，不会删除已下载的文件。</string>
+    <string name="purge_confirm_label">清除</string>
+    <string name="purge_done">已清除已完成任务的记录</string>
+    <string name="decrease">减少</string>
+    <string name="increase">增加</string>
+    <string name="prev_preset">上一档</string>
+    <string name="next_preset">下一档</string>
+
+    <!-- Toast messages -->
+    <string name="toast_file_location_unknown">无法确定文件位置</string>
+    <string name="toast_is_directory">该任务是文件夹，无法直接打开</string>
+    <string name="toast_file_not_exist">文件不存在</string>
+    <string name="toast_no_app_to_open">没有可打开此类型文件的应用</string>
+    <string name="toast_open_failed">打开失败: %1$s</string>
+
+    <!-- Engine error messages -->
+    <string name="error_extract_binary_failed">提取引擎二进制失败: %1$s</string>
+    <string name="error_no_exec_permission">无法设置引擎可执行权限，请检查设备安全策略</string>
+    <string name="error_engine_exit_code">引擎进程退出码: %1$d</string>
+    <string name="error_engine_timeout">引擎启动超时，RPC 端口未就绪</string>
+    <string name="error_engine_start_exception">启动引擎异常: %1$s</string>
+    <string name="error_engine_start_default">引擎启动失败</string>
+
+    <!-- Time formatting -->
+    <string name="yesterday">昨天 %1$s</string>
+    <string name="month_day">%1$d月%2$d日 %3$s</string>
+    <string name="today">今天 %1$s</string>
+
+    <!-- 内置 BT 订阅源预置 -->
+    <string name="preset_sub_xiu2_best">XIU2 精选 Tracker</string>
+    <string name="preset_sub_ngosang_best">ngosang 最佳 Tracker</string>
+    <string name="preset_sub_xiu2_all">XIU2 全量 Tracker</string>
+
+    <!-- 应用更新检测 -->
+    <string name="auto_update_check">自动检测更新</string>
+    <string name="auto_update_check_desc">启动时检查 GitHub Releases，发现新版本时通知</string>
+    <string name="check_update_now">检查更新</string>
+    <string name="check_update_now_desc">手动检查是否有新版本</string>
+    <string name="update_checking">正在检查更新…</string>
+    <string name="update_latest">当前已是最新版本</string>
+    <string name="update_check_failed">检查更新失败，请检查网络</string>
+    <string name="update_available">发现新版本 %1$s</string>
+    <string name="update_notification_title">Lerxu %1$s 可用</string>
+    <string name="update_notification_text">点击查看并下载新版本</string>
+    <string name="channel_update_name">应用更新</string>
+    <!-- 任务详情分类 -->
+    <string name="detail_tab_overview">概览</string>
+    <string name="detail_tab_pieces">分片</string>
+    <string name="detail_tab_peers">节点</string>
+    <string name="detail_tab_trackers">Tracker</string>
+    <string name="detail_tab_files">文件</string>
+    <string name="detail_gid">GID</string>
+    <string name="detail_avg_speed">平均速度</string>
+    <string name="detail_seed_ratio">分享率</string>
+    <!-- 单任务限速 -->
+    <string name="speed_limit">单任务限速</string>
+    <string name="speed_limit_edit">编辑单任务限速</string>
+    <string name="speed_limit_download">下载限速</string>
+    <string name="speed_limit_upload">上传限速</string>
+    <string name="speed_limit_unlimited">跟随全局</string>
+    <string name="speed_limit_hint">留空跟随全局限速；设置后单任务优先生效，可高于或低于全局。支持 1M / 500K / 字节数</string>
+    <string name="speed_limit_saved">限速已更新</string>
+    <string name="speed_limit_failed">限速更新失败</string>
+    <!-- 分片 -->
+    <string name="piece_progress">%1$d / %2$d 片</string>
+    <string name="piece_length_label">片大小 %1$s</string>
+    <string name="piece_done">已完成</string>
+    <string name="piece_pending">未完成</string>
+    <!-- 节点 -->
+    <string name="peers_empty">暂无连接的节点</string>
+    <string name="peer_unknown_client">未知客户端</string>
+    <string name="peer_seed_badge">种子</string>
+    <string name="peer_disconnected">已断开</string>
+    <string name="peer_encrypted">加密</string>
+    <string name="peer_choked">被阻塞</string>
+    <string name="ban_peer">封禁节点</string>
+    <string name="ban_10min">封禁 10 分钟</string>
+    <string name="ban_1hour">封禁 1 小时</string>
+    <string name="ban_permanent">永久封禁</string>
+    <string name="ban_peer_done">节点已封禁</string>
+    <string name="ban_peer_failed">封禁失败</string>
+    <!-- Tracker -->
+    <string name="trackers_empty">暂无 Tracker</string>
+    <string name="tracker_working">正常</string>
+    <string name="tracker_not_working">异常</string>
+    <string name="tracker_waiting">等待</string>
+    <string name="tracker_leechers">下载者</string>
+    <string name="tracker_next_announce">下次 announce %1$s</string>
+    <!-- 文件 -->
+    <string name="files_empty">暂无文件信息</string>
+    <string name="files_waiting_metadata">等待元数据解析…</string>
+    <string name="apply_selection">应用选择</string>
+    <string name="select_at_least_one">至少选择一个文件</string>
+    <string name="selection_applied">文件选择已更新</string>
+    <string name="selection_failed">文件选择更新失败</string>
+    <!-- 添加任务文件勾选流程 -->
+    <string name="magnet_parsing">正在获取元数据…</string>
+    <string name="select_files_hint">勾选要下载的文件</string>
+    <string name="metadata_parse_failed">元数据获取失败或超时</string>
+    <string name="select_none">全不选</string>
+</resources>

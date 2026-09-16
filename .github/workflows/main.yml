@@ -51,17 +51,44 @@ jobs:
           console.log('Electron builder config verified');
         "
 
-    - name: Verify engine artifacts (all platforms)
+    - name: Verify engine artifacts (desktop + Android)
       run: |
-        # 各发布组合的引擎二进制必须随仓库存在（缺失告警，交由构建运行时测试兜底）
-        for platform in darwin/x64 darwin/arm64 win32/x64 linux/x64 linux/arm64; do
-          bin="extra/${platform}/engine/xfercore"
+        # 各发布组合的引擎二进制必须随仓库存在（缺失即失败：CI 无法凭空得到
+        # 引擎，XferRust 源码是嵌套仓库、不在本仓库内）。
+        fail=0
+        for bin in \
+          extra/darwin/x64/engine/xferrust \
+          extra/darwin/arm64/engine/xferrust \
+          extra/linux/x64/engine/xferrust \
+          extra/linux/arm64/engine/xferrust \
+          extra/win32/x64/engine/xferrust.exe \
+          Android/app/src/main/assets/xferrust \
+          Android/app/src/main/jniLibs/arm64-v8a/libxferrust.so; do
           if [ -f "$bin" ]; then
-            echo "Engine found: $bin"
+            echo "✓ Engine found: $bin ($(stat -c%s "$bin" 2>/dev/null || stat -f%z "$bin") bytes)"
           else
-            echo "::warning::Engine binary missing: $bin"
+            echo "::error::Engine binary missing: $bin"
+            fail=1
           fi
         done
+        [ $fail -eq 0 ] || exit 1
+
+        # Android 两处引擎必须同字节（EngineManager 优先 jniLibs，版本指纹按文件大小）
+        a=$(sha256sum Android/app/src/main/assets/xferrust | cut -d' ' -f1)
+        b=$(sha256sum Android/app/src/main/jniLibs/arm64-v8a/libxferrust.so | cut -d' ' -f1)
+        if [ "$a" != "$b" ]; then
+          echo "::error::Android engine copies differ (assets vs jniLibs): $a != $b"
+          exit 1
+        fi
+        echo "✓ Android engine copies are identical ($a)"
+
+        # Android 引擎必须是 aarch64 ELF（AGP 按 abiFilters arm64-v8a 打包）
+        if ! file Android/app/src/main/jniLibs/arm64-v8a/libxferrust.so | grep -q 'ARM aarch64'; then
+          echo "::error::Android engine is not an ARM aarch64 ELF"
+          file Android/app/src/main/jniLibs/arm64-v8a/libxferrust.so
+          exit 1
+        fi
+        echo "✓ Android engine is ARM aarch64 ELF"
 
   # 多平台构建 + 运行时测试
   # 构建完成后立即在同一台 runner 上执行：
@@ -125,6 +152,133 @@ jobs:
         if-no-files-found: 'ignore'
         retention-days: 7
 
+  # Android 客户端构建 + 测试
+  # 引擎以 jniLibs（libxferrust.so，安装时提取到 nativeLibraryDir 以取得执行权限）
+  # 与 assets（xferrust，兜底提取）两份随仓库分发；本 job 先校验引擎二进制，
+  # 再构建 debug/release APK，并跑 lint 与单元测试、校验 APK 内确实打进了引擎。
+  android-build-and-test:
+    name: Build & Test Android (APK)
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Setup JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install required SDK packages
+      run: |
+        yes | sdkmanager --licenses > /dev/null 2>&1 || true
+        sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+        sdkmanager --list_installed | head -20
+
+    - name: Verify Android engine binary
+      run: |
+        set -e
+        ASSET=Android/app/src/main/assets/xferrust
+        LIB=Android/app/src/main/jniLibs/arm64-v8a/libxferrust.so
+
+        for f in "$ASSET" "$LIB"; do
+          [ -f "$f" ] || { echo "::error::missing engine: $f"; exit 1; }
+          echo "✓ $f ($(stat -c%s "$f") bytes)"
+        done
+
+        # 两处副本必须同字节（应用以文件大小作版本指纹，差异会导致每次启动重复提取）
+        a=$(sha256sum "$ASSET" | cut -d' ' -f1)
+        b=$(sha256sum "$LIB" | cut -d' ' -f1)
+        [ "$a" = "$b" ] || { echo "::error::engine copies differ: $a vs $b"; exit 1; }
+        echo "✓ engine copies identical"
+
+        # 必须是 aarch64 ELF（abiFilters 只打 arm64-v8a）
+        file "$LIB" | grep -q 'ARM aarch64' || { echo "::error::engine is not aarch64"; file "$LIB"; exit 1; }
+        echo "✓ engine is ARM aarch64 ELF"
+
+        # 关键能力字符串自检：引擎须包含本轮新增的全局选项（防止回填旧引擎）
+        for opt in enable-dht6 disk-cache bt-save-metadata enable-peer-exchange; do
+          if ! grep -qa "$opt" "$LIB"; then
+            echo "::error::engine missing option string: $opt (stale engine?)"
+            exit 1
+          fi
+        done
+        echo "✓ engine advertises new global options"
+
+    - name: Run Android unit tests
+      run: |
+        cd Android
+        ./gradlew --no-daemon :app:testDebugUnitTest
+      env:
+        GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8'
+
+    - name: Run Android lint
+      run: |
+        cd Android
+        ./gradlew --no-daemon :app:lintDebug
+      env:
+        GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8'
+
+    - name: Build APKs (debug + release)
+      run: |
+        cd Android
+        ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
+      env:
+        GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8'
+
+    - name: Verify APK contents (engine packaged + SDK levels)
+      run: |
+        set -e
+        apks=$(find Android/app/build/outputs/apk -name '*.apk' | sort)
+        [ -n "$apks" ] || { echo "::error::no APK produced"; find Android/app/build/outputs -type f 2>/dev/null | head; exit 1; }
+
+        for apk in $apks; do
+          size=$(stat -c%s "$apk")
+          echo "=== $apk ($size bytes) ==="
+          [ "$size" -gt 1000000 ] || { echo "::error::APK suspiciously small: $apk"; exit 1; }
+
+          # 引擎必须打进去：jniLibs 副本 + assets 副本
+          unzip -l "$apk" | grep -q 'lib/arm64-v8a/libxferrust.so' \
+            || { echo "::error::$apk missing lib/arm64-v8a/libxferrust.so"; exit 1; }
+          unzip -l "$apk" | grep -q 'assets/xferrust' \
+            || { echo "::error::$apk missing assets/xferrust"; exit 1; }
+          echo "✓ engine packaged (jniLibs + assets)"
+
+          # ABI 必须只有 arm64-v8a
+          if unzip -l "$apk" | grep -qE 'lib/(armeabi|armv7|x86)'; then
+            echo "::error::$apk contains unexpected ABI"
+            exit 1
+          fi
+          echo "✓ ABI is arm64-v8a only"
+        done
+
+    - name: Upload Android APKs
+      uses: actions/upload-artifact@v5
+      with:
+        name: android-apk
+        path: |
+          Android/app/build/outputs/apk/**/*.apk
+          Android/app/build/reports/lint-results-debug.html
+        if-no-files-found: 'warn'
+        retention-days: 7
+
+    - name: Upload Android build reports on failure
+      if: failure()
+      uses: actions/upload-artifact@v5
+      with:
+        name: android-reports
+        path: |
+          Android/app/build/reports/
+          Android/app/build/outputs/logs/
+        if-no-files-found: 'ignore'
+        retention-days: 7
+
   # 扩展功能测试
   extension-test:
     name: Browser Extension Test
@@ -141,40 +295,82 @@ jobs:
         node-version: '22'
         cache: 'npm'
 
-    - name: Test extension manifest
+    - name: Extension tests (Chromium + Firefox manifests, compat layer, i18n)
       run: |
-        # 验证浏览器扩展的manifest文件
+        # 覆盖：两份 manifest 的平台正确性（Firefox 不支持 background.service_worker、
+        # 不得含 Chromium 专有权限、MV3 必需 gecko.id）、兼容层行为（回调风格包装 /
+        # runtime.lastError / 事件对象不被包装 / 幂等）、加载顺序、脚本语法、
+        # 各语言 messages.json 的 key 一致性。
+        node test/extension/run.js
+
+    - name: Build & package extension (chromium + firefox)
+      run: |
+        # 产出 dist/extension/{chromium,firefox}/（解压可加载目录）与
+        # dist/extension/artifacts/*.zip|*.xpi（可直接提交 AMO / 商店）。
+        # 打包内置自检：归档根必须有 manifest.json、不得含 __MACOSX/._*/
+        # .DS_Store/开发脚本、非 ASCII 名必须带 UTF-8 标志。
+        node scripts/build-extension.js
+
+    - name: Verify packaged archives (AMO submission constraints)
+      run: |
         node -e "
-          const manifest = JSON.parse(require('fs').readFileSync('extensions/lerxu-webextension/manifest.json', 'utf8'));
-          if (!manifest.name || !manifest.version || !manifest.manifest_version) {
-            throw new Error('Invalid extension manifest');
+          const fs = require('fs');
+          const path = require('path');
+          const { listZipEntries } = require('./scripts/lib/minizip.js');
+          const dir = 'dist/extension/artifacts';
+          const files = fs.readdirSync(dir).filter((f) => f.endsWith('.zip') || f.endsWith('.xpi'));
+          if (files.length < 3) {
+            console.error('::error::扩展产物不足（期望 chromium zip + firefox zip + firefox xpi）');
+            process.exit(1);
           }
-          console.log('Extension manifest validated:', manifest.name, manifest.version);
+          for (const f of files) {
+            const names = listZipEntries(fs.readFileSync(path.join(dir, f))).map((e) => e.name);
+            const fail = (m) => { console.error('::error::' + f + ' ' + m); process.exit(1) };
+            if (!names.includes('manifest.json')) fail('归档根缺少 manifest.json（AMO 会报 not found at the root）');
+            if (names.some((n) => n.startsWith('lerxu-webextension/'))) fail('含顶层源码目录（不能压缩源码目录本身）');
+            const bad = names.filter((n) => n.startsWith('__MACOSX/') ||
+              n.split('/').some((s) => s.startsWith('._') || s === '.DS_Store') ||
+              n.endsWith('.py') || n.endsWith('.map'));
+            if (bad.length) fail('含禁止文件：' + bad.join(', '));
+            console.log('✓ ' + f + '（' + names.length + ' 条目，根级 manifest.json）');
+          }
         "
 
-    - name: Verify extension locales
+    - name: Lint extension archive with web-ext (Firefox)
       run: |
-        # 检查所有语言文件是否存在且格式正确
-        for lang in en de es fr ja ko ru zh_CN zh_TW; do
-          if [ -f "extensions/lerxu-webextension/_locales/$lang/messages.json" ]; then
-            node -e "
-              try {
-                JSON.parse(require('fs').readFileSync('extensions/lerxu-webextension/_locales/$lang/messages.json', 'utf8'));
-                console.log('$lang locale file is valid JSON');
-              } catch (e) {
-                console.error('$lang locale file has invalid JSON:', e.message);
-                process.exit(1);
-              }
-            "
-          else
-            echo "Warning: $lang locale file not found"
-          fi
-        done
+        # 用 Mozilla 官方 linter 直接校验**提交给 AMO 的那个归档**：
+        # manifest 错误（误用 service_worker、缺少扩展 ID、非法权限、混入
+        # 隐藏文件/可疑二进制）会以 error 形式报出并让步骤失败。
+        # 剩余的 UNSUPPORTED_API 警告指向 runtime.onActivate /
+        # downloads.setUiOptions / downloads.onDeterminingFilename —— 这些调用点
+        # 均已做能力探测（firefox-compat.js 的 LERXU_ENV + background.js），
+        # 是 lint 的静态扫描结果，不影响运行，也不阻塞 AMO 提交。
+        ZIP=$(ls dist/extension/artifacts/lerxu-webextension-firefox-*.zip | head -1)
+        npx --yes web-ext@8 lint --source-dir "$ZIP" --output json > /tmp/webext-lint.json
+        node -e "
+          const r = require('/tmp/webext-lint.json');
+          console.log('web-ext lint — errors:', r.summary.errors, 'warnings:', r.summary.warnings, 'notices:', r.summary.notices);
+          for (const e of (r.errors || [])) console.error('  ERROR', e.code, e.message, e.file || '');
+          const agg = {};
+          for (const w of (r.warnings || [])) agg[w.code] = (agg[w.code] || 0) + 1;
+          console.log('  warnings:', JSON.stringify(agg));
+          if (r.summary.errors > 0) process.exit(1);
+          const unexpected = Object.keys(agg).filter((c) => c !== 'UNSUPPORTED_API');
+          if (unexpected.length > 0) { console.error('::error::出现预期外的 lint 警告类型:', unexpected.join(',')); process.exit(1); }
+        "
+
+    - name: Upload extension packages
+      uses: actions/upload-artifact@v5
+      with:
+        name: browser-extension
+        path: dist/extension/artifacts/*
+        if-no-files-found: 'error'
+        retention-days: 7
 
   # 最终报告
   test-report:
     name: Test Report
-    needs: [lint-and-typecheck, build-and-test, extension-test]
+    needs: [lint-and-typecheck, build-and-test, android-build-and-test, extension-test]
     runs-on: ubuntu-latest
     if: always()
 
@@ -193,6 +389,13 @@ jobs:
         echo "  - HTTP download test: covered"
         echo "  - BT download test (local swarm): covered"
         echo "  - app smoke test (launch / engine rpc / http): covered"
+        echo "- Build & Test Android (APK): ${{ needs.android-build-and-test.result }}"
+        echo "  - engine binary integrity (aarch64 / copies identical / options): covered"
+        echo "  - android unit tests: covered"
+        echo "  - android lint: covered"
+        echo "  - APK build (debug + release) & content verification: covered"
         echo "- Extension Test: ${{ needs.extension-test.result }}"
+        echo "  - manifest (chromium + firefox), compat layer behavior, i18n: covered"
+        echo "  - package build (chromium zip + firefox xpi) & web-ext lint: covered"
         echo ""
         echo "Overall Status: ${{ job.status }}"

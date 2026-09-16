@@ -397,6 +397,10 @@
     fill: var(--lc-graphic-atom-4);
   }
 
+  .graphic-atom-s5 {
+    fill: var(--lc-graphic-atom-5);
+  }
+
   .form-static-value {
     color: var(--lc-text-primary);
   }
@@ -1550,27 +1554,29 @@
     color: var(--lc-preference-text);
   }
 
+  /* 偏好设置行内文案的颜色由 preference-dialog.scss 的设计令牌统一决定，
+     这里不再各自覆盖，避免出现「浅色一套、深色另一套」的偏差 */
   .form-preference .form-item-sub {
     .sub-row-reverse .sub-row-label {
-      color: rgba(255, 255, 255, 0.55);
+      color: var(--lc-text-secondary);
     }
   }
 
   .form-preference .toggle-row .toggle-label {
-    color: rgba(255, 255, 255, 0.55);
+    color: var(--lc-text-primary);
   }
 
   .form-preference .toggle-row--with-desc .toggle-desc {
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--lc-text-secondary);
   }
 
   .form-preference .form-item-sub-sub {
-    border-left-color: rgba(255, 255, 255, 0.08);
+    border-left-color: transparent;
 
     .el-radio-group {
       .el-radio__label {
         font-size: 13px;
-        color: rgba(255, 255, 255, 0.45);
+        color: var(--lc-text-regular);
       }
     }
   }
