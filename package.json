@@ -26,6 +26,7 @@
     "test:extension": "node test/extension/run.js",
     "lint:extension": "npx --yes web-ext@8 lint --source-dir $(ls dist/extension/artifacts/lerxu-webextension-firefox-*.zip | head -1)",
     "lint": "eslint --ext .js,.vue -f ./node_modules/eslint-friendly-formatter src",
+    "lint:workflows": "node scripts/check-workflows.js",
     "lint:fix": "eslint --ext .js,.vue -f ./node_modules/eslint-friendly-formatter --fix src",
     "postinstall": "electron-builder install-app-deps"
   },

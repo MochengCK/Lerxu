@@ -77,7 +77,6 @@ export default class ConfigManager {
         'bt-min-crypto-level': 'arc4',
         'bt-require-crypto': false,
         'bt-save-metadata': true,
-        'bt-load-saved-metadata': true,
         'bt-tracker': EMPTY_STRING,
         'bt-tracker-connect-timeout': 10,
         'bt-tracker-timeout': 10,

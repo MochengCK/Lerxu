@@ -38,8 +38,30 @@ npm install          # install dependencies
 npm run dev          # development mode (hot reload)
 npm run build        # build installers (outputs to release/)
 npm run build:dir    # unpacked build only (CI uses it for runtime tests)
-npm run lint         # ESLint
+npm run lint         # ESLint (errors block CI)
+npm run lint:workflows   # validate GitHub Actions workflows (see below)
 ```
+
+**ESLint rule tiers**: `error` is reserved for rules that find real defects (`no-undef`,
+`no-dupe-keys`, `vue/no-ref-as-operand`, `no-empty` with empty catches allowed, …) — they have
+actually caught undeclared variables, cross-file variable misuse, computed refs used without
+`.value`, and duplicate object keys. Purely stylistic rules (`indent`, `vue/script-indent`,
+`no-unused-vars`) are `warn`: script indentation baselines differ across files, so making them
+errors would keep CI permanently red. To normalise formatting:
+`npx eslint --ext .js,.vue src --fix`, then tighten the rules.
+
+## Workflow validation
+
+Mistakes in `.github/workflows/*.yml` come in two kinds: YAML syntax errors (caught by
+`js-yaml`) and **expression semantics errors** (valid YAML that GitHub rejects), e.g.:
+
+- the `secrets` context used in an `if:` condition → `Unrecognized named-value: 'secrets'`
+- misspelled context names, or `uses` without a pinned version
+
+`npm run lint:workflows` (`scripts/check-workflows.js`) validates every `if:` condition and
+`${{ }}` expression against GitHub's context availability table, and checks that `uses` entries
+carry a version tag. It runs in the `lint-and-typecheck` job, catching these issues before they
+only surface on save/run.
 
 ## Engine deployment
 
@@ -142,3 +164,29 @@ after the tests pass:
 - Android (ubuntu): `app-debug.apk`, `app-release-unsigned.apk` (signed when the signing secrets are configured)
 - Browser extension (ubuntu): `lerxu-webextension-firefox-<version>.zip` / `.xpi`, `lerxu-webextension-chromium-<version>.zip`
 - Both workflows run engine and app runtime tests through the shared `app-tests` composite action; any failure blocks the upload
+
+**Android signing secrets** (optional; without them the build produces an unsigned APK):
+
+`ANDROID_KEYSTORE_BASE64` (base64 of the keystore file), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+
+> ⚠️ **The `secrets` context cannot be used in `if:` conditions** — GitHub rejects the workflow with
+> `Unrecognized named-value: 'secrets'` (the `if` context list is limited to
+> github / needs / strategy / matrix / job / runner / env / vars / steps / inputs).
+> To branch on whether a credential exists, inject the secret into a job-level `env` and test it in the shell:
+>
+> ```yaml
+> jobs:
+>   android:
+>     env:
+>       KEY_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+>     steps:
+>       - name: Decode keystore (optional)
+>         run: |
+>           if [ -z "$KEY_B64" ]; then echo "not configured, skipping signing"; exit 0; fi
+>           printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+>           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+> ```
+>
+> Such mistakes are valid YAML and `js-yaml` cannot catch them, so `scripts/check-workflows.js`
+> (`npm run lint:workflows`) validates every `if:` condition and `${{ }}` expression against GitHub's
+> context availability table; it runs as part of the `lint-and-typecheck` job.

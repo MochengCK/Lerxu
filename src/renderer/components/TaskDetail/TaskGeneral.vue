@@ -18,11 +18,12 @@
     </el-form-item>
     <el-form-item :label="`${t('task.task-dir')}: `">
       <el-input placeholder="" readonly v-model="path">
-        <mo-show-in-folder
-          #append
-          v-if="isRenderer"
-          :path="path"
-        />
+        <template #append>
+          <mo-show-in-folder
+            v-if="isRenderer"
+            :path="path"
+          />
+        </template>
       </el-input>
     </el-form-item>
     <el-form-item :label="`${t('task.task-status')}: `">

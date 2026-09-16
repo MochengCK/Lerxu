@@ -2281,6 +2281,7 @@ import {
   APP_THEME,
   EMPTY_STRING,
   ENGINE_MAX_CONCURRENT_DOWNLOADS,
+  ENGINE_RPC_PORT,
   TRACKER_SOURCE_OPTIONS
 } from '@shared/constants'
 import { reduceTrackerString } from '@shared/utils/tracker'
@@ -2356,6 +2357,8 @@ const formRefs = {}
 
       const isRenderer = computed(() => is.renderer())
       const isMac = computed(() => is.macOS())
+      // RPC 默认端口：保存偏好时用户清空端口则回退到该值
+      const rpcDefaultPort = computed(() => ENGINE_RPC_PORT)
       const isMas = computed(() => is.mas())
       const isLinux = computed(() => is.linux())
       // 主题选择框（原 mo-theme-switcher 的三态切换改为下拉选择）
@@ -2457,7 +2460,7 @@ const formRefs = {}
           }
         ]
 
-        if (isMac) {
+        if (isMac.value) {
           result = [
             ...result,
             {
@@ -3601,7 +3604,7 @@ watch(trackerSourceConfigVisible, (visible) => {
           changedConfig.basic = {}
           changedConfig.advanced = {}
 
-          if (isRenderer) {
+          if (isRenderer.value) {
             if ('autoHideWindow' in data) {
               ipcRenderer.send('command',
                                               'application:auto-hide-window', autoHideWindow)

@@ -39,6 +39,9 @@ jobs:
     - name: Run ESLint
       run: npm run lint
 
+    - name: Validate GitHub Actions workflows
+      run: node scripts/check-workflows.js
+
     - name: Check package.json syntax
       run: node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
 

@@ -37,8 +37,28 @@ npm install          # 安装依赖
 npm run dev          # 开发模式（热重载）
 npm run build        # 构建安装包（输出到 release/）
 npm run build:dir    # 只构建 unpacked 目录（CI 用于运行时测试）
-npm run lint         # ESLint
+npm run lint         # ESLint（error 级别会阻断 CI）
+npm run lint:workflows   # 校验 GitHub Actions 工作流（见「工作流校验」）
 ```
+
+**ESLint 规则分级**：`error` 只保留能发现真实缺陷的规则（`no-undef`、`no-dupe-keys`、
+`vue/no-ref-as-operand`、`no-empty`（允许空 catch）等——它们已实际抓出过未声明变量、
+跨文件变量误用、computed 未取 `.value`、对象重复键等问题）；纯排版类规则
+（`indent`、`vue/script-indent`、`no-unused-vars`）为 `warn`：项目各文件的 `<script>`
+缩进基准本就不统一，强制 error 会让 CI 永远为红。如需统一风格：
+`npx eslint --ext .js,.vue src --fix`，再逐条收紧规则。
+
+## 工作流校验
+
+`.github/workflows/*.yml` 的错误分两类：YAML 语法错误（`js-yaml` 能发现）与
+**表达式语义错误**（YAML 合法但 GitHub 拒绝），例如：
+
+- `secrets` 上下文出现在 `if:` 条件中 → `Unrecognized named-value: 'secrets'`
+- 上下文名拼写错误、`uses` 未固定版本
+
+`npm run lint:workflows`（`scripts/check-workflows.js`）按 GitHub 的上下文可用性表
+校验所有 `if:` 条件与 `${{ }}` 表达式，并检查 `uses` 是否带版本标签。已接入
+`lint-and-typecheck` job，可提前拦截这类只有保存/运行时才会暴露的问题。
 
 ## 下载引擎回填
 
@@ -129,3 +149,29 @@ AMO 上架文案（名称 / 概述 / 描述 / 审核员说明）见 [AMO-LISTING
 - Android（ubuntu）：`app-debug.apk`、`app-release-unsigned.apk`（配置签名 secrets 时为已签名 APK）
 - 浏览器扩展（ubuntu）：`lerxu-webextension-firefox-<版本>.zip` / `.xpi`、`lerxu-webextension-chromium-<版本>.zip`
 - 两个工作流共用 `app-tests` 复合 Action 执行引擎与应用运行时测试；任一测试失败则产物不上传
+
+**Android 签名 secrets**（可选，未配置时产出未签名 APK）：
+
+`ANDROID_KEYSTORE_BASE64`（keystore 文件内容 base64）、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。
+
+> ⚠️ **`secrets` 上下文不能出现在 `if:` 条件中**——GitHub 会直接报
+> `Unrecognized named-value: 'secrets'`（`if` 的可用上下文只有
+> github / needs / strategy / matrix / job / runner / env / vars / steps / inputs）。
+> 需要按凭据是否存在分支时，应把 secret 注入 job 级 `env`，再在步骤内用 shell 判断：
+>
+> ```yaml
+> jobs:
+>   android:
+>     env:
+>       KEY_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+>     steps:
+>       - name: Decode keystore (optional)
+>         run: |
+>           if [ -z "$KEY_B64" ]; then echo "未配置，跳过签名"; exit 0; fi
+>           printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+>           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+> ```
+>
+> 这类错误 YAML 本身合法、本地 `js-yaml` 解析不出来，因此由 `scripts/check-workflows.js`
+> （`npm run lint:workflows`）把关：它按 GitHub 的上下文可用性表校验所有 `if:` 条件与
+> `${{ }}` 表达式，并已接入 `lint-and-typecheck` job。

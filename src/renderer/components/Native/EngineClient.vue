@@ -42,6 +42,16 @@ import {
 
 defineOptions({ name: 'mo-engine-client' })
 
+// 通知去重标记（组件级共享）
+//
+// 此前这三处在使用前从未声明就直接赋值（`if (!X) { X = new Map() }` 形式）。
+// `<script setup>` 是 ES module（严格模式），访问未声明标识符会抛
+// ReferenceError，导致「浏览器接管启动通知」「DASH 缺少 ffmpeg 提示」
+// 「存储权限提示」三条路径整体失效（ESLint no-undef 抓出）。
+let _browserStartNotifiedKeys = null
+let _extensionDashNoFfmpegNotified = null
+let _permNotifiedGids = null
+
 const { t } = i18n.global
 const msg = createMsg(ElMessage, { showClose: true })
 const route = useRoute()
