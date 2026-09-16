@@ -24,6 +24,8 @@
 
 const fs = require('fs')
 const path = require('path')
+// 用于解析 composite action（.github/actions/*/action.yml）的 runs.steps
+const yaml = require('js-yaml')
 
 const ROOT = path.resolve(__dirname, '..')
 const WF_DIR = path.join(ROOT, '.github', 'workflows')
@@ -181,16 +183,88 @@ const main = () => {
       const m = /uses:\s*([^\s#]+)/.exec(line)
       if (!m) continue
       const action = m[1]
-      if (action.startsWith('./') || action.startsWith('docker://')) continue
+      if (action.startsWith('docker://')) continue
+      // 本地 action（./path）不适用版本标签，改校验路径存在（见下一条）
+      if (action.startsWith('./')) continue
       if (!/@/.test(action)) {
         fail(file, `第 ${i + 1} 行 uses 未固定版本：${action}`)
         unpinned++
       }
     }
     if (unpinned === 0) {
-      ok('uses 均已固定版本标签')
+      ok('uses 均已固定版本标签（本地 action 除外）')
+    }
+
+    // 5) 本地 action 引用必须真实存在（只有运行时才会暴露 "Can't find action.yml"）
+    let missingAction = 0
+    for (const [i, line] of text.split('\n').entries()) {
+      const m = /uses:\s*(\.\/[^\s#]+)/.exec(line)
+      if (!m) continue
+      const dir = path.join(ROOT, m[1])
+      const manifest = path.join(dir, 'action.yml')
+      const manifestYaml = path.join(dir, 'action.yaml')
+      if (!fs.existsSync(manifest) && !fs.existsSync(manifestYaml)) {
+        fail(file, `第 ${i + 1} 行引用的本地 action 不存在：${m[1]}（缺少 action.yml）`)
+        missingAction++
+      }
+    }
+    if (missingAction === 0) {
+      ok('本地 action 引用均存在')
     }
     console.log('')
+  }
+
+  // 6) composite action：run 步骤必须声明 shell（GitHub 会报 "Required property is missing: shell"）
+  const actionsDir = path.join(ROOT, '.github', 'actions')
+  if (fs.existsSync(actionsDir)) {
+    for (const entry of fs.readdirSync(actionsDir)) {
+      const manifest = path.join(actionsDir, entry, 'action.yml')
+      if (!fs.existsSync(manifest)) continue
+      console.log(`actions/${entry}/action.yml`)
+      const doc = yaml.load(fs.readFileSync(manifest, 'utf8'))
+      if (!doc || doc.runs?.using !== 'composite') {
+        ok('非 composite action，跳过 shell 检查')
+        console.log('')
+        continue
+      }
+      let missingShell = 0
+      const steps = doc.runs.steps || []
+      steps.forEach((step, idx) => {
+        if (typeof step.run !== 'string') return
+        if (!step.shell) {
+          fail(`actions/${entry}/action.yml`, `第 ${idx + 1} 个步骤含 run 但缺少 shell（composite action 必填）`)
+          missingShell++
+        }
+      })
+      if (missingShell === 0) {
+        ok(`composite 的 run 步骤均已声明 shell（${steps.length} 个步骤）`)
+      }
+
+      // 7) composite 的 run 脚本：变量紧邻非 ASCII 字符时必须用 ${VAR}
+      //    非 UTF-8 locale 下 bash 会把中文字节并入变量名（$API、→ 变量 API、），
+      //    配合 set -u 直接报 unbound variable（本地已实测复现）
+      let badVar = 0
+      steps.forEach((step, idx) => {
+        if (typeof step.run !== 'string') return
+        step.run.split('\n').forEach((line, li) => {
+          if (/^\s*#/.test(line)) return
+          // 匹配 $VAR 后紧跟非 ASCII 字符，且未使用 ${VAR} 形式
+          const m = /\$([A-Za-z_][A-Za-z0-9_]*)([^\x00-\x7F])/.exec(line)
+          if (m) {
+            fail(
+              `actions/${entry}/action.yml`,
+              `第 ${idx + 1} 个步骤第 ${li + 1} 行：变量 $${m[1]} 紧邻非 ASCII 字符，` +
+              `须写成 \${${m[1]}}（非 UTF-8 locale 下会被解析为变量 ${m[1]}${m[2]}）`
+            )
+            badVar++
+          }
+        })
+      })
+      if (badVar === 0) {
+        ok('run 脚本中变量与非 ASCII 字符边界清晰')
+      }
+      console.log('')
+    }
   }
 
   console.log(`结果：${checks} 项通过，${errors} 项失败`)

@@ -84,7 +84,6 @@ npm run lint:workflows   # 校验 GitHub Actions 工作流（见「工作流校�
 
 前置要求：JDK 17、Android SDK（`platforms;android-35`、`build-tools;35.0.0`、`platform-tools`），
 并在 `Android/local.properties` 中写入 `sdk.dir=<SDK 路径>`（该文件不入库）。
-
 ```bash
 cd Android
 JAVA_HOME=<jdk17 路径> ./gradlew :app:assembleDebug :app:assembleRelease   # 产出 APK
@@ -109,6 +108,29 @@ ANDROID_KEY_PASSWORD=*** \
 - `EngineBinaryTest`：引擎二进制完整性——两份副本同字节、ELF 头（64 位小端 AArch64）、体积下限、关键能力字符串（防止回填旧引擎或错误架构）
 - `FormatUtilsTest`：进度 / 速度 / 时长格式化与任务状态配色的边界值
 
+### CI 中的 Android SDK 准备
+
+`.github/actions/android-sdk`（composite action）供两个工作流的 Android job 复用：定位 runner 预装
+的 SDK、接受许可、安装 `platform-tools` / `platforms;android-<API>` / `build-tools;<版本>`，并把
+`ANDROID_SDK_ROOT` / `ANDROID_HOME` 导出给 Gradle（`Android/local.properties` 不入库，Gradle 靠环境
+变量定位 SDK）。
+
+**为什么不直接用 `android-actions/setup-android@v3`**：该 action 内部会执行 `sdkmanager tools`，
+而 Google 已把 `tools` 包从 SDK 仓库移除，于是直接失败：
+
+```
+Warning: Failed to find package 'tools'
+Error: The process '.../sdkmanager' failed with exit code 1
+```
+
+维护该 action 时的两个坑（已纳入 `npm run lint:workflows` 的校验，勿回退）：
+
+1. **包名含分号必须加引号**：`sdkmanager --install platforms;android-35` 里的 `;` 是 shell 元字符，
+   即使单词内无空格也会分隔命令，会报 `Failed to find package 'platforms'`；必须写成
+   `--install "platforms;android-35"`（同理 `build-tools;35.0.0`）。
+2. **变量紧邻非 ASCII 字符必须写 `${VAR}`**：非 UTF-8 locale 下 bash 会把中文字节并入变量名
+   （`$API、` 被解析为变量 `API、`），配合 `set -u` 直接报 `unbound variable`——本地已实测复现。
+
 ## 浏览器扩展
 
 扩展主体代码在两个平台完全一致（统一 `chrome.*` 回调风格 + `firefox-compat.js` 兼容层），差异只在清单：
@@ -130,7 +152,6 @@ AMO 上架文案（名称 / 概述 / 描述 / 审核员说明）见 [AMO-LISTING
 两个工作流共用一个原则：**引擎二进制随仓库分发，CI 不编译引擎**，因此每个工作流都先校验引擎产物，再构建、测试。
 
 ### CI Tests（`.github/workflows/main.yml`）
-
 | Job | 运行环境 | 覆盖内容 |
 | --- | --- | --- |
 | `lint-and-typecheck` | ubuntu | ESLint、`package.json` / electron-builder 配置校验、**全部引擎产物完整性**（桌面 5 个 + Android 2 个：存在性、同字节、架构） |

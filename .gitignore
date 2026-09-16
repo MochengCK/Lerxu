@@ -66,3 +66,8 @@ SingletonSocket
 
 # Temporary files
 temp/
+
+# Python 缓存（误提交过 generate_icons.cpython-313.pyc）
+__pycache__/
+*.pyc
+*.pyo

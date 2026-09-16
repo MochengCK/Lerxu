@@ -119,6 +119,31 @@ ANDROID_KEY_PASSWORD=*** \
   AArch64), size floor, capability strings (guards against stale engines or wrong architectures)
 - `FormatUtilsTest`: progress / speed / duration formatting and per-status colours, including boundaries
 
+### Android SDK setup in CI
+
+`.github/actions/android-sdk` (a composite action) is shared by both workflows' Android jobs: it locates
+the SDK preinstalled on the runner, accepts licenses, installs `platform-tools` /
+`platforms;android-<API>` / `build-tools;<version>` and exports `ANDROID_SDK_ROOT` / `ANDROID_HOME` for
+Gradle (`Android/local.properties` is not tracked, so Gradle relies on those environment variables).
+
+**Why not `android-actions/setup-android@v3`**: that action runs `sdkmanager tools` internally, and Google
+has removed the `tools` package from the SDK repository, so it fails outright:
+
+```
+Warning: Failed to find package 'tools'
+Error: The process '.../sdkmanager' failed with exit code 1
+```
+
+Two traps when maintaining this action (both enforced by `npm run lint:workflows` — do not regress):
+
+1. **Quote package names containing semicolons**: in `sdkmanager --install platforms;android-35` the `;`
+   is a shell metacharacter — it separates commands even without spaces, yielding
+   `Failed to find package 'platforms'`. Always write `--install "platforms;android-35"` (same for
+   `build-tools;35.0.0`).
+2. **Use `${VAR}` when a variable is adjacent to non-ASCII text**: under a non-UTF-8 locale bash folds the
+   multibyte bytes into the variable name (`$API、` is parsed as the variable `API、`), and with `set -u`
+   that fails with `unbound variable` — reproduced locally.
+
 ## Browser extension
 
 The extension runs identical code on both platforms (unified `chrome.*` callback style plus the

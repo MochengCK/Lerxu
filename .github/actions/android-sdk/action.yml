@@ -1,0 +1,80 @@
+name: 'Setup Android SDK'
+description: >
+  定位 GitHub 托管 runner 预装的 Android SDK、接受许可并安装应用需要的包，最后把
+  ANDROID_SDK_ROOT / ANDROID_HOME 导出给后续步骤（Gradle 依赖它们定位 SDK，因为
+  Android/local.properties 不入库）。
+
+  刻意**不使用**第三方 setup action：`android-actions/setup-android@v3` 内部会执行
+  `sdkmanager tools`，而 Google 已把 `tools` 包从 SDK 仓库移除，导致
+  `Warning: Failed to find package 'tools'` → `exit code 1` 直接失败。
+
+  脚本中的两个坑（已规避，勿回退）：
+  1. sdkmanager 包名形如 `platforms;android-35`，分号是 shell 元字符——即使单词中
+     无空格也会被当作命令分隔符，必须逐个加引号，否则报 `Failed to find package 'platforms'`；
+  2. 变量紧邻非 ASCII 字符时必须写成 `${VAR}`：在非 UTF-8 locale 下 bash 会把中文
+     字节并入变量名（`$API、` 会被解析为变量 `API、`），配合 `set -u` 直接报
+     `unbound variable`。
+
+inputs:
+  api-level:
+    description: 'Android API level（与 Android/app/build.gradle.kts 的 compileSdk 一致）'
+    required: false
+    default: '35'
+  build-tools:
+    description: 'build-tools 版本（与 buildToolsVersion 一致）'
+    required: false
+    default: '35.0.0'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Locate SDK, accept licenses and install packages
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+        if [ ! -d "${SDK_ROOT}" ]; then
+          echo "::error::Android SDK not found (looked at ${SDK_ROOT}). Set ANDROID_SDK_ROOT or use a runner image with a preinstalled SDK."
+          exit 1
+        fi
+
+        # sdkmanager：优先 PATH，其次 cmdline-tools/<version>/bin（取版本最高者）
+        SDKMGR="$(command -v sdkmanager || true)"
+        if [ -z "${SDKMGR}" ]; then
+          SDKMGR="$(ls -d "${SDK_ROOT}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort -V | tail -1 || true)"
+        fi
+        if [ -z "${SDKMGR}" ] || [ ! -x "${SDKMGR}" ]; then
+          echo "::error::sdkmanager not found under ${SDK_ROOT}/cmdline-tools"
+          ls -la "${SDK_ROOT}" || true
+          exit 1
+        fi
+        echo "SDK root: ${SDK_ROOT}"
+        echo "sdkmanager: ${SDKMGR}"
+
+        # 导出给后续步骤与 Gradle
+        echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
+        echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
+        echo "$(dirname "${SDKMGR}")" >> "$GITHUB_PATH"
+
+        # 接受许可（非交互；已接受时重复执行无副作用，部分版本即使成功也返回非 0）
+        yes | "${SDKMGR}" --licenses > /dev/null 2>&1 || true
+
+        API="${{ inputs.api-level }}"
+        BT="${{ inputs.build-tools }}"
+
+        # 逐个加引号：分号是 shell 元字符，未加引号会报 Failed to find package 'platforms'
+        "${SDKMGR}" --install "platform-tools" "platforms;android-${API}" "build-tools;${BT}"
+
+        echo "--- installed packages ---"
+        "${SDKMGR}" --list_installed 2>/dev/null | head -30 || true
+
+        # 校验关键组件确实落盘（避免后续 Gradle 报 SDK 缺失）。
+        # 目录名用 `/`（platforms/android-35、build-tools/35.0.0），包名用 `;`，两者不可混用。
+        for dir in "platforms/android-${API}" "build-tools/${BT}"; do
+          if [ ! -d "${SDK_ROOT}/${dir}" ]; then
+            echo "::error::missing SDK component: ${SDK_ROOT}/${dir}"
+            exit 1
+          fi
+        done
+        echo "SDK components ready: platforms/android-${API}, build-tools/${BT}"

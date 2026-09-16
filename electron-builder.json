@@ -33,8 +33,7 @@
       "to": "./lerxu-webextension",
       "filter": [
         "**/*",
-        "!**/*.txt",
-        "!**/generate_icons.py"
+        "!**/*.txt"
       ]
     }
   ],

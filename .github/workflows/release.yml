@@ -218,12 +218,7 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install required SDK packages
-        run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+        uses: ./.github/actions/android-sdk
 
       - name: Verify Android engine binary
         run: |
