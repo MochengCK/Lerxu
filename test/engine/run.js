@@ -3,7 +3,7 @@
  * Lerxu 引擎运行时测试（CI 与本地通用，纯 Node 零依赖）
  *
  * 覆盖三类验证：
- *   1. 引擎可执行性 —— 在当前平台启动 extra/<platform>/<arch>/engine/xfercore，
+ *   1. 引擎可执行性 —— 在当前平台启动 extra/<platform>/<arch>/engine/xferrust(.exe)，
  *      通过 JSON-RPC getVersion 探活（验证二进制架构 / 动态库加载 / RPC 栈）。
  *   2. HTTP 下载 —— 本地 HTTP 服务器提供随机数据（支持 Range 多连接分片），
  *      经引擎 addUri 下载，完成后逐字节校验。
@@ -18,7 +18,7 @@
 import { spawn, execSync } from 'node:child_process'
 import { createHash, randomBytes } from 'node:crypto'
 import http from 'node:http'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, chmodSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, statSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -37,7 +37,20 @@ const KEEP_ARTIFACTS = argv.includes('--keep')
 // ---------- 平台 / 引擎路径 ----------
 const PLATFORM = process.platform // darwin | win32 | linux
 const ARCH = process.arch // x64 | arm64 ...
-const ENGINE_BIN_NAME = PLATFORM === 'win32' ? 'xfercore.exe' : 'xfercore'
+// 引擎二进制名与 src/main/configs/engine.js 的 engineBinMap 保持一致。
+// 引擎已由 aria2/XferCore 更换为自研 XferRust，故为 xferrust(.exe)；
+// 这里额外做一次目录扫描兜底，避免引擎再次改名后本测试静默失效。
+const ENGINE_BIN_NAME = PLATFORM === 'win32' ? 'xferrust.exe' : 'xferrust'
+
+function resolveEngineBin (engineDir) {
+  const canonical = path.join(engineDir, ENGINE_BIN_NAME)
+  if (existsSync(canonical)) return canonical
+  try {
+    const hit = readdirSync(engineDir).find(f => /^xferrust(\.[A-Za-z0-9]+)?$/.test(f))
+    if (hit) return path.join(engineDir, hit)
+  } catch (_) {}
+  return canonical
+}
 
 function resolveEngineDir () {
   const custom = argValue('--engine-dir')
@@ -124,11 +137,11 @@ async function waitEngineReady (port, secret, timeoutMs = 60000) {
 // ---------- 引擎进程管理 ----------
 const aliveEngines = []
 
-async function startEngine ({ name, rpcPort, btPort, workDir }) {
+async function startEngine ({ name, rpcPort, btPort, workDir, seedMode = false }) {
   const engineDir = resolveEngineDir()
-  const bin = path.join(engineDir, ENGINE_BIN_NAME)
+  const bin = resolveEngineBin(engineDir)
   if (!existsSync(bin)) die(`engine binary not found: ${bin}`)
-  // xfercore 的 Logger 打不开文件会直接退出（Engine.js 有同样记录），先确保目录存在
+  // xferrust 的 Logger 打不开文件会直接退出（Engine.js 有同样记录），先确保目录存在
   mkdirSync(workDir, { recursive: true })
   if (PLATFORM !== 'win32') {
     try {
@@ -159,14 +172,22 @@ async function startEngine ({ name, rpcPort, btPort, workDir }) {
     '--enable-dht6=false',
     '--bt-enable-lpd=false',
     '--enable-peer-exchange=false',
-    `--listen-port=${btPort}`,
-    // 强制 TCP 传输：xfercore 默认 both（uTP 优先），实测 uTP 在
-    // loopback/LAN 场景握手后无响应且长时间不回退 TCP，导致下载停滞
-    '--bt-connect-protocol=tcp',
+    // 引擎键名一律带 bt- 前缀（见 crates/xfer-engine/src/manager.rs 白名单）：
+    // aria2 时代的 --listen-port / --seed-ratio / --bt-stop-timeout 都不存在，
+    // 传了会被静默忽略，测试意图随之落空（端口/做种配置全部失效）。
+    `--bt-listen-port=${btPort}`,
+    // 强制 TCP 传输：引擎键是 bt-protocol（tcp+utp|tcp|utp），
+    // 应用层的 bt-connect-protocol 别名在引擎侧不存在（会被忽略）。
+    // loopback/LAN 闭环下 uTP 出现过握手后长时间不回退、下载停滞，
+    // 这里固定 TCP 让闭环用例走确定性传输。
+    '--bt-protocol=tcp',
     `--bt-tracker=http://127.0.0.1:${TRACKER_PORT}/announce`,
     '--bt-request-timeout=30',
-    '--bt-stop-timeout=0',
-    '--seed-ratio=0'
+    // 做种端必须开 bt-seed-mode：否则任务一判完成，引擎就取消 shutdown →
+    // peer 监听与对端会话被拆除（之后入站连接 ECONNREFUSED），
+    // 做种端再也无法提供服务。做种端由调用方显式传入 seedMode: true。
+    '--bt-seed-ratio=0',
+    ...(seedMode ? ['--bt-seed-mode=true'] : [])
   ]
 
   const child = spawn(bin, args, {
@@ -304,7 +325,7 @@ function bencode (val) {
 function startTracker (port) {
   const swarms = new Map() // infoHashHex -> Map(port -> port)
   const server = http.createServer((req, res) => {
-    // xfercore 的 announce 请求行可能是绝对 URI（proxy 风格）也可能是相对路径，
+    // 引擎的 announce 请求行可能是绝对 URI（proxy 风格）也可能是相对路径，
     // 统一剥掉 scheme://host 再判断
     const pathname = req.url.replace(/^https?:\/\/[^/]+/i, '')
     if (!pathname.startsWith('/announce')) {
@@ -362,12 +383,12 @@ function buildTorrentFile ({ name, data, pieceLength = 262144, trackerPort }) {
 }
 
 // ---------- 等待工具 ----------
-// tellStatus 轮询（对 xfercore BT 任务的 "GID xx is not unique" 已知怪癖容错：
-// 该错误出现时退化为文件级完成检测——目标文件达到期望大小且 .aria2 控制文件消失）
+// tellStatus 轮询（对引擎偶发的 GID 相关 RPC 怪癖容错：报错时退化为文件级完成
+// 检测——目标文件达到期望大小且 .aria2 控制文件消失）
 async function waitTaskDone (engine, gid, { timeoutMs = 180000, expectFile = null, expectSize = 0 } = {}) {
   const deadline = Date.now() + timeoutMs
   let lastProgress = ''
-  let notUniqueWarned = false
+  let rpcWarned = false
   while (Date.now() < deadline) {
     // 文件级完成检测：不受引擎 RPC 怪癖影响。
     // 下载完成 = 目标文件达到期望大小且 .aria2 控制文件已消失
@@ -393,14 +414,44 @@ async function waitTaskDone (engine, gid, { timeoutMs = 180000, expectFile = nul
         throw new Error(`task ${gid} failed: errorCode=${st.errorCode} errorMessage=${st.errorMessage || ''}`)
       }
     } catch (e) {
-      if (/is not unique/.test(e.message) && !notUniqueWarned) {
-        notUniqueWarned = true
-        log('warn', `xfercore reported "${e.message.replace(/RPC error\(1\): /, '')}" on ${engine.name}; relying on file-level completion check (known xfercore quirk, data integrity is still verified)`)
+      // 引擎明确报出的下载失败必须立即上抛，不能落进容错分支被吞掉
+      if (/failed: errorCode=/.test(e.message)) throw e
+      if (!rpcWarned) {
+        rpcWarned = true
+        log('warn', `${engine.name} tellStatus 报错「${e.message}」；按已知引擎 RPC 怪癖容错，` +
+          '退回文件级完成检测（数据完整性仍会逐字节校验）')
       }
     }
     await sleep(800)
   }
-  throw new Error(`task ${gid} not done within ${timeoutMs}ms`)
+  // 超时前抓一次 getPeers：把「对端连没连上 / 被 choke / 是否 interested /
+  // 走 TCP 还是 uTP / 已收字节」写进错误信息，CI 上失败可自证原因。
+  let peersDump = ''
+  try {
+    const peers = await rpcOnce(engine.rpcPort, engine.secret, 'aria2.getPeers', [gid], 5000)
+    peersDump = `\n  peers: ${JSON.stringify(peers).slice(0, 800)}`
+  } catch (_) {}
+  throw new Error(`task ${gid} not done within ${timeoutMs}ms${peersDump}`)
+}
+
+// tellStatus 结果的精简摘要：状态 / 进度 / 位图 / 速度 / 连接数。
+// 注意 test/engine/run.js 的 rpcOnce 直接返回 result（不包 {ok,data} 信封）。
+function summarizeTask (t) {
+  if (!t) return '(no task)'
+  return `${t.status} ${t.completedLength}/${t.totalLength} bitfield=${t.bitfield} ` +
+    `speed=${t.downloadSpeed} conns=${t.connections}`
+}
+
+// 校验 addTorrent 携带的 dir 选项真的生效。参数位置传错时引擎不报错，
+// 只是把选项丢掉、任务落到引擎 --dir 上——做种端随即变成「文件找不到 →
+// 位图为空 → 下载端空转」，是极难定位的静默失败，所以这里显式失败。
+async function assertTaskDir (engine, gid, expectedDir, label) {
+  const st = await rpcOnce(engine.rpcPort, engine.secret, 'aria2.tellStatus', [gid])
+  if (!st || path.resolve(st.dir || '') !== path.resolve(expectedDir)) {
+    die(`${label}: 任务 dir 未按预期生效（期望 ${expectedDir}，实际 ${st && st.dir}）；` +
+      'addTorrent 的 options 必须放在参数下标 1：(torrent, options, position)')
+  }
+  return st
 }
 
 function assertFileEquals (file, expected, label) {
@@ -411,6 +462,19 @@ function assertFileEquals (file, expected, label) {
   }
   if (!actual.equals(expected)) die(`${label}: content mismatch (bytes differ)`)
   log('verify', `${label}: content OK (${expected.length} bytes)`)
+}
+
+/**
+ * addUri / addTorrent 的 RPC result 是**裸 GID 字符串**（16 位 hex），不是数组。
+ * 误当数组解构会把 GID 截成首字符，后续 tellStatus 全部报 "GID x 非法" 并静默
+ * 空转到超时——这里提前失败并给出可读原因。
+ */
+function assertGid (gid, label) {
+  if (typeof gid !== 'string' || !/^[0-9a-f]{16}$/i.test(gid)) {
+    die(`${label}: addUri/addTorrent did not return a GID string (got ${JSON.stringify(gid)}); ` +
+      'RPC result 为裸 GID 字符串，不要用数组解构接收')
+  }
+  return gid
 }
 
 // ---------- 测试主体 ----------
@@ -440,7 +504,7 @@ async function main () {
   log('setup', `local BT tracker listening :${TRACKER_PORT}`)
 
   // ---- 1. 启动双引擎实例（覆盖：二进制可执行、动态库加载、RPC 栈） ----
-  const engineA = await startEngine({ name: 'engine-a', rpcPort: RPC_PORT_A, btPort: BT_PORT_A, workDir: path.join(tmpRoot, 'a') })
+  const engineA = await startEngine({ name: 'engine-a', rpcPort: RPC_PORT_A, btPort: BT_PORT_A, workDir: path.join(tmpRoot, 'a'), seedMode: true })
   const engineB = await startEngine({ name: 'engine-b', rpcPort: RPC_PORT_B, btPort: BT_PORT_B, workDir: path.join(tmpRoot, 'b') })
 
   // ---- 2. HTTP 下载测试（4MB 随机数据，Range 多连接分片） ----
@@ -448,12 +512,17 @@ async function main () {
   const httpPayload = randomBytes(4 * 1024 * 1024)
   const fileServer = await startHttpFileServer(HTTP_FILE_PORT, httpPayload)
   cleanupFns.push(() => fileServer.close())
-  const [httpGid] = await rpcOnce(engineA.rpcPort, engineA.secret, 'aria2.addUri', [
+  const httpGid = await rpcOnce(engineA.rpcPort, engineA.secret, 'aria2.addUri', [
     [`http://127.0.0.1:${HTTP_FILE_PORT}/http-test.bin`],
     { out: 'http-test.bin' }
   ])
+  assertGid(httpGid, 'HTTP')
   log('engine-a', `HTTP task gid=${httpGid}`)
-  await waitTaskDone(engineA, httpGid, { timeoutMs: 120000 })
+  await waitTaskDone(engineA, httpGid, {
+    timeoutMs: 120000,
+    expectFile: path.join(tmpRoot, 'a', 'http-test.bin'),
+    expectSize: httpPayload.length
+  })
   assertFileEquals(path.join(tmpRoot, 'a', 'http-test.bin'), httpPayload, 'HTTP download')
 
   // ---- 3. BT 下载测试（A 做种 / B 下载，本地 tracker 闭环） ----
@@ -466,11 +535,16 @@ async function main () {
   log('engine-a', `torrent built infoHash=${infoHash}`)
 
   // A：对已有完整文件 addTorrent + 完整性校验 → 转入做种
-  const [seedGid] = await rpcOnce(engineA.rpcPort, engineA.secret, 'aria2.addTorrent', [
+  // 注意参数位置：引擎兼容层签名是 (torrent, options, position)，
+  // 不是 aria2 的 (torrent, uris, options, position)——多塞一个 uris 数组
+  // 会让 options 整体被丢弃（dir 落到引擎 --dir、check-integrity 失效，
+  // 表现为做种端位图为空、下载端握手后零传输）。
+  const seedGid = await rpcOnce(engineA.rpcPort, engineA.secret, 'aria2.addTorrent', [
     torrent.toString('base64'),
-    [],
     { dir: seedDir, 'check-integrity': 'true' }
   ])
+  assertGid(seedGid, 'seed')
+  await assertTaskDir(engineA, seedGid, seedDir, 'seed')
   log('engine-a', `seed task gid=${seedGid}`)
   // 做种端就位判定：已完成校验（completed==total）即开始提供 piece
   await waitTaskDone(engineA, seedGid, {
@@ -478,13 +552,15 @@ async function main () {
     expectFile: path.join(seedDir, 'bt-test.bin'),
     expectSize: btPayload.length
   })
+  log('engine-a', `seed task status=${summarizeTask(await rpcOnce(engineA.rpcPort, engineA.secret, 'aria2.tellStatus', [seedGid]))}`)
 
   // B：从 swarm 下载同一 torrent（完成后校验；文件级检测兜底 gid 冲突怪癖）
-  const [dlGid] = await rpcOnce(engineB.rpcPort, engineB.secret, 'aria2.addTorrent', [
+  const dlGid = await rpcOnce(engineB.rpcPort, engineB.secret, 'aria2.addTorrent', [
     torrent.toString('base64'),
-    [],
     { dir: path.join(tmpRoot, 'b') }
   ])
+  assertGid(dlGid, 'BT download')
+  await assertTaskDir(engineB, dlGid, path.join(tmpRoot, 'b'), 'BT download')
   log('engine-b', `download task gid=${dlGid}`)
   await waitTaskDone(engineB, dlGid, {
     timeoutMs: 90000,
@@ -506,6 +582,18 @@ main().catch(async (e) => {
   for (const en of aliveEngines) {
     if (en.tail.length) {
       process.stderr.write(`\n--- ${en.name} output tail ---\n${en.tail.join('\n')}\n`)
+    }
+  }
+  // 失败现场：逐引擎 dump 任务摘要（位图/进度/连接数），CI 上失败可直接看出
+  // 「做种端位图为空」「下载端未 become interested」这类根因
+  for (const en of aliveEngines) {
+    try {
+      const active = await rpcOnce(en.rpcPort, `${en.name}-secret`, 'aria2.tellActive', [], 5000)
+      const list = Array.isArray(active) ? active : []
+      process.stderr.write(`\n--- ${en.name} active(${list.length}) --- ` +
+        `${list.map(t => `${t.gid} ${summarizeTask(t)}`).join(' | ') || '(无活跃任务)'}\n`)
+    } catch (e) {
+      process.stderr.write(`\n--- ${en.name} dump failed: ${e.message}\n`)
     }
   }
   await shutdownAll().catch(() => {})

@@ -11,7 +11,7 @@
  *      "Unauthorized" 即证明 RPC 栈存活），再读出 secret 完成
  *      aria2.getVersion 鉴权调用，验证「应用 → 引擎 → RPC」完整链路。
  *   3. HTTP 下载 —— 本地 HTTP 服务器提供随机数据，经应用拉起的引擎
- *      addUri 下载（走应用真实的 aria2.conf + 配置合并链路），完成后逐字节校验。
+ *      addUri 下载（走应用真实的 system.json 引擎选项链路），完成后逐字节校验。
  *
  * BT 下载的完整闭环测试见 test/engine/run.js（对同一份打包引擎二进制执行）。
  *
@@ -287,7 +287,7 @@ async function stopApp () {
   }
   // Windows 下引擎可能成为孤儿，按进程名兜底清理
   if (IS_WIN) {
-    try { execFile('taskkill', ['/IM', 'xfercore.exe', '/F'], { windowsHide: true }, () => {}) } catch (_) {}
+    try { execFile('taskkill', ['/IM', 'xferrust.exe', '/F'], { windowsHide: true }, () => {}) } catch (_) {}
   }
   await sleep(300)
 }
@@ -349,7 +349,8 @@ async function main () {
     log('test', '=== HTTP download via app engine ===')
     const outName = 'app-smoke-http.bin'
     const expectFile = path.join(downloadDir, outName)
-    const [gid] = await rpcOnce(secret, 'aria2.addUri', [
+    // addUri 的 result 是裸 GID 字符串（16 位 hex），不可用数组解构接收
+    const gid = await rpcOnce(secret, 'aria2.addUri', [
       [`http://${detectLanIp()}:${HTTP_FILE_PORT}/app-smoke-http.bin`],
       { dir: downloadDir, out: outName }
     ]).then(r => {
@@ -358,19 +359,27 @@ async function main () {
       }
       return r.data.result
     })
+    if (typeof gid !== 'string' || !/^[0-9a-f]{16}$/i.test(gid)) {
+      throw new Error(`addUri did not return a GID string (got ${JSON.stringify(gid)})`)
+    }
     log('app', `HTTP task gid=${gid}`)
 
     const dlDeadline = Date.now() + 120000
     let done = false
     let lastProgress = ''
+    let rpcWarned = false
     while (Date.now() < dlDeadline) {
-      // 文件级完成检测（对 xfercore 的 gid 怪癖容错，见 engine 测试同名逻辑）
+      // 文件级完成检测（对引擎 gid 怪癖容错，见 engine 测试同名逻辑）
       if (existsSync(expectFile) && !existsSync(expectFile + '.aria2') && statSync(expectFile).size === httpPayloadSize) {
         done = true
         break
       }
       try {
         const st = await rpcOnce(secret, 'aria2.tellStatus', [gid])
+        if (!st.ok && !rpcWarned) {
+          rpcWarned = true
+          log('warn', `tellStatus 调用异常（${st.error}）；按已知引擎 RPC 怪癖容错，退回文件级完成检测`)
+        }
         if (st.ok && st.data.result) {
           const s = st.data.result
           if (s.totalLength && s.totalLength !== '0') {
@@ -384,11 +393,17 @@ async function main () {
         }
       } catch (e) {
         if (/download failed/.test(e.message)) throw e
-        // tellStatus 偶发怪癖（GID not unique 等）忽略，靠文件级检测兜底
+        if (!rpcWarned) {
+          rpcWarned = true
+          log('warn', `tellStatus 报错「${e.message}」；按已知引擎 RPC 怪癖容错，退回文件级完成检测`)
+        }
       }
       await sleep(700)
     }
-    if (!done) throw new Error(`HTTP download not finished within 120s`)
+    if (!done) {
+      throw new Error(`HTTP download not finished within 120s (last known state: ${lastProgress || 'no status report'}; ` +
+        `target file ${existsSync(expectFile) ? `${statSync(expectFile).size}B` : 'missing'}, expected ${httpPayloadSize}B)`)
+    }
     const actual = readFileSync(expectFile)
     const served = await new Promise((resolve) => {
       http.get(`http://127.0.0.1:${HTTP_FILE_PORT}/app-smoke-http.bin`, (res) => {

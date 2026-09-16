@@ -16,10 +16,12 @@ runs:
           Windows)
             ENGINE_DIR="release/win-unpacked/resources/engine"
             APP_BIN="release/win-unpacked/Lerxu.exe"
+            ENGINE_BIN="xferrust.exe"
             ;;
           Linux)
             ENGINE_DIR="release/linux-unpacked/resources/engine"
             APP_BIN="release/linux-unpacked/lerxu"
+            ENGINE_BIN="xferrust"
             ;;
           macOS)
             HOST_ARCH="$(uname -m)"
@@ -35,6 +37,7 @@ runs:
             # <...>/Lerxu.app/Contents/MacOS/Lerxu -> <...>/Lerxu.app/Contents/Resources/engine
             APP_CONTENTS="$(dirname "$(dirname "$APP_BIN")")"
             ENGINE_DIR="${APP_CONTENTS}/Resources/engine"
+            ENGINE_BIN="xferrust"
             ;;
           *)
             echo "::error::Unsupported RUNNER_OS: $RUNNER_OS"
@@ -45,14 +48,16 @@ runs:
         echo "ENGINE_DIR=$ENGINE_DIR" >> "$GITHUB_ENV"
         echo "APP_BIN=$APP_BIN" >> "$GITHUB_ENV"
 
-        for f in "$ENGINE_DIR/aria2.conf" "$APP_BIN"; do
+        # 引擎已由 XferCore 更换为自研 XferRust（xferrust / xferrust.exe），
+        # 不再有 aria2.conf；这里校验真正需要存在的产物。
+        for f in "$ENGINE_DIR/$ENGINE_BIN" "$APP_BIN"; do
           if [ ! -e "$f" ]; then
             echo "::error::Required build artifact missing: $f"
             ls -la "$ENGINE_DIR" 2>/dev/null || true
             exit 1
           fi
         done
-        echo "Located engine: $ENGINE_DIR"
+        echo "Located engine binary: $ENGINE_DIR/$ENGINE_BIN"
         echo "Located app binary: $APP_BIN"
 
     - name: Install Linux GUI dependencies
