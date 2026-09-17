@@ -67,6 +67,7 @@ import com.lerxu.android.model.EngineVersion
 import com.lerxu.android.ui.MainActivity
 import com.lerxu.android.ui.TaskViewModel
 import com.lerxu.android.ui.formatBytes
+import com.lerxu.android.update.ReleaseChannel
 import com.lerxu.android.update.UpdateManager
 import kotlinx.coroutines.launch
 
@@ -226,6 +227,12 @@ fun SettingsScreen(
             checkingUpdate = false
         }
     }
+
+    // ── 更新渠道：stable（正式版）/ beta（测试版）/ all（含内测），与桌面端同一套语义 ──
+    var updateChannel by remember {
+        mutableStateOf(ReleaseChannel.fromKey(prefs.getString(UpdateManager.KEY_CHANNEL, null)))
+    }
+    var showChannelDialog by remember { mutableStateOf(false) }
 
     // ── 主题切换 ──
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -1099,6 +1106,40 @@ fun SettingsScreen(
                 thickness = 0.5.dp
             )
 
+            // 更新渠道：切换后立即按新渠道重新检查（与桌面端一致）
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showChannelDialog = true }
+                    .padding(horizontal = 16.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.update_channel),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        channelLabel(updateChannel),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = colorScheme.outlineVariant,
+                thickness = 0.5.dp
+            )
+
             // 手动检查更新
             Row(
                 modifier = Modifier
@@ -1261,6 +1302,21 @@ fun SettingsScreen(
                 onThemeChange(pref)
             },
             onDismiss = { showThemeDialog = false }
+        )
+    }
+
+    // 更新渠道切换：落盘 → 清掉旧渠道的更新卡片 → 立即按新渠道检查
+    if (showChannelDialog) {
+        UpdateChannelDialog(
+            current = updateChannel,
+            onSelect = { channel ->
+                showChannelDialog = false
+                if (channel != updateChannel) {
+                    updateChannel = channel
+                    UpdateManager.setChannel(context, channel)
+                }
+            },
+            onDismiss = { showChannelDialog = false }
         )
     }
 
@@ -1795,6 +1851,72 @@ private fun ThemeDialog(
                     Spacer(Modifier.width(12.dp))
                     Text(
                         themeLabel(option.key),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (selected) colorScheme.primary else colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (selected) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
+
+// ─── 更新渠道切换弹窗 ───
+
+/** 渠道展示名（与桌面端 preferences.update-channel-* 文案一致） */
+@Composable
+private fun channelLabel(channel: ReleaseChannel): String = when (channel) {
+    ReleaseChannel.STABLE -> stringResource(R.string.update_channel_stable)
+    ReleaseChannel.BETA -> stringResource(R.string.update_channel_beta)
+    ReleaseChannel.ALL -> stringResource(R.string.update_channel_all)
+}
+
+/**
+ * 更新渠道选择：稳定版 / 测试版 / 全部版本。
+ * 三档语义与桌面端严格一致 —— 稳定版只看正式版，测试版只看预发布，
+ * 全部版本取版本最高者（含预发布）。
+ */
+@Composable
+private fun UpdateChannelDialog(
+    current: ReleaseChannel,
+    onSelect: (ReleaseChannel) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    BottomConfirmDialog(
+        title = stringResource(R.string.update_channel),
+        subtitle = stringResource(R.string.update_channel_desc),
+        confirmLabel = null,
+        onDismiss = onDismiss,
+        content = {
+            Spacer(Modifier.height(10.dp))
+            ReleaseChannel.entries.forEachIndexed { index, option ->
+                if (index > 0) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        color = colorScheme.outlineVariant,
+                        thickness = 0.5.dp
+                    )
+                }
+                val selected = option == current
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(option) }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        channelLabel(option),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                         color = if (selected) colorScheme.primary else colorScheme.onSurface,

@@ -10,11 +10,14 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,6 +33,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,29 +47,29 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.text.SpannableString
-import android.text.Spanned
-import android.text.TextPaint
-import android.text.method.LinkMovementMethod
-import android.text.style.ClickableSpan
-import android.text.style.URLSpan
-import android.view.View
-import android.widget.TextView
-import androidx.core.text.HtmlCompat
 import com.lerxu.android.BuildConfig
 import com.lerxu.android.R
+import com.lerxu.android.update.NoteBlock
+import com.lerxu.android.update.ReleaseNotes
 import com.lerxu.android.update.UpdateManager
 import kotlinx.coroutines.delay
 
@@ -204,9 +208,9 @@ fun UpdateNoticeCard(
                             color = colorScheme.onSurfaceVariant
                         )
 
-                        // 更新说明：TextView + HtmlCompat 渲染 GitHub 的 HTML 说明，
-                        // 保留标题/列表/粗体/代码/链接等样式；纯文本（降级路径）
-                        // 自动包 <pre> 保留换行。
+                        // 更新说明：解析成结构化块后用 Compose 排版（标题层级/列表缩进/
+                        // 段落间距/代码块/分隔线都保留）。旧实现走 TextView + HtmlCompat，
+                        // 块级排版会被 HTML 解析器吞掉，整篇说明糊成一段。
                         if (update.notes.isNotBlank()) {
                             Spacer(Modifier.height(12.dp))
                             Surface(
@@ -216,14 +220,17 @@ fun UpdateNoticeCard(
                             ) {
                                 Box(
                                     Modifier
-                                        .heightIn(max = 180.dp)
+                                        .heightIn(max = 200.dp)
                                         .verticalScroll(rememberScrollState())
                                         .padding(12.dp)
                                 ) {
-                                    ReleaseNotesText(
+                                    ReleaseNotesView(
                                         content = update.notes,
-                                        textColor = colorScheme.onSurfaceVariant.toArgb(),
-                                        linkColor = colorScheme.primary.toArgb()
+                                        textColor = colorScheme.onSurfaceVariant,
+                                        headingColor = colorScheme.onSurface,
+                                        linkColor = colorScheme.primary,
+                                        codeBackground = colorScheme.surfaceContainerHighest
+                                            .copy(alpha = 0.75f)
                                     )
                                 }
                             }
@@ -336,79 +343,237 @@ private fun UpdateActionArea(
     }
 }
 
+// ─── 发行说明渲染 ───
+
 /**
- * 发行说明渲染：TextView + HtmlCompat。
+ * 发行说明渲染：结构化块 + Compose 原生排版。
  *
- * - 内容为 HTML（GitHub body_html）时按富文本渲染（标题 / 列表 / 粗体 /
- *   代码 / 链接等样式保留）；
- * - 纯文本（降级路径：拿不到 body_html 时的 Markdown 原文）包一层 `<pre>`，
- *   保留换行；
- * - 链接只放行 http(s)，点击在系统浏览器打开（用 ClickableSpan 替换
- *   URLSpan，避免 javascript: / file: / content: 等协议被拉起）。
+ * 旧实现是 TextView + `HtmlCompat.fromHtml`：Android 的 Html 解析器忽略容器
+ * 标签（`<pre>`、`<div>`、`<table>`）并会吞掉文本里的换行，于是标题层级、
+ * 列表缩进、段落间距全部丢失，整篇更新说明挤成一坨。
+ * 现在改成先解析成块（[ReleaseNotes.blocks]），再逐块用 Compose 排版：
+ * 标题按层级加粗放大、列表按嵌套深度缩进、段落之间留白、引用带竖线、
+ * 代码块用等宽字体独立底纹。
  */
 @Composable
-private fun ReleaseNotesText(
+private fun ReleaseNotesView(
     content: String,
-    textColor: Int,
-    linkColor: Int
+    textColor: Color,
+    headingColor: Color,
+    linkColor: Color,
+    codeBackground: Color
 ) {
-    AndroidView(
-        factory = { ctx ->
-            TextView(ctx).apply {
-                setTextColor(textColor)
-                textSize = 12f
-                setLineSpacing(0f, 1.5f)
-                movementMethod = LinkMovementMethod.getInstance()
-                highlightColor = android.graphics.Color.TRANSPARENT
+    val blocks = remember(content) { ReleaseNotes.blocks(content) }
+    Column(Modifier.fillMaxWidth()) {
+        blocks.forEachIndexed { index, block ->
+            val topGap = when (block) {
+                is NoteBlock.Heading -> if (index == 0) 0.dp else 12.dp
+                NoteBlock.Divider -> 7.dp
+                is NoteBlock.Paragraph -> if (index == 0) 0.dp else 7.dp
+                is NoteBlock.Code -> 7.dp
+                is NoteBlock.Quote -> 6.dp
+                is NoteBlock.Item -> 4.dp
             }
-        },
-        update = { tv ->
-            tv.setTextColor(textColor)
-            tv.setLinkTextColor(linkColor)
-            val looksLikeHtml = content.contains('<') &&
-                (content.contains("</") || content.contains("<h") ||
-                    content.contains("<p") || content.contains("<li") ||
-                    content.contains("<ul") || content.contains("<ol"))
-            val html = if (looksLikeHtml) content else "<pre>" + escapeHtmlText(content) + "</pre>"
-            val spanned = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT)
-            tv.text = makeSafeLinks(spanned, tv.context, linkColor)
+            if (topGap > 0.dp) Spacer(Modifier.height(topGap))
+
+            when (block) {
+                is NoteBlock.Heading -> Text(
+                    text = inlineMarkdown(block.text, linkColor, codeBackground),
+                    style = when (block.level) {
+                        1, 2 -> MaterialTheme.typography.titleSmall
+                        3 -> MaterialTheme.typography.labelLarge
+                        else -> MaterialTheme.typography.labelMedium
+                    },
+                    fontWeight = FontWeight.Bold,
+                    color = headingColor
+                )
+
+                is NoteBlock.Paragraph -> Text(
+                    text = inlineMarkdown(block.text, linkColor, codeBackground),
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 19.sp,
+                    color = textColor
+                )
+
+                is NoteBlock.Item -> Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = (block.depth * 12).dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Text(
+                        text = block.marker,
+                        style = MaterialTheme.typography.bodySmall,
+                        lineHeight = 19.sp,
+                        color = textColor.copy(alpha = 0.7f)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = inlineMarkdown(block.text, linkColor, codeBackground),
+                        style = MaterialTheme.typography.bodySmall,
+                        lineHeight = 19.sp,
+                        color = textColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                is NoteBlock.Quote -> Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min)
+                ) {
+                    Box(
+                        Modifier
+                            .width(3.dp)
+                            .fillMaxHeight()
+                            .background(linkColor.copy(alpha = 0.45f), RoundedCornerShape(2.dp))
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = inlineMarkdown(block.text, linkColor, codeBackground),
+                        style = MaterialTheme.typography.bodySmall,
+                        lineHeight = 19.sp,
+                        color = textColor.copy(alpha = 0.85f),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                is NoteBlock.Code -> Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = codeBackground,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = block.text,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        color = textColor,
+                        modifier = Modifier
+                            .horizontalScroll(rememberScrollState())
+                            .padding(8.dp)
+                    )
+                }
+
+                NoteBlock.Divider -> HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 1.dp),
+                    color = textColor.copy(alpha = 0.18f),
+                    thickness = 0.7.dp
+                )
+            }
         }
-    )
+    }
 }
 
-private fun escapeHtmlText(s: String): String = s
-    .replace("&", "&amp;")
-    .replace("<", "&lt;")
-    .replace(">", "&gt;")
+// ─── 行内标记（粗体 / 斜体 / 删除线 / 行内代码 / 链接 / @提及） ───
 
-/** 把 HTML 里的 URLSpan 替换为只放行 http(s) 的 ClickableSpan */
-private fun makeSafeLinks(spanned: Spanned, context: Context, linkColor: Int): Spanned {
-    val ss = SpannableString(spanned)
-    for (span in ss.getSpans(0, ss.length, URLSpan::class.java)) {
-        val start = ss.getSpanStart(span)
-        val end = ss.getSpanEnd(span)
-        val flags = ss.getSpanFlags(span)
-        val url = span.url
-        ss.removeSpan(span)
-        ss.setSpan(object : ClickableSpan() {
-            override fun updateDrawState(ds: TextPaint) {
-                ds.color = linkColor
-                ds.isUnderlineText = true
-            }
-
-            override fun onClick(widget: View) {
-                if (url.startsWith("http://") || url.startsWith("https://")) {
-                    try {
-                        context.startActivity(
-                            Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        )
-                    } catch (_: Exception) {
-                        // 没有可处理该链接的应用：静默忽略
-                    }
-                }
-            }
-        }, start, end, flags)
+/** 行内匹配结果：end 为匹配合成结束位置（左闭右开），text 为要显示的文本 */
+private class InlineSpan(val end: Int, val kind: Int, val text: String, val url: String = "") {
+    companion object {
+        const val CODE = 0
+        const val LINK = 1
+        const val URL = 2
+        const val BOLD = 3
+        const val ITALIC = 4
+        const val STRIKE = 5
+        const val MENTION = 6
     }
-    return ss
+}
+
+private val CODE_RE = Regex("`([^`\n]+)`")
+private val LINK_RE = Regex("\\[([^\\]]+)\\]\\((https?://[^\\s)]+)\\)")
+private val BOLD_RE = Regex("\\*\\*([^*\n]+)\\*\\*")
+private val STRONG_ALT_RE = Regex("__([^_\n]+)__")
+private val STRIKE_RE = Regex("~~([^~\n]+)~~")
+private val ITALIC_RE = Regex("\\*([^*\n]+)\\*")
+
+// 裸链接：排除空白与常见收尾符号（含中文标点，避免把句号吞进 URL）
+private val BARE_URL_RE = Regex("https?://[^\\s<>()\\[\\]「」『』，。；：！？、）》】\"']+")
+private val MENTION_RE = Regex("@([A-Za-z0-9][A-Za-z0-9-]{0,37})")
+
+/** URL 前一位是 ASCII 字母/数字或 . - / 时不算新链接（邮箱、域名片段误判兜底） */
+private fun isUrlBoundary(prev: Char?): Boolean =
+    prev == null || !(prev.isLetterOrDigit() && prev.code < 128) && prev !in charArrayOf('.', '-', '/')
+
+/** 在 text[start] 处尝试匹配一个行内标记；不匹配返回 null */
+private fun matchInlineAt(text: String, start: Int, allowEmphasis: Boolean): InlineSpan? {
+    fun at(re: Regex): MatchResult? = re.find(text, start)?.takeIf { it.range.first == start }
+
+    at(CODE_RE)?.let { return InlineSpan(it.range.last + 1, InlineSpan.CODE, it.groupValues[1]) }
+    at(LINK_RE)?.let {
+        return InlineSpan(it.range.last + 1, InlineSpan.LINK, it.groupValues[1], it.groupValues[2])
+    }
+    if (allowEmphasis) {
+        at(BOLD_RE)?.let { return InlineSpan(it.range.last + 1, InlineSpan.BOLD, it.groupValues[1]) }
+        at(STRONG_ALT_RE)?.let { return InlineSpan(it.range.last + 1, InlineSpan.BOLD, it.groupValues[1]) }
+    }
+    at(STRIKE_RE)?.let { return InlineSpan(it.range.last + 1, InlineSpan.STRIKE, it.groupValues[1]) }
+    if (allowEmphasis) {
+        at(ITALIC_RE)?.let { return InlineSpan(it.range.last + 1, InlineSpan.ITALIC, it.groupValues[1]) }
+    }
+    at(BARE_URL_RE)?.let {
+        if (isUrlBoundary(if (start == 0) null else text[start - 1])) {
+            return InlineSpan(it.range.last + 1, InlineSpan.URL, it.value, it.value)
+        }
+    }
+    at(MENTION_RE)?.let {
+        if (isUrlBoundary(if (start == 0) null else text[start - 1])) {
+            return InlineSpan(
+                it.range.last + 1,
+                InlineSpan.MENTION,
+                it.value,
+                "https://github.com/${it.groupValues[1]}"
+            )
+        }
+    }
+    return null
+}
+
+/** 行内标记 → AnnotatedString；链接走 LinkAnnotation（点击由 Text 交给系统浏览器打开） */
+private fun inlineMarkdown(
+    text: String,
+    linkColor: Color,
+    codeBackground: Color,
+    allowEmphasis: Boolean = true
+): AnnotatedString = buildAnnotatedString {
+    var i = 0
+    while (i < text.length) {
+        val m = matchInlineAt(text, i, allowEmphasis)
+        if (m == null) {
+            append(text[i])
+            i++
+            continue
+        }
+        when (m.kind) {
+            InlineSpan.CODE -> withStyle(
+                SpanStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    background = codeBackground
+                )
+            ) { append(m.text) }
+
+            InlineSpan.LINK, InlineSpan.URL, InlineSpan.MENTION -> withLink(
+                LinkAnnotation.Url(
+                    m.url,
+                    TextLinkStyles(
+                        SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)
+                    )
+                )
+            ) { append(m.text) }
+
+            InlineSpan.BOLD -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                append(inlineMarkdown(m.text, linkColor, codeBackground, allowEmphasis = false))
+            }
+
+            InlineSpan.ITALIC -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                append(inlineMarkdown(m.text, linkColor, codeBackground, allowEmphasis = false))
+            }
+
+            else -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
+                append(m.text)
+            }
+        }
+        i = m.end
+    }
 }

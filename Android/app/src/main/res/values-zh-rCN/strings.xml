@@ -273,6 +273,12 @@
     <string name="update_card_downloading">正在下载更新…</string>
     <string name="update_card_installing">下载完成，正在启动安装程序…</string>
     <string name="update_card_download_failed">下载失败，请检查网络后重试</string>
+    <string name="update_channel">更新渠道</string>
+    <string name="update_channel_desc">选择检查更新的发布渠道</string>
+    <string name="update_channel_stable">稳定版</string>
+    <string name="update_channel_beta">测试版</string>
+    <string name="update_channel_all">全部版本（包含内测版）</string>
+    <string name="update_check_channel_failed">无法获取发布列表（API 限流或网络异常），请稍后重试</string>
     <!-- 任务详情分类 -->
     <string name="detail_tab_overview">概览</string>
     <string name="detail_tab_pieces">分片</string>
