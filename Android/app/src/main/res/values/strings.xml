@@ -266,6 +266,13 @@
     <string name="update_notification_title">Lerxu %1$s available</string>
     <string name="update_notification_text">Tap to view and download</string>
     <string name="channel_update_name">App updates</string>
+    <string name="update_card_title">New version available</string>
+    <string name="update_card_current">Current version %1$s</string>
+    <string name="update_card_action">Update now</string>
+    <string name="update_card_retry">Retry</string>
+    <string name="update_card_downloading">Downloading update…</string>
+    <string name="update_card_installing">Download complete, opening the installer…</string>
+    <string name="update_card_download_failed">Download failed. Check your network and try again.</string>
     <!-- Task detail tabs -->
     <string name="detail_tab_overview">Overview</string>
     <string name="detail_tab_pieces">Pieces</string>

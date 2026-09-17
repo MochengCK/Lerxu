@@ -43,8 +43,8 @@
           min-width="150"
         >
           <template #default="scope">
-            <mo-hover-tip :content="scope.row.host" placement="top" :disabled="!scope.row._hostOverflow">
-              <span class="mo-conn-host" @mouseenter="handleHostMouseEnter($event, scope.row)">{{ scope.row.host }}</span>
+            <mo-hover-tip effect="dark" :content="scope.row.host" placement="top" :open-delay="300" :disabled="!scope.row._hostOverflow || !scope.row.host">
+              <span class="mo-conn-host" :class="{ 'is-truncated': scope.row._hostOverflow }" @mouseenter="handleHostMouseEnter($event, scope.row)">{{ scope.row.host }}</span>
             </mo-hover-tip>
           </template>
         </el-table-column>
@@ -74,12 +74,9 @@
           align="center"
         >
           <template #default="scope">
-            <el-tag
-              size="small"
-              :type="scope.row.isActive ? 'success' : 'info'"
-            >
+            <span class="mo-conn-status" :class="scope.row.isActive ? 'is-active' : 'is-idle'">
               {{ scope.row.status }}
-            </el-tag>
+            </span>
           </template>
         </el-table-column>
       </el-table>
@@ -242,26 +239,29 @@ watch(() => props.task?.connections, () => {
 </script>
 
 <style lang="scss">
+/* 连接表格样式与节点（Node/Peer）表格对齐：透明底、无表头分隔线、
+   32px 行高、行内 1px 分隔、溢出渐隐，保证详情页内各表格观感统一 */
 .mo-task-connections {
   .mo-connections-summary {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     padding: 12px;
-    background: var(--task-detail-summary-bg, #f5f7fa);
-    border-radius: 4px;
+    background: transparent;
+    border: 1px solid var(--lc-border-base);
+    border-radius: 8px;
 
     .summary-item {
       text-align: center;
 
       .summary-label {
         font-size: 12px;
-        color: #909399;
+        color: var(--el-text-color-secondary);
         margin-bottom: 4px;
       }
 
       .summary-value {
         font-size: 18px;
         font-weight: 600;
-        color: #303133;
+        color: var(--lc-text-primary);
       }
     }
   }
@@ -270,7 +270,7 @@ watch(() => props.task?.connections, () => {
   .mo-connections-loading {
     text-align: center;
     padding: 40px 0;
-    color: #909399;
+    color: var(--el-text-color-secondary);
 
     i {
       font-size: 48px;
@@ -283,30 +283,94 @@ watch(() => props.task?.connections, () => {
     }
   }
 
-.mo-table-wrapper {
-max-height: 450px;
-overflow-y: auto;
-border: 1px solid var(--lc-border-base);
+  .mo-table-wrapper {
+    border: 1px solid var(--lc-border-base);
     border-radius: 8px;
+    overflow: hidden;
+    box-sizing: border-box;
   }
 
-  .mo-connection-table {
-    .cell {
-      padding-left: 0.5rem;
-      padding-right: 0.5rem;
+  .el-table.mo-connection-table {
+    border: none !important;
+    border-radius: 8px;
+    &::before, &::after {
+      display: none !important;
     }
-
+    // 修复滚动条出现时表头错位问题（针对自定义滚动条优化）
+    th.gutter, colgroup.gutter {
+      display: none !important;
+      width: 0 !important;
+    }
+    .el-table__header colgroup col[name="gutter"] {
+      display: none !important;
+      width: 0 !important;
+    }
+    // 修复底部边框重复导致粗细不一
+    .el-table__body tr:last-child td {
+      border-bottom: none !important;
+    }
+    th.el-table__cell {
+      border-bottom: none !important;
+    }
+    .cell {
+      padding-left: 10px !important;
+      padding-right: 10px !important;
+    }
+    /* mo-hover-tip trigger 默认 inline-flex 会撑开宽度，
+       改为 block 并限制宽度，确保 text-overflow 和溢出检测生效 */
+    .lc-hover-tip__trigger {
+      display: block;
+      overflow: hidden;
+    }
     .mo-conn-host {
       display: block;
-      max-width: 100%;
       white-space: nowrap;
       overflow: hidden;
-      text-overflow: ellipsis;
+      position: relative;
+      text-overflow: clip; /* 不使用 ellipsis，避免双重省略效果 */
+      /* 文本被截断时右侧渐隐，避免硬截断突兀 */
+      &.is-truncated {
+        -webkit-mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 85%, rgba(0, 0, 0, 0));
+        mask-image: linear-gradient(to right, rgba(0, 0, 0, 1) 85%, rgba(0, 0, 0, 0));
+      }
     }
-
+    // 严格强制单行高度并修复对齐
+    .el-table__row {
+      height: 32px !important;
+      td {
+        padding: 0 !important;
+        .cell {
+          line-height: 32px !important;
+          height: 32px !important;
+          display: flex;
+          align-items: center;
+          padding-top: 0 !important;
+          padding-bottom: 0 !important;
+          padding-left: 10px !important;
+          padding-right: 10px !important;
+        }
+        &.is-right .cell {
+          justify-content: flex-end;
+          text-align: right;
+        }
+        &.is-center .cell {
+          justify-content: center;
+          text-align: center;
+        }
+      }
+    }
     .speed-active {
       color: #67c23a;
       font-weight: 500;
+    }
+    .mo-conn-status {
+      &.is-active {
+        color: #67c23a;
+        font-weight: 500;
+      }
+      &.is-idle {
+        color: var(--el-text-color-secondary);
+      }
     }
   }
 }
@@ -314,8 +378,8 @@ border: 1px solid var(--lc-border-base);
 // 暗色主题适配
 .theme-dark .mo-task-connections {
   .mo-connections-summary {
-    background: var(--lc-table-striped-bg, #1a1e24);
-    border-radius: 8px;
+    background: transparent;
+    border-color: var(--lc-border-base);
 
     .summary-label {
       color: var(--lc-text-secondary);
@@ -336,7 +400,8 @@ border: 1px solid var(--lc-border-base);
     background-color: var(--lc-task-item-bg) !important;
   }
 
-  .mo-connection-table {
+  .el-table.mo-connection-table {
+    border-color: transparent !important;
     background-color: transparent !important;
     color: var(--lc-text-regular) !important;
 
@@ -356,16 +421,19 @@ border: 1px solid var(--lc-border-base);
     .el-table__row {
       background-color: transparent !important;
     }
-    th.el-table__cell {
-      background-color: var(--lc-table-th-bg) !important;
-      color: var(--lc-text-secondary) !important;
-      border-bottom: none !important;
-    }
     // 悬停高亮：强制覆盖 Element UI 默认白色背景
     .el-table__body tr:hover > td,
     .el-table__body tr:hover > td.el-table__cell,
     .el-table--enable-row-hover .el-table__body tr:hover > td {
       background-color: var(--lc-table-hover-bg) !important;
+    }
+    &.el-table thead th,
+    &.el-table thead th.el-table__cell,
+    &.el-table thead th.is-leaf,
+    &.el-table thead th.el-table__cell.is-leaf {
+      background-color: transparent !important;
+      color: var(--lc-text-secondary) !important;
+      border-bottom: none !important;
     }
     td.el-table__cell {
       background-color: transparent !important;
@@ -377,6 +445,9 @@ border: 1px solid var(--lc-border-base);
     }
     .el-table__empty-text {
       color: var(--lc-text-placeholder) !important;
+    }
+    .mo-conn-status.is-idle {
+      color: var(--lc-text-secondary);
     }
     &::before, &::after {
       display: none !important;

@@ -2247,7 +2247,7 @@ const normalizeTaskMultiSelectModifier = (value) => {
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import is from 'electron-is'
-import { nativeImage, clipboard, ipcRenderer } from 'electron'
+import { nativeImage, ipcRenderer } from 'electron'
 import { app, dialog, shell } from '@electron/remote'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -3427,11 +3427,11 @@ watch(trackerSourceConfigVisible, (visible) => {
         form.value.customSecurityScanPath = path
         autoSaveForm()
       }
-      function copyChannelUrl() {
+      async function copyChannelUrl() {
         const text = appChannelUrl.value
         if (!text) return
         try {
-          clipboard.writeText(text)
+          await ipcRenderer.invoke('clipboard:write-text', text)
           msg.success(t('preferences.save-success-message'))
         } catch (e) {
           msg.error(t('preferences.save-fail-message'))
@@ -3484,7 +3484,7 @@ watch(trackerSourceConfigVisible, (visible) => {
           // Windows 版 Edge 会丢弃命令行传入的 edge:// URL（安全过滤），
           // 因此 Edge 不做任何拉起；Chrome 已在运行时也只激活不导航。
           // 两种情况都把地址复制到剪贴板，提示用户粘贴到地址栏打开。
-          try { clipboard.writeText(extensionUrl) } catch (e) {}
+          try { ipcRenderer.invoke('clipboard:write-text', extensionUrl) } catch (e) {}
           if (result.running) {
             msg.warning(t('preferences.extension-open-running', { url: extensionUrl }))
           } else {

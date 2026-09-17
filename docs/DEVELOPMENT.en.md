@@ -102,8 +102,8 @@ JAVA_HOME=<jdk17 path> ./gradlew :app:lintDebug                           # stat
 
 Artifacts: `Android/app/build/outputs/apk/{debug,release}/*.apk`
 
-**Signing** (optional): `app/build.gradle.kts` supports environment-driven release signing; without it the
-build produces an unsigned APK:
+**Signing**: release APKs are **always signed** (the workflows no longer build debug or unsigned
+APKs). `app/build.gradle.kts` reads signing credentials from environment variables:
 
 ```bash
 ANDROID_KEYSTORE_PATH=/path/to/release.keystore \
@@ -174,7 +174,7 @@ so every workflow verifies the engine artifacts first, then builds and tests.
 | --- | --- | --- |
 | `lint-and-typecheck` | ubuntu | ESLint, `package.json` / electron-builder config checks, **all engine artifacts** (5 desktop + 2 Android: existence, byte-identical copies, architecture) |
 | `build-and-test` | ubuntu / windows / macos | Build the unpacked app → engine runtime tests (RPC probe, HTTP download, BT local-swarm loop) → app smoke test (launch app → engine subprocess → RPC auth → one HTTP download through the app engine) |
-| `android-build-and-test` | ubuntu | Engine verification (aarch64 / identical copies / capability strings) → unit tests → lint → build debug + release APKs → verify the engine is packaged and the ABI is `arm64-v8a` only → upload APKs |
+| `android-build-and-test` | ubuntu | Engine verification (aarch64 / identical copies / capability strings) → unit tests → lint. **Does not build APKs** (the signed APK is produced by the android job in release.yml) |
 | `extension-test` | ubuntu | Dual-platform manifest checks (Firefox has no `service_worker`, requires `gecko.id`, must not carry Chromium-only permissions, requires the data-collection declaration) → compat layer behaviour (callback wrapping / `runtime.lastError` / event objects untouched / idempotency) → archive layout checks (root-level `manifest.json`, no macOS metadata, no dev scripts) → build and `web-ext lint` (zero errors required) |
 | `test-report` | ubuntu | Aggregated results |
 
@@ -186,11 +186,11 @@ On pushes to `main` it builds release artifacts for every platform and uploads t
 after the tests pass:
 
 - Desktop (ubuntu / windows / macos): `.exe`, `.dmg`, `.zip`, `.AppImage`, `.deb`
-- Android (ubuntu): `app-debug.apk`, `app-release-unsigned.apk` (signed when the signing secrets are configured)
+- Android (ubuntu): `app-release.apk` only (**signed**; the job fails if the signing secrets are missing — no debug / unsigned packages)
 - Browser extension (ubuntu): `lerxu-webextension-firefox-<version>.zip` / `.xpi`, `lerxu-webextension-chromium-<version>.zip`
 - Both workflows run engine and app runtime tests through the shared `app-tests` composite action; any failure blocks the upload
 
-**Android signing secrets** (optional; without them the build produces an unsigned APK):
+**Android signing secrets** (**required**; the android job fails without them):
 
 `ANDROID_KEYSTORE_BASE64` (base64 of the keystore file), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 
@@ -205,7 +205,7 @@ after the tests pass:
 >     env:
 >       KEY_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
 >     steps:
->       - name: Decode keystore (optional)
+>       - name: Decode keystore (required)
 >         run: |
 >           if [ -z "$KEY_B64" ]; then echo "not configured, skipping signing"; exit 0; fi
 >           printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"

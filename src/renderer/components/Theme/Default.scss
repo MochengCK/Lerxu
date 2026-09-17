@@ -239,6 +239,35 @@ iframe {
   background-color: transparent !important;
 }
 
+/* 多选选择框内的标签（GitHub 镜像、BT Tracker、扩展排除域名等）
+   --------------------------------------------------------------------------
+   Element Plus 的 el-tag 默认底色取自 --el-fill-color-light，而 Tokens.scss
+   把它与 --el-fill-color-blank 一起设为 transparent（输入框/选择框只画边框、
+   不铺底色，透出卡片底色），于是多选标签在浅色下完全没有背景，与卡片底色
+   （--pref-card: #f2f5f9）连成一片，看不出「已选条目」的边界。
+
+   这里改用「比卡片亮一档」的中性底色（--lc-bg-button：浅色 #ffffff /
+   深色 #363b44），与深色模式的既有覆盖（Dark.scss 的 .el-select .el-tag）
+   取值一致，两个主题下标签都能与卡片区分开。 */
+.el-select .el-tag {
+  background-color: var(--lc-bg-button) !important;
+  border-color: var(--lc-tag-info-border) !important;
+  color: var(--lc-text-regular) !important;
+}
+
+/* el-input 后置区域（#append）内的图标垂直居中
+   --------------------------------------------------------------------------
+   后置区里的 .lc-hover-tip__trigger 已由 flex 撑满并居中，但其内部结构是
+   `<i><svg class="mo-icon"></svg></i>`：<i> 是 block 且继承行高，12px 的 svg
+   按行盒基线对齐，字体 descender 空间会把图标整体顶高约 1px——任务详情的
+   「存储路径」文件夹按钮、偏好设置的 RPC 骰子按钮都存在这类上移。
+   让内层 <i> 也变成 flex 居中容器即可消除字体度量影响（实测偏移 -1px → 0）。 */
+.el-input-group__append .lc-hover-tip__trigger > i {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* 独立输入框/选择框的悬停和聚焦边框高亮 */
 .el-input__wrapper:hover {
   box-shadow: 0 0 0 1px var(--lc-border-hover) inset !important;

@@ -17,6 +17,11 @@ const MAX_TASK_PRIORITY_GIDS = 1000
 const MAX_MAGNET_STATUS_GIDS = 300
 const MAX_DATA_ACCESS_STATUS_GIDS = 300
 const MAX_TASK_LINK_UPDATE_HINT_GIDS = 300
+// 非「全部」列表时，侧边栏计数用的全量任务列表刷新间隔（毫秒）。
+// 每秒单独再拉一次全量（tellActive+tellWaiting+tellStopped 全字段）
+// 会让引擎与渲染进程负担翻倍，而它只影响侧边栏计数与待选择扫描
+const ALL_LIST_REFRESH_INTERVAL = 3000
+let _lastAllListFetchAt = 0
 
 let saveSessionDebounceTimer = null
 
@@ -488,6 +493,13 @@ const mutations = {
     }
   },
   UPDATE_SELECTED_GID_LIST(gidList) {
+    const prev = this.selectedGidList
+    // 每轮 fetchList 都会用 intersection 结果回写一次。内容未变时复用旧数组，
+    // 避免依赖选中态的 computed / 组件在每个轮询周期里无谓重算
+    if (Array.isArray(gidList) && Array.isArray(prev) &&
+        prev.length === gidList.length && prev.every((gid, i) => gid === gidList[i])) {
+      return
+    }
     this.selectedGidList = gidList
   },
   CHANGE_CURRENT_LIST(currentList) {
@@ -598,6 +610,12 @@ const mutations = {
     this.dataAccessStatuses = next
   },
   UPDATE_TASK_PRIORITIES(mapping) {
+    // fetchList 每轮都会重放一次优先级映射。值完全一致时短路，
+    // 避免无条件替换两个 map 触发依赖（排序/优先级展示）重算
+    const keys = Object.keys(mapping || {})
+    if (keys.length > 0 && keys.every(k => this.taskPriorities[k] === mapping[k])) {
+      return
+    }
     const now = Date.now()
     const nextTouched = { ...(this.taskPrioritiesTouchedAt || {}) }
     Object.keys(mapping || {}).forEach(gid => {
@@ -953,7 +971,8 @@ const actions = {
         // 更新全量任务列表（用于侧边栏计数，不受 currentList 影响）
         if (this.currentList === 'all') {
           this.UPDATE_ALL_TASK_LIST(filteredData)
-        } else {
+        } else if (Date.now() - _lastAllListFetchAt >= ALL_LIST_REFRESH_INTERVAL) {
+          _lastAllListFetchAt = Date.now()
           api.fetchTaskList({ type: 'all' })
             .then((allData) => {
               const allFiltered = applyDateFilter(allData, this.filterDate)

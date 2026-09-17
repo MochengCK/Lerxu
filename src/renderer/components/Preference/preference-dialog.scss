@@ -67,10 +67,12 @@
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* 遮罩：更柔和，突出弹窗本体 */
+/* 遮罩：更柔和，突出弹窗本体。
+   注意：这里刻意不使用 backdrop-filter——全屏遮罩上的一次模糊会让每次
+   重绘（滚动 / 动画 / 输入）都触发整屏采样，是偏好设置弹窗卡顿的主要来源；
+   半透明底色本身已足够突出弹窗本体（2px 模糊在 32% 不透明度下几乎不可见）。 */
 .preference-dialog-overlay {
   background-color: rgba(15, 23, 42, 0.32);
-  backdrop-filter: blur(2px);
 }
 
 .theme-dark .preference-dialog-overlay,

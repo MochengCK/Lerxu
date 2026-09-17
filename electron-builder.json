@@ -212,13 +212,6 @@
     "shortcutName": "Lerxu",
     "deleteAppDataOnUninstall": false
   },
-  "appx": {
-    "artifactName": "Lerxu-${version}-${arch}.${ext}",
-    "applicationId": "app.lerxu.native",
-    "identityName": "MochengCK.Lerxu",
-    "publisher": "CN=MochengCK",
-    "publisherDisplayName": "MochengCK"
-  },
   "portable": {
     "artifactName": "Lerxu-${version}-${arch}.${ext}"
   },

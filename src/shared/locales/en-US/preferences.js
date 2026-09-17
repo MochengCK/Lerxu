@@ -285,6 +285,7 @@ export default {
   'last-check-update-time': 'Last checked for an update',
   'update-preview-fail': 'Failed to preview update, please try again',
   'update-preview-empty': 'No release notes for this version',
+  'update-preview-loading': 'Loading release notes…',
   
   'undo-change': 'Undo Change',
   'engine': 'Engine',

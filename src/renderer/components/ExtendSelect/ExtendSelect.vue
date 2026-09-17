@@ -574,7 +574,10 @@ defineExpose({ focus, blur, close })
       height: 20px;
       padding: 0 4px 0 6px;
       border-radius: 4px;
-      background-color: var(--lc-bg-hover, #f0f4f8);
+      /* 与 el-select 的多选标签同款：比卡片亮一档的底色 + 细边框，
+         保证在浅色卡片（--pref-card: #f2f5f9）上也能看清标签边界 */
+      background-color: var(--lc-bg-button, #fff);
+      border: 1px solid var(--lc-tag-info-border, #e9e9eb);
       color: var(--lc-text-regular, #333);
       font-size: 12px;
       line-height: 1;

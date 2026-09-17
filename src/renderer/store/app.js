@@ -272,13 +272,27 @@ export const useAppStore = defineStore('app', () => {
         } else {
           increaseInterval()
         }
+
+        // stat 是 shallowRef，替换引用会让所有依赖它的组件（顶栏速度/托盘等）
+        // 重渲染。无任务或速度无变化时数值完全一致，直接复用旧对象，
+        // 避免每秒一次的空转更新
+        const prev = stat.value || {}
+        const prevKeys = Object.keys(prev)
+        const nextKeys = Object.keys(newStat)
+        if (prevKeys.length === nextKeys.length && nextKeys.every(k => prev[k] === newStat[k])) {
+          return
+        }
         stat.value = newStat
       })
       .catch(() => {})
   }
 
+  // 全局进度只用到总量与完成量。不指定 keys 时 aria2 会返回全部字段
+  // （含 files/bitfield 等重型字段），活跃 BT 任务每秒要白白序列化大量数据
+  const PROGRESS_KEYS = ['totalLength', 'completedLength']
+
   function fetchProgress () {
-    return api.fetchActiveTaskList()
+    return api.fetchActiveTaskList({ keys: PROGRESS_KEYS })
       .then((data) => {
         let val = -1
         if (data.length !== 0) {

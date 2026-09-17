@@ -67,6 +67,14 @@ SingletonSocket
 # Temporary files
 temp/
 
+# 签名密钥：严禁入库（本地生成后只在 CI secrets 中配置；泄露=可冒名发布）
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.b64
+*.key
+
 # Python 缓存（误提交过 generate_icons.cpython-313.pyc）
 __pycache__/
 *.pyc

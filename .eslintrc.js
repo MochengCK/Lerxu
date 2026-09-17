@@ -12,6 +12,11 @@ module.exports = {
   ],
   parserOptions: {
     parser: '@babel/eslint-parser',
+    // 本项目没有真正的 Babel 构建链（Vite/esbuild + @vitejs/plugin-vue 直接转译，
+    // 不读 .babelrc）。此前靠仓库根放一个 .babelrc 才能让这个 parser 找到配置文件，
+    // 而那份 .babelrc 内容是 element-ui 时代的死配置（项目已迁 element-plus）。
+    // 官方推荐的等价写法是关掉配置查找，解析行为（ecmaVersion/sourceType）不受影响。
+    requireConfigFile: false,
     requireVueCompiler: false,
     ecmaVersion: 2022,
     sourceType: 'module'

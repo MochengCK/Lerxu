@@ -533,6 +533,7 @@
       @click.self="closeUpdatePreview"
     >
       <div class="update-preview-body" @click="handleUpdatePreviewClick">
+        <div v-if="updatePreviewVersion" class="update-preview-version">{{ updatePreviewVersion }}</div>
         <div class="update-preview-html" v-html="updatePreviewContent" />
       </div>
     </div>
@@ -742,6 +743,8 @@ let saveTimeout = null
 const appVersion = ref('')
 const updatePreviewVisible = ref(false)
 const updatePreviewContent = ref('')
+// 预览层顶部显示的版本号（远端最新版本，按当前更新渠道选定）
+const updatePreviewVersion = ref('')
 const hasNoResults = ref(false)
 const ffmpegStatus = ref({ installed: false, path: '' })
 const uaOptions = ref([
@@ -1995,12 +1998,13 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
                   'p', 'br',
                   'ul', 'ol', 'li',
                   'pre', 'code',
-                  'strong', 'em', 'b', 'i',
+                  'strong', 'em', 'b', 'i', 'del',
                   'a',
                   'img',
                   'table', 'thead', 'tbody', 'tr', 'th', 'td',
                   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                  'blockquote', 'hr'
+                  'blockquote', 'hr',
+                  'details', 'summary'
                 ])
 
                 const isBlockedTag = (tag) => {
@@ -2015,63 +2019,63 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
                   return ''
                 }
 
-                const sanitizeNode = (node, outDoc) => {
-                  if (!node) return null
+                // 属性白名单：只复制必要属性。
+                // 旧实现直接 `return node`，把远端节点原样交给 v-html，
+                // onerror/onclick 这类事件属性会一并进入 DOM（注入面），
+                // normalizeUrlAttr 也因此从未被调用（死代码）。
+                const ATTR_WHITELIST = {
+                  a: ['href', 'title'],
+                  img: ['src', 'alt', 'title'],
+                  '*': ['title']
+                }
+
+                const container = document.createElement('div')
+                const sanitizeInto = (node, outParent) => {
+                  if (!node) return
                   if (node.nodeType === Node.TEXT_NODE) {
-                    return outDoc.createTextNode(node.textContent || '')
+                    outParent.appendChild(document.createTextNode(node.textContent || ''))
+                    return
                   }
-                  if (node.nodeType !== Node.ELEMENT_NODE) {
-                    return null
-                  }
-
+                  if (node.nodeType !== Node.ELEMENT_NODE) return
                   const tag = (node.tagName || '').toLowerCase()
-                  if (isBlockedTag(tag)) {
-                    return null
-                  }
+                  if (isBlockedTag(tag)) return
                   if (!allowedTags.has(tag)) {
-                    const frag = outDoc.createDocumentFragment()
-                    while (node.firstChild) {
-                      frag.appendChild(node.firstChild)
-                    }
-                    node.parentNode.replaceChild(frag, node)
-                    return null
+                    // 非白名单标签：解包，仅保留其子内容
+                    Array.from(node.childNodes).forEach(child => sanitizeInto(child, outParent))
+                    return
                   }
-                  return node
-                }
-
-                // Walk the tree and sanitize all nodes
-                const walkAndSanitize = (rootNode, outDoc) => {
-                  const stack = []
-                  let child = rootNode.firstChild
-                  while (child) {
-                    const next = child.nextSibling
-                    const result = sanitizeNode(child, outDoc)
-                    if (result && result.nodeType === Node.ELEMENT_NODE) {
-                      stack.push(result)
-                    }
-                    child = next
-                  }
-                  while (stack.length) {
-                    const el = stack.pop()
-                    let c = el.firstChild
-                    while (c) {
-                      const n = c.nextSibling
-                      const r = sanitizeNode(c, outDoc)
-                      if (r && r.nodeType === Node.ELEMENT_NODE) {
-                        stack.push(r)
+                  const el = document.createElement(tag)
+                  const attrs = ATTR_WHITELIST[tag] || ATTR_WHITELIST['*']
+                  for (const name of attrs) {
+                    const value = node.getAttribute(name)
+                    if (value === null) continue
+                    if (name === 'href' || name === 'src') {
+                      const safe = normalizeUrlAttr(value)
+                      if (!safe) continue
+                      el.setAttribute(name, safe)
+                      if (tag === 'a') {
+                        // 预览层内的链接统一交给系统浏览器打开（点击已由
+                        // handleUpdatePreviewClick 拦截），避免在应用窗口内导航
+                        el.setAttribute('target', '_blank')
+                        el.setAttribute('rel', 'noopener noreferrer')
                       }
-                      c = n
+                    } else {
+                      el.setAttribute(name, value)
                     }
                   }
+                  outParent.appendChild(el)
+                  Array.from(node.childNodes).forEach(child => sanitizeInto(child, el))
                 }
 
-                const sanitizedDoc = new DOMParser().parseFromString('<div></div>', 'text/html')
-                const sanitizedRoot = sanitizedDoc.body.firstElementChild || sanitizedDoc.body
-                walkAndSanitize(root, sanitizedDoc)
-                return sanitizedRoot.innerHTML
+                // 关键修复：清洗结果必须写进输出容器。
+                // 旧实现只遍历、不 append，sanitizedRoot.innerHTML 恒为空字符串，
+                // 于是「预览更新」无论上游有没有说明都显示「该版本暂无更新说明」。
+                Array.from(root.childNodes).forEach(child => sanitizeInto(child, container))
+                return container.innerHTML
               } catch (e) {
-                console.warn('[Lerxu] Failed to sanitize clipboard HTML:', e)
-                return dirtyHtml
+                console.warn('[Lerxu] Failed to sanitize release notes HTML:', e)
+                // 清洗失败时不放行未清洗内容
+                return ''
               }
             }
 
@@ -2079,14 +2083,47 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
             return sanitized
           }
 
-          // 打开内置预览层展示更新日志（releaseNotes 由主进程 update-available 事件下发、
-          // 持久化到 config 'release-notes'，组件挂载时恢复）
-          const raw = releaseNotes.value || ''
-          const html = buildReleaseNotesHtml(raw)
+          // 展示更新日志：
+          //   1) 优先用已有说明（主进程 update-available 事件下发，或从配置恢复）；
+          //   2) 为空、或不是「已渲染的 HTML」时向主进程请求规范化内容——
+          //      历史上主进程存的是 Markdown 原文，那种内容按 HTML 渲染会丢掉
+          //      换行与结构（说明挤成一行、`##`/`-` 原样显示）；
+          //   3) 最终仍只有纯文本（离线且只有旧缓存）时用 <pre> 保留换行。
+          const looksLikeHtml = (text) => /<(h[1-6]|p|ul|ol|li|pre|code|a|strong|em|del|br|blockquote|img|table)\b/i.test(text)
+          const escapeText = (text) => `${text}`
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+
+          let raw = `${releaseNotes.value || ''}`.trim()
+          let versionLabel = `${newVersion.value || ''}`.trim()
+
+          if (!raw || !looksLikeHtml(raw)) {
+            updatePreviewVersion.value = ''
+            updatePreviewContent.value = `<p class="update-preview-loading">${t('preferences.update-preview-loading')}</p>`
+            updatePreviewVisible.value = true
+            try {
+              const result = await ipcRenderer.invoke('get-release-notes')
+              const fetched = `${(result && result.notes) || ''}`.trim()
+              if (fetched) {
+                raw = fetched
+                versionLabel = `${(result && (result.version || result.tagName)) || versionLabel}`.trim()
+                preferenceStore.updateReleaseNotes(fetched)
+              }
+            } catch (e) {
+              console.warn('[Lerxu] Failed to fetch release notes:', e)
+            }
+          }
+
+          const html = looksLikeHtml(raw)
+            ? buildReleaseNotesHtml(raw)
+            : buildReleaseNotesHtml(`<pre>${escapeText(raw)}</pre>`)
           if (!html) {
+            updatePreviewVisible.value = false
             msg.info(t('preferences.update-preview-empty'))
             return
           }
+          updatePreviewVersion.value = versionLabel
           updatePreviewContent.value = html
           updatePreviewVisible.value = true
         } catch (e) {
@@ -2300,6 +2337,22 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
   z-index: 3100;
 }
 
+/* 预览层顶部的版本标识（远端最新版本号） */
+.update-preview-version {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--lc-border-divider, rgba(26, 35, 50, 0.08));
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lc-text-primary, #303133);
+}
+
+/* 说明获取中的占位提示 */
+.update-preview-loading {
+  margin: 0;
+  color: var(--lc-text-secondary, #909399);
+}
+
 .update-preview-html {
   white-space: normal;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -2364,6 +2417,9 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
   border-radius: 4px;
   background: rgba(27, 31, 35, 0.06);
   overflow: auto;
+  /* 纯文本兜底（只有旧格式缓存时）也要保留换行、且长行折行而不是横向滚动 */
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .update-preview-html pre code {
@@ -2487,7 +2543,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
   border: 1px solid var(--lc-border-base);
   border-left: none;
   border-radius: 0 6px 6px 0;
-  background-color: var(--lc-bg-input);
+  background-color: transparent;
   box-sizing: border-box;
   transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 
@@ -2628,7 +2684,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
   border: 1px solid var(--lc-border-base);
   border-right: none;
   border-radius: 6px 0 0 6px;
-  background-color: var(--lc-bg-input);
+  background-color: transparent;
   box-sizing: border-box;
   transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 
@@ -2675,7 +2731,7 @@ if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
   border: 1px solid var(--lc-border-base);
   border-left: none;
   border-radius: 0 6px 6px 0;
-  background-color: var(--lc-bg-input);
+  background-color: transparent;
   box-sizing: border-box;
   transition: border-color 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
 

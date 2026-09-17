@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -317,11 +318,14 @@ private fun WelcomePage(colorScheme: ColorScheme) {
                     .background(colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    Icons.Default.Download,
+                // 应用图标（前景层）：与桌面启动器图标一致。
+                // 注意不能用 R.mipmap.ic_launcher —— Android 8+ 它是 adaptive-icon
+                // XML，painterResource 无法直接加载；ic_launcher_foreground.png
+                // 是它的前景层（透明背景 + 图标主体），在圆形底色上呈现即完整图标。
+                Image(
+                    painter = painterResource(R.mipmap.ic_launcher_foreground),
                     contentDescription = null,
-                    modifier = Modifier.size(44.dp),
-                    tint = colorScheme.primary
+                    modifier = Modifier.size(56.dp)
                 )
             }
         }

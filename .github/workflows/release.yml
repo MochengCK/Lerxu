@@ -198,9 +198,10 @@ jobs:
     name: Build Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # 签名凭据（可选）：secrets 上下文**不能**在 `if:` 条件中引用
+    # 签名凭据（**必需**）：secrets 上下文**不能**在 `if:` 条件中引用
     # （GitHub 会报 "Unrecognized named-value: 'secrets'"），因此统一在 job 级
-    # env 中注入，步骤内用 shell 判断是否配置，未配置时产出未签名 APK。
+    # env 中注入。工作流只构建签名版 APK——任一凭据缺失直接失败，
+    # 不再产出开发版（debug）或未签名（unsigned）产物。
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -237,34 +238,53 @@ jobs:
           done
           echo "✓ Android engine verified"
 
-      # 签名（可选）：配置了 ANDROID_KEYSTORE_BASE64 时解码出 keystore，
-      # 后续构建步骤经 GITHUB_ENV 注入的 ANDROID_KEYSTORE_PATH 让 Gradle
-      # 产出已签名 release APK；未配置时跳过解码，产出未签名 APK。
-      - name: Decode keystore (optional)
-        run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "未配置 ANDROID_KEYSTORE_BASE64，将产出未签名 APK（app-release-unsigned.apk）"
-            exit 0
-          fi
-          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
-          echo "✓ Release keystore decoded"
+    # 签名（必需）：工作流**只产出已签名版 APK**——未配置凭据直接失败，
+    # 不再生成开发版（debug）或未签名（unsigned）产物。
+    - name: Decode release keystore (required)
+      run: |
+        if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+          echo "::error::ANDROID_KEYSTORE_BASE64 未配置——工作流只构建签名版 APK。请在仓库配置 secrets：ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD"
+          exit 1
+        fi
+        [ -n "$ANDROID_KEYSTORE_PASSWORD" ] || { echo "::error::ANDROID_KEYSTORE_PASSWORD 未配置"; exit 1; }
+        [ -n "$ANDROID_KEY_ALIAS" ] || { echo "::error::ANDROID_KEY_ALIAS 未配置"; exit 1; }
+        [ -n "$ANDROID_KEY_PASSWORD" ] || { echo "::error::ANDROID_KEY_PASSWORD 未配置"; exit 1; }
+        printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+        # 收紧权限：keystore 含私钥，仅允许当前用户读写
+        chmod 600 "$RUNNER_TEMP/release.keystore"
+        echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+        echo "✓ Release keystore decoded (600, under RUNNER_TEMP)"
 
-      - name: Build APKs (debug + release)
+      # 只构建签名版 release APK（签名由 app/build.gradle.kts 的 signingConfigs
+      # 读取 job env 注入的 ANDROID_KEYSTORE_PATH 等变量完成）
+      - name: Build signed APK
         run: |
           cd Android
-          ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
+          ./gradlew --no-daemon :app:assembleRelease
 
-      - name: Verify APK contents
+      - name: Verify APK contents & signature
         run: |
           set -e
-          apks=$(find Android/app/build/outputs/apk -name '*.apk' | sort)
-          [ -n "$apks" ] || { echo "::error::no APK produced"; exit 1; }
-          for apk in $apks; do
-            echo "=== $apk ($(stat -c%s "$apk") bytes) ==="
-            unzip -l "$apk" | grep -q 'lib/arm64-v8a/libxferrust.so' || { echo "::error::$apk missing engine (jniLibs)"; exit 1; }
-            unzip -l "$apk" | grep -q 'assets/xferrust' || { echo "::error::$apk missing engine (assets)"; exit 1; }
-          done
+          apk=Android/app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$apk" ]; then
+            echo "::error::missing $apk（应产出已签名的 app-release.apk）"
+            find Android/app/build/outputs/apk -type f 2>/dev/null | head || true
+            exit 1
+          fi
+          echo "=== $apk ($(stat -c%s "$apk") bytes) ==="
+          unzip -l "$apk" | grep -q 'lib/arm64-v8a/libxferrust.so' || { echo "::error::$apk missing engine (jniLibs)"; exit 1; }
+          unzip -l "$apk" | grep -q 'assets/xferrust' || { echo "::error::$apk missing engine (assets)"; exit 1; }
+          echo "✓ engine packaged"
+
+          # 必须已签名（否则下游发布的是可被篡改的未签名包）
+          APKSIGNER=$(ls "$ANDROID_SDK_ROOT"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1 || true)
+          if [ -n "$APKSIGNER" ]; then
+            "$APKSIGNER" verify --print-certs "$apk" > /dev/null || { echo "::error::$apk 未签名"; exit 1; }
+            echo "✓ signature verified"
+          else
+            echo "::error::apksigner not found in $ANDROID_SDK_ROOT/build-tools"
+            exit 1
+          fi
           echo "✓ APK contents verified"
 
       # 归集到 release/ 供下游 release job 统一下载（命名与桌面一致：release-artifacts-*）
@@ -283,6 +303,14 @@ jobs:
           path: release/*.apk
           if-no-files-found: 'error'
           retention-days: 7
+
+      # 双保险：显式删除签名密钥（RUNNER_TEMP 在 job 结束后本会清理，
+      # 显式删掉可防止未来误把该目录加入 artifact）
+      - name: Clean up signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/release.keystore" || true
+          echo "✓ signing keystore removed from runner"
 
   # 收集所有平台产物，统一上传到同一版本的草稿 release
   release:

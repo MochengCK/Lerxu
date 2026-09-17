@@ -3076,7 +3076,16 @@ writeFileSync(skipFlagPath, '1')
             console.error('[Lerxu] polling error, loop continues:', err)
           }
           startPolling()
-        }, interval.value)
+        }, pollingDelay())
+      }
+      // 窗口隐藏（最小化/切到后台）时进度无需秒级刷新：即使有活跃任务，
+      // 也把轮询放宽到 3s（下载与引擎行为不受影响，仅界面数据少刷几次），
+      // 恢复可见时 visibilitychange 会立即 kickPolling 补一次
+      const HIDDEN_POLLING_INTERVAL = 3000
+      function pollingDelay() {
+        const base = interval.value
+        const hidden = typeof document !== 'undefined' && !!document.hidden
+        return hidden ? Math.max(base, HIDDEN_POLLING_INTERVAL) : base
       }
       function kickPolling() {
         const now = Date.now()
@@ -3620,19 +3629,26 @@ unlinkSync(finalPath)
           }
         }
 
-        const pruneObj = (obj) => {
+        const pruneObj = (r) => {
+          const obj = r.value || {}
+          const keys = Object.keys(obj)
+          // 每轮轮询都会走到这里：无键需要剔除时完全不赋值，
+          // 避免每秒替换 ref 触发依赖方无谓重算（值内容本就没变）
+          if (keys.length === 0 || keys.every(gid => gidSet.has(gid))) {
+            return
+          }
           const next = {}
-          Object.keys(obj || {}).forEach(gid => {
+          keys.forEach(gid => {
             if (gidSet.has(gid)) {
               next[gid] = obj[gid]
             }
           })
-          return next
+          r.value = next
         }
 
-        magnetZeroMap.value = pruneObj(magnetZeroMap.value)
-        dataAccessZeroMap.value = pruneObj(dataAccessZeroMap.value)
-        dataAccessLastCompletedMap.value = pruneObj(dataAccessLastCompletedMap.value)
+        pruneObj(magnetZeroMap)
+        pruneObj(dataAccessZeroMap)
+        pruneObj(dataAccessLastCompletedMap)
 
         if (magnetAlertedSet.value && magnetAlertedSet.value.size > 0) {
           Array.from(magnetAlertedSet.value).forEach(gid => {

@@ -49,6 +49,24 @@ const baseTime = ref(0)
 const currentSpeed = ref(0)
 const lastIndeterminate = ref(false)
 
+// 同一任务内允许进度条回退的阈值（百分点）：引擎分片校验失败重下、
+// 统计口径抖动、状态在 active/waiting/seeding 之间切换，都会让上报进度
+// 短暂回落 1~3 个点，直接跟随会让进度条肉眼可见地"倒退"。
+// 只有超过该阈值的回落（重新选择文件、任务重新开始等真实变化）才回退。
+const BACKWARD_TOLERANCE = 5
+
+// 应用真实进度：默认只增不减，仅当回退幅度超过阈值时才接受
+function applyPercent (value, force = false) {
+  const p = Number.isFinite(value) ? value : 0
+  if (force || !Number.isFinite(displayPercent.value)) {
+    displayPercent.value = p
+    return
+  }
+  if (p > displayPercent.value || displayPercent.value - p > BACKWARD_TOLERANCE) {
+    displayPercent.value = p
+  }
+}
+
 const isActive = computed(() => props.status === TASK_STATUS.ACTIVE)
 
 const percent = computed(() => {
@@ -75,8 +93,14 @@ const color = computed(() => {
   return colors[props.status]
 })
 
+function isDocumentHidden () {
+  return typeof document !== 'undefined' && !!document.hidden
+}
+
 function startTicker () {
-  if (ticker.value) {
+  // 页面不可见（最小化/切后台）时进度条无人观看：不启动 250ms 动画，
+  // 避免每个活跃任务每秒 4 次空转触发 el-progress 重渲染
+  if (ticker.value || isDocumentHidden()) {
     return
   }
   ticker.value = setInterval(() => animateProgress(), 250)
@@ -94,7 +118,7 @@ function animateProgress () {
     if (props.status === TASK_STATUS.COMPLETE || props.status === TASK_STATUS.SEEDING || props.status === TASK_STATUS.MERGING) {
       displayPercent.value = 100
     } else {
-      displayPercent.value = percent.value
+      applyPercent(percent.value)
     }
     return
   }
@@ -171,11 +195,11 @@ watch(percent, (val) => {
   if (!Number.isFinite(displayPercent.value)) {
     displayPercent.value = p
   } else if (!isActive.value) {
-    displayPercent.value = p
+    // 暂停/等待态同样不允许小幅回退：状态在 active ↔ waiting 之间
+    // 切换时会带着仍处于预估领先的显示值一起回落，看起来就是进度条倒退
+    applyPercent(p)
   } else if (Math.abs(p - displayPercent.value) > 2) {
-    if (p > displayPercent.value) {
-      displayPercent.value = p
-    }
+    applyPercent(p)
   }
   baseCompleted.value = Number.isFinite(props.completed) ? props.completed : 0
   baseTime.value = Date.now()
@@ -193,9 +217,21 @@ watch(() => props.status, (val) => {
   if (val === TASK_STATUS.COMPLETE || val === TASK_STATUS.SEEDING || val === TASK_STATUS.MERGING) {
     displayPercent.value = 100
   } else {
-    displayPercent.value = percent.value
+    // 不再无条件回落到真实进度：做种/下载状态来回切换时
+    // （完种后校验失败重新下载等）会把进度条从 100% 拽回来
+    applyPercent(percent.value)
   }
 })
+
+function handleVisibilityChange () {
+  if (isDocumentHidden()) {
+    stopTicker()
+  } else if (isActive.value) {
+    startTicker()
+    // 立即补一次动画，避免恢复可见瞬间停留在隐藏前的旧进度
+    animateProgress()
+  }
+}
 
 watch(isActive, (val) => {
   if (val) {
@@ -209,10 +245,16 @@ onMounted(() => {
   if (isActive.value) {
     startTicker()
   }
+  if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+  }
 })
 
 onBeforeUnmount(() => {
   stopTicker()
+  if (typeof document !== 'undefined' && document && typeof document.removeEventListener === 'function') {
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }
 })
 </script>
 
@@ -251,13 +293,13 @@ onBeforeUnmount(() => {
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    /* 用"下载中"的状态色（#5b5bea）做高光：白色在浅灰底槽上几乎看不出来，
-       靛蓝与 eventual 进度条同色，明暗主题下都清晰可辨 */
+    /* 用"下载中"的状态色（#1a7fe0）做高光：白色在浅灰底槽上几乎看不出来，
+       蓝色与最终进度条同色，明暗主题下都清晰可辨 */
     background: linear-gradient(
       90deg,
-      rgba(91, 91, 234, 0) 0%,
-      rgba(91, 91, 234, 0.6) 50%,
-      rgba(91, 91, 234, 0) 100%
+      rgba(26, 127, 224, 0) 0%,
+      rgba(26, 127, 224, 0.6) 50%,
+      rgba(26, 127, 224, 0) 100%
     );
     transform: translateX(-100%);
     animation: lc-progress-metadata-sweep 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
@@ -268,9 +310,9 @@ onBeforeUnmount(() => {
 .theme-dark .el-progress.is-fetching-metadata .el-progress-bar__outer::after {
   background: linear-gradient(
     90deg,
-    rgba(91, 91, 234, 0) 0%,
-    rgba(112, 112, 240, 0.85) 50%,
-    rgba(91, 91, 234, 0) 100%
+    rgba(74, 158, 255, 0) 0%,
+    rgba(74, 158, 255, 0.85) 50%,
+    rgba(74, 158, 255, 0) 100%
   );
 }
 

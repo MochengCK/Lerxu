@@ -156,7 +156,7 @@ AMO 上架文案（名称 / 概述 / 描述 / 审核员说明）见 [AMO-LISTING
 | --- | --- | --- |
 | `lint-and-typecheck` | ubuntu | ESLint、`package.json` / electron-builder 配置校验、**全部引擎产物完整性**（桌面 5 个 + Android 2 个：存在性、同字节、架构） |
 | `build-and-test` | ubuntu / windows / macos | 构建 unpacked 应用 → 引擎运行时测试（RPC 探活、HTTP 下载、BT 本地 swarm 闭环）→ 应用冒烟测试（启动应用 → 引擎子进程 → RPC 鉴权 → 经应用引擎完成一次 HTTP 下载） |
-| `android-build-and-test` | ubuntu | 引擎校验（aarch64 / 同字节 / 能力字符串）→ 单元测试 → lint → 构建 debug + release APK → 校验 APK 内已打进引擎且 ABI 仅 `arm64-v8a` → 上传 APK |
+| `android-build-and-test` | ubuntu | 引擎校验（aarch64 / 同字节 / 能力字符串）→ 单元测试 → lint。**不构建 APK**（发布用的已签名 APK 由 release.yml 的 android job 产出） |
 | `extension-test` | ubuntu | 双平台清单校验（Firefox 不支持 `service_worker`、必需 `gecko.id`、不得含 Chromium 专有权限、必需数据收集声明）→ 兼容层行为测试（回调包装 / `runtime.lastError` / 事件对象不被包装 / 幂等）→ 归档结构校验（根级 `manifest.json`、无 macOS 元数据、无开发脚本）→ 构建并 `web-ext lint`（errors 必须为 0） |
 | `test-report` | ubuntu | 汇总各 job 结果 |
 
@@ -167,11 +167,11 @@ AMO 上架文案（名称 / 概述 / 描述 / 审核员说明）见 [AMO-LISTING
 推送到 `main` 时构建全部平台的正式产物，测试通过后统一上传到同一草稿 Release：
 
 - 桌面三平台（ubuntu / windows / macos）：`.exe`、`.dmg`、`.zip`、`.AppImage`、`.deb`
-- Android（ubuntu）：`app-debug.apk`、`app-release-unsigned.apk`（配置签名 secrets 时为已签名 APK）
+- Android（ubuntu）：仅 `app-release.apk`（**已签名**；未配置签名凭据会直接失败，不产出 debug / unsigned 包）
 - 浏览器扩展（ubuntu）：`lerxu-webextension-firefox-<版本>.zip` / `.xpi`、`lerxu-webextension-chromium-<版本>.zip`
 - 两个工作流共用 `app-tests` 复合 Action 执行引擎与应用运行时测试；任一测试失败则产物不上传
 
-**Android 签名 secrets**（可选，未配置时产出未签名 APK）：
+**Android 签名 secrets**（**必需**，缺失则 android job 直接失败）：
 
 `ANDROID_KEYSTORE_BASE64`（keystore 文件内容 base64）、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。
 

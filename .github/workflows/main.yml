@@ -222,47 +222,18 @@ jobs:
       env:
         GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8'
 
-    - name: Build APKs (debug + release)
-      run: |
-        cd Android
-        ./gradlew --no-daemon :app:assembleDebug :app:assembleRelease
-      env:
-        GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8'
+    # 不再构建 APK：CI 只做引擎校验 + 单测 + lint。
+    # 发布用的 APK 由 release.yml 的 android job 构建，且只产出已签名版
+    # （未配置签名凭据会直接失败，不存在开发版/未签名版产物）。
 
-    - name: Verify APK contents (engine packaged + SDK levels)
-      run: |
-        set -e
-        apks=$(find Android/app/build/outputs/apk -name '*.apk' | sort)
-        [ -n "$apks" ] || { echo "::error::no APK produced"; find Android/app/build/outputs -type f 2>/dev/null | head; exit 1; }
-
-        for apk in $apks; do
-          size=$(stat -c%s "$apk")
-          echo "=== $apk ($size bytes) ==="
-          [ "$size" -gt 1000000 ] || { echo "::error::APK suspiciously small: $apk"; exit 1; }
-
-          # 引擎必须打进去：jniLibs 副本 + assets 副本
-          unzip -l "$apk" | grep -q 'lib/arm64-v8a/libxferrust.so' \
-            || { echo "::error::$apk missing lib/arm64-v8a/libxferrust.so"; exit 1; }
-          unzip -l "$apk" | grep -q 'assets/xferrust' \
-            || { echo "::error::$apk missing assets/xferrust"; exit 1; }
-          echo "✓ engine packaged (jniLibs + assets)"
-
-          # ABI 必须只有 arm64-v8a
-          if unzip -l "$apk" | grep -qE 'lib/(armeabi|armv7|x86)'; then
-            echo "::error::$apk contains unexpected ABI"
-            exit 1
-          fi
-          echo "✓ ABI is arm64-v8a only"
-        done
-
-    - name: Upload Android APKs
+    - name: Upload Android lint report
+      if: always()
       uses: actions/upload-artifact@v5
       with:
-        name: android-apk
+        name: android-lint-report
         path: |
-          Android/app/build/outputs/apk/**/*.apk
           Android/app/build/reports/lint-results-debug.html
-        if-no-files-found: 'warn'
+        if-no-files-found: 'ignore'
         retention-days: 7
 
     - name: Upload Android build reports on failure
@@ -390,7 +361,7 @@ jobs:
         echo "  - engine binary integrity (aarch64 / copies identical / options): covered"
         echo "  - android unit tests: covered"
         echo "  - android lint: covered"
-        echo "  - APK build (debug + release) & content verification: covered"
+        echo "  - APK: not built in CI (engine verified on source; signed APK only in release.yml): covered"
         echo "- Extension Test: ${{ needs.extension-test.result }}"
         echo "  - manifest (chromium + firefox), compat layer behavior, i18n: covered"
         echo "  - package build (chromium zip + firefox xpi) & web-ext lint: covered"

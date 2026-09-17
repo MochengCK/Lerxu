@@ -137,11 +137,13 @@ import com.lerxu.android.data.EngineRepository
 import com.lerxu.android.model.TaskInfo
 import com.lerxu.android.ui.RoundedProgressBar
 import com.lerxu.android.ui.TaskViewModel
+import com.lerxu.android.ui.UpdateNoticeCard
 import com.lerxu.android.ui.formatBytes
 import com.lerxu.android.ui.formatDuration
 import com.lerxu.android.ui.formatFinishedTime
 import com.lerxu.android.ui.formatSpeed
 import com.lerxu.android.ui.statusColor
+import com.lerxu.android.update.UpdateManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -184,6 +186,11 @@ fun AppScreen(
     }
     var pendingDeleteGids by remember { mutableStateOf<List<String>?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+
+    // 应用内更新提示：UpdateManager 发现新版本时发到 availableUpdate，
+    // 这里以底部悬浮卡片展示（系统通知同时保留，互为补充）
+    val availableUpdate by UpdateManager.availableUpdate.collectAsStateWithLifecycle()
+    val updateDownloadState by UpdateManager.downloadState.collectAsStateWithLifecycle()
 
     // 列表按所选方式排序；完成时间未知（0）的任务始终沉底
     val displayTasks = remember(state.tasks, sortBy, searchQuery) {
@@ -464,6 +471,18 @@ fun AppScreen(
                 pendingDeleteGids = null
             },
             onDismiss = { pendingDeleteGids = null }
+        )
+    }
+
+    // 发现新版本：底部悬浮卡片（圆角、四周留白不贴边）。
+    // 点击「立即更新」→ 按钮原地变为进度条（下载 APK）→ 完成后调起系统安装器。
+    val pendingUpdate = availableUpdate
+    if (pendingUpdate != null) {
+        UpdateNoticeCard(
+            update = pendingUpdate,
+            downloadState = updateDownloadState,
+            onUpdate = { UpdateManager.downloadAndInstall(context) },
+            onDismiss = { UpdateManager.dismiss() }
         )
     }
 }

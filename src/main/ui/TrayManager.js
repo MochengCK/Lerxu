@@ -100,7 +100,7 @@ export default class TrayManager extends EventEmitter {
   }
 
   loadImagesForMacOS () {
-    // static/ 中只有 @1x/@2x 变体；@2x 由 nativeImage 自动按 Retina 缩放
+    // 托盘图标只保留 @2x 变体（@1x 已删）：nativeImage 会按 Retina 自动缩放渲染
     this.normalIcon = this.getFromCacheOrCreateImage('mo-tray-light-normal@2x.png')
   }
 

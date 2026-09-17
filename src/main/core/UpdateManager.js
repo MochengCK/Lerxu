@@ -245,64 +245,254 @@ function pickReleaseByChannel (releases, channel) {
 }
 
 /**
- * 获取发行说明（从 GitHub Releases API 或镜像）
- * preferExactTag=true（beta/all 渠道）时只查 tags/v{version}，避免
- * releases/latest 返回正式版说明与 beta 版本号不匹配。
+ * Markdown → HTML 的最小转换（零依赖）。
+ *
+ * 为什么需要：GitHub 的 html+json 接口能直接给渲染好的 HTML，但只要它失败
+ * （限流、镜像、Atom 降级），拿到的就是 Markdown 原文。渲染层只做标签白名单
+ * 过滤、不做 Markdown 解析，把原文直接送进去会让 `##`、`-`、`**` 原样显示，
+ * 更新说明看起来像一堆标记符号。这里在送往前端之前先转换。
+ *
+ * 覆盖发布说明实际用到的语法：围栏代码块、标题、有序/无序列表、引用、分隔线、
+ * 粗体/斜体/行内代码/链接。所有文本先做 HTML 转义，链接只放行 http(s)，
+ * 避免把远端内容当代码注入。
  */
-async function fetchReleaseNotes (version, axiosConfig = {}, preferExactTag = false) {
-  const apiUrls = preferExactTag
-    ? [`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/v${version}`]
-    : [
-      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
-      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/v${version}`
-    ]
+function markdownToHtml (markdown) {
+  if (!markdown || typeof markdown !== 'string') return ''
+  // 占位标记：行内代码与围栏代码块在替换期间需要被「保护」起来，
+  // 避免其中的 * _ [ ] 被后续行内规则二次处理。
+  // 不用控制字符做标记（会触发 ESLint no-control-regex），
+  // 也不用 HTML 注释（会被 escapeHtml 转义），这里用不可能出现在正文里的标记串。
+  const CODE_OPEN = '@@LERXUCODE'
+  const BLOCK_OPEN = '@@LERXUBLOCK'
+  const MARK_CLOSE = '@@'
+  const codePlaceholderRe = new RegExp(`${CODE_OPEN}(\\d+)${MARK_CLOSE}`, 'g')
+  const blockLineRe = new RegExp(`^${BLOCK_OPEN}(\\d+)${MARK_CLOSE}$`)
 
-  const config = {
-    timeout: 15000,
-    headers: { Accept: 'application/vnd.github.v3+json' },
-    maxRedirects: 5,
-    ...axiosConfig
+  const escapeHtml = (s) => String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+
+  const inline = (text) => {
+    let s = escapeHtml(text)
+    // 行内代码优先（内部不再做其它替换）
+    const codes = []
+    s = s.replace(/`([^`]+)`/g, (_, code) => {
+      codes.push(code)
+      return `${CODE_OPEN}${codes.length - 1}${MARK_CLOSE}`
+    })
+    // 链接 [文本](url) —— 只放行 http(s)
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`)
+    // 裸链接
+    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, pre, url) => `${pre}<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
+    // @提及 → 用户主页（GitHub 官方渲染同样会把 @user 变成链接）。
+    // 前缀允许行首、空白与各类括号（含中文全角「（」），否则带中文括号的
+    // 提及（如「（@MochengCK）」）会漏掉；同时要求 @ 前不是普通字母，
+    // 避免把邮箱 me@example.com 误转。
+    s = s.replace(/(^|[\s(（[【])@([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,37}[a-zA-Z0-9])?)/g, (_, pre, user) => `${pre}<a href="https://github.com/${user}" target="_blank" rel="noopener noreferrer">@${user}</a>`)
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    s = s.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
+    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>')
+    return s.replace(codePlaceholderRe, (_, i) => `<code>${codes[Number(i)]}</code>`)
   }
 
-  for (const url of apiUrls) {
-    try {
-      logger.info(`[Lerxu] Fetching release notes: ${url}`)
-      const response = await axios.get(url, config)
-      if (response.data && response.data.body) {
-        logger.info('[Lerxu] Release notes fetched successfully')
-        return response.data.body
-      }
-    } catch (err) {
-      logger.warn(`[Lerxu] Release notes fetch failed: ${url} - ${err.message}`)
+  // 先摘出围栏代码块，避免内部内容被当作 Markdown 处理
+  const blocks = []
+  const withoutFences = String(markdown).replace(/```([a-zA-Z0-9+#.-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    blocks.push(`<pre><code${lang ? ` class="language-${escapeHtml(lang)}"` : ''}>${escapeHtml(code.replace(/\n$/, ''))}</code></pre>`)
+    return `${BLOCK_OPEN}${blocks.length - 1}${MARK_CLOSE}`
+  })
+
+  const lines = withoutFences.split(/\r?\n/)
+  const out = []
+  let listType = null
+  let paragraph = []
+
+  const flushParagraph = () => {
+    if (paragraph.length) {
+      out.push(`<p>${inline(paragraph.join(' '))}</p>`)
+      paragraph = []
+    }
+  }
+  const closeList = () => {
+    if (listType) {
+      out.push(listType === 'ul' ? '</ul>' : '</ol>')
+      listType = null
+    }
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, '')
+    const trimmed = line.trim()
+
+    const blockPlaceholder = trimmed.match(blockLineRe)
+    if (blockPlaceholder) {
+      flushParagraph()
+      closeList()
+      out.push(blocks[Number(blockPlaceholder[1])])
       continue
     }
+    if (!trimmed) {
+      flushParagraph()
+      closeList()
+      continue
+    }
+    const heading = trimmed.match(/^(#{1,6})\s+(.*)$/)
+    if (heading) {
+      flushParagraph()
+      closeList()
+      const level = heading[1].length
+      out.push(`<h${level}>${inline(heading[2])}</h${level}>`)
+      continue
+    }
+    // 单独的 # 行（无标题文字）：GitHub 渲染为空标题（<h1></h1>）。
+    // 不特殊处理的话它会作为普通文本并入下一段，界面上会看到一个孤立的 "#"。
+    const emptyHeading = trimmed.match(/^(#{1,6})$/)
+    if (emptyHeading) {
+      flushParagraph()
+      closeList()
+      const level = emptyHeading[1].length
+      out.push(`<h${level}></h${level}>`)
+      continue
+    }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+      flushParagraph()
+      closeList()
+      out.push('<hr>')
+      continue
+    }
+    const quote = trimmed.match(/^>\s?(.*)$/)
+    if (quote) {
+      flushParagraph()
+      closeList()
+      out.push(`<blockquote><p>${inline(quote[1])}</p></blockquote>`)
+      continue
+    }
+    const bullet = trimmed.match(/^[-*+]\s+(.*)$/)
+    if (bullet) {
+      flushParagraph()
+      if (listType !== 'ul') {
+        closeList()
+        out.push('<ul>')
+        listType = 'ul'
+      }
+      out.push(`<li>${inline(bullet[1])}</li>`)
+      continue
+    }
+    const ordered = trimmed.match(/^\d+[.)]\s+(.*)$/)
+    if (ordered) {
+      flushParagraph()
+      if (listType !== 'ol') {
+        closeList()
+        out.push('<ol>')
+        listType = 'ol'
+      }
+      out.push(`<li>${inline(ordered[1])}</li>`)
+      continue
+    }
+    paragraph.push(trimmed)
+  }
+  flushParagraph()
+  closeList()
+  return out.join('\n')
+}
+
+/**
+ * 获取指定 release 的发行说明正文（供「预览更新」使用）。
+ *
+ * 取数顺序：
+ *   1. GitHub API + `Accept: html+json` → 直接拿渲染好的 `body_html`；
+ *   2. GitHub API + 默认 Accept → `body`（Markdown），本地转 HTML；
+ *   3. `releases.atom`（含镜像）按 tag 匹配 → Markdown，本地转 HTML；
+ *   4. 全部失败：返回可点击的 GitHub 链接占位，而不是空串——预览层拿不到
+ *      内容时只会提示「暂无更新说明」，让用户误以为上游没写说明。
+ *
+ * @returns {{ notes: string, source: string }}
+ */
+async function fetchReleaseNotesDetail (tagName, version, axiosConfig = {}) {
+  const tag = tagName || (version ? `v${version}` : '')
+  const config = { timeout: 15000, maxRedirects: 5, ...axiosConfig }
+  const apiUrls = tag
+    ? [
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/${tag}`,
+      ...MIRROR_HOSTS.slice(0, 2).map(host => `https://${host}/https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tags/${tag}`)
+    ]
+    : [
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
+      ...MIRROR_HOSTS.slice(0, 2).map(host => `https://${host}/https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`)
+    ]
+
+  // 1) GitHub 渲染好的 HTML
+  for (const url of apiUrls) {
+    try {
+      const response = await axios.get(url, {
+        ...config,
+        headers: { Accept: 'application/vnd.github.v3.html+json', 'User-Agent': 'Lerxu-UpdateCheck' }
+      })
+      const html = response.data && response.data.body_html
+      if (html && String(html).trim()) {
+        logger.info(`[Lerxu] Release notes fetched as HTML: ${url}`)
+        return { notes: String(html), source: 'github-html' }
+      }
+    } catch (err) {
+      logger.warn(`[Lerxu] Release notes (HTML) failed: ${url} - ${err.message}`)
+    }
   }
 
-  // API 限流/不可达时降级到 releases.atom：按版本号（忽略大小写与
-  // 前导 v）匹配对应 entry 的正文。
-  try {
-    const atomUrls = [
-      `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases.atom`,
-      ...MIRROR_HOSTS.slice(0, 3).map(host => `https://${host}/https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases.atom`)
-    ]
-    const target = String(version || '').trim().toLowerCase().replace(/^v/, '')
-    for (const url of atomUrls) {
-      try {
-        const response = await axios.get(url, { ...config, timeout: 8000 })
-        if (response.status !== 200 || typeof response.data !== 'string') continue
-        const entry = parseReleasesAtom(response.data)
-          .find(e => e.tag_name && e.tag_name.toLowerCase().replace(/^v/, '') === target)
-        if (entry && entry.body) {
-          logger.info(`[Lerxu] Release notes fetched via Atom feed: ${url}`)
-          return entry.body
-        }
-      } catch (err) {
-        logger.warn(`[Lerxu] Release notes Atom feed failed: ${url} - ${err.message}`)
+  // 2) Markdown 原文 → 本地转换
+  for (const url of apiUrls) {
+    try {
+      const response = await axios.get(url, {
+        ...config,
+        headers: { Accept: 'application/vnd.github.v3+json', 'User-Agent': 'Lerxu-UpdateCheck' }
+      })
+      const md = response.data && response.data.body
+      if (md && String(md).trim()) {
+        logger.info(`[Lerxu] Release notes fetched as Markdown: ${url}`)
+        return { notes: markdownToHtml(String(md)), source: 'github-markdown' }
       }
+    } catch (err) {
+      logger.warn(`[Lerxu] Release notes (Markdown) failed: ${url} - ${err.message}`)
     }
-  } catch (_) {}
+  }
 
-  return `See the full release notes at:\nhttps://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/v${version}`
+  // 3) Atom feed 降级
+  const atomUrls = [
+    `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases.atom`,
+    ...MIRROR_HOSTS.slice(0, 3).map(host => `https://${host}/https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases.atom`)
+  ]
+  const target = String(version || tag || '').trim().toLowerCase().replace(/^v/, '')
+  for (const url of atomUrls) {
+    try {
+      const response = await axios.get(url, {
+        ...config,
+        timeout: 8000,
+        headers: { Accept: 'application/atom+xml, application/xml, text/xml, */*' }
+      })
+      if (response.status !== 200 || typeof response.data !== 'string') continue
+      const entries = parseReleasesAtom(response.data)
+      const entry = target
+        ? entries.find(e => e.tag_name && e.tag_name.toLowerCase().replace(/^v/, '') === target)
+        : entries[0]
+      if (entry && entry.body) {
+        logger.info(`[Lerxu] Release notes fetched via Atom feed: ${url}`)
+        return { notes: markdownToHtml(entry.body), source: 'atom' }
+      }
+    } catch (err) {
+      logger.warn(`[Lerxu] Release notes Atom failed: ${url} - ${err.message}`)
+    }
+  }
+
+  // 4) 兜底：给出可点击的官方链接（优于空内容）
+  const link = tag
+    ? `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/${tag}`
+    : `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases`
+  return {
+    notes: `<p>Release notes could not be loaded automatically. You can read them on GitHub:</p>` +
+      `<p><a href="${link}" target="_blank" rel="noopener noreferrer">${link}</a></p>`,
+    source: 'fallback'
+  }
 }
 
 /**
@@ -829,7 +1019,12 @@ export default class UpdateManager extends EventEmitter {
       // 获取发行说明（latest.yml 中不包含，需从 GitHub API 获取）
       let releaseNotes = info.releaseNotes || ''
       if (!releaseNotes) {
-        releaseNotes = await fetchReleaseNotes(info.version, axiosConfig, channel !== 'stable')
+        // 统一取「渲染好的 HTML」：旧实现调用 fetchReleaseNotes 拿到的是
+        // Markdown 原文，前端按 HTML 渲染时会丢掉换行与结构——更新说明会
+        // 挤成一行、`##`/`-` 原样显示。
+        const detail = await fetchReleaseNotesDetail(`v${info.version}`, info.version, axiosConfig)
+        releaseNotes = detail.notes
+        logger.info(`[Lerxu] Release notes for update-available: source=${detail.source} length=${releaseNotes.length}`)
       }
       // 写回内存状态：get-update-status 需要向渲染端返回说明，
       // 否则"下载中/已下载"态的预览更新会显示"暂无版本说明"
@@ -1162,7 +1357,10 @@ export default class UpdateManager extends EventEmitter {
           version: this._updateInfo.version,
           downloadedFile: tmpFile,
           fileType: this._downloadedFileType,
-          releaseNotes: await fetchReleaseNotes(this._updateInfo.version, this._getAxiosConfig()).catch(() => '')
+          // 同样取渲染好的 HTML（见上文 update-available 处的说明）
+          releaseNotes: await fetchReleaseNotesDetail(`v${this._updateInfo.version}`, this._updateInfo.version, this._getAxiosConfig())
+            .then(result => result.notes)
+            .catch(() => '')
         }
         this.emit('update-downloaded', data)
         this._notifyWindows('update-downloaded', data)
@@ -1599,6 +1797,78 @@ export default class UpdateManager extends EventEmitter {
       downloadTotal: this._currentProgress?.total || this._downloadSize || 0,
       downloadTransferred: this._currentProgress?.transferred || 0
     }
+  }
+
+  /**
+   * 预览更新：获取远端「最新版本」的发行说明，与是否存在可用更新解耦。
+   *
+   * 旧行为：发行说明只在检测到可用更新时才抓取，且判定「已是最新」时会
+   * 把它清空（_saveCheckResult(false, '')）。于是用户在偏好设置点「预览更新」
+   * 永远只看到「该版本暂无更新说明」——即使 GitHub 上一直有最新版本的说明可读。
+   * 预览的语义应当是「看看最新版带来了什么」，因此这里按当前渠道独立选版并
+   * 抓取说明，并做会话级缓存（同一会话内重复点击不再请求网络）。
+   *
+   * @returns {Promise<{version: string, tagName: string, notes: string,
+   *   source: string, channel: string, prerelease: boolean, cached: boolean}>}
+   */
+  async getReleaseNotesForPreview () {
+    if (this._previewNotesCache && this._previewNotesCache.notes) {
+      return { ...this._previewNotesCache, cached: true }
+    }
+
+    const axiosConfig = this._getAxiosConfig()
+
+    let channel = 'stable'
+    try {
+      const cfg = global.application?.configManager
+      if (cfg && typeof cfg.getUserConfig === 'function') {
+        const raw = cfg.getUserConfig('update-channel')
+        if (raw === 'beta' || raw === 'all') channel = raw
+      }
+    } catch (e) {
+      logger.warn(`[Lerxu] Preview: failed to read update-channel: ${e.message}`)
+    }
+
+    let tagName = ''
+    let version = ''
+    let prerelease = false
+    try {
+      const releases = await fetchReleaseList(axiosConfig)
+      // stable 渠道显式只认正式版（与 check() 的选版规则保持一致）
+      const pool = channel === 'stable'
+        ? (releases || []).filter(r => r.source !== 'atom' && !r.prerelease && !r.draft)
+        : releases
+      const pick = pickReleaseByChannel(pool, channel)
+      if (pick && pick.tagName) {
+        tagName = pick.tagName
+        version = pick.version
+        prerelease = !!pick.prerelease
+      }
+    } catch (e) {
+      logger.warn(`[Lerxu] Preview: release list unavailable: ${e.message}`)
+    }
+
+    if (!tagName) {
+      // 发布列表拿不到（限流/离线）：至少展示当前运行版本对应的说明
+      tagName = `v${CURRENT_VERSION}`
+      version = CURRENT_VERSION
+    }
+
+    const { notes, source } = await fetchReleaseNotesDetail(tagName, version, axiosConfig)
+    const result = {
+      version: version || tagName.replace(/^v/, ''),
+      tagName,
+      notes,
+      source,
+      channel,
+      prerelease,
+      cached: false
+    }
+    if (notes) {
+      this._previewNotesCache = result
+    }
+    logger.info(`[Lerxu] Preview notes ready: tag=${tagName} channel=${channel} source=${source} length=${notes.length}`)
+    return result
   }
 
   /**

@@ -285,6 +285,7 @@ export default {
   'last-check-update-time': '上次檢查更新時間',
   'update-preview-fail': '更新預覽失敗，請重試',
   'update-preview-empty': '此版本暫無更新說明',
+  'update-preview-loading': '正在取得版本資訊…',
   'undo-change': '撤回更改',
   'engine': '引擎',
   'engine-select': '引擎選擇',

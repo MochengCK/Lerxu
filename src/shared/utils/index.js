@@ -395,7 +395,9 @@ export const getFileNameFromFile = (file) => {
     return ''
   }
 
-  const index = path.lastIndexOf('/')
+  // 同时识别 / 与 \ 分隔符：Windows 任务路径使用反斜杠，
+  // 只按 / 截取会把整个路径当成文件名展示（任务名显示为完整路径）
+  const index = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
 
   if (index <= 0 || index === path.length) {
     const base = path

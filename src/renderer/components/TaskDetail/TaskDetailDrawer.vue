@@ -75,9 +75,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import is from 'electron-is'
-import { debounce, merge } from 'lodash'
+import { debounce } from 'lodash'
 import {
   calcFormLabelWidth,
   checkTaskIsBT,
@@ -320,9 +320,25 @@ const fileList = computed(() => {
       completedLength: item.completedLength
     }
   })
-  merge(cached.files, result)
+  syncCachedFiles(result)
   return cached.files
 })
+
+// 任务下载中 props.files 每秒刷新，而 el-table 的勾选状态依赖行对象引用，
+// 因此不能重建数组/行对象，只能就地更新（数组引用与行对象引用都保持不变，
+// el-table 不会清空勾选）。但行对象必须是响应式的：就地更新非响应式对象
+// 不会触发单元格重渲染，表格内容看起来"不刷新"（需切换分类再切回才更新）。
+function syncCachedFiles (result) {
+  cached.files.length = result.length
+  result.forEach((item, index) => {
+    const row = cached.files[index]
+    if (row && row.idx === item.idx) {
+      Object.assign(row, item)
+    } else {
+      cached.files[index] = reactive(item)
+    }
+  })
+}
 
 const selectedFileList = computed(() => fileList.value.filter((item) => item.selected))
 
@@ -349,6 +365,11 @@ onUnmounted(() => {
 // Watchers
 watch(() => props.gid, () => {
   cached.files = []
+  // 文件表启用了 row-key + reserve-selection（勾选按 idx 保留，不再随刷新丢失），
+  // 切换任务时必须显式清空：否则上个任务勾选的 idx 会让新任务同 idx 文件误显示为已勾选
+  if (detailFileList.value && detailFileList.value.clearSelection) {
+    detailFileList.value.clearSelection()
+  }
 })
 
 watch(statusHintText, () => {

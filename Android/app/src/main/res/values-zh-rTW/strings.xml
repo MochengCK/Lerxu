@@ -266,6 +266,13 @@
     <string name="update_notification_title">Lerxu %1$s 可用</string>
     <string name="update_notification_text">點擊查看並下載新版本</string>
     <string name="channel_update_name">應用更新</string>
+    <string name="update_card_title">發現新版本</string>
+    <string name="update_card_current">目前版本 %1$s</string>
+    <string name="update_card_action">立即更新</string>
+    <string name="update_card_retry">重試</string>
+    <string name="update_card_downloading">正在下載更新…</string>
+    <string name="update_card_installing">下載完成，正在啟動安裝程式…</string>
+    <string name="update_card_download_failed">下載失敗，請檢查網路後重試</string>
     <!-- 任務詳情分類 -->
     <string name="detail_tab_overview">概覽</string>
     <string name="detail_tab_pieces">分片</string>

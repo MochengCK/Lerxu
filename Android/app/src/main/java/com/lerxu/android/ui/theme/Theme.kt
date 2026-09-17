@@ -25,23 +25,26 @@ private val LightColorScheme = lightColorScheme(
     onTertiary = Color.White,
     tertiaryContainer = Color(0xFFD1FAE5),
     onTertiaryContainer = Color(0xFF064E3B),
-    background = Color(0xFFF7F9FC),
+    // 浅色层级（对比度优先）：页面底(明显浅灰) < 卡片内面板 < 卡片(纯白)
+    // 原来的 background(0xFFF7F9FC) 与 surface(0xFFFFFFFF) 只差 2% 亮度，
+    // 卡片与页面底几乎连成一片，内容"背景不够明显"。
+    background = Color(0xFFE7ECF3),
     onBackground = Color(0xFF1A1C1E),
     surface = Color(0xFFFFFFFF),
     onSurface = Color(0xFF1A1C1E),
-    surfaceVariant = Color(0xFFEDF1F7),
-    onSurfaceVariant = Color(0xFF5F6368),
+    surfaceVariant = Color(0xFFDCE3EC),
+    onSurfaceVariant = Color(0xFF545C66),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF3F6FA),
-    surfaceContainer = Color(0xFFEEF2F8),
-    surfaceContainerHigh = Color(0xFFE9EEF5),
-    surfaceContainerHighest = Color(0xFFE3E9F1),
+    surfaceContainerLow = Color(0xFFF7F9FC),
+    surfaceContainer = Color(0xFFEDF1F7),
+    surfaceContainerHigh = Color(0xFFE3E9F2),
+    surfaceContainerHighest = Color(0xFFD8E0EA),
     error = Color(0xFFE53935),
     onError = Color.White,
     errorContainer = Color(0xFFFDECEA),
     onErrorContainer = Color(0xFF8C1D18),
-    outline = Color(0xFFD5DBE3),
-    outlineVariant = Color(0xFFE4E9F0)
+    outline = Color(0xFFB9C3D0),
+    outlineVariant = Color(0xFFCFD8E3)
 )
 
 private val DarkColorScheme = darkColorScheme(

@@ -1,16 +1,21 @@
 <template>
   <div :class="['mo-task-files', { 'is-detail-mode': mode === 'DETAIL' }]" v-if="files">
     <div class="mo-table-wrapper">
+      <!-- 详情模式下任务下载中每秒刷新 files，必须用 row-key + reserve-selection：
+           否则 el-table 依赖行对象身份维护勾选（cleanSelection 会剔除"不在数据里"的行），
+           reactive 行对象每秒触发 setData 时会误清空用户勾选 -->
       <el-table
         ref="torrentTable"
         :height="computedTableHeight"
         :data="files"
+        :row-key="mode === 'DETAIL' ? fileRowKey : undefined"
         style="width: 100%"
         @row-dblclick="handleRowDbClick"
         @selection-change="handleSelectionChange">
         <el-table-column
           type="selection"
-          width="42">
+          width="42"
+          :reserve-selection="mode === 'DETAIL'">
         </el-table-column>
         <el-table-column
           :label="t('task.file-name')"
@@ -223,6 +228,12 @@ const computedTableHeight = computed(() => {
   if (props.height !== undefined && props.height !== null) return props.height
   return props.mode === 'DETAIL' ? props.tableHeight : undefined
 })
+
+// 行 key：优先用文件 idx（引擎 index）；缺失或 NaN 时退化为路径，
+// 避免所有行共用同一个 key 导致勾选串联
+function fileRowKey (row) {
+  return row && Number.isFinite(row.idx) ? row.idx : `p:${row && row.path ? row.path : ''}`
+}
 
 const selectedFilesCount = computed(() => selectedFiles.value.length)
 

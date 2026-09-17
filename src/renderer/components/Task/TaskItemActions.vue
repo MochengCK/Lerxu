@@ -333,7 +333,7 @@ import { ref, computed, getCurrentInstance, onBeforeUnmount, nextTick } from 'vu
 import is from 'electron-is'
 import { existsSync } from 'node:fs'
 import { isAbsolute, resolve, basename } from 'node:path'
-import { clipboard } from 'electron'
+import { ipcRenderer } from 'electron'
 
 import { commands } from '@/components/CommandManager/instance'
 import api from '@/api'
@@ -715,13 +715,13 @@ async function onVerify (verifyType) {
 
   if (hashes.length === 1) {
     const digest = hashes[0].digest
-    try { clipboard.writeText(digest) } catch (_) {}
+    try { ipcRenderer.invoke('clipboard:write-text', digest) } catch (_) {}
     instance.proxy.$msg.success(t('task.verify-success-hash', { algorithm: algorithmLabel, hash: digest }))
     return
   }
 
   const lines = hashes.map(h => `${h.digest}  ${`${h.path}`.replace(/\\/g, '/')}`)
-  try { clipboard.writeText(lines.join('\n')) } catch (_) {}
+  try { ipcRenderer.invoke('clipboard:write-text', lines.join('\n')) } catch (_) {}
   instance.proxy.$msg.success(t('task.verify-success-hash-list', { algorithm: algorithmLabel, count: hashes.length }))
 }
 

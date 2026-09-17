@@ -72,6 +72,7 @@ export default class Application extends EventEmitter {
     this._clipboardWatchTimer = null
     this._clipboardLastText = ''
     this._clipboardLastTriggerAt = 0
+    this._clipboardChecking = false
 
     // 独立任务进度窗口的平均速度采样 (gid -> [{bytes, durationMs}])
     this._progressSpeedSamples = new Map()
@@ -2091,11 +2092,16 @@ export default class Application extends EventEmitter {
         return
       }
     } catch (e) {}
-    try {
-      this._clipboardLastText = `${clipboard.readText() || ''}`
-    } catch (e) {
-      this._clipboardLastText = ''
-    }
+    // Electron 44 起 clipboard 读写为异步 API（返回 Promise），
+    // 直接拼接会把 Promise 字符串化，这里改为异步取初值
+    Promise.resolve()
+      .then(() => clipboard.readText())
+      .then((text) => {
+        this._clipboardLastText = `${text || ''}`
+      })
+      .catch(() => {
+        this._clipboardLastText = ''
+      })
     this._clipboardWatchTimer = setInterval(() => {
       this.checkClipboardAndAutoOpenAddTask()
     }, 800)
@@ -2163,13 +2169,28 @@ export default class Application extends EventEmitter {
     return false
   }
 
-  getDownloadUriFromClipboardHtml (plainText = '') {
+  async getDownloadUriFromClipboardHtml (plainText = '') {
+    // Electron 44 起 clipboard.readHTML() 已移除，改为经 ClipboardItem 的
+    // MIME 接口读取 text/html（getType 返回 Blob，取其文本内容）
     let html = ''
     try {
-      html = `${clipboard.readHTML() || ''}`.trim()
+      const items = await clipboard.read()
+      for (const item of (items || [])) {
+        const types = Array.isArray(item.types) ? item.types : []
+        const htmlType = types.find(type => `${type}`.toLowerCase() === 'text/html')
+        if (!htmlType) continue
+        const payload = await item.getType(htmlType)
+        if (payload && typeof payload.text === 'function') {
+          html = `${await payload.text() || ''}`
+        } else if (typeof payload === 'string') {
+          html = payload
+        }
+        if (html) break
+      }
     } catch (e) {
       return ''
     }
+    html = html.trim()
     if (!html) return ''
 
     let baseOrigin = ''
@@ -2233,49 +2254,59 @@ export default class Application extends EventEmitter {
     return ''
   }
 
-  checkClipboardAndAutoOpenAddTask () {
-    let enabled = true
+  async checkClipboardAndAutoOpenAddTask () {
+    // Electron 44 起剪贴板读取为异步 API，800ms 轮询可能在读取完成前重入，
+    // 用标志位避免并发读取与重复触发
+    if (this._clipboardChecking) return
+    this._clipboardChecking = true
     try {
-      const raw = this.configManager.getUserConfig('clipboard-auto-paste')
-      enabled = raw === undefined ? true : !!raw
-    } catch (e) {}
-    if (!enabled) return
+      let enabled = true
+      try {
+        const raw = this.configManager.getUserConfig('clipboard-auto-paste')
+        enabled = raw === undefined ? true : !!raw
+      } catch (e) {}
+      if (!enabled) return
 
-    let autoOpenEnabled = false
-    try {
-      const raw = this.configManager.getUserConfig('clipboard-auto-open-add-task')
-      autoOpenEnabled = raw === undefined ? false : !!raw
-    } catch (e) {}
-    if (!autoOpenEnabled) return
+      let autoOpenEnabled = false
+      try {
+        const raw = this.configManager.getUserConfig('clipboard-auto-open-add-task')
+        autoOpenEnabled = raw === undefined ? false : !!raw
+      } catch (e) {}
+      if (!autoOpenEnabled) return
 
-    let text = ''
-    try {
-      text = `${clipboard.readText() || ''}`.trim()
+      let text = ''
+      try {
+        text = `${await clipboard.readText() || ''}`.trim()
+      } catch (e) {
+        return
+      }
+      if (!text) return
+      if (text === this._clipboardLastText) return
+      this._clipboardLastText = text
+
+      let uri = ''
+      if (detectResource(text)) {
+        const lines = text.split(/\r?\n/).map(v => sanitizeLink(`${v}`.trim())).filter(Boolean)
+        uri = lines.find(l => this.isDownloadLinkLine(l)) || ''
+      }
+      if (!uri) {
+        uri = await this.getDownloadUriFromClipboardHtml(text)
+      }
+      if (!uri) return
+
+      const now = Date.now()
+      if (now - (this._clipboardLastTriggerAt || 0) < 1200) return
+      this._clipboardLastTriggerAt = now
+
+      try {
+        this.windowManager.bringToFront('index')
+        this.sendCommandToAll('application:new-task', { type: ADD_TASK_TYPE.URI, uri })
+      } catch (e) {}
     } catch (e) {
-      return
+      logger.warn('[Lerxu] clipboard auto-open check failed:', e.message)
+    } finally {
+      this._clipboardChecking = false
     }
-    if (!text) return
-    if (text === this._clipboardLastText) return
-    this._clipboardLastText = text
-
-    let uri = ''
-    if (detectResource(text)) {
-      const lines = text.split(/\r?\n/).map(v => sanitizeLink(`${v}`.trim())).filter(Boolean)
-      uri = lines.find(l => this.isDownloadLinkLine(l)) || ''
-    }
-    if (!uri) {
-      uri = this.getDownloadUriFromClipboardHtml(text)
-    }
-    if (!uri) return
-
-    const now = Date.now()
-    if (now - (this._clipboardLastTriggerAt || 0) < 1200) return
-    this._clipboardLastTriggerAt = now
-
-    try {
-      this.windowManager.bringToFront('index')
-      this.sendCommandToAll('application:new-task', { type: ADD_TASK_TYPE.URI, uri })
-    } catch (e) {}
   }
 
   hide (page) {
@@ -4139,6 +4170,28 @@ export default class Application extends EventEmitter {
       }
     })
 
+    // 预览更新：按当前更新渠道获取远端最新版本的发行说明。
+    // 与「是否存在可用更新」无关——即便本地已是最新（或版本号更高），
+    // 也应能查看上游最新版本写了什么，否则预览只会显示「暂无更新说明」。
+    ipcMain.handle('get-release-notes', async () => {
+      try {
+        if (this.updateManager && typeof this.updateManager.getReleaseNotesForPreview === 'function') {
+          return await this.updateManager.getReleaseNotesForPreview()
+        }
+      } catch (e) {
+        logger.warn('[Lerxu] get-release-notes failed:', e.message)
+      }
+      return {
+        version: '',
+        tagName: '',
+        notes: '',
+        source: 'error',
+        channel: '',
+        prerelease: false,
+        cached: false
+      }
+    })
+
     ipcMain.handle('get-app-locale', async () => {
       const raw = this.configManager.getUserConfig('locale') || this.configManager.getSystemConfig('locale')
       return getLanguage(raw)
@@ -4216,11 +4269,10 @@ export default class Application extends EventEmitter {
     })
 
     // 剪贴板读写桥：渲染进程直接访问 electron.clipboard 已弃用
-    // （Accessing 'clipboard.readText' from the renderer process is deprecated），
-    // 统一经主进程代理。
+    // （Electron 44 起 clipboard 模块不再暴露给渲染进程），统一经主进程代理。
     ipcMain.handle('clipboard:read-text', async () => {
       try {
-        return clipboard.readText()
+        return await clipboard.readText()
       } catch (e) {
         logger.warn('[Lerxu] clipboard read failed:', e.message)
         return ''
@@ -4228,7 +4280,7 @@ export default class Application extends EventEmitter {
     })
     ipcMain.handle('clipboard:write-text', async (event, text) => {
       try {
-        clipboard.writeText(`${text || ''}`)
+        await clipboard.writeText(`${text || ''}`)
         return true
       } catch (e) {
         logger.warn('[Lerxu] clipboard write failed:', e.message)
