@@ -5,6 +5,55 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// ---------------------------------------------------------------------------
+// 版本号单一来源：仓库根目录的 package.json
+//
+// 桌面端由 Electron 的 app.getVersion() 直接读该字段（设置页展示、更新比较都用它），
+// release 工作流的 release tag 也取自同一字段。Android 在这里读同一个文件，
+// 保证「手机端版本 == 桌面端版本」，不再出现两边各写一份导致漂移
+// （历史问题：package.json 已是 v3.2.0-Beta1，APK 还停在 1.0.0）。
+//
+// 解析失败让配置阶段直接失败——静默回退默认值正是版本漂移的根源。
+// ---------------------------------------------------------------------------
+val packageJson = rootProject.file("../package.json")
+require(packageJson.isFile) {
+    "找不到 ${packageJson.path}：Android 版本号以仓库根 package.json 为唯一来源"
+}
+
+// versionName 逐字符等于 package.json 的 version（含前导 v），与桌面端展示完全一致
+val appVersionName: String = Regex("\"version\"\\s*:\\s*\"([^\"]+)\"")
+    .find(packageJson.readText())
+    ?.groupValues?.get(1)
+    ?.takeIf { it.isNotBlank() }
+    ?: throw GradleException("${packageJson.path} 中找不到可用的 \"version\" 字段")
+
+// versionName → versionCode：Android 要求 versionCode 是单调递增的整数。
+//   code = major*10^7 + minor*10^5 + patch*10^3 + rank*100 + 预发布序号
+//   rank: alpha=1 < beta=2 < rc=3 < 正式版=9
+//   于是 3.2.0-Beta1 < 3.2.0-Beta2 < 3.2.0 < 3.2.1-Beta1，且每次发版必然递增
+val appVersionCode: Int = run {
+    val m = Regex("^[vV]?(\\d+)\\.(\\d+)\\.(\\d+)(?:-([0-9A-Za-z.]+))?")
+        .find(appVersionName)
+        ?: throw GradleException("版本号 $appVersionName 不是 major.minor.patch[-预发布] 形式")
+    val major = m.groupValues[1].toInt()
+    val minor = m.groupValues[2].toInt()
+    val patch = m.groupValues[3].toInt()
+    require(minor < 100 && patch < 100) { "版本号 $appVersionName 的 minor/patch 必须小于 100" }
+
+    val pre = m.groupValues.getOrNull(4)?.lowercase().orEmpty()
+    val rank = when {
+        pre.isEmpty() -> 9
+        pre.startsWith("alpha") -> 1
+        pre.startsWith("beta") -> 2
+        pre.startsWith("rc") -> 3
+        else -> 1
+    }
+    val preNum = Regex("\\d+").find(pre)?.value?.toInt()?.coerceAtMost(99) ?: 0
+    major * 10_000_000 + minor * 100_000 + patch * 1_000 + rank * 100 + preNum
+}
+
+logger.lifecycle("Lerxu Android 版本：versionName=$appVersionName versionCode=$appVersionCode（取自 package.json）")
+
 android {
     namespace = "com.lerxu.android"
     compileSdk = 35
@@ -14,8 +63,8 @@ android {
         applicationId = "com.lerxu.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

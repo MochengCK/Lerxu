@@ -238,22 +238,22 @@ jobs:
           done
           echo "✓ Android engine verified"
 
-    # 签名（必需）：工作流**只产出已签名版 APK**——未配置凭据直接失败，
-    # 不再生成开发版（debug）或未签名（unsigned）产物。
-    - name: Decode release keystore (required)
-      run: |
-        if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-          echo "::error::ANDROID_KEYSTORE_BASE64 未配置——工作流只构建签名版 APK。请在仓库配置 secrets：ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD"
-          exit 1
-        fi
-        [ -n "$ANDROID_KEYSTORE_PASSWORD" ] || { echo "::error::ANDROID_KEYSTORE_PASSWORD 未配置"; exit 1; }
-        [ -n "$ANDROID_KEY_ALIAS" ] || { echo "::error::ANDROID_KEY_ALIAS 未配置"; exit 1; }
-        [ -n "$ANDROID_KEY_PASSWORD" ] || { echo "::error::ANDROID_KEY_PASSWORD 未配置"; exit 1; }
-        printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-        # 收紧权限：keystore 含私钥，仅允许当前用户读写
-        chmod 600 "$RUNNER_TEMP/release.keystore"
-        echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
-        echo "✓ Release keystore decoded (600, under RUNNER_TEMP)"
+      # 签名（必需）：工作流**只产出已签名版 APK**——未配置凭据直接失败，
+      # 不再生成开发版（debug）或未签名（unsigned）产物。
+      - name: Decode release keystore (required)
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 未配置——工作流只构建签名版 APK。请在仓库配置 secrets：ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD"
+            exit 1
+          fi
+          [ -n "$ANDROID_KEYSTORE_PASSWORD" ] || { echo "::error::ANDROID_KEYSTORE_PASSWORD 未配置"; exit 1; }
+          [ -n "$ANDROID_KEY_ALIAS" ] || { echo "::error::ANDROID_KEY_ALIAS 未配置"; exit 1; }
+          [ -n "$ANDROID_KEY_PASSWORD" ] || { echo "::error::ANDROID_KEY_PASSWORD 未配置"; exit 1; }
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          # 收紧权限：keystore 含私钥，仅允许当前用户读写
+          chmod 600 "$RUNNER_TEMP/release.keystore"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          echo "✓ Release keystore decoded (600, under RUNNER_TEMP)"
 
       # 只构建签名版 release APK（签名由 app/build.gradle.kts 的 signingConfigs
       # 读取 job env 注入的 ANDROID_KEYSTORE_PATH 等变量完成）
@@ -272,6 +272,18 @@ jobs:
             exit 1
           fi
           echo "=== $apk ($(stat -c%s "$apk") bytes) ==="
+
+          # 版本一致性：APK 的 versionName 必须与仓库根 package.json 的 version 逐字符相同。
+          # 桌面端 app.getVersion() 与 release tag 同源于该字段，这里做最后一道兜底，
+          # 避免「手机端版本 ≠ 桌面端版本」悄悄发布出去。
+          EXPECTED_VERSION=$(node -p "require('./package.json').version")
+          ACTUAL_VERSION=$(node -p "require('./Android/app/build/outputs/apk/release/output-metadata.json').elements[0].versionName")
+          if [ "$ACTUAL_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "::error::APK versionName=$ACTUAL_VERSION 与 package.json version=$EXPECTED_VERSION 不一致"
+            exit 1
+          fi
+          echo "✓ version consistent: $ACTUAL_VERSION"
+
           unzip -l "$apk" | grep -q 'lib/arm64-v8a/libxferrust.so' || { echo "::error::$apk missing engine (jniLibs)"; exit 1; }
           unzip -l "$apk" | grep -q 'assets/xferrust' || { echo "::error::$apk missing engine (assets)"; exit 1; }
           echo "✓ engine packaged"

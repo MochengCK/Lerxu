@@ -47,6 +47,11 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repository.refreshGlobalStat() }
     }
 
+    /** 界面可见性：不可见时把速度轮询放宽到 3s（与桌面端一致的省电策略） */
+    fun setUiVisible(visible: Boolean) {
+        repository.setUiVisible(visible)
+    }
+
     fun addUriTask(uri: String, dir: String, out: String = "") {
         viewModelScope.launch {
             repository.addUriTask(uri, dir, out)

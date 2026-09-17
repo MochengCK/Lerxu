@@ -116,6 +116,20 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
+    /**
+     * 前后台切换驱动全局速度轮询节奏：回到前台立即补一次采样，
+     * 退到后台把间隔放宽到 3s（引擎照常下载，只是界面数据少刷几次）。
+     */
+    override fun onResume() {
+        super.onResume()
+        viewModel.setUiVisible(true)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        viewModel.setUiVisible(false)
+    }
+
     private fun handleIntent(intent: Intent?) {
         when (intent?.action) {
             Intent.ACTION_VIEW -> {

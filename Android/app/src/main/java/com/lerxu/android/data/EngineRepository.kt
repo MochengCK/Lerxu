@@ -21,7 +21,9 @@ import kotlinx.serialization.json.JsonElement
  * 架构：
  * - [EngineRpcClient] 负责 WebSocket 连接与 RPC 请求
  * - 事件订阅（task.progress / task.complete / task.error）自动驱动
- *   任务列表和全局统计的增量更新，无需轮询
+ *   任务列表的增量更新，无需轮询
+ * - 例外：全局速度（engine.globalStat）引擎不推送，只能按自适应间隔主动拉取；
+ *   不拉的话顶栏速度会永远停在「建连那一刻」的采样值（见 startStatPolling）
  * - ViewModel 通过 StateFlow 观察 UI 状态
  *
  * 启动时序：
@@ -36,8 +38,34 @@ class EngineRepository private constructor(
     companion object {
         private const val TAG = "EngineRepository"
 
+        // 全局速度轮询节奏（与桌面端 EngineClient 的 polling 保持一致）：
+        // 有活跃任务时按任务数加压，空闲时逐级退避，界面不可见时不低于 3s
+        private const val STAT_POLL_BASE_MS = 1000L
+        private const val STAT_POLL_PER_TASK_MS = 100L
+        private const val STAT_POLL_MIN_MS = 500L
+        private const val STAT_POLL_MAX_MS = 30_000L
+        private const val STAT_POLL_HIDDEN_MS = 3_000L
+
         @Volatile
         private var instance: EngineRepository? = null
+
+        /**
+         * 下一次轮询间隔（纯函数，便于单测）：
+         * 有活跃任务 → 1000ms 起、每个任务再减 100ms，下限 500ms；
+         * 空闲 → 每次 +100ms 逐级退避，上限 30s。
+         */
+        internal fun nextStatPollInterval(currentMs: Long, activeCount: Int): Long =
+            if (activeCount > 0) {
+                (STAT_POLL_BASE_MS - STAT_POLL_PER_TASK_MS * activeCount)
+                    .coerceAtLeast(STAT_POLL_MIN_MS)
+            } else {
+                (currentMs + STAT_POLL_PER_TASK_MS)
+                    .coerceAtMost(STAT_POLL_MAX_MS)
+            }
+
+        /** 界面不可见时把间隔放宽到不低于 3s（引擎照常跑，只是界面少刷几次） */
+        internal fun statPollDelayMs(intervalMs: Long, visible: Boolean): Long =
+            if (visible) intervalMs else maxOf(intervalMs, STAT_POLL_HIDDEN_MS)
 
         fun getInstance(context: Context): EngineRepository {
             return instance ?: synchronized(this) {
@@ -81,6 +109,13 @@ class EngineRepository private constructor(
     private var initialSyncDone = false
     private var currentScope = "all"
 
+    // ─── 全局速度轮询状态 ───
+    // 引擎只在被问到时才算速度（stat_raw 汇总各任务的无锁原子速度），没有推送事件，
+    // 所以顶栏速度必须靠这个循环刷新，否则会停在旧采样值上。
+    private var statPollJob: Job? = null
+    private var statPollInterval = STAT_POLL_BASE_MS
+    @Volatile private var uiVisible = true
+
     // ─── 引擎就绪广播接收器 ───
 
     private val engineReadyReceiver = object : BroadcastReceiver() {
@@ -122,7 +157,10 @@ class EngineRepository private constructor(
                         _uiState.update { it.copy(connected = false) }
                     }
                     EngineRpcClient.ConnectionState.DISCONNECTED -> {
-                        _uiState.update { it.copy(connected = false) }
+                        // 停掉速度轮询并清零：断线后若留着上一个采样值，
+                        // 顶栏会一直显示一个早已失效的速度
+                        stopStatPolling()
+                        _uiState.update { it.copy(connected = false, globalStat = GlobalStat()) }
                     }
                 }
             }
@@ -147,6 +185,7 @@ class EngineRepository private constructor(
     }
 
     fun stop() {
+        stopStatPolling()
         scope.launch {
             // 断开前先让引擎把会话落盘（任务进度/终态时间戳不丢）
             try {
@@ -178,7 +217,9 @@ class EngineRepository private constructor(
 
         // 全量拉取任务列表
         refreshTasks()
-        scope.launch { refreshGlobalStat() }
+        // 首帧速度立刻有值，之后交给自适应轮询持续刷新
+        refreshGlobalStat()
+        startStatPolling()
         // 内置订阅源：首次运行时注入常用 BT tracker 订阅（异步，不阻塞连接流程）
         scope.launch { seedPresetSubscriptions() }
     }
@@ -347,6 +388,47 @@ class EngineRepository private constructor(
             _uiState.update { it.copy(globalStat = stat) }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to refresh global stat", e)
+        }
+    }
+
+    /**
+     * 全局速度轮询：`engine.globalStat` 没有任何推送事件，顶栏的上下行速度只能靠这里刷新。
+     * 不轮询的话，速度会永远停在「建连 / 新建任务 / 任务结束」那几个时刻的采样值上
+     * （表现为下载中一直显示 0 B/s 或冻在旧数字），看着就是「速度不准」。
+     *
+     * 节奏与桌面端一致：有活跃任务时 1000ms 起、每多一个任务减 100ms（下限 500ms）；
+     * 空闲时每次 +100ms 逐级退避到 30s（引擎空闲时没必要每秒问一次）；
+     * 界面不可见时不低于 3s。
+     */
+    private fun startStatPolling() {
+        stopStatPolling()
+        statPollInterval = STAT_POLL_BASE_MS
+        statPollJob = scope.launch {
+            while (isActive) {
+                refreshGlobalStat()
+
+                val active = _uiState.value.globalStat.numActive
+                statPollInterval = nextStatPollInterval(statPollInterval, active)
+                delay(statPollDelayMs(statPollInterval, uiVisible))
+            }
+        }
+    }
+
+    private fun stopStatPolling() {
+        statPollJob?.cancel()
+        statPollJob = null
+    }
+
+    /**
+     * 界面可见性（由 Activity 生命周期驱动）。
+     * 回到前台时立即补一次采样并复位间隔，避免刚切回来还停在退避后的长间隔上。
+     */
+    fun setUiVisible(visible: Boolean) {
+        if (uiVisible == visible) return
+        uiVisible = visible
+        if (visible) {
+            statPollInterval = STAT_POLL_BASE_MS
+            scope.launch { refreshGlobalStat() }
         }
     }
 
