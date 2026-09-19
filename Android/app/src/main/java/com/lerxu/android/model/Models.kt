@@ -147,13 +147,21 @@ data class TaskInfo(
     /**
      * 任务显示名称，解析顺序与桌面端 getTaskName 对齐：
      * BT 种子名 -> 首文件路径 -> 首文件 URI 解码 -> gid
+     *
+     * 但**非 BT（HTTP / 直链）以首文件路径为准**：引擎会给 HTTP 任务也带一份
+     * `bittorrent.info.name`（按地址推出来的），那份名字是**我们传 `out` 之前的原名**；
+     * 拿它当显示名，就会出现"列表里是原始文件名、详情里是视频名"这种前后不一致
+     *（用户点名的现象 —— 详情读的是 files[].path，列表读的是这里）。
+     * BT 反过来：首文件路径是"种子名/文件.mkv"，显示名该用种子名。
      */
     val fileName: String get() {
-        bittorrent?.info?.name?.takeIf { it.isNotBlank() }?.let { return it }
         val file = files.firstOrNull()
-        val path = file?.path.orEmpty()
-        path.substringAfterLast('/').substringAfterLast('\\')
-            .takeIf { it.isNotBlank() }?.let { return it }
+        val base = file?.path.orEmpty()
+            .substringAfterLast('/').substringAfterLast('\\')
+            .takeIf { it.isNotBlank() }
+        if (!isBT && base != null) return base
+        bittorrent?.info?.name?.takeIf { it.isNotBlank() }?.let { return it }
+        if (base != null) return base
         file?.uris?.firstOrNull()?.uri
             ?.takeIf { it.isNotBlank() }
             ?.let { uri -> uriToFileName(uri).takeIf { it.isNotBlank() }?.let { return it } }

@@ -60,16 +60,22 @@ fun formatFinishedTime(context: Context, timestamp: Long): String {
     }
 }
 
+/**
+ * 任务状态色：与桌面端共用同一套取值（桌面来源 `src/shared/colors.json`，
+ * 主列表状态点与进度条都读它），两种主题下都不变——桌面就是这么做的。
+ * `awaiting_selection` 是安卓特有的「待勾选文件」状态，对应桌面
+ * TaskProgress 的 pendingSelection 色 `#f0ad4e`。
+ */
 fun statusColor(status: String): Long = when (status) {
-    "active" -> 0xFF2196F3  // Blue（下载中）
-    "seeding" -> 0xFF26A69A // Teal（做种中）
-    "waiting" -> 0xFFFF9800  // Orange
-    "awaiting_selection" -> 0xFFFF9800 // Orange（待选择文件）
-    "paused" -> 0xFF9E9E9E  // Gray
-    "complete" -> 0xFF4CAF50  // Green（已完成）
-    "error" -> 0xFFF44336   // Red
-    "removed" -> 0xFF9E9E9E  // Gray
-    else -> 0xFF9E9E9E
+    "active" -> 0xFF1A7FE0  // --lc-color-primary（下载中）
+    "seeding" -> 0xFF2ACB42 // complete 同色（做种中）
+    "waiting" -> 0xFF737373
+    "awaiting_selection" -> 0xFFF0AD4E // pendingSelection
+    "paused" -> 0xFF737373
+    "complete" -> 0xFF2ACB42
+    "error" -> 0xFFFF6157
+    "removed" -> 0xFF737373
+    else -> 0xFF737373
 }
 
 fun statusText(context: Context, status: String): String = when (status) {

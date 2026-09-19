@@ -162,6 +162,17 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.activity:activity-compose:1.9.3")
+    
+    // Biometric for password authentication
+    implementation("androidx.biometric:biometric:1.1.0")
+    // 显式提一档 fragment：biometric 1.1.0 传递进来的是 fragment 1.2.5，那一版的
+    // `FragmentActivity.startActivityForResult` 会把**高 16 位非零**的 requestCode
+    // 判为非法（"Can only use lower 16 bits for requestCode"），而 androidx.activity
+    // 1.9 的 ActivityResultRegistry 生成的 requestCode 必然带高 16 位 ——
+    // 于是所有走 startActivityForResult 的契约（选文件、请求系统角色）一调用就抛
+    // IllegalArgumentException，表现为"点一下闪退"或"点了没反应"。
+    // Gradle 默认取最高版本，这里声明一下即可把 1.2.5 顶掉。
+    implementation("androidx.fragment:fragment:1.8.5")
 
     // Compose UI
     implementation("androidx.compose.ui:ui")
@@ -190,6 +201,9 @@ dependencies {
     // WorkManager for background service
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
+
+    // WebView 兼容库：算法变暗（深色主题下把浅色网页渲染成深色）
+    implementation("androidx.webkit:webkit:1.12.1")
 
     // Debugging
     debugImplementation("androidx.compose.ui:ui-tooling")

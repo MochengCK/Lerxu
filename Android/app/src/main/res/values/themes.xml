@@ -4,4 +4,17 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!--
+      WebView 的壳主题：站点的 prefers-color-scheme 由 WebView **创建时上下文
+      主题的 isLightTheme** 决定（targetSdk 33+ 走这条，不看 uiMode）——应用
+      自己的主题是固定浅色的，不换壳站点就永远拿到浅色偏好、永远不启用它
+      自己的深色模式。深浅各备一套，创建 WebView 时按应用主题挑。
+    -->
+    <style name="Theme.Lerxu.Browser" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:isLightTheme">true</item>
+    </style>
+    <style name="Theme.Lerxu.Browser.Dark" parent="android:Theme.Material.NoActionBar">
+        <item name="android:isLightTheme">false</item>
+    </style>
 </resources>

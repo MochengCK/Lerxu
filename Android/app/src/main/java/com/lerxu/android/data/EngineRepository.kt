@@ -310,7 +310,7 @@ class EngineRepository private constructor(
     private fun publishTasks() {
         val list = taskMap.values.map { t ->
             val recorded = finishedAtMap[t.gid]
-            when {
+            val base = when {
                 recorded != null && t.finishedAt != recorded ->
                     t.copy(finishedAt = recorded)
                 // 会话内首次观察到完成/错误（事件漏发时的兜底，如 BT seeding 状态）。
@@ -323,6 +323,8 @@ class EngineRepository private constructor(
                 }
                 else -> t
             }
+            // 引擎还没解析出文件名（排队 / 等元数据）时，用我们请求的那个名字顶上
+            base.withRequestedName()
         }
         val counts = mapOf(
             "all" to list.size,
@@ -442,9 +444,25 @@ class EngineRepository private constructor(
         }
     }
 
-    suspend fun addUriTask(uri: String, dir: String, out: String = ""): String? {
+    suspend fun addUriTask(uri: String, dir: String, out: String = ""): String? =
+        addUriTask(uri, dir, out, emptyList())
+
+    /**
+     * 带逐任务请求头新增 HTTP 任务（内置浏览器转交下载用）。
+     *
+     * [headers] 为 `"Name: value"` 行列表，典型内容为 `Referer` / `Cookie` /
+     * `User-Agent`；不传 `Origin`。
+     */
+    suspend fun addUriTask(
+        uri: String,
+        dir: String,
+        out: String = "",
+        headers: List<String> = emptyList()
+    ): String? {
         return try {
-            val gid = rpcClient.addUriTask(listOf(uri), dir, out)
+            val gid = rpcClient.addUriTask(listOf(uri), dir, out, headers)
+            // 记住我们请求的名字：引擎要等真正开始下载才解析出文件名（见 requestedNames）
+            if (out.isNotBlank() && gid.isNotBlank()) requestedNames[gid] = out
             refreshSingleTask(gid)
             refreshGlobalStat()
             gid
@@ -453,6 +471,35 @@ class EngineRepository private constructor(
             _uiState.update { it.copy(error = e.message) }
             null
         }
+    }
+
+    /**
+     * 我们**请求的**文件名（gid → 文件名）。
+     *
+     * 浏览器转交下载时会带 `out`（视频名），但引擎要等真正开始下载、探测到响应头
+     * 之后才把解析出的文件名写进 `files[].path` —— 排队 / 等元数据期间那里是空的，
+     * 界面于是退回"地址里的文件名"，也就是用户看到的"还是原始名称"；重进应用后
+     * 引擎从会话里读回 `out`，名字才对上（用户点名的现象）。
+     *
+     * 这里把请求时那个名字记下来，界面优先用它；引擎一给出真名就立刻丢弃这条记录。
+     */
+    private val requestedNames = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /**
+     * 引擎还没给出文件名时，用我们请求的名字把首文件路径补上。
+     *
+     * 补在 `files[0].path` 上而不是另开一个显示字段：列表（[TaskInfo.fileName]）
+     * 和任务详情（读 `files[].path`）本来就同源，补这里两边一起对 ✓
+     */
+    private fun TaskInfo.withRequestedName(): TaskInfo {
+        val want = requestedNames[gid]?.takeIf { it.isNotBlank() } ?: return this
+        val first = files.firstOrNull() ?: return this
+        if (first.path.isNotBlank()) {
+            // 引擎已经解析出真名（可能与我们请求的不同，比如服务器给了 Content-Disposition）
+            requestedNames.remove(gid)
+            return this
+        }
+        return copy(files = listOf(first.copy(path = want)) + files.drop(1))
     }
 
     suspend fun addMagnetTask(magnet: String, dir: String, awaitSelection: Boolean = false): String? {

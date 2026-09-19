@@ -1,7 +1,14 @@
 package com.lerxu.android.ui.screen
 
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,8 +33,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
@@ -38,6 +47,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchColors
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,6 +72,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lerxu.android.BuildConfig
 import com.lerxu.android.R
+import com.lerxu.android.browser.SearchEngineDetector
+import com.lerxu.android.browser.SearchEnginePick
+import com.lerxu.android.browser.SearchEngines
 import com.lerxu.android.engine.EngineManager
 import com.lerxu.android.model.BtSubscription
 import com.lerxu.android.model.EngineVersion
@@ -138,7 +152,9 @@ fun SettingsScreen(
     viewModel: TaskViewModel,
     engineVersion: EngineVersion?,
     themePref: String = "system",
-    onThemeChange: (String) -> Unit = {}
+    onThemeChange: (String) -> Unit = {},
+    searchEngineKey: String = "bing",
+    onSearchEngineChange: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
@@ -234,8 +250,20 @@ fun SettingsScreen(
     }
     var showChannelDialog by remember { mutableStateOf(false) }
 
+    // ── 启动默认入口（引导里选过，这里可改；下次打开 App 生效）──
+    var startPage by remember { mutableStateOf(StartPagePrefs.read(context)) }
+    var showStartPageDialog by remember { mutableStateOf(false) }
+
     // ── 主题切换 ──
     var showThemeDialog by remember { mutableStateOf(false) }
+    var showSearchEngineDialog by remember { mutableStateOf(false) }
+    // 跟随网络自动选择是否仍生效（用户手动选过就不再自动改）
+    var enginePinned by remember {
+        mutableStateOf(
+            prefs.getBoolean(SearchEngineDetector.PREF_PINNED, false)
+        )
+    }
+    val engineScope = rememberCoroutineScope()
 
     // ── BT tracker 订阅源 ──
     val scope = rememberCoroutineScope()
@@ -556,7 +584,8 @@ fun SettingsScreen(
                     onCheckedChange = {
                         btAdaptive = it
                         viewModel.setBtAdaptive(it)
-                    }
+                    },
+                    colors = lerxuSwitchColors()
                 )
             }
 
@@ -668,7 +697,8 @@ fun SettingsScreen(
                     onCheckedChange = {
                         btSeedMode = it
                         viewModel.setBtSeedMode(it)
-                    }
+                    },
+                    colors = lerxuSwitchColors()
                 )
             }
 
@@ -806,7 +836,8 @@ fun SettingsScreen(
                     onCheckedChange = {
                         btEnableLpd = it
                         viewModel.setBtEnableLpd(it)
-                    }
+                    },
+                    colors = lerxuSwitchColors()
                 )
             }
 
@@ -840,7 +871,8 @@ fun SettingsScreen(
                     onCheckedChange = {
                         btPortMapping = it
                         viewModel.setBtPortMapping(it)
-                    }
+                    },
+                    colors = lerxuSwitchColors()
                 )
             }
         }
@@ -871,7 +903,8 @@ fun SettingsScreen(
                     onCheckedChange = {
                         autoUpdateTrackers = it
                         scope.launch { viewModel.setAutoUpdateTrackers(it) }
-                    }
+                    },
+                    colors = lerxuSwitchColors()
                 )
             }
 
@@ -973,6 +1006,36 @@ fun SettingsScreen(
             }
         }
 
+        // ── 启动：默认入口（下载器 / 浏览器）──
+        SettingsSection(stringResource(R.string.settings_section_start)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showStartPageDialog = true }
+                    .padding(horizontal = 16.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.settings_start_page),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        startPageLabel(startPage),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+        }
+
         // ── 外观 ──
         SettingsSection(stringResource(R.string.settings_appearance)) {
             Row(
@@ -1020,6 +1083,36 @@ fun SettingsScreen(
                     )
                     Text(
                         languageLabel(prefs.getString(MainActivity.KEY_LANGUAGE, "") ?: ""),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+        }
+
+        // ── 浏览器：搜索引擎（内置浏览器用） ──
+        SettingsSection(stringResource(R.string.tab_browser)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showSearchEngineDialog = true }
+                    .padding(horizontal = 16.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.browser_engine_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        engineSubtitle(context, searchEngineKey, enginePinned),
                         style = MaterialTheme.typography.bodySmall,
                         color = colorScheme.onSurfaceVariant
                     )
@@ -1096,7 +1189,8 @@ fun SettingsScreen(
                     onCheckedChange = {
                         autoUpdateCheck = it
                         prefs.edit().putBoolean("auto_update_check", it).apply()
-                    }
+                    },
+                    colors = lerxuSwitchColors()
                 )
             }
 
@@ -1106,6 +1200,87 @@ fun SettingsScreen(
                 thickness = 0.5.dp
             )
 
+            // ── 设为默认浏览器 ──
+            // 默认关闭：开关状态**直接读系统**（我们现在是不是默认浏览器），不另存偏好 ——
+            // 存一份自己的布尔值只会在用户在系统设置里改动后与事实不一致。
+            // 角色机制是 API 29+ 才有的；更低的系统上这行不出现。
+            val roleManager = remember {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    context.getSystemService(android.app.role.RoleManager::class.java)
+                } else {
+                    null
+                }
+            }
+            val roleAvailable =
+                roleManager?.isRoleAvailable(android.app.role.RoleManager.ROLE_BROWSER) == true
+            var isDefaultBrowser by remember { mutableStateOf(isDefaultBrowserApp(context)) }
+            // 回到前台重读：用户可能在系统"默认应用"里改过（应用内撤销不了这个角色）
+            val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        isDefaultBrowser = isDefaultBrowserApp(context)
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            }
+            val roleLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult()
+            ) { isDefaultBrowser = isDefaultBrowserApp(context) }
+            if (roleAvailable) {
+                // 整行可点 = 和开关同一个动作：只让那枚小开关可点的话，用户点文字
+                // 会"没反应"（用户点名的现象）
+                fun requestDefaultBrowser(want: Boolean) {
+                    if (want) {
+                        // 交给系统弹它自己的确认框（这是唯一的授予途径）。
+                        // 拉不起来（个别系统没有这个界面 / 被裁剪）时退回系统设置页 ——
+                        // 至少让用户看到"去了某个地方"，而不是点了毫无动静
+                        val launched = runCatching {
+                            roleLauncher.launch(
+                                roleManager!!.createRequestRoleIntent(
+                                    android.app.role.RoleManager.ROLE_BROWSER
+                                )
+                            )
+                        }.isSuccess
+                        if (!launched) openDefaultAppsSettings(context)
+                    } else {
+                        // 角色只能由系统收回：把用户送到"默认应用"页面自己改
+                        openDefaultAppsSettings(context)
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { requestDefaultBrowser(!isDefaultBrowser) }
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.default_browser_title),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            stringResource(R.string.default_browser_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = isDefaultBrowser,
+                        onCheckedChange = { want -> requestDefaultBrowser(want) },
+                        colors = lerxuSwitchColors()
+                    )
+                }
+
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = colorScheme.outlineVariant,
+                    thickness = 0.5.dp
+                )
+            }
             // 更新渠道：切换后立即按新渠道重新检查（与桌面端一致）
             Row(
                 modifier = Modifier
@@ -1294,6 +1469,42 @@ fun SettingsScreen(
     }
 
     // 主题切换：Compose 状态驱动，立即生效无需重建
+    if (showSearchEngineDialog) {
+        SearchEngineDialog(
+            currentKey = searchEngineKey,
+            autoActive = !enginePinned,
+            onPickEngine = { key ->
+                SearchEngineDetector.setEngine(context, key, pinned = true)
+                enginePinned = true
+                onSearchEngineChange(key)
+                showSearchEngineDialog = false
+            },
+            onPickAuto = {
+                // 跟随网络自动选择：清掉手动标记并立刻按当前网络重选一次
+                SearchEngineDetector.clearPinned(context)
+                showSearchEngineDialog = false
+                engineScope.launch {
+                    val picked = SearchEngineDetector.ensureInitialized(context)
+                    enginePinned = false
+                    onSearchEngineChange(picked)
+                }
+            },
+            onDismiss = { showSearchEngineDialog = false }
+        )
+    }
+
+    if (showStartPageDialog) {
+        StartPageDialog(
+            current = startPage,
+            onSelect = { picked ->
+                showStartPageDialog = false
+                startPage = picked
+                StartPagePrefs.write(context, picked)
+            },
+            onDismiss = { showStartPageDialog = false }
+        )
+    }
+
     if (showThemeDialog) {
         ThemeDialog(
             current = themePref,
@@ -1406,10 +1617,57 @@ private fun SubscriptionRow(
         }
         Switch(
             checked = sub.enabled,
-            onCheckedChange = { onToggle() }
+            onCheckedChange = { onToggle() },
+            colors = lerxuSwitchColors()
         )
     }
 }
+
+/**
+ * 我们现在是不是系统默认浏览器。
+ *
+ * 走 API 29+ 的「浏览器角色」；更低的系统没有这套机制，一律 false（设置里那行也不出现）。
+ */
+private fun isDefaultBrowserApp(context: Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        context.getSystemService(android.app.role.RoleManager::class.java)
+            ?.isRoleHeld(android.app.role.RoleManager.ROLE_BROWSER) == true
+    } else {
+        false
+    }
+
+/** 送到系统的「默认应用」页面 —— 浏览器角色只能由系统收回，应用内撤不掉。 */
+private fun openDefaultAppsSettings(context: Context) {
+    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+    } else {
+        Intent(android.provider.Settings.ACTION_SETTINGS)
+    }
+    runCatching { context.startActivity(intent) }
+}
+
+/**
+ * 开关（Switch）的统一配色 —— **必须显式给，不能用 Material3 默认**。
+ *
+ * 默认未选中态是拿 `outline` 画圆点与描边、`surfaceContainerHighest` 画轨道的，
+ * 而本应用的色板里这两个**在深色下就是同一个颜色**（都是 #3D424D）：关闭时圆点
+ * 完全糊进轨道，整条开关看起来是一块实心色板；浅色下两者也只差一档（#D3DDE6 /
+ * #E8EEF5），圆点几乎看不见（用户点名：「关闭后代表选项的圆点直接跟背景融为一体」）。
+ *
+ * 这里按"三档都要分得开"重给：
+ *  · 轨道用 `surfaceVariant` —— 比它所在的卡片底**深一档**，读作一条凹槽；
+ *  · 圆点用 `onSurfaceVariant` —— 轨道上的一枚明确色点，关闭时也看得清；
+ *  · 描边保留 `outline`（只作收边，不承担辨识）。
+ * 打开态沿用主色 + onPrimary，与其他控件一致。
+ */
+@Composable
+fun lerxuSwitchColors(): SwitchColors = SwitchDefaults.colors(
+    checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+    checkedTrackColor = MaterialTheme.colorScheme.primary,
+    uncheckedThumbColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+    uncheckedBorderColor = MaterialTheme.colorScheme.outline
+)
 
 /** 订阅更新时间的简短展示：今天 HH:mm，否则 M月d日 */
 private fun formatSubTime(context: Context, unixSeconds: Long): String {
@@ -1796,6 +2054,120 @@ private fun LanguageDialog(
     )
 }
 
+// ─── 搜索引擎（内置浏览器） ───
+
+/**
+ * 设置项副标题：手动选过就只显示引擎名；仍跟随网络时补上
+ * 「为什么是它」（可直连 / 按区域 / 未联网 / 通用回退）。
+ */
+@Composable
+private fun engineSubtitle(context: Context, key: String, pinned: Boolean): String {
+    val name = SearchEngines.byKey(key).name
+    if (pinned) return name
+    val reason = SearchEngineDetector.lastReason(context) ?: return name
+    val label = stringResource(
+        when (reason) {
+            SearchEnginePick.Reason.REACHABLE -> R.string.browser_engine_reason_reachable
+            SearchEnginePick.Reason.REGION -> R.string.browser_engine_reason_region
+            SearchEnginePick.Reason.OFFLINE -> R.string.browser_engine_reason_offline
+            SearchEnginePick.Reason.FALLBACK -> R.string.browser_engine_reason_fallback
+        }
+    )
+    return "$name · $label"
+}
+
+@Composable
+private fun SearchEngineDialog(
+    currentKey: String,
+    autoActive: Boolean,
+    onPickEngine: (String) -> Unit,
+    onPickAuto: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    BottomConfirmDialog(
+        title = stringResource(R.string.browser_engine_title),
+        confirmLabel = null,
+        onDismiss = onDismiss,
+        content = {
+            Spacer(Modifier.height(10.dp))
+            // 「跟随网络自动选择」是一个可选项：选它即清掉手动标记并立刻重选
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onPickAuto() }
+                    .padding(vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.browser_engine_auto),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (autoActive) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (autoActive) colorScheme.primary else colorScheme.onSurface
+                    )
+                    if (autoActive) {
+                        Text(
+                            stringResource(
+                                R.string.browser_engine_auto_on,
+                                SearchEngines.byKey(currentKey).name
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (autoActive) {
+                    Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        tint = colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 4.dp),
+                color = colorScheme.outlineVariant,
+                thickness = 0.5.dp
+            )
+            SearchEngines.all.forEachIndexed { index, engine ->
+                if (index > 0) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        color = colorScheme.outlineVariant,
+                        thickness = 0.5.dp
+                    )
+                }
+                val selected = !autoActive && engine.key == currentKey
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPickEngine(engine.key) }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        engine.name,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (selected) colorScheme.primary else colorScheme.onSurface
+                    )
+                    if (selected) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
+
 // ─── 主题切换弹窗 ───
 
 private data class ThemeOption(val key: String)
@@ -1807,6 +2179,80 @@ private fun themeLabel(key: String): String = when (key) {
     "light" -> stringResource(R.string.theme_light)
     "dark" -> stringResource(R.string.theme_dark)
     else -> stringResource(R.string.theme_follow_system)
+}
+
+// ─── 默认入口（下载器 / 浏览器） ───
+
+@Composable
+private fun startPageLabel(page: StartPage): String = stringResource(
+    if (page == StartPage.Browser) R.string.start_page_browser else R.string.start_page_downloader
+)
+
+@Composable
+private fun StartPageDialog(
+    current: StartPage,
+    onSelect: (StartPage) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val options = listOf(
+        Triple(StartPage.Downloader, Icons.Default.CloudDownload, R.string.start_page_downloader),
+        Triple(StartPage.Browser, Icons.Default.Language, R.string.start_page_browser)
+    )
+    BottomConfirmDialog(
+        title = stringResource(R.string.settings_start_page),
+        confirmLabel = null,
+        onDismiss = onDismiss,
+        content = {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.settings_start_page_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(6.dp))
+            options.forEachIndexed { index, (page, icon, labelRes) ->
+                if (index > 0) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        color = colorScheme.outlineVariant,
+                        thickness = 0.5.dp
+                    )
+                }
+                val selected = page == current
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(page) }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = if (selected) colorScheme.primary else colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        stringResource(labelRes),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (selected) colorScheme.primary else colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (selected) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    )
 }
 
 @Composable

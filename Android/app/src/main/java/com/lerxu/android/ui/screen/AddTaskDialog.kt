@@ -248,6 +248,26 @@ fun AddTaskDialog(
         }
     }
 
+    /**
+     * 拉起种子选择器。
+     *
+     * 先按种子类型找，找不到退回通配类型（第三方文件管理器多半只认通配）；
+     * 两条都不行才报错，而且**把真实原因带出来** —— 系统都自带文件选择器，
+     * 一句"设备上没有选择器"只会误导（用户点名）。
+     */
+    val pickTorrent: () -> Unit = {
+        val first = tryLaunch { torrentPicker.launch("application/x-bittorrent") }
+        if (first != null) {
+            val second = tryLaunch { torrentPicker.launch("*/*") }
+            if (second != null) {
+                error = context.getString(
+                    R.string.file_picker_failed,
+                    second.message ?: second.javaClass.simpleName
+                )
+            }
+        }
+    }
+
     ModalBottomSheet(
         onDismissRequest = {
             if (phase != 0) abortPending(false)
@@ -545,7 +565,7 @@ fun AddTaskDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        torrentPicker.launch("application/x-bittorrent")
+                                        pickTorrent()
                                     }
                             ) {
                                 Row(
@@ -636,6 +656,17 @@ fun AddTaskDialog(
             }
         }
     }
+}
+
+/**
+ * 拉起一个外部选择器，**不让异常逃出去**（从点击回调里逃出去会直接终止进程）。
+ * 返回 null 表示拉起来了；否则返回那个异常，交给调用方决定怎么处理 / 怎么报。
+ */
+private fun tryLaunch(launch: () -> Unit): Exception? = try {
+    launch()
+    null
+} catch (e: Exception) {
+    e
 }
 
 private fun queryFileName(context: Context, uri: Uri): String? {

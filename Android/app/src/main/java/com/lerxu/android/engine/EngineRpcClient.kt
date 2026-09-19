@@ -259,11 +259,27 @@ class EngineRpcClient private constructor(
         return result.toString().contains("\"ok\":true")
     }
 
-    suspend fun addUriTask(uris: List<String>, dir: String, out: String = ""): String {
+    /**
+     * 新增 HTTP(S) 任务。
+     *
+     * [headers] 为逐任务自定义请求头（`"Name: value"` 行），会原样转成引擎的
+     * `header` 选项——浏览器里点下来的地址常需要 `Referer` / `Cookie`
+     * 才放行，缺了必然 403。**绝不放入 `Origin`**：跨域 GET 本就不带它，
+     * 伪造会被对端判为伪造请求。
+     */
+    suspend fun addUriTask(
+        uris: List<String>,
+        dir: String,
+        out: String = "",
+        headers: List<String> = emptyList()
+    ): String {
         val params = buildJsonObject {
             put("uris", JsonArray(uris.map { JsonPrimitive(it) }))
             put("dir", dir)
             if (out.isNotEmpty()) put("out", out)
+            if (headers.isNotEmpty()) {
+                put("header", JsonArray(headers.map { JsonPrimitive(it) }))
+            }
             if (secret.isNotEmpty()) put("token", secret)
         }
         val result = callRaw("task.add", params)

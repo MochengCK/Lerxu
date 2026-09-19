@@ -58,6 +58,18 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * 内置浏览器转交下载：带请求头（`Referer` / `Cookie` / `User-Agent`）
+     * 发起 HTTP 任务并返回 gid（失败为 null）——浏览器场景需要 gid
+     * 才能给出「已交给引擎」的回执。
+     */
+    suspend fun addBrowserDownload(
+        uri: String,
+        dir: String,
+        out: String = "",
+        headers: List<String> = emptyList()
+    ): String? = repository.addUriTask(uri, dir, out, headers)
+
     /** 磁力添加（可带文件勾选流程：元数据就绪后自动暂停等待选择） */
     fun addMagnetTask(magnet: String, dir: String, awaitSelection: Boolean = false) {
         viewModelScope.launch {

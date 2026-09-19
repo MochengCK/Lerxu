@@ -5,13 +5,15 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.*
 import androidx.core.content.edit
+import com.lerxu.android.CrashLog
 import com.lerxu.android.engine.EngineService
 import com.lerxu.android.update.UpdateManager
 import com.lerxu.android.ui.screen.OnboardingTransition
@@ -19,7 +21,7 @@ import com.lerxu.android.ui.screen.AppScreen
 import com.lerxu.android.ui.theme.LerxuTheme
 import java.util.Locale
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private val viewModel: TaskViewModel by viewModels()
 
@@ -57,7 +59,24 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // 偶发崩溃留一份记录（外部目录，便于取出）
+        CrashLog.install(this)
+        // 导航条区域**完全透明**：默认的 `enableEdgeToEdge()` 在 API < 29 上会给
+        // 导航条垫一层半透明 scrim，浏览器里那正好压在底部控制栏的下半截上 ——
+        // 看上去就是"控制栏下面还有一条空白背景"。这里把两种模式都设成全透明，
+        // 底部由我们自己的控制栏一直铺到屏幕底（图标明暗仍由 auto() 判断）。
+        enableEdgeToEdge(
+            navigationBarStyle = SystemBarStyle.auto(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            )
+        )
+        // API 29+ 即使导航条设成透明，系统还会"为了保护可读性"自动给它加一层对比
+        // scrim —— 那一层正好压在底部控制栏的下半截上，看着就是控制栏下面多一条
+        // 空白底色。关掉它，底部完全由我们自己的控制栏铺到屏幕底。
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
 
         // 检查是否已完成引导
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

@@ -50,6 +50,13 @@
     <string name="onboarding_permission_granted">已授權</string>
     <string name="onboarding_finish_title">一切就緒！</string>
     <string name="onboarding_finish_subtitle">正在啟動下載引擎…</string>
+    <string name="onboarding_entry_title">從哪裡開始</string>
+    <string name="onboarding_entry_subtitle">選一個啟動 App 時先開啟的地方</string>
+    <string name="onboarding_finish_entry">預設入口：%1$s</string>
+    <string name="start_page_downloader">下載器</string>
+    <string name="start_page_downloader_desc">管理下載任務，新增連結與種子</string>
+    <string name="start_page_browser">瀏覽器</string>
+    <string name="start_page_browser_desc">直接開啟網頁，邊看邊下載</string>
 
     <!-- App Screen -->
     <string name="settings">設定</string>
@@ -106,6 +113,7 @@
     <string name="click_select_torrent">點選選擇 .torrent 檔案</string>
     <string name="support_local_bt">支援本地 BT 種子檔案</string>
     <string name="read_torrent_failed">讀取種子檔案失敗: %1$s</string>
+    <string name="file_picker_failed">無法開啟檔案選擇器：%1$s</string>
     <string name="add_task_failed">新增任務失敗: %1$s</string>
 
     <!-- Delete confirm dialog -->
@@ -207,6 +215,9 @@
     <string name="add_sub_partial">已新增，但首次拉取失敗：%1$s</string>
     <string name="add_sub_success">已新增 %1$d 個 tracker</string>
     <string name="settings_maintenance">維護</string>
+    <string name="settings_section_start">啟動</string>
+    <string name="settings_start_page">預設入口</string>
+    <string name="settings_start_page_note">下次開啟 App 時生效，之後可隨時在設定裡改</string>
     <string name="settings_appearance">外觀</string>
     <string name="theme">主題</string>
     <string name="theme_follow_system">跟隨系統</string>
@@ -334,4 +345,57 @@
     <string name="select_files_hint">勾選要下載的檔案</string>
     <string name="metadata_parse_failed">中繼資料取得失敗或逾時</string>
     <string name="select_none">全不選</string>
+    <!-- 內建瀏覽器 -->
+    <string name="tab_browser">瀏覽器</string>
+    <string name="browser_back">上一頁</string>
+    <string name="browser_address_hint">搜尋或輸入網址 · %1$s</string>
+    <string name="browser_sniff_title">本頁資源</string>
+    <string name="default_browser_title">設為預設瀏覽器</string>
+    <string name="default_browser_desc">用 Lerxu 開啟 http / https 連結</string>
+    <string name="browser_sniff_clear">清空</string>
+    <string name="browser_sniff_empty">還沒有找到資源</string>
+    <string name="browser_sniff_empty_hint">播放頁面中的音訊或視訊後，網址會自動出現在這裡。</string>
+    <string name="browser_size_unknown">大小未知</string>
+    <string name="browser_download">交給下載引擎</string>
+    <string name="browser_remove">從清單移除</string>
+    <string name="browser_download_sent">已交給下載引擎</string>
+    <string name="browser_download_failed">這個下載沒能新增成功</string>
+    <string name="browser_view_tasks">查看任務</string>
+    <string name="browser_engine_title">搜尋引擎</string>
+    <string name="browser_engine_auto">跟隨網路自動選擇</string>
+    <string name="browser_engine_auto_on">已依目前網路自動選擇：%1$s</string>
+    <string name="browser_engine_reason_reachable">目前網路可直連 Google</string>
+    <string name="browser_engine_reason_region">依所在地區選擇</string>
+    <string name="browser_engine_reason_offline">目前未連網，依地區選擇</string>
+    <string name="browser_engine_reason_fallback">選擇了通用可連的引擎</string>
+    <string name="browser_error_title">網頁無法開啟</string>
+    <string name="browser_error_home">回到首頁</string>
+    <string name="browser_error_ssl">憑證驗證失敗（代碼 %1$d）</string>
+    <string name="browser_retry">重試</string>
+    <string name="browser_launch_hint">搜尋或輸入連結</string>
+    <string name="browser_tabs">分頁</string>
+    <string name="browser_tabs_done">完成</string>
+    <string name="browser_new_tab">新增分頁</string>
+    <string name="browser_close_tab">關閉分頁</string>
+    <string name="browser_tab_untitled">新分頁</string>
+    <string name="browser_sniff_collapse">收合</string>
+    <string name="browser_downloads_page">下載頁</string>
+    <string name="browser_back_to_downloads">返回下載頁</string>
+    <string name="browser_back_downloader">返回下載器</string>
+    <string name="browser_pull_refresh">鬆開以重新載入</string>
+    <string name="browser_link_copied">連結已複製</string>
+    <string name="browser_dock_style">介面方案</string>
+    <string name="browser_dock_style_classic">傳統</string>
+    <string name="browser_dock_style_modern">現代</string>
+    <!-- Window mode selection -->
+    <string name="browser_window_mode">視窗模式</string>
+    <string name="normal_window">一般視窗</string>
+    <string name="incognito_window">無痕視窗</string>
+    <!-- 標籤格狀頂端那枚滑桿用的短標籤：滑桿要盡量短，只佔中間一小塊 -->
+    <string name="window_normal_short">一般</string>
+    <string name="window_incognito_short">無痕</string>
+    <string name="select_window_mode">選擇您要開啟的視窗類型。</string>
+    <string name="enter_password">輸入密碼</string>
+    <string name="password_hint">請輸入密碼以存取無痕模式。</string>
+    <string name="browser_auth_failed">驗證未通過：%1$s</string>
 </resources>

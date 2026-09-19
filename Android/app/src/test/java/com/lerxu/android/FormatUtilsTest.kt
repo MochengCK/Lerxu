@@ -64,16 +64,19 @@ class FormatUtilsTest {
 
     @Test
     fun `statusColor maps each task status`() {
-        assertEquals(0xFF2196F3, statusColor("active"))
-        assertEquals(0xFF26A69A, statusColor("seeding"))
-        assertEquals(0xFFFF9800, statusColor("waiting"))
-        assertEquals(0xFFFF9800, statusColor("awaiting_selection"))
-        assertEquals(0xFF9E9E9E, statusColor("paused"))
-        assertEquals(0xFF4CAF50, statusColor("complete"))
-        assertEquals(0xFFF44336, statusColor("error"))
-        assertEquals(0xFF9E9E9E, statusColor("removed"))
+        // 取值与桌面端共用一套（桌面来源 src/shared/colors.json）：
+        // 下载中 = 品牌主色；做种/完成 = 同一绿；等待/暂停/已移除 = 同一灰
+        assertEquals(0xFF1A7FE0, statusColor("active"))
+        assertEquals(0xFF2ACB42, statusColor("seeding"))
+        assertEquals(0xFF737373, statusColor("waiting"))
+        // 待勾选文件是安卓特有状态，对应桌面 pendingSelection 的 #f0ad4e
+        assertEquals(0xFFF0AD4E, statusColor("awaiting_selection"))
+        assertEquals(0xFF737373, statusColor("paused"))
+        assertEquals(0xFF2ACB42, statusColor("complete"))
+        assertEquals(0xFFFF6157, statusColor("error"))
+        assertEquals(0xFF737373, statusColor("removed"))
         // 未知状态回落为灰色，不抛异常
-        assertEquals(0xFF9E9E9E, statusColor("unknown-status"))
+        assertEquals(0xFF737373, statusColor("unknown-status"))
     }
 
     @Test

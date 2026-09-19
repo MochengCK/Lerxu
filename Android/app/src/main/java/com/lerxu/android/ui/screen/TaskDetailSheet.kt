@@ -92,6 +92,7 @@ import com.lerxu.android.ui.formatBytes
 import com.lerxu.android.ui.formatDuration
 import com.lerxu.android.ui.formatSpeed
 import com.lerxu.android.ui.statusColor
+import com.lerxu.android.ui.theme.lerxuExtraColors
 import com.lerxu.android.ui.statusText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -509,14 +510,15 @@ private fun PiecesTab(
                         color = colorScheme.onSurfaceVariant
                     )
                 }
+                val extraColors = lerxuExtraColors
                 PieceGridView(
                     bitfieldHex = task.bitfield,
                     partialBitfieldHex = task.partialBitfield,
                     wantedBitfieldHex = task.wantedBitfield,
                     numPieces = task.numPieces,
-                    color = Color(0xFF4CAF50),
-                    emptyColor = colorScheme.surfaceContainerHighest,
-                    unwantedColor = Color(0xFF90A4AE)
+                    color = extraColors.pieceDone,
+                    emptyColor = extraColors.pieceEmpty,
+                    unwantedColor = extraColors.pieceUnwanted
                 )
             }
         }
@@ -843,10 +845,12 @@ private fun TrackerRow(
     colorScheme: androidx.compose.material3.ColorScheme,
     tr: Tracker
 ) {
+    val extraColors = lerxuExtraColors
+    // 功能色取主题里的桌面 token（success / danger / warning），深色模式同源
     val statusColor = when (tr.status) {
-        "working" -> Color(0xFF4CAF50)
-        "not-working" -> Color(0xFFF44336)
-        else -> Color(0xFFFF9800)
+        "working" -> extraColors.success
+        "not-working" -> extraColors.danger
+        else -> extraColors.warning
     }
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {

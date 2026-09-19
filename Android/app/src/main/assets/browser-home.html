@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Lerxu</title>
+<script>
+  // 启动配置：App 在 serve 这份 HTML 时把真实 JSON 直接替换进下面的占位符
+  // （见 BrowserController 的 shouldInterceptRequest 注入），首次绘制前
+  // 配色就已确定。没被替换（走的是原始资源而非注入）时退回解析 URL 参数。
+  (function () {
+    var boot = /*__LERXU_BOOT__*/null;
+    if (!boot) {
+      var q = {};
+      location.search.replace(/^\?/, '').split('&').forEach(function (pair) {
+        if (!pair) return;
+        var i = pair.indexOf('=');
+        var k = decodeURIComponent(i < 0 ? pair : pair.slice(0, i));
+        var v = decodeURIComponent(i < 0 ? '' : pair.slice(i + 1));
+        q[k] = v;
+      });
+      boot = {
+        lang: q.lang === 'en' ? 'en' : 'zh',
+        dark: q.dark === '1',
+        colors: q.colors || '',
+        focus: q.focus === '1'
+      };
+    }
+    window.LERXU_BOOT = boot;
+    if (boot.dark) document.documentElement.className = 'dark';
+  })();
+</script>
+<style>
+  /* 兜底配色（浅色）：App 注入的色板会整段替换下面的占位符，
+     保证 :root / html.dark 两套 token 都指向当前主题的同一组颜色 ——
+     即使明暗类名判定有偏差，页面颜色也一定跟随应用主题 */
+  :root {
+    color-scheme: light;
+    --bg: #F0F4F8;
+    --panel: #FFFFFF;
+    --border: #D3DDE6;
+    --text: #2C3E50;
+    --muted: #5A6C7D;
+    --primary: #1A7FE0;
+  }
+  html.dark {
+    color-scheme: dark;
+    --bg: #1E2228;
+    --panel: #262A31;
+    --border: #3D424D;
+    --text: #DFE3E8;
+    --muted: #8B95A3;
+    --primary: #4A9EFF;
+  }
+  /*__LERXU_THEME__*/
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 -apple-system, "PingFang SC", "Roboto", "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* 页面只剩品牌区：搜索统一走底部控制栏的地址栏（进首页时 App 会自动落焦），
+     这里不再放一个重复的搜索框 */
+  .wrap {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 24px 20px 20vh;
+  }
+  /* 品牌：整枚 "lerxu" 字标就是一张透明底的图（不再拼文字） */
+  .brand {
+    display: flex;
+    align-items: center;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .brand img {
+    height: 80px;
+    width: auto;
+    display: block;
+  }
+  /* 深色底上原标的深藏青会糊进背景：反色 + 色相回转保住冷色系，
+     只把深色部件提亮（字标是自家资产，滤镜比换一套图更省事也不会缺图） */
+  html.dark .brand img {
+    filter: invert(1) hue-rotate(180deg) brightness(1.05);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <img src="lerxu-logo.png" alt="Lerxu">
+  </div>
+</div>
+<script>
+  // 引擎选择不在这页做了：入口在 App 底部控制栏的引擎选择框，
+  // 目录以 Kotlin 侧 SearchEngines 为单一来源，本地页面不再自带清单
+  var BOOT = window.LERXU_BOOT || { lang: 'zh', dark: false, colors: '', focus: false };
+
+  // 与 App 注入顺序一一对应的 CSS 变量（bg/panel/border/text/muted/primary）
+  var COLOR_TOKENS = ['--bg', '--panel', '--border', '--text', '--muted', '--primary'];
+  // 主题变化时 JS 桥会重新下发同一组 token：内联变量优先级最高，直接覆盖
+  function applyColors(colors) {
+    var list = typeof colors === 'string' ? colors.split(',') : (colors || []);
+    COLOR_TOKENS.forEach(function (name, i) {
+      var v = list[i] && String(list[i]).trim();
+      if (v) document.documentElement.style.setProperty(name, v);
+    });
+  }
+
+  // 统一的配置应用：注入的启动配置与 JS 桥下发走同一条路（外观只有一处真相）
+  function applyConfig(cfg) {
+    cfg = cfg || {};
+    var lang = cfg.lang === 'en' ? 'en' : 'zh';
+    document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+    document.documentElement.className = cfg.dark ? 'dark' : '';
+    if (cfg.colors) { applyColors(cfg.colors); }
+  }
+
+  // App 端在主题 / 语言变化时会回调这个函数（无需重载页面）
+  window.LerxuHomeInit = function (cfg) { applyConfig(cfg); };
+
+  // 首帧：注入配置下这是幂等的（占位符已是同一份真相）；
+  // 原始资源下退回 URL 参数
+  applyConfig(BOOT);
+</script>
+</body>
+</html>

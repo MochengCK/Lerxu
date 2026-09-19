@@ -50,6 +50,13 @@
     <string name="onboarding_permission_granted">已授权</string>
     <string name="onboarding_finish_title">一切就绪！</string>
     <string name="onboarding_finish_subtitle">正在启动下载引擎…</string>
+    <string name="onboarding_entry_title">从哪里开始</string>
+    <string name="onboarding_entry_subtitle">选一个启动 App 时先打开的地方</string>
+    <string name="onboarding_finish_entry">默认入口：%1$s</string>
+    <string name="start_page_downloader">下载器</string>
+    <string name="start_page_downloader_desc">管理下载任务，添加链接与种子</string>
+    <string name="start_page_browser">浏览器</string>
+    <string name="start_page_browser_desc">直接打开网页，边看边下</string>
 
     <!-- App Screen -->
     <string name="settings">设置</string>
@@ -106,6 +113,7 @@
     <string name="click_select_torrent">点击选择 .torrent 文件</string>
     <string name="support_local_bt">支持本地 BT 种子文件</string>
     <string name="read_torrent_failed">读取种子文件失败: %1$s</string>
+    <string name="file_picker_failed">无法打开文件选择器：%1$s</string>
     <string name="add_task_failed">添加任务失败: %1$s</string>
 
     <!-- Delete confirm dialog -->
@@ -207,6 +215,9 @@
     <string name="add_sub_partial">已添加，但首次拉取失败：%1$s</string>
     <string name="add_sub_success">已添加 %1$d 个 tracker</string>
     <string name="settings_maintenance">维护</string>
+    <string name="settings_section_start">启动</string>
+    <string name="settings_start_page">默认入口</string>
+    <string name="settings_start_page_note">下次打开 App 时生效，之后可随时在设置里改</string>
     <string name="settings_appearance">外观</string>
     <string name="theme">主题</string>
     <string name="theme_follow_system">跟随系统</string>
@@ -334,4 +345,57 @@
     <string name="select_files_hint">勾选要下载的文件</string>
     <string name="metadata_parse_failed">元数据获取失败或超时</string>
     <string name="select_none">全不选</string>
+    <!-- 内置浏览器 -->
+    <string name="tab_browser">浏览器</string>
+    <string name="browser_back">后退</string>
+    <string name="browser_address_hint">搜索或输入地址 · %1$s</string>
+    <string name="browser_sniff_title">本页资源</string>
+    <string name="default_browser_title">设为默认浏览器</string>
+    <string name="default_browser_desc">用 Lerxu 打开 http / https 链接</string>
+    <string name="browser_sniff_clear">清空</string>
+    <string name="browser_sniff_empty">还没有发现资源</string>
+    <string name="browser_sniff_empty_hint">播放页面里的音视频后，地址会自动出现在这里。</string>
+    <string name="browser_size_unknown">大小未知</string>
+    <string name="browser_download">交给下载引擎</string>
+    <string name="browser_remove">从列表移除</string>
+    <string name="browser_download_sent">已交给下载引擎</string>
+    <string name="browser_download_failed">这个下载没能添加成功</string>
+    <string name="browser_view_tasks">查看任务</string>
+    <string name="browser_engine_title">搜索引擎</string>
+    <string name="browser_engine_auto">跟随网络自动选择</string>
+    <string name="browser_engine_auto_on">已按当前网络自动选择：%1$s</string>
+    <string name="browser_engine_reason_reachable">当前网络可直连 Google</string>
+    <string name="browser_engine_reason_region">按所在区域选择</string>
+    <string name="browser_engine_reason_offline">当前未联网，按区域选择</string>
+    <string name="browser_engine_reason_fallback">选择了通用可达的引擎</string>
+    <string name="browser_error_title">网页无法打开</string>
+    <string name="browser_error_home">回到首页</string>
+    <string name="browser_error_ssl">证书校验失败（代码 %1$d）</string>
+    <string name="browser_retry">重试</string>
+    <string name="browser_launch_hint">搜索或输入链接</string>
+    <string name="browser_tabs">标签页</string>
+    <string name="browser_tabs_done">完成</string>
+    <string name="browser_new_tab">新建标签</string>
+    <string name="browser_close_tab">关闭标签</string>
+    <string name="browser_tab_untitled">新标签页</string>
+    <string name="browser_sniff_collapse">收起</string>
+    <string name="browser_downloads_page">下载页</string>
+    <string name="browser_back_to_downloads">返回下载页</string>
+    <string name="browser_back_downloader">返回下载器</string>
+    <string name="browser_pull_refresh">松开以重新加载</string>
+    <string name="browser_link_copied">链接已复制</string>
+    <string name="browser_dock_style">界面方案</string>
+    <string name="browser_dock_style_classic">传统</string>
+    <string name="browser_dock_style_modern">现代</string>
+    <!-- Window mode selection -->
+    <string name="browser_window_mode">窗口模式</string>
+    <string name="normal_window">普通窗口</string>
+    <string name="incognito_window">无痕窗口</string>
+    <!-- 标签网格顶部那枚滑块用的短标签：滑块要尽量短，只占中间一小块 -->
+    <string name="window_normal_short">普通</string>
+    <string name="window_incognito_short">无痕</string>
+    <string name="select_window_mode">选择您想要打开的窗口类型。</string>
+    <string name="enter_password">输入密码</string>
+    <string name="password_hint">请输入密码以访问无痕模式。</string>
+    <string name="browser_auth_failed">验证未通过：%1$s</string>
 </resources>

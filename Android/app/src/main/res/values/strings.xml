@@ -50,6 +50,13 @@
     <string name="onboarding_permission_granted">Granted</string>
     <string name="onboarding_finish_title">All set!</string>
     <string name="onboarding_finish_subtitle">Starting download engine…</string>
+    <string name="onboarding_entry_title">Where to start</string>
+    <string name="onboarding_entry_subtitle">Pick what opens first when the app launches</string>
+    <string name="onboarding_finish_entry">Default entry: %1$s</string>
+    <string name="start_page_downloader">Downloader</string>
+    <string name="start_page_downloader_desc">Manage tasks, add links and torrents</string>
+    <string name="start_page_browser">Browser</string>
+    <string name="start_page_browser_desc">Browse the web and download as you go</string>
 
     <!-- App Screen -->
     <string name="settings">Settings</string>
@@ -106,6 +113,7 @@
     <string name="click_select_torrent">Tap to select .torrent file</string>
     <string name="support_local_bt">Supports local BT torrent files</string>
     <string name="read_torrent_failed">Failed to read torrent file: %1$s</string>
+    <string name="file_picker_failed">Could not open a file picker: %1$s</string>
     <string name="add_task_failed">Failed to add task: %1$s</string>
 
     <!-- Delete confirm dialog -->
@@ -207,6 +215,9 @@
     <string name="add_sub_partial">Added, but first fetch failed: %1$s</string>
     <string name="add_sub_success">Added %1$d trackers</string>
     <string name="settings_maintenance">Maintenance</string>
+    <string name="settings_section_start">Startup</string>
+    <string name="settings_start_page">Default entry</string>
+    <string name="settings_start_page_note">Takes effect next launch — change it anytime in Settings</string>
     <string name="settings_appearance">Appearance</string>
     <string name="theme">Theme</string>
     <string name="theme_follow_system">Follow system</string>
@@ -334,4 +345,57 @@
     <string name="select_files_hint">Select the files to download</string>
     <string name="metadata_parse_failed">Metadata fetch failed or timed out</string>
     <string name="select_none">Deselect All</string>
+    <!-- Built-in browser -->
+    <string name="tab_browser">Browser</string>
+    <string name="browser_back">Back</string>
+    <string name="browser_address_hint">Search or enter address · %1$s</string>
+    <string name="browser_sniff_title">Resources on this page</string>
+    <string name="default_browser_title">Set as default browser</string>
+    <string name="default_browser_desc">Open http / https links with Lerxu</string>
+    <string name="browser_sniff_clear">Clear</string>
+    <string name="browser_sniff_empty">Nothing found yet</string>
+    <string name="browser_sniff_empty_hint">Play the page&#8217;s media and the addresses show up here.</string>
+    <string name="browser_size_unknown">Size unknown</string>
+    <string name="browser_download">Send to download engine</string>
+    <string name="browser_remove">Remove from list</string>
+    <string name="browser_download_sent">Sent to the download engine</string>
+    <string name="browser_download_failed">Could not add this download</string>
+    <string name="browser_view_tasks">View tasks</string>
+    <string name="browser_engine_title">Search engine</string>
+    <string name="browser_engine_auto">Auto (follow network)</string>
+    <string name="browser_engine_auto_on">Chosen for your network: %1$s</string>
+    <string name="browser_engine_reason_reachable">Google is reachable on this network</string>
+    <string name="browser_engine_reason_region">Chosen from your region</string>
+    <string name="browser_engine_reason_offline">Offline, so chosen from your region</string>
+    <string name="browser_engine_reason_fallback">Chose a widely reachable engine</string>
+    <string name="browser_error_title">This page can&#8217;t be opened</string>
+    <string name="browser_error_home">Back to home</string>
+    <string name="browser_error_ssl">Certificate check failed (code %1$d)</string>
+    <string name="browser_retry">Retry</string>
+    <string name="browser_launch_hint">Search or enter a link</string>
+    <string name="browser_tabs">Tabs</string>
+    <string name="browser_tabs_done">Done</string>
+    <string name="browser_new_tab">New tab</string>
+    <string name="browser_close_tab">Close tab</string>
+    <string name="browser_tab_untitled">New tab</string>
+    <string name="browser_sniff_collapse">Hide</string>
+    <string name="browser_downloads_page">Downloads</string>
+    <string name="browser_back_to_downloads">Back to downloads</string>
+    <string name="browser_back_downloader">Back to downloader</string>
+    <string name="browser_pull_refresh">Release to reload</string>
+    <string name="browser_link_copied">Link copied</string>
+    <string name="browser_dock_style">Interface style</string>
+    <string name="browser_dock_style_classic">Classic</string>
+    <string name="browser_dock_style_modern">Modern</string>
+    <!-- Window mode selection -->
+    <string name="browser_window_mode">Window Mode</string>
+    <string name="normal_window">Normal Window</string>
+    <string name="incognito_window">Incognito Window</string>
+    <!-- Short labels for the tab-grid top switch: it should stay as small as possible -->
+    <string name="window_normal_short">Normal</string>
+    <string name="window_incognito_short">Incognito</string>
+    <string name="select_window_mode">Select the type of window you want to open.</string>
+    <string name="enter_password">Enter Password</string>
+    <string name="password_hint">Please enter your password to access incognito mode.</string>
+    <string name="browser_auth_failed">Verification failed: %1$s</string>
 </resources>
