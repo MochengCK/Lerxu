@@ -34,9 +34,51 @@
 | `_locales/{en,zh_CN,zh_TW}/messages.json` | 清单 i18n | 扩展名称 / 描述 / 按钮标题（清单里用 `__MSG_*__` 引用） |
 | `icons/`、`Installation-Guide-*.txt`、`安装指南-中文.txt` 等 | 随包资源 | 图标与四种语言的离线安装指南 |
 
+> `icons/` 下的 4 个 PNG 由 `scripts/generate-extension-icons.py` 生成（几何绘制 + 16 倍超采样降采样），
+> 改图标请改脚本再重跑 `python3 scripts/generate-extension-icons.py`，不要直接手改 PNG；
+> `--preview` 会另出一张浅底/深底对比图，便于确认小尺寸下是否还认得出。
+
 > 另有 `dash-sniffer.js` 与 `diagnose.js` 两个文件随包分发，但**两份清单都没有引用它们**：
 > 前者是早期的 DASH 嗅探实现（能力已并入 `video-sniffer.js`），后者是手动粘贴到扩展
 > 控制台里排查语言同步的调试脚本。它们不参与运行，改动功能时不必看这两处。
+
+### 音视频配对协议（扩展 ↔ 应用）
+
+DASH 站点的画面流与声音流是两个独立下载任务，应用要在两者都下完后用 ffmpeg 合成一个文件。
+"哪两个文件是一对"由扩展**显式声明**，不靠文件名猜：
+
+- 扩展把一对流交给 `sendStreamPair`（`key-listener.js`）统一发送：两条消息带**同一个
+  `pairId`**，各自的 `pairRole` 为 `video` / `audio`；
+- 配对信息走**消息字段**而不是请求头 —— 应用只从 `headers` 里挑出
+  `User-Agent` / `Cookie` / `Authorization`，其余一律丢弃，塞进 headers 收不到；
+- 链路：`key-listener` → `background.js` 的 `addUriFromContent` → `Application.js`
+  `_handleExtensionAdd`（放进 taskPayload）→ 渲染进程 `addUri` **写进任务历史** →
+  下载完成时 `EngineClient.vue` 按 `pairId` 配对合并。写历史是必需的：完成事件触发时
+  任务可能已被引擎清理，只剩历史可查；
+- 一对音视频的**文件名也只由 `streamPairFilenames` 生成**（`<名>_video.mp4` /
+  `<名>_audio.m4a`）。以前两个分支各写一套（一套本地化 `_视频流/_音频流`），同一对流的
+  文件名词干不一致，应用端配不上对；
+- 发送去重按"整对"（`videoUrl|audioUrl`）做，单独资源按地址去重 —— 只拦单条会把一对
+  拆成一半，应用端会一直等一个不会来的伙伴。
+
+应用端在没有 `pairId` 时（旧版扩展、站点自身的 DASH 分片）才回退到"同目录 + 同词干
+文件名"的启发式配对。
+
+### 配置存储契约（容易踩）
+
+`background.js` 把拦截配置**整体**存在 `chrome.storage.local` 的 `extConfig` 键下
+（一个对象：`interceptAllDownloads` / `silentDownload` / `skipFileExtensions` /
+`excludeDomains` / `minFileSize` / `shiftToggleEnabled` / `videoSniffer*`），
+**不写**扁平的 `interceptAllDownloads` 等同名键；只有 `videoSnifferEnabled` 等少数几个
+是扁平存的。因此：
+
+- content script（`download-interceptor.js`）读配置**必须**取 `extConfig` 对象再取字段，
+  读扁平键会永远拿到 `undefined`；
+- 这个坑真实发生过：`download-interceptor.js` 早期读的是扁平键，`cachedInterceptEnabled`
+  恒为 `false`，**点击拦截从未生效**，所有下载都退化成"浏览器先建下载项、再被取消"的
+  事后接管 —— 小文件/高速下载来不及取消就留给了浏览器（表现为"有时交给应用、有时交给浏览器"）；
+- 配置变更的通知走 `chrome.tabs.sendMessage({ type: 'extConfigUpdated' })`，
+  同时 `chrome.storage.onChanged` 也会触发，两条路都要能刷新缓存。
 
 ## 构建、打包与测试
 
@@ -122,6 +164,9 @@ Lerxu 应用构造下载任务——按 Mozilla 定义，在扩展与浏览器�
 - Firefox：`about:debugging#/runtime/this-firefox` → 「临时载入附加组件」→ `dist/extension/firefox/manifest.json`
 
 ## AMO 提交
+
+线上地址：**https://addons.mozilla.org/zh-CN/firefox/addon/lerxu/**（slug 为 `lerxu`；
+用户可直接从商店安装并自动更新，随包分发的 `.zip` / `.xpi` 只用于本地测试与自签名分发）。
 
 1. `npm run build:extension`，提交 `dist/extension/artifacts/lerxu-webextension-firefox-<版本>.zip`
 2. 上架文案（名称 / 概述 / 描述 / 版本说明 / 分类与标签建议 / 给审核员的说明）见

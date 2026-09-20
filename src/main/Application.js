@@ -22,7 +22,7 @@ import {
   ADD_TASK_TYPE,
   TASK_STATUS
 } from '@shared/constants'
-import { bytesToSize, checkIsNeedRunAdvanced, detectResource, sanitizeLink, getTaskName, removeExtensionDot, timeFormat, timeRemaining } from '@shared/utils'
+import { bytesToSize, checkIsNeedRunAdvanced, detectResource, sanitizeLink, getTaskName, getTaskUriForComparison, removeExtensionDot, timeFormat, timeRemaining } from '@shared/utils'
 import { parsePieceStatuses } from '@shared/utils/piece-status'
 import {
   deduplicateTrackers,
@@ -344,7 +344,7 @@ export default class Application extends EventEmitter {
 
   // 添加下载任务(与 /lerxu/add POST 一致),返回 { ok, dialog } 或 { ok: false, error }
   async _handleExtensionAdd (payload) {
-    const { url, referer, headers, suggestedFilename } = payload
+    const { url, referer, headers, suggestedFilename, pairId, pairRole } = payload
     const downloadUrl = `${url || ''}`.trim()
     if (!downloadUrl || !/^https?:/i.test(downloadUrl)) {
       return { ok: false, error: 'invalid url' }
@@ -352,6 +352,9 @@ export default class Application extends EventEmitter {
 
     const historyTasks = []
     const allTasks = []
+    // 活动 / 等待中的任务（不含 stopped 历史）：既用于下面的命名冲突判断，
+    // 也用于「同一地址重复提交」的判定
+    const liveTasks = []
 
     try {
       // 仅检查活动 / 等待中的任务,避免历史已完成任务(文件可能已删除或已合并)
@@ -361,12 +364,36 @@ export default class Application extends EventEmitter {
         this.engineClient.call('tellActive'),
         this.engineClient.call('tellWaiting', 0, 1000)
       ])
-      allTasks.push(...(active || []), ...(waiting || []))
+      liveTasks.push(...(active || []), ...(waiting || []))
     } catch (error) {
       console.error('[Duplicate Check] Error fetching tasks:', error)
     }
 
+    allTasks.push(...liveTasks)
+
     allTasks.push(...historyTasks)
+
+    // 同一地址已经在下载 / 排队 → 判定为重复提交，直接忽略，不再建任务。
+    //
+    // 为什么必须有这一层：扩展把同一份资源发两次是可能的 —— 合集下载会在很短
+    // 时间内连发几十条 add（每个视频的视频流 + 音频流各一条），排在队尾的
+    // WebSocket 请求超过扩展的 5s 超时会被判失败，扩展随即回退 HTTP 再发一遍，
+    // 应用侧于是收到两次；add 非幂等，就建出了两个任务，同一个视频被下载两份
+    // （用户点名）。扩展侧的去重只能覆盖"同一会话、同一窗口期"内的重复，
+    // 跨通道（WS + HTTP）的重复只有这里能兜住。
+    // 只比对活动 / 等待中的任务：已完成或已停止的不算重复 —— 用户删掉任务后
+    // 重新下载同一个地址是正常操作，不能被拦。
+    try {
+      const target = sanitizeLink(downloadUrl)
+      const duplicated = liveTasks.some(task => {
+        const uri = getTaskUriForComparison(task)
+        return !!uri && sanitizeLink(uri) === target
+      })
+      if (duplicated) {
+        console.log('[Lerxu] Duplicate extension add ignored (already active/waiting):', downloadUrl)
+        return { ok: true, duplicate: true }
+      }
+    } catch (_) {}
 
     const existingNames = new Set()
     allTasks.forEach(task => {
@@ -490,6 +517,14 @@ export default class Application extends EventEmitter {
     }
     if (authorization) {
       taskPayload.authorization = authorization
+    }
+    // 一对音视频（扩展把同一视频的画面流与声音流拆成两个任务发过来）带同一个
+    // pairId 与各自角色。渲染进程把它记进任务历史，下载完成时据此配对合并 ——
+    // 不再靠"文件名长得像不像"去猜（用户点名：靠猜会把不相干的视频误配成一对，
+    // 也会因为两个文件不同时下载完就跳过合并）
+    if (pairId) {
+      taskPayload.pairId = `${pairId}`
+      taskPayload.pairRole = pairRole ? `${pairRole}` : ''
     }
 
     if (!silentDownload) {
@@ -697,6 +732,18 @@ export default class Application extends EventEmitter {
           return true
         }
 
+        // 存活探针：**故意放在鉴权之前**。
+        // 扩展用它判断"应用在不在"，据此决定下载是交给应用还是留给浏览器。
+        // 放在鉴权之后会让它失去意义：token 失效（应用刚重启）时探针返回 401，
+        // 扩展就误判应用离线，把下载放行给浏览器 —— 用户看到的是
+        // "应用明明开着、接管也开着，怎么还是浏览器下载"（用户点名）。
+        // 只回 {ok:true}，不含任何信息。
+        if (url.startsWith('/lerxu/health')) {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+          return
+        }
+
         if (!validateToken()) {
           const clientIp = req.socket.remoteAddress || 'unknown'
           const requestPath = url
@@ -787,12 +834,6 @@ export default class Application extends EventEmitter {
               res.end(JSON.stringify({ ok: false }))
             }
           })
-          return
-        }
-
-        if (url.startsWith('/lerxu/health')) {
-          res.writeHead(200, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ ok: true }))
           return
         }
 

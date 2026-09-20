@@ -45,11 +45,13 @@ export const getDhtPath = (protocol) => {
   return resolve(getUserDataPath(), `./${name}`)
 }
 
-export const getAria2LogPath = () => {
-  return resolve(getUserDataPath(), './aria2-debug.log')
+// 下载引擎（XferRust）的调试日志。文件名与展示名都用"引擎"而不是
+// 旧引擎的 aria2：换引擎后设置面板里再出现 "aria2" 只会让用户困惑（用户点名）
+export const getEngineLogPath = () => {
+  return resolve(getUserDataPath(), './engine-debug.log')
 }
 
-export const getAria2LogDir = () => {
+export const getEngineLogDir = () => {
   return getUserDataPath()
 }
 

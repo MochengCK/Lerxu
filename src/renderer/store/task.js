@@ -1334,10 +1334,20 @@ const actions = {
           const fromBrowserExtension =
             hasBrowserExtensionHeader(normalizedOptions) ||
             (Array.isArray(optionsList) && optionsList.some(o => hasBrowserExtensionHeader(o)))
+          // 扩展发来的一对音视频（画面流 / 声音流）带同一个 pairId 与各自角色，
+          // 必须**落进任务历史**：下载完成事件里要据此配对合并，而那时任务可能
+          // 已经被引擎清理、只剩历史可查（用户点名要合并可靠）
+          const pairId = data && data.pairId ? `${data.pairId}` : ''
+          const pairRole = data && data.pairRole ? `${data.pairRole}` : ''
           try {
             const now = Date.now()
             gids.forEach(gid => {
-              const patch = fromBrowserExtension ? { createdAt: now, fromBrowserExtension: true } : { createdAt: now }
+              const patch = { createdAt: now }
+              if (fromBrowserExtension) patch.fromBrowserExtension = true
+              if (pairId) {
+                patch.pairId = pairId
+                patch.pairRole = pairRole
+              }
               taskHistory.updateTask(`${gid}`, patch, null)
             })
           } catch (e) {}

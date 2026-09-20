@@ -535,7 +535,7 @@
   min-width: 0;
 }
 
-/* 行内链接（如 Chrome / Edge）：紧邻排列而不是被 space-between 推到两端 */
+/* 行内链接（如 Chrome / Edge / Firefox）：紧邻排列而不是被 space-between 推到两端 */
 .preference-dialog .form-item-sub:has(> .pref-link) {
   justify-content: flex-start;
   gap: 18px;

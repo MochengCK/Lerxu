@@ -527,6 +527,12 @@
             >
               Edge
             </span>
+            <span
+              class="text-link pref-link"
+              @click="openFirefoxAddon()"
+            >
+              Firefox
+            </span>
           </el-col>
         </el-form-item>
       </div>
@@ -3455,6 +3461,15 @@ watch(trackerSourceConfigVisible, (visible) => {
         // 开发环境
         const appPath = app.getAppPath()
         return path.join(appPath, 'extensions', 'lerxu-webextension')
+      }
+
+      // Firefox 用户走商店安装：AMO 上的版本会自动更新，不需要像 Chrome / Edge
+      // 那样"加载已解压的扩展程序"，所以直接打开附加组件页面，不去开扩展目录。
+      const FIREFOX_ADDON_URL = 'https://addons.mozilla.org/zh-CN/firefox/addon/lerxu/'
+      function openFirefoxAddon () {
+        try {
+          ipcRenderer.send('command', 'application:open-external', FIREFOX_ADDON_URL)
+        } catch (e) {}
       }
 
       // 点击浏览器按钮：跳转到对应浏览器的扩展管理页面，

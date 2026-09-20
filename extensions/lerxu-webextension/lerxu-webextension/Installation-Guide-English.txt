@@ -73,7 +73,14 @@ omits the Chromium-only `downloads.ui` permission).
 
 ### Permanent installation
 
-Firefox requires signed add-ons for permanent installation:
+**From the add-on store (recommended):** the extension is published on Mozilla
+Add-ons (AMO). Open the page below and click "Add to Firefox" — future versions
+update automatically:
+
+https://addons.mozilla.org/en-US/firefox/addon/lerxu/
+
+If you want to install a build of your own (a development version that is not on
+AMO yet), you need to sign it yourself:
 
 1. From the repository root run `npm run build:extension`
    → produces `dist/extension/artifacts/lerxu-webextension-firefox-<version>.zip`

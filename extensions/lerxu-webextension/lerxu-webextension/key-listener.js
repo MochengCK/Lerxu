@@ -309,6 +309,16 @@ if (typeof window !== 'undefined' && window.addEventListener) {
    * `resource.url.includes(...)`，一条脏数据就抛异常让整段渲染中断，
    * 列表少几条而按钮数字照旧，正是「数量不一样」的另一个来源。
    */
+  /** 比较 URL 是否指向同一条资源（忽略查询串）。 */
+  const urlKeyForDedup = (url) => {
+    try {
+      const u = new URL(url)
+      return `${u.protocol}//${u.hostname}${u.pathname}`
+    } catch (e) {
+      return `${url || ''}`.split('?')[0]
+    }
+  }
+
   const collectDisplayItems = (resources) => {
     const r = resources || {}
     const combined = Array.isArray(r.combined) ? r.combined.filter(Boolean) : []
@@ -316,7 +326,24 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const hasM4s = m4s.length > 0
     const keepPlain = (list) => (Array.isArray(list) ? list.filter(Boolean) : [])
       .filter(item => !(hasM4s && isM4sEntry(item)))
-    return { combined, m4s, video: keepPlain(r.video), audio: keepPlain(r.audio) }
+
+    // 合并条目（「完整视频」）已经覆盖了它用的那两条流：这两条不再在
+    // 「分离流 / 视频资源 / 音频资源」段里重复列一遍 —— 否则同一条资源
+    // 在下拉框里出现两次，看起来就是「内容重复」（用户点名）。
+    const usedByCombined = new Set()
+    combined.forEach(c => {
+      if (!c) return
+      if (c.videoUrl) usedByCombined.add(urlKeyForDedup(c.videoUrl))
+      if (c.audioUrl) usedByCombined.add(urlKeyForDedup(c.audioUrl))
+    })
+    const dropUsed = (list) => list.filter(item => !(item && usedByCombined.has(urlKeyForDedup(item.url))))
+
+    return {
+      combined,
+      m4s: dropUsed(m4s),
+      video: dropUsed(keepPlain(r.video)),
+      audio: dropUsed(keepPlain(r.audio))
+    }
   }
 
   /** 上面那四组条目一共几条 —— 按钮上显示的就是这个数。 */
@@ -459,16 +486,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     backupResources()
     updateMainButtonResourceCount()
     
-    // 检查按钮是否被用户关闭，如果关闭则不显示
-    if (!isButtonClosedByUser() && sniffedResources.total > 0) {
-      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper') || document.getElementById('lerxu-download-btn-wrapper')
-      if (wrapper) {
-        wrapper.style.display = 'block'
-        wrapper.style.visibility = 'visible'
-        log('Ensured button visibility after resource update')
-      }
-    }
-    
+    // 按钮显隐统一交给 updateButtonVisibility 决定（它已包含 per-video 模式判断）。
+    // 旧代码在这里直接写 display=block：per-video 页面里会把本该隐藏的主按钮
+    // 闪出来一帧，再被 renderPerVideoSniffButtons 藏回去（用户点名）
     dedupeUniversalButtonWrappers()
     renderPerVideoSniffButtons()
     updateButtonVisibility()
@@ -497,16 +517,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       backupResources()
       updateMainButtonResourceCount()
       
-      // 检查按钮是否被用户关闭，如果关闭则不显示
-      if (!isButtonClosedByUser() && sniffedResources.total > 0) {
-        const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper') || document.getElementById('lerxu-download-btn-wrapper')
-        if (wrapper) {
-          wrapper.style.display = 'block'
-          wrapper.style.visibility = 'visible'
-          log('Ensured button visibility after iframe message')
-        }
-      }
-      
+      // 按钮显隐同样统一交给 updateButtonVisibility（见上方说明）
       dedupeUniversalButtonWrappers()
       renderPerVideoSniffButtons()
       updateButtonVisibility()
@@ -616,6 +627,62 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return headers
   }
 
+  /**
+   * 一条流（视频流 / 音频流）在一对音视频里的角色。
+   * 应用端靠它决定"哪个文件当画面、哪个当声音"，不再靠扩展名去猜。
+   */
+  const PAIR_ROLE_VIDEO = 'video'
+  const PAIR_ROLE_AUDIO = 'audio'
+
+  /** 生成一对音视频的配对 ID（两条消息共用同一个，应用据此配对）。 */
+  const makePairId = () => {
+    try {
+      const rand = Math.random().toString(36).slice(2, 10)
+      return `lx${Date.now().toString(36)}${rand}`
+    } catch (e) {
+      return `lx${Date.now()}`
+    }
+  }
+
+  /**
+   * 一对音视频的文件名。
+   *
+   * **必须只有这一处**：视频流与音频流的名字只差结尾那一个词，应用端据此
+   * 归并出同一个 stem。以前两个分支各写一套（一套 `_video/_audio`，一套本地化的
+   * `_视频流/_音频流`），同一对流的 stem 就可能不一致，配不上对（用户点名）。
+   */
+  const streamPairFilenames = (base, seq) => {
+    const b = safeFilenamePart(base || '') || 'video'
+    const s = (typeof seq === 'number' && seq > 0) ? `_${seq}` : ''
+    return {
+      video: `${b}${s}_video.mp4`,
+      audio: `${b}${s}_audio.m4a`
+    }
+  }
+
+  /**
+   * 把一对音视频发给下载器。
+   *
+   * 两条消息带**同一个 pairId** 与各自的角色，应用端因此不需要靠"文件名像不像"
+   * 去猜配对，也不会把不相干的视频误配成一对（用户点名）。
+   */
+  const sendStreamPair = (videoUrl, audioUrl, referer, base, seq) => {
+    try {
+      if (!videoUrl || !audioUrl) return false
+      // 整对去重：同一对（同样的画面 + 同样的声音）短时间内只发一次。
+      // 必须在这一层去重 —— 只拦单条会把一对拆成一半，应用端会一直
+      // 等一个永远不来的伙伴（用户点名）
+      if (!markSent(`${videoUrl}|${audioUrl}`)) return false
+      const names = streamPairFilenames(base, seq)
+      const pairId = makePairId()
+      sendResourceToClient(videoUrl, referer, names.video, { id: pairId, role: PAIR_ROLE_VIDEO })
+      sendResourceToClient(audioUrl, referer, names.audio, { id: pairId, role: PAIR_ROLE_AUDIO })
+      return true
+    } catch (e) {
+      return false
+    }
+  }
+
   const sendPageToClient = () => {
     try {
       const url = window.location.href || ''
@@ -626,21 +693,61 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   }
 
-  const sendResourceToClient = (url, referer, suggestedFilename) => {
+  /**
+   * 近期已发送过的资源（key → 时间戳）。
+   *
+   * 同一份资源被发两次会变成两个任务、下载两份文件，还会把合并配对搅乱
+   * （重名会被应用追加 " (1)"）。以前只有 background 里"并发在途"那一层去重，
+   * 两次点击 / "下载全部"这类**先后发生**的重复拦不住（用户点名）。
+   */
+  const recentSentKeys = new Map()
+  // 只拦"手一抖点两下"这类重复：窗口太长会挡住用户删除任务后立刻重下的正常操作
+  const RECENT_SENT_TTL = 5000
+
+  const markSent = (key) => {
     try {
-      if (!url || !/^https?:/i.test(url)) return
+      const now = Date.now()
+      recentSentKeys.forEach((ts, k) => {
+        if (now - ts > RECENT_SENT_TTL) recentSentKeys.delete(k)
+      })
+      if (recentSentKeys.has(key)) return false
+      recentSentKeys.set(key, now)
+      return true
+    } catch (e) {
+      return true
+    }
+  }
+
+  const sendResourceToClient = (url, referer, suggestedFilename, pair) => {
+    try {
+      if (!url || !/^https?:/i.test(url)) return false
+      // 单独发送的资源按**地址**去重，拦"手一抖点两下"；
+      // 成对的流不在这里拦 —— 它们由 sendStreamPair 按"整对"去重，
+      // 在这里按单条拦会把一对拆成一半（用户点名）
+      if (!(pair && pair.id) && !markSent(url)) return false
+
+      const headers = buildDownloadHeaders()
       const message = {
         type: 'addUriFromContent',
         url,
         referer,
-        headers: buildDownloadHeaders()
+        headers
+      }
+      // 配对信息走**消息字段**而不是请求头：应用只从 headers 里挑出
+      // User-Agent / Cookie / Authorization，其余一律丢弃，
+      // 塞进 headers 的话应用端根本收不到（用户点名要能配对）
+      if (pair && pair.id) {
+        message.pairId = pair.id
+        message.pairRole = pair.role || ''
       }
       // 如果有建议的文件名，添加到消息中
       if (suggestedFilename) {
         message.suggestedFilename = suggestedFilename
       }
       chrome.runtime.sendMessage(message, () => { })
+      return true
     } catch (e) {
+      return false
     }
   }
 
@@ -1107,10 +1214,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const combinedPool = filterContextResources(sniffedResources.combined || [], contextId, activeAt, preferredHost)
       const bestCombined = pickNearest(combinedPool, activeAt) || pickBestCombined(combinedPool)
       if (bestCombined && bestCombined.videoUrl && bestCombined.audioUrl) {
-        const videoFilename = base ? `${base}_${seq}_video.mp4` : ''
-        const audioFilename = base ? `${base}_${seq}_audio.m4a` : ''
-        sendResourceToClient(bestCombined.videoUrl, referer, videoFilename)
-        sendResourceToClient(bestCombined.audioUrl, referer, audioFilename)
+        // 成对发送：两条流带同一个 pairId，应用端据此合并（不再靠文件名猜）
+        sendStreamPair(bestCombined.videoUrl, bestCombined.audioUrl, referer, base, seq)
         return true
       }
 
@@ -1305,6 +1410,28 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     } catch (e) {}
   }, 300)
 
+  // 高频维护视频"最近可见"的记忆值，供 per-video 模式判定使用。
+  // 判定（renderPerVideoSniffButtons）是事件驱动的低频调用，如果只在判定时
+  // 采样可见性，采样相位与滚动 / 懒加载的节奏错开时会把仍在视口内的视频误判成
+  // "已离开"，模式跟着来回切，主按钮就一闪一闪（用户点名）。
+  setInterval(() => {
+    try {
+      const nowTs = Date.now()
+      document.querySelectorAll('video').forEach(v => {
+        if (isElementVisibleInViewport(v)) v._lerxuEligibleAt = nowTs
+      })
+    } catch (e) {}
+  }, 300)
+
+  // per-video 模式判定参数：
+  // - ELIGIBLE_TTL：视频"算数"的可见性记忆窗口，抹平滚动/懒加载造成的瞬时抖动
+  // - SWITCH_DELAY：候选模式连续稳定多久才真正切换
+  const PER_VIDEO_ELIGIBLE_TTL = 5000
+  const PER_VIDEO_SWITCH_DELAY = 700
+  let pendingPerVideoMode = null
+  let pendingPerVideoModeSince = 0
+  let perVideoModeSwitchTimer = null
+
   const renderPerVideoSniffButtons = () => {
     try {
       if (!videoSnifferConfig.loaded || !videoSnifferConfig.enabled) {
@@ -1314,9 +1441,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       }
 
       const videos = Array.from(document.querySelectorAll('video'))
+      const nowTs = Date.now()
       const eligibleVideos = videos.filter(v => {
         try {
-          if (!isElementVisibleInViewport(v)) return false
+          // 可见性用「最近 PER_VIDEO_ELIGIBLE_TTL 内可见过」的记忆值，而不是瞬时值。
+          // 滚动、懒加载、悬停预览会让瞬时可见性在 1↔2 的边界反复横跳，模式判定
+          // 跟着跳 -> 主按钮周期性显隐（用户看到按钮一直闪、点不中）。记忆值让
+          // 模式判定稳定；小按钮自身的位置/显隐仍由 syncPerVideoButtonPosition
+          // 按瞬时可见性即时处理，不会因此残留。
+          if (isElementVisibleInViewport(v)) {
+            v._lerxuEligibleAt = nowTs
+          } else if (!v._lerxuEligibleAt) {
+            return false
+          }
+          if (nowTs - (v._lerxuEligibleAt || 0) > PER_VIDEO_ELIGIBLE_TTL) return false
+
           const rect = v.getBoundingClientRect()
           const minW = 240
           const minH = 135
@@ -1364,10 +1503,42 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           if (largeFeed || dominant) shouldUsePerVideoMode = false
         }
       }
-      perVideoModeActive = shouldUsePerVideoMode
 
-      if (!shouldUsePerVideoMode) {
+      // 模式切换加迟滞。
+      // 「可见的大视频数量」在滚动 / 懒加载 / 悬停预览出现消失时会在 1↔2 的
+      // 边界上抖动，而这个函数又被 scroll / 资源更新高频调用 —— 立即切换会让
+      // 主按钮刚显示又被藏起来，用户看到的就是按钮一直闪烁、点不到。
+      // 候选状态必须连续稳定 PER_VIDEO_SWITCH_DELAY 才真正切换。
+      const now = Date.now()
+      if (shouldUsePerVideoMode === perVideoModeActive) {
+        pendingPerVideoMode = null
+        if (perVideoModeSwitchTimer) {
+          clearTimeout(perVideoModeSwitchTimer)
+          perVideoModeSwitchTimer = null
+        }
+      } else if (pendingPerVideoMode === shouldUsePerVideoMode) {
+        if (now - pendingPerVideoModeSince >= PER_VIDEO_SWITCH_DELAY) {
+          perVideoModeActive = shouldUsePerVideoMode
+          pendingPerVideoMode = null
+          if (perVideoModeSwitchTimer) {
+            clearTimeout(perVideoModeSwitchTimer)
+            perVideoModeSwitchTimer = null
+          }
+        }
+      } else {
+        pendingPerVideoMode = shouldUsePerVideoMode
+        pendingPerVideoModeSince = now
+        if (perVideoModeSwitchTimer) clearTimeout(perVideoModeSwitchTimer)
+        // 事件可能不再来了（比如滚动停下），到点主动重算一次完成切换
+        perVideoModeSwitchTimer = setTimeout(() => {
+          perVideoModeSwitchTimer = null
+          renderPerVideoSniffButtons()
+        }, PER_VIDEO_SWITCH_DELAY + 30)
+      }
+
+      if (!perVideoModeActive) {
         removePerVideoButtons()
+        // 主按钮的显隐统一由 updateButtonVisibility 决定，这里不直接写 style
         return
       }
 
@@ -1399,8 +1570,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }
       })
 
-      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
-      if (wrapper) wrapper.style.display = 'none'
+      // per-video 模式下主按钮应隐藏：借统一的可见性函数完成（它会读 perVideoModeActive）
+      updateButtonVisibility()
     } catch (e) {}
   }
 
@@ -1751,33 +1922,33 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         const videos = Array.isArray(resources.video) ? resources.video : []
         const audios = Array.isArray(resources.audio) ? resources.audio : []
 
-        const hasM4s = m4s.length > 0
+        // 已经发出去的地址不再发第二遍。
+        // combined 的 videoUrl / audioUrl **本来就取自** video / audio / m4s 这几栏，
+        // 老逻辑"成对发一遍、再逐条发一遍"，同一份资源变成两个任务、下载两份文件，
+        // 还会因重名被追加 " (1)" 把合并配对搅乱（用户点名）。
+        const sentUrls = new Set()
 
         combined.forEach(resource => {
+          if (!resource) return
+          const v = resource.videoUrl || ''
+          const a = resource.audioUrl || ''
+          if (!v || !a) return
           downloadCombinedResource(resource, referer)
+          sentUrls.add(v)
+          sentUrls.add(a)
         })
 
-        m4s.forEach(resource => {
+        const sendSingle = (resource) => {
+          if (!resource || typeof resource.url !== 'string') return
+          if (sentUrls.has(resource.url)) return
+          sentUrls.add(resource.url)
           downloadSingleResource(resource, referer)
-        })
+        }
 
-        videos.forEach((resource, index) => {
-          if (!resource || typeof resource.url !== 'string') return
-          const isM4S = resource.url.includes('.m4s')
-          const shouldShowInM4SSection = isM4S && hasM4s
-          if (!shouldShowInM4SSection) {
-            downloadSingleResource(resource, referer, index)
-          }
-        })
-
-        audios.forEach((resource, index) => {
-          if (!resource || typeof resource.url !== 'string') return
-          const isM4S = resource.url.includes('.m4s')
-          const shouldShowInM4SSection = isM4S && hasM4s
-          if (!shouldShowInM4SSection) {
-            downloadSingleResource(resource, referer, index)
-          }
-        })
+        // m4s 先发：video / audio 两栏里往往就是同一批 m4s，靠上面的集合自然去重
+        m4s.forEach(sendSingle)
+        videos.forEach(sendSingle)
+        audios.forEach(sendSingle)
       } catch (e) {
       }
 
@@ -2108,34 +2279,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     item.appendChild(audioUrl)
 
     item.addEventListener('click', () => {
-      // 生成建议的文件名
-      let videoFilename = ''
-      let audioFilename = ''
-      try {
-        const pageTitle = getVideoTitle()
-
-        if (pageTitle) {
-          let cleanTitle = pageTitle
-            .replace(/\s*[-_│|]\s*在线播放.*$/i, '')
-            .replace(/\s*[-_│|]\s*在线观看.*$/i, '')
-            .replace(/\s*[-_│|]\s*樱花动漫.*$/i, '')
-            .replace(/\s*[-_│|]\s*\w+视频.*$/i, '')
-            .replace(/[<>:"/\\|?*]/g, '_')  // 替换非法文件名字符
-            .trim()
-
-          if (cleanTitle) {
-            // 视频流文件名
-            videoFilename = `${cleanTitle}_${getLocalizedText('videoStream').replace(':', '')}.mp4`
-            // 音频流文件名
-            audioFilename = `${cleanTitle}_${getLocalizedText('audioStream').replace(':', '')}.m4a`
-          }
-        }
-      } catch (e) {
-      }
-
-      // 同时下载视频和音频
-      sendResourceToClient(resource.videoUrl, referer, videoFilename)
-      sendResourceToClient(resource.audioUrl, referer, audioFilename)
+      // 一对音视频交给同一个函数发送：命名规则与配对 ID 都只有一处定义
+      sendStreamPair(resource.videoUrl, resource.audioUrl, referer, getVideoTitle())
       const dropdown = document.getElementById('lerxu-resource-dropdown')
       if (dropdown) dropdown.style.display = 'none'
     })
@@ -2332,30 +2477,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   }
 
   const downloadCombinedResource = (resource, referer) => {
-    let videoFilename = ''
-    let audioFilename = ''
-    try {
-      const pageTitle = getVideoTitle()
-
-      if (pageTitle) {
-        let cleanTitle = pageTitle
-          .replace(/\s*[-_│|]\s*在线播放.*$/i, '')
-          .replace(/\s*[-_│|]\s*在线观看.*$/i, '')
-          .replace(/\s*[-_│|]\s*樱花动漫.*$/i, '')
-          .replace(/\s*[-_│|]\s*\w+视频.*$/i, '')
-          .replace(/[<>:"/\\|?*]/g, '_')
-          .trim()
-
-        if (cleanTitle) {
-          videoFilename = `${cleanTitle}_${getLocalizedText('videoStream').replace(':', '')}.mp4`
-          audioFilename = `${cleanTitle}_${getLocalizedText('audioStream').replace(':', '')}.m4a`
-        }
-      }
-    } catch (e) {
-    }
-
-    sendResourceToClient(resource.videoUrl, referer, videoFilename)
-    sendResourceToClient(resource.audioUrl, referer, audioFilename)
+    sendStreamPair(resource.videoUrl, resource.audioUrl, referer, getVideoTitle())
     const dropdown = document.getElementById('lerxu-resource-dropdown')
     if (dropdown) dropdown.style.display = 'none'
   }
@@ -2514,24 +2636,29 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const RESOURCE_LIST_UPDATE_INTERVAL = 100 // 减少到100ms，提高响应速度
 
   // 更新按钮显示状态
-  const updateButtonVisibility = () => {
+  const updateButtonVisibility = (skipListRefresh = false) => {
+    // wrapper 直接按 id 取。旧代码是从按钮反推（btn.parentElement.parentElement），
+    // 但查的按钮 id 还是废弃的 lerxu-download-btn —— 找不到就直接 return，
+    // 整个可见性逻辑静默失效（该显示的按钮不显示、per-video 模式下也藏不干净）。
+    const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
+    if (!wrapper) return
+
+    // 只在值真的变化时才写 style：每写一次都可能触发样式重算与重绘，
+    // 高频写入会让按钮看起来在闪（用户点名）
+    const applyDisplay = (value) => {
+      if (wrapper.style.display !== value) wrapper.style.display = value
+    }
+
     if (perVideoModeActive) {
-      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
-      if (wrapper) wrapper.style.display = 'none'
+      applyDisplay('none')
       return
     }
-    const btn = document.getElementById('lerxu-download-btn')
-    const { resources: viewResources } = getUniversalScopedResources()
-    log('Update button visibility, btn:', !!btn, 'total:', viewResources.total, 'sniffer enabled:', videoSnifferConfig.enabled, 'config loaded:', videoSnifferConfig.loaded)
-    if (!btn) return
 
+    const { resources: viewResources } = getUniversalScopedResources()
     const hasResources = hasAnySniffedResources(viewResources)
     const snifferEnabled = videoSnifferConfig.enabled
     const configLoaded = videoSnifferConfig.loaded
-    const wrapper = btn.parentElement?.parentElement // 现在btn在buttonContainer中，wrapper是buttonContainer的父元素
-
-    log('Wrapper element:', wrapper)
-    log('Wrapper current display:', wrapper ? wrapper.style.display : 'no wrapper')
+    log('Update button visibility, total:', viewResources.total, 'sniffer enabled:', snifferEnabled, 'config loaded:', configLoaded)
 
     // 检查按钮是否已被用户关闭
     const isButtonClosed = isButtonClosedByUser()
@@ -2539,12 +2666,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     // 只有在配置已加载、嗅探器启用、有资源且按钮未被用户关闭时才显示按钮
     if (configLoaded && snifferEnabled && hasResources && !isButtonClosed) {
       log('Showing button, updating resource list...')
-      if (wrapper) {
+      {
         const wasHidden = wrapper.style.display === 'none'
 
         // 确保按钮始终显示（有资源时）
-        wrapper.style.display = 'block'
-        wrapper.style.visibility = 'visible'
+        applyDisplay('block')
+        if (wrapper.style.visibility !== 'visible') wrapper.style.visibility = 'visible'
 
         // 只有在按钮之前是隐藏的时候才需要特殊处理位置
         if (wasHidden) {
@@ -2602,16 +2729,17 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         log('Wrapper top:', wrapper.style.top, 'right:', wrapper.style.right)
       }
 
-      // 立即更新资源列表，不使用节流
-      updateResourceList()
-      updateMainButtonResourceCount()
+      // 资源列表与数量只在需要时刷新（稳定性兜底每 2 秒调用一次，
+      // 每次都重建列表会让打开着的下拉框规律性闪动）
+      if (!skipListRefresh) {
+        updateResourceList()
+        updateMainButtonResourceCount()
+      }
     } else {
       log('Hiding button - config loaded:', configLoaded, 'sniffer enabled:', snifferEnabled, 'has resources:', hasResources, 'button closed:', isButtonClosed)
       // 无资源、嗅探器禁用、或用户关闭时，强制隐藏按钮（无视拖拽/锁定/固定状态）
-      if (wrapper) {
-        wrapper.style.display = 'none'
-        log('Hiding button - no resources or sniffer disabled or closed')
-      }
+      applyDisplay('none')
+      log('Hiding button - no resources or sniffer disabled or closed')
     }
   }
 
@@ -2624,32 +2752,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   let buttonStabilityTimer = null // 按钮稳定性定时器
   let buttonPinned = false // 按钮是否已锁定可见（用户悬停过视频后锁定，直到悬停下个视频或关闭按钮）
 
-  // 按钮稳定性检查 - 确保有资源且嗅探器启用时按钮始终可见
+  // 按钮稳定性检查 —— 兜底校正，可见性判定统一交给 updateButtonVisibility。
+  //
+  // 旧实现自己判断"有资源就显示"，既不看 per-video 模式、也不用作用域资源口径：
+  // 在 per-video 页面（多个视频）里，主按钮本应隐藏，它却每 2 秒把按钮亮一次，
+  // 与 renderPerVideoSniffButtons 的隐藏来回拉锯 —— 用户看到的就是按钮持续闪烁
+  // 且点不中（用户点名）。现在只调用同一个真源，判定不可能再打架。
   const ensureButtonStability = () => {
-    const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
-    const isButtonClosed = isButtonClosedByUser()
-
-    if (perVideoModeActive) {
-      if (wrapper && wrapper.style.display !== 'none') {
-        wrapper.style.display = 'none'
-      }
-      return
-    }
-    
-    if (wrapper && sniffedResources && sniffedResources.total > 0 && videoSnifferConfig.enabled && videoSnifferConfig.loaded && !isButtonClosed) {
-      // 如果有资源且嗅探器启用但按钮被隐藏且未被用户关闭，重新显示
-      if (wrapper.style.display === 'none') {
-        wrapper.style.display = 'block'
-        wrapper.style.visibility = 'visible'
-        log('Button stability check: restored hidden button with resources and sniffer enabled')
-      }
-    } else if (wrapper) {
-      // 无资源、嗅探器禁用、或用户关闭时，强制隐藏按钮（无视拖拽/锁定/固定状态）
-      if (wrapper.style.display !== 'none') {
-        wrapper.style.display = 'none'
-        log('Button stability check: hidden button due to no resources/disabled/closed')
-      }
-    }
+    updateButtonVisibility(true)
   }
 
   // 启动按钮稳定性检查
@@ -3383,10 +3493,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     wrapper.style.right = `${newRight}px`
     wrapper.style.left = 'auto'
 
-    // 只有在有资源且嗅探器启用时才确保按钮可见
-    if (sniffedResources && sniffedResources.total > 0 && videoSnifferConfig.enabled) {
-      wrapper.style.display = 'block'
-      wrapper.style.visibility = 'visible'
+    // 只有在有资源、嗅探器启用且不在 per-video 模式时才确保按钮可见
+    if (!perVideoModeActive && sniffedResources && sniffedResources.total > 0 && videoSnifferConfig.enabled) {
+      if (wrapper.style.display !== 'block') wrapper.style.display = 'block'
+      if (wrapper.style.visibility !== 'visible') wrapper.style.visibility = 'visible'
     }
 
     // 锁定位置，防止被其他逻辑重置
@@ -3923,12 +4033,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           if (seen.has(dedupKey)) return
           seen.add(dedupKey)
 
+          // av 号兜底：部分老页面 / 课程页只给 av 不给 BV，只认 BV 会让这些条目
+          // 静默取不到流（用户点名"选了 3 个只发出去 2 个"）
+          const aidInUrl = (url.match(/\/video\/av(\d+)/i) || [])[1] || ''
+          const aid = aidInUrl || (/^\d+$/.test(bvKey) ? bvKey : '')
+
           videos.push({
             url,
             title: title || bvKey || '未知视频',
             duration,
             // BV 兜底从地址里取：后续预取分P / 下载都靠它
             bv: /^BV/i.test(bvKey) ? bvKey : bvInUrl,
+            aid,
             section
           })
         } catch (e) {}
@@ -3937,74 +4053,148 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return videos
   }
 
+  // ─── B 站接口 ───
+
   /**
-   * 通过B站API获取视频流URL。
+   * B 站接口里"值得重试"的返回码：限频 / 风控 / 服务繁忙。
    *
-   * [cid] 省略时用视频默认的 P（也就是第一个 P）；**多 P 视频要逐个 P 把 cid 传进来**，
-   * 否则一个视频里后面的几个"视频"（分P）一个都下不到（用户点名）。
-   *
-   * 返回里带上 `cid` 与 `pages`（分P 列表）—— 分P 信息本来就在同一个 view 响应里，
-   * 顺手带出来，调用方不必再为"这个视频里有几个 P"多发一次请求。
+   * 合集下载会连着打好几个视频的 view + playurl（面板的"共 N P"预取也在打
+   * 同一批接口），很容易撞上频率限制。以前一次失败就把这个视频**静默跳过**，
+   * 用户看到的是"选了 3 个只发出去 2 个"（用户点名）。这类码是瞬态的，
+   * 退避重试即可恢复；"视频不存在""无权限"之类重试也没用，直接放弃。
    */
-  const fetchBiliVideoStream = async (bv, cid) => {
+  const BILI_TRANSIENT_CODES = [-799, -412, -509, -504, -503]
+
+  /** 请求 B 站接口并解析 JSON；瞬态失败退避重试，重试后仍失败返回 null。 */
+  const biliApiJson = async (url, attempts = 3) => {
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const resp = await fetch(url, { credentials: 'include' })
+        if (resp && resp.ok) {
+          const data = await resp.json()
+          const code = data && typeof data.code === 'number' ? data.code : 0
+          if (!BILI_TRANSIENT_CODES.includes(code)) return data
+          log('bili api transient code', code, url)
+        } else {
+          log('bili api http error', resp && resp.status, url)
+        }
+      } catch (e) {
+        log('bili api request error', e, url)
+      }
+      // 退避 400ms / 1.6s：限频通常一两秒内恢复
+      if (i < attempts - 1) {
+        await new Promise(r => setTimeout(r, 400 * (i + 1) * (i + 1)))
+      }
+    }
+    return null
+  }
+
+  /**
+   * 取流接口的 id 参数。
+   *
+   * 优先 BV 号；只有 av 号（部分老页面 / 课程页不给 BV）时退回 aid ——
+   * 以前写死 `bvid=`，这类条目必然拿到 code != 0 而被静默跳过（用户点名）。
+   */
+  const biliVideoQuery = (video) => {
     try {
-      // 1. 获取 cid
-      const viewResp = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bv}`, {
-        credentials: 'include'
+      const v = video || {}
+      const bv = `${v.bv || ''}`.trim()
+      if (/^BV/i.test(bv)) return `bvid=${encodeURIComponent(bv)}`
+      const aid = `${v.aid || ''}`.trim()
+      if (/^\d+$/.test(aid)) return `aid=${aid}`
+      const url = `${v.url || ''}`
+      const mBv = url.match(/(BV[0-9A-Za-z]{8,})/)
+      if (mBv) return `bvid=${encodeURIComponent(mBv[1])}`
+      const mAid = url.match(/\/video\/av(\d+)/i) || url.match(/[?&]aid=(\d+)/)
+      if (mAid) return `aid=${mAid[1]}`
+    } catch (e) {}
+    return ''
+  }
+
+  /** 从 view 响应里取出分P 列表。 */
+  const parseBiliPages = (data) => {
+    const pages = data && data.data && Array.isArray(data.data.pages) ? data.data.pages : []
+    return pages.map(p => ({ cid: p.cid, page: p.page || 0, part: p.part || '' }))
+  }
+
+  /** 从 playurl 响应里挑出画面流与声音流（DASH 优先 H.264，兼容旧版 durl）。 */
+  const parseBiliPlayData = (streamData) => {
+    const result = { videoUrl: '', audioUrl: '', videoQuality: '' }
+    if (!streamData) return result
+    if (streamData.dash && (streamData.dash.video || streamData.dash.audio)) {
+      const videos = streamData.dash.video || []
+      const audios = streamData.dash.audio || []
+      const h264Videos = videos.filter(v => {
+        const code = `${(v && v.codecs) || ''}`.toLowerCase()
+        return code.includes('avc') || code.includes('h264')
       })
-      const viewData = await viewResp.json()
-      if (!viewData || viewData.code !== 0 || !viewData.data || !viewData.data.cid) {
-        log('Failed to get cid for', bv, viewData)
-        return null
+      const bestVideo = (h264Videos.length > 0 ? h264Videos : videos)[0]
+      if (bestVideo) {
+        result.videoUrl = bestVideo.baseUrl || bestVideo.base_url || ''
+        result.videoQuality = bestVideo.id ? `${bestVideo.id}` : ''
       }
-      const pages = Array.isArray(viewData.data.pages)
-        ? viewData.data.pages.map(p => ({ cid: p.cid, page: p.page || 0, part: p.part || '' }))
-        : []
-      const useCid = cid || viewData.data.cid
-      const title = viewData.data.title || bv
+      const bestAudio = audios[0]
+      if (bestAudio) {
+        result.audioUrl = bestAudio.baseUrl || bestAudio.base_url || ''
+      }
+    } else if (streamData.durl && streamData.durl.length > 0) {
+      result.videoUrl = streamData.durl[0].url || ''
+    }
+    return result
+  }
 
-      // 2. 获取播放地址（DASH格式）
-      const playResp = await fetch(
-        `https://api.bilibili.com/x/player/playurl?bvid=${bv}&cid=${useCid}&qn=80&fnval=16&fnver=0&fourk=1`,
-        { credentials: 'include' }
+  /**
+   * 取某个 cid（分P）的播放地址。**只打 playurl 一个接口** ——
+   * 分P 场景下 view 的结果调用方已经有了，再打一次纯属浪费，也更容易触发限频。
+   */
+  const fetchBiliPlayUrl = async (video, cid) => {
+    try {
+      const query = biliVideoQuery(video)
+      if (!query || !cid) return null
+      const data = await biliApiJson(
+        `https://api.bilibili.com/x/player/playurl?${query}&cid=${cid}&qn=80&fnval=16&fnver=0&fourk=1`
       )
-      const playData = await playResp.json()
-      if (!playData || playData.code !== 0 || !playData.data) {
-        log('Failed to get playurl for', bv, playData)
+      if (!data || data.code !== 0 || !data.data) {
+        log('Failed to get playurl for', query, 'cid', cid, data)
         return null
       }
-
-      const streamData = playData.data
-      const result = { title, videoUrl: '', audioUrl: '', cid: useCid, pages }
-
-      // DASH格式：从dash.video和dash.audio中选取最佳流
-      if (streamData.dash && (streamData.dash.video || streamData.dash.audio)) {
-        const videos = streamData.dash.video || []
-        const audios = streamData.dash.audio || []
-
-        // 优先选择H.264的视频流
-        const h264Videos = videos.filter(v => {
-          const code = v.codecs || ''
-          return code.toLowerCase().includes('avc') || code.toLowerCase().includes('h264')
-        })
-        const bestVideo = (h264Videos.length > 0 ? h264Videos : videos)[0]
-        if (bestVideo) {
-          result.videoUrl = bestVideo.baseUrl || bestVideo.base_url || ''
-          result.videoQuality = bestVideo.id ? `${bestVideo.id}` : ''
-        }
-
-        const bestAudio = audios[0]
-        if (bestAudio) {
-          result.audioUrl = bestAudio.baseUrl || bestAudio.base_url || ''
-        }
-      } else if (streamData.durl && streamData.durl.length > 0) {
-        // 旧版MP4格式
-        result.videoUrl = streamData.durl[0].url || ''
-      }
-
-      return result
+      return parseBiliPlayData(data.data)
     } catch (e) {
-      log('fetchBiliVideoStream error for', bv, e)
+      log('fetchBiliPlayUrl error for', video && video.bv, e)
+      return null
+    }
+  }
+
+  /**
+   * 通过B站API获取视频流URL（含 cid 与分P 列表）。
+   *
+   * 返回 `{ title, videoUrl, audioUrl, cid, pages }`，拿不到返回 null。
+   * 调用方拿到 `pages` 后，后续分P 只需 [`fetchBiliPlayUrl`]（见合集下载循环）。
+   */
+  const fetchBiliVideoStream = async (video, cid) => {
+    try {
+      const query = biliVideoQuery(video)
+      if (!query) {
+        log('No bilibili video id for', video && video.url)
+        return null
+      }
+      // 1. 获取 cid 与分P 列表
+      const viewData = await biliApiJson(`https://api.bilibili.com/x/web-interface/view?${query}`)
+      if (!viewData || viewData.code !== 0 || !viewData.data || !viewData.data.cid) {
+        log('Failed to get cid for', query, viewData)
+        return null
+      }
+      const pages = parseBiliPages(viewData)
+      const useCid = cid || viewData.data.cid
+      const title = viewData.data.title || (video && video.title) || ''
+
+      // 2. 获取播放地址（DASH 格式）
+      const play = await fetchBiliPlayUrl(video, useCid)
+      if (!play) return null
+
+      return { title, videoUrl: play.videoUrl, audioUrl: play.audioUrl, cid: useCid, pages }
+    } catch (e) {
+      log('fetchBiliVideoStream error for', video && video.bv, e)
       return null
     }
   }
@@ -4013,16 +4203,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
    * 只取分P 列表（面板里标"共 N P"用，不请求播放地址，省一半请求）。
    * 拿不到就返回空数组 —— 标记不显示而已，下载时还会再取一次。
    */
-  const fetchBiliVideoPages = async (bv) => {
+  const fetchBiliVideoPages = async (video) => {
     try {
-      if (!bv) return []
-      const resp = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bv}`, {
-        credentials: 'include'
-      })
-      const data = await resp.json()
+      const query = biliVideoQuery(video)
+      if (!query) return []
+      const data = await biliApiJson(`https://api.bilibili.com/x/web-interface/view?${query}`)
       if (!data || data.code !== 0 || !data.data) return []
-      const pages = Array.isArray(data.data.pages) ? data.data.pages : []
-      return pages.map(p => ({ cid: p.cid, page: p.page || 0, part: p.part || '' }))
+      return parseBiliPages(data)
     } catch (e) {
       return []
     }
@@ -4301,9 +4488,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     ;(async () => {
       for (let i = 0; i < videos.length; i++) {
         if (pagesCancelled || !panel.isConnected) return
-        const bv = videos[i].bv || (videos[i].url.match(/BV\w+/) || [])[0] || ''
-        if (!bv) continue
-        const pages = await fetchBiliVideoPages(bv)
+        const pages = await fetchBiliVideoPages(videos[i])
         if (pagesCancelled || !panel.isConnected) return
         if (pages.length > 1 && pageMarks[i]) {
           pageMarks[i].textContent = `共${pages.length}P`
@@ -4363,6 +4548,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       let successCount = 0
       let failCount = 0
+      // 失败的视频标题：收尾时如实报出来，不再让"选了 3 个只发出去 2 个"无声发生
+      const failedTitles = []
 
       for (let i = 0; i < selectedIndices.length; i++) {
         const video = videos[selectedIndices[i]]
@@ -4370,13 +4557,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           btnTextEl.textContent = `获取中 ${i + 1}/${selectedIndices.length}`
         }
 
-        const bv = video.bv || (video.url.match(/BV\w+/) || [])[0] || ''
         // 通过B站API获取视频流URL（分P 列表也一并带回来了）
-        const info = await fetchBiliVideoStream(bv)
+        const info = await fetchBiliVideoStream(video)
 
         if (!info || !info.videoUrl) {
           failCount++
-          log('Failed to get stream for', bv || video.title)
+          failedTitles.push(video.title || video.bv || video.url)
+          log('Failed to get stream for', video.bv || video.aid || video.title)
           if (i < selectedIndices.length - 1) {
             await new Promise(r => setTimeout(r, 300))
           }
@@ -4389,12 +4576,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           ? info.pages
           : [{ cid: info.cid, page: 0, part: '' }]
 
+        // 文件名用 view 里的标题：分P 只取了 playurl，那条结果里没有 title
+        const titleBase = info.title || video.title || ''
+
         for (let k = 0; k < parts.length; k++) {
           const part = parts[k]
-          const stream = part.cid === info.cid ? info : await fetchBiliVideoStream(bv, part.cid)
+          // 首个 P 复用上面那次结果；其余 P 只打 playurl —— view 的结果已经有了，
+          // 再打一次纯属浪费且更容易触发限频（用户点名"选了 3 个只发出去 2 个"）
+          const stream = part.cid === info.cid ? info : await fetchBiliPlayUrl(video, part.cid)
           if (!stream || !stream.videoUrl) {
             failCount++
-            log('Failed to get stream for', bv, 'P', part.page)
+            failedTitles.push(`${video.title || video.bv || ''} P${part.page || 1}`)
+            log('Failed to get stream for', video.bv || video.aid, 'P', part.page)
             continue
           }
 
@@ -4409,26 +4602,59 @@ if (typeof window !== 'undefined' && window.addEventListener) {
             ? `_P${part.page}${part.part ? '_' + safeFilenamePart(part.part) : ''}`
             : ''
 
+          // 这一对音视频共用一个配对 ID（与页面内嗅探走同一套协议），
+          // 应用端据此把画面与声音配到一起合并（用户点名）。
+          // 去重按"整对"做：只拦单条会把一对拆成一半，应用端会一直等一个不来的伙伴
+          const videoUrl = stream.videoUrl || ''
+          const audioUrl = stream.audioUrl || ''
+          // 没有音频流就不是"一对"，按单条发（不带配对 ID）——
+          // 否则应用端会一直等一个不存在的伙伴
+          if (!audioUrl) {
+            if (markSent(videoUrl)) {
+              chrome.runtime.sendMessage({
+                type: 'addUriFromContent',
+                url: videoUrl,
+                referer,
+                headers,
+                suggestedFilename: `${titleBase}${partTag}.mp4`
+              }, () => {})
+            }
+            successCount++
+            if (k < parts.length - 1) {
+              await new Promise(r => setTimeout(r, 300))
+            }
+            continue
+          }
+          if (!markSent(`${videoUrl}|${audioUrl}`)) {
+            if (k < parts.length - 1) {
+              await new Promise(r => setTimeout(r, 300))
+            }
+            continue
+          }
+          const pairId = makePairId()
+
           // 发送视频流
           chrome.runtime.sendMessage({
             type: 'addUriFromContent',
-            url: stream.videoUrl,
+            url: videoUrl,
             referer,
             headers,
-            suggestedFilename: `${stream.title}${partTag}_video.mp4`
+            pairId,
+            pairRole: PAIR_ROLE_VIDEO,
+            suggestedFilename: `${titleBase}${partTag}_video.mp4`
           }, () => {})
 
-          // 发送音频流（如果有）
-          if (stream.audioUrl) {
-            await new Promise(r => setTimeout(r, 100))
-            chrome.runtime.sendMessage({
-              type: 'addUriFromContent',
-              url: stream.audioUrl,
-              referer,
-              headers,
-              suggestedFilename: `${stream.title}${partTag}_audio.m4a`
-            }, () => {})
-          }
+          // 发送音频流
+          await new Promise(r => setTimeout(r, 100))
+          chrome.runtime.sendMessage({
+            type: 'addUriFromContent',
+            url: audioUrl,
+            referer,
+            headers,
+            pairId,
+            pairRole: PAIR_ROLE_AUDIO,
+            suggestedFilename: `${titleBase}${partTag}_audio.m4a`
+          }, () => {})
 
           successCount++
 
@@ -4443,9 +4669,17 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       }
 
       if (btnTextEl) {
-        const msg = failCount > 0 ? `已发送 ${successCount} 失败 ${failCount}` : `已发送 ${successCount} 个`
-        btnTextEl.textContent = msg
-        setTimeout(() => { btnTextEl.textContent = oldText }, 4000)
+        // 有失败就写清楚几个失败、并把是哪些打到控制台 ——
+        // 以前只写"失败 N"且 4 秒后复原，用户看到的是"选了 3 个怎么只发出去 2 个"（用户点名）。
+        // 这里刻意用 console.warn 而不是 log：后者受 DEBUG 开关控制（默认关），
+        // 真出问题时必须能在控制台看到到底哪个视频没发出去。
+        if (failCount > 0) {
+          console.warn('[Key Listener] Collection download failed for:', failedTitles)
+          btnTextEl.textContent = `已发送 ${successCount}，${failCount} 个失败`
+        } else {
+          btnTextEl.textContent = `已发送 ${successCount} 个`
+        }
+        setTimeout(() => { btnTextEl.textContent = oldText }, failCount > 0 ? 8000 : 4000)
       }
     })
   }

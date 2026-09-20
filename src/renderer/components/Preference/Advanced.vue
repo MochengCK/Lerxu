@@ -491,10 +491,10 @@
             </el-col>
             <el-col class="form-item-sub form-item-sub--inline form-item-sub--inline-wide" :span="24">
               <div class="pref-row-text">
-                <span class="pref-row-label">{{ t('preferences.aria2-log-path') }}</span>
-                <div class="pref-row-desc">{{ t('preferences.aria2-log-path-desc') }}</div>
+                <span class="pref-row-label">{{ t('preferences.engine-log-path') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.engine-log-path-desc') }}</div>
               </div>
-              <el-input placeholder="" disabled v-model="aria2LogPath">
+              <el-input placeholder="" disabled v-model="engineLogPath">
                 <template #append>
                   <mo-hover-tip
                     effect="dark"
@@ -502,7 +502,7 @@
                     placement="top"
                     :open-delay="500"
                   >
-                    <i v-if="isRenderer" @click="openAria2LogFolder" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: pointer;">
+                    <i v-if="isRenderer" @click="openEngineLogFolder" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; cursor: pointer;">
                       <mo-icon name="folder" width="12" height="12" />
                     </i>
                   </mo-hover-tip>
@@ -819,8 +819,8 @@ const rpcDefaultPort = computed(() => ENGINE_RPC_PORT)
 const logLevels = computed(() => LOG_LEVELS)
 const logPath = computed(() => preferenceConfig.value.logPath)
 const sessionPath = computed(() => preferenceConfig.value.sessionPath)
-const aria2LogPath = computed(() => preferenceConfig.value.aria2LogPath)
-const aria2LogDir = computed(() => preferenceConfig.value.aria2LogDir)
+const engineLogPath = computed(() => preferenceConfig.value.engineLogPath)
+const engineLogDir = computed(() => preferenceConfig.value.engineLogDir)
 const schedulerSpeedUnits = computed(() => [
   { label: 'KB/s', value: 'K' },
   { label: 'MB/s', value: 'M' }
@@ -1464,32 +1464,32 @@ const path = ffmpegStatus.value.path
           console.warn('[FFmpeg] Open folder failed:', e)
         }
       }
-function openAria2LogFolder() {
+function openEngineLogFolder() {
 
 // 优先尝试打开日志文件
-if (aria2LogPath.value && existsSync(aria2LogPath.value)) {
+if (engineLogPath.value && existsSync(engineLogPath.value)) {
           try {
-            shell.showItemInFolder(aria2LogPath.value)
+            shell.showItemInFolder(engineLogPath.value)
             return
           } catch (e) {
-            console.warn('[Aria2] Show log file failed:', e)
+            console.warn('[Engine] Show log file failed:', e)
           }
         }
 
         // 如果文件不存在，打开日志目录
-        if (aria2LogDir.value) {
+        if (engineLogDir.value) {
           try {
-            shell.openPath(aria2LogDir.value)
+            shell.openPath(engineLogDir.value)
           } catch (e) {
-            console.warn('[Aria2] Open log directory failed:', e)
+            console.warn('[Engine] Open log directory failed:', e)
           }
-        } else if (aria2LogPath.value) {
+        } else if (engineLogPath.value) {
           // 降级：从日志路径提取目录
           try {
-            const folderPath = dirname(aria2LogPath.value)
+            const folderPath = dirname(engineLogPath.value)
             shell.openPath(folderPath)
           } catch (e) {
-            console.warn('[Aria2] Open log folder failed:', e)
+            console.warn('[Engine] Open log folder failed:', e)
           }
         }
       }

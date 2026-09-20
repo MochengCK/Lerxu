@@ -66,7 +66,12 @@ A: 在`chrome://extensions/`页面找到Lerxu扩展，点击"移除"按钮
 
 ### 正式安装
 
-Firefox 正式安装需要扩展经过签名：
+**从附加组件商店安装（推荐）**：扩展已上架 Mozilla 附加组件商店（AMO），打开下面的页面
+点「添加到 Firefox」即可，之后的版本会自动更新：
+
+https://addons.mozilla.org/zh-CN/firefox/addon/lerxu/
+
+如果你要装的是自己构建的包（AMO 上还没有的开发中版本），才需要自行签名：
 
 1. 在仓库根目录打包：`npm run build:extension`
    → 产出 `dist/extension/artifacts/lerxu-webextension-firefox-<版本>.zip`

@@ -3,8 +3,8 @@ import {
   getEnginePath,
   getAria2BinPath,
   getSessionPath,
-  getAria2LogPath,
-  getAria2LogDir
+  getEngineLogPath,
+  getEngineLogDir
 } from '../utils'
 
 const { platform, arch } = process
@@ -36,8 +36,8 @@ export default class Context {
       'session-path': getSessionPath(),
       'engine-path': getEnginePath(platform, arch),
       'aria2-bin-path': getAria2BinPath(platform, arch),
-      'aria2-log-path': getAria2LogPath(),
-      'aria2-log-dir': getAria2LogDir()
+      'engine-log-path': getEngineLogPath(),
+      'engine-log-dir': getEngineLogDir()
     }
 
     logger.info('[Lerxu] Context.init===>', this.context)

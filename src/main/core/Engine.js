@@ -11,7 +11,7 @@ import {
   getEnginePidPath,
   getSessionPath,
   getUserDataPath,
-  getAria2LogPath,
+  getEngineLogPath,
   getEngineBin,
   getEnginePath
 } from '../utils/index'
@@ -67,7 +67,7 @@ export default class Engine {
     await this.killStaleProcess(pidPath)
 
     // 启动前截断旧日志，防止日志文件无限增长占用磁盘
-    this.truncateAria2Log()
+    this.truncateEngineLog()
 
     const originBinPath = this.getEngineBinPath()
     // 二进制可用性检查（xattr/版本探测）为异步子进程调用，不阻塞主进程
@@ -629,8 +629,8 @@ export default class Engine {
    * 引擎启动前截断旧日志文件，防止日志无限增长占用磁盘
    * 如果日志文件超过 5MB，清空文件内容
    */
-  truncateAria2Log () {
-    const logPath = getAria2LogPath()
+  truncateEngineLog () {
+    const logPath = getEngineLogPath()
     try {
       if (existsSync(logPath)) {
         // 引擎日志文件可能处于异常状态：引擎的 Logger 打开失败时
@@ -643,6 +643,11 @@ export default class Engine {
     } catch (e) {
       // 删除失败不影响启动
     }
+    // 旧引擎（aria2）时代留下的日志文件，顺手清掉，别一直占着磁盘
+    try {
+      const legacyLogPath = resolve(getUserDataPath(), './aria2-debug.log')
+      if (existsSync(legacyLogPath)) unlinkSync(legacyLogPath)
+    } catch (e) {}
   }
 
   /**
@@ -655,7 +660,7 @@ export default class Engine {
    *             --rpc-listen-port --rpc-secret --dir --max-concurrent-downloads
    */
   getStartArgs (binPath) {
-    const logPath = getAria2LogPath()
+    const logPath = getEngineLogPath()
     const sessionPath = getSessionPath()
     const sessionIsExist = existsSync(sessionPath)
 

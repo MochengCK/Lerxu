@@ -248,6 +248,12 @@ export const buildUriPayload = async (form, autoCategorize = false, categories =
     dirs: categorizedPaths.length > 0 ? categorizedPaths.map(item => item.categorizedDir) : null,
     priorities: Array.isArray(form.priorities) ? [...form.priorities] : null
   }
+  // 扩展发来的一对音视频（画面流 + 声音流）带同一个 pairId 与各自角色，
+  // 原样带到任务创建处，由那里记进任务历史 —— 下载完成时靠它配对合并
+  if (!isEmpty(form.pairId)) {
+    result.pairId = form.pairId
+    result.pairRole = form.pairRole || ''
+  }
   return result
 }
 

@@ -30,25 +30,30 @@
   let cachedMinFileSize = 0
   let cachedAutoHijackDisabled = false
 
+  // background.js 把拦截配置**整体**存在这个键下（一个对象），
+  // 并不写扁平的 interceptAllDownloads 等键。以前这里读的是扁平键，
+  // 于是 cachedInterceptEnabled 恒为 false，点击拦截从来没生效过
+  // —— 所有下载都退化成"浏览器先建下载项、再被取消"的事后接管，
+  // 小文件/高速下载往往来不及取消，就表现为"有时交给应用、有时交给浏览器"（用户点名）。
+  const EXT_CONFIG_KEY = 'extConfig'
+  const AUTO_HIJACK_OVERRIDE_KEY = 'autoHijackTemporarilyDisabled'
+
+  const applyConfig = (raw) => {
+    const cfg = raw && typeof raw === 'object' ? raw : {}
+    cachedInterceptEnabled = !!cfg.interceptAllDownloads
+    cachedSilentDownload = !!cfg.silentDownload
+    cachedSkipExtensions = Array.isArray(cfg.skipFileExtensions) ? cfg.skipFileExtensions : []
+    cachedExcludeDomains = Array.isArray(cfg.excludeDomains) ? cfg.excludeDomains : []
+    cachedMinFileSize = Number(cfg.minFileSize) || 0
+  }
+
   // 从 storage 加载配置
   const loadConfig = () => {
     try {
-      chrome.storage.local.get([
-        'interceptAllDownloads',
-        'silentDownload',
-        'skipFileExtensions',
-        'excludeDomains',
-        'minFileSize',
-        'autoHijackTemporarilyDisabled'
-      ], (res) => {
-        if (res) {
-          cachedInterceptEnabled = !!res.interceptAllDownloads
-          cachedSilentDownload = !!res.silentDownload
-          cachedSkipExtensions = Array.isArray(res.skipFileExtensions) ? res.skipFileExtensions : []
-          cachedExcludeDomains = Array.isArray(res.excludeDomains) ? res.excludeDomains : []
-          cachedMinFileSize = Number(res.minFileSize) || 0
-          cachedAutoHijackDisabled = !!res.autoHijackTemporarilyDisabled
-        }
+      chrome.storage.local.get([EXT_CONFIG_KEY, AUTO_HIJACK_OVERRIDE_KEY], (res) => {
+        if (!res) return
+        applyConfig(res[EXT_CONFIG_KEY])
+        cachedAutoHijackDisabled = !!res[AUTO_HIJACK_OVERRIDE_KEY]
       })
     } catch (e) {}
   }
@@ -59,12 +64,10 @@
   // 监听配置变化
   try {
     chrome.storage.onChanged.addListener((changes) => {
-      if (changes.interceptAllDownloads) cachedInterceptEnabled = !!changes.interceptAllDownloads.newValue
-      if (changes.silentDownload) cachedSilentDownload = !!changes.silentDownload.newValue
-      if (changes.skipFileExtensions) cachedSkipExtensions = Array.isArray(changes.skipFileExtensions.newValue) ? changes.skipFileExtensions.newValue : []
-      if (changes.excludeDomains) cachedExcludeDomains = Array.isArray(changes.excludeDomains.newValue) ? changes.excludeDomains.newValue : []
-      if (changes.minFileSize) cachedMinFileSize = Number(changes.minFileSize.newValue) || 0
-      if (changes.autoHijackTemporarilyDisabled) cachedAutoHijackDisabled = !!changes.autoHijackTemporarilyDisabled.newValue
+      if (changes[EXT_CONFIG_KEY]) applyConfig(changes[EXT_CONFIG_KEY].newValue)
+      if (changes[AUTO_HIJACK_OVERRIDE_KEY]) {
+        cachedAutoHijackDisabled = !!changes[AUTO_HIJACK_OVERRIDE_KEY].newValue
+      }
     })
   } catch (e) {}
 

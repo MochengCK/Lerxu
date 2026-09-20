@@ -108,24 +108,50 @@ Lerxu 把浏览器下载交给 [Lerxu 桌面应用](https://github.com/MochengCK
 
 ## Release notes（版本说明）
 
+提交时把下面这段填进 AMO 的 **Version notes** 字段（随版本更新）。
+
 **English**
 
 ```
-First Firefox release. Same feature set as the Chromium build: media sniffing, download takeover, per-site and
-per-file-type exclusions, temporary bypass and the status popup.
+1.7.0
+- Resource list and the button counter now always agree: the counter is computed from the same
+  items the panel renders, and the open panel refreshes as new resources arrive.
+- Bilibili collection download: videos nested under a collection section are now listed (previously
+  only the section name showed), multi-part videos (P1/P2/...) are all downloaded, and the panel no
+  longer hides behind Bilibili's fixed top navigation bar.
+- Fixed audio/video pairing for DASH streams: the two streams of one video now carry an explicit
+  pair id, so they are merged even when they finish downloading at different times, and the same
+  resource is no longer sent twice.
+- Firefox: the resource button no longer flickers and stays clickable. Per-video mode detection
+  now uses a visibility memory plus a switch delay, and the button's visibility is driven by a
+  single code path instead of several places overwriting each other.
+- The resource panel no longer lists the same stream twice: streams already used by a
+  "complete video" (merged video+audio) entry are no longer repeated in the separate-stream /
+  video / audio sections, and the button counter follows the same count.
 ```
 
 **简体中文**
 
 ```
-首个 Firefox 版本，功能与 Chromium 版一致：媒体嗅探、下载接管、按站点与文件类型排除、临时放行与状态弹窗。
+1.7.0
+- 资源列表与按钮上的数量现在始终一致：数量由列表渲染的同一份条目算出，列表打开时会跟着新资源刷新。
+- B站合集下载：合集分类下的视频现在会列出来（此前只显示分类名），多 P 视频（P1/P2/…）会逐个下载，
+  弹窗也不再被 B 站固定顶部导航栏遮挡。
+- 修复 DASH 音视频配对：同一个视频的两条流现在带显式配对 ID，即使两者下载完成时间不同也能合并，
+  同一份资源也不会被重复发送。
+- 修复 Firefox 上资源按钮持续闪烁、无法点击的问题：多视频模式（per-video）的判定改为稳定口径
+  （可见性记忆 + 切换迟滞），按钮显隐由单一入口决定，不再出现多条代码路径互相覆盖。
+- 资源列表不再重复显示同一条流：已被「完整视频」（合并条目）使用的音视频流，不再在
+  「分离流 / 视频资源 / 音频资源」段里重复列出；按钮上的数量与列表同源，一并保持一致。
 ```
+
+> 更早的版本说明（1.6.x 及之前）已随各次提交存档，此处只保留待提交版本的文案。
 
 ## 其他提交字段建议
 
 | 字段 | 建议值 |
 | --- | --- |
-| Add-on URL | `lerxu`（若被占用，可改为 `lerxu-download-manager`） |
+| Add-on URL | `lerxu` —— 已上架：https://addons.mozilla.org/zh-CN/firefox/addon/lerxu/ |
 | Firefox categories（最多 2 个） | **Download Management**（可选第二个：Productivity） |
 | Android categories | 不适用（扩展依赖桌面应用与 `127.0.0.1` 通信，未适配 Android 版 Firefox） |
 | This add-on is experimental | 不勾选（功能完整；如需灰度可先勾选） |

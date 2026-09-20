@@ -80,12 +80,12 @@ const TOKEN_VERSION_KEY = 'lerxuTokenVersion'
 // 与 background 的 downloadViaBrowser 同时触发),若一次性消费,其余下载项仍会被
 // 接管→再次发送→再次失败→再次回退,形成发送循环。由下方定时器统一清理。
 const fallbackBrowserUrls = new Map()
-// 最近被扩展尝试接管/发送过的 URL 集合(15s 窗口)。
-// 与 fallbackBrowserUrls 的区别:fallback 只保护"本次主动回退"产生的下载项;
-// recentTakeoverUrls 保护"最近 N 秒内被扩展处理过"的所有同名 URL 下载项——
-// 即使回退下载项因 URL 重定向变化、并行创建等原因没有命中 fallback 标记,
-// 只要该 URL 最近被扩展处理过,浏览器下载项也一律放行,从根上切断
-// "接管→发送失败→回退→再次接管→再次发送"的无限循环。
+// 最近**接管发送失败**的 URL 集合（15s 窗口）。
+// 只记失败：失败后浏览器下载被 resume，同一地址若马上又被点击/触发，
+// 短时间内不再重复尝试，避免"接管→发送→失败"紧凑重试。
+// 接管**成功**时不记 —— 那时浏览器下载项已被 erase，再记只会让用户
+// 15s 内重下同一地址时被莫名放行给浏览器（用户点名）。
+// 真正的循环（回退下载产生新下载项）由 fallbackBrowserUrls 覆盖。
 const recentTakeoverUrls = new Map()
 // 缓存 autoHijackOverride 状态，避免 onCreated 中的异步 storage 读取延迟
 // 同步读取是让 cancel 在下载项出现前立即执行的关键
@@ -1062,7 +1062,7 @@ const mergeHeaderLines = (baseLines, extraLines) => {
 // 顺序重发由 recentTakeoverUrls 的窗口放行兜底。
 const inflightAdds = new Map()
 
-const addUri = async (url, referer, suggestedFilename, extraHeaders) => {
+const addUri = async (url, referer, suggestedFilename, extraHeaders, pair) => {
   try {
     // 快速失败:程序不在线(无 WS 且最近 health 探测失败)时不走 HTTP 认证
     // 兜底(ensureSessionToken→performAuthentication→2 host×1.5s 超时,可达 5~6s),
@@ -1080,6 +1080,11 @@ const addUri = async (url, referer, suggestedFilename, extraHeaders) => {
       const baseHeaders = await getHeadersForUrl(url, referer)
       const headers = mergeHeaderLines(baseHeaders, extraHeaders)
       const payload = { url, referer, headers }
+      // 配对信息透传给应用（应用端靠它把音视频配到一起合并）
+      if (pair && pair.id) {
+        payload.pairId = pair.id
+        payload.pairRole = pair.role || ''
+      }
       // 如果有建议的文件名，添加到请求中
       if (suggestedFilename) {
         payload.suggestedFilename = suggestedFilename
@@ -1430,9 +1435,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const referer = msg.referer || ''
       const suggestedFilename = msg.suggestedFilename || ''
       const extraHeaders = Array.isArray(msg.headers) ? msg.headers : []
+      const pair = msg.pairId ? { id: msg.pairId, role: msg.pairRole || '' } : null
       // addUri 内部已有程序在线预检查(快路径,零网络开销),离线时立即返回
       // false 走浏览器下载,不会卡在 HTTP 认证兜底上
-      const ok = await addUri(url, referer, suggestedFilename, extraHeaders)
+      const ok = await addUri(url, referer, suggestedFilename, extraHeaders, pair)
       if (ok) {
         sendResponse({ ok: true, via: 'client' })
       } else {
@@ -1939,10 +1945,12 @@ const executeTakeover = async (item) => {
 
     const addResult = await addUri(url, item.referrer, item.filename)
     keepSwAlive()
-    // 无论 add 成功与否,标记"最近处理过的 URL":此后窗口期内(15s)浏览器侧
-    // 再出现该 URL 的下载项一律放行,彻底切断"接管→发送→失败→回退→再接管→再发送"循环
-    recentTakeoverUrls.set(url, Date.now())
     if (addResult) {
+      // 接管成功：浏览器下载项已被 cancel + erase，**不记 recentTakeoverUrls**。
+      // 以前无论成败都记，于是同一地址在 15s 内再点一次会被一律放行给浏览器，
+      // 表现为"刚才还能交给应用，现在怎么又交给浏览器了"（用户点名）。
+      // 循环风险由 fallbackBrowserUrls 覆盖：真正的回退下载（downloadViaBrowser /
+      // 右键菜单）才会产生新的下载项，那两处都会写 fallbackBrowserUrls。
       console.log('[Background] Takeover success, task sent to client:', url)
       // 接管成功:取消完成后彻底移除浏览器下载记录
       await new Promise((resolve) => {
@@ -1954,8 +1962,10 @@ const executeTakeover = async (item) => {
       })
       keepSwAlive()
     } else {
-      // 发送失败:恢复原下载项,保留已下载进度,而不是重新下载清零进度。
+      // 发送失败：短时间内不再反复尝试同一地址（避免"接管→发送→失败"紧凑重试），
+      // 随后恢复原下载项，保留已下载进度，而不是重新下载清零进度。
       // 浏览器已持有部分文件,resume 会从断点继续,等于回滚到"未接管"状态。
+      recentTakeoverUrls.set(url, Date.now())
       console.log('[Background] Takeover addUri failed, resuming original browser download:', url)
       await new Promise((resolve) => {
         chrome.downloads.resume(item.id, () => {
