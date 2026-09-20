@@ -1,18 +1,42 @@
 # Lerxu 浏览器扩展（Chromium + Firefox）
 
-面向维护者。用户在应用 [README](../../README-CN.md) 中查看扩展的安装与功能说明。
+面向维护者。**用户**的安装步骤在随包分发的离线指南里（`安装指南-中文.txt` /
+`Installation-Guide-English.txt` / `インストールガイド-日本語.txt` / `설치-가이드-한국어.txt`），
+应用 [README](../../README-CN.md) 里只有一条功能介绍。
 
 源码目录：`lerxu-webextension/`
 
 ## ⚠️ 打包请用构建脚本，不要手动压缩
 
 直接在 `lerxu-webextension/` 上「右键 → 压缩」会得到**错误结构**的包：内层多一层
-`lerxu-webextension/` 目录，macOS 还会写入 `__MACOSX/`、`._*` 元数据，源码里的
-`icons/generate_icons.py` 也会被打进去。AMO 会依次报：
+`lerxu-webextension/` 目录，macOS 还会写入 `__MACOSX/`、`._*` 元数据。AMO 会依次报：
 
 - `No manifest.json was found at the root of the extension`（扩展文件必须在归档**根目录**）
 - `Hidden file flagged`（macOS 元数据）
-- `Flagged file type found`（`generate_icons.py`）
+- `Flagged file type found`（打包时混进了 `.py` 之类的开发脚本）
+
+构建脚本用**显式白名单**（`INCLUDE_FILES` / `INCLUDE_DIRS`）复制文件，并额外拦下
+`.py`、`.map`、`__MACOSX/`、`._*`、`.DS_Store`，因此上面三种情况不可能出现在产物里；
+往扩展里加新文件时必须同时加进白名单，否则不会被打包。
+
+## 模块构成
+
+两份清单引用的是同一套源码，加载图如下（`firefox-compat.js` 在每一处都**首个加载**）：
+
+| 文件 | 位置 | 职责 |
+| --- | --- | --- |
+| `firefox-compat.js` | 全部三处 | 兼容层：把仅有 `browser.*` 的环境包装成回调风格 `chrome.*`，并暴露 `globalThis.LERXU_ENV` |
+| `background.js` | 后台 | 与 `127.0.0.1:16900` 上的 Lerxu 应用通信、下载接管与写盘前改名、右键菜单、下载气泡控制 |
+| `video-sniffer.js` | content script | 页面侧媒体嗅探（含 DASH），产出 video / audio / m4s / combined 四类资源 |
+| `key-listener.js` | content script（popup 也引） | 页面侧 UI：悬浮资源按钮与资源下拉框、合集下载按钮与弹窗、多语言同步 |
+| `download-interceptor.js` | content script | 下载链接接管（排除站点 / 类型、快捷键临时放行） |
+| `popup.html` / `popup.js` / `i18n.js` | 扩展弹窗 | RPC 地址、连接状态、客户端版本、上下行速度，以及「排除当前站点」快捷按钮；`i18n.js` 为弹窗内嵌的多语言表（清单 i18n 另见 `_locales/`） |
+| `_locales/{en,zh_CN,zh_TW}/messages.json` | 清单 i18n | 扩展名称 / 描述 / 按钮标题（清单里用 `__MSG_*__` 引用） |
+| `icons/`、`Installation-Guide-*.txt`、`安装指南-中文.txt` 等 | 随包资源 | 图标与四种语言的离线安装指南 |
+
+> 另有 `dash-sniffer.js` 与 `diagnose.js` 两个文件随包分发，但**两份清单都没有引用它们**：
+> 前者是早期的 DASH 嗅探实现（能力已并入 `video-sniffer.js`），后者是手动粘贴到扩展
+> 控制台里排查语言同步的调试脚本。它们不参与运行，改动功能时不必看这两处。
 
 ## 构建、打包与测试
 
@@ -23,7 +47,7 @@ npm run build:extension          # 构建两个平台 + 打包（含自检）
 node scripts/build-extension.js --platform=firefox   # 只处理 Firefox
 node scripts/build-extension.js --no-package         # 只生成解压目录
 
-npm run test:extension           # 测试（含归档结构断言）
+npm run test:extension           # 测试（27 项：清单 / 兼容层 / 语法与 i18n / 归档结构）
 npm run lint:extension           # Mozilla 官方 web-ext lint（需先构建）
 ```
 
@@ -41,6 +65,15 @@ dist/extension/artifacts/lerxu-webextension-firefox-<版本>.xpi       Firefox �
 完全一致，不会混入 `__MACOSX`，并会为中日韩文文件名写入 UTF-8 标志。打包时自检四项：归档根存在
 `manifest.json`、不含禁止文件、非 ASCII 名带 UTF-8 标志、归档内清单与目标平台匹配。
 
+`npm run test:extension`（`test/extension/run.js`）共 27 项断言，分四组：
+
+1. **清单** —— 两份 `host_permissions` / 关键元信息一致、兼容层位于各加载点首位、清单引用的文件都存在
+2. **兼容层行为** —— 在 `vm` 沙箱里用 mock 的 `browser.*` 驱动，验证回调包装、`lastError` 语义、事件对象不被包装、幂等
+3. **脚本语法与多语言资源** —— 全部 JS 过一遍语法检查、三份 `messages.json` 的 key 集合一致、i18n 占位符有定义
+4. **打包产物结构** —— 真跑一遍构建与打包，断言归档结构（产物写入系统临时目录，不污染 `dist/extension/artifacts/`）
+
+测试直接读源码目录，**不需要先构建**（第 4 组会自行调用构建脚本）。
+
 ## 双平台清单差异
 
 代码完全相同（统一 `chrome.*` 回调风格 + `firefox-compat.js` 兼容层），差异只在清单：
@@ -48,15 +81,19 @@ dist/extension/artifacts/lerxu-webextension-firefox-<版本>.xpi       Firefox �
 | 差异点 | Chromium（`manifest.json`） | Firefox（`manifest.firefox.json`） |
 | --- | --- | --- |
 | 后台形态 | `background.service_worker`（单文件 SW） | `background.scripts`（event page，**Firefox 不支持 MV3 `service_worker`**） |
-| 扩展 ID | 不需要 | 必需 `browser_specific_settings.gecko.id` |
-| 专有权限 | 含 `downloads.ui` | 不含（Firefox 无此权限） |
-| 数据收集声明 | 不需要 | 必需 `gecko.data_collection_permissions` |
+| 扩展 ID | 不需要（商店分配） | 必需 `browser_specific_settings.gecko.id` |
+| 专有权限 | 含 `downloads.ui`（下载气泡控制） | 不含（Firefox 无此权限） |
+| `downloads.onDeterminingFilename` | 支持（写盘 / 另存为弹窗之前介入） | 不支持 → 走 `downloads.onCreated` 路径（功能等价） |
+| `downloads.setUiOptions` | 支持 | 不支持 → 跳过气泡控制 |
+| `runtime.onActivate` | 支持（SW 重启唤醒） | 不支持 → 跳过 |
+| 数据收集声明 | 不需要 | 必需 `gecko.data_collection_permissions`（2025-11-03 起 AMO 对新扩展强制要求） |
 
 兼容层（`firefox-compat.js`）在 background / content_scripts / popup 中**首个加载**：仅有 `browser.*` 的
 环境会被包装成回调风格（含 `runtime.lastError` 语义），并暴露 `globalThis.LERXU_ENV`
-（Firefox 标识 + Chromium 专有能力探测）。三处 Chromium 专有 API（`runtime.onActivate`、
-`downloads.setUiOptions`、`downloads.onDeterminingFilename`）在使用点均做了能力检测，Firefox 上走
-`downloads.onCreated` 等价路径。
+（Firefox 标识 + Chromium 专有能力探测）。其中 `downloads.onDeterminingFilename`、
+`downloads.setUiOptions`、`runtime.onActivate` 三项在使用点均做了能力检测
+（如 `if (chrome.downloads && chrome.downloads.onDeterminingFilename)`），Firefox 上走
+`downloads.onCreated` 等价路径 —— 该约定由测试第 2 组断言守护。
 
 ## 数据收集声明（AMO 强制）
 

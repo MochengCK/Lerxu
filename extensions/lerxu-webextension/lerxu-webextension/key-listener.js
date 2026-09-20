@@ -285,6 +285,87 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return false
   }
 
+  /**
+   * 一条资源是不是「M4S 分片」。
+   *
+   * 分片在列表里归到「DASH 分离流」那一段，就不再重复出现在视频/音频段。
+   * 计数和渲染必须共用这一个判定，否则数字与列表必然对不上（用户点名）。
+   */
+  const isM4sEntry = (resource) => {
+    try {
+      return !!(resource && typeof resource.url === 'string' && resource.url.includes('.m4s'))
+    } catch (e) {
+      return false
+    }
+  }
+
+  /**
+   * 把一批资源切成**真正会显示出来的四组条目**。
+   *
+   * 这是「按钮上的数量」与「下拉框里的条目」唯一的共同来源：两处都从这里取，
+   * 切分规则只有一份，就不可能再对不上（用户点名）。
+   *
+   * 顺带把缺 url 的脏数据挡在渲染之外 —— 老代码在渲染循环里直接取
+   * `resource.url.includes(...)`，一条脏数据就抛异常让整段渲染中断，
+   * 列表少几条而按钮数字照旧，正是「数量不一样」的另一个来源。
+   */
+  const collectDisplayItems = (resources) => {
+    const r = resources || {}
+    const combined = Array.isArray(r.combined) ? r.combined.filter(Boolean) : []
+    const m4s = Array.isArray(r.m4s) ? r.m4s.filter(Boolean) : []
+    const hasM4s = m4s.length > 0
+    const keepPlain = (list) => (Array.isArray(list) ? list.filter(Boolean) : [])
+      .filter(item => !(hasM4s && isM4sEntry(item)))
+    return { combined, m4s, video: keepPlain(r.video), audio: keepPlain(r.audio) }
+  }
+
+  /** 上面那四组条目一共几条 —— 按钮上显示的就是这个数。 */
+  const countDisplayItems = (items) => {
+    try {
+      return items.combined.length + items.m4s.length + items.video.length + items.audio.length
+    } catch (e) {
+      return 0
+    }
+  }
+
+  // 取数重入深度：从备份恢复的那一步本身会回头刷新 UI（进而再次取数），
+  // 不挡住的话会来回套娃；恢复只允许在最外层做一次。
+  let displayResolveDepth = 0
+
+  /**
+   * 当前该展示哪一批资源。
+   *
+   * 按钮与列表必须看到**同一批数据**，所以取数（含「资源被意外清空后从备份
+   * 恢复」这一步）只在这里做一次，谁先调用都不会得出两个不同的结果（用户点名）。
+   * 短视频信息流站点保持原口径：只用圈定结果，不回退到全部资源。
+   */
+  const resolveDisplayResources = () => {
+    displayResolveDepth++
+    try {
+      let resources = getUniversalScopedResources().resources
+      if (displayResolveDepth === 1 &&
+          !hasAnySniffedResources(resources) && checkAndRestoreResources()) {
+        resources = getUniversalScopedResources().resources
+      }
+      if (isShortVideoFeedHost()) return resources
+      return hasAnySniffedResources(resources) ? resources : sniffedResources
+    } catch (e) {
+      return sniffedResources
+    } finally {
+      displayResolveDepth--
+    }
+  }
+
+  /** 下拉框正开着就跟着新资源一起刷新，否则按钮数字涨了列表还是旧的（用户点名）。 */
+  const refreshOpenDropdown = () => {
+    try {
+      const dropdown = document.getElementById('lerxu-resource-dropdown')
+      if (!dropdown || dropdown.style.display !== 'flex') return
+      updateResourceList()
+      adjustDropdownPosition(dropdown)
+    } catch (e) {}
+  }
+
   const updateMainButtonResourceCount = () => {
     try {
       const btn = document.getElementById('lerxu-bilibili-download-btn')
@@ -292,43 +373,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const countSpan = btn.querySelector('.lerxu-resource-count')
       if (!countSpan) return
 
-      let scoped = getUniversalScopedResources().resources
-      if (!hasAnySniffedResources(scoped) && checkAndRestoreResources()) {
-        scoped = getUniversalScopedResources().resources
-      }
-      // 短视频信息流站点：使用 scoped 结果，不回退到全部资源，保持按钮数字与下拉框一致
-      let resources
-      if (isShortVideoFeedHost()) {
-        resources = scoped
-      } else {
-        resources = hasAnySniffedResources(scoped) ? scoped : sniffedResources
-      }
-
-      const hasM4s = Array.isArray(resources.m4s) && resources.m4s.length > 0
-
-      const combinedCount = Array.isArray(resources.combined) ? resources.combined.length : 0
-      const m4sCount = hasM4s ? resources.m4s.length : 0
-
-      const videoList = Array.isArray(resources.video) ? resources.video : []
-      const audioList = Array.isArray(resources.audio) ? resources.audio : []
-
-      const videoCount = videoList.filter((resource) => {
-        if (!resource || typeof resource.url !== 'string') return true
-        const isM4S = resource.url.includes('.m4s')
-        const shouldShowInM4SSection = isM4S && hasM4s
-        return !shouldShowInM4SSection
-      }).length
-
-      const audioCount = audioList.filter((resource) => {
-        if (!resource || typeof resource.url !== 'string') return true
-        const isM4S = resource.url.includes('.m4s')
-        const shouldShowInM4SSection = isM4S && hasM4s
-        return !shouldShowInM4SSection
-      }).length
-
-      const totalItems = combinedCount + m4sCount + videoCount + audioCount
-      const safeTotal = totalItems > 0 ? totalItems : 0
-      countSpan.textContent = `${safeTotal} 个资源`
+      // 与下拉框同源同算法：这个数就是列表里能看到几条
+      const total = countDisplayItems(collectDisplayItems(resolveDisplayResources()))
+      countSpan.textContent = `${total} 个资源`
     } catch (e) {}
   }
 
@@ -425,6 +472,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     dedupeUniversalButtonWrappers()
     renderPerVideoSniffButtons()
     updateButtonVisibility()
+    // 下拉框开着就跟着一起刷新，保证「按钮上的数 = 列表里的条数」（用户点名）
+    refreshOpenDropdown()
   })
 
   // 监听来自 iframe 的消息
@@ -461,6 +510,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       dedupeUniversalButtonWrappers()
       renderPerVideoSniffButtons()
       updateButtonVisibility()
+      refreshOpenDropdown()
     }
   })
 
@@ -1496,8 +1546,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg && msg.type === 'localeChanged') {
         updateLocaleCache().then(() => {
-          // 语言变化后重新渲染UI
-          updateResourceList()
+          // 语言变化后重新渲染UI（文案变了，必须重画，绕过去重）
+          updateResourceList(true)
           
           // 更新按钮文本
           const btn = document.getElementById('lerxu-bilibili-download-btn')
@@ -1514,8 +1564,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg && msg.type === 'localeChanged') {
         updateLocaleCache().then(() => {
-          // 语言变化后重新渲染UI
-          updateResourceList()
+          // 语言变化后重新渲染UI（文案变了，必须重画，绕过去重）
+          updateResourceList(true)
           
           // 更新按钮文本
           const btn = document.getElementById('lerxu-bilibili-download-btn')
@@ -1758,14 +1808,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return container
   }
 
+  // 上次渲染的内容签名：资源没变就不重建 —— 否则后台每来一批资源就把列表
+  // 整个重画一次，正在列表里滚动的人会被弹回顶部。
+  let lastResourceListSignature = ''
+
   // 更新资源列表
-  const updateResourceList = () => {
-    const { resources: viewResources } = getUniversalScopedResources()
-    log('Updating resource list, resources:', JSON.stringify(viewResources))
-    log('Video count:', viewResources.video?.length || 0)
-    log('Audio count:', viewResources.audio?.length || 0)
-    log('M4S count:', viewResources.m4s?.length || 0)
-    log('Combined count:', viewResources.combined?.length || 0)
+  const updateResourceList = (force) => {
+    // 与按钮上的数量**同源同算法**：同一批数据、同一套切分规则，
+    // 于是列表里有几条，按钮上就写几（用户点名要准确）
+    const viewResources = collectDisplayItems(resolveDisplayResources())
+    const totalItems = countDisplayItems(viewResources)
+    log('Updating resource list, items:', totalItems)
+    log('Video count:', viewResources.video.length)
+    log('Audio count:', viewResources.audio.length)
+    log('M4S count:', viewResources.m4s.length)
+    log('Combined count:', viewResources.combined.length)
     
     const content = document.getElementById('lerxu-resource-list')
     if (!content) {
@@ -1773,15 +1830,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       return
     }
 
-    // 检查是否资源突然变为空（可能是意外清除）
-    const totalResources = (viewResources.video?.length || 0) + 
-                          (viewResources.audio?.length || 0) + 
-                          (viewResources.combined?.length || 0)
-    
-    if (totalResources === 0 && content.children.length > 0) {
-      log('Warning: Resources became empty but UI had content, this might be an unexpected clear')
-      // 可以在这里添加恢复逻辑，但现在先记录
-    }
+    // 内容没变就不重画（切换语言要重画，那种调用传 force）
+    const signature = `${totalItems}|` +
+      viewResources.combined.concat(viewResources.m4s, viewResources.video, viewResources.audio)
+        .map(item => (item && item.url) || '')
+        .join('\n')
+    if (!force && content.children.length > 0 && signature === lastResourceListSignature) return
+    lastResourceListSignature = signature
 
     content.innerHTML = ''
 
@@ -1791,7 +1846,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const header = document.getElementById('lerxu-dropdown-header')
     if (header) {
       header.innerHTML = ''
-      if (hasAnySniffedResources(viewResources)) {
+      if (totalItems > 0) {
         const controls = createDropdownControls(viewResources, referer)
         const hStyle = header.style
         hStyle.display = 'flex'
@@ -1804,7 +1859,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     // 优先显示组合的DASH视频（视频+音频）
-    if (viewResources.combined && viewResources.combined.length > 0) {
+    if (viewResources.combined.length > 0) {
       const combinedSection = document.createElement('div')
 
       const combinedTitle = document.createElement('div')
@@ -1825,7 +1880,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     // 显示 M4S 资源（B站 DASH 视频）
-    if (viewResources.m4s && viewResources.m4s.length > 0) {
+    if (viewResources.m4s.length > 0) {
       const m4sSection = document.createElement('div')
 
       const m4sTitle = document.createElement('div')
@@ -1846,7 +1901,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     // 显示普通视频资源
-    if (viewResources.video && viewResources.video.length > 0) {
+    if (viewResources.video.length > 0) {
       const videoSection = document.createElement('div')
 
       const videoTitle = document.createElement('div')
@@ -1858,24 +1913,17 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       videoTitle.style.backgroundColor = '#f5f5f5'
       videoSection.appendChild(videoTitle)
 
+      // 归到「DASH 分离流」的分片在切分时已剔除，这里剩下的是纯视频流
       viewResources.video.forEach((resource, index) => {
-        // 如果M4S资源没有在M4S区域显示，则在这里显示
-        const isM4S = resource.url.includes('.m4s')
-        const shouldShowInM4SSection = isM4S && viewResources.m4s && viewResources.m4s.length > 0
-        
-        if (!shouldShowInM4SSection) {
-          const item = createResourceItem(resource, referer, index)
-          videoSection.appendChild(item)
-        }
+        const item = createResourceItem(resource, referer, index)
+        videoSection.appendChild(item)
       })
 
-      if (videoSection.children.length > 1) { // 除了标题还有其他内容
-        content.appendChild(videoSection)
-      }
+      content.appendChild(videoSection)
     }
 
     // 显示音频资源
-    if (viewResources.audio && viewResources.audio.length > 0) {
+    if (viewResources.audio.length > 0) {
       const audioSection = document.createElement('div')
 
       const audioTitle = document.createElement('div')
@@ -1887,20 +1935,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       audioTitle.style.backgroundColor = '#f5f5f5'
       audioSection.appendChild(audioTitle)
 
+      // 同上：分片已归到「DASH 分离流」，这里剩下的是纯音频流
       viewResources.audio.forEach((resource, index) => {
-        // 如果M4S资源没有在M4S区域显示，则在这里显示
-        const isM4S = resource.url.includes('.m4s')
-        const shouldShowInM4SSection = isM4S && viewResources.m4s && viewResources.m4s.length > 0
-        
-        if (!shouldShowInM4SSection) {
-          const item = createResourceItem(resource, referer, index)
-          audioSection.appendChild(item)
-        }
+        const item = createResourceItem(resource, referer, index)
+        audioSection.appendChild(item)
       })
 
-      if (audioSection.children.length > 1) {
-        content.appendChild(audioSection)
-      }
+      content.appendChild(audioSection)
     }
 
     if (content.children.length === 0) {
@@ -3706,22 +3747,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           if (subscribeBtn) break
         }
 
-      // 查找合集视频列表项
-      const itemSelectors = [
-        '.pod-item',
-        '.video-pod__item',
-        '[class*="pod-item"]',
-        '.video-section-item',
-        '[class*="section-item"]',
-        '[class*="video-list-item"]',
-        '[class*="episode-item"]'
-      ]
-
-        let videoItems = []
-        for (const itemSel of itemSelectors) {
-          videoItems = container.querySelectorAll(itemSel)
-          if (videoItems.length > 0) break
-        }
+      // 查找合集视频列表项：合并选择器一次查完，分类容器与视频项都会被命中，
+      // 交给 extractCollectionVideos 区分并下钻 —— 分类下的视频必须都列出来
+      let videoItems = container.querySelectorAll(COLLECTION_ITEM_SELECTOR)
+      if (videoItems.length === 0) {
+        // class 全改版时的兜底：带 BV 的 data-key 一直都在
+        videoItems = container.querySelectorAll(COLLECTION_BV_SELECTOR)
+      }
 
       // 查找合集标题
       let collectionTitle = ''
@@ -3750,12 +3782,103 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return { exists: false }
   }
 
+  /** 合集条目选择器：分类容器与视频项都可能被它命中，靠 isCollectionSectionNode 区分。 */
+  const COLLECTION_ITEM_SELECTOR = '.pod-item, .video-pod__item, [class*="pod-item"], .video-section-item, [class*="section-item"], [class*="video-list-item"], [class*="episode-item"]'
+
+  /** 视频项（带 BV 的 data-key）：比 class 稳，站点改版也不容易失效。 */
+  const COLLECTION_BV_SELECTOR = '[data-key^="BV"], [data-key^="bv"]'
+
+  /**
+   * 这个元素是「分类容器」还是「视频项」？
+   *
+   * 合集带分类（section）时，分类容器和视频项会被同一批选择器命中：容器里只有
+   * 分类名，真正的视频在它内部 —— 老代码把容器当视频提取，于是列表里只剩一条
+   * 分类名、分类下的视频全丢（用户点名）。
+   * 判据：自己带 BV 的 data-key 就是视频项；内部还套着 BV 项的就是分类容器。
+   */
+  const isCollectionSectionNode = (el) => {
+    try {
+      if (!el || !el.getAttribute) return false
+      const own = `${el.getAttribute('data-key') || ''}`.trim()
+      if (/^bv/i.test(own)) return false
+      // 内部套着带 BV 的 data-key → 是分类容器
+      if (el.querySelectorAll(COLLECTION_BV_SELECTOR).length > 0) return true
+      // 没有 data-key 的版本：内部指向**不同** BV 才算容器
+      // （视频项自己也有多个指向同一个 BV 的链接，不能只看链接个数）
+      const bvs = new Set()
+      el.querySelectorAll('a[href*="/video/BV"]').forEach(a => {
+        const m = `${a.getAttribute('href') || ''}`.match(/BV[0-9A-Za-z]+/)
+        if (m) bvs.add(m[0])
+      })
+      return bvs.size > 1
+    } catch (e) {
+      return false
+    }
+  }
+
+  /** 分类名（拿不到就返回空串）。 */
+  const collectionSectionTitle = (el) => {
+    try {
+      const selectors = [
+        '.video-pod__header .title', '.video-pod__header',
+        '[class*="section-title"]', '[class*="section-header"]',
+        '.title-txt', '[class*="list-title"]'
+      ]
+      for (const sel of selectors) {
+        const node = el.querySelector(sel)
+        if (!node) continue
+        const text = `${node.getAttribute('title') || node.textContent || ''}`.trim()
+        if (text) return text.slice(0, 30)
+      }
+    } catch (e) {}
+    return ''
+  }
+
+  /** 视频项所在的分类名（向上找最近的分类容器；没有就返回空串）。 */
+  const collectionSectionAncestorTitle = (el) => {
+    try {
+      let node = el && el.parentElement
+      let depth = 0
+      while (node && depth < 6) {
+        const cls = `${node.getAttribute ? (node.getAttribute('class') || '') : ''}`
+        // 分类容器的 class 里带 section（合集容器 .video-pod 不带），且里面确实装着视频
+        if (/section/i.test(cls) && node.querySelectorAll(COLLECTION_BV_SELECTOR).length > 0) {
+          const title = collectionSectionTitle(node)
+          if (title) return title
+        }
+        node = node.parentElement
+        depth++
+      }
+    } catch (e) {}
+    return ''
+  }
+
   // 从合集视频列表项中提取视频信息
+  // （支持「合集 → 分类 → 视频」两级结构：分类容器会被下钻，分类名记进 section）
   const extractCollectionVideos = (videoItems) => {
     const videos = []
     const seen = new Set()
+
+    // 先摊平成一张视频项清单：分类容器下钻，并把分类名带下来
+    const flat = []
+    const flatten = (nodes, section) => {
+      Array.prototype.forEach.call(nodes || [], el => {
+        if (isCollectionSectionNode(el)) {
+          const title = collectionSectionTitle(el) || section
+          let inner = el.querySelectorAll(COLLECTION_BV_SELECTOR)
+          if (inner.length === 0) inner = el.querySelectorAll(COLLECTION_ITEM_SELECTOR)
+          flatten(inner, title)
+        } else {
+          // 分类名优先用下钻时带下来的；没有（视频项被顶层选择器直接命中）就向上
+          // 找最近的分类容器 —— 两种情况都要能标出分类（用户点名）
+          flat.push({ el, section: section || collectionSectionAncestorTitle(el) })
+        }
+      })
+    }
+    flatten(videoItems, '')
+
     try {
-      videoItems.forEach(item => {
+      flat.forEach(({ el: item, section }) => {
         try {
           let bvKey = ''
           let title = ''
@@ -3779,8 +3902,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
           // 构建 URL
           let url = ''
-          if (bvKey && bvKey.startsWith('BV') && !seen.has(bvKey)) {
-            seen.add(bvKey)
+          if (bvKey && bvKey.startsWith('BV')) {
             url = `https://www.bilibili.com/video/${bvKey}`
           } else {
             // 回退：从 <a> 标签提取
@@ -3788,31 +3910,43 @@ if (typeof window !== 'undefined' && window.addEventListener) {
             if (link) {
               const href = link.href || link.getAttribute('href') || ''
               if (href) {
-                if (!href.startsWith('http')) {
-                  url = new URL(href, window.location.origin).href
-                } else {
-                  url = href
-                }
-                if (!seen.has(url)) {
-                  seen.add(url)
-                } else {
-                  return
-                }
+                url = href.startsWith('http') ? href : new URL(href, window.location.origin).href
               }
             }
           }
+          if (!url) return
 
-          if (url) {
-            videos.push({ url, title: title || bvKey || '未知视频', duration, bv: bvKey })
-          }
+          // 去重键统一成 BV 号（拿不到才退回 URL）：分类容器下钻和顶层列表可能
+          // 命中同一个视频，键不统一就会把它收两次（用户点名要分类下的视频，不要重复）
+          const bvInUrl = (url.match(/BV[0-9A-Za-z]+/) || [])[0] || ''
+          const dedupKey = /^BV/i.test(bvKey) ? bvKey : (bvInUrl || url)
+          if (seen.has(dedupKey)) return
+          seen.add(dedupKey)
+
+          videos.push({
+            url,
+            title: title || bvKey || '未知视频',
+            duration,
+            // BV 兜底从地址里取：后续预取分P / 下载都靠它
+            bv: /^BV/i.test(bvKey) ? bvKey : bvInUrl,
+            section
+          })
         } catch (e) {}
       })
     } catch (e) {}
     return videos
   }
 
-  // 通过B站API获取视频流URL
-  const fetchBiliVideoStream = async (bv) => {
+  /**
+   * 通过B站API获取视频流URL。
+   *
+   * [cid] 省略时用视频默认的 P（也就是第一个 P）；**多 P 视频要逐个 P 把 cid 传进来**，
+   * 否则一个视频里后面的几个"视频"（分P）一个都下不到（用户点名）。
+   *
+   * 返回里带上 `cid` 与 `pages`（分P 列表）—— 分P 信息本来就在同一个 view 响应里，
+   * 顺手带出来，调用方不必再为"这个视频里有几个 P"多发一次请求。
+   */
+  const fetchBiliVideoStream = async (bv, cid) => {
     try {
       // 1. 获取 cid
       const viewResp = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bv}`, {
@@ -3823,12 +3957,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         log('Failed to get cid for', bv, viewData)
         return null
       }
-      const cid = viewData.data.cid
+      const pages = Array.isArray(viewData.data.pages)
+        ? viewData.data.pages.map(p => ({ cid: p.cid, page: p.page || 0, part: p.part || '' }))
+        : []
+      const useCid = cid || viewData.data.cid
       const title = viewData.data.title || bv
 
       // 2. 获取播放地址（DASH格式）
       const playResp = await fetch(
-        `https://api.bilibili.com/x/player/playurl?bvid=${bv}&cid=${cid}&qn=80&fnval=16&fnver=0&fourk=1`,
+        `https://api.bilibili.com/x/player/playurl?bvid=${bv}&cid=${useCid}&qn=80&fnval=16&fnver=0&fourk=1`,
         { credentials: 'include' }
       )
       const playData = await playResp.json()
@@ -3838,7 +3975,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       }
 
       const streamData = playData.data
-      const result = { title, videoUrl: '', audioUrl: '' }
+      const result = { title, videoUrl: '', audioUrl: '', cid: useCid, pages }
 
       // DASH格式：从dash.video和dash.audio中选取最佳流
       if (streamData.dash && (streamData.dash.video || streamData.dash.audio)) {
@@ -3872,6 +4009,25 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   }
 
+  /**
+   * 只取分P 列表（面板里标"共 N P"用，不请求播放地址，省一半请求）。
+   * 拿不到就返回空数组 —— 标记不显示而已，下载时还会再取一次。
+   */
+  const fetchBiliVideoPages = async (bv) => {
+    try {
+      if (!bv) return []
+      const resp = await fetch(`https://api.bilibili.com/x/web-interface/view?bvid=${bv}`, {
+        credentials: 'include'
+      })
+      const data = await resp.json()
+      if (!data || data.code !== 0 || !data.data) return []
+      const pages = Array.isArray(data.data.pages) ? data.data.pages : []
+      return pages.map(p => ({ cid: p.cid, page: p.page || 0, part: p.part || '' }))
+    } catch (e) {
+      return []
+    }
+  }
+
   // 检测合集中当前正在播放的视频BV号
   const detectCurrentPlayingBv = () => {
     try {
@@ -3900,6 +4056,39 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return ''
   }
 
+  /**
+   * 顶部悬浮导航栏在**视口坐标**里的下沿（没有则 0）。
+   *
+   * B 站顶栏是 fixed 的、z-index 比我们的面板高：面板一旦伸到它底下就会被吃掉半截。
+   * 所以定位前先问清楚"从哪儿开始才是安全区"（用户点名要自动避让）。
+   */
+  const getBiliHeaderBottom = () => {
+    try {
+      const selectors = [
+        '.bili-header', '#bili-header', '.fixed-header', '.bili-nav-header',
+        '.mini-header', '.international-header'
+      ]
+      let bottom = 0
+      selectors.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => {
+          try {
+            const style = window.getComputedStyle(el)
+            if (!style || style.display === 'none' || style.visibility === 'hidden') return
+            const pos = style.position
+            // 只算会悬浮盖住内容的（fixed / sticky）；跟着文档流的顶栏挡不住面板
+            if (pos !== 'fixed' && pos !== 'sticky') return
+            const rect = el.getBoundingClientRect()
+            if (rect.height <= 0 || rect.top > 0) return
+            if (rect.bottom > bottom) bottom = rect.bottom
+          } catch (e) {}
+        })
+      })
+      return bottom
+    } catch (e) {
+      return 0
+    }
+  }
+
   // 显示合集下载悬浮面板
   const showCollectionDownloadDialog = (videos, collectionTitle) => {
     // 移除已存在的面板
@@ -3908,7 +4097,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 获取下载合集按钮的位置
     const downloadBtnEl = document.getElementById('lerxu-collection-download-btn')
-    let btnRect = { bottom: 0, left: 0, width: 0 }
+    let btnRect = { top: 0, right: 0, bottom: 0, left: 0, width: 0 }
     if (downloadBtnEl) {
       btnRect = downloadBtnEl.getBoundingClientRect()
     }
@@ -3931,13 +4120,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     pStyle.display = 'flex'
     pStyle.flexDirection = 'column'
     pStyle.overflow = 'hidden'
-    pStyle.zIndex = '1000'
-    // 定位在按钮下方，右对齐于按钮（向左延伸，不遮挡按钮）
-    const scrollX = window.scrollX || window.pageXOffset || 0
-    const scrollY = window.scrollY || window.pageYOffset || 0
-    const panelWidth = 300
-    pStyle.top = `${btnRect.bottom + scrollY + 4}px`
-    pStyle.left = `${Math.max(10, btnRect.right + scrollX - panelWidth)}px`
+    // 10000：比 B 站顶栏那一档高，万一避让判定在特殊布局下失灵也不会被吃掉半截
+    pStyle.zIndex = '10000'
+    // 初始位置先占个位，真正的落位在 append 之后由 placePanel 统一算
+    // （规则见 placePanel：向下展开 → 放不下翻上方 → 都不许伸进顶部导航栏）
+    pStyle.top = '0'
+    pStyle.left = '0'
 
     // 滚动条样式
     const scrollStyle = document.createElement('style')
@@ -3984,7 +4172,24 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     listContainer.style.cssText = 'flex:1;overflow-y:auto;padding:2px 0;'
 
     const itemCheckboxes = []
+    // 每行的"共 N P"标记（下标与 videos 对齐），下面异步填
+    const pageMarks = []
+    // 面板一关就停掉还在跑的分P 预取，别让请求打到用户已经关掉的弹窗上
+    let pagesCancelled = false
+    let lastSection = null
     videos.forEach((video, index) => {
+      // 分类名变化时插一条小标题，分类下的视频跟在它后面 ——
+      // 老版本只列出分类名、分类里的视频全丢（用户点名），现在两样都看得到
+      const section = video.section || ''
+      if (section !== lastSection) {
+        lastSection = section
+        if (section) {
+          const sectionRow = document.createElement('div')
+          sectionRow.textContent = section
+          sectionRow.style.cssText = 'padding:6px 10px 2px;font-size:10px;color:#888;font-weight:600;'
+          listContainer.appendChild(sectionRow)
+        }
+      }
       const isPlaying = currentBv && video.bv === currentBv
       const item = document.createElement('div')
       item.style.cssText = `display:flex;align-items:center;padding:4px 10px;cursor:pointer;${isPlaying ? 'background:#e3f2fd;' : ''}`
@@ -4003,6 +4208,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       const rightSpan = document.createElement('span')
       rightSpan.style.cssText = 'flex-shrink:0;margin-left:8px;display:flex;align-items:center;gap:4px;'
+
+      // "共 N P"：这个合集视频里还含着几个分P（下面异步补，取不到就不显示）
+      const pageMark = document.createElement('span')
+      pageMark.style.cssText = 'font-size:10px;color:#1a7fe0;flex-shrink:0;'
+      rightSpan.appendChild(pageMark)
+      pageMarks.push(pageMark)
 
       if (isPlaying) {
         const playingTag = document.createElement('span')
@@ -4035,20 +4246,46 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     panel.appendChild(listContainer)
     document.body.appendChild(panel)
 
-    // 调整面板位置确保在视口内
-    requestAnimationFrame(() => {
-      const pRect = panel.getBoundingClientRect()
-      const vw = window.innerWidth
-      const vh = window.innerHeight
-      const sx = window.scrollX || window.pageXOffset || 0
-      const sy = window.scrollY || window.pageYOffset || 0
-      if (pRect.right > vw - 10) {
-        panel.style.left = `${Math.max(10 + sx, vw + sx - pRect.width - 10)}px`
-      }
-      if (pRect.bottom > vh - 10) {
-        panel.style.top = `${Math.max(10 + sy, btnRect.top + sy - pRect.height - 4)}px`
-      }
-    })
+    /**
+     * 落位：先在按钮下方展开；下方放不下就翻到按钮上方；
+     * **两种都不许伸进顶部导航栏底下**（导航栏 z-index 更高，伸进去就被吃掉半截），
+     * 实在放不下就压高度，而不是把面板挪到导航栏底下去（用户点名要自动避让）。
+     * 面板与按钮都用文档坐标（absolute + scrollY），页面滚动时两者一起走，不会错位。
+     */
+    const placePanel = () => {
+      try {
+        const vw = window.innerWidth
+        const vh = window.innerHeight
+        const sx = window.scrollX || window.pageXOffset || 0
+        const sy = window.scrollY || window.pageYOffset || 0
+        const safeTop = getBiliHeaderBottom() + 8   // 视口坐标：安全上沿
+        const safeBottom = vh - 10                  // 视口坐标：安全下沿
+
+        // 先按可用空间收紧高度，再决定放上还是放下
+        const available = Math.max(120, safeBottom - safeTop)
+        panel.style.maxHeight = `${Math.min(360, available)}px`
+
+        const width = panel.offsetWidth || 300
+        const height = panel.offsetHeight || 0
+
+        let top = btnRect.bottom + 4
+        if (top + height > safeBottom) {
+          const above = btnRect.top - height - 4
+          top = above >= safeTop ? above : safeTop
+        }
+        if (top + height > safeBottom) top = Math.max(safeTop, safeBottom - height)
+
+        let left = btnRect.right - width
+        if (left + width > vw - 10) left = vw - width - 10
+        if (left < 10) left = 10
+
+        panel.style.top = `${top + sy}px`
+        panel.style.left = `${left + sx}px`
+      } catch (e) {}
+    }
+    placePanel()
+    // 列表内容渲染完（异步补上的"共 N P"标记会把面板撑高）再校一次
+    requestAnimationFrame(placePanel)
 
     // 全选逻辑
     function updateSelectAllState() {
@@ -4058,6 +4295,23 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       downloadBtn.style.opacity = checkedCount === 0 ? '0.5' : '1'
     }
     updateSelectAllState()
+
+    // 一个合集视频里可能还含着多个分P（"视频里的视频"）：逐个把"共 N P"补上。
+    // 串行 + 留间隔，避免一堆请求同时打 B 站接口；面板一关就停（用户点名要能处理分P）
+    ;(async () => {
+      for (let i = 0; i < videos.length; i++) {
+        if (pagesCancelled || !panel.isConnected) return
+        const bv = videos[i].bv || (videos[i].url.match(/BV\w+/) || [])[0] || ''
+        if (!bv) continue
+        const pages = await fetchBiliVideoPages(bv)
+        if (pagesCancelled || !panel.isConnected) return
+        if (pages.length > 1 && pageMarks[i]) {
+          pageMarks[i].textContent = `共${pages.length}P`
+          pageMarks[i].title = pages.map(p => `P${p.page} ${p.part}`).join('\n')
+        }
+        await new Promise(r => setTimeout(r, 300))
+      }
+    })()
 
     selectAllCheckbox.addEventListener('change', () => {
       itemCheckboxes.forEach(cb => { cb.checked = selectAllCheckbox.checked })
@@ -4070,6 +4324,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 关闭面板
     const closePanel = () => {
+      pagesCancelled = true
       panel.remove()
       document.removeEventListener('click', outsideClickHandler, true)
     }
@@ -4115,13 +4370,44 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           btnTextEl.textContent = `获取中 ${i + 1}/${selectedIndices.length}`
         }
 
-        // 通过B站API获取视频流URL
-        const stream = await fetchBiliVideoStream(video.bv || video.url.match(/BV\w+/)?.[0] || '')
+        const bv = video.bv || (video.url.match(/BV\w+/) || [])[0] || ''
+        // 通过B站API获取视频流URL（分P 列表也一并带回来了）
+        const info = await fetchBiliVideoStream(bv)
 
-        if (stream && stream.videoUrl) {
-          if (btnTextEl) {
-            btnTextEl.textContent = `下载中 ${i + 1}/${selectedIndices.length}`
+        if (!info || !info.videoUrl) {
+          failCount++
+          log('Failed to get stream for', bv || video.title)
+          if (i < selectedIndices.length - 1) {
+            await new Promise(r => setTimeout(r, 300))
           }
+          continue
+        }
+
+        // 一个合集视频里可能还含着多个分P（"视频里的视频"）：多 P 时逐个 P 都要发，
+        // 只发第一个 P 的话剩下的分P 一个都下不到（用户点名）
+        const parts = info.pages && info.pages.length > 1
+          ? info.pages
+          : [{ cid: info.cid, page: 0, part: '' }]
+
+        for (let k = 0; k < parts.length; k++) {
+          const part = parts[k]
+          const stream = part.cid === info.cid ? info : await fetchBiliVideoStream(bv, part.cid)
+          if (!stream || !stream.videoUrl) {
+            failCount++
+            log('Failed to get stream for', bv, 'P', part.page)
+            continue
+          }
+
+          if (btnTextEl) {
+            btnTextEl.textContent = parts.length > 1
+              ? `下载中 ${i + 1}/${selectedIndices.length} · P${k + 1}/${parts.length}`
+              : `下载中 ${i + 1}/${selectedIndices.length}`
+          }
+
+          // 多 P 时文件名带上 P 号，否则几十个分P 会互相覆盖成一个
+          const partTag = part.page
+            ? `_P${part.page}${part.part ? '_' + safeFilenamePart(part.part) : ''}`
+            : ''
 
           // 发送视频流
           chrome.runtime.sendMessage({
@@ -4129,7 +4415,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
             url: stream.videoUrl,
             referer,
             headers,
-            suggestedFilename: `${stream.title}_video.mp4`
+            suggestedFilename: `${stream.title}${partTag}_video.mp4`
           }, () => {})
 
           // 发送音频流（如果有）
@@ -4140,14 +4426,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
               url: stream.audioUrl,
               referer,
               headers,
-              suggestedFilename: `${stream.title}_audio.m4a`
+              suggestedFilename: `${stream.title}${partTag}_audio.m4a`
             }, () => {})
           }
 
           successCount++
-        } else {
-          failCount++
-          log('Failed to get stream for', video.bv || video.title)
+
+          if (k < parts.length - 1) {
+            await new Promise(r => setTimeout(r, 300))
+          }
         }
 
         if (i < selectedIndices.length - 1) {
