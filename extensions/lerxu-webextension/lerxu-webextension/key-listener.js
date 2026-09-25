@@ -300,7 +300,49 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   }
 
   /**
-   * 把一批资源切成**真正会显示出来的四组条目**。
+   * 一条资源是不是 **HLS 清单**（`.m3u8`，也就是 `#EXTM3U` 那种索引文件）。
+   *
+   * 清单不是媒体文件，但它**就是"一个完整视频"**：把这一条交给下载器，
+   * 引擎自己会拉清单里的全部分片并拼成单个文件。所以它必须独立成一栏、
+   * 排在所有资源最前面 —— 混在几十条分片里，用户根本不知道该点哪一条
+   * （用户点名：嗅探到 m3u8 + ts 时"分不清该点哪个"）。
+   *
+   * 判定先看扩展名（嗅探结果有时拿不到正确扩展名），再看地址本身。
+   */
+  const isHlsManifestEntry = (resource) => {
+    try {
+      if (!resource || typeof resource.url !== 'string') return false
+      if (`${resource.ext || ''}`.toLowerCase() === 'm3u8') return true
+      return /\.m3u8(?:[?#]|$)/i.test(resource.url)
+    } catch (e) {
+      return false
+    }
+  }
+
+  /**
+   * 一条资源是不是 HLS 的 **TS 分片**。
+   *
+   * 分片单独下出来只有几秒钟的画面，没有任何意义。但**只有页面上确实
+   * 存在清单时**才把它折进「HLS 分片」组 —— 孤立的一条 `.ts` 可能真是
+   * 整段视频（老式站点直接给 .ts 文件），不能一律当分片藏起来。
+   */
+  const isTsSegmentEntry = (resource) => {
+    try {
+      if (!resource || typeof resource.url !== 'string') return false
+      if (`${resource.ext || ''}`.toLowerCase() === 'ts') return true
+      return /\.(ts|m2ts|mts)(?:[?#]|$)/i.test(resource.url)
+    } catch (e) {
+      return false
+    }
+  }
+
+  /**
+   * 把一批资源切成**真正会显示出来的各组条目**。
+   *
+   * 返回 `{ manifest, segments, combined, m4s, video, audio }`：
+   *   - `manifest`：HLS 清单（m3u8）——**一条就是一个完整视频**，排最前面；
+   *   - `segments`：清单的分片（.ts）——默认收起的一组，不占版面；
+   *   - 其余四组沿用老口径（合并条目 / DASH 分离流 / 视频 / 音频）。
    *
    * 这是「按钮上的数量」与「下拉框里的条目」唯一的共同来源：两处都从这里取，
    * 切分规则只有一份，就不可能再对不上（用户点名）。
@@ -338,18 +380,55 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     })
     const dropUsed = (list) => list.filter(item => !(item && usedByCombined.has(urlKeyForDedup(item.url))))
 
+    const video = dropUsed(keepPlain(r.video))
+    const audio = dropUsed(keepPlain(r.audio))
+    const m4sKept = dropUsed(m4s)
+
+    // 清单与它的分片从普通条目里**抽出来单独成组**：
+    //   清单 → 最前面一栏「HLS 完整视频」，点一下就是一个完整视频；
+    //   分片 → 默认收起的「HLS 分片」组（**只有这一页真有清单时才收**）。
+    // 不抽的话它们全混在「视频资源」栏里，几十条长得一模一样的 `.ts`
+    // 会把真正该点的那一条埋掉（用户点名：分不清该点哪个）。
+    const dedupeByUrl = (list) => {
+      const seen = new Set()
+      const out = []
+      list.forEach(item => {
+        if (!item) return
+        // 清单的查询串是有意义的（?stream=a 与 ?stream=b 是两条流），按完整地址去重
+        const key = `${item.url || ''}`
+        if (!key || seen.has(key)) return
+        seen.add(key)
+        out.push(item)
+      })
+      return out
+    }
+    const plainPool = video.concat(audio, m4sKept)
+    const manifest = dedupeByUrl(plainPool.filter(isHlsManifestEntry))
+    const hasManifest = manifest.length > 0
+    const segments = hasManifest ? dedupeByUrl(plainPool.filter(isTsSegmentEntry)) : []
+    const strip = (list) => list.filter(item =>
+      !(item && (isHlsManifestEntry(item) || (hasManifest && isTsSegmentEntry(item)))))
+
     return {
+      manifest,
+      segments,
       combined,
-      m4s: dropUsed(m4s),
-      video: dropUsed(keepPlain(r.video)),
-      audio: dropUsed(keepPlain(r.audio))
+      m4s: strip(m4sKept),
+      video: strip(video),
+      audio: strip(audio)
     }
   }
 
-  /** 上面那四组条目一共几条 —— 按钮上显示的就是这个数。 */
+  /**
+   * 下拉框里一共几条**看得见的条目** —— 按钮上显示的就是这个数。
+   *
+   * 分片那一整组只算一条：它就是列表里的一个可折叠行，而"按钮数字 =
+   * 列表里看得见的条目数"这条不变式是用户点名要的。
+   */
   const countDisplayItems = (items) => {
     try {
-      return items.combined.length + items.m4s.length + items.video.length + items.audio.length
+      return items.manifest.length + items.combined.length + items.m4s.length +
+        items.video.length + items.audio.length + (items.segments.length > 0 ? 1 : 0)
     } catch (e) {
       return 0
     }
@@ -645,6 +724,27 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   }
 
   /**
+   * 清单类地址（HLS/DASH）的**产物**扩展名。
+   *
+   * `.m3u8` / `.mpd` 是清单文本，不是媒体文件：应用端（引擎）会按清单顺序
+   * 把分片拉下来拼成一个真实媒体文件。把建议文件名写成 `.m3u8` 会让用户在
+   * 新建任务对话框里看到一个与实际产物不符的名字（引擎虽然会在落盘时纠正
+   * 扩展名，但对话框里的预览就是错的）。
+   *
+   * HLS 绝大多数是 MPEG-TS，按 `.ts` 建议；fMP4（`#EXT-X-MAP`）的清单由
+   * 引擎在下载时自行改成 `.mp4`。DASH 的 `.mpd` 同理按 `.mp4`。
+   */
+  const MANIFEST_OUT_EXT = { m3u8: 'ts', mpd: 'mp4' }
+  const outputExtFor = (ext) => {
+    const e = `${ext || ''}`.toLowerCase()
+    return MANIFEST_OUT_EXT[e] || e
+  }
+
+  /** 地址是否为清单（不是可直接下载的媒体文件）。 */
+  const MANIFEST_URL_RE = /\.(m3u8|mpd)(?:[?#]|$)/i
+  const isManifestUrl = (url) => MANIFEST_URL_RE.test(`${url || ''}`)
+
+  /**
    * 一对音视频的文件名。
    *
    * **必须只有这一处**：视频流与音频流的名字只差结尾那一个词，应用端据此
@@ -673,6 +773,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       // 必须在这一层去重 —— 只拦单条会把一对拆成一半，应用端会一直
       // 等一个永远不来的伙伴（用户点名）
       if (!markSent(`${videoUrl}|${audioUrl}`)) return false
+      // 防御：清单（HLS/DASH）自带音视频，根本不是"分离的视频流"。配对由
+      // video-sniffer 侧拦掉（见 NON_PAIRABLE_EXTS），这里再兜一层——旧版
+      // 或历史数据把清单配进来时，降级成单条，绝不发成一对。
+      if (isManifestUrl(videoUrl)) {
+        const b = safeFilenamePart(base || '') || 'video'
+        const s = (typeof seq === 'number' && seq > 0) ? `_${seq}` : ''
+        sendResourceToClient(videoUrl, referer, `${b}${s}.${outputExtFor('m3u8')}`)
+        return true
+      }
       const names = streamPairFilenames(base, seq)
       const pairId = makePairId()
       sendResourceToClient(videoUrl, referer, names.video, { id: pairId, role: PAIR_ROLE_VIDEO })
@@ -1220,11 +1329,26 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       }
 
       const videoPool = filterContextResources(sniffedResources.video || [], contextId, activeAt, preferredHost)
-      const nonM4s = Array.isArray(videoPool) ? videoPool.filter(r => r && r.url && r.ext !== 'm4s') : []
+      // 清单优先：per-video 按钮点的是"这个视频"，而 HLS 页面上"这个视频"
+      // 就是清单那一条。分片按"离播放时刻最近"排序经常排在最前，点下去只
+      // 下到几秒钟的画面 —— 用户看到的正是"点了不对的那个"（用户点名）。
+      const manifests = videoPool.filter(isHlsManifestEntry)
+      const bestManifest = pickNearest(manifests, activeAt) || pickBestSingle(manifests)
+      if (bestManifest && bestManifest.url) {
+        const filename = base ? `${base}_${seq}.${outputExtFor(bestManifest.ext || 'm3u8')}` : ''
+        sendResourceToClient(bestManifest.url, referer, filename)
+        return true
+      }
+
+      const hasManifest = manifests.length > 0
+      const nonM4s = Array.isArray(videoPool)
+        ? videoPool.filter(r => r && r.url && r.ext !== 'm4s' && !(hasManifest && isTsSegmentEntry(r)))
+        : []
       const bestVideo = pickNearest(nonM4s, activeAt) || pickBestSingle(nonM4s) || pickNearest(videoPool, activeAt) || pickBestSingle(videoPool)
       if (bestVideo && bestVideo.url) {
         const ext = bestVideo.ext ? `${bestVideo.ext}`.toLowerCase() : 'mp4'
-        const filename = base ? `${base}_${seq}.${ext}` : ''
+        // 清单（m3u8）不是媒体文件：产物扩展名按实际容器给（HLS → ts）
+        const filename = base ? `${base}_${seq}.${outputExtFor(ext)}` : ''
         sendResourceToClient(bestVideo.url, referer, filename)
         return true
       }
@@ -1699,6 +1823,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         'en': 'Download all',
         'zh_CN': '下载全部',
         'zh_TW': '下載全部'
+      },
+      'hlsCompleteVideo': {
+        'en': 'HLS Complete Video',
+        'zh_CN': 'HLS 完整视频',
+        'zh_TW': 'HLS 完整視頻'
+      },
+      'hlsSegments': {
+        'en': 'HLS segments',
+        'zh_CN': 'HLS 分片',
+        'zh_TW': 'HLS 分片'
+      },
+      'segment': {
+        'en': 'segment',
+        'zh_CN': '分片',
+        'zh_TW': '分片'
       }
     }
     
@@ -1917,6 +2056,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     downloadAllBtn.addEventListener('click', () => {
       try {
         const resources = viewResources || {}
+        const manifest = Array.isArray(resources.manifest) ? resources.manifest : []
         const combined = Array.isArray(resources.combined) ? resources.combined : []
         const m4s = Array.isArray(resources.m4s) ? resources.m4s : []
         const videos = Array.isArray(resources.video) ? resources.video : []
@@ -1944,6 +2084,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           sentUrls.add(resource.url)
           downloadSingleResource(resource, referer)
         }
+
+        // 清单**先发**：HLS 页面上"一个视频"就是清单那一条，分片交给引擎按
+        // 清单自己拉。绝不去遍历 segments —— 几十条 .ts 逐条发只会得到几十个
+        // 几秒钟的垃圾任务，还要手删（用户点名）。
+        manifest.forEach(sendSingle)
 
         // m4s 先发：video / audio 两栏里往往就是同一批 m4s，靠上面的集合自然去重
         m4s.forEach(sendSingle)
@@ -1983,6 +2128,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 整个重画一次，正在列表里滚动的人会被弹回顶部。
   let lastResourceListSignature = ''
 
+  // HLS 分片组是否展开。列表每次重画都要保留这个状态：新分片不断进来，
+  // 每来一条就把用户展开的组收回去，等于点了没法看。
+  let segmentsExpanded = false
+
   // 更新资源列表
   const updateResourceList = (force) => {
     // 与按钮上的数量**同源同算法**：同一批数据、同一套切分规则，
@@ -2003,7 +2152,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 内容没变就不重画（切换语言要重画，那种调用传 force）
     const signature = `${totalItems}|` +
-      viewResources.combined.concat(viewResources.m4s, viewResources.video, viewResources.audio)
+      viewResources.manifest.concat(viewResources.segments, viewResources.combined,
+        viewResources.m4s, viewResources.video, viewResources.audio)
         .map(item => (item && item.url) || '')
         .join('\n')
     if (!force && content.children.length > 0 && signature === lastResourceListSignature) return
@@ -2027,6 +2177,28 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         hStyle.backgroundColor = 'transparent'
         header.appendChild(controls)
       }
+    }
+
+    // HLS 清单排在最前面：一条地址 = 一个完整视频，**点这条就是下载**
+    // （引擎会把全部分片拉下来拼成一个文件）。这一栏必须在分片前面 ——
+    // 用户点开列表第一眼看到的就是该点的那条。
+    if (viewResources.manifest.length > 0) {
+      const hlsSection = document.createElement('div')
+
+      const hlsTitle = document.createElement('div')
+      hlsTitle.textContent = getLocalizedText('hlsCompleteVideo')
+      hlsTitle.style.fontSize = '12px'
+      hlsTitle.style.fontWeight = 'bold'
+      hlsTitle.style.padding = '10px 12px 5px'
+      hlsTitle.style.color = '#1a7fe0'
+      hlsTitle.style.backgroundColor = '#eef6ff'
+      hlsSection.appendChild(hlsTitle)
+
+      viewResources.manifest.forEach((resource, index) => {
+        hlsSection.appendChild(createResourceItem(resource, referer, index, { primary: true }))
+      })
+
+      content.appendChild(hlsSection)
     }
 
     // 优先显示组合的DASH视频（视频+音频）
@@ -2113,6 +2285,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       })
 
       content.appendChild(audioSection)
+    }
+
+    // HLS 分片收在最后、默认收起：几十条分片把清单淹没正是用户"分不清点哪个"
+    // 的直接原因。默认不展开，但一条都没删 —— 想单独取某一段的人展开就能点。
+    if (viewResources.segments.length > 0) {
+      content.appendChild(createSegmentGroup(viewResources.segments, referer))
     }
 
     if (content.children.length === 0) {
@@ -2288,22 +2466,34 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return item
   }
 
-  // 创建资源项
-  const createResourceItem = (resource, referer, index) => {
+  /**
+   * 创建资源条目。
+   *
+   * `options.primary`：清单那一栏用（浅蓝底 + 标题条目标题就是页面标题本身）；
+   * `options.segment`：HLS 分片用（灰一点 + 「分片」徽章）。
+   *
+   * **条目上不放任何下载按钮/图标** —— 点条目本身就是"加入下载队列"，
+   * 再挂一个按钮只是噪音（用户点名不要）。
+   */
+  const createResourceItem = (resource, referer, index, options) => {
+    const opts = options || {}
+    const baseBg = opts.primary ? '#f7fbff' : '#ffffff'
+    const hoverBg = opts.primary ? '#eef6ff' : '#f5f5f5'
+
     const item = document.createElement('div')
     const iStyle = item.style
     iStyle.padding = '8px 12px'
     iStyle.borderBottom = '1px solid #f0f0f0'
-    iStyle.backgroundColor = '#ffffff'
+    iStyle.backgroundColor = baseBg
     iStyle.cursor = 'pointer'
     iStyle.transition = 'background-color 0.2s ease'
     iStyle.fontSize = '12px'
 
     item.addEventListener('mouseenter', () => {
-      item.style.backgroundColor = '#f5f5f5'
+      item.style.backgroundColor = hoverBg
     })
     item.addEventListener('mouseleave', () => {
-      item.style.backgroundColor = '#ffffff'
+      item.style.backgroundColor = baseBg
     })
 
     const info = document.createElement('div')
@@ -2333,9 +2523,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           .trim()
 
         if (cleanTitle) {
-          displayName = `${cleanTitle}, ${ext}${getLocalizedText('file')}`
+          // 清单条目就显示标题本身：它上面那行标题已经写明"HLS 完整视频"，
+          // 再拼一个 "M3U8文件" 只是噪音
+          displayName = opts.primary
+            ? cleanTitle
+            : `${cleanTitle}, ${ext}${getLocalizedText('file')}`
           // 如果有质量信息，添加到文件名
-          if (resource.quality && resource.quality !== ext) {
+          if (!opts.primary && resource.quality && resource.quality !== ext) {
             displayName = `${cleanTitle}, ${resource.quality}, ${ext}${getLocalizedText('file')}`
           }
         } else {
@@ -2353,7 +2547,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     name.textContent = displayName
     name.style.fontSize = '12px'
     name.style.fontWeight = '500'
-    name.style.color = '#333'
+    // 分片整条压暗：它是"零件"而不是能单独用的资源，视觉上就该往后退
+    name.style.color = opts.segment ? '#999' : '#333'
     name.style.flex = '1'
     name.style.overflow = 'hidden'
     name.style.textOverflow = 'ellipsis'
@@ -2393,6 +2588,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       badges.appendChild(size)
     }
 
+    // 分片徽章：分片不是"一个视频"，标出来免得跟真资源混淆
+    if (opts.segment) {
+      const segTag = document.createElement('span')
+      segTag.textContent = getLocalizedText('segment')
+      segTag.style.fontSize = '11px'
+      segTag.style.color = '#999'
+      segTag.style.padding = '2px 6px'
+      segTag.style.backgroundColor = '#f5f5f5'
+      segTag.style.borderRadius = '3px'
+      badges.appendChild(segTag)
+    }
+
     info.appendChild(name)
     if (badges.children.length > 0) {
       info.appendChild(badges)
@@ -2409,12 +2616,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     item.appendChild(info)
     item.appendChild(url)
 
-    item.addEventListener('click', () => {
+    // 加入下载队列（行、以及行里的下载按钮共用这一段）
+    const sendThis = () => {
       // 生成建议的文件名
       let filename = ''
       try {
         const pageTitle = getVideoTitle()
-        const ext = resource.ext || 'video'
+        const srcExt = resource.ext || 'video'
+        // 清单（m3u8/mpd）的产物扩展名与实际容器一致，见 outputExtFor
+        const ext = outputExtFor(srcExt)
 
         if (pageTitle) {
           let cleanTitle = pageTitle
@@ -2427,7 +2637,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
           if (cleanTitle) {
             // 如果有质量信息，添加到文件名
-            if (resource.quality && resource.quality !== ext.toUpperCase()) {
+            if (resource.quality && resource.quality !== srcExt.toUpperCase()) {
               filename = `${cleanTitle}_${resource.quality}.${ext}`
             } else {
               filename = `${cleanTitle}.${ext}`
@@ -2440,16 +2650,64 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       sendResourceToClient(resource.url, referer, filename)
       const dropdown = document.getElementById('lerxu-resource-dropdown')
       if (dropdown) dropdown.style.display = 'none'
-    })
+    }
+
+    item.addEventListener('click', sendThis)
 
     return item
+  }
+
+  /**
+   * 「HLS 分片」组：一个可折叠的标题行 + 收在里面的分片条目。
+   *
+   * 分片默认收起（`segmentsExpanded` 是跨重画的持久状态）。**一条都没丢** ——
+   * 想单独取某几段的人展开就能点，但默认不会再让几十条分片把清单挤下去。
+   */
+  const createSegmentGroup = (segments, referer) => {
+    const section = document.createElement('div')
+
+    const header = document.createElement('div')
+    header.style.cssText = 'display:flex;align-items:center;gap:6px;padding:10px 12px 5px;' +
+      'background-color:#f5f5f5;cursor:pointer;user-select:none;'
+
+    const arrow = document.createElement('span')
+    arrow.textContent = segmentsExpanded ? '▾' : '▸'
+    arrow.style.cssText = 'font-size:10px;color:#999;flex-shrink:0;'
+
+    const label = document.createElement('span')
+    label.textContent = `${getLocalizedText('hlsSegments')} · ${segments.length}`
+    label.style.cssText = 'font-size:12px;font-weight:bold;color:#999;'
+
+    header.appendChild(arrow)
+    header.appendChild(label)
+    section.appendChild(header)
+
+    const list = document.createElement('div')
+    list.style.display = segmentsExpanded ? 'block' : 'none'
+    segments.forEach((resource, index) => {
+      list.appendChild(createResourceItem(resource, referer, index, { segment: true }))
+    })
+    section.appendChild(list)
+
+    header.addEventListener('click', () => {
+      segmentsExpanded = !segmentsExpanded
+      arrow.textContent = segmentsExpanded ? '▾' : '▸'
+      list.style.display = segmentsExpanded ? 'block' : 'none'
+      // 展开/收起改变的是下拉框高度，它贴着按钮定位 —— 不重算就可能伸出屏幕
+      const dropdown = document.getElementById('lerxu-resource-dropdown')
+      if (dropdown) adjustDropdownPosition(dropdown)
+    })
+
+    return section
   }
 
   const downloadSingleResource = (resource, referer, index) => {
     let filename = ''
     try {
       const pageTitle = getVideoTitle()
-      const ext = resource.ext || 'video'
+      const srcExt = resource.ext || 'video'
+      // 清单（m3u8/mpd）的产物扩展名与实际容器一致，见 outputExtFor
+      const ext = outputExtFor(srcExt)
 
       if (pageTitle) {
         let cleanTitle = pageTitle
@@ -2461,7 +2719,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
           .trim()
 
         if (cleanTitle) {
-          if (resource.quality && resource.quality !== ext.toUpperCase()) {
+          if (resource.quality && resource.quality !== srcExt.toUpperCase()) {
             filename = `${cleanTitle}_${resource.quality}.${ext}`
           } else {
             filename = `${cleanTitle}.${ext}`
@@ -2484,41 +2742,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   const getAutoDownloadCandidates = (resources) => {
     const r = resources || sniffedResources
+    // 与下拉框**共用同一套切分规则**：这里老代码自己又写了一遍"哪些进 m4s 栏"，
+    // 规则一改两处就会对不上（数量对不上是用户点名过的问题）。分片组永远不进
+    // 候选 —— 自动下载只在"整页就一个视频"时触发，分片不是视频。
+    const items = collectDisplayItems(r)
     const candidates = []
-    const hasM4sSection = !!(r.m4s && r.m4s.length > 0)
-
-    if (r.combined && r.combined.length > 0) {
-      r.combined.forEach((resource, index) => {
-        candidates.push({ section: 'combined', resource, index })
+    const push = (section) => (list) => {
+      (Array.isArray(list) ? list : []).forEach((resource, index) => {
+        candidates.push({ section, resource, index })
       })
     }
-
-    if (r.m4s && r.m4s.length > 0) {
-      r.m4s.forEach((resource, index) => {
-        candidates.push({ section: 'm4s', resource, index })
-      })
-    }
-
-    if (r.video && r.video.length > 0) {
-      r.video.forEach((resource, index) => {
-        const isM4S = resource.url && resource.url.includes('.m4s')
-        const shouldShowInM4SSection = isM4S && hasM4sSection
-        if (!shouldShowInM4SSection) {
-          candidates.push({ section: 'video', resource, index })
-        }
-      })
-    }
-
-    if (r.audio && r.audio.length > 0) {
-      r.audio.forEach((resource, index) => {
-        const isM4S = resource.url && resource.url.includes('.m4s')
-        const shouldShowInM4SSection = isM4S && hasM4sSection
-        if (!shouldShowInM4SSection) {
-          candidates.push({ section: 'audio', resource, index })
-        }
-      })
-    }
-
+    push('manifest')(items.manifest)
+    push('combined')(items.combined)
+    push('m4s')(items.m4s)
+    push('video')(items.video)
+    push('audio')(items.audio)
     return candidates
   }
 

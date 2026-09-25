@@ -107,8 +107,6 @@ const initialLoading = ref(true)
 let fetchTimer = null
 
 const hasSummary = computed(() => connectionsData.value && connectionsData.value.servers && connectionsData.value.servers.length > 0)
-const totalConnections = computed(() => connectionsData.value && connectionsData.value.totalValue ? parseInt(connectionsData.value.totalValue) : 0)
-const activeConnections = computed(() => connectionsData.value && connectionsData.value.activeValue ? parseInt(connectionsData.value.activeValue) : 0)
 const taskDownloadSpeed = computed(() => Number(props.task && props.task.downloadSpeed) || 0)
 const serverList = computed(() => (connectionsData.value && connectionsData.value.servers) || [])
 

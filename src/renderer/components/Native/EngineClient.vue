@@ -3,8 +3,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import is from 'electron-is'
 import { ipcRenderer } from 'electron'
 import { ElMessage } from 'element-plus'
@@ -55,13 +55,12 @@ let _permNotifiedGids = null
 const { t } = i18n.global
 const msg = createMsg(ElMessage, { showClose: true })
 const route = useRoute()
-const router = useRouter()
 
 const appStore = useAppStore()
 const taskStore = useTaskStore()
 const preferenceStore = usePreferenceStore()
 const { config: preferenceConfig } = storeToRefs(preferenceStore)
-const { stat, interval, progress } = storeToRefs(appStore)
+const { interval, progress } = storeToRefs(appStore)
 const { seedingList, taskDetailVisible, enabledFetchPeers, currentTaskGid, currentTaskItem } = storeToRefs(taskStore)
 
 // Computed from app store
@@ -70,8 +69,6 @@ const downloadSpeed = computed(() => appStore.stat.downloadSpeed)
 const speed = computed(() => appStore.stat.uploadSpeed + appStore.stat.downloadSpeed)
 const downloading = computed(() => appStore.stat.numActive > 0)
 // Computed from preference store
-const taskNotification = computed(() => preferenceConfig.value.taskNotification)
-const taskCompleteNotifyClickAction = computed(() => preferenceConfig.value.taskCompleteNotifyClickAction || 'open-folder')
 
 // --- Data ---
 const magnetZeroMap = ref({})
@@ -1740,29 +1737,6 @@ writeFileSync(skipFlagPath, '1')
         const fallback = resolve(dir, `.lerxu-merging-${Date.now()}.mp4`)
         return fallback
       }
-      function forceDeleteFileSync(filePath) {
-        if (!filePath) return false
-        let full = ''
-        try { full = resolve(filePath) } catch (_) { full = `${filePath}` }
-        if (!full) return false
-        for (let attempt = 0; attempt < 10; attempt++) {
-          try {
-            if (existsSync(full)) {
-              unlinkSync(full)
-            }
-            if (!existsSync(full)) return true
-          } catch (_) {
-            try {
-              execSync(`rm -f "${full.replace(/"/g, '\\"')}"`, { stdio: 'ignore' })
-            } catch (_) {}
-          }
-          if (!existsSync(full)) return true
-          if (attempt < 9) {
-            try { const end = Date.now() + 80; while (Date.now() < end); } catch (_) {}
-          }
-        }
-        return !existsSync(full)
-      }
       function generateUniqueFilePath(dir, stem, ext, pathsToIgnore = []) {
         const pathExists = (candidate) => {
           try {
@@ -3358,21 +3332,6 @@ writeFileSync(skipFlagPath, '1')
         // 系统通知由主进程展示（task-download-complete 事件），
         // 渲染进程只负责应用内 toast，避免重复通知
       }
-      function showTaskErrorNotify(task) {
-        const taskName = getTaskName(task)
-
-        const message = t('task.download-fail-message', { taskName })
-        msg.error(message)
-
-        if (!taskNotification.value) {
-          return
-        }
-
-        showNativeNotification({
-          title: t('task.download-fail-notify'),
-          body: taskName
-        })
-      }
       function bindEngineEvents() {
         api.client.on('onDownloadStart', onDownloadStart)
         api.client.on('onDownloadPause', onDownloadPause)
@@ -3514,89 +3473,6 @@ writeFileSync(skipFlagPath, '1')
             }
           }
         }
-      }
-      function maybeRestoreSuffixNearCompletion(task) {
-        try {
-          const suffix = preferenceConfig.value.downloadingFileSuffix
-          if (!suffix) return
-          const isBT = checkTaskIsBT(task)
-          if (isBT) return
-          const total = Number(task.totalLength || 0)
-          const done = Number(task.completedLength || 0)
-          if (total <= 0) return
-          const ratio = done / total
-          if (ratio < 0.99) return
-          const finalPath = getTaskFullPath(task)
-          const suffixedPath = finalPath + suffix
-          if (existsSync(suffixedPath) && !existsSync(finalPath)) {
-            const ok = renamePreserveTimes(suffixedPath, finalPath)
-            if (ok) {
-              console.log(`[Lerxu] Restored suffix near completion: ${suffixedPath} -> ${finalPath}`)
-              cleanupAria2ControlFiles([suffixedPath, finalPath])
-            }
-          }
-        } catch (_) {}
-      }
-      function restoreSuffixFilesForActiveTasks() {
-        const suffix = preferenceConfig.value.downloadingFileSuffix
-        if (!suffix) {
-          return
-        }
-
-        api.fetchTaskList({ type: 'all' }).then((tasks) => {
-          tasks.forEach(task => {
-            if ([TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED].includes(task.status)) {
-              return
-            }
-
-            if (checkTaskIsBT(task)) {
-              return
-            }
-
-            try {
-              const finalPath = getTaskFullPath(task)
-              const suffixedPath = finalPath + suffix
-
-              // 如果存在后缀文件，且原文件不存在或大小为0
-              if (existsSync(suffixedPath)) {
-                let shouldRestore = false
-                if (!existsSync(finalPath)) {
-                  shouldRestore = true
-                } else {
-                  try {
-                    const st = statSync(finalPath)
-                    if (st.size === 0) {
-                      shouldRestore = true
-                    }
-                  } catch (e) {
-                    shouldRestore = true
-                  }
-                }
-
-                if (shouldRestore) {
-                  // 如果原文件存在但大小为0，先删除
-                  if (existsSync(finalPath)) {
-try {
-unlinkSync(finalPath)
-                    } catch (e) {
-                      console.warn(`[Lerxu] Failed to remove empty file: ${finalPath}`, e)
-                    }
-                  }
-
-                  const ok = renamePreserveTimes(suffixedPath, finalPath)
-                  if (ok) {
-                    console.log(`[Lerxu] Restored suffix on startup: ${suffixedPath} -> ${finalPath}`)
-                    cleanupAria2ControlFiles([suffixedPath, finalPath])
-                  } else {
-                    console.warn(`[Lerxu] Failed to restore suffix on startup: ${suffixedPath} -> ${finalPath}`)
-                  }
-                }
-              }
-            } catch (err) {
-              console.warn(`[Lerxu] restoreSuffixFilesForActiveTasks error for task ${task.gid}:`, err)
-            }
-          })
-        })
       }
       function persistAllActiveTasksAverageSpeed() {
         const list = taskStore.taskList || []

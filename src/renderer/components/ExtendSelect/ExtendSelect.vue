@@ -237,7 +237,10 @@ const hasSelection = computed(() => {
   if (props.multiple) {
     return Array.isArray(props.modelValue) && props.modelValue.length > 0
   }
-  return props.modelValue !== '' && props.modelValue !== null && props.modelValue !== undefined
+  // 只要选项列表里存在同值项就算已选择：有些下拉用 '' 表示"默认档"
+  // （如清晰度的「最高」、落盘方式的「乱序」），此时应正常显示该项文案，
+  // 而不是回落到占位符的灰色样式
+  return flatOptions.value.some(opt => String(opt.value) === String(props.modelValue))
 })
 
 const flatOptions = computed(() => {

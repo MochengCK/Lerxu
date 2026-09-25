@@ -81,16 +81,12 @@ export const GRAPHIC = '░▒▓█'
 export const ONE_SECOND = 1000
 export const ONE_MINUTE = ONE_SECOND * 60
 export const ONE_HOUR = ONE_MINUTE * 60
-export const ONE_DAY = ONE_HOUR * 24
 
 // 12 Hours
 export const AUTO_SYNC_TRACKER_INTERVAL = ONE_HOUR * 12
 
 // 24 Hours
 export const AUTO_SYNC_ED2K_SERVER_INTERVAL = ONE_HOUR * 24
-
-// One Week
-export const AUTO_CHECK_UPDATE_INTERVAL = ONE_DAY * 7
 
 export const MAX_BT_TRACKER_LENGTH = 6144
 
@@ -199,20 +195,6 @@ export const TRACKER_SOURCE_OPTIONS = [
         value: XIU2_TRACKERS_HTTP_URL_CDN,
         label: 'http.txt',
         cdn: true
-      }
-    ]
-  }
-]
-
-// ED2K server subscription preset sources
-// These provide server.met binary format, auto-parsed on fetch
-export const ED2K_SERVER_SOURCE_OPTIONS = [
-  {
-    label: 'emule-security.org',
-    options: [
-      {
-        value: 'http://upd.emule-security.org/server.met',
-        label: 'server.met'
       }
     ]
   }
@@ -347,11 +329,6 @@ export const SUB_SUFFIXES = [
   '.sst',
   '.sub'
 ]
-
-export const ED2K_DEFAULT_LISTEN_PORT = 4662
-export const ED2K_DEFAULT_MAX_CONNECTIONS = 200
-export const ED2K_DEFAULT_CONNECTION_TIMEOUT = 30
-export const ED2K_DEFAULT_MAX_SOURCES_PER_FILE = 100
 
 export const DOCUMENT_SUFFIXES = [
   '.azw3',

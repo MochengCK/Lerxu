@@ -1474,11 +1474,27 @@
     return combined
   }
 
+  /**
+   * 不参与"音视频成对"的扩展名。
+   *
+   * - `m4s`：B 站式 DASH 音视频分离，由 combineM4SStreams 专门配对；
+   * - `m3u8` / `mpd`：**清单**不是媒体流，它本身就带着音视频。把它当成
+   *   "分离的视频流"再配上一条音频，会发成两条带 pairId 的任务、文件名
+   *   还被硬编码成 `_video.mp4`（清单被应用当成普通文件下载）——对 HLS
+   *   完全是错的（用户点名：m3u8 要作为**一个**任务交给应用，由引擎按
+   *   播放列表下分片并拼成单文件）。
+   * - `ts` / `m2ts` / `mts`：HLS 的**分片**，同样不是"一条完整视频流"。
+   *   页面上常有几十条分片，配上一条音频就会生成几十条"完整视频"条目，
+   *   真正的清单反而被淹没（用户点名：分不清该点哪个）。
+   */
+  const NON_PAIRABLE_EXTS = new Set(['m4s', 'm3u8', 'mpd', 'ts', 'm2ts', 'mts'])
+  const isPairableStream = (r) => !!r && !NON_PAIRABLE_EXTS.has(`${r.ext || ''}`.toLowerCase())
+
   // 合并非M4S格式的音视频流（通用平台，如抖音等）
   function combineGenericStreams() {
     const combined = []
-    const videoStreams = sniffedResources.video.filter(r => r && r.ext !== 'm4s')
-    const audioStreams = sniffedResources.audio.filter(r => r && r.ext !== 'm4s')
+    const videoStreams = sniffedResources.video.filter(isPairableStream)
+    const audioStreams = sniffedResources.audio.filter(isPairableStream)
 
     log('Combining generic streams - Video:', videoStreams.length, 'Audio:', audioStreams.length)
 

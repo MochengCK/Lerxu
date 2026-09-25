@@ -64,6 +64,40 @@ DASH 站点的画面流与声音流是两个独立下载任务，应用要在两
 应用端在没有 `pairId` 时（旧版扩展、站点自身的 DASH 分片）才回退到"同目录 + 同词干
 文件名"的启发式配对。
 
+### HLS（m3u8）清单（扩展 ↔ 应用）
+
+清单**不是**"分离的视频流"，它自带音视频，由引擎按播放列表拉分片并拼成一个文件。
+所以扩展侧的规则与配对相反：
+
+- `video-sniffer.js` 的 `NON_PAIRABLE_EXTS`（`m4s` / `m3u8` / `mpd` / `ts` / `m2ts` / `mts`）
+  把这些扩展名排除出 `combineGenericStreams` 的配对集合：清单不再被配成一对（否则会发
+  两条带 `pairId` 的任务、文件名还被写成 `_video.mp4`）；`.ts` 同理 —— 一页常有几十条
+  分片，配上一条音频就会生成几十条"完整视频"条目；
+- `sendStreamPair` 另有一层兜底：万一清单被配上了（旧数据），降级成单条发送；
+- 建议文件名不能带清单扩展名 —— 产物是媒体文件不是清单文本。`outputExtFor`
+  （`key-listener.js`）映射 `m3u8 → ts`（HLS 绝大多数是 MPEG-TS）、`mpd → mp4`；
+  fMP4 的清单由引擎在落盘时自行改成 `.mp4`；
+- 清单地址**原样单条**发给应用（全仓库不解析 `#EXTINF`、不展开分片），由引擎的
+  HLS 任务种类接管。
+
+#### 资源列表怎么显示（"该点哪个"）
+
+`collectDisplayItems`（`key-listener.js`）是**列表与按钮数字唯一的共同来源**，
+它把资源切成 `manifest` / `segments` / `combined` / `m4s` / `video` / `audio` 六组：
+
+- **`manifest`（`.m3u8`）独立成栏、排在最前面**，标题只有一个「HLS 完整视频」——
+  一条地址就是一个完整视频，**点这一条就是下载**；
+- **`segments`（`.ts`）折进默认收起的「HLS 分片 · N」组**：不删、但也不占版面。
+  **只有这一页确实存在清单时才收** —— 孤立的一条 `.ts` 可能真是整段视频，照常列在视频栏；
+- 条目上**不放任何下载按钮/图标**（用户点名不要）：点条目本身就是"加入下载队列"，
+  再挂按钮只是噪音，还得靠 `stopPropagation` 防重复发送；
+- 分片组只算**一条**可见条目（它就是一个可折叠行），所以"按钮上的数字 = 列表里看得见的
+  条目数"这条不变式仍然成立；
+- 「下载全部」**先发清单、且从不遍历 `segments`** —— 几十条 `.ts` 逐条发只会得到几十个
+  几秒钟的垃圾任务；
+- per-video 悬浮按钮（`downloadForVideoContext`）同样**清单优先**：分片按"离播放时刻最近"
+  排序经常排在最前，选错就只下到几秒钟的画面。
+
 ### 配置存储契约（容易踩）
 
 `background.js` 把拦截配置**整体**存在 `chrome.storage.local` 的 `extConfig` 键下
@@ -89,7 +123,7 @@ npm run build:extension          # 构建两个平台 + 打包（含自检）
 node scripts/build-extension.js --platform=firefox   # 只处理 Firefox
 node scripts/build-extension.js --no-package         # 只生成解压目录
 
-npm run test:extension           # 测试（27 项：清单 / 兼容层 / 语法与 i18n / 归档结构）
+npm run test:extension           # 测试（35 项：清单 / 兼容层 / 语法与 i18n / HLS 分组 / 下载入口 / 归档结构）
 npm run lint:extension           # Mozilla 官方 web-ext lint（需先构建）
 ```
 
@@ -107,14 +141,16 @@ dist/extension/artifacts/lerxu-webextension-firefox-<版本>.xpi       Firefox �
 完全一致，不会混入 `__MACOSX`，并会为中日韩文文件名写入 UTF-8 标志。打包时自检四项：归档根存在
 `manifest.json`、不含禁止文件、非 ASCII 名带 UTF-8 标志、归档内清单与目标平台匹配。
 
-`npm run test:extension`（`test/extension/run.js`）共 27 项断言，分四组：
+`npm run test:extension`（`test/extension/run.js`）共 35 项断言，分六组：
 
 1. **清单** —— 两份 `host_permissions` / 关键元信息一致、兼容层位于各加载点首位、清单引用的文件都存在
 2. **兼容层行为** —— 在 `vm` 沙箱里用 mock 的 `browser.*` 驱动，验证回调包装、`lastError` 语义、事件对象不被包装、幂等
 3. **脚本语法与多语言资源** —— 全部 JS 过一遍语法检查、三份 `messages.json` 的 key 集合一致、i18n 占位符有定义
-4. **打包产物结构** —— 真跑一遍构建与打包，断言归档结构（产物写入系统临时目录，不污染 `dist/extension/artifacts/`）
+4. **HLS 清单 / 分片分组** —— 把 `collectDisplayItems` / `countDisplayItems` 那一段抽进沙箱喂数据：清单独立成栏、分片归组且两者都不再混在视频栏、**没有清单时 `.ts` 不算分片**、不同查询串的清单不被去重合并、既有 m4s / 合并视频规则未被破坏
+5. **行内下载入口（DOM 桩）** —— 极简 DOM 桩（click 会沿 parentNode 冒泡）驱动条目渲染器：清单条目有实心「下载」按钮、**点按钮只发一次任务**（`stopPropagation` 没失效）、分片组默认收起且点击标题才展开
+6. **打包产物结构** —— 真跑一遍构建与打包，断言归档结构（产物写入系统临时目录，不污染 `dist/extension/artifacts/`）
 
-测试直接读源码目录，**不需要先构建**（第 4 组会自行调用构建脚本）。
+测试直接读源码目录，**不需要先构建**（第 6 组会自行调用构建脚本）。第 4、5 组用"从源码里按标记切出函数体再在 `vm` 里跑"的方式测真实行为 —— 这些函数在 5000 行的 IIFE 里、无法 `require`，但它们是"显示哪几条、按钮写几"的唯一来源，改坏了必须能被测试拦住。
 
 ## 双平台清单差异
 

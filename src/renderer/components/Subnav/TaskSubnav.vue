@@ -125,7 +125,7 @@ import '@/components/Icons/subnav-music'
 import '@/components/Icons/subnav-images'
 import '@/components/Icons/subnav-documents'
 
-const props = defineProps({
+defineProps({
   current: {
     type: String,
     default: 'all'

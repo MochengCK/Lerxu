@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
 import { ref, computed, shallowRef } from 'vue'
-import is from 'electron-is'
 import { ipcRenderer } from 'electron'
 import { ADD_TASK_TYPE } from '@shared/constants'
 import api from '@/api'

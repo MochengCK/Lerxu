@@ -3699,14 +3699,9 @@ export default class Application extends EventEmitter {
         ])
       }
 
-      // 获取引擎版本信息
+      // 获取引擎版本信息：引擎实际能力由 engine.getVersion 的 features 字段上报，
+      // 不要再单独探测 aria2 时代的选项，更不要在应用侧臆造能力列表。
       const version = await withTimeout(this.engineClient.call('getVersion'), null)
-
-      // 获取支持的协议
-      const protocols = await withTimeout(
-        this.engineClient.call('getGlobalOption', ['enable-http-pipelining', 'enable-mmap', 'check-certificate']),
-        null
-      )
 
       // 获取系统架构信息
       const { platform, arch } = process
@@ -3718,8 +3713,8 @@ export default class Application extends EventEmitter {
       const versionInfo = {
         version: version || 'Unknown',
         architecture: `${platform}-${arch}`,
-        features: this.getEngineFeatures(protocols),
-        dependencies: this.getEngineDependencies(),
+        features: this.getEngineFeatures(version),
+        dependencies: this.getEngineDependencies(version),
         compileInfo: this.getCompileInfo(),
         binPath: engineBinPath
       }
@@ -3732,38 +3727,31 @@ export default class Application extends EventEmitter {
     }
   }
 
-  getEngineFeatures (protocols) {
-    const features = []
-
-    // 基于协议支持判断功能
-    if (protocols && protocols['enable-http-pipelining']) {
-      features.push('HTTP Pipelining')
+  /**
+   * 引擎能力列表（用于「进阶设置 → 引擎信息」卡片与日志）。
+   *
+   * 只透传引擎自报的能力：XferRust 的 engine.getVersion 返回 features 数组。
+   * 不要在应用侧写死协议名——引擎只有 HTTP(S) 与 BitTorrent 两条传输路径，
+   * 曾经硬编码的 FTP / Metalink / ED2K 会让用户以为这些协议受支持。
+   */
+  getEngineFeatures (version) {
+    if (version && Array.isArray(version.features)) {
+      return version.features.slice()
     }
-    if (protocols && protocols['enable-mmap']) {
-      features.push('Memory Mapping')
-    }
-    if (protocols && protocols['check-certificate'] === false) {
-      features.push('SSL Certificate Bypass')
-    }
-
-    // 添加基本功能
-    features.push('HTTP/HTTPS', 'FTP', 'BitTorrent', 'Metalink', 'ED2K')
-
-    return features
+    return []
   }
 
-  getEngineDependencies () {
-    // 返回引擎依赖的库信息
-    return [
-      'zlib',
-      'c-ares',
-      'sqlite3',
-      'libxml2',
-      'libssh2',
-      'gmp',
-      'libgcrypt',
-      'expat'
-    ]
+  /**
+   * 引擎运行时依赖。
+   *
+   * 引擎是纯 Rust 实现，不链接 aria2 时代的 C 库（zlib / c-ares / sqlite3 …），
+   * 那些名字属于旧引擎，写在这里只会误导问题排查。引擎自报时可透传，否则留空。
+   */
+  getEngineDependencies (version) {
+    if (version && Array.isArray(version.dependencies)) {
+      return version.dependencies.slice()
+    }
+    return []
   }
 
   getCompileInfo () {

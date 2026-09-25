@@ -29,10 +29,9 @@
   </el-config-provider>
 </template>
 <script setup>
-import { ref, computed, watch, onBeforeMount, onMounted, onUnmounted, getCurrentInstance } from 'vue'
+import { ref, computed, watch, onBeforeMount, onMounted, onUnmounted } from 'vue'
 import is from 'electron-is'
 import { pathToFileURL } from 'node:url'
-import { getCurrentWindow } from '@electron/remote'
 import { ipcRenderer } from 'electron'
 import { ElConfigProvider, ElMessage } from 'element-plus'
 import { APP_RUN_MODE } from '@shared/constants'
@@ -50,7 +49,6 @@ import { storeToRefs } from 'pinia'
 
 const { t } = i18n.global
 const msg = createMsg(ElMessage, { showClose: true })
-const instance = getCurrentInstance()
 
 const appStore = useAppStore()
 const preferenceStore = usePreferenceStore()
@@ -226,22 +224,6 @@ const enableTraySpeedometer = computed(() => {
 
 // --- Methods ---
 
-function bringMainWindowToFront () {
-  try {
-    const win = getCurrentWindow && getCurrentWindow()
-    if (win) {
-      if (win.isMinimized && win.isMinimized()) win.restore()
-      if (win.show) win.show()
-      if (win.focus) win.focus()
-      if (win.moveTop) win.moveTop()
-    }
-  } catch (e) {}
-  try {
-    ipcRenderer.send('command', 'application:bring-to-front', { page: 'index' })
-    return true
-  } catch (e) {}
-  return false
-}
 
 function updateRootClassName () {
   const className = `${themeClass.value} ${i18nClass.value} ${directionClass.value} ${backgroundClass.value} ${nativeTransparentClass.value} ${taskDetailTransparentClass.value} ${layoutClass.value}`.trim()

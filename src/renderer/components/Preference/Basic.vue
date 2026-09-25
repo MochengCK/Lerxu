@@ -790,19 +790,11 @@
               :step="1"
               :label="t('preferences.transfer-speed-download')"
             />
-            <el-select
+            <mo-extend-select
               v-model="uploadUnit"
-              style="width: 100px;"
-              popper-class="speed-unit-popper"
+              :options="speedUnits"
               @change="handleUploadChange"
-            >
-              <el-option
-                v-for="item in speedUnits"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
+            />
           </el-col>
           <el-col
             class="form-item-sub speed-limit-row"
@@ -820,19 +812,97 @@
               :step="1"
               :label="t('preferences.transfer-speed-download')"
             />
-            <el-select
+            <mo-extend-select
               v-model="downloadUnit"
-              style="width: 100px;"
-              popper-class="speed-unit-popper"
+              :options="speedUnits"
               @change="handleDownloadChange"
-            >
-              <el-option
-                v-for="item in speedUnits"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
+            />
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- M3U8（HLS）下载设置卡片 -->
+      <div
+        v-if="activeCategory === 'transfer'"
+        class="preference-card"
+        data-category="transfer"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.hls-settings') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-hls"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.hls-variant') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.hls-variant-desc') }}</div>
+            </div>
+            <mo-extend-select
+              v-model="form.hlsVariant"
+              :options="hlsVariantChoices"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-hls"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.hls-write-mode') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.hls-write-mode-desc') }}</div>
+            </div>
+            <mo-extend-select
+              v-model="form.hlsWriteMode"
+              :options="hlsWriteModeChoices"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-hls"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.hls-concurrency') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.hls-concurrency-desc') }}</div>
+            </div>
+            <mo-extend-select
+              v-model="form.hlsConcurrency"
+              :options="hlsConcurrencyChoices"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.hls-segment-retries') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.hls-segment-retries-desc') }}</div>
+            </div>
+            <el-input-number
+              v-model="form.hlsSegmentRetries"
+              controls-position="right"
+              :min="1"
+              :max="10"
+              :step="1"
+              :label="t('preferences.hls-segment-retries')"
+              @change="autoSaveForm"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.hls-probe-size') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.hls-probe-size-desc') }}</div>
+            </div>
+            <el-switch
+              v-model="form.hlsProbeSize"
+              @change="autoSaveForm"
+            />
           </el-col>
         </el-form-item>
       </div>
@@ -2113,7 +2183,13 @@ const normalizeTaskMultiSelectModifier = (value) => {
       trackerSourceDiscovered,
       trackerSourceOrigins,
       trackerSourceMap,
-      btTracker
+      btTracker,
+      // HLS（M3U8）：清晰度 / 落盘方式 / 分片并发 / 分片大小探测 / 分片重试次数
+      hlsVariant,
+      hlsWriteMode,
+      hlsConcurrency,
+      hlsProbeSize,
+      hlsSegmentRetries
     } = config
 
     let normalizedEngineMax = engineMaxConnectionPerServer
@@ -2172,6 +2248,17 @@ const normalizeTaskMultiSelectModifier = (value) => {
       extensionExcludeDomains: convertCommaToLine(extensionExcludeDomains || ''),
       extensionMinFileSize: typeof extensionMinFileSize === 'number' ? extensionMinFileSize : 0,
       extensionShiftToggleEnabled: extensionShiftToggleEnabled || false,
+      // HLS（M3U8）：'auto' = 自动/默认（清晰度最高码率、乱序落盘、并发按 split 推导）。
+      // 分片并发刻意不做成数字输入 —— 引擎把 "0" 夹到 1（等于"只开一路"），
+      // 想表达"自动"只能**不下发这个键**，所以这里是「自动 + 若干档位」的下拉。
+      // 表单内统一 'auto'（'' 会被选择框显示成占位文案），提交时还原为 ''。
+      hlsVariant: hlsVariant === 'worst' ? 'worst' : 'auto',
+      hlsWriteMode: hlsWriteMode === 'ordered' ? 'ordered' : 'auto',
+      hlsConcurrency: ['8', '16', '32', '48', '64'].includes(`${hlsConcurrency}`) ? `${hlsConcurrency}` : 'auto',
+      hlsProbeSize: hlsProbeSize === undefined ? true : hlsProbeSize === true,
+      hlsSegmentRetries: (typeof hlsSegmentRetries === 'number' && Number.isFinite(hlsSegmentRetries) && hlsSegmentRetries >= 1 && hlsSegmentRetries <= 10)
+        ? hlsSegmentRetries
+        : 3,
       runMode,
       seedRatio,
       seedTime,
@@ -2490,6 +2577,26 @@ const formRefs = {}
           }
         ]
       })
+      // HLS（M3U8）各档位："自动/默认"用 'auto' 哨兵值表示——'' 会被选择框
+      // 当作「未选择」而显示占位文案（Element Plus 直接显示 "Select"）。
+      // 哨兵只在表单里存在，提交时由 submitForm 还原为 ''（不下发该键，
+      // 交给引擎默认）。
+      const hlsVariantChoices = computed(() => [
+        { label: t('preferences.hls-variant-highest'), value: 'auto' },
+        { label: t('preferences.hls-variant-lowest'), value: 'worst' }
+      ])
+      const hlsWriteModeChoices = computed(() => [
+        { label: t('preferences.hls-write-mode-unordered'), value: 'auto' },
+        { label: t('preferences.hls-write-mode-ordered'), value: 'ordered' }
+      ])
+      const hlsConcurrencyChoices = computed(() => [
+        { label: t('preferences.hls-concurrency-auto'), value: 'auto' },
+        { label: '8', value: '8' },
+        { label: '16', value: '16' },
+        { label: '32', value: '32' },
+        { label: '48', value: '48' },
+        { label: '64', value: '64' }
+      ])
       const preferenceBasePath = computed(() => {
         const path = `${route.path || ''}`
         return path.startsWith('/preference-window') ? '/preference-window' : '/preference'
@@ -3558,6 +3665,14 @@ watch(trackerSourceConfigVisible, (visible) => {
           const data = {
             ...diffResult,
             ...changedConfig.advanced
+          }
+
+          // HLS 三个下拉的 'auto' 哨兵（见 hlsVariantChoices 注释）还原为 ''：
+          // 引擎桥接层会丢弃空串键，语义仍是"自动/默认"。
+          for (const key of ['hlsVariant', 'hlsWriteMode', 'hlsConcurrency']) {
+            if (data[key] === 'auto') {
+              data[key] = ''
+            }
           }
 
           const {
@@ -4785,7 +4900,7 @@ onBeforeUnmount(() => {
 /* 上传/下载限速行：文案在左，数字框与单位选择框右对齐等高 */
 :deep(.speed-limit-row) {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 132px 92px;
+  grid-template-columns: minmax(0, 1fr) 132px 120px;
   align-items: center;
   column-gap: 8px;
   width: 100%;
@@ -4799,8 +4914,7 @@ onBeforeUnmount(() => {
     --el-input-height: var(--lc-speed-control-height);
   }
 
-  .el-input-number .el-input__wrapper,
-  .el-select .el-select__wrapper {
+  .el-input-number .el-input__wrapper {
     box-sizing: border-box;
     min-height: var(--lc-speed-control-height);
     height: var(--lc-speed-control-height);
@@ -4812,14 +4926,11 @@ onBeforeUnmount(() => {
     text-align: center;
   }
 
-  .el-select {
-    width: 92px;
-    --el-select-width: 92px;
-  }
-
-  .el-select .el-select__wrapper {
-    padding: 0 8px;
-    line-height: 20px;
+  /* 单位选择框（自定义选择框，默认高 24px）：与左侧数字框等高，
+     宽度比默认略宽（列宽也可能是 auto，故控件自身也定宽） */
+  .lc-extend-select {
+    width: 120px;
+    height: var(--lc-speed-control-height);
   }
 }
 
@@ -4836,14 +4947,12 @@ onBeforeUnmount(() => {
    下拉框顶部和底部出现间距。以下清零这两层 padding 使内容完整显示。 */
 
 /* 下拉面板容器自身 padding 清零 */
-.tracker-source-popper.el-select__popper .el-select-dropdown,
-.speed-unit-popper.el-select__popper .el-select-dropdown {
+.tracker-source-popper.el-select__popper .el-select-dropdown {
   padding: 0;
 }
 
 /* 列表容器 padding 清零 */
-.tracker-source-popper.el-select__popper .el-select-dropdown__list,
-.speed-unit-popper.el-select__popper .el-select-dropdown__list {
+.tracker-source-popper.el-select__popper .el-select-dropdown__list {
   padding: 0;
 }
 
@@ -4858,13 +4967,6 @@ onBeforeUnmount(() => {
 .tracker-source-popper.el-select__popper .el-select-group__title {
   line-height: 20px;
   padding: 4px 12px;
-}
-
-/* 限速单位下拉面板：选项行高 28px */
-.speed-unit-popper.el-select__popper .el-select-dropdown__item {
-  height: 28px;
-  line-height: 28px;
-  padding: 0 12px;
 }
 
 /* mo-hover-tip trigger 在 el-input append 内撑满，使骰子图标居中 */

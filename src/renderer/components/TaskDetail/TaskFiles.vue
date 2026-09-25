@@ -91,7 +91,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount, getCurrentInstance } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { isEmpty } from 'lodash'
 import '@/components/Icons/video'
 import '@/components/Icons/audio'
@@ -114,7 +114,6 @@ import {
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 
 const { t } = i18n.global
-const instance = getCurrentInstance()
 
 const props = defineProps({
   mode: {
@@ -304,9 +303,6 @@ function confirmSelection () {
   emit('confirm-selection')
 }
 
-function hideConfirm () {
-  showConfirm.value = false
-}
 
 function handleRowDbClick (row) {
   torrentTable.value.toggleRowSelection(row)

@@ -503,8 +503,280 @@ const main = async () => {
     }
   })
 
+  // --------------------------------------------------------- hls grouping
+  console.log('\n[4] HLS 清单 / 分片分组（key-listener.js）')
+
+  /**
+   * 把 key-listener.js 里"资源分成哪几组"的那一段抽出来在沙箱里跑。
+   *
+   * 那一段（isM4sEntry → countDisplayItems）是纯函数、不碰 DOM，抽出来就能
+   * 直接喂数据断言。它决定了"下拉框里显示哪几条、按钮上写几" —— 用户两次
+   * 点名（数量对不上、分不清该点哪个）都出在这里，必须有回归测试。
+   */
+  const loadGrouping = () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    const start = src.indexOf('const isM4sEntry = (resource) => {')
+    const end = src.indexOf('// 取数重入深度')
+    assert(
+      start >= 0 && end > start,
+      '未能在 key-listener.js 中定位分组函数（结构变了？测试需同步）'
+    )
+    // 包一层函数：脚本顶层不允许 return
+    const code = `(function () {\n${src.slice(start, end)}\nreturn { collectDisplayItems, countDisplayItems }\n})()`
+    const sandbox = { URL, console: { log () {}, warn () {}, error () {} } }
+    vm.createContext(sandbox)
+    return new vm.Script(code, { filename: 'hls-grouping.js' }).runInContext(sandbox)
+  }
+
+  check('清单独立成一栏、分片折进分片组，两者都不再混在视频栏', () => {
+    const { collectDisplayItems, countDisplayItems } = loadGrouping()
+    const manifest = { url: 'https://cdn.example.com/show/index.m3u8?token=a', ext: 'm3u8', size: 0 }
+    const segments = Array.from({ length: 40 }, (_, i) => ({
+      url: `https://cdn.example.com/show/seg${i}.ts`, ext: 'ts', size: 0
+    }))
+    const plain = { url: 'https://cdn.example.com/other/clip.mp4', ext: 'mp4', size: 100 }
+    const items = collectDisplayItems({
+      video: [manifest, ...segments, plain], audio: [], m4s: [], combined: []
+    })
+
+    assert(items.manifest.length === 1, `清单应有 1 条，实际 ${items.manifest.length}`)
+    assert(items.segments.length === 40, `分片应全部归组，实际 ${items.segments.length}`)
+    assert(
+      items.video.length === 1 && items.video[0].url === plain.url,
+      '视频栏应只剩真正独立的视频文件'
+    )
+    // 条数 = 清单 1 + 视频 1 + 分片组 1（折叠组是一行，按钮数字必须与列表一致）
+    assert(countDisplayItems(items) === 3, `可见条目数应为 3，实际 ${countDisplayItems(items)}`)
+  })
+
+  check('没有清单时 .ts 不算分片（孤立的 .ts 可能真是整段视频）', () => {
+    const { collectDisplayItems, countDisplayItems } = loadGrouping()
+    const ts = { url: 'https://cdn.example.com/legacy/movie.ts', ext: 'ts', size: 0 }
+    const items = collectDisplayItems({ video: [ts], audio: [], m4s: [], combined: [] })
+    assert(items.manifest.length === 0 && items.segments.length === 0, '没有清单就不该有分片组')
+    assert(items.video.length === 1, '孤立 .ts 应照常列在视频栏')
+    assert(countDisplayItems(items) === 1, '计数应保持 1')
+  })
+
+  check('不同查询串的清单是两条流，不会被去重合并', () => {
+    const { collectDisplayItems } = loadGrouping()
+    const m720 = { url: 'https://cdn.example.com/index.m3u8?q=720', ext: 'm3u8' }
+    const m1080 = { url: 'https://cdn.example.com/index.m3u8?q=1080', ext: 'm3u8' }
+    const items = collectDisplayItems({ video: [m720, m1080], audio: [], m4s: [], combined: [] })
+    assert(items.manifest.length === 2, `两条清单都应保留，实际 ${items.manifest.length}`)
+  })
+
+  check('既有的 m4s / 合并视频规则未被破坏', () => {
+    const { collectDisplayItems, countDisplayItems } = loadGrouping()
+    const m4s = { url: 'https://upos.example.com/v.m4s', ext: 'm4s' }
+    const plain = { url: 'https://upos.example.com/other.mp4', ext: 'mp4' }
+    const items = collectDisplayItems({
+      video: [m4s, plain], audio: [], m4s: [m4s], combined: []
+    })
+    assert(items.m4s.length === 1, 'm4s 应留在分离流那一栏')
+    assert(items.video.length === 1 && items.video[0].url === plain.url, 'm4s 不应在视频栏重复出现')
+
+    const v = { url: 'https://cdn.example.com/v.mp4', ext: 'mp4' }
+    const a = { url: 'https://cdn.example.com/a.m4a', ext: 'm4a' }
+    const paired = collectDisplayItems({
+      video: [v], audio: [a], m4s: [], combined: [{ videoUrl: v.url, audioUrl: a.url }]
+    })
+    assert(paired.video.length === 0 && paired.audio.length === 0, '配进合并条目的流不应再单列')
+    assert(countDisplayItems(paired) === 1, '合并条目应计为 1')
+  })
+
+  check('条目上不放下载按钮，且「下载全部」不会逐条发送分片', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    assert(/isHlsManifestEntry/.test(src) && /isTsSegmentEntry/.test(src), '缺少清单/分片判定')
+    assert(
+      /manifest\.forEach\(sendSingle\)/.test(src),
+      '「下载全部」没把清单放进发送队列'
+    )
+    assert(
+      !/segments\.forEach\(sendSingle\)/.test(src),
+      '「下载全部」不应逐条发送分片（会建出几十个垃圾任务）'
+    )
+    // 条目本身就是"加入下载队列"，不再挂按钮/图标（用户点名：那是噪音）
+    assert(
+      !/createItemDownloadIcon|stopPropagation/.test(
+        src.slice(src.indexOf('const createResourceItem'), src.indexOf('const downloadSingleResource'))
+      ),
+      '条目渲染里不应再出现下载按钮/图标'
+    )
+    for (const key of ['hlsCompleteVideo', 'hlsSegments', 'segment']) {
+      assert(
+        new RegExp(`'${key}':\\s*\\{[^}]*'zh_CN'`).test(src),
+        `getLocalizedText 缺少 ${key} 的 zh_CN 文案`
+      )
+    }
+  })
+
+  // ------------------------------------------------------- 行内下载入口 DOM
+  console.log('\n[5] 行内下载入口（DOM 桩）')
+
+  /**
+   * 极简 DOM 桩：只实现渲染条目真正用到的那几个方法。
+   *
+   * 关键是 **click 会冒泡**（`fireClick` 沿 parentNode 往上走，遇到
+   * `stopPropagation` 就停）—— "点按钮会不会连整行的处理器一起触发、
+   * 一次点击建出两个任务"只有这样才能测出来，而这正是加按钮时最容易踩的坑。
+   */
+  const makeDomStub = () => {
+    const listeners = new WeakMap()
+
+    const createEl = (tag) => {
+      const el = {
+        tagName: tag,
+        style: {},
+        children: [],
+        parentNode: null,
+        textContent: '',
+        title: '',
+        setAttribute () {},
+        appendChild (child) {
+          if (child && typeof child === 'object') child.parentNode = el
+          el.children.push(child)
+          return child
+        },
+        addEventListener (type, fn) {
+          const map = listeners.get(el) || {}
+          map[type] = map[type] || []
+          map[type].push(fn)
+          listeners.set(el, map)
+        }
+      }
+      return el
+    }
+
+    const fireClick = (el, extra) => {
+      const e = { bubbles: true, _stopped: false }
+      e.stopPropagation = () => { e._stopped = true }
+      e.preventDefault = () => {}
+      if (extra) Object.assign(e, extra)
+      let node = el
+      while (node) {
+        const handlers = (listeners.get(node) || {}).click || []
+        handlers.slice().forEach((fn) => fn(e))
+        if (e._stopped) break
+        node = node.parentNode
+      }
+    }
+
+    const walk = (el, out = []) => {
+      out.push(el)
+      ;(el.children || []).forEach((c) => {
+        if (c && typeof c === 'object' && Array.isArray(c.children)) walk(c, out)
+      })
+      return out
+    }
+
+    return { createEl, fireClick, walk }
+  }
+
+  const loadItemRenderers = () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    const start = src.indexOf('const createCombinedResourceItem = (resource, referer, index) => {')
+    const end = src.indexOf('const downloadSingleResource = (resource, referer, index) => {')
+    assert(
+      start >= 0 && end > start,
+      '未能在 key-listener.js 中定位条目渲染函数（结构变了？测试需同步）'
+    )
+
+    const dom = makeDomStub()
+    const sent = []
+    const sandbox = {
+      console: { log () {}, warn () {}, error () {} },
+      document: {
+        createElement: (tag) => dom.createEl(tag),
+        createElementNS: (_ns, tag) => dom.createEl(tag),
+        getElementById: () => null
+      },
+      // getLocalizedText 直接回原 key：断言里就能按 key 找到元素
+      getLocalizedText: (key) => key,
+      cachedUnknownSizeText: '未知大小',
+      formatFileSize: () => '1.0 MB',
+      getVideoTitle: () => '测试标题',
+      outputExtFor: (ext) => ({ m3u8: 'ts', mpd: 'mp4' }[`${ext || ''}`.toLowerCase()] || `${ext || ''}`.toLowerCase()),
+      sendResourceToClient: (url, referer, filename) => sent.push({ url, referer, filename }),
+      sendStreamPair: (v, a) => sent.push({ pair: [v, a] }),
+      markSent: () => true,
+      adjustDropdownPosition: () => {},
+      segmentsExpanded: false
+    }
+    vm.createContext(sandbox)
+    // 包一层函数：脚本顶层不允许 return；segmentsExpanded 是跨重画的模块级状态
+    const code = `(function () {\nlet segmentsExpanded = false;\n${src.slice(start, end)}\n` +
+      'return { createResourceItem, createCombinedResourceItem, createSegmentGroup }\n})()'
+    const api = new vm.Script(code, { filename: 'item-render.js' }).runInContext(sandbox)
+    return { ...api, dom, sent }
+  }
+
+  check('清单条目：点整行即下载一次，且行内没有多余的按钮', () => {
+    const { createResourceItem, dom, sent } = loadItemRenderers()
+    const item = createResourceItem(
+      { url: 'https://cdn.example.com/show/index.m3u8', ext: 'm3u8' },
+      'https://page.example.com/watch',
+      0,
+      { primary: true }
+    )
+    const nodes = dom.walk(item)
+    assert(
+      !nodes.some((n) => n.textContent === 'download' || n.title === 'download'),
+      '条目上不应再挂下载按钮/图标（用户点名：点条目本身就是下载）'
+    )
+
+    dom.fireClick(item)
+    assert(sent.length === 1, `点条目应发一次，实际 ${sent.length} 次`)
+    assert(
+      sent[0].url === 'https://cdn.example.com/show/index.m3u8',
+      '发出去的应是清单地址（引擎自己拉分片）'
+    )
+    assert(
+      sent[0].filename === '测试标题.ts',
+      `清单的产物名应是 .ts 容器，实际 ${sent[0].filename}`
+    )
+  })
+
+  check('普通条目 / 分片条目同样只有整行可点（没有额外按钮）', () => {
+    const { createResourceItem, dom, sent } = loadItemRenderers()
+    for (const resource of [
+      { url: 'https://cdn.example.com/clip.mp4', ext: 'mp4' },
+      { url: 'https://cdn.example.com/show/seg0.ts', ext: 'ts' }
+    ]) {
+      const item = createResourceItem(resource, 'https://page.example.com/watch', 0)
+      assert(
+        !dom.walk(item).some((n) => n.textContent === 'download' || n.title === 'download'),
+        `${resource.ext} 条目上不应有下载按钮/图标`
+      )
+      sent.length = 0
+      dom.fireClick(item)
+      assert(sent.length === 1, `点 ${resource.ext} 条目应只发一次，实际 ${sent.length} 次`)
+    }
+  })
+
+  check('分片组默认收起、点击标题才展开（几十条分片不该占版面）', () => {
+    const { createSegmentGroup, dom } = loadItemRenderers()
+    const segments = Array.from({ length: 5 }, (_, i) => ({
+      url: `https://cdn.example.com/seg${i}.ts`, ext: 'ts'
+    }))
+    const group = createSegmentGroup(segments, 'https://page.example.com/watch')
+    const nodes = dom.walk(group)
+
+    // 第 0 个是组容器，第 1 个是标题行，第 2 个是分片列表容器
+    const list = group.children[1]
+    assert(list && list.style.display === 'none', '分片列表默认应收起')
+
+    dom.fireClick(group.children[0])
+    assert(list.style.display === 'block', '点击标题行应展开分片列表')
+    dom.fireClick(group.children[0])
+    assert(list.style.display === 'none', '再次点击应收起')
+
+    const label = nodes.find((n) => `${n.textContent}`.indexOf('hlsSegments') === 0)
+    assert(label && label.textContent.indexOf('5') > 0, `标题应写明分片数量，实际 ${label && label.textContent}`)
+  })
+
   // ------------------------------------------------------------- packaging
-  console.log('\n[4] 打包产物结构（AMO 提交约束）')
+  console.log('\n[6] 打包产物结构（AMO 提交约束）')
 
   const build = require(path.resolve(__dirname, '../../scripts/build-extension.js'))
   // 测试产物写到临时目录，避免污染 dist/extension/artifacts（待提交的构建输出）

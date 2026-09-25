@@ -25,7 +25,16 @@ class MainActivity : FragmentActivity() {
 
     private val viewModel: TaskViewModel by viewModels()
 
-    private var sharedIntentData: String? = null
+    /**
+     * 外部进来的链接（分享 / `ACTION_VIEW`）与它的**序号**。
+     *
+     * 必须是 Compose 状态：普通字段在 `onNewIntent` 里改了界面读不到（只在首次
+     * 组合时取过一次值），应用已经活着时从别的 App 分享进来会毫无反应（用户点名）。
+     * 序号是为了"同一个地址连着分享两次"也算两次 —— 界面那边用
+     * `LaunchedEffect(data, tick)` 触发，值相等时它不会重启。
+     */
+    private val sharedIntentData = mutableStateOf<String?>(null)
+    private val sharedIntentTick = mutableStateOf(0)
 
     companion object {
         private const val PREFS_NAME = "lerxu_prefs"
@@ -111,7 +120,8 @@ class MainActivity : FragmentActivity() {
                 ) {
                     AppScreen(
                         viewModel = viewModel,
-                        initialIntentData = sharedIntentData,
+                        initialIntentData = sharedIntentData.value,
+                        intentTick = sharedIntentTick.value,
                         themePref = themePref,
                         onThemeChange = { pref ->
                             themePref = pref
@@ -150,23 +160,22 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        when (intent?.action) {
-            Intent.ACTION_VIEW -> {
-                val uri = intent.data
-                if (uri != null) {
-                    sharedIntentData = uri.toString()
-                }
-            }
+        val data = when (intent?.action) {
+            Intent.ACTION_VIEW -> intent.data?.toString()
             Intent.ACTION_SEND -> {
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)
                 val stream = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-                if (text != null && (text.startsWith("http") || text.startsWith("magnet"))) {
-                    sharedIntentData = text
-                } else if (stream != null) {
-                    sharedIntentData = stream.toString()
+                when {
+                    text != null && (text.startsWith("http") || text.startsWith("magnet")) -> text
+                    stream != null -> stream.toString()
+                    else -> null
                 }
             }
-        }
+            else -> null
+        } ?: return
+        sharedIntentData.value = data
+        // 序号一起加一：同一个地址连着分享两次也要各算一次（见字段说明）
+        sharedIntentTick.value++
     }
 
     override fun onDestroy() {

@@ -148,7 +148,6 @@ import { storeToRefs } from 'pinia'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 import { commands } from '@/components/CommandManager/instance'
 import { ADD_TASK_TYPE, TASK_STATUS } from '@shared/constants'
-import { bytesToSize, timeFormat } from '@shared/utils'
 // mo-segmented-slider is globally registered in main.js
 import '@/components/Icons/menu-add'
 import '@/components/Icons/view-list'
@@ -174,7 +173,7 @@ const { config: preferenceConfig } = storeToRefs(preferenceStore)
 
 const selectedGidListCount = computed(() => selectedGidList.value.length)
 
-const props = defineProps({
+defineProps({
   task: {
     type: Object,
     default: null

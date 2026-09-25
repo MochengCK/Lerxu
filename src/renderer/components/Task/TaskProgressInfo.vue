@@ -8,8 +8,18 @@
       :md="leftColSpan.md"
       :lg="leftColSpan.lg"
     >
+      <!-- 有进度可显示就**优先显示进度**：已下载 / 已知总大小 / 百分比。
+           HLS 的总大小是逐步收敛的（先来自清单码率、再被实测外推修正），
+           所以这里只要 `totalLength > 0` 就带上它，不再等"精确总长"。
+           提示文字退到后面去，否则「正在获取数据…」会把大小和百分比盖住。 -->
+      <div v-if="task.completedLength > 0 || task.totalLength > 0">
+        <span>{{ bytesToSize(task.completedLength, 2) }}</span>
+        <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
+        <span v-if="downloadPercentText" class="task-progress-sep"></span>
+        <span v-if="downloadPercentText" class="task-progress-percent">{{ downloadPercentText }}</span>
+      </div>
       <mo-hover-tip
-        v-if="connectingStatusText"
+        v-else-if="connectingStatusText"
         effect="dark"
         :content="connectingStatusText"
         placement="top"
@@ -22,12 +32,6 @@
           {{ connectingStatusText }}
         </div>
       </mo-hover-tip>
-      <div v-else-if="task.completedLength > 0 || task.totalLength > 0">
-        <span>{{ bytesToSize(task.completedLength, 2) }}</span>
-        <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
-        <span v-if="downloadPercentText" class="task-progress-sep"></span>
-        <span v-if="downloadPercentText" class="task-progress-percent">{{ downloadPercentText }}</span>
-      </div>
     </el-col>
     <el-col
       class="task-progress-info-right"
@@ -241,6 +245,18 @@ const connectingStatusText = computed(() => {
     const statusHint = `${task.statusHint || ''}`.trim()
     if (statusHint === 'task.ed2k-searching-sources') return t(statusHint)
     return t('task.ed2k-searching-sources')
+  }
+
+  // 已经开始、但一个字节都还没到：HLS 要先取播放列表（还可能要读变体清单），
+  // 普通 HTTP 也要先握手。**必须在 `total > 0` 那条之前判断** —— HLS 的总长
+  // 是随分片落地实时估算出来的，早期可能已经有 total 但 completed 仍是 0。
+  // 这里只出文字；"在动"的感知交给进度条上的扫光动效（TaskItem 的
+  // isFetchingMetadata → TaskProgress 的 .is-fetching-metadata），
+  // 左下角不放独立动画（用户点名不要）。
+  if (`${task.status || ''}` === TASK_STATUS.ACTIVE
+    && completed === 0
+    && Number(task.downloadSpeed || 0) === 0) {
+    return t('task.fetching-data')
   }
 
   if (total > 0 || completed > 0) return ''

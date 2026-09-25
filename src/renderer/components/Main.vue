@@ -1317,7 +1317,8 @@ onBeforeUnmount(() => {
 // Helper method to format bytes
 function formatBytes(bytes) {
   if (!bytes || bytes === 0) return '0 B'
-  const k = 1024
+  // 1000 进制：与 Finder/资源管理器显示口径一致
+  const k = 1000
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]

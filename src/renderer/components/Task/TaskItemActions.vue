@@ -362,7 +362,6 @@ import '@/components/Icons/info-circle'
 import '@/components/Icons/verify-file'
 import '@/components/Icons/trash'
 import '@/components/Icons/select-files'
-import TaskFiles from '@/components/TaskDetail/TaskFiles'
 import { useTaskStore } from '@/store/task'
 import { usePreferenceStore } from '@/store/preference'
 import { storeToRefs } from 'pinia'
@@ -426,7 +425,6 @@ const updateLinkSubmitting = ref(false)
 const selectFilesDialogVisible = ref(false)
 const selectFilesData = ref([])
 
-const noConfirmBeforeDelete = computed(() => preferenceConfig.value.noConfirmBeforeDeleteTask)
 
 const needUpdateLink = computed(() => {
   const { task } = props
@@ -549,7 +547,6 @@ const showSelectFilesBar = computed(() => {
   return !!(pendingFileSelection.value && pendingFileSelection.value[gid])
 })
 
-const verifyCanSlideOut = computed(() => !!(path.value && existsSync(path.value)))
 
 const primaryActions = computed(() => {
   return taskActions.value.filter(action => action !== 'VERIFY' || !showVerifyBar.value)

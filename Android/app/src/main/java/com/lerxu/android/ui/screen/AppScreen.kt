@@ -3,6 +3,7 @@ package com.lerxu.android.ui.screen
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import android.graphics.RectF
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -46,7 +47,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.graphics.SolidColor
@@ -64,6 +67,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -85,10 +89,13 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.SideEffect
 import com.lerxu.android.browser.BrowserController
+import com.lerxu.android.browser.DockFollow
 import com.lerxu.android.browser.DownloadHandoff
 import com.lerxu.android.browser.SearchEngine
 import com.lerxu.android.browser.SearchEngineDetector
 import com.lerxu.android.browser.SearchEngines
+import com.lerxu.android.browser.SniffedResource
+import com.lerxu.android.ui.player.NativePlayerOverlay
 import com.lerxu.android.engine.EngineManager
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -98,15 +105,23 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Tab
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -120,7 +135,10 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Surface
@@ -137,6 +155,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
@@ -148,6 +167,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -171,6 +191,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -182,6 +203,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
@@ -195,6 +217,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextStyle
 import com.lerxu.android.R
 import com.lerxu.android.data.EngineRepository
@@ -216,10 +241,16 @@ import kotlinx.coroutines.withTimeoutOrNull
 fun AppScreen(
     viewModel: TaskViewModel,
     initialIntentData: String? = null,
+    /** 外部链接的序号：同一个地址连着进来两次也要各处理一次（见下面的 LaunchedEffect）。 */
+    intentTick: Int = 0,
     themePref: String = "system",
     onThemeChange: (String) -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    // 窗口根 View 与密度：首页面板要按"像素"算让位高度（网页里的 CSS px ≈ dp），
+    // 需要窗口的实际高度来换算
+    val rootView = androidx.compose.ui.platform.LocalView.current
+    val density = LocalDensity.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showAddTask by remember { mutableStateOf(false) }
     var selectedTaskGid by remember { mutableStateOf<String?>(null) }
@@ -302,6 +333,13 @@ fun AppScreen(
     // 底部坞里的地址栏：文本与焦点状态（坞在页面之外常驻，状态也放这里）
     var addressInput by remember { mutableStateOf("") }
     var addressFocused by remember { mutableStateOf(false) }
+    // 这一次聚焦是否已经为"点输入框从网页跳搜索页"动过页面（跳一次就够，见下面那个效果）
+    var jumpedFromWeb by remember { mutableStateOf(false) }
+    // 框里那串字是不是「从网页带过来的当前地址」（不是用户要搜的词）。
+    // 只用来决定面板要不要拿它当过滤词，见下面推给首页的 query。
+    // **只在用户真的改了字**（onAddressChange）时才解除 —— 不跟着失焦解除：
+    // 按住列表向下拖只会收起输入框、面板还开着，这时它仍然是"带过来的地址"
+    var addressCarried by remember { mutableStateOf(false) }
     // 坞的浏览器专有设置（长按标签按钮展开的面板）：界面方案 + 液态玻璃，持久化。
     // 界面方案默认**现代**（悬浮渐变 + 滚动收起）；用户在设置面板切回传统后记住选择
     var dockModern by remember {
@@ -315,21 +353,186 @@ fun AppScreen(
         context.getSharedPreferences("lerxu_prefs", android.content.Context.MODE_PRIVATE)
             .edit().putBoolean("dock_modern", value).apply()
     }
+    // 自动拦截广告：**默认开**（用户点名）。持久化，改了下发给控制器立即生效 ——
+    // 同一个开关同时管"拦请求"与"藏广告位"（见 AdBlocker）
+    var adBlock by remember {
+        mutableStateOf(
+            context.getSharedPreferences("lerxu_prefs", android.content.Context.MODE_PRIVATE)
+                .getBoolean("ad_block", true)
+        )
+    }
+    fun setAdBlock(value: Boolean) {
+        adBlock = value
+        context.getSharedPreferences("lerxu_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean("ad_block", value).apply()
+    }
     val dockUiScope = rememberCoroutineScope()
     // 底部嗅探面板是否展开（只在浏览器页有效）
     var sniffOpen by remember { mutableStateOf(false) }
+    // 原生播放器当前在播的那条资源（null = 没在播）。点「本页资源」里的一条就设它，
+    // 播放页盖在整个界面之上（见文件末尾）
+    var playing by remember { mutableStateOf<SniffedResource?>(null) }
+
+    // 网页里**开始播视频** → App 接管：直接开原生播放器（见 PageVideoDetector）。
+    // 这是"换成我们的播放器"那条路的主入口 —— 用户不必先点「本页资源」。
+    // 请求是一次性的，消费完立刻清掉，否则下一次起播会被误判成"已在接管"
+    LaunchedEffect(browserController.nativePlayRequest) {
+        browserController.nativePlayRequest?.let { item ->
+            playing = item
+            sniffOpen = false
+            browserController.clearNativePlayRequest()
+        }
+    }
     val addressFocusRequester = remember { FocusRequester() }
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val isDarkTheme = when (themePref) {
         "dark" -> true
         "light" -> false
         else -> androidx.compose.foundation.isSystemInDarkTheme()
     }
 
-    // 地址栏跟随页面；正在输入时不打断（首首页则留空，显示占位提示）
-    LaunchedEffect(browserController.currentUrl, browserController.isHomePage, addressFocused) {
+    // 地址栏跟随页面；正在输入时不打断。首页在**搜索页收起后**才清空 ——
+    // 搜索页还开着时（比如按住列表向下拖把输入框收起来了）要留着那串字，
+    // 不然列表按输入过滤、框里却空了
+    //
+    // 框里显示的是**处理过的地址**，不是原始 URL（用户点名）：去掉协议、去掉开头的
+    // `www.`、去掉末尾斜杠 —— 与标签卡副标题同一套规则（见 TabNaming.subtitle）。
+    // 坞里输入框只有那么宽，原始链接一长就被截掉尾巴，读不出"这是哪个站"。
+    // 它仍然是一条能开回来的地址：按回车时 BrowserUrl.toUrl 会把裸域名补回 `https://`
+    //（这两条必须一直成立，BrowserRulesTest 里有对拍）
+    LaunchedEffect(
+        browserController.currentUrl,
+        browserController.isHomePage,
+        addressFocused,
+        browserController.homePanelsOpen
+    ) {
+        if (!addressFocused && !browserController.homePanelsOpen) {
+            addressInput = if (browserController.isHomePage) {
+                ""
+            } else {
+                // "原始内容"：搜索来的显示搜索词、导航来的显示页面地址（见控制器
+                // addressEditText）—— 展示态看到的是网页名，这串字是点开编辑时用的
+                browserController.addressEditText
+            }
+        }
+    }
+
+    // 底部地址栏聚焦 = 进入「搜索页」（搜索建议 + 历史）。
+    // **浏览网页时点输入框也一样**（用户点名）：先把自家首页载进当前标签。
+    // 这一趟首页是"过路"的（keepHistory）—— 不清历史，用户正看的那页留着，
+    // 系统返回键 / 左滑返回都能退回它，不丢上下文。
+    // 首页载完 `isHomePage` 翻真，本效果会再跑一次，那时才真正把面板推下去。
+    // **只在聚焦时打开** —— 搜索页的关闭归左上角返回键 / 导航 / 离开浏览器页管，
+    // 否则"按住列表向下拖收起输入框"会连带把搜索页关掉（用户要的是留着）
+    LaunchedEffect(browserController.isHomePage, addressFocused) {
         if (!addressFocused) {
-            addressInput = if (browserController.isHomePage) "" else browserController.currentUrl
+            // 松手就复位：下一次聚焦又是全新一次"进搜索页"
+            jumpedFromWeb = false
+            return@LaunchedEffect
+        }
+        if (!browserController.isHomePage && !jumpedFromWeb) {
+            // 标记**这一次聚焦已经跳过了**：返回上一页时 `isHomePage` 会翻假，
+            // 本效果跟着重跑 —— 不设这道闸就会立刻又被弹回搜索页，用户再也退不出去
+            jumpedFromWeb = true
+            // 框里那串字**留着**（用户点名）：在网页上点一下地址栏，手上这页的地址
+            // 应该还摆在那儿等着被改，而不是先被清空。
+            //
+            // 它同时被标成"带过来的" —— 面板此时**不拿它当输入去过滤**（见下面推
+            // query 那一段）：否则"最近访问""搜索历史"被这串地址一筛就只剩它自己，
+            // 用户要的"搜索页"就空掉了。用户动了字才算数
+            addressCarried = true
+            // 框里那串字换成"原始内容"：**搜索来的显示搜索词**（用户点名：在搜索结果页
+            // 点输入框，要看到自己搜的那串内容）、导航来的显示这页的地址简写。
+            // 这里**直接覆盖**（不再只在空的时候填）：搜索后框里本来摆着结果页的 URL，
+            // 不换的话点开还是那串搜索结果地址，用户根本认不出自己在搜什么。
+            // 顺带兜住"页面加载完之前就点了输入框"那一下空档
+            addressInput = browserController.addressEditText
+            browserController.loadHome(keepHistory = true)
+        }
+        browserController.setHomePanels(true)
+    }
+    // 离开搜索页（返回上一页 / 点了建议去结果页）就把输入框收起来：
+    // 焦点留着的话键盘会压在新页面上，而且要再想搜一次就得先手点一次空白处收键盘
+    LaunchedEffect(browserController.isHomePage) {
+        if (!browserController.isHomePage) {
+            // 面板只属于自家首页，离开就一起收掉。这一步不是多余的：后退若命中
+            // WebView 的后退缓存，`onPageStarted` 可能根本不触发，收尾只剩这里
+            browserController.closeHomePanels()
+            if (addressFocused) {
+                addressFocused = false
+                focusManager.clearFocus()
+                keyboard?.hide()
+            }
+        }
+    }
+    // 框里的输入推给首页当过滤词。**从网页带过来的那串地址不算输入** ——
+    // 它只是"手上这页的地址"，拿去过滤只会把两条列表筛空（用户要的是搜索建议 + 历史）。
+    // `addressCarried` 也当 key：它是在同一帧里由上面那个效果翻真的，
+    // 不当 key 就得指望效果之间的执行顺序，写进来才是确定的一遍
+    LaunchedEffect(addressInput, addressFocused, addressCarried) {
+        if (addressFocused) {
+            browserController.setHomeQuery(if (addressCarried) "" else addressInput)
+        }
+    }
+    // 面板里点了建议 / 历史：网页已经接管这次导航，地址栏该收起来了
+    //（不然键盘一直压着新页面，框里还留着上一串输入）
+    LaunchedEffect(browserController.addressBlurTick) {
+        if (browserController.addressBlurTick > 0) {
+            addressFocused = false
+            focusManager.clearFocus()
+            keyboard?.hide()
+        }
+    }
+
+    // 用户**手动**收起系统输入法（返回键 / 返回手势）时，输入框本身还持着焦点 ——
+    // 于是输入框下方那条「常用前缀」一直挂在那里，得再点一次空背景才收（用户点名）。
+    // 这里把"输入法正在收起"直接当成一次「收起输入框」：清焦点，前缀条与让位的
+    // 左右按钮随之回位，与拖拽收起（HomeBridge.collapseInput）同一条语义。
+    //
+    // 判据是"**变矮**"而不是"归零"：`ime` 内边距是跟着键盘动画逐帧变的，等它回到 0
+    // 已经是动画末尾 —— 前缀条要再等两三百毫秒才动，读起来就是"延迟一会才消失"。
+    // 一发现明显矮于刚才的高度就动手，收起动作与键盘同步。
+    //
+    // 用 0.5 这个比例而不是"任意下降"：键盘弹出过程本身可能有小幅回弹，切到
+    // 单手键盘也会矮掉一截 —— 挑一个"只可能是收起"的落差（矮到不足一半）才不会被误判。
+    // 收起动画走到一半就命中，前缀条与键盘同步收回，不再"延迟一会才消失"
+    //
+    // 比例之外还要看**方向**：只有"键盘正在长高时"到过的高度才算证据（见下面 peak）。
+    // 少了这一条，快速连点输入框会把上一轮键盘的收尾动画误判成"用户收起键盘"，
+    // 刚弹出来的键盘立刻又被关掉（用户点名）
+    //
+    // `WindowInsets.ime` 是 @Composable 取值，进不了 snapshotFlow 的 lambda，
+    // 所以每帧先在组合里量出来、装进 rememberUpdatedState 供那个常驻协程读
+    val imeBottomNow = androidx.compose.runtime.rememberUpdatedState(
+        WindowInsets.ime.asPaddingValues().calculateBottomPadding().value
+    )
+    LaunchedEffect(Unit) {
+        // `peak` = "键盘确实打开过"的证据高度，**只在键盘正在长高时记录**；
+        // `last` = 上一帧的高度，用来判方向
+        var peak = 0f
+        var last = -1f
+        snapshotFlow { addressFocused to imeBottomNow.value }.collect { (focused, h) ->
+            if (!focused) {
+                peak = 0f
+                last = -1f
+                return@collect
+            }
+            // 只在"键盘正在长高"时记峰值。**快速连点就会踩到这里**：上一次键盘还在
+            // 收起动画里（h 从高位往下走）时又点了一下输入框，若把那种高度记成峰值，
+            // 等这轮收尾动画走到一半就会被判成"用户在收起键盘" —— 于是刚弹出来的
+            // 键盘立刻被清焦点关掉（用户点名的现象）。往下走的高度只说明"上一轮还没收完"，
+            // 不是"键盘已经打开"，不该作数
+            if (h > last) peak = h
+            last = h
+            // 从"明显打开过"的高度掉到不足一半：这才是用户把键盘收起来了。
+            // 与键盘同步动手，不等它归零（归零已是动画末尾，前缀条要晚两三百毫秒才收）
+            if (peak > 0f && h < peak * 0.5f) {
+                peak = 0f
+                last = -1f
+                addressFocused = false
+                focusManager.clearFocus()
+            }
         }
     }
 
@@ -349,13 +552,21 @@ fun AppScreen(
         browserController.homeColors = homeColors
         browserController.homeLang = if (java.util.Locale.getDefault().language == "en") "en" else "zh"
         browserController.dockModern = dockModern
+        browserController.adBlockEnabled = adBlock
+        // 聚焦态同步给控制器：网页滚动回传要据此闭嘴（见 DockBridge.scroll），
+        // 同时把网页的"触摸抢焦点"关掉 —— 否则快速连点时第二下落在网页上，
+        // 焦点被抢走、键盘刚弹出来就被关掉（见 setDockInputFocused）
+        browserController.setDockInputFocused(addressFocused)
         // 关掉最后一个标签页 = 退出浏览器
         browserController.onAllTabsClosed = { page = AppPage.Tasks }
     }
 
-    // 离开浏览器页就解除收起态：回到任务页/设置页时坞必须完整
+    // 离开浏览器页就解除收起态：回到任务页/设置页时坞必须完整。
+    // 同时把"坞在不在场上"关掉 —— 设置页压根不渲染坞，而这个标记是网页那边
+    // 决定要不要跟手收起的依据（网页即使没显示也可能在自动滚动）
     LaunchedEffect(page) {
-        if (page != AppPage.Browser) browserController.dockCollapsed = false
+        browserController.dockEngaged = page == AppPage.Browser
+        if (page != AppPage.Browser) browserController.expandDock()
     }
 
     // 「本页资源」弹窗依附当前标签页，并且依赖那枚资源按钮当锚点：
@@ -373,7 +584,11 @@ fun AppScreen(
     // 离开浏览器页时清掉地址栏聚焦态：坞换成按钮形态后不再有失焦回调，
     // 这个状态得手动归位，否则回来时「返回下载器」与侧按钮都起不来
     LaunchedEffect(page) {
-        if (page != AppPage.Browser) addressFocused = false
+        if (page != AppPage.Browser) {
+            addressFocused = false
+            // 首页面板是"聚焦才有"的东西，离开浏览器就一起收掉
+            browserController.closeHomePanels()
+        }
     }
 
     // 进浏览器页：**开一张新标签**（不落在上次恢复出来、没有历史的那一页上，
@@ -431,7 +646,10 @@ fun AppScreen(
     // 处理外部 Intent 带来的链接：**先分清是哪种链接**（用户点名）。
     //  · 下载链接（magnet / ed2k / 迅雷 / 扩展名在白名单里）→ 交给下载器（预填添加任务）
     //  · 网页链接 → 直接用浏览器打开（新标签），不再一律弹"添加任务"对话框
-    LaunchedEffect(initialIntentData) {
+    //
+    // key 里带上 [intentTick]：应用已经活着时从别的 App 分享进来，地址可能与上一次
+    // 完全相同 —— 只按值做 key 的话那次分享不会重启这个副作用，读起来就是"没反应"
+    LaunchedEffect(initialIntentData, intentTick) {
         val data = initialIntentData?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         if (com.lerxu.android.browser.VideoSniffer.isDownloadLink(data)) {
             if (state.connected) showAddTask = true
@@ -599,7 +817,11 @@ fun AppScreen(
                         TRADITIONAL_DOCK_HEIGHT
                     },
                     modern = dockModern,
-                    topInset = windowTopInset
+                    topInset = windowTopInset,
+                    // 影视模式：识别到影视内容后自动开（见 MovieMode），这一页改用自家
+                    // 的影视页整屏呈现；点列表里的一条就走 App 自己的播放器
+                    movieMode = browserController.movieMode,
+                    onPlayMovie = { item -> playing = item }
                 )
 
                 AppPage.Settings -> Box(
@@ -613,7 +835,9 @@ fun AppScreen(
                         themePref = themePref,
                         onThemeChange = onThemeChange,
                         searchEngineKey = searchEngineKey,
-                        onSearchEngineChange = { key -> searchEngineKey = key }
+                        onSearchEngineChange = { key -> searchEngineKey = key },
+                        adBlock = adBlock,
+                        onAdBlockChange = { setAdBlock(it) }
                     )
                 }
 
@@ -828,11 +1052,11 @@ fun AppScreen(
                     // **严格限定只在自家首页出现** —— 之前用"排除搜索结果页"
                     // 的写法，任何没匹配上的网页（重定向、换域名）都会漏出来
                     // 一个返回按钮，语义也不清；其余页面的退出走系统返回键。
-                    // 首页内再让位给：地址栏 / 首页搜索框聚焦、提交后导航未开始、
-                    // 标签网格展开。
+                    // 首页内再让位给：地址栏聚焦（此时首页会切成建议 / 历史视图）、
+                    // 提交后导航未开始、标签网格展开。
                     val backToShow = page == AppPage.Browser && dockOpaque &&
                         browserController.isHomePage &&
-                        !addressFocused && !browserController.homeInputFocused &&
+                        !addressFocused && !browserController.homePanelsOpen &&
                         !browserController.navSubmitting &&
                         !browserController.tabsOpen
                     AnimatedVisibility(
@@ -869,6 +1093,12 @@ fun AppScreen(
                     SniffPopup(
                         open = shelfOpen,
                         items = browserController.sniffed,
+                        onPlay = { item ->
+                            // 交给 App 自己的播放器（见 PlayerScreen）：控件、全屏、
+                            // 手势都归我们，不再受 WebView 怎么合成页面的影响
+                            playing = item
+                            sniffOpen = false
+                        },
                         onDownload = { item ->
                             browserController.handoff(item)
                             browserController.dismiss(item.url)
@@ -886,6 +1116,30 @@ fun AppScreen(
                             // 坞悬浮在网页之上：抓标签页缩略图时这一段要排掉
                             //（不排，卡片上会烙一条控制栏），见 captureThumbnail
                             browserController.dockOcclusionTopPx = it.top.roundToInt()
+                            // 首页面板的底部让位 = **网页可视底边到坞顶**的距离，
+                            // 两端都实测：坞顶会随聚焦、展开引擎框、键盘抬起而变，
+                            // 所以量出来而不是写死常量。
+                            //
+                            // 网页底边按"首页那一档"算（见 BrowserScreen 的
+                            // webBottomInset）：首页的输入框在坞里、页面内没有输入框，
+                            // 网页**不为输入法缩高** —— 键盘抬起时坞自己上移，网页底边
+                            // 没动，再减一次键盘高度会把整条列表顶到半屏以上。
+                            // 单位：这里算出来的是 dp，而首页页面里的 1px 就是 1dp
+                            //（WebView 初始缩放为 1、devicePixelRatio = 屏幕密度），
+                            // 所以直接下发，不要再 roundToPx（那是设备像素，会放大
+                            // 一个密度倍数，同样把列表顶飞）。
+                            if (it.height > 0f) {
+                                val winHeight = with(density) { rootView.height.toDp() }
+                                val dockTop = with(density) { it.top.toDp() }
+                                val pageBottomInset = if (dockModern) {
+                                    0.dp
+                                } else {
+                                    navBottom + TRADITIONAL_DOCK_HEIGHT
+                                }
+                                val reserve = (winHeight - pageBottomInset - dockTop)
+                                    .coerceAtLeast(0.dp)
+                                browserController.setHomePanelBottom(reserve.value.roundToInt())
+                            }
                         },
                         onAddressCopied = {
                             dockUiScope.launch {
@@ -895,19 +1149,38 @@ fun AppScreen(
                             }
                         },
                         controller = browserController,
-                        engineName = searchEngine.name,
                         addressValue = addressInput,
-                        onAddressChange = { addressInput = it },
+                        onAddressChange = {
+                            // 来自输入框的回传 = 用户改了字（或双击清空），
+                            // "带过来的地址"这个身份到此为止，它现在是真输入了
+                            addressCarried = false
+                            addressInput = it
+                        },
                         onAddressFocusChange = { addressFocused = it },
                         focusRequester = addressFocusRequester,
                         bottomPadding = dockBottom,
                         sniffOpen = shelfOpen,
+                        // 影视模式入口：检测到影视站才出现（本页资源那枚按钮已按用户要求移除）。
+                        // **进和出都走它**（用户口径）：不在模式里 → 进；在模式里 → 退（斜杠）
+                        movieSite = browserController.movieSiteDetected,
+                        movieMode = browserController.movieMode,
+                        onMovieMode = {
+                            if (browserController.movieMode) {
+                                browserController.closeMovieMode()
+                            } else {
+                                browserController.enableMovieMode()
+                            }
+                        },
                         onLaunch = { page = AppPage.Browser },
                         // 长按返回键 = 直接回下载器（退出浏览器）；标签页留着，再进还在
                         onExitBrowser = { page = AppPage.Tasks },
                         onTabs = {
                             sniffOpen = false
                             browserController.openTabs()
+                        },
+                        onOpenSettings = {
+                            sniffOpen = false
+                            page = AppPage.Settings
                         },
                         onSniff = { sniffOpen = !sniffOpen },
                         onEnginePick = { key ->
@@ -973,6 +1246,135 @@ fun AppScreen(
         )
     }
 
+    // ── 原生播放器：贴在网页里那个播放器的位置上 ──
+    // 它**不在这棵 Compose 树里**：一块加在 decorView 上的原生覆盖层（见
+    // NativePlayerOverlay，跟网页全屏视频用的那套一模一样）。这里只负责三件事：
+    // 开/关、把页面报回来的位置喂给它、以及随界面一起退场。
+    // 请求头按当前标签页的 Referer / UA / Cookie 拼（影视站的流几乎都校验防盗链）
+    //
+    // 开着的时候还要让网页那边"别再全屏"：影视站的播放按钮常在 `play()` 的同一拍里
+    // `requestFullscreen()`，那次请求晚到一步就会盖住我们的播放器（见
+    // BrowserController.setNativePlayerActive）
+    LaunchedEffect(playing != null) {
+        browserController.setNativePlayerActive(playing != null)
+    }
+    val playerOverlay = remember {
+        (context as? android.app.Activity)?.let { act ->
+            NativePlayerOverlay(act) { playing = null }
+        }
+    }
+    LaunchedEffect(playerOverlay, playing) {
+        val overlay = playerOverlay ?: return@LaunchedEffect
+        val item = playing
+        if (item == null) {
+            overlay.close(notify = false)
+        } else {
+            overlay.open(
+                url = item.url,
+                title = item.title.ifBlank { item.pageUrl },
+                headers = browserController.playbackHeaders(item.url)
+            )
+        }
+    }
+    /**
+     * 影视模式下播放器该落在哪儿用的两个数：**内容区顶**（状态栏那一截之下）与屏幕宽。
+     *
+     * 起点与 `BrowserScreen` 的 `topInset` **同源**（两处都是
+     * `ScaffoldDefaults.contentWindowInsets` 的顶内边距）—— 影视页那块 16:9 占位就贴在
+     * 这个起点上，播放器按同一个数落下来才盖得住它。
+     */
+    val movieTopInsetDp = ScaffoldDefaults.contentWindowInsets
+        .asPaddingValues().calculateTopPadding().value
+    val movieWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
+
+    /**
+     * 影视模式下的播放器落点：**我们自己的那一块**（整宽 16:9、在影视页顶栏之下）。
+     *
+     * 原生播放器是按"网页里那个 `<video>` 的矩形"摆位的，而影视模式把网页整个盖住了
+     * —— 那块矩形在我们这一屏后面，播放器会摆到看不见的地方。所以影视模式开着且正在
+     * 播放时，推给覆盖层的 frame 换成我们自己的位置。
+     *
+     * **必须与 `MovieScreen` 顶部那块占位 Box 同源**（起点、高度都出自 MovieScreen.kt
+     * 里那两个算式）。两边一旦对不齐，播放器就盖不住那块占位、底下会露出一条黑边。
+     * 返回 null = 不接管（照旧用网页报上来的矩形）。
+     */
+    fun movieFrame(): RectF? {
+        if (!browserController.movieMode) return null
+        // 影视模式自己保证有落点（那一块 16:9 占位），所以只要这一屏真有东西在放就接管：
+        // 我们的播放器（[playing]）与**网页自己那个播放器**（`playerOnScreen`，页面起播时
+        // 自动接管的那一路）都算。以前只认前者 —— 页面自己起播时播放器就照着网页里那块
+        // 矩形摆，正好压住我们的顶栏、还在它和内容之间留出一条空白（用户点名）。
+        if (playing == null && !browserController.playerOnScreen) return null
+        // 落点以 **MovieScreen 量出来的真实矩形**为准（见 `movieStageRect`）：原先两边各算
+        // 一遍，只要有一处没跟上（顶栏高度变了、上面多了一层内边距）就会错位。量真东西不会错。
+        browserController.movieStageRect?.let { return RectF(it) }
+        // 还没量到（首帧）：退回算式 —— 起点在影视页顶栏之下、高度整宽 16:9
+        val top = movieStageTopDp(movieTopInsetDp)
+        return RectF(0f, top, movieWidthDp, top + movieStageHeightDp(movieWidthDp))
+    }
+
+    /**
+     * 把播放器此刻该有的状态推给覆盖层。
+     *
+     * [browserPage] = 现在停在浏览器页。**必须把它一起算进去**：覆盖层是挂在 `decorView`
+     * 上的一层，不属于任何 Compose 页面 —— 光看"宿主标签页在台前"判断不出用户已经回
+     * 下载器 / 去设置页了，播放器就会一直悬浮在别的页面上（用户点名："返回到下载页或者
+     * 切换到设置页，原生视频容器它还不会消失，还是悬浮的"）。
+     */
+    fun pushPlayerState(browserPage: Boolean) {
+        playerOverlay?.update(
+            frame = movieFrame() ?: browserController.playerFrame,
+            // 影视模式下"真有东西在放"才显示：我们的播放器（[playing]）或网页自己那个
+            // 播放器（`playerOnScreen`）。**不能只因为"在影视模式里"就显示** —— 那样换页
+            //（比如用我们的站内搜索换了内容）之后，播放器会照着上一份矩形停在上一路的画面上
+            // 不走（用户点名："站内搜索内容后，原生播放器还在"）。
+            visible = browserPage && (browserController.playerOnScreen || playing != null),
+            morph = browserController.pageGridMorph,
+            target = browserController.pageGridClip,
+            alpha = browserController.pageGridAlpha,
+            gridProgress = browserController.pageGridProgress
+        )
+    }
+    // 位置走**直连**（页面每报一次位置就当场摆）：不经过 Compose 状态与重组，
+    // 滚动时不会慢半拍 —— 用户点名"滚动的时候有轻微偏移"就是这个半拍
+    DisposableEffect(playerOverlay) {
+        browserController.frameSink = { frame, visible ->
+            playerOverlay?.update(
+                // 影视模式下网页报上来的位置没有意义（那块矩形被我们盖住了）：
+                // 换成我们自己的落点，两处推送必须同源（见 [movieFrame]）
+                frame = movieFrame() ?: frame,
+                visible = page == AppPage.Browser &&
+                    (visible || playing != null),
+                morph = browserController.pageGridMorph,
+                target = browserController.pageGridClip,
+                alpha = browserController.pageGridAlpha,
+                gridProgress = browserController.pageGridProgress
+            )
+        }
+        // 挂上时先把当前状态摆一次（播放器可能已经开着、位置也早就报上来了）
+        pushPlayerState(page == AppPage.Browser)
+        onDispose {
+            browserController.frameSink = null
+            playerOverlay?.release()
+        }
+    }
+    // 切 App 页面时**立刻**重推一次：位置是网页主动报上来的，切页面这一下不一定有新位置，
+    // 不重推就会停在上一页的状态（播放器留在屏幕上不消失）
+    LaunchedEffect(page) { pushPlayerState(page == AppPage.Browser) }
+    // 播放区那块矩形变了（转屏、顶栏高度变化）也要重推一次：位置是**推**给覆盖层的，
+    // 没人推它就停在上一份上 —— 那正是"播放器压住顶栏 / 和内容之间裂出一条空白"的来源
+    LaunchedEffect(browserController.movieStageRect) {
+        pushPlayerState(page == AppPage.Browser)
+    }
+
+    // 承载播放器的那一页走了（导航走了 / 标签页被关）：播放器跟着结束
+    LaunchedEffect(browserController.nativePlayStop) {
+        if (browserController.nativePlayStop) {
+            playing = null
+            browserController.clearNativePlayStop()
+        }
+    }
+
     // 发现新版本：底部悬浮卡片（圆角、四周留白不贴边）。
     // 点击「立即更新」→ 按钮原地变为进度条（下载 APK）→ 完成后调起系统安装器。
     val pendingUpdate = availableUpdate
@@ -1014,6 +1416,20 @@ private fun collapsedPillWidth(nameText: String): Dp =
         .coerceAtMost(220.dp)
 
 /**
+ * 网页底部固定元素的让位带分几档下发。
+ *
+ * 跟手收起时这条带子每帧都在变，而下发给网页是跨进程的 `evaluateJavascript`，
+ * 每帧一次太贵；而且页面侧收到之后要**遍历整页**（`querySelectorAll('body *')`）
+ * 才能算出谁该让位 —— 那个开销不能压在滚动的那几帧上。
+ * 所以量化成这几档，档与档之间由网页自己的 300ms 过渡补平。
+ */
+private const val DOCK_AVOID_STEPS = 3f
+
+/** 两个 dp 之间按进度取值（收起进度是 0..1 的连续量，尺寸都靠它推出来）。 */
+private fun lerpDp(from: Dp, to: Dp, t: Float): Dp =
+    (from.value + (to.value - from.value) * t.coerceIn(0f, 1f)).dp
+
+/**
  * 坞容器的材质层：整块面板的填充都在这里画，Surface 自身透明。
  *
  * [morph] 从 0 → 1 时，轮廓从整块容器**收缩到收起态胶囊的尺寸**并同步淡出；
@@ -1024,7 +1440,8 @@ private fun collapsedPillWidth(nameText: String): Dp =
 private fun Modifier.dockSurfaceMaterial(
     morph: Float,
     amount: Float,
-    corner: Dp,
+    cornerTop: Dp,
+    cornerBottom: Dp,
     targetWidth: Dp,
     base: Color,
 ): Modifier = drawWithCache {
@@ -1035,10 +1452,19 @@ private fun Modifier.dockSurfaceMaterial(
     val w = fullW + (targetWidth.toPx().coerceAtMost(fullW) - fullW) * m
     val h = fullH + (COLLAPSED_PILL_HEIGHT.toPx().coerceAtMost(fullH) - fullH) * m
     val rect = Rect(Offset((fullW - w) / 2f, (fullH - h) / 2f), Size(w, h))
-    // 圆角跟着高度与模式收：传统模式传入 0（方角整条），胶囊那一档下正好是半圆的圆头
-    val radius = minOf(corner.toPx(), h / 2f)
+    // 上下两排圆角**分开给**：传统模式两排都是 0（方角整条），聚焦态是"上圆下方"
+    //（贴边那张形态），平时是四角同圆的悬浮胶囊。上限仍按 h/2 收 —— 胶囊那一档
+    // 下正好是半圆的圆头
+    val rTop = minOf(cornerTop.toPx(), h / 2f).coerceAtLeast(0f)
+    val rBottom = minOf(cornerBottom.toPx(), h / 2f).coerceAtLeast(0f)
     val path = Path().apply {
-        addRoundRect(RoundRect(rect, CornerRadius(radius.coerceAtLeast(0f))))
+        addRoundRect(
+            RoundRect(
+                rect,
+                CornerRadius(rTop), CornerRadius(rTop),
+                CornerRadius(rBottom), CornerRadius(rBottom)
+            )
+        )
     }
     onDrawBehind {
         drawPath(path, base.copy(alpha = a * (1f - m)))
@@ -1071,17 +1497,22 @@ private fun BrowserDock(
     onBounds: (Rect) -> Unit,
     onAddressCopied: () -> Unit,
     controller: BrowserController,
-    engineName: String,
     addressValue: String,
     onAddressChange: (String) -> Unit,
     onAddressFocusChange: (Boolean) -> Unit,
     focusRequester: FocusRequester,
     bottomPadding: Dp,
     sniffOpen: Boolean,
+    /** 影视模式入口的三个入参：检测到影视站才显示、开着时实心、点了手动进模式。 */
+    movieSite: Boolean,
+    movieMode: Boolean,
+    onMovieMode: () -> Unit,
     onLaunch: () -> Unit,
     /** 长按左侧返回键：直接回下载器（退出浏览器）。 */
     onExitBrowser: () -> Unit,
     onTabs: () -> Unit,
+    /** 「更多功能」弹窗里的"设置"：切到设置页（这个状态在 AppScreen 手里）。 */
+    onOpenSettings: () -> Unit,
     onSniff: () -> Unit,
     onEnginePick: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -1093,11 +1524,23 @@ private fun BrowserDock(
     var enginePickerOpen by remember { mutableStateOf(false) }
     // 长按标签按钮展开的设置面板：同样向上长（与引擎选择框互斥）
     var settingsOpen by remember { mutableStateOf(false) }
-    // 收起态单一真相在控制器：网页下滑（BrowserController 滚动监听）与坞上拖动
-    // 都写它，界面只读它做动画。顶部面板（设置/引擎选择）展开时不进入收起态。
-    val panelsOpen = settingsOpen || enginePickerOpen
+    // 「更多功能」弹窗（用户点名：右侧那枚标签按钮换成"更多"，点开就是它）。
+    // **不再是坞里长出来的一块**，而是与播放器设置同款的独立弹窗 —— 与另外两个
+    // 面板互斥，同一条"向上长出来"的位置只站一个人
+    var moreOpen by remember { mutableStateOf(false) }
+    // 顶部面板（设置/引擎选择）展开期间不进入收起态：向上长出的面板会被收进屏幕，
+    // 用户正在选的东西凭空消失；更多功能虽是弹窗，开着时也一并让坞别收起
+    val panelsOpen = settingsOpen || enginePickerOpen || moreOpen
     LaunchedEffect(panelsOpen) { controller.dockPanelsOpen = panelsOpen }
-    val collapsed = modern && address && controller.dockCollapsed && !panelsOpen
+    // 收起进度：**单一真相在控制器**（网页滚动逐帧写、坞上拖动写、停下后吸附），
+    // 界面只读它、不自己补间 —— 补间会去"追"一个还在动的目标，跟手立刻慢半拍。
+    // 各种"不该收起"的场合也不在这里拦（拦了就是一帧硬切，反而跳），
+    // 都由下面的 LaunchedEffect 调 expandDock() 让进度**自己补间回 0**
+    val collapse = controller.dockProgress
+    // 搜索页开着时输入框**始终是展开态**（哪怕键盘已收、焦点已不在）：那是"正在搜索"
+    // 的界面，输入框缩成小胶囊会读成"已经退出搜索"（用户点名）。所以收起态在
+    // 搜索页里不成立 —— 它由左上角返回键 / 导航来收场。
+    val searchOpen = controller.homePanelsOpen
 
     /**
      * 网页里那层**贴底整宽**的弹窗（全宽操作条 / 半屏弹窗 / 登录罩）。
@@ -1129,10 +1572,29 @@ private fun BrowserDock(
         if (!visible || mode != DockMode.Address) {
             enginePickerOpen = false
             settingsOpen = false
+            // 离开地址形态时一并收起更多功能弹窗：它是盖住整屏的独立弹窗，
+            // 留在场上会挡住切换后的界面
+            moreOpen = false
         }
     }
-    LaunchedEffect(modern, address, visible) {
-        if (!modern || !address || !visible) controller.dockCollapsed = false
+    // 传统方案 / 浏览器按钮形态 / 坞不在场 / 搜索页开着：这几种场合收起态都不成立。
+    // 同时把"坞在不在场上"同步给控制器 —— 只靠界面拦是不够的：跟手是网页那边
+    // **主动**推上来的，页面自己的自动滚动也会推（见 dockEngaged）
+    LaunchedEffect(modern, address, visible, searchOpen) {
+        controller.dockEngaged = address && visible
+        if (!modern || !address || !visible || searchOpen) controller.expandDock()
+    }
+    // 聚焦的那一刻把收起态归位：网页里上一次滑动留下的进度若不抹掉，等会儿
+    // 一失焦就会**凭空**缩成胶囊（收起动作该由下一次滑动决定）。
+    // 地址栏聚焦期间输入法还压着、正在输入，坞缩成小胶囊会读成"样式错乱"
+    LaunchedEffect(addressFocused) {
+        if (addressFocused) controller.expandDock()
+    }
+    // 回到自家首页（含系统返回手势从网页退回）也要归位：首页没有"滚动让位"的语义，
+    // 退回来时坞还缩着一枚胶囊就不对了（用户点名）。只在 isHomePage **变化**时归位，
+    // 所以不影响"在首页把坞拖下去"这个手势
+    LaunchedEffect(controller.isHomePage) {
+        if (controller.isHomePage) controller.expandDock()
     }
     // 系统手势条那一截（导航条 inset）：现代模式网页铺到屏幕底，网页自己的
     // 贴底底部导航会有一截落进小横条区域 —— 下发给脚本让它向上延伸
@@ -1147,9 +1609,15 @@ private fun BrowserDock(
     // 留着它传统工具栏仍会按弹窗让位/藏起来（用户点名的 bug）。
     // !address 那档（坞还是"浏览器按钮"形态）保持脚本活着、让位带给 0：
     // 不然进了地址形态还得等下一次注入。
-    LaunchedEffect(collapsed, overlayPx, modern, address, navBottom) {
+    //
+    // **跟手时这个量每帧都在变，但下发给网页是跨进程的 evaluateJavascript** ——
+    // 每帧发一次太贵（每个标签页都要发）。所以量化成 DOCK_AVOID_STEPS 档，
+    // 只在跨档时下发；网页那边对位移本身挂了 300ms 过渡，档与档之间是平滑补上的
+    val avoidStep = (collapse * DOCK_AVOID_STEPS).roundToInt()
+    LaunchedEffect(avoidStep, overlayPx, modern, address, navBottom) {
         controller.updateDockAvoid(
-            padPx = if (!address) 0 else (if (collapsed) 68 else 88) + overlayPx,
+            padPx = if (!address) 0 else
+                (88f - 20f * avoidStep / DOCK_AVOID_STEPS).roundToInt() + overlayPx,
             enabled = modern,
             gesturePx = navBottom.value.toInt()
         )
@@ -1209,24 +1677,19 @@ private fun BrowserDock(
         animationSpec = tween(340, easing = FastOutSlowInEasing),
         label = "dockMaterialAmount"
     )
-    // 收起形态进度：材质轮廓据此从整块收缩到收起态胶囊的尺寸
-    val collapseMorph by animateFloatAsState(
-        targetValue = if (collapsed) 1f else 0f,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "dockCollapseMorph"
-    )
+    // 收起形态进度：材质轮廓据此从整块收缩到收起态胶囊的尺寸。
+    // **就是跟手进度本身**（不再套一层补间）—— 补间会让材质去追一个还在动的目标，
+    // 观感正是用户点名的"跟手不跟手"
+    val collapseMorph = collapse
     // 浏览器按钮形态整体下沉一点：更贴底部（按钮无背景，位移不会带动控制栏）
     val launchDrop by animateDpAsState(
         targetValue = if (address) 0.dp else 6.dp,
         animationSpec = tween(340, easing = FastOutSlowInEasing),
         label = "dockLaunchDrop"
     )
-    // 收起态轻微下沉：贴向底缘一点，但不压到导航条（用户：再向下一点点 6 → 10dp）
-    val collapseDrop by animateDpAsState(
-        targetValue = if (collapsed) 10.dp else 0.dp,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "dockCollapseDrop"
-    )
+    // 收起态轻微下沉：贴向底缘一点，但不压到导航条（用户：再向下一点点 6 → 10dp）。
+    // 同样**跟手**：收缩到几成就下沉几成，停下时由吸附补齐最后一段
+    val collapseDrop = (10f * collapse).dp
 
     /**
      * 传统模式（非现代）的浏览器控制栏：**贴边、贴底、方角的一整条工具栏** ——
@@ -1238,25 +1701,67 @@ private fun BrowserDock(
      * ③ 方角 + 顶部一条发丝分割线。这些量都走动画，切换模式时是连续形变。
      */
     val docked = address && !modern
-    val dockSidePad by animateDpAsState(
-        targetValue = if (docked) 0.dp else 16.dp,
+    // 聚焦态（现代模式）：坞**左右贴边、下面两个角变直角**，上面两个角保持圆角 ——
+    // 读起来是从底部升起来的一层，而不是一枚悬浮胶囊（用户点名）。
+    //
+    // 只动左右与圆角，**不动底部留白**：坞与键盘之间那一截（导航条那点高度）留着，
+    // 免得键盘没弹出时坞一头扎到屏幕最底、盖住小横条
+    val flush = address && modern && addressFocused
+    val dockSidePadBase by animateDpAsState(
+        // 与网页上的坞**同一档**（用户点名：搜索页的坞左右间距要和网页上一致）：
+        // 16dp；聚焦贴边那一档是 0。
+        //
+        // **搜索界面不在这里分叉**（用户点名）：面板展开那一屏里，坞本身还是首页
+        // 那一枚（16dp 外边距、下圆角、悬浮在导航条之上），换的只是**坞里面那枚
+        // 链接输入框的左右**（见 DockAddressContent 的 rowPad / pillFlushPad）——
+        // 整条坞跟着贴边的话，进搜索页会看到控制栏横跳一整档
+        targetValue = if (docked || flush) 0.dp else 16.dp,
         animationSpec = tween(300, easing = FastOutSlowInEasing),
         label = "dockSidePad"
     )
+    // 收起态左右再收到 4dp（用户点名：收起状态下输入框两侧的间距还要减少）。
+    // **跟手直算、不套补间** —— 与其它跟手量同源，补间会让它慢半拍；
+    // 用 lerpDp 按进度插值，两档（首页 8 / 其它页 16）都平滑地往 4dp 收
+    val dockSidePad = if (docked || flush) {
+        dockSidePadBase
+    } else {
+        lerpDp(dockSidePadBase, 4.dp, collapse)
+    }
     val dockTopPad by animateDpAsState(
         targetValue = if (docked) 0.dp else 6.dp,
         animationSpec = tween(300, easing = FastOutSlowInEasing),
         label = "dockTopPad"
     )
+    // 上面两个角：传统模式 0（方角整条），其余是悬浮胶囊的 23dp
     val dockCorner by animateDpAsState(
         targetValue = if (docked) 0.dp else DOCK_CORNER,
         animationSpec = tween(300, easing = FastOutSlowInEasing),
         label = "dockCorner"
     )
+    // 下面两个角：聚焦态也收成直角（与"贴边"配套，见 flush）
+    val dockCornerBottom by animateDpAsState(
+        targetValue = if (docked || flush) 0.dp else DOCK_CORNER,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "dockCornerBottom"
+    )
     // 传统模式：导航条那一截由工具栏自己垫（背景同色、内容不进去），
     // 所以外层不再留 bottomPadding、也不做"抬到弹窗上面"那套（传统模式网页本来就预留了底边）
-    val dockBottomPad = if (docked) 0.dp else bottomPadding + overlayLift
-    val dockNavStrip = if (docked) navBottom else 0.dp
+    // 聚焦展开时坞也**贴到屏幕底**（与左右贴边配套 —— 用户点名：聚焦后它和底部的
+    // 系统组件之间不应该有间距）。导航条那一截改由坞内部垫出来（同传统模式），
+    // 内容与系统横条仍然互不侵犯。
+    //
+    // 两段都**走补间**、与左右/圆角同一条 300ms 时间线：之前是布尔直算，聚焦那一下
+    // 底边"啪"地贴到底（用户点名：底部延展是直接跳的，应该有动画）
+    val dockBottomPad by animateDpAsState(
+        targetValue = if (docked || flush) 0.dp else bottomPadding + overlayLift,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "dockBottomPad"
+    )
+    val dockNavStrip by animateDpAsState(
+        targetValue = if (docked || flush) navBottom else 0.dp,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "dockNavStrip"
+    )
     // 顶部那条发丝分割线的厚度（也要算进高度里，内容区高度才稳定）
     val dockDivider = if (docked) 1.dp else 0.dp
     // 传统工具栏更厚实一档；高度也走动画，切换模式时是连续长高而不是跳变
@@ -1300,7 +1805,8 @@ private fun BrowserDock(
                             Modifier.dockSurfaceMaterial(
                                 morph = collapseMorph,
                                 amount = materialAmount,
-                                corner = dockCorner,
+                                cornerTop = dockCorner,
+                                cornerBottom = dockCornerBottom,
                                 targetWidth = collapsedPillWidth(
                                     controller.pageTitle.ifBlank {
                                         com.lerxu.android.browser.TabNaming.host(controller.currentUrl)
@@ -1314,26 +1820,36 @@ private fun BrowserDock(
                     )
                     // 坞自己的窗口坐标：抓标签页缩略图时要排掉这一段（见 captureThumbnail）
                     .onGloballyPositioned { onBounds(it.boundsInWindow()) }
-                    // 现代模式：在坞上纵向拖动 = 收起 / 恢复（跟手不跟动画，
-                    // 越过阈值整段切换，剩下的位移交给形变动画收尾）
-                    .pointerInput(modern, address) {
-                        if (!modern || !address) return@pointerInput
-                        var acc = 0f
-                        val trigger = 56.dp.toPx()
+                    // 现代模式：在坞上纵向拖动 = 收起 / 恢复。**同样是跟手的** ——
+                    // 往下拖它跟着缩、往上拖跟着长，松手按"过没过一半"吸附
+                    //（与网页滚动那一路共用同一套进度与同一个判据）。
+                    // 搜索页开着时这段手势整个不挂：那时输入框必须留在展开态；
+                    // 地址栏聚焦期间同理 —— 正在输入，不该顺手把坞拖成胶囊
+                    .pointerInput(modern, address, searchOpen, addressFocused) {
+                        if (!modern || !address || searchOpen || addressFocused) return@pointerInput
+                        // 往下拖满这一段 = 从全展到全收（与网页滚动那一档是两个输入，
+                        // 常量都放在 DockFollow 里）
+                        val travel = DockFollow.DRAG_TRAVEL_DP.dp.toPx()
                         detectVerticalDragGestures(
-                            onDragStart = { acc = 0f },
-                            onDragEnd = { acc = 0f },
-                            onDragCancel = { acc = 0f }
+                            onDragEnd = { controller.settleDock() },
+                            onDragCancel = { controller.settleDock() }
                         ) { _, dragAmount ->
-                            acc += dragAmount
-                            if (acc > trigger) controller.dockCollapsed = true
-                            else if (acc < -trigger) controller.dockCollapsed = false
+                            // 指尖**还按着**：中间的停顿不算"停手"，吸附留到抬手那一下
+                            controller.followDock(dragAmount, travel, settleAfterIdle = false)
                         }
                     }
                     // 收起态下点坞任意处恢复完整形态
-                    .clickable(enabled = collapsed) { controller.dockCollapsed = false },
-                // 传统模式是方角整条（dockCorner = 0），现代模式是 23dp 圆角胶囊
-                shape = RoundedCornerShape(dockCorner),
+                    .clickable(enabled = collapse >= DockFollow.SNAP_AT) {
+                        controller.expandDock()
+                    },
+                // 传统模式是方角整条（两排都是 0）、现代模式是 23dp 圆角胶囊；
+                // 聚焦态**上圆下方**（左右已贴边，下面两个角收成直角）
+                shape = RoundedCornerShape(
+                    topStart = dockCorner,
+                    topEnd = dockCorner,
+                    bottomEnd = dockCornerBottom,
+                    bottomStart = dockCornerBottom
+                ),
                 // 填充全部由 dockSurfaceMaterial 绘制（含收起时的收缩淡出）
                 color = Color.Transparent,
                 // 极细描边由材质层自带，这里不再叠一层
@@ -1409,7 +1925,6 @@ private fun BrowserDock(
                                 DockMode.Launch -> DockLaunchContent(onLaunch)
                                 DockMode.Address -> DockAddressContent(
                                     controller = controller,
-                                    engineName = engineName,
                                     value = addressValue,
                                     onValueChange = onAddressChange,
                                     onFocusChange = { focused ->
@@ -1419,12 +1934,14 @@ private fun BrowserDock(
                                     },
                                     focusRequester = focusRequester,
                                     sniffOpen = sniffOpen,
-                                    onTabs = onTabs,
                                     onSniff = onSniff,
+                                    movieSite = movieSite,
+                                    movieMode = movieMode,
+                                    onMovieMode = onMovieMode,
                                     onEngineIcon = {
                                         // 收起态下先恢复完整控制栏，再谈引擎选择
                                         if (controller.dockCollapsed) {
-                                            controller.dockCollapsed = false
+                                            controller.expandDock()
                                         } else {
                                             enginePickerOpen = !enginePickerOpen
                                             if (enginePickerOpen) settingsOpen = false
@@ -1432,13 +1949,25 @@ private fun BrowserDock(
                                     },
                                     pickerOpen = enginePickerOpen,
                                     panelOpen = panelsOpen,
-                                    collapsed = collapsed,
+                                    searchOpen = searchOpen,
+                                    flush = flush,
+                                    collapse = collapse,
                                     onTabsLongPress = {
                                         settingsOpen = !settingsOpen
-                                        if (settingsOpen) enginePickerOpen = false
+                                        if (settingsOpen) {
+                                            enginePickerOpen = false
+                                            moreOpen = false
+                                        }
+                                    },
+                                    onMore = {
+                                        moreOpen = !moreOpen
+                                        if (moreOpen) {
+                                            enginePickerOpen = false
+                                            settingsOpen = false
+                                        }
                                     },
                                     onCopied = onAddressCopied,
-                                    onCollapsedRestore = { controller.dockCollapsed = false },
+                                    onCollapsedRestore = { controller.expandDock() },
                                     onExitBrowser = onExitBrowser,
                                     docked = docked
                                 )
@@ -1453,6 +1982,20 @@ private fun BrowserDock(
                 }
             }
         }
+    }
+
+    // 「更多功能」独立弹窗（用户点名：不再从坞里向上长出来，改成与播放器设置同款的
+    // 底部弹窗）。关闭由弹窗自己负责（滑动/点遮罩走 onDismiss，每一行点击后也先收起）
+    if (moreOpen) {
+        DockMoreSheet(
+            tabCount = controller.tabCount,
+            onDismiss = { moreOpen = false },
+            onTabs = { moreOpen = false; onTabs() },
+            onNewTab = { moreOpen = false; controller.newTab() },
+            onHome = { moreOpen = false; controller.loadHome() },
+            onDownloads = { moreOpen = false; onExitBrowser() },
+            onSettings = { moreOpen = false; onOpenSettings() }
+        )
     }
 }
 
@@ -1488,6 +2031,25 @@ private val ENGINE_PICKER_HEIGHT = 66.dp
 
 /** 长按标签按钮展开的设置面板高度（界面方案 + 液态玻璃两行）。 */
 private val DOCK_SETTINGS_HEIGHT = 84.dp
+
+/**
+ * 按住链接输入框往上拖：手指移出这么多（dp）才开始**跟手**推网格。
+ *
+ * 只是"起手死区"（防点一下时的手指抖动把网格带出来），不是触发阈值 —— 越过它之后
+ * 网格进度就完全跟着手指走（用户点名："应该做成跟手的……而不是固定的动画"）。
+ * 比点击容差略大一点：现在**不等长按**就能起手，抖动余地要留够。
+ */
+private val TAB_DRAG_SLOP = 10.dp
+
+/**
+ * 从"网格全关"拖到"全开"要走多少：**屏高的这个比例**（不是固定 dp）。
+ *
+ * 为什么按屏高而不是给个固定值：网格是**全屏**的形态切换，行程给短了就会"刚拖一点
+ * 就整块开"（用户点名："目前我刚就拖一点，就自动进入标签模式"）。按屏高走，手指走
+ * 多少、网格就跟着长多少，抬手时"过没过一半"也才有意义 —— 与坞那条（收起只是缩一小截，
+ * 所以行程 72dp）不同，它换掉的是整屏。
+ */
+private const val TAB_DRAG_TRAVEL_RATIO = 0.42f
 
 /** 聚焦时输入框向下长出的「常用前缀」条高度。 */
 private val DOCK_PREFIX_HEIGHT = 28.dp
@@ -1626,6 +2188,111 @@ private fun DockSettingsPanel(
     }
 }
 
+/**
+ * 「更多功能」弹窗（用户点名：底部功能栏右侧那枚标签按钮换成"更多"，点开就是这一屏）。
+ *
+ * **独立弹窗，样式照播放器设置弹窗来**（用户点名）：同一个 [ModalBottomSheet]，同一套
+ * 标题字号与内边距。不再从坞里向上长出来 —— 那块"长高"的地方只留给坞自己的设置面板
+ * （见 BrowserDock）。
+ *
+ * 只放动作，不放开关：标签页／新建标签／主页／下载页／设置。标签页入口从坞上挪到
+ * 这里之后，进标签页还剩两条路：这个弹窗，以及**按住链接输入框往上拖**。
+ *
+ * 五个动作排成**图标宫格**：原先的竖排列表每行只挂一枚 ">"，五个动作摊满一屏很空、
+ * 也不够一眼扫完；换成"图标居中在上、名称在下"的等距排布后，图标本身就是最快的识别锚点。
+ * 宫格用普通 [Row] 而不是 LazyVerticalGrid —— 弹窗里再嵌一层可滚动网格会和底部弹窗自己的
+ * 下拉收起抢手势，五个固定项也不值得为它引入懒加载。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DockMoreSheet(
+    tabCount: Int,
+    onTabs: () -> Unit,
+    onNewTab: () -> Unit,
+    onHome: () -> Unit,
+    onDownloads: () -> Unit,
+    onSettings: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                // 与播放器设置弹窗同一套内边距（底面留厚一点，避开手势条）
+                .padding(start = 20.dp, end = 20.dp, bottom = 24.dp)
+        ) {
+            Text(
+                stringResource(R.string.browser_dock_more),
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+            Spacer(Modifier.height(18.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                // 等距铺开：两侧留白与项间留白一致，整排看起来才是"一个宫格"而不是挤在一起
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                // 图标统一顶对齐：标签页那项名下多一行数量小字、整项更高，
+                // 若按居中对齐，它的图标会被压低、和旁边四项错开一格
+                verticalAlignment = Alignment.Top
+            ) {
+                DockMoreItem(Icons.Rounded.Tab, stringResource(R.string.browser_dock_more_tabs), tabCount.toString(), onTabs)
+                DockMoreItem(Icons.Rounded.Add, stringResource(R.string.browser_dock_more_new_tab), null, onNewTab)
+                DockMoreItem(Icons.Rounded.Home, stringResource(R.string.browser_dock_more_home), null, onHome)
+                DockMoreItem(Icons.Rounded.Download, stringResource(R.string.browser_dock_more_downloads), null, onDownloads)
+                DockMoreItem(Icons.Rounded.Settings, stringResource(R.string.browser_dock_more_settings), null, onSettings)
+            }
+        }
+    }
+}
+
+/**
+ * 宫格里的一项：图标居中在上、名称在下。
+ *
+ * [badge] 不为空时（目前只有"标签页"用）把数量**画进图标**（右上角一枚小圆标）——
+ * 用户点名："标签页图标应该重新设计一下，应该让文字融入图标，而不是单独显示在下方"。
+ * 用 Material 的 [BadgedBox] 而不是自己在名称下面再排一行字：数量是"这枚图标自己的
+ * 状态"，挂在图标上才读得出归属；摊在下方既拉高整项、又会让人以为它是第二行名称。
+ *
+ * 命中区撑到 56dp 见方 —— 宫格把横向空间摊开之后每项都比原来的一整行窄得多，沿用列表那套
+ * 高度会让相邻项挨得太近、很容易误触；56dp 是 Material 建议的最小可点尺寸，保证每项好按。
+ * 图标颜色取 [LocalContentColor] 而不是写死，深浅色主题与弹窗自身的内容色都能自动跟上。
+ */
+@Composable
+private fun DockMoreItem(
+    icon: ImageVector,
+    label: String,
+    badge: String?,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .widthIn(min = 56.dp)
+            .heightIn(min = 56.dp)
+            .pointerInput(Unit) { detectTapGestures { onClick() } },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        BadgedBox(
+            badge = {
+                if (badge != null) {
+                    Badge(containerColor = MaterialTheme.colorScheme.primary) {
+                        Text(badge)
+                    }
+                }
+            }
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = LocalContentColor.current
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(label, fontSize = 12.sp, textAlign = TextAlign.Center)
+    }
+}
+
 /** 界面方案的分段选择小胶囊。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1664,20 +2331,40 @@ private fun DockSegChip(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun DockAddressContent(
     controller: BrowserController,
-    engineName: String,
     value: String,
     onValueChange: (String) -> Unit,
     onFocusChange: (Boolean) -> Unit,
     focusRequester: FocusRequester,
     sniffOpen: Boolean,
-    onTabs: () -> Unit,
     onSniff: () -> Unit,
+    /** 这一站像不像影视站（见 `movieSiteDetected`）：是才在输入框里显示影视模式入口。 */
+    movieSite: Boolean,
+    /** 影视模式是否开着（开着时那枚入口是实心的）。 */
+    movieMode: Boolean,
+    /** 点那枚入口 = 手动进影视模式（默认自动开，手动关掉之后从这里再开回来）。 */
+    onMovieMode: () -> Unit,
     onEngineIcon: () -> Unit,
     pickerOpen: Boolean,
     /** 引擎选择框 / 设置面板是否占着坞的上半截（两者都与前缀条互斥）。 */
     panelOpen: Boolean,
-    collapsed: Boolean,
+    /** 首页搜索页是否开着：开着时输入框保持**展开态**（左右按钮让位），哪怕已失焦。 */
+    searchOpen: Boolean,
+    /**
+     * 聚焦态：坞已经**贴到屏幕左右边**（见 BrowserDock 的 flush）。此时内容不能跟着
+     * 一起贴边，得自己让出呼吸位 —— 否则文字离屏幕边只有 2dp。
+     */
+    flush: Boolean,
+    /**
+     * 收起进度 0..1：**跟手**量 —— 网页滚多少就收多少，停下后由控制器吸附到 0 / 1。
+     *
+     * 这一档**不再是布尔**：宽度、高度、圆角、两侧按钮与图标、URL 与网页名的交叉
+     * 淡入淡出**全部由它连续推出来**，所以观感是"整条控制栏在跟着手指缩"，
+     * 而不是"到某一档就整块换成另一个形态"（用户点名）。
+     */
+    collapse: Float,
     onTabsLongPress: () -> Unit,
+    /** 「更多功能」按钮：点开坞里向上长出来的功能面板（长按仍是设置面板）。 */
+    onMore: () -> Unit,
     onCopied: () -> Unit,
     onCollapsedRestore: () -> Unit,
     /** 长按返回键：直接回下载器（退出浏览器）。 */
@@ -1710,26 +2397,74 @@ private fun DockAddressContent(
         snapshotFlow { fieldState.text.toString() }
             .collect { latestOnValueChange(it) }
     }
-    // 聚焦状态本地也持有一份：左右按钮要为输入框让位（宽度动画收起到 0）
+    // 聚焦状态本地也持有一份：它现在只推**形态**（圆角长成胶囊），不再让图标让位
     var focused by remember { mutableStateOf(false) }
-    val chromeHidden = focused || pickerOpen || collapsed
-    val sideButtonWidth by animateDpAsState(
-        targetValue = if (chromeHidden) 0.dp else 38.dp,
+    // 长按之后"往上拖进标签页"的两个量（dp → px 只算一次，手势块里直接用）：
+    // 起手死区 + 从全关拖到全开的行程（行程按屏高取比例，见 TAB_DRAG_TRAVEL_RATIO）
+    val tabDragSlopPx = with(LocalDensity.current) { TAB_DRAG_SLOP.toPx() }
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp
+    val tabDragTravelPx = with(LocalDensity.current) {
+        (screenHeightDp * TAB_DRAG_TRAVEL_RATIO).dp.toPx()
+    }
+    /**
+     * "选中态"（聚焦 / 引擎选择框展开 / 搜索页）0..1：**只推形态** ——
+     * 输入框圆角长成与控制栏同档的胶囊。
+     *
+     * 它**不驱动输入框内部图标的让位**：用户点名"链接输入框展开后，里边的
+     * 引擎选择图标和刷新按钮不见了，它们应该仍然存在" —— 那几枚只跟收起进度。
+     * 而坞**两端**的外部按钮（回退 / 标签）该让位，由下面的 edgeLift 推。
+     */
+    val selectedLift by animateFloatAsState(
+        targetValue = if (focused || pickerOpen || searchOpen) 1f else 0f,
+        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        label = "addressSelectedLift"
+    )
+    /**
+     * 编辑态（聚焦）0..1：展示层（网页名）与编辑层（原始内容）的交叉淡入。
+     *
+     * 展示态一律显示**网页名** —— 与收起态同一个读法（用户点名：输入框改为只显示
+     * 网页名 + 右侧搜索引擎）；点开编辑才换成"原始内容"：搜索来的显示搜索词、
+     * 导航来的显示页面地址（见 controller.addressEditText）。
+     */
+    val editLift by animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = tween(180, easing = FastOutSlowInEasing),
+        label = "addressEditLift"
+    )
+    /**
+     * 输入框"展开"（聚焦 / 引擎选择框 / 搜索页）推的**两端外部按钮**让位 0..1。
+     *
+     * 与 selectedLift 的区别：selectedLift 只推输入框自己的圆角；这一档推的是
+     * 坞两端的外部按钮（左侧回退、右侧标签）—— 输入框展开后它们该整个让出整行
+     *（用户点名：展开后不该还显示着左侧的回退按钮和右侧的标签按钮）。
+     *
+     * 输入框**内部**的引擎徽标 / 刷新 / 嗅探不跟它走：那几枚此前被用户点名
+     * "必须留着"，只跟跟手的收起进度（见 hide）。
+     */
+    val edgeLift by animateFloatAsState(
+        targetValue = if (focused || pickerOpen || searchOpen) 1f else 0f,
         animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "dockSideBtnWidth"
+        label = "addressEdgeLift"
     )
-    val sideButtonAlpha by animateFloatAsState(
-        targetValue = if (chromeHidden) 0f else 1f,
-        animationSpec = tween(200, easing = FastOutSlowInEasing),
-        label = "dockSideBtnAlpha"
-    )
-    // 输入框高度：正常 38dp，收起态缩成细胶囊。**不再因为引擎选择框而长高** ——
-    // 选择框长在坞的上半截，输入框自己保持原高、只把宽度放开
-    val surfaceHeight by animateDpAsState(
-        targetValue = if (collapsed) COLLAPSED_PILL_HEIGHT else 38.dp,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "addressHeight"
-    )
+    /**
+     * 输入框**内部**元素的让位程度 0..1：只由跟手的收起进度驱动。
+     *
+     * 引擎徽标、刷新键、嗅探键的宽度与透明度由它推，所以收起过程里它们是
+     * **跟着一起缩**的，而不是到某一档才整块消失。
+     */
+    val hide = collapse.coerceIn(0f, 1f)
+    /**
+     * 坞**两端外部按钮**（回退 / 标签）的让位程度：跟手收起与"输入框展开"
+     * 取较大者 —— 两条来源各自独立，任一条成立都该让位。
+     */
+    val edgeHide = maxOf(hide, edgeLift)
+    // 收起判定（点它是恢复展开、胶囊里只报网页名）：与吸附用**同一个阈值**
+    val collapsedNow = collapse >= DockFollow.SNAP_AT
+    val sideButtonWidth = (38f * (1f - edgeHide)).dp
+    // 淡得比缩得快一档：缩小到一半时图标已经看不见了，不会出现"压扁的图标"
+    val sideButtonAlpha = (1f - edgeHide * 2f).coerceIn(0f, 1f)
+    // 输入框高度：正常 38dp，收起态缩成细胶囊 —— **跟手**（38 ⇄ 30 连续）
+    val surfaceHeight = lerpDp(38.dp, COLLAPSED_PILL_HEIGHT, collapse)
     // 聚焦时输入框下方长出的前缀条（与坞长高共用一条时间线）。
     // **面板开着就不长**：坞没有为它留高度（见 BrowserDock 的 prefixExtra），
     // 硬要长出来会把地址行挤扁
@@ -1739,38 +2474,54 @@ private fun DockAddressContent(
         label = "addressPrefixHeight"
     )
     // 选中（聚焦或展开选择框）后圆角与控制栏对齐：控制栏是 46dp 高、
-    // 23dp 圆角的胶囊，输入框要长成同一个胶囊形状，不能还是原来的小圆角
-    val surfaceCorner by animateDpAsState(
-        targetValue = if (chromeHidden) DOCK_CORNER else 16.dp,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "addressCorner"
-    )
+    // 23dp 圆角的胶囊，输入框要长成同一个胶囊形状，不能还是原来的小圆角。
+    // **取"选中"与"收起"的较大值**：这两条各自独立（选中不再推让位，收起与选中
+    // 无关），只跟 hide 的话聚焦态会掉回 16dp 的小圆角，读起来不像"从底部升起来的
+    // 一层"（用户之前按这个读法定过）
+    val surfaceCorner = lerpDp(16.dp, DOCK_CORNER, maxOf(hide, selectedLift))
     // 左右内边距：**聚焦 / 选择框展开 / 收起**这三档统一 —— 它们都是"左右按钮让位、
     // 输入框吃满宽度"的状态，边距必须一致，否则聚焦时左右各多出 2dp（用户：聚焦后
-    // 左右流出的间距应该和引擎选择框展开时一致）。传统模式是贴边工具栏，给 6dp 呼吸位。
-    val rowPad = when {
-        docked -> 6.dp
-        chromeHidden -> 2.dp
-        else -> 4.dp
-    }
+    // 左右流出的间距应该和引擎选择框展开时一致）。传统模式与聚焦贴边那档给 6dp 呼吸位。
+    //
+    // **必须走动画**：这个值就是"输入框可用宽度"的输入（见下面 BoxWithConstraints 里的
+    // available），跳变会让输入框长度在一帧里突然变长/变短 —— 用户点名的"点一下输入框
+    // 长度会突然跳一下"。补间之后，它是跟着坞一起**向左右展开**的
+    val rowPad by animateDpAsState(
+        targetValue = when {
+            // 聚焦展开：坞已经贴到屏幕边，输入框跟着吃满宽度，只留 2dp 呼吸位
+            //（用户："展开后，左右间距再减少一点点，就一点点" —— 上一轮是 3dp，
+            // 这一轮再收 1dp；与下面 pillFlushPad 的一半相加 = 离屏幕边 4dp）
+            flush -> 2.dp
+            // 传统模式那一整条工具栏：内边距与聚焦档本来就是同一个 6dp
+            docked -> 6.dp
+            // 搜索界面（首页面板展开、还没聚焦）：**坞还是首页那一枚**（外边距
+            // 16dp 由 dockSidePad 管），这里只管坞**里面**这枚输入框 —— 它的
+            // 左右按聚焦档收边，所以用户在两种状态下读到的输入框留白一致，
+            // 点进去不会横跳（用户点名）
+            searchOpen -> 2.dp
+            hide >= 0.5f -> 2.dp
+            else -> 4.dp
+        },
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "addressRowPad"
+    )
     val rowPadStart = rowPad
     val rowPadEnd = rowPad
     // 嗅探入口的占位宽（宽度与透明度都走动画）。
     // 它住在**输入框内部**、刷新按钮右侧（用户点名：不再额外占一个位置）。
     // 宽度恒为 30dp —— 就是一枚**标准圆形**图标钮，与刷新按钮同档；
-    // 有没有资源靠图标的着色区分（有内容染主色），不再用数字把圆撑成胶囊
+    // 有没有资源靠图标的着色区分（有内容染主色），不再用数字把圆撑成胶囊。
+    // **收起过半就不再挂**：这时它已经缩得只剩零头，留着只会变成一枚
+    // 画在圆外面的"隐形按钮"（点击判定跟着 28dp 的圆心走，比看到的宽）
     val sniffCount = controller.sniffed.size
-    val sniffPresent = (sniffCount > 0 || sniffOpen) && !chromeHidden
-    val sniffWidth by animateDpAsState(
-        targetValue = if (sniffPresent) 30.dp else 0.dp,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-        label = "sniffBtnWidth"
-    )
-    val sniffAlpha by animateFloatAsState(
-        targetValue = if (sniffPresent) 1f else 0f,
+    val sniffShown = (sniffCount > 0 || sniffOpen) && hide < 0.5f
+    val sniffSlot by animateFloatAsState(
+        targetValue = if (sniffShown) 1f else 0f,
         animationSpec = tween(260, easing = FastOutSlowInEasing),
-        label = "sniffBtnAlpha"
+        label = "sniffBtnSlot"
     )
+    val sniffWidth = (30f * sniffSlot * (1f - hide)).dp
+    val sniffAlpha = sniffSlot * (1f - hide)
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1784,15 +2535,64 @@ private fun DockAddressContent(
             val available = maxWidth
             // 收起态宽度按网页名估算、展开态占满剩余空间：**同一个宽度值在动画**，
             // 因此观感是一枚胶囊在连续缩放，而不是两个组件切换
-            val nameText = controller.pageTitle.ifBlank {
-                com.lerxu.android.browser.TabNaming.host(controller.currentUrl)
+            // 展示层的内容：网页名（没标题退域名）。**自家首页给空状态提示** ——
+            // 首页本来就没有名字，但输入框也不该是全空（用户点名：应该显示提示）
+            val homeHint = stringResource(R.string.browser_address_hint)
+            // 搜索结果页的"名字"就是**搜索词**：结果页的页面标题自带引擎名
+            //（"天气 - Bing"），直接摆出来就是"网页名 + 引擎名"（用户点名不要）
+            val searchWord = controller.currentSearchQuery
+            // 用户在框里敲过、还没提交的内容：**收起 / 失焦之后也要看得见**
+            //（用户点名：搜索页输入的内容在输入框收起后消失了）。判据必须带上
+            // "与原始内容不同" —— 只看非空的话，普通页面浏览时框里本来就摆着
+            // 地址，会把网页名顶掉
+            val typed = fieldState.text.toString()
+            val hasUserInput = typed.isNotEmpty() && typed != controller.addressEditText
+            val nameText = when {
+                hasUserInput -> typed
+                controller.isHomePage -> homeHint
+                else -> searchWord ?: controller.pageTitle.ifBlank {
+                    com.lerxu.android.browser.TabNaming.host(controller.currentUrl)
+                }
             }
-            // 收起进度：0 = 展开（吃满整条控制栏），1 = 收起成小胶囊
-            val collapseProgress by animateFloatAsState(
-                targetValue = if (collapsed) 1f else 0f,
-                animationSpec = tween(300, easing = FastOutSlowInEasing),
-                label = "addressCollapseProgress"
-            )
+            // 提示是次级信息，用次级色（与编辑层里那句提示同色）；网页名/搜索词/
+            // 用户输入的内容用正文色
+            val nameColor = if (controller.isHomePage && !hasUserInput) {
+                colorScheme.onSurfaceVariant
+            } else {
+                colorScheme.onSurface
+            }
+            // 展开态的对齐：搜索后（结果页）居中，搜索页 / 普通页居左；
+            // 用户输入的内容按编辑习惯居左。
+            //
+            // **收起态的"居中"不在这里切**：对齐是离散值，切过去那一帧必然横跳
+            //（用户点名"过渡时会突然跳到居中"）—— 收起态由下面**独立的一层**做
+            // 居中，两层按收起进度交叉淡入，位置变化被淡入淡出掩护掉
+            val nameAlignOpen = if (!hasUserInput && !controller.isHomePage && searchWord != null) {
+                TextAlign.Center
+            } else {
+                TextAlign.Start
+            }
+            // 居中档的水平补偿：文字区**左侧 = 输入行左内边距 + 引擎徽标**
+            //（8 + 34·(1−hide)），右侧 = 右内边距 + 刷新 + 嗅探
+            //（2 + 30·(1−hide) + 嗅探宽）。两侧不等宽，直接在文字区里居中 =
+            // 相对胶囊中心偏左或偏右，且随嗅探显隐漂移 —— 用户点名"输入的内容
+            // 还是会左右偏移"。偏移量就是 (左 − 右)/2，反号抵消。
+            // **两端的 8 / 2 必须算进来**：漏掉它们补偿就会差 3dp 左右，看着还在偏
+            val nameShift = if (nameAlignOpen == TextAlign.Center) {
+                (-((8f + 34f * (1f - hide)) -
+                    (2f + 30f * (1f - hide) + sniffWidth.value)) / 2f).dp
+            } else {
+                0.dp
+            }
+            // 收起层的水平补偿：收起态引擎 / 刷新 / 嗅探都让位，只剩输入行两端
+            // 内边距的差（左 8 / 右 2）
+            val nameShiftCollapsed = (-((8f - 2f) / 2f)).dp
+            // 手势闭包要读**最新**的补偿值：pointerInput 的 key 是 collapsedNow，
+            // 补偿值变化时块不会重启，直接捕获会一直用旧值（点击落点反查就会错）
+            val latestNameShift by rememberUpdatedState(nameShift)
+            // 收起进度直接用传入的跟手进度（0 = 吃满整条控制栏，1 = 收起成小胶囊）：
+            // **不再套一层补间** —— 补间会让宽度去追一个还在动的目标（跟手就慢半拍），
+            // 而吸附那一段补间已经在控制器里做完了
             // 输入框宽度**不再自己补间**，而是直接由当前实测宽推出来。
             //
             // 这里是"控制栏都出来了、链接输入框才开始动"（用户点名的不同步）的根因：
@@ -1801,9 +2601,9 @@ private fun DockAddressContent(
             // 容器 340ms 长完，输入框还要再追约 300ms 才到位，读起来就是"控制栏出现
             // 之后输入框才动"。直接推就没有第二次补间：输入框贴着容器走，同一帧起跑。
             //
-            // 两侧按钮让出的宽度取它们**自己的动画值**（同一个值驱动按钮与
-            // 输入框，两边严丝合缝、不会互相追）。只有"收起成胶囊"这一档是补间出来的
-            // （collapseProgress）：收起时容器宽度不变，展开时它恒为 0，两者不打架。
+            // 两侧按钮让出的宽度取**同一个量**（同一条 `hide` 驱动按钮与输入框，
+            // 两边严丝合缝、不会互相追）。收起成胶囊那一档也是同一个量推的：
+            // 收起时容器宽度不变，展开时它恒为 0，两者不打架。
             //
             // 嗅探按钮已经挪进胶囊内部（刷新按钮右侧），所以**不再从整行里让位** ——
             // 它只挤占输入框内部的文字宽度（那里本来就是 weight(1f)）。
@@ -1817,17 +2617,81 @@ private fun DockAddressContent(
             // 所以裁掉的观感偏在右边。
             //
             // 让输入框**只吃当下真正给得出的宽度**：容器长多宽、它就多宽，永远不溢出。
-            val maxPill = (available - sideTake - 10.dp).coerceAtLeast(0.dp)
+            // 留白取 `pillFlushPad`：左右各一半 + 容器自身的 rowPad —— 两档（聚焦 /
+            // 引擎选择框展开）共用这一个值，所以两边的间距天然一致
+            //（这两档的 rowPad 也相同，见上面的 rowPad）
+            //
+            // 聚焦展开时这一档**再收一点**（6dp → 4dp，用户："展开后左右间距再减少
+            // 一点点，就一点点"）：加上 rowPad 的 2dp，离屏幕边总共 4dp。
+            // 搜索界面取同一档（用户点名：坞里那枚输入框的左右留白与聚焦一致；
+            // 坞本身的外边距仍走首页那一档，见 dockSidePad）
+            // 必须走补间 —— 它直接进可用宽度算式，跳变会让输入框在一帧里突然变长/变短
+            val pillFlushPad by animateDpAsState(
+                targetValue = if (flush || searchOpen) 4.dp else 6.dp,
+                animationSpec = tween(300, easing = FastOutSlowInEasing),
+                label = "addressPillFlushPad"
+            )
+            val maxPill = (available - sideTake - pillFlushPad).coerceAtLeast(0.dp)
             // 收起态按网页名估宽，同样不能超过当下能给的最大宽度（否则一样被裁）
+            // 收起态胶囊宽度**按实际内容自适应**（用户点名：收起时该跟着内容长短走，
+            // 不是固定长度）—— 长网页名 / 你输入的内容会让胶囊变长，短就短；
+            // 上限是坞内当下真正给得出的宽度
             val collapsedWidth = collapsedPillWidth(nameText).coerceAtMost(maxPill)
             val pillWidth = (maxPill.value +
-                (collapsedWidth.value - maxPill.value) * collapseProgress).dp
-            // 收起时内容整体换成网页名：与 URL 交叉淡入
-            val nameAlpha by animateFloatAsState(
-                targetValue = if (collapsed) 1f else 0f,
-                animationSpec = tween(180, easing = FastOutSlowInEasing),
-                label = "collapsedNameAlpha"
-            )
+                (collapsedWidth.value - maxPill.value) * collapse).dp
+            // 内容交叉淡入：展示态 = 网页名（收起态与展开态同一个读法），
+            // 编辑态（聚焦）= 原始内容（搜索词 / 地址）—— 两层由 editLift 交接。
+            // **不再由收起进度推**：收起态显示的就是网页名，两者没有交接可言；
+            // 会换层的只有"有没有在编辑"
+            val editAlpha = editLift
+            val nameAlpha = 1f - editLift
+            // 名字的**连续位移**（用户点名"就要无缝过渡"）：对齐固定居左，需要居中的
+            // 两档（展开时的结果页、收起后的胶囊）都用水平偏移推出来 ——
+            // 偏移量按收起进度线性插值，所以文字是**滑**过去的：既不切换对齐（那会跳），
+            // 也不淡出重生（那有空档）。
+            //
+            // "居中要滑多远" = (文字区宽 − 实测文字宽)/2。文字区是**胶囊内部**留给
+            // 文字的那一段：胶囊内宽 − 左右内边距(8/2) − 引擎徽标 − 刷新 − 嗅探。
+            // 这里**不能用整行宽**（above 的 available，之前就是用错了它）：它比文字区
+            // 宽出一大截 —— 展开档会偏出去小半屏，收起档那一截甚至宽过整枚胶囊，
+            // 位移直接把文字推出可视范围（用户点名"展开也不居中，收起后直接滑出"）。
+            // 两个档位的文字区宽**各算各的**：展开档三颗按钮都在（hide=0），
+            // 收起档它们收到 0、胶囊也收成"刚好包住文字"的窄条
+            val nameAreaOpen = (maxPill - 10.dp - 34.dp - 30.dp - (30f * sniffSlot).dp)
+                .coerceAtLeast(0.dp)
+            val nameAreaCollapsed = (collapsedWidth - 10.dp).coerceAtLeast(0.dp)
+            // 文字宽**在组合期量**（TextMeasurer）。不能用 onTextLayout 量：那是
+            // 布局阶段的回调，写 state 要等下一帧才生效 —— 中间那一帧文字宽按 0 算，
+            // 位移就成了"半个文字区"，文字先不居中、再被甩出去（用户点名）。
+            // 约束给展开档的文字区宽（两档里更宽的那个）：超长文字量出来就是它，
+            // 位移自然为 0（本就占满）；收起档的窄胶囊是"包着这段文字"算出来的，
+            // 不会把文字再截短
+            val nameMeasurer = rememberTextMeasurer()
+            val nameDensity = LocalDensity.current
+            // 文本样式在 @Composable 上下文里先取出来：measure 的 lambda 不是组合上下文，
+            // 里面不能再碰 MaterialTheme（那是 @Composable 属性）
+            val nameStyle = MaterialTheme.typography.bodySmall
+            val nameAreaPx = with(nameDensity) { nameAreaOpen.roundToPx() }
+            // 与渲染用的 Text 同一套排版参数（maxLines=1 + 省略号），量到多宽就渲染多宽。
+            // 密度与样式也进 key：字体档位一变（系统字号 / 主题），量出来的宽就得重算
+            val nameWidthDp = remember(nameText, nameAreaPx, nameStyle, nameDensity) {
+                with(nameDensity) {
+                    nameMeasurer.measure(
+                        text = AnnotatedString(nameText),
+                        style = nameStyle,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        constraints = Constraints(maxWidth = nameAreaPx)
+                    ).size.width.toDp()
+                }
+            }
+            val travelOpen = ((nameAreaOpen - nameWidthDp) / 2f).coerceAtLeast(0.dp)
+            val travelCollapsed = ((nameAreaCollapsed - nameWidthDp) / 2f).coerceAtLeast(0.dp)
+            // 展开档居左时不推位移（nameShift 只在结果页那档非零，它补偿的是
+            // 文字区两侧不对称的内边距 —— 把"文字区居中"改写成"胶囊居中"）
+            val openOffset = if (nameAlignOpen == TextAlign.Center) travelOpen + nameShift else 0.dp
+            val collapsedOffset = travelCollapsed + nameShiftCollapsed
+            val nameSlide = lerpDp(openOffset, collapsedOffset, collapse)
         Row(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.Center,
@@ -1837,7 +2701,8 @@ private fun DockAddressContent(
         // 它不再兼职"退出浏览器"（同一个位置换图标换动作太容易误解）——
         // 但**长按**它可以直接回下载器的（用户点名要的手势），退出也还可以走系统返回键
         // 或标签页网格左上角那个写明「下载页」的按钮。
-        // 聚焦时宽度动画到 0，把位置整个让给输入框。
+        // 输入框展开（聚焦 / 选择框 / 搜索页）或跟手收起时宽度动画到 0，
+        // 把位置整个让给输入框（两条来源见 edgeHide）。
         if (sideButtonWidth > 0.dp) {
             val backEnabled = canGoBack || !controller.isHomePage
             Box(
@@ -1898,19 +2763,16 @@ private fun DockAddressContent(
                         .padding(start = 8.dp, end = 2.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                // 当前搜索引擎的徽标：点开引擎选择框（**控制栏**向上长高一截）。
+                // 当前搜索引擎的徽标：**在输入框最左侧**（用户确认过位置 —— 放到右侧
+                // 试过一版，读起来不对）。点开引擎选择框（**控制栏**向上长高一截）。
                 // 选择框开着期间徽标底**常亮**，给出「现在是选择态」的锚点；
-                // 收起态整个图标让位（宽度动画到 0），胶囊里只留网页名。
+                // 收起时整个图标跟着进度让位（宽度连续收到 0），胶囊里只留网页名
                 val iconHalo by animateColorAsState(
                     targetValue = if (pickerOpen) colorScheme.primaryContainer else Color.Transparent,
                     animationSpec = tween(200, easing = FastOutSlowInEasing),
                     label = "engineIconHalo"
                 )
-                val engineIconWidth by animateDpAsState(
-                    targetValue = if (collapsed) 0.dp else 34.dp,
-                    animationSpec = tween(260, easing = FastOutSlowInEasing),
-                    label = "engineIconWidth"
-                )
+                val engineIconWidth = (34f * (1f - hide)).dp
                 if (engineIconWidth > 0.dp) {
                     Box(
                         modifier = Modifier
@@ -1926,7 +2788,9 @@ private fun DockAddressContent(
                                     .size(28.dp)
                                     .clip(CircleShape)
                                     .background(iconHalo, CircleShape)
-                                    .clickable(onClick = onEngineIcon),
+                                    // 缩到只剩零头时别再吃点击（圆本身还是 28dp，
+                                    // 点击判定比看到的宽得多）
+                                    .clickable(enabled = hide < 0.4f, onClick = onEngineIcon),
                                 contentAlignment = Alignment.Center
                             ) {
                                 EngineIcon(key = controller.engine.key, size = 20.dp)
@@ -1942,11 +2806,12 @@ private fun DockAddressContent(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        // key 用 `collapsed`（不是地址文本）：key 一变这个块会被**重启**，
-                        // 正在处理的那一次点击就被取消了 —— 页面加载中地址文本一直在变，
-                        // 用文本当 key 会让"加载时点输入框"时灵时不灵（用户点名的"有时
-                        // 点不动"）。collapsed 才是这个手势真正依赖的状态
-                        .pointerInput(collapsed) {
+                        // key 用**跟手进度的离散档**（不是地址文本）：key 一变这个块会被
+                        // **重启**，正在处理的那一次点击就被取消了 —— 页面加载中地址文本
+                        // 一直在变，用文本当 key 会让"加载时点输入框"时灵时不灵（用户点名的
+                        // "有时点不动"）；而用连续的进度当 key 则每帧都重启，手势根本活不过
+                        // 一帧。收起与否才是这个手势真正依赖的状态
+                        .pointerInput(collapsedNow) {
                             val longMs = android.view.ViewConfiguration.getLongPressTimeout().toLong()
                             val doubleMs = android.view.ViewConfiguration.getDoubleTapTimeout().toLong()
                             // **整个手势循环必须兜住异常**：pointerInput 的块一旦抛出去，
@@ -1957,38 +2822,90 @@ private fun DockAddressContent(
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false)
                                 down.consume()
-                                val up = withTimeoutOrNull(longMs) {
-                                    var released: androidx.compose.ui.input.pointer.PointerInputChange? = null
-                                    while (released == null) {
-                                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                                        event.changes.forEach { it.consume() }
-                                        val change = event.changes.firstOrNull() ?: continue
-                                        if (!change.pressed) released = change
+                                // 这个手势有**三种结局**，谁先到算谁：
+                                // 1. 手指往上移过起手死区 → **立刻**跟手推网格。不等长按：
+                                //    要按住 500ms 才动，读起来就是"固定阈值、不跟手"
+                                //   （用户点名："它并不跟手，还是固定阀值"）；
+                                // 2. 一直不动、等到长按超时 → 长按态：原地抬手 = 复制完整链接；
+                                // 3. 没到长按就抬手 → 点一下（收起态恢复 / 展开态聚焦）。
+                                //
+                                // 跟手的做法与坞那一路同一套（见 DockFollow）：这里只把手指的
+                                // **纵向增量**逐帧交给控制器，进度由控制器累加并夹在 0..1；
+                                // 抬手那一下才由它按"过没过一半"吸附。
+                                var dragging = false
+                                var longPressed = false
+                                var lastY = down.position.y
+                                val longPressAt = down.uptimeMillis + longMs
+                                var released = false
+                                // 抬手那一点：点一下的"点哪儿光标落哪儿"要用它
+                                var releasePos = down.position
+                                while (!released) {
+                                    // 还没进跟手、也还没到长按：这一段**带超时地等**，
+                                // 超时就转成长按态；已经进跟手/长按之后就一直等事件
+                                    val remaining =
+                                        longPressAt - android.os.SystemClock.uptimeMillis()
+                                    val event = if (!dragging && !longPressed && remaining > 0L) {
+                                        withTimeoutOrNull(remaining) {
+                                            awaitPointerEvent(PointerEventPass.Initial)
+                                        } ?: run {
+                                            longPressed = true
+                                            null
+                                        }
+                                    } else {
+                                        awaitPointerEvent(PointerEventPass.Initial)
                                     }
-                                    released
+                                    if (event == null) continue
+                                    event.changes.forEach { it.consume() }
+                                    val change = event.changes.firstOrNull() ?: continue
+                                    if (!change.pressed) {
+                                        releasePos = change.position
+                                        released = true
+                                        break
+                                    }
+                                    val dy = change.position.y - lastY
+                                    lastY = change.position.y
+                                    if (!dragging &&
+                                        change.position.y - down.position.y < -tabDragSlopPx
+                                    ) {
+                                        dragging = true
+                                    }
+                                    if (dragging) controller.followGrid(dy, tabDragTravelPx)
                                 }
-                                if (up == null) {
-                                    // 没到超时没抬手 = 长按：复制
-                                    if (fieldState.text.isNotBlank()) {
+                                if (dragging) {
+                                    // 抬手吸附：过半就开，没过半收回（从当前进度接着补间）
+                                    controller.settleGrid()
+                                } else if (longPressed) {
+                                    // 原地长按抬手 = 复制**完整链接**
+                                    // 展示态框里显示的是网页名、编辑层摆的是搜索词或
+                                    // 去掉协议的简写，照抄过去都不是一条能打开的地址。
+                                    // "用户改过没有"拿**原始内容**（addressEditText）当基准：
+                                    // 没动过就复制当前页的真实 URL；真改过（比如改成新
+                                    // 网址要访问）才复制他改出来的内容
+                                    val shown = fieldState.text.toString()
+                                    val real = controller.currentUrl
+                                    val copy = if (shown.isNotBlank() &&
+                                        shown == controller.addressEditText
+                                    ) real else shown
+                                    if (copy.isNotBlank()) {
                                         clipboard.setText(
-                                            androidx.compose.ui.text.AnnotatedString(fieldState.text.toString())
+                                            androidx.compose.ui.text.AnnotatedString(copy)
                                         )
                                         onCopied()
-                                    }
-                                    while (true) {
-                                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                                        event.changes.forEach { it.consume() }
-                                        if (event.changes.none { it.pressed }) break
                                     }
                                 } else {
                                     // 收起态：单击 = 恢复完整控制栏（不聚焦、不弹键盘）；
                                     // 展开态：抬手即聚焦 + 弹键盘（不等双击判定）
-                                    if (collapsed) {
+                                    if (collapsedNow) {
                                         onCollapsedRestore()
                                     } else {
-                                        // 点哪儿光标就落到哪儿：用文本布局把触点反查成偏移
+                                        // 点哪儿光标就落到哪儿：用文本布局把触点反查成偏移。
+                                        // 编辑层带着水平补偿（offset），触点要先减去它才落
+                                        // 到正确的字符上（不减的话居中的那档会点错位置）
                                         textLayout?.let { layout ->
-                                            val offset = layout.getOffsetForPosition(up.position)
+                                            val shiftPx = latestNameShift.toPx()
+                                            val offset = layout.getOffsetForPosition(
+                                                releasePos - Offset(shiftPx, 0f)
+                                            )
                                             fieldState.edit { selection = TextRange(offset) }
                                         }
                                         // requestFocus 在"还没挂到可聚焦节点上"时会抛
@@ -2016,32 +2933,34 @@ private fun DockAddressContent(
                                 }
                             }
                             } catch (e: kotlinx.coroutines.CancellationException) {
-                                // 块被重组/换 key 取消：原样抛出，别当成错误吞掉
+                                // 块被重组/换 key 取消：原样抛出，别当成错误吞掉。
+                                // 但**先把手上的跟手收尾**：不然网格会卡在"跟着手指的那一档"
+                                // 再也不动（跟手进度是我们自己拿着的，取消不会替我们吸附）
+                                controller.settleGrid()
                                 throw e
                             } catch (t: Throwable) {
                                 // 单次手势出错：吞掉这一次，下一轮 awaitEachGesture 照常接管
-                                // —— 不这么做的话输入框会永久失去点击能力
+                                // —— 不这么做的话输入框会永久失去点击能力。同样要收尾跟手
+                                controller.settleGrid()
                             }
                         }
                 ) {
-                    if (collapsed) {
-                        // 收起态不显示完整链接，只报**网页名**（点它是恢复展开，
-                        // 不需要编辑态）；没有标题时退到域名
-                        Text(
-                            text = controller.pageTitle.ifBlank {
-                                com.lerxu.android.browser.TabNaming.host(controller.currentUrl)
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    } else {
+                    // 编辑态的主角：链接输入框（点开编辑才出现 —— 展示态看到的是
+                    // 网页名）。淡入与网页名的淡出是同一根进度推的，不会出现
+                    // "字先换、层再动"的两段式。
+                    //
+                    // 对齐与水平补偿和**展示层用同一套**：结果页那档编辑时也居中、
+                    // 走同一个 nameShift —— 两层不一致的话，点开/收起会让文字从
+                    // 中间横跳到左边（用户点名"输入的内容会左右偏移"）
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .offset(x = nameShift)
+                            .graphicsLayer { alpha = editAlpha }
+                    ) {
                         if (fieldState.text.isEmpty()) {
                             Text(
-                                stringResource(R.string.browser_address_hint, engineName),
+                                stringResource(R.string.browser_address_hint),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -2054,7 +2973,10 @@ private fun DockAddressContent(
                         lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
                         textStyle = TextStyle(
                             color = colorScheme.onSurface,
-                            fontSize = MaterialTheme.typography.bodySmall.fontSize
+                            fontSize = MaterialTheme.typography.bodySmall.fontSize,
+                            // 与展开态的名字层同一套对齐（结果页居中、其余居左）——
+                            // 见编辑层 Box 上的说明
+                            textAlign = nameAlignOpen
                         ),
                         cursorBrush = SolidColor(colorScheme.primary),
                         keyboardOptions = KeyboardOptions(
@@ -2063,41 +2985,56 @@ private fun DockAddressContent(
                         ),
                         onKeyboardAction = androidx.compose.foundation.text.input.KeyboardActionHandler {
                             // 输入法回发的任何提交动作都走同一条路：加载 + 收键盘 + 失焦
-                            controller.load(fieldState.text.toString(), controller.engine)
+                            //
+                            // 框里的显示值是**去掉协议的简写**（见上面的 TabNaming.subtitle）。
+                            // 用户没动过这串字、直接敲回车时不能拿简写去解析 —— 裸域名会被
+                            // 补成 `https://`（原本 http 的站被升级）、`www.` 与末尾斜杠也
+                            // 回不来。显示态与当前页一致就走真实地址，其余照常解析
+                            val typed = fieldState.text.toString()
+                            val real = controller.currentUrl
+                            if (typed.isNotBlank() &&
+                                typed == com.lerxu.android.browser.TabNaming.subtitle(real)
+                            ) {
+                                controller.loadUrl(real)
+                            } else {
+                                controller.load(typed, controller.engine)
+                            }
                             keyboard?.hide()
                             focusManager.clearFocus()
                         },
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(focusRequester)
-                            .graphicsLayer { alpha = 1f - nameAlpha }
                             .onFocusChanged {
                                 focused = it.isFocused
                                 onFocusChange(it.isFocused)
                             }
                     )
-                    // 收起态：胶囊中央显示网页名，URL 同步淡出（同一枚胶囊内切换内容）
-                    if (nameAlpha > 0.01f) {
+                    }
+                    // 展示态的主角：网页名（收起态与展开态都显示它 —— 用户点名
+                    // "输入框改为只显示网页名称"）。**与上面那层同处一枚胶囊、
+                    // 同时在场**，各自带透明度交叉淡入，而不是两个组件交替
+                    //（用户点名过"不要两个组件来回换"）；没有标题时退到域名
+                    // 名字层：**单层 + 连续位移**（见上面 nameSlide）。基准对齐恒为居左，
+                    // 居中的那两档都由位移推出来，所以展开 ⇄ 收起是滑动，无跳变也无空档。
+                    // 位移量里的文字宽在组合期量（TextMeasurer），不靠布局回调
+                    if (nameAlpha > 0.01f && nameText.isNotEmpty()) {
                         Text(
                             text = nameText,
                             style = MaterialTheme.typography.bodySmall,
-                            color = colorScheme.onSurface,
+                            color = nameColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
+                            textAlign = TextAlign.Start,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .offset(x = nameSlide)
                                 .graphicsLayer { alpha = nameAlpha }
                         )
                     }
-                    }
                 }
-                // 刷新 / 停止：收在输入框右侧；收起态下同样让位（宽度动画到 0）
-                val refreshWidth by animateDpAsState(
-                    targetValue = if (collapsed) 0.dp else 30.dp,
-                    animationSpec = tween(260, easing = FastOutSlowInEasing),
-                    label = "refreshBtnWidth"
-                )
+                // 刷新 / 停止：收在输入框右侧；收起时跟着进度让位（宽度连续收到 0）
+                val refreshWidth = (30f * (1f - hide)).dp
                 if (refreshWidth > 0.dp) {
                     Box(
                         modifier = Modifier
@@ -2128,17 +3065,19 @@ private fun DockAddressContent(
                         }
                     }
                 }
-                    // ── 资源嗅探入口：住在输入框**内部**、刷新按钮右侧 ──
+                    // ── 影视模式入口：住在输入框**内部**、刷新按钮右侧 ──
                     //
-                    // 用户点名：不再额外占一个位置，融进输入框右端的按钮区，
-                    // 而且就该是**一枚标准圆形**（不再用数字把圆撑成胶囊）。
-                    // 于是它和刷新按钮排成一组：同 28dp 高、同 30dp 槽位、同圆形。
-                    // 有资源时把图标染成主色/反白，靠颜色说明状态；具体数量在弹窗里看。
-                    if (sniffWidth > 0.dp) {
-                        val sniffFilled = sniffOpen
+                    // 用户口径：
+                    // - 原来这一格是「本页资源」按钮，移除它、把影视模式入口放进来；
+                    // - **不带背景**：只画图标 / 斜杠，底色交给坞本身；
+                    // - 不在影视模式时是**胶片图标**（点了进），在影视模式时是**一条斜杠**（点了退）。
+                    if (movieSite && sniffWidth > 0.dp) {
                         Box(
                             modifier = Modifier
                                 .size(sniffWidth)
+                                // 跟着收回来的槽位会把 28dp 的圆切掉一截：裁掉而不是
+                                // 让圆溢出到槽位外面（与引擎徽标同一处理）
+                                .clipToBounds()
                                 .graphicsLayer { alpha = sniffAlpha },
                             contentAlignment = Alignment.Center
                         ) {
@@ -2146,46 +3085,68 @@ private fun DockAddressContent(
                                 modifier = Modifier
                                     .size(28.dp)
                                     .clip(CircleShape)
-                                    .background(
-                                        if (sniffFilled) colorScheme.primary
-                                        else colorScheme.surfaceContainerHighest
-                                    )
-                                    .clickable { onSniff() },
+                                    // 缩到零头时别再吃点击（判定区比看到的大）
+                                    .clickable(enabled = hide < 0.4f) { onMovieMode() },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    // 语义图标：这一页里能下载的媒体 / 文件
-                                    imageVector = Icons.Default.FileDownload,
-                                    contentDescription = stringResource(R.string.browser_sniff_title),
-                                    modifier = Modifier.size(15.dp),
-                                    tint = when {
-                                        sniffFilled -> colorScheme.onPrimary
-                                        sniffCount > 0 -> colorScheme.primary
-                                        else -> colorScheme.onSurfaceVariant
+                                if (movieMode) {
+                                    // 在影视模式里：**胶片图标 + 一道斜杠**（用户口径：斜杠表示点了退出）。
+                                    // 图标压暗一点，斜杠才读得出来是"划掉"而不是图标本身的花纹
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Movie,
+                                            contentDescription = stringResource(R.string.movie_mode),
+                                            modifier = Modifier.size(17.dp),
+                                            tint = colorScheme.primary.copy(alpha = 0.45f)
+                                        )
+                                        Box(
+                                            Modifier
+                                                .rotate(-45f)
+                                                .width(2.dp)
+                                                .height(20.dp)
+                                                .background(
+                                                    colorScheme.primary,
+                                                    RoundedCornerShape(1.dp)
+                                                )
+                                        )
                                     }
-                                )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Movie,
+                                        contentDescription = stringResource(R.string.movie_mode),
+                                        modifier = Modifier.size(17.dp),
+                                        tint = colorScheme.primary
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        // 最右：标签页入口。数量**融在图标里**（卡片内居中），不再挂角标。
+        // 最右：**更多功能**（用户点名：原来是标签页入口，换成它）。
+        // 标签页并没有消失 —— 它挪进了这个弹窗，外加"新建标签 / 主页 / 下载页 / 设置"；
+        // 另外**按住链接输入框往上拖**也能直接进标签页（见输入区那段手势）
         if (sideButtonWidth > 0.dp) {
             Box(
                 modifier = Modifier
                     .size(sideButtonWidth)
                     .graphicsLayer { alpha = sideButtonAlpha }
             ) {
-                // 点按开标签网格；**长按展开坞内设置面板**（界面方案 / 液态玻璃）
+                // 点按开「更多功能」弹窗；**长按仍是坞内设置面板**（界面方案）
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(CircleShape)
-                        .combinedClickable(onClick = onTabs, onLongClick = onTabsLongPress),
+                        .combinedClickable(onClick = onMore, onLongClick = onTabsLongPress),
                     contentAlignment = Alignment.Center
                 ) {
-                    TabStackIcon(count = controller.tabCount)
+                    Icon(
+                        Icons.Rounded.MoreHoriz,
+                        contentDescription = stringResource(R.string.browser_dock_more),
+                        modifier = Modifier.size(22.dp),
+                        tint = colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
@@ -2214,61 +3175,15 @@ private fun DockAddressContent(
                         maxLines = 1,
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { onValueChange(value + prefix) }
+                            // 追加用的是**输入框里此刻的文本**，不是外面那份受控值：
+                            // 后者是异步回传过来的，刚敲完字立刻点前缀时可能还滞后一帧，
+                            // 用它会把刚敲进去的字符回退掉
+                            .clickable { onValueChange(fieldState.text.toString() + prefix) }
                             .padding(horizontal = 2.dp, vertical = 2.dp)
                     )
                 }
             }
         }
-    }
-}
-
-/**
- * 标签页入口图标：**叠放卡片**造型，数量直接排在前面那张卡片里 ——
- * 不再在右上角挂角标（数字与图标本是一体，读起来更干净）。
- * 数字常驻：单标签也显示「1」。
- */
-@Composable
-private fun TabStackIcon(count: Int) {
-    val tint = androidx.compose.material3.LocalContentColor.current
-    Box(contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.size(21.dp)) {
-            val stroke = 1.7.dp.toPx()
-            val corner = 3.2.dp.toPx()
-            // 后卡：只露出上、左两条边（前面被主卡让出的空位挡住的效果）
-            drawLine(
-                color = tint,
-                start = Offset(3.6.dp.toPx(), 1.6.dp.toPx()),
-                end = Offset(11.5.dp.toPx(), 1.6.dp.toPx()),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
-            )
-            drawLine(
-                color = tint,
-                start = Offset(1.6.dp.toPx(), 3.6.dp.toPx()),
-                end = Offset(1.6.dp.toPx(), 11.5.dp.toPx()),
-                strokeWidth = stroke,
-                cap = StrokeCap.Round
-            )
-            // 前卡：数字就住在它里面
-            drawRoundRect(
-                color = tint,
-                topLeft = Offset(4.8.dp.toPx(), 4.8.dp.toPx()),
-                size = Size(14.4.dp.toPx(), 14.4.dp.toPx()),
-                cornerRadius = CornerRadius(corner),
-                style = Stroke(width = stroke)
-            )
-        }
-        // 数字常驻：单标签也显示「1」，入口含义更完整（点它是打开全部标签页）
-        Text(
-            if (count > 99) "99+" else count.coerceAtLeast(1).toString(),
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            color = tint,
-            maxLines = 1,
-            // 前卡中心比画布中心偏右下：数字跟着挪，保证"在卡片正中"
-            modifier = Modifier.padding(start = 2.6.dp, top = 2.6.dp)
-        )
     }
 }
 

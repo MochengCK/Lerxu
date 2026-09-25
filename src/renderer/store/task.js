@@ -7,7 +7,7 @@ import { checkTaskIsBT, getFileNameFromFile, getFileExtension, getTaskUri, inter
 import taskHistory from '@/api/TaskHistory'
 import pendingFileSelectionStore from '@/api/PendingFileSelection'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
-import { getTaskInfoHash, isTaskPendingSelectionCandidate, isTaskPendingSelectionTarget, isTaskFileSelectionConfirmed } from '@/utils/task'
+import { getTaskInfoHash, isTaskPendingSelectionCandidate, isTaskPendingSelectionTarget, isTaskFileSelectionConfirmed, isHlsManifestUri } from '@/utils/task'
 import { useAppStore } from './app'
 import { usePreferenceStore } from './preference'
 
@@ -1181,6 +1181,13 @@ const actions = {
       try {
         // uri 可能是字符串或数组（GitHub 镜像情况）
         const uriStr = Array.isArray(uri) ? uri[0] : uri
+        // HLS 清单（.m3u8）不从 URL 末段取名：清单不是产物，末段又常是
+        // index/playlist 这类通用名。不填 out，交给引擎按"末段是通用名则
+        // 回退上级目录名 + 按实际容器定扩展名（fMP4→.mp4，其余→.ts）"命名，
+        // 产物名因此更贴近站点自己的命名。
+        if (isHlsManifestUri(uriStr)) {
+          return ''
+        }
         return getFileNameFromFile({ uris: [{ uri: uriStr }] })
       } catch (_) {
         return ''

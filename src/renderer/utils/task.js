@@ -21,6 +21,16 @@ import {
   buildDefaultOptionsFromCurl
 } from '@shared/utils/curl'
 
+/**
+ * 一条链接是不是 HLS（M3U8）清单地址。
+ *
+ * 判据与引擎一致（扩展名 `.m3u8`，查询串/锚点不影响）。三处共用：
+ * ① 新建任务对话框「已解析」表格只在 M3U8 行给出清晰度/落盘方式两列；
+ * ② `buildUriPayload` 只对这类链接下发逐链接的 `hls-variant` / `hls-write-mode`；
+ * ③ `store/task.js` 不为这类地址预填 `out`（清单不是产物，末段又常是通用名）。
+ */
+export const isHlsManifestUri = (uri) => /\.m3u8(?:[?#]|$)/i.test(`${uri || ''}`)
+
 const buildHeaderForUri = (form, uri, explicit = {}) => {
   const { userAgent, referer, cookie, authorization, fromBrowserExtension } = form || {}
   const result = []
@@ -61,7 +71,10 @@ export const initTaskForm = state => {
     maxConnectionPerServer,
     newTaskShowDownloading,
     newTaskJumpTarget,
-    split
+    split,
+    // HLS：新建任务的默认值沿用偏好设置 → 传输设置里的全局选项
+    hlsVariant,
+    hlsWriteMode
   } = state.preference.config
 
   let initialSplit = Number(maxConnectionPerServer)
@@ -87,6 +100,11 @@ export const initTaskForm = state => {
     newTaskJumpTarget: newTaskJumpTarget || 'downloading',
     out: addTaskOptions.suggestedFilename || '',
     customOuts: [],
+    // 逐链接的 HLS 选项（按链接顺序、与 customOuts 同一套下标）：
+    // 空串 = 不下发该选项（由高级区的全局设置或引擎默认接管）。
+    // 只有 M3U8 清单地址会在表格里给出这两列，普通地址一律留空。
+    customHlsVariants: [],
+    customHlsWriteModes: [],
     referer: '',
     selectFile: NONE_SELECTED_FILES,
     split: initialSplit,
@@ -94,6 +112,14 @@ export const initTaskForm = state => {
     uris: addTaskUrl,
     userAgent: '',
     authorization: '',
+    // HLS（m3u8）清晰度：'' = 最高码率（默认），'worst' = 最低码率。
+    // 只在地址是播放列表清单时对引擎有意义（引擎选项 hls-variant）。
+    // 默认取偏好设置里的全局值，用户在弹窗里改了只影响本次任务。
+    hlsVariant: hlsVariant === 'worst' ? 'worst' : '',
+    // HLS 落盘方式：'' = 乱序（默认，各段先落段文件再按序拼接，进度与速度同步、
+    // 内存占用极低）/ 'ordered' = 顺序（边下边按清单顺序写产物，下载中途的
+    // 产物就是一个能播的完整前缀）。引擎选项 hls-write-mode。
+    hlsWriteMode: hlsWriteMode === 'ordered' ? 'ordered' : '',
     ...addTaskOptions
   }
   // addTaskOptions（如引擎 getOption 返回值）可能携带字符串形式的 split，
@@ -144,6 +170,8 @@ export const buildOption = (type, form, uris = [], includeHeader = true) => {
   const {
     allProxy,
     dir,
+    hlsVariant,
+    hlsWriteMode,
     out,
     selectFile,
     split
@@ -164,6 +192,17 @@ export const buildOption = (type, form, uris = [], includeHeader = true) => {
 
   if (split > 0) {
     result.split = split
+  }
+
+  // HLS 选流偏好：只在用户显式选了「最低码率」时才下发，
+  // 留空即引擎默认（取最高码率变体）
+  if (!isEmpty(hlsVariant)) {
+    result.hlsVariant = hlsVariant
+  }
+
+  // HLS 落盘方式：只在用户显式选了「顺序」时才下发，留空即默认（乱序）
+  if (!isEmpty(hlsWriteMode)) {
+    result.hlsWriteMode = hlsWriteMode
   }
 
   if (type === ADD_TASK_TYPE.TORRENT) {
@@ -209,13 +248,30 @@ export const buildUriPayload = async (form, autoCategorize = false, categories =
 
     const customReferers = Array.isArray(form.customReferers) ? form.customReferers : []
     const customUserAgents = Array.isArray(form.customUserAgents) ? form.customUserAgents : []
+    const customHlsVariants = Array.isArray(form.customHlsVariants) ? form.customHlsVariants : []
+    const customHlsWriteModes = Array.isArray(form.customHlsWriteModes) ? form.customHlsWriteModes : []
     const uriIndex = nextUris.length - 1
 
     const header = buildHeaderForUri(form, u, {
       referer: customReferers[uriIndex] || null,
       userAgent: customUserAgents[uriIndex] || null
     })
-    optionsList.push(!isEmpty(header) ? { header } : null)
+    // 逐链接 HLS 选项（新增任务对话框「已解析」表格里的两列）：
+    // 空 = 不下发，交给高级区的全局设置 / 引擎默认。
+    // 只认 M3U8 清单地址 —— 普通地址选了也没有意义。
+    const perUri = {}
+    if (!isEmpty(header)) {
+      perUri.header = header
+    }
+    if (isHlsManifestUri(u)) {
+      if (!isEmpty(customHlsVariants[uriIndex])) {
+        perUri.hlsVariant = customHlsVariants[uriIndex]
+      }
+      if (!isEmpty(customHlsWriteModes[uriIndex])) {
+        perUri.hlsWriteMode = customHlsWriteModes[uriIndex]
+      }
+    }
+    optionsList.push(!isEmpty(perUri) ? perUri : null)
   }
 
   uris = nextUris

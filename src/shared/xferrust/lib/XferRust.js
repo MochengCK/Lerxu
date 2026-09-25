@@ -36,6 +36,14 @@ const EFFECTIVE_GLOBAL_KEYS = [
   'dir',
   'split',
   'max-connection-per-server',
+  // HLS 分片并发（不给则按显式写过的 max-connection-per-server / split 推导）
+  'hls-concurrency',
+  // HLS 落盘方式：unordered（默认，乱序落盘 + 顺序拼接）/ ordered（边下边按序写）
+  'hls-write-mode',
+  // HLS 选流（worst = 最低码率）、分片大小探测开关、单分片重试次数
+  'hls-variant',
+  'hls-probe-size',
+  'hls-segment-retries',
   'min-split-size',
   'max-overall-download-limit',
   'max-overall-upload-limit',

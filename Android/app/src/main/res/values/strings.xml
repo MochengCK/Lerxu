@@ -218,6 +218,15 @@
     <string name="settings_section_start">Startup</string>
     <string name="settings_start_page">Default entry</string>
     <string name="settings_start_page_note">Takes effect next launch — change it anytime in Settings</string>
+    <string name="settings_browser">Browser</string>
+    <string name="settings_ad_block">Block ads automatically</string>
+    <string name="settings_ad_block_desc">Blocks ad requests and hides ad slots in pages. On by default.</string>
+    <string name="browser_dock_more">More</string>
+    <string name="browser_dock_more_tabs">Tabs</string>
+    <string name="browser_dock_more_new_tab">New tab</string>
+    <string name="browser_dock_more_home">Home page</string>
+    <string name="browser_dock_more_downloads">Downloads</string>
+    <string name="browser_dock_more_settings">Settings</string>
     <string name="settings_appearance">Appearance</string>
     <string name="theme">Theme</string>
     <string name="theme_follow_system">Follow system</string>
@@ -348,7 +357,7 @@
     <!-- Built-in browser -->
     <string name="tab_browser">Browser</string>
     <string name="browser_back">Back</string>
-    <string name="browser_address_hint">Search or enter address · %1$s</string>
+    <string name="browser_address_hint">Search or enter address</string>
     <string name="browser_sniff_title">Resources on this page</string>
     <string name="default_browser_title">Set as default browser</string>
     <string name="default_browser_desc">Open http / https links with Lerxu</string>
@@ -387,6 +396,19 @@
     <string name="browser_dock_style">Interface style</string>
     <string name="browser_dock_style_classic">Classic</string>
     <string name="browser_dock_style_modern">Modern</string>
+    <!-- Movie mode (auto-enabled on pages that look like a video site) -->
+    <string name="movie_mode">Movie mode</string>
+    <string name="movie_mode_close">Close movie mode</string>
+    <string name="movie_mode_empty">No playable video found on this page yet</string>
+    <string name="movie_mode_loading">Reading this page…</string>
+    <string name="movie_mode_no_content">This page has nothing to show</string>
+    <string name="movie_mode_view_page">View original page</string>
+    <string name="movie_mode_lines">Streams</string>
+    <string name="movie_mode_recommend">You may also like</string>
+    <string name="movie_mode_comments">Comments</string>
+    <string name="movie_mode_nav_open">Browse categories</string>
+    <string name="movie_mode_search_hint">Search this site</string>
+    <string name="movie_mode_play_in_page">Play in the page</string>
     <!-- Window mode selection -->
     <string name="browser_window_mode">Window Mode</string>
     <string name="normal_window">Normal Window</string>

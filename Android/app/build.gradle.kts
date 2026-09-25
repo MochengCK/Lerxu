@@ -205,6 +205,14 @@ dependencies {
     // WebView 兼容库：算法变暗（深色主题下把浅色网页渲染成深色）
     implementation("androidx.webkit:webkit:1.12.1")
 
+    // ── 原生播放器（Media3 / ExoPlayer）──
+    // 网页里注入控件那条路走不通（WebView 的原生全屏只合成视频画面，DOM 覆盖层不参与
+    // 合成），改成把嗅探到的流地址交给 App 自己播：控件、全屏、手势全归我们。
+    // hls 单独一个包：影视站的流几乎都是 m3u8
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
+
     // Debugging
     debugImplementation("androidx.compose.ui:ui-tooling")
 

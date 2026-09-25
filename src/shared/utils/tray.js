@@ -6,8 +6,9 @@ const bytesToSize = (bytes) => {
   const b = parseInt(bytes, 10) || 0
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   if (b === 0) { return '0 KB' }
-  const i = parseInt(Math.floor(Math.log(b) / Math.log(1024)), 10)
-  return `${(b / (1024 ** i)).toFixed(1)} ${sizes[i]}`
+  // 1000 进制：与 Finder/资源管理器、进度窗口显示口径一致
+  const i = parseInt(Math.floor(Math.log(b) / Math.log(1000)), 10)
+  return `${(b / (1000 ** i)).toFixed(1)} ${sizes[i]}`
 }
 
 const lightTextColor = '#000'

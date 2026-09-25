@@ -30,13 +30,15 @@ import {
   DOCUMENT_SUFFIXES
 } from '@shared/constants'
 
+// 十进制（1000 进制）：与 Finder/资源管理器、引擎 TUI 的显示口径一致
+// （1024 进制会把 489,253,080 字节标成 466.6 MB，与系统显示的 489.3 MB 对不上）
 export const bytesToSize = (bytes, precision = 1) => {
   const b = parseInt(bytes, 10)
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
   if (b === 0) { return '0 KB' }
-  const i = parseInt(Math.floor(Math.log(b) / Math.log(1024)), 10)
+  const i = parseInt(Math.floor(Math.log(b) / Math.log(1000)), 10)
   if (i === 0) { return `${b} ${sizes[i]}` }
-  return `${(b / (1024 ** i)).toFixed(precision)} ${sizes[i]}`
+  return `${(b / (1000 ** i)).toFixed(precision)} ${sizes[i]}`
 }
 
 export const normalizeEngineBinary = (engineBinary = '') => {

@@ -37,18 +37,28 @@ class FormatUtilsTest {
         assertEquals("0 B", formatBytes(0))
         assertEquals("0 B", formatBytes(-1))
         assertEquals("512 B", formatBytes(512))
+        // 1000 进制：与 Finder/资源管理器、桌面端显示口径一致
+        assertEquals("1.0 KB", formatBytes(1000))
+        assertEquals("1.5 KB", formatBytes(1500))
+        assertEquals("1.0 MB", formatBytes(1_000_000L))
+        assertEquals("1.0 GB", formatBytes(1_000_000_000L))
+        assertEquals("1.0 TB", formatBytes(1_000_000_000_000L))
+        // 1024 字节按 1000 进制仍落在 KB 档（1.024 → 1.0 KB）
         assertEquals("1.0 KB", formatBytes(1024))
-        assertEquals("1.5 KB", formatBytes(1536))
-        assertEquals("1.0 MB", formatBytes(1024L * 1024))
-        assertEquals("1.0 GB", formatBytes(1024L * 1024 * 1024))
-        assertEquals("1.0 TB", formatBytes(1024L * 1024 * 1024 * 1024))
+    }
+
+    @Test
+    fun `formatBytes matches the size shown by the system file manager`() {
+        // 用户实测：m3u8 下载产物 489,253,080 字节，Finder 显示 489.3 MB，
+        // 而旧口径（1024 进制）显示 466.6 MB —— 数值必须与系统一致
+        assertEquals("489.3 MB", formatBytes(489_253_080L))
     }
 
     @Test
     fun `formatSpeed appends per-second suffix`() {
         assertEquals("0 B/s", formatSpeed(0))
         assertEquals("0 B/s", formatSpeed(-5))
-        assertEquals("1.0 KB/s", formatSpeed(1024))
+        assertEquals("1.0 KB/s", formatSpeed(1000))
     }
 
     @Test

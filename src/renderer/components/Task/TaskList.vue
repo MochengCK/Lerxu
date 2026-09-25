@@ -48,10 +48,8 @@ import {
   TASK_STATUS
 } from '@shared/constants'
 import i18n from '@/plugins/i18n'
-import DragSelect from '@/components/DragSelect/DragSelect'
 import { getTaskActualPath } from '@/utils/native'
 import { commands } from '@/components/CommandManager/instance'
-import TaskItem from './TaskItem'
 import { useTaskStore } from '@/store/task'
 import { usePreferenceStore } from '@/store/preference'
 import { storeToRefs } from 'pinia'

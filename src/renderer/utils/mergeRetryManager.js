@@ -7,10 +7,6 @@
  */
 const timers = new Map()
 
-export function getMergeRetryTimer (gid) {
-  return timers.get(gid)
-}
-
 export function setMergeRetryTimer (gid, timer) {
   timers.set(gid, timer)
 }
@@ -28,12 +24,4 @@ export function clearAllMergeRetryTimers () {
     clearTimeout(timer)
   })
   timers.clear()
-}
-
-export function hasMergeRetryTimer (gid) {
-  return timers.has(gid)
-}
-
-export function getAllMergeRetryTimers () {
-  return timers
 }

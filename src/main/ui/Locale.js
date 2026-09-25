@@ -18,7 +18,3 @@ export const setupLocaleManager = (locale) => {
 export const getI18n = () => {
   return localeManager.getI18n()
 }
-
-export const getI18nTranslator = () => {
-  return localeManager.getI18n().t
-}

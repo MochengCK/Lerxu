@@ -2,13 +2,16 @@ package com.lerxu.android.ui.screen
 
 import android.content.Context
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -74,6 +77,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
@@ -81,6 +85,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -105,8 +110,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -118,10 +124,13 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import com.lerxu.android.R
 import com.lerxu.android.browser.BrowserController
 import com.lerxu.android.browser.DownloadHandoff
 import com.lerxu.android.browser.PullRefreshGlyph
+import com.lerxu.android.browser.SniffKind
+import com.lerxu.android.browser.SniffedResource
 import com.lerxu.android.browser.TabNaming
 import com.lerxu.android.util.PasswordAuthHelper
 import kotlinx.coroutines.delay
@@ -207,6 +216,58 @@ private fun Density.gridCardRect(
 }
 
 /**
+ * 形变锚点那张卡片在**窗口坐标**里的矩形 —— 网页形变与播放器形变**共用这一个入口**。
+ *
+ * 为什么必须共用：播放器是另一棵 View 树（窗口级覆盖层），它那份落点只能在这里算好
+ * 喂过去。两边只要一个用"实测卡片"、另一个用"按常量外推"，差的那些帧就会被读成
+ * "先偏到一边、再归位"（用户点名）。
+ *
+ * 顺序：**实测优先**（[measured]，`boundsInWindow`，与播放器的 `getLocationInWindow`
+ * 是同一套坐标系）；还没收到实测值（形变最头上一两帧）才按常量外推 ——
+ * [Density.gridCardRect] 给的是页面局部坐标，这里按 [pageOrigin] 换到窗口坐标。
+ * 返回 null = 连外推都算不出来（页面尺寸还没测到 / 锚点无效）。
+ */
+private fun anchorCardRect(
+    index: Int,
+    measured: Rect?,
+    gridWidth: Float,
+    gridHeight: Float,
+    pageOrigin: Offset,
+    topInset: Dp,
+    gridState: LazyGridState,
+    density: Density
+): Rect? {
+    if (index < 0) return null
+    if (measured != null && measured.width > 0f) return measured
+    if (gridWidth <= 0f || gridHeight <= 0f) return null
+    val contentTop = with(density) {
+        (topInset + TAB_GRID_HEADER_GAP + TAB_GRID_HEADER + TAB_GRID_PAD_TOP).toPx()
+    }
+    val firstVisible = gridState.layoutInfo.visibleItemsInfo.firstOrNull()
+    val local = with(density) {
+        gridCardRect(
+            index = index,
+            gridWidth = gridWidth,
+            firstVisibleRow = (firstVisible?.index ?: 0) / TAB_GRID_COLUMNS,
+            firstVisibleRowOffsetY = firstVisible?.offset?.y?.toFloat() ?: contentTop
+        )
+    }
+    return Rect(
+        local.left + pageOrigin.x,
+        local.top + pageOrigin.y,
+        local.right + pageOrigin.x,
+        local.bottom + pageOrigin.y
+    )
+}
+
+/**
+ * 卡片"落位"判据的**释放**阈值（见 BrowserScreen 里的 `gridSettled`）。
+ *
+ * 到顶（1.0）才算落位、掉到这个值以下才取消落位 —— 中间这 3% 是迟滞带。
+ */
+private const val GRID_SETTLE_RELEASE = 0.97f
+
+/**
  * 整页 ⇄ 卡片形变用的裁剪形状：窗口与半径逐帧更新（半路圆角、落位正圆角）。
  * **每帧新建**（见调用处）—— 复用实例会让图形层以为形状没变，轮廓不再重算。
  *
@@ -241,15 +302,34 @@ fun BrowserScreen(
     bottomInset: Dp = 0.dp,
     modern: Boolean = false,
     /** 顶部系统信息栏的高度：**只有网页内容**要让出它，标签网格铺到顶。 */
-    topInset: Dp = 0.dp
+    topInset: Dp = 0.dp,
+    /**
+     * 影视模式开着：这一页的影视内容改用自家的 [MovieScreen] 整屏呈现（盖在网页之上）。
+     *
+     * 默认值给 `false` / 空实现，调用点可以渐进更新（与其它可选参数同一口径）。
+     */
+    movieMode: Boolean = false,
+    /** 点影视页列表里的一条 → 交给 App 自己的播放器（第一版：点播才进播放器）。 */
+    onPlayMovie: (SniffedResource) -> Unit = {}
 ) {
     // 返回键优先级：网格开着 → 收网格；页面可后退 → 退网页；否则交给外层（回任务页）
     BackHandler(enabled = controller.tabsOpen) { controller.closeTabs() }
     BackHandler(enabled = !controller.tabsOpen && controller.canGoBack) { controller.goBack() }
+    // 历史查看页是搜索页里**最上面的一层**：系统返回先退这一层（与页面左上角
+    // 返回键同一个动作）。放在前两条之后注册 —— 注册晚的优先，
+    // 这一层才不会被"退网页"抢走
+    BackHandler(enabled = !controller.tabsOpen && controller.homeHistoryView) {
+        controller.closeHomeHistory()
+    }
 
+    // 网格开合进度。**跟手期间手指就是真相**（见 controller.gridFollow）：补间时长为 0，
+    // 拖到哪儿网格就停在哪儿；抬手后 gridFollow 清掉，进度从**当前值**接着走 380ms 的
+    // 补间 —— 不会先跳回 0 或 1（用户点名要"跟手，而不是固定的动画"）。
+    val gridFollowing = controller.gridFollowing
     val gridProgress by animateFloatAsState(
-        targetValue = if (controller.tabsOpen) 1f else 0f,
-        animationSpec = tween(380, easing = FastOutSlowInEasing),
+        targetValue = if (gridFollowing) controller.gridFollow
+        else if (controller.tabsOpen) 1f else 0f,
+        animationSpec = if (gridFollowing) tween(0) else tween(380, easing = FastOutSlowInEasing),
         label = "tabGrid"
     )
 
@@ -267,7 +347,13 @@ fun BrowserScreen(
     // 现代模式：网页**一直铺到屏幕底**，坞与底部阴影悬浮在其上（Chrome 同款）。
     // 不铺到底的话，阴影带后面垫的是应用纯色底，"半透明"根本透不出内容，
     // 看上去就还是一块实心色板 —— 阴影要成立，必须先让内容穿到它身后。
+    //
+    // **自家首页例外**：它的输入框在坞里、页面内一个输入框都没有，网页没有理由
+    // 为键盘缩高。缩了反而出事：页面高度一变，`.brand` 的 `top: 50%` 就瞬间挪位，
+    // 于是同一个字标的位移同时有"布局跳"和"transform 滑"两条路 —— 读起来就是
+    // "两个 logo 在交替"（用户点名）。高度恒定之后，全程只剩那一条 transform 动画。
     val webBottomInset = when {
+        controller.isHomePage -> if (modern) 0.dp else animatedBottomInset
         imeBottom > animatedBottomInset -> imeBottom
         modern -> 0.dp
         else -> animatedBottomInset
@@ -280,6 +366,10 @@ fun BrowserScreen(
     // 这一跳再等 260ms 才盖，等于把那张原始错误页又露一次（用户点名要自家失败页）。
     // 所以只要是从失败页重新发起加载，就**立刻**盖上加载动画
     var coverAtOnce by remember { mutableStateOf(false) }
+    // 切标签归零：这个标记的意思是"这一页是从失败页重发的"，跟着标签走 ——
+    // 不复位的话，从"有错误的标签"切到"正在加载的正常标签"时，新页会跳过那 260ms
+    // 延迟立刻盖上加载动画（秒开的页面白闪一下）
+    LaunchedEffect(controller.activeId) { coverAtOnce = false }
     LaunchedEffect(controller.loadError) {
         if (controller.loadError != null) coverAtOnce = true
     }
@@ -298,6 +388,8 @@ fun BrowserScreen(
     }
 
     val context = LocalContext.current
+    /** 页面尺寸 / 矩形与原生覆盖层之间换算要用（播放器是另一个 View 树）。 */
+    val pxDensity = LocalDensity.current
 
     /**
      * 切窗口模式。
@@ -370,6 +462,7 @@ fun BrowserScreen(
     // 卡片上报的**实测**矩形（根坐标）：整页形变的落点以它为准。
     // 只按常量推算的话，差一点点都会在落位那一瞬间"跳"到正确位置（用户点名）。
     val cardRects = remember { mutableStateMapOf<Long, Rect>() }
+
     // 本页根容器在根坐标里的位置（把实测矩形换算成页面层的局部坐标用）
     val rootPos = remember { mutableStateOf(Offset.Zero) }
     // 形变用的裁剪窗口（逐帧新建，见 MorphClipShape 的说明）
@@ -383,8 +476,18 @@ fun BrowserScreen(
     // 约 20% 没缩到位，交叉淡入的两张图比例不同，用户读到的就是
     // "快到位时突然跳一下、大小直接变成标签的大小"（用户点名）。
     // 收起时立刻归零：放大回整页的主角同样只剩网页一个。
+    //
+    // **判据带迟滞**（见 [gridSettled]）：跟手拖动时手指在顶端附近来回几像素，进度会在
+    // 1.0 上下反复跨线，两条补间被反复重启 —— 整页与卡片的透明度来回抖，读起来就是
+    // "播放器不断闪烁"（用户点名）。迟滞让这条边界只认一次。
+    var gridSettled by remember { mutableStateOf(false) }
+    LaunchedEffect(controller.tabsOpen, gridProgress) {
+        if (!controller.tabsOpen) gridSettled = false
+        else if (gridProgress >= 1f) gridSettled = true
+        else if (gridProgress < GRID_SETTLE_RELEASE) gridSettled = false
+    }
     val cardReveal by animateFloatAsState(
-        targetValue = if (controller.tabsOpen && gridProgress >= 1f) 1f else 0f,
+        targetValue = if (gridSettled) 1f else 0f,
         animationSpec = tween(120, easing = FastOutSlowInEasing),
         label = "tabCardReveal"
     )
@@ -394,16 +497,158 @@ fun BrowserScreen(
     // UI 一起浮出来"。再早不行：整页还在缩、卡片被压在下面，提前交叉淡入
     // 会把"尺寸还没缩到位"暴露出来（就是之前修过的"落位跳一下"）。
     val cardChrome by animateFloatAsState(
-        targetValue = if (controller.tabsOpen && gridProgress >= 1f) 1f else 0f,
+        targetValue = if (gridSettled) 1f else 0f,
         animationSpec = tween(240, easing = FastOutSlowInEasing),
         label = "tabCardChrome"
     )
 
+    // 页面那块 Box 的尺寸（形变映射要用）。取自根容器 —— 两者同为 fillMaxSize。
+    val pageBoxSize = remember { mutableStateOf(IntSize.Zero) }
+    /**
+     * 把"播放器这一帧该落在哪儿"推给覆盖层（窗口级 View 树，读不到 Compose 状态）。
+     *
+     * 为什么落点要在 Compose 这边算：网页那套形变是"覆盖式缩放 + 窗口裁剪"
+     *（见下面 graphicsLayer 里的注释），视频只是页面里的一块 —— 网页缩到卡片时，
+     * 视频只占卡片的一部分、比例也跟着一起缩。播放器是另一个 View 树，拿不到那套
+     * 参数，只能在这里算好喂过去。
+     *
+     * **形变的"起点"必须是播放器此刻真正在的那块**（页面报回来的那条，含"吸附在顶部"
+     * 那条），而不是页面里那个 `<video>` 的原始矩形：页面滚上去之后播放器是**钉在顶上**的，
+     * 用原始矩形当起点会让它一进网格就先跳到屏幕外的旧位置、然后消失（用户点名：
+     * "它会先悬浮在标签上方再消失"）。同一个纯函数、同一份输入，两边算出来的就是同一块。
+     *
+     * 发布走 **SideEffect**（每次重组一次，形变动画期间逐帧都有重组）。**不要**改挂到
+     * 绘制阶段：那里的调用会在绘制中途改 View 树（`layoutParams` → requestLayout），
+     * 实测表现是画面闪烁、形变时有时无。
+     */
+    fun publishPlayerMorph() {
+        controller.pageGridProgress = gridProgress
+        // 播放器的不透明度**跟网页同一个值**：网页什么时候淡、播放器就什么时候淡。
+        // 早先这里是"进度过半就淡完"，于是网格还在收集/展开时播放器先没了，
+        // 页面里那个播放器就露出来了（用户点名）。
+        controller.pageGridAlpha = if (controller.tabsOpen) 1f - cardReveal else 1f
+        val origin = rootPos.value
+        val size = pageBoxSize.value
+        val density = pxDensity.density
+        val base = controller.playerFrame
+        // 播放器此刻**真正**摆在哪儿（窗口 px）：页面报回来的就是最终位置（"越过站点顶栏
+        // 就钉在它下面"那条吸附规则已经在页面里算完，见 PageVideoDetector.playerTop），
+        // 这里只把它折成窗口 px —— 与覆盖层**同一份输入、同一个换算**，不会各算各的
+        val box = base?.let {
+            Rect(
+                it.left * density,
+                it.top * density,
+                it.right * density,
+                it.bottom * density
+            )
+        }
+        // 锚点卡片与网页形变**用同一份解析**（见 anchorCardRect）：实测优先、常量外推兜底。
+        // 三个矩形**全部在窗口坐标里**（卡片取 `boundsInWindow`，播放器本来就是
+        // `getLocationInWindow` 报上来的）：混用"根坐标"与"窗口坐标"会在形变时整体
+        // 偏掉一个"Compose 根在窗口里的位置"。
+        val anchorId = controller.tabs.getOrNull(anchorIndex)?.id ?: -1L
+        val card = anchorCardRect(
+            index = anchorIndex,
+            measured = cardRects[anchorId],
+            gridWidth = size.width.toFloat(),
+            gridHeight = size.height.toFloat(),
+            pageOrigin = origin,
+            topInset = topInset,
+            gridState = gridState,
+            density = pxDensity
+        )
+        val morph = if (box != null && card != null) {
+            morphPlayerInPage(
+                progress = gridProgress,
+                pageTop = with(pxDensity) { topInset.toPx() },
+                gridWidth = size.width.toFloat(),
+                gridHeight = size.height.toFloat(),
+                pageOrigin = origin,
+                card = card,
+                video = box
+            )
+        } else {
+            null
+        }
+        controller.pageGridMorph = morph?.first?.toAndroidRect()
+        controller.pageGridClip = morph?.second?.toAndroidRect()
+        // 同一帧把新落点交给覆盖层（写值的这一步跑在绘制遍历里，覆盖层随后就按新位置摆）
+        controller.publishPlayerFrame()
+    }
+
+    SideEffect { publishPlayerMorph() }
+
+    // 页面叠层：加载动画 / 失败页 / 什么都不盖。
+    //
+    // 两者必须在**同一块叠层里交叉**：以前失败页在加载层下面，它的进场
+    // 动画被不透明的加载层整段盖住，等加载层淡出时它早就"就位"了 ——
+    // 看起来就是硬跳（用户点名：加载转失败要有无缝衔接）。现在
+    // 加载 → 失败、失败点重试 → 加载，都是同中心的一淡一显。
+    // 失败页优先：出错时 loading 已是 false
+    //
+    // 在**根容器之前**算：顶部那一截系统栏的底色也要读它（见 stripColor）
+    val pageOverlay: PageOverlayState = when {
+        controller.loadError != null -> PageOverlayState.Error(controller.loadError!!)
+        showPageLoading -> PageOverlayState.Loading
+        else -> PageOverlayState.None
+    }
+
+    val colorScheme = MaterialTheme.colorScheme
+    // ── 顶部那一截系统栏（网页让位让出来的那条）：底色**跟着网页走** ──
+    // 用户点名：它原来是固定的应用底色，深色网页顶上就顶着一条浅色带子，
+    // 像页面被裁掉了头。现在取当前页报上来的网页底色
+    //（见 BrowserController.pageBackgroundArgb —— 页面侧量的 body/html 画布色，
+    // 页面自己换肤会实时再报）；量不出来（自家首页、画布透明的页面）就退回
+    // 应用底色，那正是 WebView 露在页面后面的那一层，本来就该同色。
+    //
+    // 自家加载 / 失败叠层在场时也回应用底色：那两块整屏就是应用底色画的，
+    // 带子不跟着回，顶上就留一条颜色不同的边。
+    // 换色走补间：跳转 / 站点切换深浅色时是"染过去"，不是闪一下
+    val stripColor by animateColorAsState(
+        targetValue = if (pageOverlay == PageOverlayState.None &&
+            controller.pageBackgroundArgb >= 0
+        ) {
+            Color(0xFF000000.toInt() or controller.pageBackgroundArgb)
+        } else {
+            colorScheme.background
+        },
+        animationSpec = tween(240, easing = FastOutSlowInEasing),
+        label = "pageTopStrip"
+    )
+    // 系统栏图标的明暗**跟着带子走**：深色带子上留着深色图标等于看不见
+    //（本应用的窗口主题固定是浅色那套，图标默认就是深色）。两种情况算"带子不在场"、
+    // 交回应用默认：带子被加载 / 失败叠层顶掉（上面 stripColor 已经回应用底色），
+    // 以及**标签网格盖上来**（那一层的底色是应用自己的另一档，浅色网格配浅色
+    // 图标同样看不见）。只在浏览器页在场期间接管，离开这一页时还原 —— 别的页面
+    // 没有这条带子
+    val stripsDark = stripColor.luminance() < 0.5f && gridProgress < 0.5f
+    DisposableEffect(stripsDark) {
+        val bars = context.findFragmentActivity()?.window
+            ?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        bars?.isAppearanceLightStatusBars = !stripsDark
+        onDispose { bars?.isAppearanceLightStatusBars = true }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .onGloballyPositioned { rootPos.value = it.boundsInRoot().topLeft }
+            .onGloballyPositioned {
+                rootPos.value = it.boundsInWindow().topLeft
+                pageBoxSize.value = it.size
+            }
     ) {
+        // 顶上那条带子：画在**最底层**（网页那一层随后盖上来，它自己让出了这一截，
+        // 所以只在没有网页内容的地方露出来），标签网格上来时跟着一起退
+        if (topInset > 0.dp) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(topInset)
+                    .graphicsLayer { alpha = 1f - gridProgress }
+                    .background(stripColor)
+            )
+        }
         // ── 网页内容：铺满整页（底部坞悬浮其上，不占布局高度）──
         // 展开网格时，整页**形变**成网格里当前页那张卡片：可视窗口、缩放、
         // 圆角（0 → 卡片圆角）沿 380ms 同一条时间线插值；落位后卡片 UI 才淡入，
@@ -432,8 +677,22 @@ fun BrowserScreen(
                         return@graphicsLayer
                     }
                     val index = anchorIndex
-                    if (index < 0) {
-                        // 找不到来源标签页（理论上不会发生）：原地缩小淡出兜底
+                    val origin = rootPos.value
+                    val anchorId = controller.tabs.getOrNull(index)?.id ?: -1L
+                    // 锚点卡片（**窗口坐标**）：实测优先、常量外推兜底 —— 与喂给播放器
+                    // 的那一份**同一个入口**（见 anchorCardRect），两边不会各算各的
+                    val cardWin = anchorCardRect(
+                        index = index,
+                        measured = cardRects[anchorId],
+                        gridWidth = size.width,
+                        gridHeight = size.height,
+                        pageOrigin = origin,
+                        topInset = topInset,
+                        gridState = gridState,
+                        density = this
+                    )
+                    if (cardWin == null) {
+                        // 找不到来源标签页 / 页面尺寸还没测到（理论上不会发生）：原地缩小淡出兜底
                         clip = false
                         transformOrigin = TransformOrigin(0.5f, 0.2f)
                         val sc = 1f - 0.38f * p
@@ -444,35 +703,13 @@ fun BrowserScreen(
                         alpha = if (controller.tabsOpen) (1f - 1.15f * p).coerceIn(0f, 1f) else 1f
                         return@graphicsLayer
                     }
-                    // 目标卡片矩形：**优先用卡片实测的位置**（落位严丝合缝）；
-                    // 还没收到实测值（进场最头上一两帧）才退回按常量推算 ——
-                    // 推算值哪怕只差几个 dp，落位那一刻也会"跳"一下（用户点名）。
-                    val anchorId = controller.tabs.getOrNull(index)?.id ?: -1L
-                    val measured = cardRects[anchorId]
-                    val card = if (measured != null && measured.width > 0f) {
-                        val origin = rootPos.value
-                        Rect(
-                            measured.left - origin.x,
-                            measured.top - origin.y,
-                            measured.right - origin.x,
-                            measured.bottom - origin.y
-                        )
-                    } else {
-                        // 没测到卡片时按常量外推：网格铺满整块，起排线在
-                        // "状态栏 + 浮条 + 呼吸"之下
-                        val contentTop = (
-                            topInset + TAB_GRID_HEADER_GAP + TAB_GRID_HEADER + TAB_GRID_PAD_TOP
-                            ).toPx()
-                        val info = gridState.layoutInfo
-                        val firstVisible = info.visibleItemsInfo.firstOrNull()
-                        gridCardRect(
-                            index = index,
-                            gridWidth = size.width,
-                            firstVisibleRow = (firstVisible?.index ?: 0) / TAB_GRID_COLUMNS,
-                            firstVisibleRowOffsetY = firstVisible?.offset?.y?.toFloat()
-                                ?: contentTop
-                        )
-                    }
+                    // 图形层在自己的局部坐标里动，所以换算掉"根在窗口里的位置"
+                    val card = Rect(
+                        cardWin.left - origin.x,
+                        cardWin.top - origin.y,
+                        cardWin.right - origin.x,
+                        cardWin.bottom - origin.y
+                    )
                     // 形变的"整页"= **网页那一块**（顶部让给状态栏的那一截不算）：
                     // 缩略图拍的就是这块，两边同源，落位才对得齐
                     val pageTop = topInset.toPx()
@@ -513,21 +750,15 @@ fun BrowserScreen(
                 }
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // 进度条只在加载时占位：不加载时高度为 0，避免页面上下抖动
-                Box(modifier = Modifier.fillMaxWidth().height(2.dp)) {
-                    if (controller.loading) {
-                        LinearProgressIndicator(
-                            progress = { controller.progress / 100f },
-                            modifier = Modifier.fillMaxWidth().height(2.dp),
-                            strokeCap = StrokeCap.Butt
-                        )
-                    }
-                }
-
                 // weight(1f)：只占剩余高度（用 fillMaxSize 会按整列高度撑开，
                 // 把内容顶出可视区）。[animatedBottomInset] 作为底部留白，
                 // 网页内容收在控制栏上方，不被坞遮住。
                 // 网页内容让出顶部状态栏（标签网格则铺到顶，见上面的 Grid）
+                //
+                // **加载进度条不在这列里**：它叠在网页最上沿（见下面那个 Box 里），
+                // 占 2dp 高度会把整个 WebView 往下推 2dp，而播放器的吸附位置是按
+                // WebView 的窗口位置算出来的 —— 顶上就会裂出一道 2dp 的缝
+                //（用户点名："收起展开都有一两个像素的缝隙"）。
                 Box(modifier = Modifier.fillMaxWidth().weight(1f).padding(top = topInset)) {
                     // 只挂容器本身（不随切换重建）：容器里放着所有标签页的
                     // WebView，当前页 VISIBLE、其余 GONE。
@@ -537,6 +768,59 @@ fun BrowserScreen(
                             .fillMaxSize()
                             .padding(bottom = webBottomInset)
                     )
+
+                    // 影视模式：**替代网页**的一整屏（识别到影视内容后自动开，见
+                    // MovieMode）。插在这里 = 在 WebView 之上、又在 TabGrid 之下 ——
+                    // 它盖住网页，但网格展开时照样能被网格盖住（网格是更上层的一层）。
+                    // 加载进度条 / 滑动提示 / 失败页都排在它之后，也就是**盖在它上面**：
+                    // 影视页不是"页面加载失败"的替身，失败页该露出来的时候要露。
+                    if (movieMode) {
+                        MovieScreen(
+                            title = controller.moviePageTitle,
+                            nav = controller.movieNav,
+                            // 主内容墙左上角那一行板块名（站点给的名字 → 当前分类名，见 movieBlockTitle）
+                            blockTitle = controller.movieBlockTitle,
+                            cards = controller.movieCards,
+                            sections = controller.movieSections,
+                            // 站点的评论区：内容借它的，样式是我们的（用户口径）
+                            comments = controller.movieComments,
+                            commentTitle = controller.movieCommentTitle,
+                            items = controller.sniffed.filter { it.kind == SniffKind.VIDEO },
+                            loading = controller.movieExtracting,
+                            empty = controller.movieExtractFailed,
+                            // 封面图过防盗链要带的来源页 / UA：与网页同一条（见 CoverImageLoader）
+                            referer = controller.movieReferer,
+                            userAgent = controller.movieUserAgent,
+                            // 内容区让出底部功能栏：功能栏浮在网页之上，不让出来最后一排卡片会被压在栏里
+                            bottomInset = bottomInset,
+                            // 播放区那块 16:9 的**真实矩形**喂给原生播放器（见 AppScreen.movieFrame）
+                            onStageRect = { controller.movieStageRect = it },
+                            // 顶栏的站内搜索：用**站点自己的**搜索表单（见 searchInMovieMode）
+                            searchReady = controller.movieSearchReady,
+                            searchHint = controller.movieSearchHint,
+                            // 站内跳转交给控制器：它会钉住 host，让影视模式跟着走（跨站才退出）
+                            onNavigate = { controller.openInMovieMode(it) },
+                            onSearch = { controller.searchInMovieMode(it) },
+                            onPlay = onPlayMovie,
+                            // 回网页去起播（退出但不拉黑这一站）：起播后判据成立会自动回到影视模式
+                            onPlayInPage = { controller.playInPage() },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    // 加载进度：**叠在网页最上沿**（正好落在状态栏那条带子下面），
+                    // 不占布局高度 —— 这样 WebView 的窗口顶边就等于"状态栏带子的下沿"，
+                    // 播放器按它算出来的吸附位置不会在顶上留缝
+                    if (controller.loading) {
+                        LinearProgressIndicator(
+                            progress = { controller.progress / 100f },
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .height(2.dp),
+                            strokeCap = StrokeCap.Butt
+                        )
+                    }
 
                     // 滑动手势的实时提示（边缘箭头 / 顶部刷新圈）
                     SwipeHints(controller)
@@ -552,20 +836,30 @@ fun BrowserScreen(
                         )
                     }
 
-                    // 主文档加载失败：**整页换成自家的失败页**。
-                    // 原来只在网页上浮一张小卡 —— 底下 Chromium 自带的错误页照样透出来，
-                    // 用户看到的仍是"原始网页"（用户点名）。所以这里铺满整块网页区域、
-                    // 用不透明底色盖住 WebView（见 PageErrorView）。
-                    controller.loadError?.let { message ->
-                        PageErrorView(
-                            message = message,
-                            onRetry = { controller.reload() },
-                            onHome = { controller.loadHome() }
-                        )
+                    // 页面叠层：加载动画 / 失败页 / 什么都不盖（定义在根容器之前，
+                    // 顶带子也要读它 —— 见 stripColor）。
+                    // 主文档加载失败：**整页换成自家的失败页**（铺满整块网页区域、
+                    // 用不透明底色盖住 WebView，见 PageErrorView）
+                    AnimatedContent(
+                        targetState = pageOverlay,
+                        modifier = Modifier.fillMaxSize(),
+                        transitionSpec = {
+                            // 只做交叉淡入淡出、两态都铺满同色底：交叉区看不到底色突变，
+                            // 读起来是"弧消散、失败页浮现"
+                            fadeIn(tween(280)) togetherWith fadeOut(tween(200))
+                        },
+                        label = "pageOverlay"
+                    ) { state ->
+                        when (state) {
+                            PageOverlayState.Loading -> PageLoadingGlyph()
+                            is PageOverlayState.Error -> PageErrorView(
+                                message = state.message,
+                                onRetry = { controller.reload() },
+                                onHome = { controller.loadHome() }
+                            )
+                            PageOverlayState.None -> Spacer(Modifier.fillMaxSize())
+                        }
                     }
-
-                    // 加载动画放**最上层**：正在加载时它盖住空白（页面一出来就淡出）
-                    PageLoadingOverlay(visible = showPageLoading)
                 }
             }
         }
@@ -1192,7 +1486,7 @@ private fun TabCard(
             .aspectRatio(TAB_CARD_RATIO)
             .onGloballyPositioned {
                 cardWidth = it.size.width.toFloat().coerceAtLeast(1f)
-                onBounds(it.boundsInRoot())
+                onBounds(it.boundsInWindow())
             }
     ) {
         // 卡片底下那层"松手即关"的提示：随位移渐显（滑得越远越明确）。
@@ -1406,8 +1700,8 @@ private fun TabCard(
  * 拿这张预览顶上去接住"还在卡位上的整页"的 —— 两边尺寸对不齐，落位瞬间内容
  * 就会**突然变小 / 跳一下**（用户点名）。按页排布 + 同一套裁法，两边天然同源。
  *
- * 页面版式取自 browser-home.html 的 `.wrap`：上下留白后居中（上 24px、下 20vh），
- * 品牌区高 80px —— 因此字标中心落在 `0.4 × 页高 + 12` 处，**略高于页面中心**。
+ * 页面版式取自 browser-home.html：`.wrap` 是整屏、`.brand` 在其中水平垂直**居中**，
+ * 品牌区高 80px —— 因此字标中心就落在页面正中（0.5 × 页高），水平居中。
  * 那两处常量若在 HTML 里改了，这里要跟着改。
  */
 @Composable
@@ -1446,12 +1740,17 @@ private fun HomePreview(pageWidth: Dp, pageHeight: Dp, modifier: Modifier = Modi
                 val cover = maxOf(cardW / pageW, cardH / pageH)
                 val tx = (cardW - pageW * cover) / 2f
                 val ty = (cardH - pageH * cover) / 2f
-                // 字标在"页面"里的位置：水平居中；垂直中心在 0.4×页高 + 12 处
-                //（首页 .wrap 上 24px、下 20vh，上下留白后居中 —— 因此略高于页面中心）
+                // 字标在"页面"里的位置：水平居中、垂直也居中。
+                //
+                // 首页里 `.brand` 就是 `top: 50%` 的居中元素（`.wrap` 是整屏、
+                // 上下没有任何留白），所以这里必须画在**页面正中**。早先按
+                // "上 24px、下 20vh 之后居中"外推成 `0.4×页高 + 12`，比真位置高出
+                // 一成页高：落位那一刻卡片上的字标与还在卡位上的整页字标**差着
+                // 一大截**，交叉淡入读起来就是"两个 logo 在交替"（用户点名）
                 val h = HOME_BRAND_HEIGHT.toPx() * cover
                 val w = h * ratio
                 val cx = pageW / 2f * cover + tx
-                val cy = (pageH * 0.4f + 12.dp.toPx()) * cover + ty
+                val cy = pageH * 0.5f * cover + ty
                 drawImage(
                     image = logoImage,
                     dstOffset = IntOffset(
@@ -1479,7 +1778,8 @@ private val HOME_BRAND_HEIGHT = 80.dp
  * "用的还是原始网页"。所以这里做成一个真正的**页面**，而不是浮层卡片。
  *
  * 版式：大号断线图标（呼吸）+ 标题 + 具体失败原因 + 「重试 / 回到首页」两个出口。
- * 换一条失败原因会重播一次进场（淡入 + 0.96 → 1 轻微放大）。
+ * 换一条失败原因会重播一次进场（内容从下方 10dp 浮现）；整页的淡入由外层叠层的
+ * 交叉负责（见 PageOverlayState），这里不再自己做。
  */
 @Composable
 private fun PageErrorView(
@@ -1493,7 +1793,7 @@ private fun PageErrorView(
     LaunchedEffect(message) { shown = true }
     val appear by animateFloatAsState(
         targetValue = if (shown) 1f else 0f,
-        animationSpec = tween(260, easing = FastOutSlowInEasing),
+        animationSpec = tween(280, easing = FastOutSlowInEasing),
         label = "pageErrorAppear"
     )
     val pulse = rememberInfiniteTransition(label = "pageErrorPulse").animateFloat(
@@ -1520,21 +1820,21 @@ private fun PageErrorView(
                         awaitPointerEvent().changes.forEach { it.consume() }
                     }
                 }
-            }
-            .graphicsLayer {
-                alpha = appear
-                scaleX = 0.96f + 0.04f * appear
-                scaleY = 0.96f + 0.04f * appear
             },
         contentAlignment = Alignment.Center
     ) {
         // 失败原因要能**长按选中、复制**：包一层选择容器，选中与复制都走我们自己的
-        // 文本（下面那张原始错误页已经不参与手势了）
+        // 文本（下面那张原始错误页已经不参与手势了）。
+        //
+        // 进场只做**内容上浮**（10dp → 0）：整页的淡入交给外层叠层的交叉 —— 两层
+        // 各自淡入会叠成"双淡入"，交叉区发灰（而且底色本该第一帧就铺满，
+        // 免得露出下面 WebView 的空白）
         SelectionContainer {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 36.dp),
+                    .padding(horizontal = 36.dp)
+                    .graphicsLayer { translationY = (1f - appear) * 10.dp.toPx() },
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(
@@ -1589,46 +1889,61 @@ private fun PageErrorView(
 }
 
 /**
- * 自家的页面加载动画（不是系统那条细进度条）。
+ * 覆盖在网页之上的那层状态（加载动画 / 失败页 / 都不盖）。
  *
- * 一圈匀速转动的弧 + 中间一枚**轻轻呼吸的字标**（与首页同一个资产），
- * 底色用页面底 —— 读起来是"应用自己在加载"，而不是网页自己的骨架屏。
- *
- * 盖住的那块是空白期：页面一画上来 `visible` 就转 false，260ms 淡出。
+ * 用 sealed 而不是两个布尔：交叉过渡一次只该有**一个**当前态，
+ * 两份布尔必然打架（失败时 loading 也是 false，谁优先只能靠书写顺序保证）。
  */
-@Composable
-private fun PageLoadingOverlay(visible: Boolean, modifier: Modifier = Modifier) {
-    AnimatedVisibility(
-        visible = visible,
-        modifier = modifier,
-        enter = fadeIn(tween(180)),
-        exit = fadeOut(tween(260))
-    ) {
-        // 两条无限动画放在**可见分支内部**：放外面的话，即便整块隐着，
-        // 转圈与呼吸也会一直跑下去 —— 应用再也进不了空闲，白白每帧重绘
-        PageLoadingGlyph()
-    }
+private sealed interface PageOverlayState {
+    /** 自家加载动画在场（页面还没画出内容）。 */
+    data object Loading : PageOverlayState
+
+    /** 主文档加载失败，整页换成失败页。 */
+    data class Error(val message: String) : PageOverlayState
+
+    /** 什么都不盖，直接看网页。 */
+    data object None : PageOverlayState
 }
 
-/** 加载动画本体（转圈 + 呼吸字标）。只在覆盖层可见期间存在。 */
+/**
+ * 加载动画本体（品牌渐变弧 + 轻呼吸的字标）。只在覆盖层可见期间存在。
+ *
+ * 弧取 Material 圆环进度的成熟做法（旋转 + 弧长呼吸两条动画叠加），但刷的是
+ * **品牌渐变拖尾**：尾端近透明、头端实色，转起来自带拖尾（用户要"有设计感"）。
+ * 只有旋转的话是一根固定弧在转，读起来像"卡住了"；弧长呼吸才是"在忙"的观感。
+ */
 @Composable
 private fun PageLoadingGlyph() {
     val colorScheme = MaterialTheme.colorScheme
     val logo = rememberLerxuLogo()
+    // 旋转：匀速转圈（时间基准）。略慢于弧长呼吸，两条叠加时相位持续错开，
+    // 观感不会陷入机械循环
     val spin = rememberInfiniteTransition(label = "pageLoadSpin").animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1100, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(1150, easing = LinearEasing)),
         label = "pageLoadSpinAngle"
     )
-    val breath = rememberInfiniteTransition(label = "pageLoadBreath").animateFloat(
-        initialValue = 0.86f,
-        targetValue = 1f,
+    // 弧长呼吸：68° ⇄ 288°，与旋转叠加出"扫"的动感
+    val sweep = rememberInfiniteTransition(label = "pageLoadSweep").animateFloat(
+        initialValue = PAGE_LOAD_SWEEP_MIN,
+        targetValue = PAGE_LOAD_SWEEP_MAX,
         animationSpec = infiniteRepeatable(
-            tween(900, easing = FastOutSlowInEasing),
+            tween(1080, easing = FastOutSlowInEasing),
             RepeatMode.Reverse
         ),
-        label = "pageLoadBreathScale"
+        label = "pageLoadSweepAngle"
+    )
+    // 字标呼吸：只做**透明度**（不缩放 —— 缩放在字标上显得廉价），
+    // 节奏比弧慢一档，两者不同频才不会读成"整块在抖"
+    val logoBreath = rememberInfiniteTransition(label = "pageLoadBreath").animateFloat(
+        initialValue = 0.72f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            tween(1500, easing = FastOutSlowInEasing),
+            RepeatMode.Reverse
+        ),
+        label = "pageLoadLogoAlpha"
     )
     Box(
         modifier = Modifier
@@ -1642,16 +1957,37 @@ private fun PageLoadingGlyph() {
                     .fillMaxSize()
                     .graphicsLayer { rotationZ = spin.value }
             ) {
-                val stroke = 2.4.dp.toPx()
+                val stroke = 2.6.dp.toPx()
                 val radius = size.minDimension / 2f - stroke / 2f
-                drawArc(
+                // 拖尾：把弧切成若干段、透明度从尾（淡）到头（实）递增。
+                // **不用 sweepGradient** —— 渐变的颜色停靠点钉死在整圈上，弧长呼吸时
+                // 既会露硬边、拖尾也跟着失效；分段画与弧长无关，怎么呼吸都对
+                val sweepDeg = sweep.value
+                val segments = 26
+                for (i in 0 until segments) {
+                    val f = i / (segments - 1f)
+                    // 二次曲线：尾端掉得更快，头部保持实色
+                    val alpha = 0.08f + 0.92f * f * f
+                    drawArc(
+                        color = colorScheme.primary.copy(alpha = alpha),
+                        startAngle = -90f + sweepDeg * (i / segments.toFloat()),
+                        sweepAngle = sweepDeg / segments + 1.2f,
+                        useCenter = false,
+                        topLeft = Offset(stroke / 2f, stroke / 2f),
+                        size = Size(radius * 2f, radius * 2f),
+                        style = Stroke(width = stroke, cap = StrokeCap.Butt)
+                    )
+                }
+                // 头端补一枚圆点：段与段用 Butt 衔接（圆头会互相叠出一串"珠子"），
+                // 整条弧的圆角只在头部给
+                val headRad = Math.toRadians((-90f + sweepDeg).toDouble())
+                drawCircle(
                     color = colorScheme.primary,
-                    startAngle = -90f,
-                    sweepAngle = 250f,
-                    useCenter = false,
-                    topLeft = Offset(stroke / 2f, stroke / 2f),
-                    size = Size(radius * 2f, radius * 2f),
-                    style = Stroke(width = stroke, cap = StrokeCap.Round)
+                    radius = stroke / 2f,
+                    center = Offset(
+                        size.width / 2f + radius * Math.cos(headRad).toFloat(),
+                        size.height / 2f + radius * Math.sin(headRad).toFloat()
+                    )
                 )
             }
             if (logo != null) {
@@ -1661,10 +1997,7 @@ private fun PageLoadingGlyph() {
                     modifier = Modifier
                         .height(13.dp)
                         .aspectRatio(logo.width.toFloat() / logo.height.coerceAtLeast(1))
-                        .graphicsLayer {
-                            scaleX = breath.value
-                            scaleY = breath.value
-                        },
+                        .graphicsLayer { alpha = logoBreath.value },
                     // 深色底上原标的深藏青会糊进背景：与首页同读法，把它提亮
                     colorFilter = if (colorScheme.background.luminance() < 0.5f) {
                         ColorFilter.tint(colorScheme.onSurface)
@@ -1676,6 +2009,10 @@ private fun PageLoadingGlyph() {
         }
     }
 }
+
+/** 加载弧弧长呼吸的上下限（度）。上限留出缺口，读起来是"在扫"而不是一条闭合圆环。 */
+private const val PAGE_LOAD_SWEEP_MIN = 68f
+private const val PAGE_LOAD_SWEEP_MAX = 288f
 
 /** 首页字标（assets 里那张）解一次记住：卡片预览与页面加载动画共用。 */
 @Composable
@@ -1839,4 +2176,75 @@ private fun Context.findFragmentActivity(): androidx.fragment.app.FragmentActivi
         ctx = (ctx as? android.content.ContextWrapper)?.baseContext
     }
     return null
+}
+
+/** Compose 的浮点 Rect → 原生覆盖层那边的整型 px（`android.graphics.Rect`）。 */
+private fun Rect.toAndroidRect(): android.graphics.Rect =
+    android.graphics.Rect(
+        left.roundToInt(),
+        top.roundToInt(),
+        right.roundToInt(),
+        bottom.roundToInt()
+    )
+
+/**
+ * 网格形变期间播放器该落在哪儿 —— 把页面里那个 `<video>` 的矩形，用**网页形变那一套
+ * 完全相同的映射**折算一遍。
+ *
+ * 网页那套（见 BrowserScreen 里那个 `graphicsLayer`）是"覆盖式缩放 + 窗口裁剪"：
+ * 1. 缩放 `s` 从 1 插值到 `cover`（`cover` = 卡片宽高比下"盖满卡片"所需的缩放）；
+ * 2. 可视窗口在页面局部坐标里居中、大小为 `目标矩形 / s`，随进度从"整页"变成"卡片"；
+ * 3. 于是页面里任意一点 `p` 落在屏幕上 = `目标矩形左上角 + (p - 窗口左上角) * s`。
+ *
+ * 播放器是另一个 View 树（不吃 Compose 的图形层），所以在这里把视频矩形按同一套映射
+ * 折出来喂给它：网页缩到哪儿、缩成多大，播放器就跟到哪儿、缩成多大，比例也一致 ——
+ * 而不是"简单地插值到整张卡片"（那样落位时播放器会比网页里那块大一圈、比例也不对）。
+ *
+ * **三个矩形必须处在同一个坐标系**：这里统一用**窗口坐标**（卡片与页框都取
+ * `boundsInWindow`，播放器那个矩形本来就是 `getLocationInWindow` 报上来的）。
+ * 早先卡片用"根坐标"、播放器用"窗口坐标"，两者差着"Compose 根在窗口里的位置"
+ * （状态栏那一截），于是形变整段都偏一个固定的量、落位那一刻才归位 ——
+ * 用户看到的就是"先向右下偏移，然后再定位到中间"。
+ *
+ * 返回 (播放器矩形, 可见窗口矩形)：可见窗口矩形用来**裁剪**（视频会被窗口裁掉一部分，
+ * 跟网页里一模一样，不裁的话播放器会画到卡片外面去）。两者都是窗口坐标 px。
+ * 没有形变（进度为 0 / 尺寸还没测到）时返回 null。
+ */
+private fun morphPlayerInPage(
+    progress: Float,
+    pageTop: Float,
+    gridWidth: Float,
+    gridHeight: Float,
+    pageOrigin: Offset,
+    card: Rect,
+    video: Rect
+): Pair<Rect, Rect>? {
+    if (progress <= 0f || gridWidth <= 0f || gridHeight <= 0f) return null
+    // 页框（网页内容那一块）在窗口里的位置：顶部让给状态栏的那一截不算
+    val full = Rect(
+        pageOrigin.x,
+        pageOrigin.y + pageTop,
+        pageOrigin.x + gridWidth,
+        pageOrigin.y + gridHeight
+    )
+    if (full.width <= 0f || full.height <= 0f) return null
+    val cover = maxOf(card.width / full.width, card.height / full.height)
+    val s = 1f + (cover - 1f) * progress
+    val targetW = full.width + (card.width - full.width) * progress
+    val targetH = full.height + (card.height - full.height) * progress
+    if (s <= 0f || targetW <= 0f || targetH <= 0f) return null
+    val winW = targetW / s
+    val winH = targetH / s
+    val winLeft = full.center.x - winW / 2f
+    val winTop = full.center.y - winH / 2f
+    val targetLeft = full.left + (card.left - full.left) * progress
+    val targetTop = full.top + (card.top - full.top) * progress
+    val target = Rect(targetLeft, targetTop, targetLeft + targetW, targetTop + targetH)
+    val mapped = Rect(
+        targetLeft + (video.left - winLeft) * s,
+        targetTop + (video.top - winTop) * s,
+        targetLeft + (video.right - winLeft) * s,
+        targetTop + (video.bottom - winTop) * s
+    )
+    return mapped to target
 }

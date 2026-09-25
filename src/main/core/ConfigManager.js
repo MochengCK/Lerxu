@@ -110,6 +110,13 @@ export default class ConfigManager {
         'enable-dht6': true,
         'follow-metalink': true,
         'follow-torrent': true,
+        // HLS（M3U8）：空串 = 自动/默认（清晰度取最高码率变体、乱序落盘、
+        // 分片并发按用户显式设置过的 split / 每服务器连接数推导）
+        'hls-concurrency': EMPTY_STRING,
+        'hls-probe-size': true,
+        'hls-segment-retries': 3,
+        'hls-variant': EMPTY_STRING,
+        'hls-write-mode': EMPTY_STRING,
         'listen-port': 21301,
         'max-concurrent-downloads': 10,
         'max-connection-per-server': defaultConn,

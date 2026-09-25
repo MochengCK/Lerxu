@@ -188,6 +188,12 @@ const systemKeys = [
   'gid',
   'hash-check-only',
   'header',
+  // HLS（M3U8）：清晰度 / 落盘方式 / 分片并发 / 分片大小探测 / 分片重试次数
+  'hls-concurrency',
+  'hls-probe-size',
+  'hls-segment-retries',
+  'hls-variant',
+  'hls-write-mode',
   'http-accept-gzip',
   'http-auth-challenge',
   'http-no-cache',

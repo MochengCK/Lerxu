@@ -118,11 +118,6 @@ export const convertTrackerDataToLine = (arr = []) => {
   return result
 }
 
-export const convertTrackerDataToComma = (arr = []) => {
-  const result = convertTrackerDataToLine(arr).replace(/(?:\r\n|\r|\n)/g, ',').trim()
-  return result
-}
-
 /**
  * Deduplicate individual tracker URLs from raw text responses.
  * Each element in `data` is a raw string that may contain multiple tracker

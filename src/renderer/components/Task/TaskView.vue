@@ -58,10 +58,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted, nextTick, getCurrentInstance, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted, getCurrentInstance } from 'vue'
 // 偏好设置表单同步导入：避免 defineAsyncComponent 在 dev 模式下导致
 // 组件 JS 与 scoped CSS 分离加载，首次渲染时样式未就绪（FOUC）。
-import { useRouter } from 'vue-router'
 import { dialog, Menu, getCurrentWindow } from '@electron/remote'
 import { ipcRenderer } from 'electron'
 import { ElMessage } from 'element-plus'
@@ -96,7 +95,6 @@ import { clearMergeRetryTimer } from '@/utils/mergeRetryManager'
 
 const { t } = i18n.global
 const msg = createMsg(ElMessage, { showClose: true })
-const router = useRouter()
 
 const props = defineProps({
   status: {
@@ -145,16 +143,9 @@ const instance = getCurrentInstance()
 const noConfirmBeforeDelete = computed(() => preferenceConfig.value.noConfirmBeforeDeleteTask)
 const dateFilterFrosted = computed(() => preferenceConfig.value.dateFilterFrosted)
 const autoHideAside = computed(() => preferenceConfig.value.autoHideAside)
-const hideAppMenu = computed(() => preferenceConfig.value.hideAppMenu)
 
 const selectedGidListCount = computed(() => selectedGidList.value.length)
 
-const subnavs = computed(() => [
-  { key: 'all', title: t('task.all'), route: '/task/all' },
-  { key: 'active', title: t('task.active'), route: '/task/active' },
-  { key: 'waiting', title: t('task.waiting'), route: '/task/waiting' },
-  { key: 'stopped', title: t('task.stopped'), route: '/task/stopped' }
-])
 
 const taskSearchQuery = computed({
   get () { return taskSearchKeyword.value },
@@ -185,7 +176,6 @@ const taskActionsDateFilter = computed(() => ({
 
 const blockCategoryHoverOpen = computed(() => !!(taskDetailVisible.value || addTaskVisible.value || taskPlanVisible.value))
 
-const taskCounts = computed(() => taskStore.filteredTaskCounts)
 
 // --- Watchers ---
 watch(() => props.status, () => {
@@ -207,13 +197,6 @@ watch(storeFilterDate, (val) => {
   selectedDate.value = val || ''
 }, { immediate: true })
 // --- Methods ---
-function formatCount (count) {
-  const n = Number(count) || 0
-  if (n > 999) {
-    return '999+'
-  }
-  return String(n)
-}
 
 function onTaskPageContextMenu (event) {
   const target = event && event.target
@@ -286,22 +269,6 @@ function clearCategoryHoverCloseTimer () {
   categoryHoverCloseTimer = null
 }
 
-function scheduleCloseCategorySelect () {
-  clearCategoryHoverCloseTimer()
-  categoryHoverCloseTimer = setTimeout(() => {
-    const select = categorySelect.value
-    if (!select || !select.visible) {
-      return
-    }
-    if (isHoveringCategoryPopper.value) {
-      return
-    }
-    if (select.visible) {
-      select.visible = false
-    }
-    blurCategorySelect()
-  }, 120)
-}
 
 function blurCategorySelect () {
   const select = categorySelect.value
@@ -322,27 +289,6 @@ function blurCategorySelect () {
   }, 10)
 }
 
-function bindCategoryPopperEvents () {
-  if (isCategoryPopperEventsBound.value) {
-    return
-  }
-  const select = categorySelect.value
-  const popper = select && select.popperElm
-  if (!popper) {
-    return
-  }
-  categoryPopperMouseEnterHandler = () => {
-    isHoveringCategoryPopper.value = true
-    clearCategoryHoverCloseTimer()
-  }
-  categoryPopperMouseLeaveHandler = () => {
-    isHoveringCategoryPopper.value = false
-    scheduleCloseCategorySelect()
-  }
-  popper.addEventListener('mouseenter', categoryPopperMouseEnterHandler)
-  popper.addEventListener('mouseleave', categoryPopperMouseLeaveHandler)
-  isCategoryPopperEventsBound.value = true
-}
 
 function unbindCategoryPopperEvents () {
   const select = categorySelect.value
@@ -362,18 +308,7 @@ function unbindCategoryPopperEvents () {
   isHoveringCategoryPopper.value = false
 }
 
-function navStatus (status) {
-  instance.proxy.$router.push({
-    path: `/task/${status}`
-  }).catch(err => {
-    console.log(err)
-  })
-}
 
-function showDatePicker () {
-  datePickerVisible.value = true
-  commands.emit('popup:open', 'date-picker')
-}
 
 function onOtherPopupOpen (source) {
   if (source !== 'date-picker' && datePickerVisible.value) {

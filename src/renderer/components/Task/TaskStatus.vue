@@ -9,7 +9,6 @@ defineOptions({ name: 'mo-task-status' }) // 供父组件 [X.name]: X 注册
 import { computed } from 'vue'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 import { APP_THEME, TASK_STATUS } from '@shared/constants'
-import colors from '@shared/colors'
 
 const props = defineProps({
   theme: {
@@ -37,7 +36,6 @@ const statusTypeMap = {
 
 const type = computed(() => statusTypeMap[props.status])
 
-const color = computed(() => colors[props.status])
 
 const statusText = computed(() => {
   const raw = `${props.status || ''}`.trim()

@@ -218,6 +218,15 @@
     <string name="settings_section_start">启动</string>
     <string name="settings_start_page">默认入口</string>
     <string name="settings_start_page_note">下次打开 App 时生效，之后可随时在设置里改</string>
+    <string name="settings_browser">浏览器</string>
+    <string name="settings_ad_block">自动拦截广告</string>
+    <string name="settings_ad_block_desc">拦截网页里的广告请求，并隐藏页面上的广告位。默认开启。</string>
+    <string name="browser_dock_more">更多功能</string>
+    <string name="browser_dock_more_tabs">标签页</string>
+    <string name="browser_dock_more_new_tab">新建标签</string>
+    <string name="browser_dock_more_home">主页</string>
+    <string name="browser_dock_more_downloads">下载页</string>
+    <string name="browser_dock_more_settings">设置</string>
     <string name="settings_appearance">外观</string>
     <string name="theme">主题</string>
     <string name="theme_follow_system">跟随系统</string>
@@ -348,7 +357,7 @@
     <!-- 内置浏览器 -->
     <string name="tab_browser">浏览器</string>
     <string name="browser_back">后退</string>
-    <string name="browser_address_hint">搜索或输入地址 · %1$s</string>
+    <string name="browser_address_hint">搜索或输入地址</string>
     <string name="browser_sniff_title">本页资源</string>
     <string name="default_browser_title">设为默认浏览器</string>
     <string name="default_browser_desc">用 Lerxu 打开 http / https 链接</string>
@@ -387,6 +396,19 @@
     <string name="browser_dock_style">界面方案</string>
     <string name="browser_dock_style_classic">传统</string>
     <string name="browser_dock_style_modern">现代</string>
+    <!-- 影视模式（识别到影视页时自动开启） -->
+    <string name="movie_mode">影视模式</string>
+    <string name="movie_mode_close">关闭影视模式</string>
+    <string name="movie_mode_empty">这一页还没识别到可播放的影视资源</string>
+    <string name="movie_mode_loading">正在读取这一页…</string>
+    <string name="movie_mode_no_content">这一页没有可显示的内容</string>
+    <string name="movie_mode_view_page">查看原网页</string>
+    <string name="movie_mode_lines">播放线路</string>
+    <string name="movie_mode_recommend">猜你喜欢</string>
+    <string name="movie_mode_comments">评论</string>
+    <string name="movie_mode_nav_open">浏览分类</string>
+    <string name="movie_mode_search_hint">搜索站内内容</string>
+    <string name="movie_mode_play_in_page">在网页里播放</string>
     <!-- Window mode selection -->
     <string name="browser_window_mode">窗口模式</string>
     <string name="normal_window">普通窗口</string>

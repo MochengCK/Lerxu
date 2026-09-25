@@ -6,6 +6,7 @@ import com.lerxu.android.browser.SearchEngines
 import com.lerxu.android.browser.SniffKind
 import com.lerxu.android.browser.SniffedResource
 import com.lerxu.android.browser.PullRefreshGlyph
+import com.lerxu.android.browser.Suggestions
 import com.lerxu.android.browser.TabNaming
 import com.lerxu.android.browser.VideoSniffer
 import org.junit.Assert.assertEquals
@@ -141,7 +142,15 @@ class BrowserRulesTest {
         val file = candidates.map { File(it) }.firstOrNull { it.exists() }
             ?: error("找不到 browser-home.html（工作目录：${File(".").absolutePath}）")
         val html = file.readText()
-        assertFalse("首页不该再自带引擎清单", html.contains("key: '"))
+        // 判据要**贴着「引擎清单」的形状**找，不能只找 `key: '` —— 搜索页列表的
+        // 行复用键（`key: 'u:' + url`）也是这个写法，拿它当判据会把"行复用"
+        // 误报成"首页自带引擎清单"（真踩过：syncRows 一落地这条就红了）
+        assertFalse(
+            "首页不该再自带引擎清单",
+            Regex("""key\s*:\s*'[^']*'\s*,\s*name""").containsMatchIn(html)
+        )
+        // 清单里必然带着引擎模板，这串出现即等于第二处真相
+        assertFalse("首页不该再自带引擎清单", html.contains("searchUrl"))
         assertFalse("首页不该再有引擎标签 DOM", html.contains("id=\"chips\""))
     }
 
@@ -149,9 +158,58 @@ class BrowserRulesTest {
     fun `every engine template has exactly one placeholder`() {
         SearchEngines.all.forEach { engine ->
             assertEquals(engine.key, 1, engine.searchUrl.split("%s").size - 1)
+            // 联想词端点同样只能有一个占位符：多了会把关键词塞进错误的位置
+            assertEquals(engine.key, 1, engine.suggestUrl.split("%s").size - 1)
         }
         // key 是持久化标识，重复会导致用户选择指向不确定的引擎
         assertEquals(SearchEngines.all.size, SearchEngines.all.map { it.key }.toSet().size)
+    }
+
+    // ─── 联想词（首页聚焦后的"搜索建议"） ───
+
+    @Test
+    fun `suggest url encodes the query`() {
+        assertEquals(
+            "https://api.bing.com/osjson.aspx?query=%E7%8C%AB%20%E7%8B%97",
+            Suggestions.url(bing, "猫 狗")
+        )
+        assertTrue(Suggestions.url(google, "cat")!!.endsWith("q=cat"))
+    }
+
+    @Test
+    fun `blank query yields no suggest url`() {
+        assertNull(Suggestions.url(bing, ""))
+        assertNull(Suggestions.url(bing, "   "))
+    }
+
+    @Test
+    fun `suggest response is parsed`() {
+        // Bing osjson 与 Google complete/search 是同一形状
+        assertEquals(
+            listOf("猫粮", "猫咪图片"),
+            Suggestions.parse("[\"猫\",[\"猫粮\",\"猫咪图片\"]]")
+        )
+    }
+
+    @Test
+    fun `malformed suggest response yields an empty list`() {
+        assertEquals(emptyList<String>(), Suggestions.parse(""))
+        assertEquals(emptyList<String>(), Suggestions.parse("not json"))
+        assertEquals(emptyList<String>(), Suggestions.parse("{\"a\":1}"))
+        // 第二项不是数组（有的引擎会回一个错误对象）
+        assertEquals(emptyList<String>(), Suggestions.parse("[\"q\",{\"error\":1}]"))
+    }
+
+    @Test
+    fun `suggest response drops blanks duplicates and overlong lists`() {
+        val body = "[\"q\",[\"a\",\"\",\"  \",\"a\",\"b\",\"c\",\"d\",\"e\",\"f\",\"g\",\"h\"," +
+            "\"i\",\"j\",\"k\",\"l\"]]"
+        val parsed = Suggestions.parse(body)
+        assertEquals(
+            listOf("a", "b", "c", "d", "e", "f", "g", "h", "i", "j"),
+            parsed
+        )
+        assertEquals(Suggestions.MAX_ITEMS, parsed.size)
     }
 
     // ─── 嗅探规则 ───
@@ -325,6 +383,31 @@ class TabNamingTest {
         assertEquals("", TabNaming.subtitle("file:///android_asset/browser-home.html"))
         assertEquals("", TabNaming.subtitle("about:blank"))
         assertEquals("", TabNaming.subtitle(""))
+    }
+
+    /**
+     * 地址栏里显示的就是 [TabNaming.subtitle] 的结果（用户点名：不要原始链接）。
+     *
+     * 这条简写**必须仍然被认成网址**，否则用户点一下地址栏、手一抖按了回车，
+     * 这一页的地址会被当成搜索词送去搜（"页面地址一提交就变成搜索"）。
+     * 端口号是最容易漏的一档：`a.com:8080/x` 得走 DOMAIN_RE 的 `(:\d{1,5})?`
+     */
+    @Test
+    fun `displayed address is still recognised as a url`() {
+        val urls = listOf(
+            "https://www.a.com/b/",
+            "http://a.com",
+            "https://a.com:8080/path?q=1#f",
+            "http://192.168.1.5:8000/download",
+            "https://localhost:3000/dev"
+        )
+        urls.forEach { url ->
+            val shown = TabNaming.subtitle(url)
+            assertTrue("showed nothing for $url", shown.isNotEmpty())
+            assertTrue("$shown is not a url", BrowserUrl.looksLikeUrl(shown))
+        }
+        // 本地页面显示空串 —— 那种页面本来就没有可提交的地址
+        assertEquals("", TabNaming.subtitle("file:///android_asset/x.html"))
     }
 
     @Test

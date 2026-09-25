@@ -113,18 +113,11 @@
 
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import is from 'electron-is'
 import {
-  calcFormLabelWidth,
   checkTaskIsBT,
-  checkTaskIsSeeder
 } from '@shared/utils'
-import { convertTrackerDataToLine } from '@shared/utils/tracker'
-import { EMPTY_STRING } from '@shared/constants'
 import i18n from '@/plugins/i18n'
 import api from '@/api'
-import { usePreferenceStore } from '@/store/preference'
-import { storeToRefs } from 'pinia'
 
 const { t } = i18n.global
 
@@ -136,12 +129,7 @@ const props = defineProps({
 
 defineOptions({ name: 'mo-task-trackers' })
 
-const preferenceStore = usePreferenceStore()
-const { config } = storeToRefs(preferenceStore)
 
-const form = ref({})
-const formLabelWidth = computed(() => calcFormLabelWidth(config.value.locale))
-const locale = computed(() => config.value.locale)
 const tableHeight = ref('100%')
 const trackerStats = ref([])
 const defaultFavicon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23909399' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E"
@@ -156,18 +144,9 @@ let _faviconFlushRafId = null
 let _faviconLoadQueue = null
 let _trackerRefreshInterval = null
 
-const isRenderer = is.renderer()
 
 const isBT = computed(() => checkTaskIsBT(props.task))
-const isSeeder = computed(() => checkTaskIsSeeder(props.task))
 
-const announceList = computed(() => {
-  if (!isBT.value) return EMPTY_STRING
-  const { bittorrent } = props.task
-  if (!bittorrent || !bittorrent.announceList) return EMPTY_STRING
-  const data = bittorrent.announceList.map((i) => i[0])
-  return convertTrackerDataToLine(data)
-})
 
 const trackerList = computed(() => {
   if (!isBT.value) return []

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     class="tab-title-dialog add-task-dialog"
-    width="50vw"
+    width="min(600px, calc(100vw - 72px))"
     v-model="dialogVisible"
     :show-close="false"
     :before-close="beforeClose"
@@ -53,7 +53,7 @@
               size="small"
               :max-height="parsedTableMaxHeight"
             >
-              <el-table-column :label="t('task.task-name')" min-width="240">
+              <el-table-column :label="t('task.task-name')" min-width="186">
                 <template #default="scope">
                   <mo-hover-tip v-if="!scope.row.editing" :content="t('task.double-click-to-edit')" placement="top" :open-delay="300">
                     <span class="mo-parsed-text" @dblclick="enableNameEdit(scope.$index)">{{ scope.row.name }}</span>
@@ -67,12 +67,45 @@
                   />
                 </template>
               </el-table-column>
-              <el-table-column :label="t('task.file-size')" min-width="120" align="right">
+              <el-table-column :label="t('task.file-size')" min-width="50" align="right">
                 <template #default="scope">
                   <span>{{ scope.row.sizeText }}</span>
                 </template>
               </el-table-column>
-              <el-table-column v-if="isPriorityEngineEnabled" :label="t('task.task-priority')" min-width="150" align="right">
+              <!-- 逐链接的 HLS 选项：只对 M3U8 清单地址有意义，其余行留空
+                   （表格里的值就是这条链接实际生效的值，会覆盖高级区的全局设置）；
+                   整列在没有 M3U8 链接时干脆不出现 -->
+              <el-table-column
+                v-if="hasHlsLinks"
+                :label="t('task.hls-variant')"
+                min-width="68"
+              >
+                <template #default="scope">
+                  <mo-extend-select
+                    v-if="isHlsManifestUri(scope.row.url)"
+                    v-model="scope.row.hlsVariant"
+                    :placeholder="t('task.hls-variant-highest')"
+                    :options="hlsVariantOptions"
+                  />
+                  <span v-else class="mo-parsed-text mo-parsed-empty">—</span>
+                </template>
+              </el-table-column>
+              <el-table-column
+                v-if="hasHlsLinks"
+                :label="t('task.hls-write-mode')"
+                min-width="82"
+              >
+                <template #default="scope">
+                  <mo-extend-select
+                    v-if="isHlsManifestUri(scope.row.url)"
+                    v-model="scope.row.hlsWriteMode"
+                    :placeholder="t('task.hls-write-mode-unordered')"
+                    :options="hlsWriteModeOptions"
+                  />
+                  <span v-else class="mo-parsed-text mo-parsed-empty">—</span>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="isPriorityEngineEnabled" :label="t('task.task-priority')" min-width="86" align="right">
                 <template #default="scope">
                   <el-input-number
                     size="small"
@@ -148,6 +181,30 @@
             </div>
           </el-col>
         </el-row>
+        <!-- HLS（M3U8）两个选项只在输入里含 M3U8 链接时出现：它们对普通
+             地址没有任何意义，常驻会让高级区多出两行无用项（用户点名） -->
+        <el-form-item
+          v-if="hasHlsLinks"
+          :label="`${t('task.hls-variant')}: `"
+          :label-width="formLabelWidth"
+        >
+          <mo-extend-select
+            v-model="form.hlsVariant"
+            :placeholder="t('task.hls-variant-highest')"
+            :options="hlsVariantOptions"
+          />
+        </el-form-item>
+        <el-form-item
+          v-if="hasHlsLinks"
+          :label="`${t('task.hls-write-mode')}: `"
+          :label-width="formLabelWidth"
+        >
+          <mo-extend-select
+            v-model="form.hlsWriteMode"
+            :placeholder="t('task.hls-write-mode-unordered')"
+            :options="hlsWriteModeOptions"
+          />
+        </el-form-item>
         <el-form-item
           :label="`${t('task.task-user-agent')}: `"
           :label-width="formLabelWidth"
@@ -278,7 +335,8 @@ import { isEmpty } from 'lodash'
 import {
   initTaskForm,
   buildUriPayload,
-  buildTorrentPayload
+  buildTorrentPayload,
+  isHlsManifestUri
 } from '@/utils/task'
 import i18n from '@/plugins/i18n'
 import { createMsg } from '@/components/Msg'
@@ -327,6 +385,28 @@ const lastDuplicateHistoryKey = ref('')
 const keepTrailingNewline = ref(false)
 const advancedPresets = ref([])
 const selectedAdvancedPresetId = ref('')
+
+// HLS（m3u8）清晰度：空值 = 引擎默认（主清单里码率最高的变体）。
+// 只对播放列表清单地址有效；普通地址选了也无效（引擎按普通文件下载）。
+const hlsVariantOptions = computed(() => [
+  { label: t('task.hls-variant-highest'), value: '' },
+  { label: t('task.hls-variant-lowest'), value: 'worst' }
+])
+
+// HLS 落盘方式：空值 = 引擎默认（乱序落盘 —— 各段先落自己的段文件、连续前缀
+// 就位再拼进产物；进度与速度同步、内存占用极低、队头慢分片不会拖停其他连接）。
+// 选「顺序」= 边下边按清单顺序直接写产物，下载中途的产物就是一个能播的完整
+// 前缀，代价是内存里要攒住"下好但还没轮到写"的分片。
+const hlsWriteModeOptions = computed(() => [
+  { label: t('task.hls-write-mode-unordered'), value: '' },
+  { label: t('task.hls-write-mode-ordered'), value: 'ordered' }
+])
+
+/**
+ * 已解析的链接里是否有 M3U8 清单：两个 HLS 选项（高级区那两项、表格那两列）
+ * 只在有时才出现 —— 它们对普通地址毫无意义，常驻只是多两行无用项（用户点名）。
+ */
+const hasHlsLinks = computed(() => parsedTasks.value.some(it => isHlsManifestUri(it && it.url)))
 const savePresetDialogVisible = ref(false)
 const savePresetName = ref('')
 let clipboardTimer = null
@@ -345,6 +425,13 @@ const selectTorrent = ref(null)
 const isRenderer = is.renderer()
 const isMas = is.mas()
 const isPriorityEngineEnabled = computed(() => !!(config.value && config.value.enablePriorityEngine))
+
+// HLS 两项的「默认值」= 偏好设置 → 传输设置里的全局选项
+// （'' 表示自动/最高码率、乱序落盘）。新建任务时以它为初值，
+// 清空/删除高级预设时也回到这个默认值 —— 而不是空串：
+// 空串只表示"不下发该键、交给引擎默认"，与用户设置的全局默认不是一回事。
+const hlsVariantDefault = computed(() => ((config.value && config.value.hlsVariant) === 'worst' ? 'worst' : ''))
+const hlsWriteModeDefault = computed(() => ((config.value && config.value.hlsWriteMode) === 'ordered' ? 'ordered' : ''))
 const taskType = computed(() => props.type === 'video' ? ADD_TASK_TYPE.URI : props.type)
 const taskTypeOptions = computed(() => [
   { value: 'uri', label: t('task.uri-task') },
@@ -410,6 +497,11 @@ watch(() => form.value.uris, (val) => {
   }
 })
 
+// 高级区改了 HLS 全局设置 → 表格里没单独改过的行跟着变（改过的行保持不动），
+// 这样表格里显示的就是每条链接实际生效的值
+watch(() => form.value.hlsVariant, (cur, prev) => syncRowHlsOption('hlsVariant', cur || '', prev || ''))
+watch(() => form.value.hlsWriteMode, (cur, prev) => syncRowHlsOption('hlsWriteMode', cur || '', prev || ''))
+
 // --- Lifecycle ---
 onMounted(() => {
   dialogVisible.value = props.visible
@@ -465,6 +557,8 @@ function openSavePresetDialog () {
     referer: form.value.referer || '',
     cookie: form.value.cookie || '',
     allProxy: form.value.allProxy || '',
+    hlsVariant: form.value.hlsVariant || '',
+    hlsWriteMode: form.value.hlsWriteMode || '',
     newTaskShowDownloading: !!form.value.newTaskShowDownloading
   }
   const allEmpty = [
@@ -472,7 +566,9 @@ function openSavePresetDialog () {
     data.authorization,
     data.referer,
     data.cookie,
-    data.allProxy
+    data.allProxy,
+    data.hlsVariant,
+    data.hlsWriteMode
   ].every(v => !v || !String(v).trim()) && !data.newTaskShowDownloading
   if (allEmpty) {
     msg.warning(t('task.empty-advanced-options-tips'))
@@ -490,6 +586,8 @@ function saveAdvancedPreset () {
     referer: form.value.referer || '',
     cookie: form.value.cookie || '',
     allProxy: form.value.allProxy || '',
+    hlsVariant: form.value.hlsVariant || '',
+    hlsWriteMode: form.value.hlsWriteMode || '',
     newTaskShowDownloading: !!form.value.newTaskShowDownloading
   }
   const preset = { id: Date.now().toString(), name, data }
@@ -508,6 +606,8 @@ function onAdvancedPresetChange (id) {
     form.value.referer = ''
     form.value.cookie = ''
     form.value.allProxy = ''
+    form.value.hlsVariant = hlsVariantDefault.value
+    form.value.hlsWriteMode = hlsWriteModeDefault.value
     form.value.newTaskShowDownloading = !!(config.value && config.value.newTaskShowDownloading)
     return
   }
@@ -519,6 +619,8 @@ function onAdvancedPresetChange (id) {
   form.value.referer = d.referer || ''
   form.value.cookie = d.cookie || ''
   form.value.allProxy = d.allProxy || ''
+  form.value.hlsVariant = d.hlsVariant || ''
+  form.value.hlsWriteMode = d.hlsWriteMode || ''
   form.value.newTaskShowDownloading = !!d.newTaskShowDownloading
   msg.success(t('task.apply-preset-success'))
 }
@@ -546,6 +648,7 @@ function updateAdvancedPreset () {
     referer: form.value.referer || '',
     cookie: form.value.cookie || '',
     allProxy: form.value.allProxy || '',
+    hlsVariant: form.value.hlsVariant || '',
     newTaskShowDownloading: !!form.value.newTaskShowDownloading
   }
 
@@ -820,6 +923,19 @@ function disableNameEdit (idx) {
   task.renamed = !!renamed
 }
 
+/**
+ * 表格里逐链接的 HLS 选项默认跟随高级区的全局设置（用户没单独改过就跟着走）；
+ * 单独改过某一行之后，那一行不再被全局设置覆盖 —— 表格显示的就是该链接实际
+ * 生效的值（`Api.addUri` 把逐链接选项并到该任务上，覆盖全局）。
+ */
+function syncRowHlsOption (key, next, prev) {
+  parsedTasks.value.forEach((row) => {
+    if (row[key] === undefined || row[key] === prev) {
+      row[key] = next
+    }
+  })
+}
+
 async function updateUriPreview (uris = '') {
   const sanitized = splitTaskLinks(uris || '')
   const seen = new Set()
@@ -955,6 +1071,12 @@ async function updateUriPreview (uris = '') {
       }
     }
   })
+  // 逐链接的 HLS 选项：新行默认跟随高级区的全局设置；已有行（上面的 `...existing`）
+  // 保留用户单独改过的值，只有从未设过（undefined）时才补一个初值。
+  items.forEach((it) => {
+    if (it.hlsVariant === undefined) it.hlsVariant = form.value.hlsVariant || ''
+    if (it.hlsWriteMode === undefined) it.hlsWriteMode = form.value.hlsWriteMode || ''
+  })
   parsedTasks.value = items
 
   const newLines = lines.filter(u => !existingMap.has(u))
@@ -1049,7 +1171,8 @@ function bytesToSize (n) {
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let i = 0
   let val = n
-  while (val >= 1024 && i < units.length - 1) { val /= 1024; i++ }
+  // 1000 进制：与 Finder/资源管理器显示口径一致
+  while (val >= 1000 && i < units.length - 1) { val /= 1000; i++ }
   return `${val.toFixed(1)} ${units[i]}`
 }
 
@@ -1119,6 +1242,10 @@ async function submitForm () {
         }
       }
       form.value.customOuts = ordered.map(i => i.name)
+      // 逐链接 HLS 选项按同一顺序回填（`buildUriPayload` 按 uri 下标取用；
+      // 非 M3U8 行留空 → 该任务不下发这两个选项）
+      form.value.customHlsVariants = ordered.map(i => (isHlsManifestUri(i.url) ? (i.hlsVariant || '') : ''))
+      form.value.customHlsWriteModes = ordered.map(i => (isHlsManifestUri(i.url) ? (i.hlsWriteMode || '') : ''))
       const urisOrdered = ordered.map(i => i.url)
       form.value.uris = urisOrdered.join('\n')
       form.value.priorities = ordered.map(i => Number(i.priority) || 0)
@@ -1220,8 +1347,15 @@ async function submitForm () {
 }
 
 .el-dialog.add-task-dialog {
-  max-width: 632px;
-  min-width: 380px;
+  /* 宽度由模板 width="min(600px, calc(100vw - 72px))" 计算，这里只设下限 */
+  max-width: none;
+  min-width: 420px;
+  /* 高度上限：展开「高级选项」后内容会很高，限制在窗口内。
+     配合下面的 flex 布局让 .el-dialog__body 自己滚动 —— 否则超出的是
+     整个 .el-overlay-dialog（表现为整页滚动、页脚按钮被顶到屏幕外）。 */
+  max-height: calc(85vh - 60px);
+  display: flex;
+  flex-direction: column;
   border-radius: 16px;
 
   /* 顶部/底部整体收紧：任务类型导航栏与关闭按钮上移，页脚下缘收紧 */
@@ -1229,6 +1363,21 @@ async function submitForm () {
   padding-bottom: 6px;
 
   .el-dialog__body {
+    /* 撑满弹窗剩余高度，内容超高时在这里滚动（页脚固定可见） */
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    /* 竖向滚动条出现后表格宽度会残留旧值（比容器宽 6px），直接禁止横向滚动 */
+    overflow-x: hidden;
+    /* 始终为滚动条预留位置：否则滚动条出现/消失时内容宽度突变，
+       表格宽度算在旧值上就会横向溢出 */
+    scrollbar-gutter: stable;
+    /* 用负 margin 抵消弹窗自身的左右 padding，让滚动条贴住弹窗右边缘；
+       左右留白改由这里的 padding 提供（效果不变） */
+    margin-left: calc(-1 * var(--el-dialog-padding-primary, 16px));
+    margin-right: calc(-1 * var(--el-dialog-padding-primary, 16px));
+    padding-left: var(--el-dialog-padding-primary, 16px);
+    padding-right: var(--el-dialog-padding-primary, 16px);
     padding-top: 4px;
   }
 
@@ -1252,59 +1401,90 @@ async function submitForm () {
 
   /* Element Plus 的遮罩层由 .el-overlay 处理，无需额外设置背景色 */
   /* :deep(.el-overlay) 已由 Element Plus modal 属性自动生成遮罩 */
-.parsed-preview {
+  /* 已解析链接预览：一个 1px 圆角边框包住表格，容器高度完全跟随表格内容。
+     注意：TaskTrackers / TaskPeers / TaskEd2kSources 的 <style> 不是 scoped，
+     它们给全局 .mo-table-wrapper 设了 flex:1 / min-height:200px /
+     position:relative —— 会污染到这里：行数少时容器被撑到 200px，底部留出
+     一大片空白并把弹窗顶高。所以下面必须显式重置这几个属性。 */
+  .parsed-preview {
     margin-top: 0;
     margin-bottom: 16px;
+
     .mo-table-wrapper {
-      border: 1px solid var(--lc-border-base);
-      border-radius: 8px;
+      flex: none;
+      position: static;
+      min-height: 0;
       box-sizing: border-box;
       padding: 0;
+      border: 1px solid var(--lc-border-base);
+      border-radius: 8px;
+      overflow: hidden;
     }
+
     .el-table.mo-parsed-table {
       border: none !important;
-      border-radius: 8px 8px 0 0;
-      overflow: hidden;
-      &::before, &::after {
+
+      /* 表格自己画的边框线全部去掉：底边线（.el-table__inner-wrapper::before）
+         会和容器边框叠成双线，其余是 EP 的默认边框残留 */
+      &::before,
+      &::after,
+      .el-table__inner-wrapper::before,
+      .el-table__inner-wrapper::after,
+      .el-table--border::after,
+      .el-table--group::after {
         display: none !important;
       }
-      .el-table--border::after, .el-table--group::after {
-        display: none !important;
-      }
-      th.gutter, colgroup.gutter {
-        display: none !important;
-        width: 0 !important;
-      }
+
+      /* 竖向滚动条占位列：去掉，否则表头右侧多出一条空列 */
+      th.gutter,
+      colgroup.gutter,
       .el-table__header colgroup col[name="gutter"] {
         display: none !important;
         width: 0 !important;
       }
-      .el-table__body tr:last-child td {
-        border-bottom: none !important;
+
+      /* 列宽已随弹窗宽度分配（见各列 min-width），禁用横向滚动 */
+      .el-scrollbar__wrap,
+      .el-table__body-wrapper {
+        overflow-x: hidden !important;
       }
+
       th.el-table__cell {
         background-color: transparent !important;
         border-bottom: none !important;
+
         .cell {
           white-space: nowrap !important;
           overflow: hidden !important;
           text-overflow: ellipsis !important;
         }
       }
+
+      /* 单元格左右内边距：表头与数据行保持一致 */
       .cell {
-        padding-left: 10px !important;
-        padding-right: 10px !important;
+        padding-left: 6px !important;
+        padding-right: 6px !important;
       }
+
       .mo-parsed-text {
         display: block;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
+
+      /* 该链接不适用这一列（例如普通 HTTP 地址没有 HLS 清晰度/落盘方式） */
+      .mo-parsed-empty {
+        color: var(--el-text-color-placeholder, #a8abb2);
+      }
+
+      /* 数据行固定 32px 高，行间用 td 的下边框分隔，最后一行不画 */
       .el-table__row {
         height: 32px !important;
+
         td {
           padding: 0 !important;
+
           .cell {
             line-height: 32px !important;
             height: 32px !important;
@@ -1312,21 +1492,27 @@ async function submitForm () {
             align-items: center;
             padding-top: 0 !important;
             padding-bottom: 0 !important;
-            padding-left: 10px !important;
-            padding-right: 10px !important;
+            padding-left: 6px !important;
+            padding-right: 6px !important;
             white-space: nowrap !important;
             overflow: hidden !important;
             text-overflow: ellipsis !important;
           }
+
           &.is-right .cell {
             justify-content: flex-end;
             text-align: right;
           }
+
           &.is-center .cell {
             justify-content: center;
             text-align: center;
           }
         }
+      }
+
+      .el-table__body tr:last-child td {
+        border-bottom: none !important;
       }
     }
   }

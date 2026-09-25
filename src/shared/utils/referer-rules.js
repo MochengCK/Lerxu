@@ -271,37 +271,3 @@ export function inferRefererFromUrl (url, fallbackToHost = true) {
     return ''
   }
 }
-
-/**
- * 获取所有规则（用于调试或显示）
- * @returns {Array} - 所有规则列表
- */
-export function getAllRules () {
-  return ALL_REFERER_RULES
-}
-
-/**
- * 获取规则分类信息
- * @returns {Object} - 规则分类
- */
-export function getRuleCategories () {
-  return {
-    video: VIDEO_PLATFORM_RULES,
-    ecommerce: ECOMMERCE_RULES,
-    cloudStorage: CLOUD_STORAGE_RULES,
-    socialMedia: SOCIAL_MEDIA_RULES,
-    music: MUSIC_PLATFORM_RULES,
-    game: GAME_PLATFORM_RULES,
-    software: SOFTWARE_DOWNLOAD_RULES,
-    developer: DEVELOPER_RULES,
-    international: INTERNATIONAL_RULES,
-    other: OTHER_RULES
-  }
-}
-
-export default {
-  inferRefererFromUrl,
-  getAllRules,
-  getRuleCategories,
-  rules: ALL_REFERER_RULES
-}

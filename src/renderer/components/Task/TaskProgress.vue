@@ -34,8 +34,9 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
-  // 磁力任务在元数据就绪前没有任何进度可展示（total 恒为 0）。
-  // 置位时进度条改由 CSS 扫描动效表示"正在获取元数据"。
+  // 磁力任务在元数据就绪前、以及任何"已经开始但一个字节都没到"的任务
+  // （HLS 取播放列表等）都没有任何进度可展示（total 可能为 0，也可能已有
+  // 估算值而 completed 仍为 0）。置位时进度条改由 CSS 扫描动效表示"在动"。
   fetchingMetadata: {
     type: Boolean,
     default: false
@@ -123,14 +124,17 @@ function animateProgress () {
     return
   }
   const total = Number.isFinite(props.total) ? props.total : 0
+  // 还没有任何可展示的进度（磁力取元数据 / HLS 取播放列表等）：内条保持 0 宽，
+  // 动效完全交给 .is-fetching-metadata 的 CSS 扫光（避免与 5%~15% 往复叠加，
+  // 也避开回跳那一下的生硬感）。**这一支必须在 total 判断之前**：HLS 的总长是
+  // 随分片落地实时估算出来的，早期可能已经有 total 而 completed 仍是 0，
+  // 那种情况下若走百分比分支，看到的还是一根空条。
+  if (props.fetchingMetadata) {
+    lastIndeterminate.value = false
+    displayPercent.value = 0
+    return
+  }
   if (!(total > 0)) {
-    // 元数据未就绪的磁力任务：进度恒为 0，动效交给 .is-fetching-metadata
-    // 的 CSS 扫光（避免与 5%~15% 往复叠加，也避开回跳那一下的生硬感）
-    if (props.fetchingMetadata) {
-      lastIndeterminate.value = false
-      displayPercent.value = 0
-      return
-    }
     if (currentSpeed.value > 0) {
       const min = 5
       const max = 15
@@ -279,9 +283,9 @@ onBeforeUnmount(() => {
   background-color: #F0AD4E;
 }
 
-/* 磁力任务元数据未就绪（任务名还是临时的/"获取任务名中..."）：进度条
-   内条宽度为 0，没有任何进度可展示。在底槽上扫过一道高光表示"正在获取
-   元数据"，比让进度数字在 5%~15% 之间往复更平顺、也更有"在动"的感知。 */
+/* 还没有任何进度可展示时（磁力取元数据、HLS 取播放列表……）：进度条
+   内条宽度为 0。在底槽上扫过一道高光表示"正在获取数据"，比让进度数字在
+   5%~15% 之间往复更平顺、也更有"在动"的感知。 */
 .el-progress.is-fetching-metadata {
   .el-progress-bar__outer {
     position: relative;

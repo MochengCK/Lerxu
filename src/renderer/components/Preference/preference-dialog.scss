@@ -1359,9 +1359,16 @@ html.mac-native-transparent .el-dialog.preference-dialog {
   /* 左侧文案：吃掉剩余空间，保持与其它行的标题左对齐。
      支持「标题 + 副标题」两行（.pref-row-text），也兼容裸文案。 */
   > .pref-row-label,
-  > .pref-row-text,
   > .toggle-row {
     flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* 「标题 + 副标题」块的 flex 基准必须为 0：基准按 auto 时会取副标题的
+     整行宽度，超过剩余空间就触发 wrap，把右侧控件甩到下一行（如 M3U8 的
+     「分片并发」）。基准 0 + grow 让副标题在剩余宽度内自己折行，控件始终留在右侧。 */
+  > .pref-row-text {
+    flex: 1 1 0;
     min-width: 0;
   }
 
@@ -1394,6 +1401,11 @@ html.mac-native-transparent .el-dialog.preference-dialog {
 /* 路径这类需要读完整内容的控件：占右侧约一半宽度 */
 .preference-dialog .form-item-sub--inline-wide {
   --pref-inline-control-w: 56%;
+}
+
+/* M3U8 三个下拉：档位文案较长（如「乱序拼接（推荐，更快）」），比默认略宽 */
+.preference-dialog .form-item-sub--inline-hls {
+  --pref-inline-control-w: 200px;
 }
 
 /* 行内行的「标题 + 副标题」文本块：与开关行的 .toggle-row__text 视觉一致 */

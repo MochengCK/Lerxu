@@ -23,11 +23,20 @@
         lang: q.lang === 'en' ? 'en' : 'zh',
         dark: q.dark === '1',
         colors: q.colors || '',
-        focus: q.focus === '1'
+        focus: q.focus === '1',
+        // 这一趟首页是"从网页点地址栏过路来的搜索页"（App 标记）：logo 与面板首帧就在终态
+        search: q.search === '1'
       };
     }
+    // 这一趟是"从网页点地址栏过路进搜索页"吗？认**两个**信号，任一条成立就算：
+    // ① 注入的启动配置里的 search（App 按 Tab.homeKeepHistory 下发）；
+    // ② 地址上的 `?s=<序号>` —— App 为这条路径每次都会带上（见 loadHome）。
+    // 两道都认是有原因的：URL 是页面**自己就能看到**的东西，不依赖响应体，
+    // 也不受 WebView 缓存影响；万一启动配置没跟上，光靠它也不会又演一遍飞入（用户点名）
+    if (/(?:^|[?&])s=\d/.test(location.search)) boot.search = true;
     window.LERXU_BOOT = boot;
-    if (boot.dark) document.documentElement.className = 'dark';
+    document.documentElement.className =
+      (boot.dark ? 'dark' : '') + (boot.search ? ' search-boot' : '');
   })();
 </script>
 <style>
@@ -42,6 +51,17 @@
     --text: #2C3E50;
     --muted: #5A6C7D;
     --primary: #1A7FE0;
+
+    /* 品牌固定 80px 高，收起时靠 transform 缩小 —— 不碰 height：
+       高度动画要走布局、每帧重排，看起来就是"一卡一卡" */
+    --brand-h: 80px;
+    /* 收起后品牌中心线离页面顶部的距离（返回键与面板顶端都对齐它）。
+       这条线是**整块顶部**（字标 / 返回键 / 面板起排线）的共同锚点 ——
+       用户点名"顶部标题栏应该向上移动"，就是把这一条线往上提 */
+    --brand-center: 32px;
+    --brand-scale: .475;
+    /* 面板底部让开控制栏：具体高度由 App 按坞的实际尺寸下发 */
+    --panel-bottom: 96px;
   }
   html.dark {
     color-scheme: dark;
@@ -54,7 +74,13 @@
   }
   /*__LERXU_THEME__*/
   * { box-sizing: border-box; }
+  /* 单屏页面：任何时候都不滚动（列表超长就裁掉，不做滚动容器） */
   html, body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  body {
     margin: 0;
     padding: 0;
     background: var(--bg);
@@ -63,45 +89,384 @@
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
   }
-  /* 页面只剩品牌区：搜索统一走底部控制栏的地址栏（进首页时 App 会自动落焦），
-     这里不再放一个重复的搜索框 */
   .wrap {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    padding: 24px 20px 20vh;
+    position: relative;
+    height: 100vh;
+    overflow: hidden;
   }
-  /* 品牌：整枚 "lerxu" 字标就是一张透明底的图（不再拼文字） */
+
+  /* 品牌：绝对定位在正中；收起时**从原位置**平移 + 缩小，全程只有 transform
+    （走合成层，不触发重排）。两种状态都只描述"中心线在哪"，
+     缩放围绕自身中心 —— 所以看到的是从原地滑到顶部并变小，而不是先跳上去再缩 */
   .brand {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) scale(1);
+    transition:
+      transform 320ms cubic-bezier(.22, .61, .36, 1),
+      opacity 200ms ease;
+    will-change: transform;
     display: flex;
     align-items: center;
     user-select: none;
     -webkit-user-select: none;
   }
   .brand img {
-    height: 80px;
+    height: var(--brand-h);
     width: auto;
     display: block;
   }
+  body.panel-open .brand {
+    transform: translate(-50%, calc(-50% + var(--brand-center) - 50vh))
+      scale(var(--brand-scale));
+  }
+  /* 历史查看页（"查看更多"点开的那一页）的标题：与字标**同一条中心线**，
+     字标淡出、标题淡入。只列搜索历史时顶上不能空着一块 —— 字标是首页的脸，
+     不是这一页的；换成这一页的名字，返回键也才有落脚的那一行 */
+  .view-title {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(var(--brand-center) - var(--brand-h) * var(--brand-scale) / 2);
+    height: calc(var(--brand-h) * var(--brand-scale));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    color: var(--text);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease;
+  }
+  body.hist-view .view-title { opacity: 1; }
+  body.hist-view .brand { opacity: 0; }
+  /* 从网页点地址栏"过路"进搜索页的那一趟（启动配置带 search）：品牌、返回键、面板
+     **首帧就在终态** —— 用户是从网页跳过来的，没有"首页品牌飞入"这个语境，再补一遍
+     居中→顶部的位移就是多余的动画（用户点名）。终态与 body.panel-open 下的完全一致，
+     所以 App 随后推来真实状态、把 search-boot 摘掉时，画面一动不动 */
+  html.search-boot .brand {
+    transition: none;
+    transform: translate(-50%, calc(-50% + var(--brand-center) - 50vh))
+      scale(var(--brand-scale));
+  }
+  html.search-boot .panel {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+  html.search-boot .back {
+    opacity: 1;
+    visibility: visible;
+    transition: none;
+  }
   /* 深色底上原标的深藏青会糊进背景：反色 + 色相回转保住冷色系，
-     只把深色部件提亮（字标是自家资产，滤镜比换一套图更省事也不会缺图） */
-  html.dark .brand img {
+     只把深色部件提亮（字标是自家资产，滤镜比换一套图更省事也不会缺图）。
+     滤镜挂在**字标整体**上、不挂 img：动画期间"带滤镜的子层套在正在位移的
+     父层里"是合成器最容易留下残影的组合（读起来就是两个 logo 在交替） */
+  html.dark .brand {
     filter: invert(1) hue-rotate(180deg) brightness(1.05);
+  }
+
+  /* 搜索页的返回键：只在搜索页展开时出现，与品牌同一条中心线。
+     left 是按"与下方列表图标同一竖线"反算出来的：面板左 10px + 行内边距 4px，
+     行图标那格 22px 宽（描边内容居中），中心落在 25px；返回键是 48px 的点击区、
+     里面 22px 的图标，箭头本身在 24 格里偏左半格 —— 48 的格子摆到 1.5px 时，
+     箭头与列表图标的中心才真正对齐（原来在 6px，明显偏右） */
+  .back {
+    position: absolute;
+    left: 1.5px;
+    top: calc(var(--brand-center) - 24px);
+    width: 48px;
+    height: 48px;
+    /* 压在面板与字标之上：它必须永远点得到（哪怕日后版式把某块挪过来） */
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 200ms ease, visibility 0s linear 200ms;
+  }
+  .back svg { width: 22px; height: 22px; display: block; }
+  body.panel-open .back {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 220ms ease 90ms, visibility 0s linear 0s;
+  }
+
+  /* ── 搜索页（建议 + 历史）──────────────────────────────────
+     没有底板、没有分隔线：就是一列文字，靠行距区分，右侧一枚跳转图标。
+     高度由 top/bottom 夹住；**列多了就地滚动** —— 建议词是"能多给就多给"的东西，
+     不让它被裁掉半行，也不把行数硬压到四行。overscroll-behavior 关掉越界传递，
+     免得滚到头再往下拖时把整页（以及手势层）也带起来 */
+  .panel {
+    position: absolute;
+    left: 10px;
+    right: 10px;
+    top: calc(var(--brand-center) + 22px);
+    bottom: var(--panel-bottom);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    opacity: 0;
+    transform: translateY(-8px);
+    pointer-events: none;
+    transition: opacity 200ms ease, transform 240ms cubic-bezier(.22, .61, .36, 1);
+  }
+  body.panel-open .panel {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    /* 列表比品牌晚出：品牌要飞过列表那片区域，早淡入就会和列表叠在一起。
+       等它快到位（约 170ms）再淡入，读起来才是"logo 归位、列表随后浮上来" */
+    transition:
+      opacity 190ms ease 170ms,
+      transform 260ms cubic-bezier(.22, .61, .36, 1) 150ms;
+  }
+
+  /* 分组的出现 / 消失：面板整体淡入之外，"搜索建议"与"最近访问 / 历史记录"
+     这两组各自也要有进出场 —— 敲下第一个字时是整组换掉，硬切读起来很突兀。
+     
+     高度用 grid 的 `0fr ⇄ 1fr` 补间，**不是 max-height**：max-height 必须给一个
+     上限（原来写 600px），而"从 600 收到真实高度"这一段不产生任何位移 —— 读起来
+     就是先顿一下、再猛地收掉，展开也一样（内容一到位后面全是空转）。`fr` 是拿
+     **真实内容高度**插值的，展开与收起都跟着内容走，节奏才均匀。
+     内容那层必须 `min-height: 0`：grid 子项默认 min-height:auto，不加就不肯缩到零。 */
+  .group, .empty {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    overflow: hidden;
+    transition:
+      grid-template-rows 260ms cubic-bezier(.22, .61, .36, 1),
+      opacity 170ms ease;
+  }
+  .group.gone, .empty.gone {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* 收放的同时内容跟着落一点：只变高度会显得"干"，配 8px 位移才像浮上来。
+     位移挂在内容层上 —— 容器在裁剪，所以这段位移是看得见的 */
+  .group-body, .empty-text {
+    min-height: 0;
+    /* grid 子项默认 min-width:auto：不加 0 的话，「最近访问」里那条长 URL 副行
+       会把整组撑得比面板还宽（实测宽出 22px），右侧跳转箭头直接溢出到可视范围外
+       —— 与 min-height 是同一个坑的横向版本（用户点名） */
+    min-width: 0;
+    transform: translateY(-8px);
+    transition: transform 260ms cubic-bezier(.22, .61, .36, 1);
+  }
+  .group:not(.gone) > .group-body,
+  .empty:not(.gone) > .empty-text { transform: none; }
+
+  /* 标题行：左标题 + 右"全部清除"文字按钮（用户点名）。两端对齐；
+     按钮是纯文字（主色），按压只降透明度 —— 与列表行同一套克制的反馈 */
+  .group-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 4px 3px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .02em;
+    color: var(--muted);
+  }
+  .gt-clear {
+    flex: 0 0 auto;
+    padding: 2px;
+    border: none;
+    background: none;
+    font: inherit;
+    font-weight: 600;
+    color: var(--primary);
+    cursor: pointer;
+  }
+  .gt-clear:active { opacity: .55; }
+  /* "查看更多"（用户点名）：搜索历史**整组完整显示**时，在最后一条下面居中给一枚。
+     点开的是专职的历史查看页 —— 只列搜索历史，条数不再受面板那几条的限制。
+     它长在搜索历史组**里面**，所以组的收放（0fr ⇄ 1fr）会带着它一起进出：
+     列表被面板高度裁掉时它自然落在可视区之外，不会浮在半截列表下面 */
+  .more {
+    display: block;
+    width: 100%;
+    margin: 1px 0 3px;
+    padding: 9px 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary);
+    text-align: center;
+    cursor: pointer;
+  }
+  .more:active { opacity: .55; }
+  /* 已经在查看页里：这枚按钮的使命完成（点开的那一页就是它指向的地方） */
+  body.hist-view .more { display: none; }
+  /* 历史查看页里组标题让位：这一页的名字已经摆在顶部那条中心线上了，
+     组标题再写一遍就是同一句话出现两次。标题行留着 —— 右侧的"全部清除"还在那儿
+     （只剩它一个子项了：两端对齐会把它摆到左边，这里改回右对齐） */
+  body.hist-view #histTitle { display: none; }
+  body.hist-view .group-title { justify-content: flex-end; }
+  .rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    /* 淡出的行会被**原地绝对定位**留在列表里（见 parkAndFade），需要这里当定位基准 */
+    position: relative;
+  }
+  /* 行的纵向内边距（用户点名要收一点）：它就是按压时那层底色的高度。
+     9px 偏松 —— 一屏放不下几行，跳转图标 28px 的格子又把行高顶起来，
+     压到 6px 后整行约 40px，密一点但两行文字仍有呼吸 */
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    padding: 6px 4px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .row:active { background: color-mix(in srgb, var(--text) 7%, transparent); }
+  .row-icon {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+  }
+  .row-icon svg { width: 19px; height: 19px; display: block; }
+  /* 文字列：名称在上、链接在下（链接只有搜索时才给，见下面的 makeRow 调用）。
+     flex 子项默认 min-width:auto，不加 0 的话长文字会把跳转箭头挤出屏幕 */
+  .row-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .row-title {
+    font-size: 15px;
+    color: var(--text);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* 副行：**处理过的地址**（去协议 / 去 www. / 去末尾斜杠，由 App 下发）。
+     标题负责认出是哪一页，这一行只负责确认来源 —— 所以它是次级文字色、字号更小，
+     长了就省略号收掉 */
+  .row-sub {
+    font-size: 12px;
+    color: var(--muted);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* 搜索时命中的片段：主色 + 半粗。只换字色不加底色 —— 列表是一列纯文字，
+     给命中处套色块会让整列看起来"花"了；这里要的是"一眼看到对上了哪几个字" */
+  .hl {
+    color: var(--primary);
+    font-weight: 600;
+  }
+  /* 右侧跳转图标：**只有字形，没有底板**（用户点名不要背景），形态用方案一 ——
+     一支直线的 45° 箭身 + 折角箭头，与左侧线性图标同一套笔法，只是大一号，
+     一眼读作"从这里出去"。按压**不做任何动效**（用户点名）：按住就是按住，
+     字色不变、也不位移，按压反馈交给整行自己的底色 */
+  .row-go {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+  }
+  .row-go svg { width: 22px; height: 22px; display: block; }
+  /* 空态：内边距挪到内容层上 —— 留在容器上的话，`grid-template-rows: 0fr` 收完
+     仍会剩下上下两条 padding，收不干净 */
+  .empty {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .empty-text {
+    display: block;
+    padding: 18px 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .brand, .panel, .back,
+    .group, .empty, .group-body, .empty-text { transition: none; }
   }
 </style>
 </head>
 <body>
 <div class="wrap">
+  <button class="back" id="backBtn" type="button" aria-label="返回">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+  </button>
+
   <div class="brand">
     <img src="lerxu-logo.png" alt="Lerxu">
+  </div>
+
+  <!-- 历史查看页的标题（与字标同一中心线，两者交叉淡入）：文案由 App 下发的
+       语言决定，见 applyPanels -->
+  <div class="view-title" id="viewTitle"></div>
+
+  <!-- 搜索页：默认不显示，底部地址栏聚焦时由 App 打开并灌数据。
+       每组都套一层 .group-body：收放动画靠容器上的 grid `0fr ⇄ 1fr`，
+       而 grid 的轨道只对应**直接子项** —— 两层结构（小标题 + 列表）会被拆成
+       两行，收不干净。包一层就只有一个子项了 -->
+  <div class="panel" id="panel">
+    <div class="group gone" id="sugGroup">
+      <div class="group-body">
+        <ul class="rows" id="sugList"></ul>
+      </div>
+    </div>
+    <div class="group gone" id="recentGroup">
+      <div class="group-body">
+        <div class="group-title">
+          <span id="recentTitle"></span>
+          <button class="gt-clear" id="recentClear" type="button"></button>
+        </div>
+        <ul class="rows" id="recentList"></ul>
+      </div>
+    </div>
+    <div class="group gone" id="histGroup">
+      <div class="group-body">
+        <div class="group-title">
+          <span id="histTitle"></span>
+          <button class="gt-clear" id="histClear" type="button"></button>
+        </div>
+        <ul class="rows" id="histList"></ul>
+        <!-- 查看更多：只在搜索历史**整组显示出来**时跟着露出来（它在组里，
+             被裁掉时自然落到可视区外）。点开专职的历史查看页 -->
+        <button class="more" id="histMore" type="button"></button>
+      </div>
+    </div>
+    <div class="empty gone" id="panelEmpty">
+      <span class="empty-text" id="panelEmptyText"></span>
+    </div>
   </div>
 </div>
 <script>
   // 引擎选择不在这页做了：入口在 App 底部控制栏的引擎选择框，
   // 目录以 Kotlin 侧 SearchEngines 为单一来源，本地页面不再自带清单
   var BOOT = window.LERXU_BOOT || { lang: 'zh', dark: false, colors: '', focus: false };
+
+  // 页面"出生时刻"：用来判断面板是不是**在页面刚出现时**就被要求展开的（见 LerxuHomePanels）
+  var bornAt = Date.now();
 
   // 与 App 注入顺序一一对应的 CSS 变量（bg/panel/border/text/muted/primary）
   var COLOR_TOKENS = ['--bg', '--panel', '--border', '--text', '--muted', '--primary'];
@@ -114,17 +479,512 @@
     });
   }
 
+  var currentLang = 'zh';
+
   // 统一的配置应用：注入的启动配置与 JS 桥下发走同一条路（外观只有一处真相）
   function applyConfig(cfg) {
     cfg = cfg || {};
     var lang = cfg.lang === 'en' ? 'en' : 'zh';
+    currentLang = lang;
     document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
-    document.documentElement.className = cfg.dark ? 'dark' : '';
+    // 只拨 dark 这一个类名 —— 早先是整串 className 直接赋值，会把启动态
+    // （search-boot：从网页过路进搜索页时"logo 已经在顶部"）一起抹掉，
+    // 结果又演一遍飞入动画（页面结尾那次 applyConfig 就会踩到）
+    document.documentElement.classList.toggle('dark', !!cfg.dark);
     if (cfg.colors) { applyColors(cfg.colors); }
   }
 
   // App 端在主题 / 语言变化时会回调这个函数（无需重载页面）
   window.LerxuHomeInit = function (cfg) { applyConfig(cfg); };
+
+  // ── 搜索页（搜索建议 + 历史）────────────────────────────────
+  // 打开时机是**底部地址栏聚焦**，那个输入框在 App 的坞里、不在本页，
+  // 所以开关与内容都由 App 下发（window.LerxuHomePanels），本页不监听输入事件。
+  var LABELS = {
+    zh: {
+      recent: '最近访问', history: '搜索历史', empty: '还没有浏览记录',
+      clear: '全部清除', more: '查看更多'
+    },
+    en: {
+      recent: 'Recent', history: 'Searches', empty: 'No history yet',
+      clear: 'Clear all', more: 'See all'
+    }
+  };
+  // 图标是我们自己的常量（不含任何用户数据），可以直接 innerHTML
+  var ICON_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/>' +
+    '<path d="M20 20l-3.6-3.6"/></svg>';
+  // "搜索历史"用**时钟**：过去做过的事
+  var ICON_HISTORY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/>' +
+    '<path d="M12 8v4l3 2"/></svg>';
+  // "最近访问"单独一枚**地球**：去过哪个站。两组会同时在列（输入内容时），
+  // 图标不一样才一眼分得清 —— 都用时钟的话两段读起来就是同一份东西。
+  // 笔法与其它图标保持一致（描边 2、圆头）
+  var ICON_RECENT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/>' +
+    '<path d="M4 12h16"/>' +
+    '<path d="M12 4c2.2 2.3 3.4 5 3.4 8s-1.2 5.7-3.4 8c-2.2-2.3-3.4-5-3.4-8S9.8 6.3 12 4z"/>' +
+    '</svg>';
+  // 跳转图标（方案一）：**直线的 45° 箭身 + 折角箭头**，笔法与左侧线性图标一致
+  //（描边 2、圆头圆角），只是大一号。按下不加任何动效，所以这里只有字形本身
+  var ICON_GO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M7 17 17 7"/>' +
+    '<path d="M7 7h10v10"/></svg>';
+
+  var panelEl = document.getElementById('panel');
+  var backBtn = document.getElementById('backBtn');
+  var sugGroup = document.getElementById('sugGroup');
+  var sugList = document.getElementById('sugList');
+  var histGroup = document.getElementById('histGroup');
+  var histTitle = document.getElementById('histTitle');
+  var histList = document.getElementById('histList');
+  var recentGroup = document.getElementById('recentGroup');
+  var recentTitle = document.getElementById('recentTitle');
+  var recentClear = document.getElementById('recentClear');
+  var histClear = document.getElementById('histClear');
+  var recentList = document.getElementById('recentList');
+  var panelEmpty = document.getElementById('panelEmpty');
+  // 历史查看页：标题（与字标交叉淡入的那一行）与"查看更多"入口
+  var viewTitle = document.getElementById('viewTitle');
+  var histMore = document.getElementById('histMore');
+  // 文案写在里层的 span 上：外层要留给收放动画（见样式里 .empty-text 那段）
+  var panelEmptyText = document.getElementById('panelEmptyText');
+
+  function labels() { return LABELS[currentLang] || LABELS.zh; }
+
+  // 桥接调用：桥没装上（比如从原始资源打开的调试页）或被禁用时静默忽略。
+  //
+  // **零参方法必须一个参数都不传**：JS 桥是按实参个数去找方法的，多塞一个
+  // undefined 会直接找不到 —— 表现就是"点了没反应"（返回键与拖拽收起都中过）。
+  function callBridge(name, arg) {
+    try {
+      var bridge = window.LerxuHome;
+      if (!bridge || typeof bridge[name] !== 'function') return;
+      if (arguments.length > 1) bridge[name](arg);
+      else bridge[name]();
+    } catch (e) { /* 桥不可用：这一下点了没反应，但页面不该因此报错 */ }
+  }
+
+  // 一次"拖动"收尾后浏览器还会补一次 click，用这个标记把它吞掉
+  var dragSuppressClick = false;
+
+  // 把 text 里所有命中 query 的片段包进 `<span class="hl">`（不区分大小写，全部命中）。
+  // 用 DOM 节点拼、不用 innerHTML：标题是外部数据，只能走 textContent。
+  // 用 span 而不是 em —— em 自带斜体，而这里要的只是"高亮那几个字"（用户点名）
+  function highlight(el, text, query) {
+    el.textContent = '';
+    var q = String(query || '').trim();
+    var s = String(text == null ? '' : text);
+    if (!q) { el.textContent = s; return; }
+    var lower = s.toLowerCase();
+    var lq = q.toLowerCase();
+    var from = 0;
+    var i = lower.indexOf(lq, from);
+    while (i >= 0) {
+      if (i > from) el.appendChild(document.createTextNode(s.slice(from, i)));
+      var hit = document.createElement('span');
+      hit.className = 'hl';
+      hit.textContent = s.slice(i, i + q.length);
+      el.appendChild(hit);
+      from = i + q.length;
+      i = lower.indexOf(lq, from);
+    }
+    if (from < s.length) el.appendChild(document.createTextNode(s.slice(from)));
+  }
+
+  // 一行 = 图标 + 文字列 + 跳转箭头。[sub] 是副行（原始链接），只有搜索历史才给
+  function makeRow(icon, title, sub, query, onTap) {
+    var li = document.createElement('li');
+    li.className = 'row';
+    var ic = document.createElement('span');
+    ic.className = 'row-icon';
+    ic.innerHTML = icon;
+    var box = document.createElement('span');
+    box.className = 'row-text';
+    var main = document.createElement('span');
+    main.className = 'row-title';
+    // 标题取自网页标题，必须走 textContent：它是外部数据
+    highlight(main, title, query);
+    box.appendChild(main);
+    if (sub) {
+      var small = document.createElement('span');
+      small.className = 'row-sub';
+      highlight(small, sub, query);
+      box.appendChild(small);
+    }
+    var go = document.createElement('span');
+    go.className = 'row-go';
+    go.innerHTML = ICON_GO;
+    li.appendChild(ic);
+    li.appendChild(box);
+    li.appendChild(go);
+    li.addEventListener('click', function () {
+      // 刚才是"按住向下拖"（收起输入框），这一下不该再跳转
+      if (dragSuppressClick) { dragSuppressClick = false; return; }
+      onTap();
+    });
+    return li;
+  }
+
+  function fillList(listEl, items) {
+    listEl.textContent = '';
+    items.forEach(function (item) { listEl.appendChild(item); });
+  }
+
+  // ── 列表内容变化时的动效 ────────────────────────────────────
+  // 之前是每次把列表清空重建，所以敲下一个字时整列**直接换掉**（用户点名）。
+  // 要做对得三件事一起上，缺一件都能看出"跳"：
+  //   ① **按内容复用行**：文本没变的行留在原地 —— 整列重建的话，哪怕只有一条变了
+  //      整列也会闪一下，而且滚动位置、按压态都会丢；
+  //   ② **位置变了的行用 FLIP 补间**：先量旧位置、改完 DOM 再量新位置，补一段反向
+  //      位移再放回去，否则被别的行挤动的那些是瞬移的；
+  //   ③ **要走的那几行原地淡出**（保持原尺寸，只是脱离文档流），新的行淡入 + 上浮
+  //      并带一点递延，读起来是"旧的化掉、新的逐条落进来"。
+  var ROW_IN_MS = 190;
+  var ROW_OUT_MS = 130;
+  var ROW_STAGGER_MS = 16;
+  var ROW_FLIP_MS = 220;
+  // 系统开了"减少动态效果"就全部走静态：位置照排，但不补间
+  var reducedMotion = !!(window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  // 把一行**原地**摘出文档流并淡出：位置与尺寸按当前实际渲染结果钉住，
+  // 所以它下面的行可以立刻上移（FLIP 会把这位移补成动画），而它自己还在原地化掉。
+  // 摘完挪到列表末尾：绝对定位之后它在视觉上不动，但 `children[idx]` 的序号要干净
+  function parkAndFade(listEl, el) {
+    var r = el.getBoundingClientRect();
+    var base = listEl.getBoundingClientRect();
+    el.style.position = 'absolute';
+    el.style.left = (r.left - base.left) + 'px';
+    el.style.top = (r.top - base.top) + 'px';
+    el.style.width = r.width + 'px';
+    el.style.height = r.height + 'px';
+    el.style.margin = '0';
+    el.style.pointerEvents = 'none';
+    el.style.transition = 'opacity ' + ROW_OUT_MS + 'ms ease';
+    if (el.dataset) el.dataset.parked = '1';
+    listEl.appendChild(el);
+    requestAnimationFrame(function () { el.style.opacity = '0'; });
+    setTimeout(function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, ROW_OUT_MS + 40);
+  }
+
+  /**
+   * 把 listEl 的内容同步成 items（每项 = { key, make() }）。
+   * [animate] 为假时只摆放位置、不做任何补间（首次打开由面板自己的淡入负责，
+   * 再叠一层逐行动画会两层叠在一起）。
+   */
+  function syncRows(listEl, items, animate) {
+    var reuse = {};
+    var y0 = {};
+    var i, el, key;
+    for (i = 0; i < listEl.children.length; i++) {
+      el = listEl.children[i];
+      key = el.dataset ? el.dataset.key : '';
+      // 正在淡出的行已经被摘出文档流，不能再被当成"可复用"的
+      if (!key || (el.dataset && el.dataset.parked)) continue;
+      reuse[key] = el;
+      y0[key] = el.offsetTop;
+    }
+
+    var next = [];
+    var fresh = [];
+    var leaving = [];
+    items.forEach(function (item, idx) {
+      var node = reuse[item.key];
+      if (node) {
+        delete reuse[item.key];
+      } else {
+        node = item.make();
+        if (node.dataset) node.dataset.key = item.key;
+        fresh.push({ node: node, index: idx });
+      }
+      next.push(node);
+    });
+    Object.keys(reuse).forEach(function (k) { leaving.push(reuse[k]); });
+
+    if (animate && !reducedMotion) {
+      leaving.forEach(function (node) { parkAndFade(listEl, node); });
+    } else {
+      leaving.forEach(function (node) {
+        if (node.parentNode) node.parentNode.removeChild(node);
+      });
+    }
+
+    // 摆放：只动位置不对的那些
+    next.forEach(function (node, idx) {
+      if (listEl.children[idx] !== node) {
+        listEl.insertBefore(node, listEl.children[idx] || null);
+      }
+    });
+
+    if (!animate || reducedMotion) return;
+
+    // FLIP：位置变了的行，从旧位置滑过来
+    next.forEach(function (node) {
+      var k = node.dataset ? node.dataset.key : '';
+      var from = y0[k];
+      if (from === undefined) return;
+      var dy = from - node.offsetTop;
+      if (!dy) return;
+      node.style.transition = 'none';
+      node.style.transitionDelay = '';
+      node.style.transform = 'translateY(' + dy + 'px)';
+      void node.offsetHeight;   // 强制一次样式计算：上面这个起点必须先落到样式上
+      node.style.transition = 'transform ' + ROW_FLIP_MS + 'ms cubic-bezier(.22,.61,.36,1)';
+      node.style.transform = '';
+    });
+
+    // 新行：淡入 + 上浮，按序号递延（上限 3 行，避免长列表尾巴太慢）
+    fresh.forEach(function (item) {
+      var node = item.node;
+      node.style.transition = 'none';
+      node.style.transitionDelay = '';
+      node.style.opacity = '0';
+      node.style.transform = 'translateY(9px)';
+      void node.offsetHeight;
+      node.style.transition = 'opacity ' + ROW_IN_MS + 'ms ease, transform ' +
+        ROW_IN_MS + 'ms cubic-bezier(.22,.61,.36,1)';
+      node.style.transitionDelay = Math.min(item.index, 3) * ROW_STAGGER_MS + 'ms';
+      node.style.opacity = '';
+      node.style.transform = '';
+    });
+  }
+
+  // 一组历史记录 → 行描述（交给 [syncRows] 复用自己的位置）。
+  //
+  // 副行给的是 App 处理过的地址（去协议 / 去开头的 www. / 去末尾斜杠，
+  // 与标签卡同一套规则）：**标题负责认出是哪一页，地址只负责确认来源**。
+  // 最近访问与搜索历史都带这一行 —— 两组会同时在场，格式不一样反而割裂。
+  // 名称与地址都参与命中高亮。key 用地址：同一条记录在两次渲染之间要能被认出来
+  function historyItems(items, icon, query) {
+    return items.map(function (item) {
+      var url = item.url || '';
+      // 名称：标题优先，没标题就退回域名（App 侧已兜底，这里再兜一层）
+      var title = String(item.title || '').trim() || item.subtitle || url;
+      var sub = String(item.subtitle || '');
+      return {
+        key: 'u:' + url,
+        make: function () {
+          return makeRow(icon, title, sub, query, function () {
+            callBridge('open', url);
+          });
+        }
+      };
+    });
+  }
+
+  // ── 按住列表向下拖 = 收起底部输入框（不跳转、也不退出搜索页）──
+  // 只在列表**已经滚到顶**时才算这个手势：列多了以后，往下拖首先是把列表滚回去，
+  // 滚到头再往下拖才收起输入框（与 Chrome 地址栏下拉一致）
+  var DRAG_DISMISS = 46;
+  var dragStartY = null;
+
+  panelEl.addEventListener('touchstart', function (e) {
+    dragSuppressClick = false;
+    dragStartY = e.touches && e.touches.length === 1 ? e.touches[0].clientY : null;
+  }, { passive: true });
+
+  panelEl.addEventListener('touchmove', function (e) {
+    if (dragStartY === null) return;
+    // 列表还没滚到头：这一下是"往回滚"，不是"收起输入框"
+    if (panelEl.scrollTop > 0) return;
+    var t = e.touches && e.touches[0];
+    if (!t) return;
+    if (t.clientY - dragStartY < DRAG_DISMISS) return;
+    dragStartY = null;
+    dragSuppressClick = true;
+    callBridge('collapseInput');
+  }, { passive: true });
+
+  panelEl.addEventListener('touchend', function () { dragStartY = null; }, { passive: true });
+  panelEl.addEventListener('touchcancel', function () {
+    dragStartY = null;
+    dragSuppressClick = false;
+  }, { passive: true });
+
+  // 左上角返回键：退出搜索页（不是退出浏览器）。退到哪儿由 App 侧决定 ——
+  // 从网页点地址栏过路来的这一趟退**回刚才那一页**，以首页为根的那一趟才回只有品牌的首页。
+  // 历史查看页里则先退**这一层**（回搜索界面），再按一次才退出搜索页 —— 一层一层退
+  backBtn.addEventListener('click', function () {
+    if (document.body.classList.contains('hist-view')) {
+      callBridge('exitHistory');
+      return;
+    }
+    callBridge('exitSearch');
+  });
+
+  // "查看更多"：交给 App 换成历史查看页（只列搜索历史、条数不再受面板那几条限制）。
+  // 与列表行同一道闸：刚才是"按住向下拖"（收起输入框）的话，这一下不该再进这一页
+  histMore.addEventListener('click', function () {
+    if (dragSuppressClick) { dragSuppressClick = false; return; }
+    callBridge('moreSearches');
+  });
+
+  // 标题右侧的"全部清除"：点了交给 App 清（清完 App 会重推面板数据，
+  // 这两组列表跟着刷新/收起，本页不自己动数据）
+  recentClear.addEventListener('click', function () { callBridge('clearRecent'); });
+  histClear.addEventListener('click', function () { callBridge('clearSearches'); });
+
+  // 分组的出现 / 消失：加去 .gone（样式里是 max-height + opacity 过渡）。
+  // 早先是直接切 `hidden` 属性 —— 那是硬切：敲下第一个字时"最近访问"整组瞬间
+  // 消失、"搜索建议"整组瞬间冒出来（用户点名要出现消失动画）
+  function setGroupVisible(el, visible) {
+    if (visible) el.classList.remove('gone');
+    else el.classList.add('gone');
+  }
+
+  // 一组的显隐 + 内容同步。**收起时不清空列表**：这一组的行一离开文档流，
+  // `grid-template-rows: 1fr → 0fr` 就没有"从多高收到零"的起点，整块会**瞬间**
+  // 塌掉 —— 它下面的内容跟着一跳（用户点名："查看更多是直接跳到顶部，
+  // 而不是丝滑地延展到顶部"）。行留着、让组自己把高度收干净（260ms），
+  // 收完再清空；展开那边不受影响（内容在文档流里，高度才有的可插值）
+  var GROUP_COLLAPSE_MS = 320;
+  function syncGroup(groupEl, listEl, items, animate, visible) {
+    if (visible) {
+      syncRows(listEl, items, animate);
+      setGroupVisible(groupEl, true);
+      return;
+    }
+    setGroupVisible(groupEl, false);
+    if (!listEl.children.length) return;
+    setTimeout(function () {
+      // 这期间又展开了（正反来回点）：那批行还要用，别清
+      if (!groupEl.classList.contains('gone')) return;
+      while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
+    }, GROUP_COLLAPSE_MS);
+  }
+
+  // 上一次渲染用的关键词：换了词就把列表滚回顶部（见下面的滚动重置）
+  var lastQuery = null;
+
+  window.LerxuHomePanels = function (cfg) {
+    cfg = cfg || {};
+    // 面板**在页面刚出生时**就被要求展开（首页一加载完就推来了）= 用户是从网页点
+    // 地址栏过路进搜索页的：这一趟没有"品牌从中间飞上去"的语境，直接落位。
+    //
+    // 这条判据不依赖任何外部下发，所以就算启动配置与地址标记都没跟上，也不会又演
+    // 一遍飞入（用户点名两次）。反过来"人已经在首页上、手动点地址栏"那条路径不会
+    // 命中 —— 那时页面早就在屏幕上待着了，离出生远不止这一小段
+    if (cfg.open && Date.now() - bornAt < 400) {
+      document.documentElement.classList.add('search-boot');
+    }
+    // "过路"进搜索页那套启动态到此为止：App 已经把真实状态推来了。终态本就一致，
+    // 摘掉它画面一动不动，之后的展开 / 收起照常有补间 —— 要的只是"进场那一下别动"。
+    //
+    // **推到下一帧之后再摘**：这次推送很可能赶在页面首次绘制之前（首页刚加载完就推），
+    // 那时摘掉的话，首帧又落回"品牌居中"的初始态，照样演一遍飞入（用户点名）。
+    // 等两帧，保证首帧读到的一定是终态
+    if (document.documentElement.classList.contains('search-boot')) {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+          document.documentElement.classList.remove('search-boot');
+        });
+      });
+    }
+    if (!cfg.open) {
+      document.body.classList.remove('panel-open');
+      // 历史查看页是**这一次搜索**里的一层：面板收起时一并退出去，
+      // 下次聚焦进搜索页必须从普通那一屏开始
+      document.body.classList.remove('hist-view');
+      // 收起时清空列表：下次打开是全新的一份，不会先闪一眼旧内容
+      fillList(sugList, []);
+      fillList(histList, []);
+      fillList(recentList, []);
+      setGroupVisible(sugGroup, false);
+      setGroupVisible(histGroup, false);
+      setGroupVisible(recentGroup, false);
+      setGroupVisible(panelEmpty, false);
+      // 顺带忘掉关键词：下次打开一定从顶部开始
+      lastQuery = null;
+      panelEl.scrollTop = 0;
+      return;
+    }
+
+    // 底部让位（CSS px，App 按"网页底边到坞顶"实测下发）。0 是**合法值**
+    //（传统模式下面板本来就该贴到网页底边），只有真的没下发（NaN）才用兜底值
+    var pad = parseInt(cfg.bottom, 10);
+    document.documentElement.style.setProperty(
+      '--panel-bottom', (isFinite(pad) && pad >= 0 ? pad : 96) + 'px'
+    );
+
+    var text = labels();
+    var query = typeof cfg.query === 'string' ? cfg.query.trim() : '';
+    var suggestions = cfg.suggestions || [];
+    var recent = cfg.recent || [];
+    // 搜索历史是**关键词**（字符串数组），不是页面记录 —— 点一下直接再搜一次
+    var searches = cfg.searches || [];
+
+    // 换了关键词（或刚打开）：列表回到顶部。列表本身可滚动，不重置的话
+    // 上一次往下滚的位置会留着 —— 新建议的头几条反而看不见
+    if (query !== lastQuery) {
+      panelEl.scrollTop = 0;
+      lastQuery = query;
+    }
+
+    // 内容变化要不要做动效：面板**已经展开**时才做 —— 首次打开由面板自己的淡入
+    // 负责入场，再叠一层逐行动画会两层撞在一起
+    var canAnimate = document.body.classList.contains('panel-open');
+
+    // 历史查看页（"查看更多"点开的那一层）：App 只给搜索历史，其余两组空着 ——
+    // 它们的收起走各自的 0fr ⇄ 1fr 补间，字标与标题交叉淡入，
+    // 多出来的历史行由 syncRows 淡入 + 上浮补进来：整屏是一次形变，没有硬切
+    document.body.classList.toggle('hist-view', !!cfg.histView);
+    viewTitle.textContent = labels().history;
+
+    // ① 搜索建议（引擎联想词，异步到达；没到之前这一段不占位）。
+    // 这一组**不带小标题**：它就是搜索框下方的一列词，加个"搜索建议"反而占掉
+    // 一行、还让列表从更低处开始（用户点名）
+    syncGroup(sugGroup, sugList, suggestions.map(function (word) {
+      // 联想词是引擎自己给的补全，不做命中高亮（高亮只用于我们自己的历史）
+      return {
+        key: 'w:' + word,
+        make: function () {
+          return makeRow(ICON_SEARCH, word, '', '', function () { callBridge('search', word); });
+        }
+      };
+    }), canAnimate, suggestions.length > 0);
+
+    // ② 最近访问：**页面** —— **只在没输入时显示**：一旦开始输入，这一组整组让位，
+    // 只留搜索建议与搜索历史（用户点名）。固定在上面
+    recentTitle.textContent = text.recent;
+    recentClear.textContent = text.clear;
+    histClear.textContent = text.clear;
+    // "全部清除"只在**没输入**时给（用户点名）：用户在输入的那一屏是
+    // "搜索建议 + 命中的历史"，这时候摆一枚"清空全部历史"既突兀又危险
+    var showClear = query === '' ? '' : 'none';
+    recentClear.style.display = showClear;
+    histClear.style.display = showClear;
+    syncGroup(
+      recentGroup, recentList, historyItems(recent, ICON_RECENT, query),
+      canAnimate, query === '' && recent.length > 0
+    );
+
+    // ③ 搜索历史：**关键词** —— 从浏览记录里认出来的搜索词（去重、最近的在前）。
+    // 它**没输入时也在**（用户点名），固定显示在"最近访问"下方；点一下就是再搜一次。
+    // 分组末尾挂着"查看更多"（历史查看页的入口，见上面 histMore 的绑定）
+    histTitle.textContent = text.history;
+    histMore.textContent = text.more;
+    syncGroup(histGroup, histList, searches.map(function (word) {
+      return {
+        key: 'k:' + word,
+        make: function () {
+          return makeRow(ICON_HISTORY, word, '', query, function () { callBridge('search', word); });
+        }
+      };
+    }), canAnimate, searches.length > 0);
+
+    panelEmptyText.textContent = text.empty;
+    setGroupVisible(
+      panelEmpty,
+      suggestions.length === 0 && recent.length === 0 && searches.length === 0
+    );
+
+    document.body.classList.add('panel-open');
+  };
 
   // 首帧：注入配置下这是幂等的（占位符已是同一份真相）；
   // 原始资源下退回 URL 参数

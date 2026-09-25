@@ -67,7 +67,8 @@ const statusLabel = computed(() => {
   let speedStr = ''
   if (props.downloadSpeed > 0 && props.pieceLength > 0) {
     const blockDownloadSpeed = props.downloadSpeed
-    const speedKbps = (blockDownloadSpeed / 1024).toFixed(2)
+    // 1000 进制：与全局速度显示口径一致
+    const speedKbps = (blockDownloadSpeed / 1000).toFixed(2)
     speedStr = `${speedKbps} KB/s`
   }
   return speedStr ? `${percent} - ${speedStr}` : percent

@@ -10,9 +10,6 @@ export const LERXU_BT_UA = 'XferCore/1.6.5'
 // Must match LERXU_BT_UA version and XferCore/configure.ac.
 export const LERXU_PEER_ID_PREFIX = '-XC1650-'
 
-// BT client name used in BEP10 extension handshake.
-export const LERXU_CLIENT_NAME = 'XferCore (based on aria2)'
-
 // Default HTTP User-Agent (browser style), user can override in preferences.
 export const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
@@ -20,9 +17,6 @@ export const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 export const ARIA2_UA = 'aria2/1.37.0'
 export const TRANSMISSION_UA = 'Transmission/3.00'
 export const DU_UA = 'netdisk;6.0.0.12;PC;PC-Windows;10.0.16299;WindowsBaiduYunGuanJia'
-
-// Backward compatible export.
-export const LERXU_UA = LERXU_BT_UA
 
 export default {
   aria2: ARIA2_UA,

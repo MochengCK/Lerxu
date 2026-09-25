@@ -44,7 +44,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, getCurrentInstance } from 'vue'
+import { ref, computed, watch } from 'vue'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 import { remote } from 'parse-torrent'
 // mo-task-files is globally registered in main.js
@@ -57,11 +57,9 @@ import {
 import {
   buildFileList,
   listTorrentFiles,
-  bytesToSize,
   getAsBase64,
-  removeExtensionDot
 } from '@shared/utils'
-import { useAppStore, usePreferenceStore } from '@/store'
+import { useAppStore } from '@/store'
 import { storeToRefs } from 'pinia'
 
 defineOptions({
@@ -70,17 +68,13 @@ defineOptions({
 
 const emit = defineEmits(['change'])
 const { t } = i18n.global
-const instance = getCurrentInstance()
 
 const appStore = useAppStore()
-const preferenceStore = usePreferenceStore()
 const { addTaskTorrents: torrents } = storeToRefs(appStore)
-const { config } = storeToRefs(preferenceStore)
 
 const name = ref(EMPTY_STRING)
 const currentTorrent = ref(EMPTY_STRING)
 const files = ref([])
-const selectedFiles = ref([])
 const torrentFileList = ref(null)
 
 const isTorrentsEmpty = computed(() => torrents.value.length === 0)

@@ -76,13 +76,9 @@
 
 <script setup>
 import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import is from 'electron-is'
 import { debounce } from 'lodash'
 import {
-  calcFormLabelWidth,
   checkTaskIsBT,
-  checkTaskIsSeeder,
-  isMagnetTask,
   isEd2kTask,
   getFileName,
   getFileExtension
@@ -139,16 +135,11 @@ defineOptions({ name: 'mo-task-detail' })
 const preferenceStore = usePreferenceStore()
 const taskStore = useTaskStore()
 const { config: preferenceConfig } = storeToRefs(preferenceStore)
-const { magnetStatuses, dataAccessStatuses } = storeToRefs(taskStore)
 
 const cached = { files: [] }
 
-const form = ref({})
-const formLabelWidth = computed(() => calcFormLabelWidth(preferenceConfig.value.locale))
-const locale = computed(() => preferenceConfig.value.locale)
 const activeTab = ref('general')
 const peerSearch = ref('')
-const graphicWidth = ref(0)
 const filesSelection = ref(EMPTY_STRING)
 const selectionChangedCount = ref(0)
 const statusHintTruncated = ref(false)
@@ -167,7 +158,6 @@ watch(() => props.visible, (val) => {
   drawerVisible.value = val
 })
 
-const isRenderer = is.renderer()
 
 const taskDetailDefaultTransparentEnabled = computed(() => {
   const cfg = preferenceConfig.value || {}
@@ -211,52 +201,7 @@ const navOptions = computed(() => {
   return navTabs.value.map(tab => ({ value: tab, label: labelMap[tab] || tab }))
 })
 
-const isSeeder = computed(() => {
-  const task = props.task || {}
-  return task.status === TASK_STATUS.ACTIVE && checkTaskIsSeeder(task)
-})
 
-const magnetHintText = computed(() => {
-  const task = props.task || {}
-  const zero = Number(task.downloadSpeed) === 0
-  const isMagnet = isMagnetTask(task)
-  const metadataReady = task.totalLength > 0 && task.files && task.files.length > 0
-  if (!(isMagnet && zero && !metadataReady)) return ''
-  const s = magnetStatuses.value[task.gid]
-  if (!s) return t('task.magnet-fetching-metadata')
-  const { peerCount = 0, trackerCount = 0, elapsedSec = 0, phase = '', peerTrend = 'flat', globalLimitLow = false, pauseMetadata = false } = s
-  const cfg = preferenceConfig.value || {}
-  const dhtEnabled = Number(cfg['dht-listen-port'] || cfg.dhtListenPort || 0) > 0
-  const trackersConfigured = `${cfg['bt-tracker'] || cfg.btTracker || ''}`.trim().length > 0
-  const elapsedMin = Math.floor(elapsedSec / 60)
-  if (phase === 'no_trackers' || (peerCount === 0 && trackerCount === 0)) {
-    const base = trackersConfigured ? t('task.magnet-status-contacting-trackers', { trackerCount }) : t('task.magnet-status-no-trackers')
-    const suggest = t('task.magnet-suggest-add-trackers')
-    return `${base}，${suggest}`
-  }
-  if (phase === 'contacting_trackers' || (peerCount === 0 && trackerCount > 0)) {
-    const base = t('task.magnet-status-contacting-trackers', { trackerCount })
-    if (elapsedMin >= 2) {
-      const wait = t('task.magnet-status-long-wait') + ' ' + t('task.magnet-status-elapsed-minutes', { minutes: elapsedMin })
-      const extra = dhtEnabled ? '' : (' ' + t('task.magnet-suggest-open-port'))
-      const limit = globalLimitLow ? (' ' + t('task.magnet-suggest-limit')) : ''
-      const paused = pauseMetadata ? (' ' + t('task.magnet-suggest-unpause-metadata')) : ''
-      return `${base}，${wait}${extra}${limit}${paused}`
-    }
-    return base
-  }
-  const peersText = t('task.magnet-status-peers', { peerCount })
-  const trackersText = t('task.magnet-status-trackers', { trackerCount })
-  if (elapsedMin >= 2) {
-    const wait = t('task.magnet-status-long-wait') + ' ' + t('task.magnet-status-elapsed-minutes', { minutes: elapsedMin })
-    const trendText = peerTrend === 'up' ? t('task.magnet-trend-up') : (peerTrend === 'down' ? t('task.magnet-trend-down') : t('task.magnet-trend-flat'))
-    const limit = globalLimitLow ? (' ' + t('task.magnet-suggest-limit')) : ''
-    const paused = pauseMetadata ? (' ' + t('task.magnet-suggest-unpause-metadata')) : ''
-    return `${peersText}，${trackersText}，${wait}，${trendText}${limit}${paused}`
-  }
-  const trendText = peerTrend === 'up' ? t('task.magnet-trend-up') : (peerTrend === 'down' ? t('task.magnet-trend-down') : '')
-  return `${peersText}，${trackersText}${trendText ? '，' + trendText : ''}`
-})
 
 const statusHintText = computed(() => {
   const task = props.task || {}
@@ -267,35 +212,7 @@ const statusHintText = computed(() => {
   return raw
 })
 
-const resolveErrorReason = computed(() => {
-  return (errorCode, errorMessage = '') => {
-    const code = Number(errorCode)
-    if (!code) return ''
-    const msgText = `${errorMessage || ''}`
-    if (code === 3) return t('task.error-reason-not-found')
-    if (code === 1) {
-      if (/fake-ip|198\.18\.|198\.19\./i.test(msgText)) return t('task.error-reason-fake-ip')
-      if (/DNS|name resolution|hostname|getaddrinfo|no data/i.test(msgText)) return t('task.error-reason-dns')
-      if (/SSL|TLS|certificate/i.test(msgText)) return t('task.error-reason-ssl')
-      if (/timeout|timed out/i.test(msgText)) return t('task.error-reason-timeout')
-      if (/connection refused|refused/i.test(msgText)) return t('task.error-reason-refused')
-      return t('task.error-reason-network')
-    }
-    if (code === 16) {
-      if (/Permission denied|permission/i.test(msgText)) return t('task.error-reason-permission')
-      if (/No space left|disk full/i.test(msgText)) return t('task.error-reason-disk-full')
-      return t('task.error-reason-disk')
-    }
-    return t('task.error-reason-generic')
-  }
-})
 
-const taskStatus = computed(() => {
-  if (isSeeder.value && props.task.status === TASK_STATUS.ACTIVE) {
-    return TASK_STATUS.SEEDING
-  }
-  return props.task.status
-})
 
 const fileList = computed(() => {
   const task = props.task || {}
@@ -448,44 +365,7 @@ function updateStatusTruncation () {
   })
 }
 
-function handleTabBeforeLeave (activeName, oldActiveName) {
-  activeTab.value = activeName
-  switch (oldActiveName) {
-  case 'peers':
-    taskStore.toggleEnabledFetchPeers(false)
-    break
-  case 'files':
-    resetTaskFilesSelection()
-    break
-  }
-}
 
-function handleTabClick (tab) {
-  const { name } = tab
-  activeTab.value = name
-  switch (name) {
-  case 'peers':
-    taskStore.toggleEnabledFetchPeers(true)
-    setImmediate(() => {
-      if (taskPeers.value) {
-        taskPeers.value.updateTableHeight()
-      }
-    })
-    break
-  case 'activity':
-    nextTick(() => {
-      if (taskGraphic.value) {
-        taskGraphic.value.updateGraphicWidth()
-      }
-    })
-    break
-  case 'files':
-    setImmediate(() => {
-      updateFilesListSelection()
-    })
-    break
-  }
-}
 
 function handleTabChange (tabName) {
   const prevTab = activeTab.value

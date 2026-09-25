@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  原生播放器的视频画面。
+
+  为什么单独一个布局文件：**`surface_type="texture_view"` 只有 XML 入口** ——
+  Media3 1.5 的 PlayerView 还没把 `setSurfaceType` 开成公开 API（常量也是私有的）。
+  而"窗口内合成"（TextureView 而不是独立 SurfaceView 合成面）正是这套覆盖层能干净
+  叠在网页上的前提：没有打洞、没有层级跳、页面那块画面也不会从播放器底下透出来。
+-->
+<androidx.media3.ui.PlayerView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view"
+    app:use_controller="false"
+    app:resize_mode="fit" />

@@ -9,7 +9,7 @@
 
 <script setup>
 defineOptions({ name: 'mo-drag-select' }) // 供父组件 [X.name]: X 注册
-import { ref, watch, onMounted, onBeforeUnmount, useSlots, getCurrentInstance } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
   attribute: {

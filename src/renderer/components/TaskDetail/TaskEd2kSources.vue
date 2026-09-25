@@ -85,13 +85,12 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick, getCurrentInstance } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useTaskStore } from '@/store/task'
 import { storeToRefs } from 'pinia'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 
 const { t } = i18n.global
-const instance = getCurrentInstance()
 
 const taskStore = useTaskStore()
 const { currentTaskPeers } = storeToRefs(taskStore)
@@ -103,7 +102,7 @@ const GROUP_CONFIG = [
   { key: 'banned', states: ['EXPIRED'] }
 ]
 
-const props = defineProps({
+defineProps({
   peers: {
     type: [Object, Array],
     default: () => ({ connected: [], attempting: [], banned: [], disconnected: [] })

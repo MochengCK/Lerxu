@@ -115,7 +115,6 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import is from 'electron-is'
 import {
   bytesToSize,
   calcFormLabelWidth,
@@ -129,8 +128,6 @@ import {
 } from '@shared/utils'
 import { TASK_STATUS } from '@shared/constants'
 import i18n from '@/plugins/i18n'
-import TaskGraphic from '@/components/TaskGraphic/TaskGraphic'
-import TaskProgress from '@/components/Task/TaskProgress'
 import { usePreferenceStore } from '@/store/preference'
 import { useTaskStore } from '@/store/task'
 import { storeToRefs } from 'pinia'
@@ -166,7 +163,6 @@ const { config } = storeToRefs(preferenceStore)
 
 const form = ref({})
 const formLabelWidth = computed(() => calcFormLabelWidth(config.value.locale))
-const locale = computed(() => config.value.locale)
 const graphicWidth = ref(0)
 const initialCompletedLength = ref(0)
 const downloadStartTime = ref(null)
@@ -176,14 +172,12 @@ const dragStartY = ref(0)
 const dragStartScrollTop = ref(0)
 const showTopFade = ref(false)
 const showBottomFade = ref(false)
-const graphicMaxRows = 6
 let graphicRafId = null
 let _fadeStateTimer = null
 let _graphicDragBound = false
 
 const graphicBox = ref(null)
 
-const isRenderer = is.renderer()
 
 const speedSamples = computed(() => {
   const gid = props.task && props.task.gid ? `${props.task.gid}` : ''

@@ -120,11 +120,19 @@ const isPendingFileSelection = computed(() => {
   return !!(pendingFileSelection.value && pendingFileSelection.value[gid])
 })
 
-// 正在获取元数据：磁力任务元数据就绪前（bittorrent 存在但没有 info）且处于
-// 活动态。用于给进度条挂"从左到右"的扫光动效（任务名此刻还是临时的）。
+// 正在获取数据：进度条上还没有任何可展示的量。两种情形：
+//   1) 磁力任务元数据就绪前（任务名此刻还是临时的）；
+//   2) 任何任务"已经开始但一个字节都没到"——HLS 要先取播放列表（大清单不再
+//      预探测分片大小，总长是随后估算出来的），普通 HTTP 也要先握手。
+// 这两种情形进度恒为 0，交给进度条上的"从左到右"扫光动效表示在动
+// （BT 取元数据时就是这个动效，用户点名要一致）。
 const isFetchingMetadata = computed(() => {
   const task = props.task || {}
-  return `${task.status || ''}` === TASK_STATUS.ACTIVE && isMagnetTask(task)
+  if (`${task.status || ''}` !== TASK_STATUS.ACTIVE) return false
+  if (isMagnetTask(task)) return true
+  // 待选择文件有自己的一档（橙色底槽），不叠加扫光
+  if (isPendingFileSelection.value) return false
+  return Number(task.completedLength || 0) === 0 && Number(task.downloadSpeed || 0) === 0
 })
 
 function getCompletedDisplayName (task) {

@@ -722,15 +722,6 @@ const bestPeer = computed(() => {
   }, connected[0])
 })
 
-const countAll = computed(() => {
-  const peers = props.peers || {}
-  if (Array.isArray(peers)) return peers.length
-  const connected = Array.isArray(peers.connected) ? peers.connected : []
-  const attempting = Array.isArray(peers.attempting) ? peers.attempting : []
-  const banned = Array.isArray(peers.banned) ? peers.banned : []
-  const mergedDisconnected = getMergedDisconnectedPeers(peers)
-  return connected.length + attempting.length + banned.length + mergedDisconnected.length
-})
 
 const groupedPeers = computed(() => {
         let peers = props.peers || {}

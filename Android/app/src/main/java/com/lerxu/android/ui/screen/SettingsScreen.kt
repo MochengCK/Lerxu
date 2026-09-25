@@ -154,7 +154,9 @@ fun SettingsScreen(
     themePref: String = "system",
     onThemeChange: (String) -> Unit = {},
     searchEngineKey: String = "bing",
-    onSearchEngineChange: (String) -> Unit = {}
+    onSearchEngineChange: (String) -> Unit = {},
+    adBlock: Boolean = true,
+    onAdBlockChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
@@ -1032,6 +1034,36 @@ fun SettingsScreen(
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+        }
+
+        // ── 浏览器 ──
+        SettingsSection(stringResource(R.string.settings_browser)) {
+            // 自动拦截广告：**默认开**。开关只改这一件事——拦网络 + 隐藏广告位
+            //（见 AdBlocker），不碰页面自己的内容
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.settings_ad_block),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        stringResource(R.string.settings_ad_block_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = adBlock,
+                    onCheckedChange = onAdBlockChange,
+                    colors = lerxuSwitchColors()
                 )
             }
         }

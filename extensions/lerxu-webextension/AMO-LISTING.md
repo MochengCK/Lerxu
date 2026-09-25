@@ -113,39 +113,31 @@ Lerxu 把浏览器下载交给 [Lerxu 桌面应用](https://github.com/MochengCK
 **English**
 
 ```
-1.7.0
-- Resource list and the button counter now always agree: the counter is computed from the same
-  items the panel renders, and the open panel refreshes as new resources arrive.
-- Bilibili collection download: videos nested under a collection section are now listed (previously
-  only the section name showed), multi-part videos (P1/P2/...) are all downloaded, and the panel no
-  longer hides behind Bilibili's fixed top navigation bar.
-- Fixed audio/video pairing for DASH streams: the two streams of one video now carry an explicit
-  pair id, so they are merged even when they finish downloading at different times, and the same
-  resource is no longer sent twice.
-- Firefox: the resource button no longer flickers and stays clickable. Per-video mode detection
-  now uses a visibility memory plus a switch delay, and the button's visibility is driven by a
-  single code path instead of several places overwriting each other.
-- The resource panel no longer lists the same stream twice: streams already used by a
-  "complete video" (merged video+audio) entry are no longer repeated in the separate-stream /
-  video / audio sections, and the button counter follows the same count.
+1.7.2
+- HLS (m3u8) playlists are now detected as complete videos: a sniffed manifest gets its own
+  section, "HLS full video", placed first — clicking that single entry downloads it.
+- The page's `.ts` segments are folded into a collapsed "HLS segments" group, so the one entry
+  worth clicking is no longer buried.
+- Fixed a manifest being paired with an audio stream as a "separate video stream": that sent two
+  tasks and even named the file `_video.mp4`.
+- "Download all" on an HLS page now sends only the manifest, instead of turning dozens of
+  segments into dozens of tasks.
+- The floating download button on the page prefers the manifest (segments are sorted by
+  "closest to the playback position" and often come first, which only gets you a few seconds).
 ```
 
 **简体中文**
 
 ```
-1.7.0
-- 资源列表与按钮上的数量现在始终一致：数量由列表渲染的同一份条目算出，列表打开时会跟着新资源刷新。
-- B站合集下载：合集分类下的视频现在会列出来（此前只显示分类名），多 P 视频（P1/P2/…）会逐个下载，
-  弹窗也不再被 B 站固定顶部导航栏遮挡。
-- 修复 DASH 音视频配对：同一个视频的两条流现在带显式配对 ID，即使两者下载完成时间不同也能合并，
-  同一份资源也不会被重复发送。
-- 修复 Firefox 上资源按钮持续闪烁、无法点击的问题：多视频模式（per-video）的判定改为稳定口径
-  （可见性记忆 + 切换迟滞），按钮显隐由单一入口决定，不再出现多条代码路径互相覆盖。
-- 资源列表不再重复显示同一条流：已被「完整视频」（合并条目）使用的音视频流，不再在
-  「分离流 / 视频资源 / 音频资源」段里重复列出；按钮上的数量与列表同源，一并保持一致。
+1.7.2
+- 嗅探到的 m3u8 清单现在被当作完整视频：单独成栏「HLS 完整视频」并排在最前，点这一条就是下载。
+- 同一页面的 `.ts` 分片折进默认收起的「HLS 分片」组，不再把真正该点的那一条埋掉。
+- 修复把清单当成"分离的视频流"与音频配对：会发成两个任务、文件名还被写成 `_video.mp4`。
+- 「下载全部」在 HLS 页面上只发清单这一条，不再把几十条分片逐条建成任务。
+- 页面上的悬浮下载按钮优先取清单（分片按"离播放时刻最近"排序常排最前，点错只能下到几秒钟的画面）。
 ```
 
-> 更早的版本说明（1.6.x 及之前）已随各次提交存档，此处只保留待提交版本的文案。
+> 更早的版本说明（1.7.0 及之前）已随各次提交存档，此处只保留待提交版本的文案。
 
 ## 其他提交字段建议
 

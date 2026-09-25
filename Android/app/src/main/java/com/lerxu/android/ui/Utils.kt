@@ -8,12 +8,16 @@ import com.lerxu.android.model.TaskInfo
  * 工具函数 —— 格式化文件大小、速度、时间等
  */
 
+/**
+ * 1000 进制（与 Finder/资源管理器、桌面端显示口径一致）：
+ * 1024 进制会把 489,253,080 字节标成 466.6 MB，与系统显示的 489.3 MB 对不上。
+ */
 fun formatBytes(bytes: Long): String {
     if (bytes <= 0) return "0 B"
     val sizes = arrayOf("B", "KB", "MB", "GB", "TB")
-    val i = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt()
+    val i = (Math.log10(bytes.toDouble()) / Math.log10(1000.0)).toInt()
     val index = i.coerceIn(0, sizes.lastIndex)
-    val value = bytes / Math.pow(1024.0, index.toDouble())
+    val value = bytes / Math.pow(1000.0, index.toDouble())
     return if (index == 0) "$bytes B" else String.format("%.1f %s", value, sizes[index])
 }
 

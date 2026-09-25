@@ -75,6 +75,8 @@ import com.lerxu.android.ui.formatBytes
 fun SniffPopup(
     open: Boolean,
     items: List<SniffedResource>,
+    /** 整条可点 = **用原生播放器播它**（视频资源的第一动作）。 */
+    onPlay: (SniffedResource) -> Unit,
     onDownload: (SniffedResource) -> Unit,
     onDismissItem: (SniffedResource) -> Unit,
     onClear: () -> Unit,
@@ -192,6 +194,7 @@ fun SniffPopup(
                         items(items, key = { it.dedupKey }) { item ->
                             SniffRow(
                                 item = item,
+                                onPlay = { onPlay(item) },
                                 onDownload = { onDownload(item) },
                                 onDismiss = { onDismissItem(item) }
                             )
@@ -204,7 +207,10 @@ fun SniffPopup(
 }
 
 /**
- * 一条资源：**整条可点即下载**（用户点名去掉那个下载按钮）。
+ * 一条资源：**整条可点即播放**（用原生播放器），右侧两枚小按钮分别是下载与移除。
+ *
+ * 这里与之前"整条可点即下载"的口径不同 —— 加了原生播放之后，一条视频资源的第一
+ * 动作是"看"，下载退到右侧那枚按钮上（两枚按钮都做得克制，不抢整条的点击）。
  *
  * 左侧不再放类型图标 —— 类型已经由标签里的扩展名说了（用户点名）；
  * 名称用**视频名**（嗅探那一刻的页面标题），地址里的文件名只作兜底。
@@ -212,6 +218,7 @@ fun SniffPopup(
 @Composable
 private fun SniffRow(
     item: SniffedResource,
+    onPlay: () -> Unit,
     onDownload: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -219,7 +226,7 @@ private fun SniffRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onDownload)
+            .clickable(onClick = onPlay)
             .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -269,6 +276,14 @@ private fun SniffRow(
                     else stringResource(R.string.browser_size_unknown)
                 )
             }
+        }
+        IconButton(onClick = onDownload, modifier = Modifier.size(30.dp)) {
+            Icon(
+                Icons.Default.FileDownload,
+                contentDescription = stringResource(R.string.browser_download),
+                modifier = Modifier.size(16.dp),
+                tint = colorScheme.onSurfaceVariant
+            )
         }
         IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
             Icon(

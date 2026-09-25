@@ -67,6 +67,11 @@ object WebThemeEngine {
      * 站点自带的深色模式：调色板原样来自站点官方主题包（[WebThemePalettes]），
      * 不做任何配色改写 —— 我们只负责"把开关拨到深色"。
      */
+    /** 给欧乐影院那组补丁加统一前缀：只有站点自己的深色皮肤加载上（html 上有
+     *  `lerxu-ole-dark`）才生效，见 [nativeThemeCookieJs]。 */
+    private fun oleRules(vararg selectors: String): String =
+        selectors.joinToString(",") { ".lerxu-ole-dark $it" }
+
     private class Native(val hostMatch: String, val css: String)
 
     private val natives = listOf(
@@ -76,6 +81,27 @@ object WebThemeEngine {
                 // 声明页面是深色：表单控件/滚动条跟随，同时让渲染层的
                 // "算法变暗"跳过这个页面（避免二次压暗）
                 "html{color-scheme:dark!important;}"
+        ),
+        Native(
+            "olevod.com",
+            // 站点自己的 black.css 有三处没跟上（实测那一页逐条量过）：
+            // ① 正文颜色仍是 `rgba(0,0,0,.85)` —— 导航、列表一大片跟着它继承成
+            //    "深底深字"；② 分类面板 / 观看记录两块仍白底；③ 内容卡片的文字
+            //    写死在 base css 里（列表标题、面板、播放列表），深色皮肤没改。
+            // 配色沿用站点自己的浅色值，其余一律不动 —— 它自己的深色主题里
+            // 该留的（金色按钮、白字版字标）一个都不碰。
+            // 全部挂在 `lerxu-ole-dark` 下：深色皮肤真加载了才生效（见
+            // [nativeThemeCookieJs]）
+            oleRules("body") + "{color:#DFE3E8!important;}" +
+                oleRules(".all_menu", ".conch_history_bg") + "{background:#222!important;}" +
+                oleRules(
+                    ".vodlist_titbox", ".vodlist_title", ".pannel", ".pannel_head",
+                    ".play_vlist", ".play_vlist_thumb", ".left_row", ".right_row",
+                    ".mob_btn", ".vodlist_titbox a", ".vodlist_title a", ".pannel a",
+                    ".play_vlist a", ".head_box", ".header", ".head_b", ".head_menu_a",
+                    ".head_menu_b", ".head_user", ".all_menu_inner", ".all_menu_box",
+                    ".nav_list", ".nav_list a", ".head_menu_a a"
+                ) + "{color:#DFE3E8!important;}"
         )
     )
 
@@ -171,6 +197,91 @@ object WebThemeEngine {
             "})();"
 
     /**
+     * 网页**实际底色**的上报脚本（幂等，与 [RUNTIME_JS] 一起注入）：
+     * 量出来的色号过桥交给原生，顶部那一截系统栏跟着它走（见 `DockBridge.bg`）——
+     * 原来那一截固定用应用底色，深色网页顶着一条浅色带子，像页面被裁掉了头。
+     *
+     * 取色按"眼睛先看到谁"来排：
+     * ① **视口最顶上那 1px 是谁** —— 顶部那条带子紧挨着的就是它，同色才不会在
+     *    交界处读出一条"分割线"（用户点名）。站点把底色画在顶栏 / 外壳容器上时，
+     *    画布色与它并不一致（深色站点常见的"白顶栏 + 画布色"就是这种）；
+     * ② 顶上就是透明的一层、量不出来时才退回文档画布色 —— body → html。CSS 里
+     *    body 的底色会传播到画布，绝大多数站点的底色都画在这两个上，这一档也最稳：
+     *    跳转、滚动都不变；
+     * ③ 都量不出来报 -1：原生退回应用底色，那正是 WebView 露在页面后面的那一层，
+     *    两者本来就同色。
+     * 半透明的一律跳过（要与露出来的那层合成，我们拿不到它的确切颜色），
+     * 只在**完全量不出**时才落到第 ③ 档。
+     *
+     * 实时性由两条保证：MutationObserver 盯 html / body 的 class / style（站点自己的
+     * 深浅开关、SPA 路由基本都是这么拨的），外加一个 500ms 起、之后放宽到 3s 的轮询
+     * 兜住纯样式表引起的变化（媒体查询、!important 覆盖）。只在**色号真的变了**时过桥。
+     */
+    const val BG_REPORT_JS: String =
+        "(function(){if(window.__lerxuPageBg)return;" +
+            "function solid(el){try{if(!el)return -1;" +
+            "var c=getComputedStyle(el).backgroundColor;var m=c&&c.match(/[0-9.]+/g);" +
+            "if(!m||m.length<3)return -1;" +
+            "if(m.length>3&&parseFloat(m[3])<0.999)return -1;" +
+            "return (Math.round(m[0])<<16)|(Math.round(m[1])<<8)|Math.round(m[2]);" +
+            "}catch(e){return -1;}}" +
+            "function readBg(){" +
+            // ① 顶部那 1px 的元素（顺祖先找第一层不透明底）
+            "try{var el=document.elementFromPoint(Math.round(window.innerWidth/2),1);" +
+            "for(var i=0;el&&i<12;i++,el=el.parentElement){" +
+            "var v=solid(el);if(v>=0)return v;}}catch(e){}" +
+            // ② 画布色
+            "var c=solid(document.body);if(c>=0)return c;" +
+            "c=solid(document.documentElement);if(c>=0)return c;" +
+            "return -1;}" +
+            "var last=-2;" +
+            "function push(force){var c=readBg();if(!force&&c===last)return;last=c;" +
+            "try{if(window.LerxuDock&&window.LerxuDock.bg)window.LerxuDock.bg(c);}catch(e){}}" +
+            "window.__lerxuPageBg=push;" +
+            "push(true);" +
+            "function watch(node,childList){try{new MutationObserver(function(){push(false);})" +
+            ".observe(node,{attributes:true,attributeFilter:['class','style','hidden']," +
+            "childList:childList,subtree:false});}catch(e){}}" +
+            "watch(document.documentElement,false);" +
+            // body 上的深色开关（站点自己换肤最常见的一处）也要盯：这段脚本常常
+            // 在 DOMContentLoaded **之后**才注入，只挂事件就永远挂不上了
+            "var attach=function(){watch(document.body,true);push(false);};" +
+            "if(document.body)attach();else document.addEventListener('DOMContentLoaded',attach);" +
+            "var n=0;var tick=function(){push(false);n++;setTimeout(tick,n<12?500:3000);};" +
+            "setTimeout(tick,500);" +
+            "})();"
+
+    /**
+     * 有些站点的深色主题是**它自己的一套皮肤**，选择结果记在 cookie 里、由站点
+     * 自己的脚本在解析时读取 —— 这种必须**在任何页面脚本之前**把开关拨好
+     *（文档起始脚本），站点自己就会把深色皮肤加载出来：颜色、图标、播放器皮肤
+     * 一起变，比我们拿兜底层一层层往上盖干净得多（用户点名"优先用它自己的"）。
+     *
+     * 欧乐影院（苹果 CMS + conch 模板）：`link[name=color]` 指向 `white.css` /
+     * `black.css` 这类配色皮肤，`switchSkin()` 把选择写进 `mystyle` cookie，
+     * 站点脚本在 DOM 就绪时照这个 cookie 换链接。换成浅色时写回 `white`
+     *（站点默认那一套），两边对称。
+     *
+     * 同时给 `<html>` 打一个 `lerxu-ole-dark` 标记 —— **只在深色皮肤真的加载上
+     * 之后**才有。[natives] 里给这家补的那几条样式全部挂在这个类下面：
+     * 用户在页面开着的时候切应用主题，cookie 改了但当前页还没重新加载，
+     * 没有这道闸就会把"浅字"压在还没变深的页面上（等于整页看不清）。
+     * 皮肤链接是站点脚本改的，所以用 MutationObserver 跟着它的变化走。
+     */
+    private fun nativeThemeCookieJs(dark: Boolean): String =
+        "try{var h=location.hostname||'';" +
+            "if(h.indexOf('olevod.com')>=0||h.indexOf('olelive.com')>=0){" +
+            "document.cookie='mystyle=" + (if (dark) "black" else "white") + ";path=/';" +
+            "var mark=function(){var e=document.documentElement;if(!e)return;" +
+            "var l=document.querySelector('link[name=color]');" +
+            "var on=!!(l&&/black/i.test(l.getAttribute('href')||''));" +
+            "if(on){e.classList.add('lerxu-ole-dark');}else{e.classList.remove('lerxu-ole-dark');}};" +
+            "mark();document.addEventListener('DOMContentLoaded',mark);" +
+            "try{new MutationObserver(mark).observe(document.documentElement," +
+            "{childList:true,subtree:true,attributes:true,attributeFilter:['href']});}catch(e2){}" +
+            "}}catch(e){}"
+
+    /**
      * 文档起始脚本：把 `prefers-color-scheme` 对齐到应用主题。
      *
      * 站点（YouTube / Google 这类）在首帧就用 `matchMedia` 决定自己的深浅色，
@@ -181,6 +292,7 @@ object WebThemeEngine {
      */
     fun docStartJs(dark: Boolean): String =
         "(function(){window.__lerxuDark=" + dark + ";" +
+            nativeThemeCookieJs(dark) +
             "try{var orig=window.matchMedia;if(!orig||orig.__lerxu)return;" +
             "var mk=function(q){try{" +
             "if(typeof q==='string'&&q.indexOf('prefers-color-scheme')>=0){" +
@@ -288,6 +400,22 @@ object WebThemeEngine {
                 ".b_algo a h2{color:var(--lerxu-primary)!important;}" +
                 "#sb_form_q{background:var(--lerxu-surface)!important;color:var(--lerxu-text)!important;}"
         }),
+        Adapter("v.qq.com", { _ ->
+            // 手机版腾讯视频（m.v.qq.com）**没有自己的深色模式**（没有
+            // prefers-color-scheme、也没有 color-scheme），所以它走兜底层。
+            // 问题是它的顶栏与频道 tab 条在 channel 主题下是**写死的白底**：
+            // `:root[theme=channel] .header{background-color:#fff}`、
+            // `.b-tabs{background-color:#fff}` —— 只罩 html/body 的话，深色页面
+            // 顶上会横着一条白栏（用户点名"没有正确覆盖"）。
+            // 播放器区域（.txp_*）一律不碰。
+            ":root[theme=channel] .header,.header,.b-tabs,.b-scroll__wrapper{" +
+                "background:var(--lerxu-bg)!important;color:var(--lerxu-text)!important;}" +
+                ".header__btn-wrapper,.btn__login,.b-tabs__item,.b-tabs__item--active{" +
+                "color:var(--lerxu-text)!important;}" +
+                // 底部面板与弹层同样是写死的白底
+                ".container .bottom-wrapper,.dialog__wrapper{" +
+                "background:var(--lerxu-surface)!important;color:var(--lerxu-text)!important;}"
+        }),
         Adapter("baidu.com", { _ ->
             // 搜索页：结果卡片与外壳跟色；百度首页的搜索框保持站点原样
             "#wrapper,#head,#content_left,#content_right,.result-op,.c-container{" +
@@ -303,6 +431,56 @@ object WebThemeEngine {
                 ".ContentItem-title a,.QuestionHeader-title{color:var(--lerxu-text)!important;}" +
                 ".RichText{color:var(--lerxu-text)!important;}" +
                 ".Button--blue{background:var(--lerxu-primary)!important;}"
+        }),
+        Adapter("sj.qq.com", { _ ->
+            // 应用宝（sj.qq.com，手机版与它自己的下载页共用同一套组件）：站点
+            // **没有自己的深色模式** —— prefers-color-scheme、color-scheme、
+            // 深色类名三处都查过，一个都没有，所以只能走兜底层。
+            //
+            // 它的浅色是**写死在组件里**的：顶栏恒白（连它那条 ::after 底线）、
+            // 侧边菜单恒白、下载 / 真机 / 预约弹层恒白、列表卡与固定卡恒白。
+            // 只罩 html/body 的话，深色页面上顶着一条白栏、中间一坨白卡，
+            // 读起来就是"一半深一半浅"（用户点名"夹杂着浅色和深色"）。
+            //
+            // 类名是 CSS Modules 的哈希后缀（每次发版都变），所以一律按**前缀**匹配
+            // （`[class*=X__]`），不写全名。文字色只压在容器**及其后代**上，
+            // 但**按钮与链接豁免**：蓝底下载键、黄底云游戏键的文字是站点自己配好的，
+            // 一起翻就成了"浅字压浅底"。链接照通用层的主色走。
+            val shells = listOf(
+                "Header_header__", "Menu_menuContent__", "Modal_content__",
+                "DownloadModal_downloadModal__", "CloudGameModal_cloudGameModal__",
+                "PreOrderModal_bookingModal__", "WechatGameModal_wechatGameModal__",
+                "GameCard_gameCard__", "SimpleGameCard_simpleGameCard__", "BannerV2_gameCard__",
+                // 应用信息卡（开发者 / 版本 / 权限那一段）、广告位、详情页的搜索面板
+                // 与品牌横幅：同样恒白
+                "GameDetail_mobileAppInfoCard__", "Advertisement_gameDetailAd__",
+                "AdModal_topDownloadAd__", "SearchBar_searchBar__",
+                "BrandBanner_brandBanner__"
+            )
+            val bgRule = shells.joinToString(",") { "[class*=\"$it\"]" }
+            // 文字色：逐个选择器带上"按钮与链接豁免"—— `:not()` 只作用于选择器列表里
+            // **最后一个**，拼成一个长列表再加后缀等于只豁免了一处，别处照旧被压
+            val textRule = shells.joinToString(",") {
+                "[class*=\"$it\"] *:not(a):not([class*=Button]):not([class*=button]):not([class*=btn])"
+            }
+            val linkRule = listOf(
+                "GameCard_gameCard__", "SimpleGameCard_simpleGameCard__",
+                "BannerV2_gameCard__", "Menu_menuContent__"
+            ).joinToString(",") { "[class*=\"$it\"] a" }
+            // 站点把图标也做成了**外部 SVG 当背景图**（`fill="black"`），一个字都
+            // 不跟随 `color` —— 顶栏的字标、搜索 / 菜单图标、应用信息卡的折叠箭头
+            // 都是这种，深色底上直接看不见。这几枚都是单色深色，反色 + 色相回转
+            // 提到浅色（与自家首页字标同一套滤镜）；**彩色图标不碰**：
+            // 面包屑 / 卡片标题的箭头是蓝色、评分星是橙色，本身在深色上就清楚
+            val iconRule = listOf(
+                "Header_logo__", "Header_menuIcon__", "SearchBar_searchIcon__",
+                "GameDetail_arrowDown__", "AppInfo_icoMobileSafeBrand__"
+            ).joinToString(",") { "[class*=\"$it\"]" }
+            bgRule + "{background:var(--lerxu-bg)!important;}" +
+                "[class*=\"Header_header__\"]::after{background:var(--lerxu-bg)!important;}" +
+                textRule + "{color:var(--lerxu-text)!important;}" +
+                linkRule + "{color:var(--lerxu-primary)!important;}" +
+                iconRule + "{filter:invert(1) hue-rotate(180deg) brightness(1.05)!important;}"
         })
     )
 
