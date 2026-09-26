@@ -27,7 +27,7 @@
 
 ## Introduction
 
-A modern download manager powered by the in-house XferRust engine (native Rust implementation), optimized for Windows, macOS, Linux, and Android. Downloads run over **HTTP(S)** and **BitTorrent** (including magnet links), with uTP transport, automatic port mapping, automatic tracker synchronization, task prioritization, batch management, and advanced download presets. Browser-extracted links such as `ed2k://` and `thunder://` are also recognized and handed over to the app.
+A modern download manager powered by the in-house XferRust engine (native Rust implementation), optimized for Windows, macOS, Linux, and Android. Downloads run over **HTTP(S)**, **BitTorrent** (including magnet links) and **HLS (M3U8)** playlists, with uTP transport, automatic port mapping, automatic tracker synchronization, task prioritization, batch management, and advanced download presets. Browser-extracted links such as `ed2k://` and `thunder://` are also recognized and handed over to the app — pair the desktop app with the browser extension to grab web videos, or use the Android client's built-in browser with resource sniffing and a native player.
 
 ## Screenshots
 
@@ -56,6 +56,7 @@ A modern download manager powered by the in-house XferRust engine (native Rust i
 
 - Lerxu runs the XferRust engine as a **separate process** and drives it over local JSON-RPC (`127.0.0.1:16800`). The app automatically picks the best "Max Connections per Server" strategy for the engine in use.
 - Each task supports up to **128 concurrent segments** (32 connections per server by default), backed by a built-in **128M disk cache** and connection reuse for smoother parallel downloads.
+- HLS (M3U8) tasks are driven by the engine itself, which reads the playlist, downloads the segments and splices them into a single file. Variant selection, segment concurrency (cap 64), write mode and segment retries are configurable in Preferences, and interrupted downloads resume.
 - Up to **10 concurrent tasks** by default — adjustable in Preferences.
 - Up to **128 peer connections** per torrent by default (the engine cap is 200).
 - The engine restarts automatically after a crash (up to 5 attempts with backoff), with task and session state restored. Unfinished tasks stay **paused** after a restart and can be resumed manually.
@@ -73,6 +74,7 @@ A modern download manager powered by the in-house XferRust engine (native Rust i
 
 ### Protocol Support
 - **HTTP/HTTPS**: Download directly from websites, with multi-connection acceleration, Gzip, Keep-Alive, and resume support
+- **HLS (M3U8)**: The manifest is parsed by the engine, which downloads the playlist's segments and splices them into one file; supports bitrate variant selection, AES-128 encrypted segments, configurable segment concurrency and retries, and resume
 - **BitTorrent**: Full torrent file support with selective downloading; uTP/TCP dual transport, DHT, LPD, PeX, and encryption work out of the box
 - **Magnet Links**: Direct downloads without .torrent files; choose files freely once metadata is ready
 - **Request Headers**: Per-task `Referer` and `User-Agent`, plus arbitrary custom headers, so links that require them can be fetched
@@ -90,11 +92,21 @@ A modern download manager powered by the in-house XferRust engine (native Rust i
 - **Seeding Control**: Set share-ratio and seeding-time goals; auto-pause or keep seeding on completion
 
 ### Video Download
-- **Online Video Download (Browser Extension)**: Recognize web videos via the browser extension and send them to the app with one click to create download tasks; works in Chrome, Edge, Opera and other Chromium-based browsers as well as Firefox
+- **Online Video Download (Browser Extension)**: Recognize web videos via the browser extension and send them to the app with one click to create download tasks; works in Chrome, Edge, Opera and other Chromium-based browsers as well as Firefox (now published on the official Firefox add-ons store)
 - **Download Takeover**: Clicks on download links on web pages (e.g., links with a download attribute or common file extensions) can be handed over to Lerxu, with support for excluding specific sites or file types and a shortcut to temporarily bypass
-- **Video Recognition**: Supports multiple video formats (including DASH) and automatically distinguishes audio streams from video streams
+- **Video Recognition**: Supports multiple video formats, including DASH (audio and video streams are paired and merged after download) and HLS (the M3U8 manifest is handed to the engine as a single item — segments are never expanded by the extension)
 - **Unified Task Management**: Video resources appear as regular download tasks in the task list, supporting the same pause/resume/delete management experience as other tasks
 - **Merge Progress Display**: Audio/video that needs merging enters a "merging" state with visible progress after download, and correctly merges when multiple segmented videos are sent at once; the FFmpeg status is shown in Preferences
+
+### Android Built-in Browser
+
+- **Built-in Browser**: The Android client ships its own browser with tab management, history and pull-to-refresh, so you can switch between the downloader and the browser at any time
+- **Resource Sniffing**: Media addresses found while browsing are collected in a resource panel and can be sent to the download engine with one tap
+- **Native Player**: Page videos can be played fullscreen in the app's own player, with play/pause, double-tap to seek, playback speed and aspect ratio, looping, keep-screen-on, and a screen lock against mistaps; the player also carries a download entry that hands the current video (with filename and estimated size) to the engine
+- **Incognito Windows**: Open an incognito window with a separate identity, gated behind biometric or device-password authentication
+- **Ad Blocking**: Ad requests are blocked and ad slots hidden by default; can be turned off in Settings
+- **Search Engine & Default Browser**: Picks a reachable search engine for the current network, and can register as the system default browser for http / https links
+- **Default Entry**: Choose whether the app opens into the downloader or the browser
 
 ### User Experience
 - **Clean Interface**: Modern, intuitive design with dark / light / system-following themes
@@ -140,7 +152,7 @@ Lerxu currently supports the following platforms:
 - **Windows** (10, 11) x64
 - **macOS** (Intel x64; Apple Silicon arm64)
 - **Linux** (x64, arm64)
-- **Android** (arm64): shares the same download engine as the desktop app, with a mobile-first interface and its own update-channel selection (stable / preview / all)
+- **Android** (arm64): shares the same download engine as the desktop app, with a mobile-first interface; besides the downloader it ships a built-in browser (tabs, resource sniffing, native player, incognito windows, ad blocking) and can register as the system default browser. It also has its own update-channel selection (stable / beta / all releases)
 
 ## Installation
 
@@ -220,6 +232,9 @@ Lerxu currently supports the following platforms:
 | `npm run build` | Build installers for the current platform |
 | `npm run build:dir` | Build an unpacked directory only (used by CI for runtime tests) |
 | `npm run build:applesilicon` | Build the macOS arm64 target |
+| `npm run build:github` | Build the front-end bundles only (used by CI, no installer) |
+| `npm run release` | Build and publish (used by CI for releases) |
+| `npm run preview` | Preview the built front-end bundles locally |
 | `npm run build:extension` | Package the browser extension (Chromium + Firefox) |
 | `npm run test:extension` | Run the browser extension tests |
 | `npm run lint:extension` | Lint the packaged Firefox extension with `web-ext` |

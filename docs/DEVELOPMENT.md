@@ -103,10 +103,12 @@ ANDROID_KEY_PASSWORD=*** \
   ./gradlew :app:assembleRelease      # → app-release.apk（已签名）
 ```
 
-**单元测试**（`Android/app/src/test/`，随 CI 执行）：
+**单元测试**（`Android/app/src/test/`，随 CI 执行，当前 13 个测试类）：
 
 - `EngineBinaryTest`：引擎二进制完整性——两份副本同字节、ELF 头（64 位小端 AArch64）、体积下限、关键能力字符串（防止回填旧引擎或错误架构）
 - `FormatUtilsTest`：进度 / 速度 / 时长格式化与任务状态配色的边界值
+- 其余覆盖内置浏览器与界面状态机：`AdBlockerTest`、`BrowseHistoryTest`、`BrowserRulesTest`、`StartPageTest`、`DockFollowTest`、`TabCardMotionTest`、`TabPersistenceTest`
+- 以及应用与更新侧：`AppPageBackTest`、`AppUpdateTest`、`ReleaseNotesTest`、`StatPollingTest`
 
 ### CI 中的 Android SDK 准备
 

@@ -113,11 +113,14 @@ ANDROID_KEY_PASSWORD=*** \
   ./gradlew :app:assembleRelease      # → app-release.apk (signed)
 ```
 
-**Unit tests** (`Android/app/src/test/`, executed by CI):
+**Unit tests** (`Android/app/src/test/`, executed by CI, currently 13 test classes):
 
 - `EngineBinaryTest`: engine binary integrity — byte-identical copies, ELF header (64-bit little-endian
   AArch64), size floor, capability strings (guards against stale engines or wrong architectures)
 - `FormatUtilsTest`: progress / speed / duration formatting and per-status colours, including boundaries
+- The rest cover the built-in browser and the UI state machine: `AdBlockerTest`, `BrowseHistoryTest`,
+  `BrowserRulesTest`, `StartPageTest`, `DockFollowTest`, `TabCardMotionTest`, `TabPersistenceTest`
+- Plus the app / update side: `AppPageBackTest`, `AppUpdateTest`, `ReleaseNotesTest`, `StatPollingTest`
 
 ### Android SDK setup in CI
 
