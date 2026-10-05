@@ -42,6 +42,7 @@ import {
   clearAllMergeRetryTimers,
   hasMergeRetryTimer
 } from '@/utils/mergeRetryManager'
+import { isTargetWrittenByEntries } from '@/utils/mergeInput'
 import { createCompleteNotifier } from '@/utils/completeNotify'
 import {
   mediaEngineBinName,
@@ -103,6 +104,13 @@ let _visibilityHandler = null
 // 一条下载只弹一次完成通知（键取 pairId / gid，见 utils/completeNotify）
 const _completeNotifier = createCompleteNotifier()
 let _dashMergeJobs = new Map()
+// 正在跑的 `zuvrust mux` 子进程：合并是长任务，宿主退出 / 组件卸载时要能一把
+// 收掉，否则引擎进程会被留下继续吃 CPU 与磁盘（正常结束它会自己退出）。
+const _activeMuxChildren = new Set()
+// 合并卡死的两道兜底：无进度输出的空闲时限，以及硬性总时限。
+// 都只是为了"别把卡死的进程一直留在后台"，正常合并远够用。
+const MUX_IDLE_TIMEOUT_MS = 180 * 1000
+const MUX_HARD_TIMEOUT_MS = 60 * 60 * 1000
 // 「合并簿记看着像在合并、其实没有任何合并在跑」的起始时间（自愈用，见
 // reconcileStaleMergingEntries）。连续 STALE_MERGING_MS 都如此才认定是中断残迹。
 const _staleMergingSince = new Map()
@@ -1370,46 +1378,34 @@ const dir = dirname(filePath)
        * 盘上这个文件是不是"某个还在下载的任务"正在写的。
        *
        * `.xfer` 控制文件是最直接的信号，但它可能还没被引擎建出来（刚起任务的那一瞬）。
-       * 再对一遍任务列表：有任务的文件路径就是它、且状态是进行中 → 视为没下完。
+       * 再对一遍任务列表：**某个进行中任务的落盘文件就是它** → 视为没下完。
        * 这个判断只会让合并**更保守**（宁可多等一轮重试，也不拿半个文件去合）。
+       *
+       * ⚠️ **判据只能是「这条任务的落盘文件 == 目标文件」**（判定逻辑在
+       * `utils/mergeInput.js` 的 `isTargetWrittenByEntries`，有单测钉着）。
+       * 这里曾经写成"entry 自己的文件带引擎控制文件就算命中"——那个条件与目标
+       * 文件**无关**，于是只要还有**任意**一个任务在下载，本函数就对**任何**目标
+       * 返回 true：多个媒体任务同时下时，先下完的那一对永远被判成"输入还在下"，
+       * 合并被无限推迟，直到所有下载都结束才一起合并（用户报的形态）。
        */
-      function isPathBeingDownloadedByOther(p) {
+      function isPathBeingDownloadedByOther(p, cfg) {
         try {
           const target = p ? resolve(`${p}`) : ''
           if (!target) return false
           const pendingStatuses = new Set([TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED])
-          // 一条记录背后可能有两个引擎任务（「一对音视频」）：折叠记录的 `files`
-          // 只带**主成员**（画面流）的文件，另一半（声音流）的路径必须从
-          // `pairMembers[].files` 里取 —— 少这一层就会把"正在下载的声音流"
-          // 误判成"已下完"，拿半个文件去合并（用户报的"没下完就合并完成"）。
-          const filesOf = (entry) => {
-            const acc = Array.isArray(entry.files) ? entry.files.slice() : []
-            const members = Array.isArray(entry.pairMembers) ? entry.pairMembers : []
-            for (const m of members) {
-              if (m && Array.isArray(m.files)) acc.push(...m.files)
-            }
-            return acc
-          }
-          const matches = (entry) => {
-            if (!entry) return false
-            const st = entry.status ? `${entry.status}` : ''
-            if (!pendingStatuses.has(st)) return false
-            return filesOf(entry).some(f => {
-              try {
-                const fp = f && f.path ? resolve(`${f.path}`) : ''
-                if (!fp) return false
-                return fp === target || fp === `${target}.xfer` || hasEngineControlFile(fp)
-              } catch (_) {
-                return false
-              }
-            })
-          }
+          const downloadingFileSuffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
           const lists = [
             taskStore.taskList || [],
             taskStore.allTaskList || [],
             taskHistory.getAllHistory() || []
           ]
-          return lists.some(list => list.some(matches))
+          return lists.some(list => isTargetWrittenByEntries({
+            target,
+            entries: list,
+            pendingStatuses,
+            downloadingFileSuffix,
+            resolvePath: (x) => resolve(`${x}`)
+          }))
         } catch (_) {
           return false
         }
@@ -1473,7 +1469,7 @@ const dir = dirname(filePath)
           if (hasEngineControlFile(p)) return false
           // 老 aria2 约定：控制文件与下载文件同目录（保留兜底）
           if (existsSync(`${p}.xfer`)) return false
-          if (isPathBeingDownloadedByOther(p)) return false
+          if (isPathBeingDownloadedByOther(p, cfg)) return false
           return true
         } catch (_) {
           return false
@@ -2058,11 +2054,43 @@ const dir = dirname(filePath)
           }
           const args = ['mux', outputPath, ...inputs, '--json', '--progress']
           const child = spawn(enginePath, args, { windowsHide: true })
+          _activeMuxChildren.add(child)
           let stderr = ''
           let stdoutBuf = ''
           let lastBytes = 0
           let lastAt = Date.now()
+          let settled = false
+          let idleTimer = null
+          // `mux` 是**同步的一次性命令**：正常结束引擎自己就退出（宿主没有把它
+          // 做成常驻服务），所以正常路径不会在后台留下进程。下面两个定时器只为
+          // "引擎卡死"兜底 —— 少了它们，一个卡住的合并进程会永久留在后台吃
+          // CPU / 磁盘，而宿主早已不再看它（用户点名的"别一直占着资源"）。
+          const finish = (fn) => {
+            if (settled) return
+            settled = true
+            clearTimeout(idleTimer)
+            clearTimeout(hardTimer)
+            _activeMuxChildren.delete(child)
+            fn()
+          }
+          const armIdle = () => {
+            clearTimeout(idleTimer)
+            idleTimer = setTimeout(() => {
+              try { child.kill('SIGKILL') } catch (_) {}
+              finish(() => reject(new Error(
+                `mux 超过 ${Math.round(MUX_IDLE_TIMEOUT_MS / 1000)} 秒没有任何进度输出，已终止`
+              )))
+            }, MUX_IDLE_TIMEOUT_MS)
+          }
+          const hardTimer = setTimeout(() => {
+            try { child.kill('SIGKILL') } catch (_) {}
+            finish(() => reject(new Error(
+              `mux 超过 ${Math.round(MUX_HARD_TIMEOUT_MS / 60000)} 分钟仍未结束，已终止`
+            )))
+          }, MUX_HARD_TIMEOUT_MS)
+          armIdle()
           child.stdout.on('data', (d) => {
+            armIdle()
             stdoutBuf += d.toString('utf8')
             const lines = stdoutBuf.split('\n')
             stdoutBuf = lines.pop() || ''
@@ -2081,14 +2109,19 @@ const dir = dirname(filePath)
               })
             }
           })
-          child.stderr.on('data', (d) => { stderr += d.toString('utf8') })
-          child.on('error', (err) => reject(err))
+          child.stderr.on('data', (d) => {
+            armIdle()
+            stderr += d.toString('utf8')
+          })
+          child.on('error', (err) => finish(() => reject(err)))
           child.on('close', (code) => {
-            if (code === 0) {
-              resolve(true)
-              return
-            }
-            reject(new Error(engineErrorText(stderr, code)))
+            finish(() => {
+              if (code === 0) {
+                resolve(true)
+                return
+              }
+              reject(new Error(engineErrorText(stderr, code)))
+            })
           })
         })
       }
@@ -2629,7 +2662,7 @@ const dir = dirname(filePath)
             // **还在被引擎写**的文件绝不删：删掉之后引擎会继续往已 unlink 的 inode
             // 写，那条任务最终"完成"了、盘上却没有文件 —— 它自己的那次合并就永远
             // 等不到自己的输入，任务会一直挂在"等待配对文件下载完成"（用户报的形态）。
-            if (hasEngineControlFile(full) || isPathBeingDownloadedByOther(full)) return false
+            if (hasEngineControlFile(full) || isPathBeingDownloadedByOther(full, { downloadingFileSuffix: deletedSuffix })) return false
             for (let attempt = 0; attempt < 5; attempt++) {
               try {
                 unlinkSync(full)
@@ -4790,6 +4823,12 @@ onUnmounted(() => {
         _btRetryTimers.clear()
       }
       clearAllMergeRetryTimers()
+      // 还在跑的合并进程一并收掉：`zuvrust mux` 正常会自己退出，但组件卸载
+      // （切换页面 / 退出应用）时仍有在跑的必须主动终止，不能让引擎进程留下。
+      for (const child of _activeMuxChildren) {
+        try { child.kill('SIGKILL') } catch (_) {}
+      }
+      _activeMuxChildren.clear()
       taskStore.saveSession()
 
       unbindEngineEvents()

@@ -28,6 +28,7 @@
     "test:packaging": "node test/packaging/run.mjs",
     "test:playback": "node --import ./test/playback/register-alias.mjs test/playback/run.mjs",
     "test:taskpair": "node --import ./test/playback/register-alias.mjs test/taskpair/run.mjs",
+    "test:mergeinput": "node test/mergeinput/run.mjs",
     "lint:extension": "npx --yes web-ext@8 lint --source-dir $(ls dist/extension/artifacts/lerxu-webextension-firefox-*.zip | head -1)",
     "lint": "eslint --ext .js,.vue -f ./node_modules/eslint-friendly-formatter src",
     "lint:workflows": "node scripts/check-workflows.js",
