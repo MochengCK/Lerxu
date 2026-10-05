@@ -118,7 +118,17 @@ data class LerxuExtraColors(
     /** --lc-color-success / -warning / -danger（暗色下取值同桌面，不另做一套） */
     val success: Color,
     val warning: Color,
-    val danger: Color
+    val danger: Color,
+    /**
+     * 弹窗（面板）里的分隔横杠。
+     *
+     * 不能直接用 Material 的 `outlineVariant`：深色主题下它是 0xFF33363D，而弹窗
+     * 面板底色（surfaceContainerHigh）是 0xFF363B44 —— 比面板还深，划出来一条
+     * "看不见的线"（用户点名："主题弹窗的划分横杠在深色模式下不易见，很多选择
+     * 弹窗都一样"）。这里按"面板底色上加一层 rgba(255,255,255,0.12)"取等效实色，
+     * 在面板上既看得见、又不抢内容；浅色主题保持原来那一档灰（本来就是可见的）。
+     */
+    val dialogDivider: Color
 )
 
 private val LightExtraColors = LerxuExtraColors(
@@ -127,7 +137,9 @@ private val LightExtraColors = LerxuExtraColors(
     pieceUnwanted = Color(0xFFB9C4D2),
     success = Color(0xFF67C23A),
     warning = Color(0xFFE6A23C),
-    danger = Color(0xFFF56C6C)
+    danger = Color(0xFFF56C6C),
+    // 与 outlineVariant 同档：浅色面板上本来就看得见
+    dialogDivider = Color(0xFFE2E8F0)
 )
 
 private val DarkExtraColors = LerxuExtraColors(
@@ -136,7 +148,9 @@ private val DarkExtraColors = LerxuExtraColors(
     pieceUnwanted = Color(0xFF4A5766),
     success = Color(0xFF67C23A),
     warning = Color(0xFFE6A23C),
-    danger = Color(0xFFF56C6C)
+    danger = Color(0xFFF56C6C),
+    // 面板色 0xFF363B44 上叠 12% 白 ≈ 0xFF4F545C：一条看得见的细线
+    dialogDivider = Color(0xFF4F545C)
 )
 
 val LocalLerxuExtraColors = staticCompositionLocalOf { LightExtraColors }

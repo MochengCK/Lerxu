@@ -17,11 +17,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import com.lerxu.android.ui.screen.DialogWindowChrome
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -115,8 +119,14 @@ fun UpdateNoticeCard(
 
     Dialog(
         onDismissRequest = { beginExit() },
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        // 见 Dialogs.kt 里 DialogWindowChrome 的说明：这扇窗口要真的铺满整屏，
+        // 否则遮罩盖不到底部手势条那一带、且窗口内的 insets 会被系统吃掉
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
+        DialogWindowChrome()
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -148,9 +158,15 @@ fun UpdateNoticeCard(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // 四周留白：左右 14dp、底部 64dp 悬浮（导航栏遮挡兜底，
-                        // 与 BottomConfirmDialog 一致）
-                        .padding(start = 14.dp, end = 14.dp, bottom = 64.dp)
+                        // 四周留白：左右 14dp、底部 = 导航条实测高度 + 12dp
+                        //（与 BottomConfirmDialog / 任务页那枚「移除控制栏」同一档 ——
+                        // 固定的 64dp 在 inset 量得到之后就显得空了）
+                        .padding(
+                            start = 14.dp,
+                            end = 14.dp,
+                            bottom = 12.dp + WindowInsets.navigationBars.asPaddingValues()
+                                .calculateBottomPadding()
+                        )
                         // 吞掉面板内点击，避免误触遮罩关闭
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },

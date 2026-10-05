@@ -1,7 +1,8 @@
 package com.lerxu.android.browser
 
 /**
- * 网页广告拦截：**四层**，按"判据有多硬"从强到弱排。
+ * 网页广告拦截：**五层**，按"判据有多硬"从强到弱排（与 uBlock Origin 那套
+ * "网络过滤 + 元素隐藏 + 脚本拦截"是同一思路，实现全部自研）。
  *
  * ① **网络层**（[isAdUrl]，配合 `shouldInterceptRequest` 用）：广告网络的请求直接
  *    判死，脚本连响应体都拿不到 —— 这是"让广告不显示"最干净的一条路。判据两类：
@@ -22,10 +23,18 @@ package com.lerxu.android.browser
  *
  * ④ **通用兜底**（[GUARD_JS]）：名字认不出来的广告位，按**版式形状**认 ——
  *    写着"广告 / 赞助 / Sponsored"的标签、IAB 标准尺寸的跨域 iframe、
- *    盖住大半个屏幕且链到别的站的弹窗。这一层是"通用"的落点：不依赖站点怎么命名。
+ *    盖住大半个屏幕且链到别的站的弹窗，以及**播放器上那张广告罩**；
+ *    再加一条"**替用户点掉跳过广告**"（贴片广告藏不掉时最有效的一招）。
  *
- * 前三层的判据都是纯函数 / 纯选择器，不碰 Android API，单测直接跑（见 AdBlockerTest）；
- * ④ 是页面内启发式，靠"多条件同时成立"压误伤，并把自己藏过的东西记下来，开关一关就还原。
+ * ⑤ **弹窗层**（[POPUP_JS] + `shouldOverrideUrlLoading` 的手势判据）：
+ *    `window.open(广告地址)` 与"脚本发起的整页跳转"按**同一份域名表**掐掉 ——
+ *    这两种都是"页面自己造出来的窗口 / 导航"，样式层与网络层都碰不到。
+ *    **带用户手势的那一下**（影视站的"假播放按钮"）也拦：判据收窄成 [isAdHost]
+ *    —— 只认确定的广告域，路径判据（`/ads/` 那类）仍留着手势豁免，避免误伤。
+ *
+ * 前四层的判据都是纯函数 / 纯选择器，不碰 Android API，单测直接跑（见 AdBlockerTest）；
+ * ④ 是页面内启发式，靠"多条件同时成立"压误伤，并把自己藏过的东西记下来，开关一关就还原
+ *（弹窗层同理：关掉时把原生 `window.open` 装回去）。
  */
 object AdBlocker {
 
@@ -216,7 +225,120 @@ object AdBlocker {
         "adsview.qq.com",
         "adkwai.com",
         "adchina.io",
-        "adpeng.com"
+        "adpeng.com",
+        // ── 视频站自己的广告投放端（整站域名不动，只拦这几条"放广告"的子域）──
+        // 这些站的广告与正片分属不同子域，拦广告域不会影响播放本身
+        "atm.youku.com",
+        "ad.api.3g.youku.com",
+        "valf.atm.youku.com",
+        "adsdwl.youku.com",
+        "ad.m.youku.com",
+        "adplay.tudou.com",
+        "ad.iqiyi.com",
+        "afp.iqiyi.com",
+        "cupid.iqiyi.com",
+        "ad.mgtv.com",
+        "ads.mgtv.com",
+        "ad.v.qq.com",
+        "ad.m.v.qq.com",
+        // ── 视频广告 SDK（播放器里那层贴片广告就是它放的）──
+        // Google IMA 与国内各家播放器 SDK 的广告服务端
+        "imasdk.googleapis.com",
+        "googleads.g.doubleclick.net",
+        // ── 补齐：广告网络 / 联盟（与现有各条同一档判据，只放"投广告"的域）──
+        "adserver.yahoo.com",
+        "ads.yahoo.com",
+        "advertising.yahoo.com",
+        "gemini.yahoo.com",
+        "ads.reddit.com",
+        "adserver.adtech.de",
+        "advertising.aol.com",
+        "ads.aol.com",
+        "o2o.aolcdn.com",
+        "ads.msn.com",
+        "adserver.tremorhub.com",
+        "ads.yieldmo.com",
+        "admedia.com",
+        "adspirit.de",
+        "adsnative.com",
+        "adotmob.com",
+        "adrelayer.com",
+        "adskeeper.co.uk",
+        "adskeeper.com",
+        "adsupply.com",
+        "adpushup.com",
+        "adtelligent.com",
+        "aduptech.com",
+        "adverline.com",
+        "adwolf.ru",
+        "admarketplace.com",
+        "ads.taboola.com",
+        "trc.taboola.com",
+        "cdn.taboola.com",
+        "amplify.outbrain.com",
+        "log.outbrain.com",
+        "adx.adform.net",
+        "track.adform.net",
+        "ad.fivecdns.com",
+        "adpush.goforandroid.com",
+        "adservex.media.net",
+        "contextual.media.net",
+        "adservetx.media.net",
+        "c1.popads.net",
+        "static.popads.net",
+        "ads.pubmatic.com",
+        "simage2.pubmatic.com",
+        "ads.smartadserver.com",
+        "doubleverify.com",
+        "nativeads.com",
+        "adfonic.net",
+        "adgrx.com",
+        "adizio.com",
+        "adledge.com",
+        "adlooxtracking.com",
+        "admeira.ch",
+        "admixer.net",
+        "admost.com",
+        "admulti.com",
+        "adperfect.com",
+        "adrta.com",
+        "adscale.de",
+        "adscience.nl",
+        "adserverplus.com",
+        "adshostnet.com",
+        "adskom.com",
+        "adsonar.com",
+        "adstune.com",
+        "adsymptotic.com",
+        "adtags.com",
+        "adtelligence.de",
+        "adtegrity.net",
+        "adtheorent.com",
+        "adxpansion.com",
+        "adxpose.com",
+        "adzooma.com",
+        "reklam.mynet.com",
+        "ads.heytapmobi.com",
+        "ads.oppomobile.com",
+        "ads.mobthinking.com",
+        "adx.toutiao.com",
+        "ad.toutiao.com",
+        "pangle.io",
+        "pangolin-sdk-toutiao.com",
+        // ── 移动广告 SDK 与广告落地页（2026-10-03 补，来自对国内小站 / 影视站的调研）──
+        // 前者是影视 App / 网页里做"激励视频 + 插屏"的那几家 SDK 的投放域；后者是
+        // 巨量引擎（抖音）给广告主做**投放落地页**的工具域 —— 用户不会主动去访问，
+        // 落到那儿基本就是点中了假播放按钮。都是"放广告"的域，不是统计埋点
+        "mintegral.com",
+        "rayjump.com",
+        "pglstatp-toutiao.com",
+        "chengzijianzhan.com",
+        // ── 小站常挂的"推流/弹层"广告网络（调研里反复出现的那几家）──
+        "adnium.com",
+        "adspyglass.com",
+        "luckyads.pro",
+        "recreativ.ru",
+        "adskeeper.com"
     )
 
     /**
@@ -277,7 +399,28 @@ object AdBlocker {
         "adclick",
         "banner_id=",
         // 百度联盟的广告 iframe 固定叫 cproIframe / cproiframe
-        "cproiframe"
+        "cproiframe",
+        // ── 补齐：广告位专属的路径 / 查询串写法 ──
+        // 视频贴片（VAST / VPAID）与 Google IMA 的取广告地址：影视站的贴片广告
+        // 全靠它们，正文资源不会这样命名。**只收这几个词形明确的** ——
+        // 像 `click_url=` / `zone_id=` 这类在正常接口里也会出现的写法一律不要
+        //（这份表宁短勿长：误杀一条就是页面缺内容）
+        "/vast/",
+        "vast.xml",
+        "vad.xml",
+        "/vpaid",
+        "/imasdk/",
+        "googleima",
+        "ad_unit=",
+        // ── 同域下的广告素材目录（2026-10-03 补，小站最常见的那几种）──
+        // 苹果 CMS / 各类小站会把广告图、广告位脚本直接放在**自己的域名**下
+        //（`/uploads/ad/xxx.jpg`、`/upload/ad/xxx.png`），这时候域名层完全看不出问题，
+        // 只能按目录认。`/uploads/ad/` 与 `/upload/ad/` 不会出现在正常素材路径里
+        //（正常上传是 `/uploads/2026/10/xxx.jpg`）
+        "/uploads/ad/",
+        "/upload/ad/",
+        "/uploads/ads/",
+        "/upload/ads/"
     )
 
     /**
@@ -287,16 +430,54 @@ object AdBlocker {
      * 自己造出来的内联资源，拦了就是白屏或缺图。
      */
     fun isAdUrl(url: String): Boolean {
-        if (url.isEmpty()) return false
         val lower = url.lowercase()
         if (!lower.startsWith("http://") && !lower.startsWith("https://")) return false
-        val afterScheme = lower.substringAfter("://")
-        val hostEnd = afterScheme.indexOfFirst { it == '/' || it == '?' || it == '#' }
-        val host = if (hostEnd < 0) afterScheme else afterScheme.substring(0, hostEnd)
-        if (host.isEmpty()) return false
-        if (HOST_SUFFIXES.any { host == it || host.endsWith(".$it") }) return true
+        if (isAdHost(url)) return true
         return PATH_MARKERS.any { lower.contains(it) }
     }
+
+    /**
+     * 这条 URL 的**主机名**是不是确定的广告域（[HOST_SUFFIXES]，不含路径判据）。
+     *
+     * 与 [isAdUrl] 分开只为一件事：**用户自己点出来的那次主框架跳转**要不要拦。
+     * `shouldOverrideUrlLoading` 那条路的既有口径是"有手势就放行"（拦了像"点了没反应"），
+     * 但那正好是影视站最常见的套路 —— **假播放按钮**一按就把整页导航到广告落地页。
+     * 折中在这里：**域名**表里的域是"只可能放广告"的（never 合法目的地），有手势也拦；
+     * 而路径判据（`/ads/` 那类）可能误伤正文，仍旧只拦"没有手势"的那一路。
+     */
+    fun isAdHost(url: String): Boolean {
+        val host = hostOf(url) ?: return false
+        return HOST_SUFFIXES.any { host == it || host.endsWith(".$it") }
+    }
+
+    /** 主机名（小写，无端口 / 路径）；不是 http(s) 或没有主机名时返回 null。 */
+    private fun hostOf(url: String): String? {
+        val lower = url.lowercase()
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) return null
+        val afterScheme = lower.substringAfter("://")
+        val hostEnd = afterScheme.indexOfFirst { it == '/' || it == '?' || it == '#' }
+        val hostPort = if (hostEnd < 0) afterScheme else afterScheme.substring(0, hostEnd)
+        val host = hostPort.substringBefore(':')
+        return host.ifEmpty { null }
+    }
+
+    /**
+     * 下面那批**懒加载属性**用的"核心广告域"（见 [HIDE_CSS] 里 ⑭ 那一段）。
+     *
+     * 为什么不拿整张 [HOST_SUFFIXES] 去生成这几种属性选择器：属性子串（`*=`）选择器
+     * **无法走 ID / class 的快速索引**，样式引擎会把**每个元素**都对它们试一遍 ——
+     * 250 个域名 × 6 种属性 = 1500 条，重页面上一轮样式重算就是几十毫秒的卡顿。
+     * 这 20 来家是影视站 / 资源站上实际会挂着的那一批，覆盖住大头即可；
+     * `src` / `href` 那两类（命中率最高）仍旧用**完整**域名表。
+     */
+    private val CORE_AD_HOSTS = listOf(
+        "exoclick.com", "exosrv.com", "exdynsrv.com", "realsrv.com", "pemsrv.com",
+        "juicyads.com", "trafficjunky.com", "trafficstars.com", "tsyndicate.com",
+        "popads.net", "popcash.net", "propellerads.com", "onclickads.net",
+        "onclickalgo.com", "adsterra.com", "admaven.com", "hilltopads.net",
+        "clickadu.com", "adcash.com", "yllix.com", "mgid.com", "revcontent.com",
+        "adspyglass.com", "luckyads.pro", "adnium.com"
+    )
 
     /**
      * 注入到页面的脚本（幂等）：按 [on] 决定挂上还是撤下那层隐藏样式。
@@ -319,7 +500,7 @@ object AdBlocker {
                 "var b=window.__lerxuAdGuardList||[];" +
                 "for(i=0;i<b.length;i++){var g=b[i];try{g.style.removeProperty('display');" +
                 "}catch(x){}}" +
-                "window.__lerxuAdGuardList=[];})();"
+                "window.__lerxuAdGuardList=[];})();" + POPUP_RESTORE_JS
         }
         return "(function(){var n=document.getElementById('lerxu-adblock');" +
             "if(!n){n=document.createElement('style');n.id='lerxu-adblock';" +
@@ -334,7 +515,7 @@ object AdBlocker {
             "m.textContent=" + jsString(HIDE_CSS) + ";};" +
             "document.addEventListener('DOMContentLoaded',put);" +
             "window.addEventListener('load',put);}}catch(e){}" +
-            "})();" + GAP_JS + GUARD_JS
+            "})();" + GAP_JS + GUARD_JS + POPUP_JS
     }
 
     /**
@@ -466,7 +647,74 @@ object AdBlocker {
         append(".plyr__ads,.plyr__ad,.plyr__ads-container,[class*=\"plyr__ads\"],")
         append(".vjs-ads,.dplayer-ad-container,.art-ad-container")
         append("{display:none!important;}")
+        // ⑬ **通用写法补齐**（与 ③ 同一档判据：整词 / 前缀 / data-*，只收词形明确的）。
+        //
+        // 注意**不能用** `[class*="ad-layer"]` / `[class*="ad-overlay"]` 这类短词：
+        // `*=` 是子串匹配，`download-layer`、`upload-overlay` 里都藏着 "ad-layer" /
+        // "ad-overlay"（downlo**ad-layer**）—— 一刀下去会把下载面板一起藏了。
+        // 所以这里只收**不可能出现在别的词里**的那几种写法：`advertise(ment)`、
+        // `banner_ad`、`google-ad`、`ad-slot`，以及 AMP 的广告元素 / 属性
+        append("[class*=\"advertise\"],[id*=\"advertise\"],")
+        append("[class*=\"banner-ad\"],[class*=\"banner_ad\"],[id*=\"banner-ad\"],[id*=\"banner_ad\"],")
+        append("[class*=\"google-ad\"],[class*=\"googlead\"],[id*=\"google-ad\"],[id*=\"googlead\"],")
+        append("[class*=\"ad-slot\"],[id*=\"ad-slot\"],[id*=\"ad_slot\"],")
+        append("amp-ad,[data-ad],[data-ad-name]")
+        append("{display:none!important;}")
+        // ⑭ **懒加载 / 脚本跳转属性**（2026-10-03 补，来自对影视站 / 资源站的调研）：
+        // 小站的广告图与广告 iframe 大多**不写在 `src` 上** —— 用 `data-src` /
+        // `data-original` / `data-lazy` 懒加载（先占位、进视口才写真地址），或者把地址
+        // 挂在 `onclick` / `data-url` 上等着被点。这一族属性 ④/⑧ 一条都没认，
+        // 正是"位子空着、点一下才蹦出广告"那种漏网的来源。
+        // 只用核心域名表 [CORE_AD_HOSTS]：属性子串选择器走不了 ID/class 的快速索引，
+        // 每多一条就是**每个元素**都要试一次（见该表的说明）
+        val lazyAttrs = listOf(
+            "data-src", "data-original", "data-lazy", "data-url", "data-href", "onclick"
+        )
+        val lazySelectors = ArrayList<String>(lazyAttrs.size * CORE_AD_HOSTS.size)
+        for (attr in lazyAttrs) {
+            for (host in CORE_AD_HOSTS) lazySelectors += "[$attr*=\"$host\"]"
+        }
+        append(lazySelectors.joinToString(","))
+        append("{display:none!important;}")
     }
+
+    /**
+     * ⑤ **弹窗广告**（`window.open` / 点一下页面就蹦出来的那一层）：
+     * 网络层拦不到"页面自己造出来的窗口"，这里按**与网络层同一份域名表**掐掉。
+     *
+     * 为什么只按域名判、不看"有没有用户手势"：影视站的开播按钮上也常挂一手
+     * `window.open(广告地址)`（真手势），只看手势等于没拦；而域名表里全是
+     * "投广告"的域，正常外链、站内跳转一概不在这张表里 —— 拦错一个地址只是
+     * 少一个弹窗，放过去就是一张糊脸的广告页。
+     *
+     * 被拦掉的窗口**返回 null**：调用方写 `var w=window.open(u); if(w)w.focus()`
+     * 的不会崩（返回 null 是浏览器自己也会出现的正常结果）。开关关掉时把
+     * 原生的 `window.open` 装回去。
+     */
+    private val POPUP_JS: String =
+        "(function(){if(window.__lerxuPopupGuard){return;}" +
+            "var HOSTS=" + jsString(HOST_SUFFIXES.joinToString("|")) + ".split('|');" +
+            "function adUrl(u){try{var s=String(u==null?'':u).toLowerCase();" +
+            "if(!s||s.indexOf('http')!==0)return false;" +
+            "var h=s.replace(/^[a-z]+:\\/\\//,'').split(/[\\/?#]/)[0].split(':')[0];" +
+            "if(!h)return false;" +
+            "for(var i=0;i<HOSTS.length;i++){var d=HOSTS[i];" +
+            "if(!d)continue;" +
+            "if(h===d||(h.length>d.length&&h.slice(-(d.length+1))==='.'+d))return true;}" +
+            "}catch(e){}return false;}" +
+            "window.__lerxuPopupGuard=1;" +
+            "window.__lerxuRawOpen=window.open;" +
+            "window.open=function(u){" +
+            "if(arguments.length&&adUrl(u))return null;" +
+            "return window.__lerxuRawOpen.apply(window,arguments);};" +
+            "})();"
+
+    /** 关掉广告拦截时把 `window.open` 装回去（见 [POPUP_JS]）。 */
+    private val POPUP_RESTORE_JS: String =
+        "(function(){if(!window.__lerxuPopupGuard)return;" +
+            "window.__lerxuPopupGuard=0;" +
+            "if(window.__lerxuRawOpen){window.open=window.__lerxuRawOpen;" +
+            "window.__lerxuRawOpen=null;}})();"
 
     /**
      * [GAP_JS] 用到的选择器：与 [HIDE_CSS] 里"广告位自己"的那几族对应，
@@ -689,9 +937,48 @@ object AdBlocker {
             "if(r.width<vr.width*0.6||r.height<vr.height*0.5)continue;" +
             "mark(el);if(hide(el,'playerad'))n++;}" +
             "p=p.parentElement;up++;}}}" +
+            // ⑤ 视频贴片广告的"跳过 / 关闭广告"按钮：广告层能藏就藏（上面几条），
+            // 藏不掉的（外层结构复杂、藏了会把播放器一起带走）就**替用户点掉它**。
+            //
+            // 三条闸门，避免误点正文里的东西：① 页面上**确有视频正在播**
+            //（贴片广告只出现在那种时刻）；② 文案里**带**"跳过 / 关闭广告"那几个词
+            //（含倒计时写法，如"5 后跳过广告" —— 2026-10-03 从"正好等于"放宽，见下）；
+            // ③ 元素必须是**小按钮**（8~260 × 8~80 的一块）—— 正文里的"跳过"链接不长这样。
+            // 同一元素只点一次（记进 done 名单）。
+            "function skipLabel(el){var t=(el.textContent||'').trim().toLowerCase();" +
+            "if(!t||t.length>16)return false;" +
+            "if(t==='skip')return true;" +
+            // 判据从"**正好等于**那几行字"放宽成"**包含**这几个词"（2026-10-03，
+            // 调研里那类按钮的实际文案）：贴片广告的按钮上常带倒计时与进度
+            //（"5 后跳过广告"、"跳过广告 3s"、"Skip Ad in 5"、"关闭此广告"），
+            // 逐字对等一条都命中不了 —— 用户点名的"播放器里的广告跳不掉"有一份就是它。
+            // 放宽是安全的：这条只在页面上**确有视频正在播**、元素是**小按钮**、
+            // 文案里带"跳过/关闭广告"时才动手
+            "return t.indexOf('跳过')>=0||t.indexOf('跳過')>=0||" +
+            "t.indexOf('关闭广告')>=0||t.indexOf('關閉廣告')>=0||" +
+            "t.indexOf('关闭此广告')>=0||t.indexOf('关闭推广')>=0||" +
+            "t.indexOf('skip ad')>=0||t.indexOf('skip-ad')>=0||" +
+            "t.indexOf('close ad')>=0||t.indexOf('close this ad')>=0;}" +
+            "function bySkip(){var vs=document.getElementsByTagName('video');" +
+            "var playing=false;" +
+            "for(var i=0;i<vs.length;i++){if(!vs[i].paused&&vs[i].readyState>2){playing=true;break;}}" +
+            "if(!playing)return;" +
+            "var all=document.querySelectorAll('a,button,span,div,em,i');var n=0;" +
+            "for(var j=0;j<all.length&&j<3000&&n<1;j++){var el=all[j];" +
+            "if(el.children.length)continue;if(seen(el))continue;" +
+            "if(!skipLabel(el))continue;" +
+            // 尺寸那一档放宽到 260×80：贴片广告的"跳过"按钮常带一枚图标 + 倒计时数字，
+            // 比正文里的文字链宽（实测那类按钮 40~120dp 宽、20~40dp 高）
+            "var r=el.getBoundingClientRect();" +
+            "if(r.width<8||r.height<8||r.width>260||r.height>80)continue;" +
+            "var cs;try{cs=getComputedStyle(el);}catch(e){continue;}" +
+            "if(cs.display==='none'||cs.visibility==='hidden')continue;" +
+            "if(parseFloat(cs.opacity||'1')<0.2)continue;" +
+            "mark(el);try{el.click();n++;}catch(e){}}}" +
             "var t=0;function run(){clearTimeout(t);t=setTimeout(function(){" +
             "try{byLabel();}catch(e){}try{bySize();}catch(e){}" +
-            "try{byOverlay();}catch(e){}try{byPlayerAd();}catch(e){}},400);}" +
+            "try{byOverlay();}catch(e){}try{byPlayerAd();}catch(e){}" +
+            "try{bySkip();}catch(e){}},400);}" +
             "try{new MutationObserver(run)" +
             ".observe(document.documentElement,{childList:true,subtree:true});}catch(e){}" +
             "document.addEventListener('DOMContentLoaded',run);" +

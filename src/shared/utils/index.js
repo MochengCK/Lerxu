@@ -546,6 +546,10 @@ export const mergeTaskResult = (response = []) => {
   return response.flat(2)
 }
 
+// multicall 结果的解析助手另立文件（零依赖、纯 Node 可直接跑，便于测试钉住
+// "gid 取成第一个字符"这类根因），这里转出保持 `@shared/utils` 的调用面不变
+export { unwrapMulticallValues } from './multicall'
+
 export const changeKeysCase = (obj, caseConverter) => {
   const result = {}
   if (isEmpty(obj) || !isFunction(caseConverter)) {

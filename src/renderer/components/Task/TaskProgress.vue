@@ -1,5 +1,32 @@
 <template>
+  <!-- 「一对音视频」：底条 + 合并进度覆盖层。
+       整条生命周期（下载中 → 待合并 → 合并中 → 已合并）都用**同一组元素**：
+       下载时底条就是普通进度条（蓝），两个文件都下完转成满格黄底，合并进度
+       用绿色从左往右覆盖，合并完转成满格绿底。
+       这样每次变化都只是**颜色/宽度的 CSS 过渡**，不会出现"下载条瞬间被换成
+       一根满格黄条"或"合并完瞬间换成另一根条"的跳变。 -->
+  <div
+    v-if="isPairRow"
+    class="lc-pair-progress"
+    :class="{ 'is-merge-overlay': progressView.mode === 'pair-merge' }">
+    <el-progress
+      class="lc-pair-progress__base"
+      :class="{ 'is-dimmed': isCoverShowing }"
+      :percentage="basePercent"
+      :show-text="false"
+      :stroke-width="6"
+      :color="color">
+    </el-progress>
+    <el-progress
+      class="lc-pair-progress__cover"
+      :percentage="progressView.coverPercent"
+      :show-text="false"
+      :stroke-width="6"
+      :color="pairMergeColor">
+    </el-progress>
+  </div>
   <el-progress
+    v-else
     :percentage="displayPercent"
     :show-text="false"
     :status="isActive ? 'success' : undefined"
@@ -11,8 +38,18 @@
 <script setup>
 defineOptions({ name: 'mo-task-progress' }) // 供父组件 [X.name]: X 注册
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { storeToRefs } from 'pinia'
 import { TASK_STATUS } from '@shared/constants'
 import { calcProgress } from '@shared/utils'
+import {
+  PROGRESS_TICK_MS,
+  applyReportedPercent,
+  easeToward,
+  leadMaxFor,
+  nextIndeterminatePercent
+} from '@shared/utils/progress-easing'
+import { resolveProgressView } from '@/utils/taskPair'
+import { useTaskStore } from '@/store/task'
 import colors from '@shared/colors'
 
 const props = defineProps({
@@ -21,6 +58,11 @@ const props = defineProps({
   },
   completed: {
     type: Number
+  },
+  // 任务 gid：合并进度按它从 store 里取（合并期间进度条要走**合并**的百分比）
+  gid: {
+    type: String,
+    default: ''
   },
   status: {
     type: String,
@@ -40,6 +82,35 @@ const props = defineProps({
   fetchingMetadata: {
     type: Boolean,
     default: false
+  },
+  // 「一对音视频」折叠成的记录：背后是一条记录、**两个引擎任务**。
+  // 合并进度挂在"后下完的那条"的 gid 上，所以要在全部成员里找。
+  pairGids: {
+    type: Array,
+    default: () => []
+  },
+  // 这条记录背后还剩几条流（两条 = 合并还没发生，一条 = 已经合并完）
+  pairMemberCount: {
+    type: Number,
+    default: 0
+  },
+  // 这条记录是不是"一对音视频"（isPair / pairId 存在）—— 用记录级标记，
+  // 不再靠"成员还剩几条"推断（成员一下完就会被分片规则摘掉，判据会失效）
+  isPair: {
+    type: Boolean,
+    default: false
+  },
+  // 已经合并出产物（记录的 dashMerged，由 afterBilibiliMerge 落库）：
+  // 此时进度条回到普通满格绿，不再走黄/绿两层
+  merged: {
+    type: Boolean,
+    default: false
+  },
+  // 已确定不会再合并（重试耗尽 / 缺另一半 / 合并失败收尾）：同样回普通档。
+  // 没有它，"只有一条流、永远等不到另一半"的记录会一直挂在黄条上。
+  mergeSkipped: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -50,29 +121,113 @@ const baseTime = ref(0)
 const currentSpeed = ref(0)
 const lastIndeterminate = ref(false)
 
-// 同一任务内允许进度条回退的阈值（百分点）：引擎分片校验失败重下、
-// 统计口径抖动、状态在 active/waiting/seeding 之间切换，都会让上报进度
-// 短暂回落 1~3 个点，直接跟随会让进度条肉眼可见地"倒退"。
-// 只有超过该阈值的回落（重新选择文件、任务重新开始等真实变化）才回退。
-const BACKWARD_TOLERANCE = 5
-
-// 应用真实进度：默认只增不减，仅当回退幅度超过阈值时才接受
+// 动画参数与算法在 @shared/utils/progress-easing（**唯一实现**）：独立任务进度
+// 窗口用的是同一套，两端手感必须一致，不要在这里另写一份。
+//   · applyReportedPercent —— 只增不减，仅当回退超过阈值时才接受（引擎分片
+//     校验失败重下、统计口径抖动、状态在 active/waiting/seeding 之间切换都会
+//     让上报进度短暂回落 1~3 个点，直接跟随会让进度条肉眼可见地"倒退"）；
+//   · easeToward / leadMaxFor —— 每 250ms 往"估计进度（最多领先 3 个点）"推进 40%。
 function applyPercent (value, force = false) {
-  const p = Number.isFinite(value) ? value : 0
-  if (force || !Number.isFinite(displayPercent.value)) {
-    displayPercent.value = p
-    return
-  }
-  if (p > displayPercent.value || displayPercent.value - p > BACKWARD_TOLERANCE) {
-    displayPercent.value = p
-  }
+  displayPercent.value = applyReportedPercent(displayPercent.value, Number.isFinite(value) ? value : 0, force)
 }
 
 const isActive = computed(() => props.status === TASK_STATUS.ACTIVE)
 
+const taskStore = useTaskStore()
+const { mergeProgresses } = storeToRefs(taskStore)
+
+// 「一对音视频」记录的两层颜色：底条黄（主题里"合并"那一档）、
+// 合并进度绿（与"完成"同色 —— 盖满就是完成）
+const pairBaseColor = colors.merging
+const pairMergeColor = colors.complete
+
+/** 这条记录背后可能的全部引擎任务 gid（记录自身 + 配对成员，去重）。 */
+const gidCandidates = computed(() => {
+  const out = []
+  const push = (gid) => {
+    const g = `${gid || ''}`
+    if (g && !out.includes(g)) {
+      out.push(g)
+    }
+  }
+  push(props.gid)
+  ;(Array.isArray(props.pairGids) ? props.pairGids : []).forEach(push)
+  return out
+})
+
+/**
+ * 这条记录是不是「一对音视频」—— 用**记录级**标记（isPair / 还有两条流），
+ * 不靠"引擎里还能查到几条成员"推断（成员一下完就会被清理）。
+ *
+ * 决定进度条用哪套模板：配对记录从下载到合并完成**始终**用底条+覆盖层这一组
+ * 元素，颜色与宽度只在同一根条上过渡，避免换元素造成的瞬时跳变。
+ */
+const isPairRow = computed(() => props.isPair === true || props.pairMemberCount > 1)
+
+/**
+ * 引擎上报的合并进度（0~100）；没有可用的上报时返回 -1。
+ *
+ * 为什么合并期间要用它：下载阶段结束了，`completedLength/totalLength` 恒等于 100%，
+ * 底条会一直满格不动 —— 合并本身是有进度的（引擎按"已写字节 / 输入总字节"实时
+ * 上报），把它画成绿色覆盖层才是用户要的"实时进度"。
+ *
+ * 为什么要**遍历成员**：合并是"后下完的那条流"的完成事件触发的，进度行挂在
+ * 它的 gid 上，未必是这条记录的主 gid（画面流）。
+ */
+const mergePercent = computed(() => {
+  if (`${props.status || ''}` !== TASK_STATUS.MERGING) {
+    return -1
+  }
+  const map = mergeProgresses.value || {}
+  for (const gid of gidCandidates.value) {
+    const p = map[gid]
+    if (!p || p.waitingForPair) {
+      continue
+    }
+    const v = Number(p.percent)
+    if (Number.isFinite(v)) {
+      return Math.max(0, Math.min(100, v))
+    }
+  }
+  return -1
+})
+
+/**
+ * 进度条走哪一档 —— 判据全在 `@/utils/taskPair` 的 `resolveProgressView`（唯一实现）：
+ * 普通进度 / 满格黄条（下载完成、待合并）/ 黄底 + 绿色覆盖层（正在合并）。
+ */
+const progressView = computed(() => resolveProgressView({
+  isPair: props.isPair === true || props.pairMemberCount > 1,
+  merged: props.merged === true,
+  mergeSkipped: props.mergeSkipped === true,
+  status: props.status,
+  total: props.total,
+  completed: props.completed,
+  mergePercent: mergePercent.value
+}))
+
+/**
+ * 底条宽度：下载阶段沿用组件自己的缓动值（`displayPercent`），这样
+ * 「下载 → 待合并」的满格黄条是从当前显示值**过渡**到 100%，而不是换一根
+ * 元素直接出现在 100%。
+ */
+const basePercent = computed(() => (
+  progressView.value.mode === 'plain' ? displayPercent.value : progressView.value.basePercent
+))
+
+/**
+ * 绿色覆盖层出现后把黄底调淡：满不透明的黄和绿叠在一起，绿色反而读不出来。
+ * 没有合并进度时（下载刚完成、还没开始合）黄底保持 100% 不透明。
+ */
+const isCoverShowing = computed(() => progressView.value.coverPercent > 0)
+
 const percent = computed(() => {
+  if (props.status === TASK_STATUS.MERGING) {
+    // 有合并进度就跟着走；没有（还没开始合 / 在等另一半）就保持满格
+    return mergePercent.value >= 0 ? mergePercent.value : 100
+  }
   const raw = calcProgress(props.total, props.completed)
-  if (props.status === TASK_STATUS.COMPLETE || props.status === TASK_STATUS.SEEDING || props.status === TASK_STATUS.MERGING) {
+  if (props.status === TASK_STATUS.COMPLETE || props.status === TASK_STATUS.SEEDING) {
     return 100
   }
   if (!Number.isFinite(raw)) {
@@ -91,6 +246,10 @@ const color = computed(() => {
   if (props.pendingSelection) {
     return '#f0ad4e'
   }
+  // 一对音视频：两个文件都下完 → 黄（可以合并了 / 正在合并）
+  if (progressView.value.mode !== 'plain') {
+    return pairBaseColor
+  }
   return colors[props.status]
 })
 
@@ -104,7 +263,7 @@ function startTicker () {
   if (ticker.value || isDocumentHidden()) {
     return
   }
-  ticker.value = setInterval(() => animateProgress(), 250)
+  ticker.value = setInterval(() => animateProgress(), PROGRESS_TICK_MS)
 }
 
 function stopTicker () {
@@ -116,8 +275,11 @@ function stopTicker () {
 
 function animateProgress () {
   if (!isActive.value) {
-    if (props.status === TASK_STATUS.COMPLETE || props.status === TASK_STATUS.SEEDING || props.status === TASK_STATUS.MERGING) {
+    if (props.status === TASK_STATUS.COMPLETE || props.status === TASK_STATUS.SEEDING) {
       displayPercent.value = 100
+    } else if (props.status === TASK_STATUS.MERGING) {
+      // 合并期间进度属于合并：引擎在实时上报就直接跟它走
+      displayPercent.value = mergePercent.value >= 0 ? mergePercent.value : 100
     } else {
       applyPercent(percent.value)
     }
@@ -136,14 +298,8 @@ function animateProgress () {
   }
   if (!(total > 0)) {
     if (currentSpeed.value > 0) {
-      const min = 5
-      const max = 15
-      const step = 0.6
-      let next = Number.isFinite(displayPercent.value) ? (displayPercent.value + step) : min
-      if (next > max) {
-        next = min
-      }
-      displayPercent.value = next
+      // 总长未知但有速度：5%~15% 往复，表示"在动"（磁力取元数据 / HLS 取播放列表）
+      displayPercent.value = nextIndeterminatePercent(displayPercent.value)
       lastIndeterminate.value = true
       return
     }
@@ -172,26 +328,8 @@ function animateProgress () {
   const estCompleted = baseCompleted.value + currentSpeed.value * elapsed
   const estClamped = Math.min(estCompleted, total)
   const estPercent = calcProgress(total, estClamped)
-  let leadMax = 3
-  if (actual >= 99) {
-    leadMax = 0.2
-  } else if (actual >= 95) {
-    leadMax = 1
-  }
-  const target = Math.min(estPercent, actual + leadMax, 100)
-  let next
-  if (!Number.isFinite(displayPercent.value)) {
-    next = target
-  } else {
-    const alpha = 0.4
-    next = displayPercent.value + (target - displayPercent.value) * alpha
-  }
-  if (!Number.isFinite(next)) {
-    next = actual
-  }
-  if (next >= displayPercent.value) {
-    displayPercent.value = next
-  }
+  const target = Math.min(estPercent, actual + leadMaxFor(actual), 100)
+  displayPercent.value = easeToward(displayPercent.value, Number.isFinite(target) ? target : actual)
 }
 
 watch(percent, (val) => {
@@ -218,8 +356,11 @@ watch(() => props.speed, (val) => {
 }, { immediate: true })
 
 watch(() => props.status, (val) => {
-  if (val === TASK_STATUS.COMPLETE || val === TASK_STATUS.SEEDING || val === TASK_STATUS.MERGING) {
+  if (val === TASK_STATUS.COMPLETE || val === TASK_STATUS.SEEDING) {
     displayPercent.value = 100
+  } else if (val === TASK_STATUS.MERGING) {
+    // 合并有真实进度（引擎在上报），不能一律钉在 100%
+    displayPercent.value = mergePercent.value >= 0 ? mergePercent.value : 100
   } else {
     // 不再无条件回落到真实进度：做种/下载状态来回切换时
     // （完种后校验失败重新下载等）会把进度条从 100% 拽回来
@@ -276,6 +417,28 @@ onBeforeUnmount(() => {
    .el-progress-bar__inner { transition: all .4s } 负责 */
 .el-progress .el-progress-bar__outer {
   transition: background-color 0.35s ease;
+}
+
+/* 「一对音视频」的合并记录：黄底（下载完成，保留为背景）+ 绿色合并进度盖上去。
+   两层都用 el-progress 本体，只把覆盖层的轨道调透明 —— 这样圆角、内条过渡、
+   深色主题的底槽色都与普通进度条完全一致，不用另造一套几何。 */
+.lc-pair-progress {
+  position: relative;
+
+  .lc-pair-progress__cover {
+    position: absolute;
+    inset: 0;
+
+    .el-progress-bar__outer {
+      background-color: transparent;
+    }
+  }
+
+  /* 绿色一出现就把黄底调淡：满不透明的黄会压住绿色，读不出合并进度。
+     内条本来就有 transition: all .4s（Theme/Default.scss），透明度变化自带过渡 */
+  .lc-pair-progress__base.is-dimmed .el-progress-bar__inner {
+    opacity: 0.4;
+  }
 }
 
 /* 深色主题同样使用 100% 不透明度的橙色，保证待选择文件状态清晰可辨 */

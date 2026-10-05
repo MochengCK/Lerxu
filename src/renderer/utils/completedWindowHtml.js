@@ -126,7 +126,9 @@ export function buildCompletedTaskWindowHtml (task, useCustomFrame, isMac, t, ge
           .title-bar {
             justify-content: flex-end;
             padding-top: 4px;
-            padding-right: 8px;
+            /* 右侧留白贴近左侧红绿灯按钮的左边距（系统 hiddenInset ≈ 20px），
+               再收一点点：标题右对齐后才不会贴到窗口右上角 */
+            padding-right: 16px;
           }
           .title-actions {
             display: none;

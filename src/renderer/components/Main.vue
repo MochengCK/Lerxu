@@ -85,7 +85,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsync
 import { dialog, BrowserWindow } from '@electron/remote'
 import { commands } from '@/components/CommandManager/instance'
 import { TASK_STATUS, APP_THEME } from '@shared/constants'
-import { parsePieceStatuses } from '@shared/utils/piece-status'
+import { parsePieceStatuses, combinePieceStatuses } from '@shared/utils/piece-status'
 import themeTokens from '@/utils/themeTokens'
 import api from '@/api'
 import { ipcRenderer } from 'electron'
@@ -102,6 +102,7 @@ import {
 import {
   moveTaskFilesToTrash
 } from '@/utils/native'
+import { resolveProgressView } from '@/utils/taskPair'
 import i18n from '@/plugins/i18n'
 import { createMsg } from '@/components/Msg'
 import { ElMessage } from 'element-plus'
@@ -456,6 +457,24 @@ onBeforeUnmount(() => {
           : t(labelKey)
         msg.success(t('app.task-plan-set-message', { action: label }))
       }
+      /**
+       * 按 gid 找列表里的记录。
+       *
+       * 「一对音视频」折叠成一条记录之后，进度窗口/事件带过来的可能是**成员**的
+       * gid（画面流或声音流），所以除了记录自身的 gid 还要认 pairGids。
+       */
+      function findTaskRowByGid(list, gid) {
+        const key = `${gid || ''}`
+        if (!key) {
+          return null
+        }
+        const rows = Array.isArray(list) ? list : []
+        const direct = rows.find(item => item && `${item.gid}` === key)
+        if (direct) {
+          return direct
+        }
+        return rows.find(item => item && Array.isArray(item.pairGids) && item.pairGids.some(g => `${g}` === key)) || null
+      }
       async function handleTaskProgressAutoOpen(payload) {
         const data = payload || {}
         const gid = data && data.gid ? `${data.gid}` : ''
@@ -470,7 +489,7 @@ onBeforeUnmount(() => {
         // 任务刚创建时 fetchList 可能尚未完成，或当前列表被类型筛选过滤，
         // 此时直接从引擎拉取任务数据，保证自动打开不被时序问题吞掉
         const list = taskList.value || []
-        let task = list.find(item => item && `${item.gid}` === gid)
+        let task = findTaskRowByGid(list, gid)
         if (!task) {
           try {
             task = await api.fetchTaskItem({ gid })
@@ -481,7 +500,7 @@ onBeforeUnmount(() => {
             return
           }
         }
-        autoOpened.add(gid)
+        autoOpened.add(`${task.gid}`)
         openProgressWindowForTask(task)
       }
       function handleThemeChangeForProgressWindow() {
@@ -493,7 +512,7 @@ onBeforeUnmount(() => {
           }
 
           const list = taskList.value || []
-          const task = list.find(item => item && `${item.gid}` === gid)
+          const task = findTaskRowByGid(list, gid)
           if (!task) {
             return
           }
@@ -542,7 +561,7 @@ onBeforeUnmount(() => {
                 pieceColors: tc.pieceColors
               })
             } catch (e) {}
-            updateProgressWindow(task)
+            updateProgressWindow(task, gid)
           } catch (e) {}
         })
 
@@ -588,7 +607,7 @@ onBeforeUnmount(() => {
           return
         }
         const list = taskList.value || []
-        let task = list.find(item => item && `${item.gid}` === gid)
+        let task = findTaskRowByGid(list, gid)
         if (!task) {
           try {
             task = await api.fetchTaskItem({ gid })
@@ -604,23 +623,29 @@ onBeforeUnmount(() => {
           hashFallbackLabel: t('task.magnet-pending-name')
         })
         if (action === 'pause') {
-          msg.info(t('task.download-pause-message', { taskName }))
+          // 同主窗口：只在真的暂停了才弹"已暂停"，否则如实说"当前无法暂停"
           taskStore.pauseTask(task)
-            .catch(({ code }) => {
-              if (code === 1) {
-                msg.error(t('task.pause-task-fail', { taskName }))
+            .then((res) => {
+              if (res && res.changed > 0) {
+                msg.info(t('task.download-pause-message', { taskName }))
+              } else {
+                msg.warning(t('task.pause-task-unavailable', { taskName }))
               }
+            })
+            .catch((e) => {
+              msg.error(t('task.pause-task-fail', { taskName }))
             })
           return
         }
         if (action === 'resume') {
           taskStore.resumeTask(task)
-            .catch(({ code }) => {
-              if (code === 1) {
-                msg.error(t('task.resume-task-fail', {
-                  taskName
-                }))
+            .then((res) => {
+              if (!(res && res.changed > 0)) {
+                msg.warning(t('task.resume-task-unavailable', { taskName }))
               }
+            })
+            .catch((e) => {
+              msg.error(t('task.resume-task-fail', { taskName }))
             })
           return
         }
@@ -741,6 +766,21 @@ onBeforeUnmount(() => {
           }
 
           const doneStatuses = [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED]
+
+          // 当前列表被筛选掉时，用**全量折叠列表**定位这条记录。
+          // 「一对音视频」必须仍然按聚合口径喂进度窗口：直接
+          // api.fetchTaskItem(gid) 拿到的是单条流（画面流）的原始状态，
+          // 会让窗口显示单流进度，并在画面流下完时被误判成"已完成/可关闭"。
+          const row = findTaskRowByGid(taskStore.allTaskList || [], gid)
+          if (row) {
+            if (doneStatuses.includes(row.status) && !checkTaskIsSeeder(row)) {
+              closeProgressWindowByGid(gid)
+              return
+            }
+            updateProgressWindow(row, gid)
+            return
+          }
+
           try {
             const task = await api.fetchTaskItem({ gid })
             if (!task || !task.gid) {
@@ -757,6 +797,31 @@ onBeforeUnmount(() => {
           }
         })
       }
+      /**
+       * 这条记录的合并进度（0~100）；没有可用上报时返回 -1。
+       *
+       * 合并进度挂在「后下完的那条流」的 gid 上（合并是它的完成事件触发的），
+       * 未必是记录的主 gid（画面流），所以要按记录自身 + pairGids 一起找。
+       * `waitingForPair` 的条目是「先下完那条」在等另一半，不是真进度，跳过。
+       */
+      function resolvePairMergePercent(status, gid, pairGids) {
+        if (`${status || ''}` !== TASK_STATUS.MERGING) {
+          return -1
+        }
+        const map = taskStore.mergeProgresses || {}
+        const candidates = [`${gid || ''}`, ...(Array.isArray(pairGids) ? pairGids : []).map(g => `${g}`)]
+        for (const key of candidates) {
+          if (!key) continue
+          const entry = map[key]
+          if (!entry || entry.waitingForPair) continue
+          const v = Number(entry.percent)
+          if (Number.isFinite(v)) {
+            return Math.max(0, Math.min(100, v))
+          }
+        }
+        return -1
+      }
+
       function buildProgressPayload(task) {
         const taskData = task || {}
         const completed = Number(taskData.completedLength || 0)
@@ -764,7 +829,19 @@ onBeforeUnmount(() => {
         const speed = Number(taskData.downloadSpeed || 0)
         const connections = Number(taskData.connections || 0)
         const percent = total > 0 ? Math.floor((completed * 100) / total) : 0
-        const title = getTaskName(taskData, {
+        // 「一对音视频」折叠记录：标题用折叠后的产物名（与任务卡片一致），
+        // 并把成员 gid 一并发下去。独立进度窗口自己还有一条 1Hz 轮询
+        // （task-progress:fetch），它必须按同一批成员求和——否则推送是
+        // "两条流的总量"、轮询是"画面流一条"，进度条会在两个数值之间来回跳。
+        const pairGids = Array.isArray(taskData.pairGids)
+          ? taskData.pairGids.map(g => `${g}`).filter(Boolean)
+          : []
+        const pairName = `${taskData.pairDisplayName || ''}`.trim()
+        // 这条记录是不是「一对音视频」折叠出来的。**不能**用 pairGids.length > 1
+        // 判断：某个成员被引擎清理后记录里就只剩一条了（pairGids 变短），但这条
+        // 记录仍然是"一对"，进度窗口也必须继续按一对处理。
+        const isPair = taskData.isPair === true
+        const title = pairName || getTaskName(taskData, {
           defaultName: t('task.get-task-name'),
           hashFallbackLabel: t('task.magnet-pending-name'),
           maxLen: -1
@@ -818,16 +895,30 @@ onBeforeUnmount(() => {
         // wantedBitfield 非空时，未选择文件覆盖的格显示为「未选择」，
         // 与「未下载」区分（否则任务完成后末尾残留灰格）
         const numPieces = Number(taskData.numPieces || 0)
-        const pieces = parsePieceStatuses(
-          taskData.bitfield,
-          taskData.partialBitfield,
-          numPieces,
-          taskData.wantedBitfield || ''
-        )
-        let piecesData = null
-        if (pieces) {
-          piecesData = {
+        // 一对音视频：把两条流各自的位图**合成一张**网格（取每格的最小值，
+        // 即"画面与声音对应的那一段都下完才算下完"）。此前这里对配对一律
+        // 不下发分片，独立进度窗口的「分片」页对一对音视频永远是「无分片数据」。
+        // 注意引擎的位图是**下载开始之后**才有的（零进度时 bitfield 为空），
+        // 所以刚开始时只有先开工的那条流有网格，两条都没开工才显示无分片数据。
+        const pieces = isPair
+          ? combinePieceStatuses((Array.isArray(taskData.pairMembers) ? taskData.pairMembers : [])
+            .map(m => parsePieceStatuses(
+              m && m.bitfield,
+              m && m.partialBitfield,
+              Number((m && m.numPieces) || 0),
+              (m && m.wantedBitfield) || ''
+            )))
+          : parsePieceStatuses(
+            taskData.bitfield,
+            taskData.partialBitfield,
             numPieces,
+            taskData.wantedBitfield || ''
+          )
+        let piecesData = null
+        if (pieces && pieces.length > 0) {
+          piecesData = {
+            // 合成网格的格数就是 pieces 的长度（配对时两条流分片数不同）
+            numPieces: isPair ? pieces.length : numPieces,
             pieces,
             tabText: t('task.task-pieces-progress')
           }
@@ -861,13 +952,46 @@ onBeforeUnmount(() => {
         const canPause = status === TASK_STATUS.ACTIVE && completed > 0
         const canResume = status === TASK_STATUS.WAITING || status === TASK_STATUS.PAUSED
         const canCancel = !doneStatuses.includes(status)
+        // 「两个文件都下完、可以合并了」（含正在合并）：进度窗口据此把底条
+        // 变成满格黄底并叠加绿色合并进度覆盖层。判据复用任务卡片那条
+        // resolveProgressView（唯一实现），窗口与卡片因此永远同一口径。
+        const mergePercent = resolvePairMergePercent(status, gid, pairGids)
+        const pairPending = isPair && resolveProgressView({
+          isPair: true,
+          merged: taskData.dashMerged === true || taskData.pairMerged === true,
+          memberCount: pairGids.length,
+          status,
+          total,
+          completed,
+          mergePercent
+        }).mode !== 'plain'
         return {
           gid: taskData && taskData.gid ? `${taskData.gid}` : '',
           title,
           status,
           percent,
           percentText: `${percent}%`,
+          // 原始字节数与速度：独立进度窗口的进度条动画（与任务卡片同一套）
+          // 要按速度外推"估计进度"，只给百分比它只能一步步跳
+          completedLength: completed,
+          totalLength: total,
+          downloadSpeed: speed,
           nameText: title,
+          // 「一对音视频」记录的成员 gid（普通任务为空数组）：
+          // 进度窗口据此把自身的轮询也按键求和
+          pairGids,
+          pairMemberCount: pairGids.length,
+          // 这条记录是"一对音视频"（成员被清理后 pairGids 可能只剩一条，
+          // 所以单独给一个稳定标记，窗口/主进程据此保持一对的口径）
+          isPair,
+          // 已经合并出产物（记录的 dashMerged）：进度窗口据此把黄底换成绿底
+          merged: taskData.dashMerged === true || taskData.pairMerged === true,
+          // 「两个文件都下完、可以合并了（含合并中）」：窗口把底条变黄并
+          // 用绿色覆盖层画合并进度
+          pairPending,
+          // 合并进度（0~100，-1 = 还没有上报）。窗口拿它画绿色覆盖层 ——
+          // 否则下载 100% 之后进度条只能停在满格，合并那几秒完全看不出在动。
+          mergePercent,
           isPaused,
           pendingSelection,
           // 单任务"完成后弹窗"偏好（进度窗口设置分类的 checkbox 初始值）
@@ -961,8 +1085,35 @@ onBeforeUnmount(() => {
           return
         }
 
-        // 检查是否已经有窗口
-        const existingWindow = progressWindows.value.get(gid)
+        // 检查是否已经有窗口。一条记录只能有一个窗口：「一对音视频」可能
+        // 在折叠完成前就先按某一条流的 gid 开过窗（自动开窗），此时按记录
+        // gid 再开一个就会出现两个窗口各显示一条流。
+        const windowKeys = [gid, ...(Array.isArray(task.pairGids) ? task.pairGids.map(g => `${g}`) : [])]
+          .filter((v, i, arr) => v && arr.indexOf(v) === i)
+        let existingKey = ''
+        let existingWindow = null
+        for (const key of windowKeys) {
+          const win = progressWindows.value.get(key)
+          if (isAliveWindow(win)) {
+            existingKey = key
+            existingWindow = win
+            break
+          }
+        }
+        // 还要按 pairId 认一遍：自动开窗（task-progress:auto-open 按 gid 触发，
+        // 画声两条流各发一次）很可能在折叠成一条记录**之前**就已经按某一条流的
+        // gid 开过窗，这时上面按 gid 匹配不上，会再开一个 —— 两个窗口叠在一起，
+        // 看起来就是"信息在两个任务之间跳"。一条记录（一个 pairId）只留一个窗口。
+        const pairId = task && task.pairId ? `${task.pairId}` : ''
+        if (!isAliveWindow(existingWindow) && pairId) {
+          for (const [key, win] of progressWindows.value.entries()) {
+            if (isAliveWindow(win) && `${win.__lerxuPairId || ''}` === pairId) {
+              existingKey = key
+              existingWindow = win
+              break
+            }
+          }
+        }
         if (isAliveWindow(existingWindow)) {
           // 确保窗口显示、激活并置于最前面
           try {
@@ -983,7 +1134,7 @@ onBeforeUnmount(() => {
           } catch (e) {
             console.warn('[Lerxu] Failed to activate existing progress window:', e.message)
           }
-          updateProgressWindow(task)
+          updateProgressWindow(task, existingKey)
           return
         }
 
@@ -1039,6 +1190,10 @@ onBeforeUnmount(() => {
           }
         })
         progressWindows.value.set(gid, win)
+        // 记下 pairId：同一条「一对音视频」记录只允许存在一个进度窗口
+        if (pairId) {
+          win.__lerxuPairId = pairId
+        }
 
         win.on('closed', () => {
           progressWindows.value.delete(gid)
@@ -1106,15 +1261,19 @@ onBeforeUnmount(() => {
           updateProgressWindow(task)
         })
       }
-      async function updateProgressWindow(task) {
+      async function updateProgressWindow(task, windowGid = '') {
         if (!task || !task.gid) {
           return
         }
         const gid = task.gid
-        const win = progressWindows.value.get(gid)
+        // 窗口 key 未必等于记录自身的 gid：「一对音视频」折叠记录的 gid 是
+        // 画面流那条，但窗口可能是按声音流 gid 打开的（自动开窗时列表里
+        // 还是两条原始任务），所以要允许调用方显式指定窗口 key。
+        const key = `${windowGid || gid}`
+        const win = progressWindows.value.get(key)
         if (!isAliveWindow(win)) {
-          progressWindows.value.delete(gid)
-          progressTaskGids.value.delete(gid)
+          progressWindows.value.delete(key)
+          progressTaskGids.value.delete(key)
           return
         }
         const payload = buildProgressPayload(task)
@@ -1122,8 +1281,16 @@ onBeforeUnmount(() => {
 
         // 只在任务活跃或等待状态时获取连接数，暂停时不显示
         if (task.status === TASK_STATUS.ACTIVE || task.status === TASK_STATUS.WAITING) {
+          // 「一对音视频」按成员汇总连接列表（与进度/速度同口径，主进程轮询
+          // 路径也是同一套汇总），否则两条 1Hz 数据流会给出一张/两张表
+          const memberGids = Array.isArray(task.pairGids) && task.pairGids.length > 0
+            ? task.pairGids.map(g => `${g}`).filter(Boolean)
+            : [gid]
           try {
-            const servers = await api.fetchTaskServers({ gid })
+            const collected = await Promise.all(
+              memberGids.map(g => api.fetchTaskServers({ gid: g }).catch(() => []))
+            )
+            const servers = collected.flat().filter(Boolean)
             payload.connectionsData = buildConnectionsData(servers, taskSpeed)
           } catch (e) {
             payload.connectionsData = buildConnectionsData([], taskSpeed)
@@ -1139,8 +1306,8 @@ onBeforeUnmount(() => {
         try {
           win.setTitle(windowTitle)
         } catch (e) {
-          progressWindows.value.delete(gid)
-          progressTaskGids.value.delete(gid)
+          progressWindows.value.delete(key)
+          progressTaskGids.value.delete(key)
           return
         }
         try {
@@ -1406,7 +1573,10 @@ function handleTaskListChange(list) {
   const closeWhenMissingLists = ['all']
 
   progressWindows.value.forEach((win, gid) => {
-    const current = list.find(item => item && `${item.gid}` === gid)
+    // 用 findTaskRowByGid：窗口 key 可能是「一对音视频」里某一条流的 gid，
+    // 记录自身的 gid 则是画面流那条；按成员 gid 也要能定位到折叠记录，
+    // 否则窗口会被当成"任务已消失"而关掉/退回单流数据。
+    const current = findTaskRowByGid(list, gid)
     if (!current) {
       if (closeWhenMissingLists.includes(taskStore.currentList || 'all')) {
         closeProgressWindowByGid(gid)
@@ -1419,7 +1589,7 @@ function handleTaskListChange(list) {
     if (doneStatuses.includes(current.status) && !isSeeding) {
       closeProgressWindowByGid(gid)
     } else {
-      updateProgressWindow(current)
+      updateProgressWindow(current, gid)
     }
   })
 

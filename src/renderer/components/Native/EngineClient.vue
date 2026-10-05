@@ -26,7 +26,9 @@ import { checkTaskIsBT, getTaskName, getTaskUri, isMagnetTask } from '@shared/ut
 import { isTaskPendingSelectionCandidate, isTaskPendingSelectionTarget, isTaskFileSelectionConfirmed, getTaskInfoHash } from '@/utils/task'
 import { TASK_STATUS } from '@shared/constants'
 import { spawn, spawnSync, execSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync, copyFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, basename, extname, resolve, isAbsolute, join } from 'node:path'
 import { app } from '@electron/remote'
 import {
@@ -37,8 +39,18 @@ import {
 import {
   clearMergeRetryTimer,
   setMergeRetryTimer,
-  clearAllMergeRetryTimers
+  clearAllMergeRetryTimers,
+  hasMergeRetryTimer
 } from '@/utils/mergeRetryManager'
+import { createCompleteNotifier } from '@/utils/completeNotify'
+import {
+  mediaEngineBinName,
+  mediaEngineCandidates,
+  parseEngineLine,
+  progressFromEngineLine,
+  probeHasVideoAndAudio,
+  engineErrorText
+} from '@shared/zuvrust'
 
 defineOptions({ name: 'mo-engine-client' })
 
@@ -46,10 +58,11 @@ defineOptions({ name: 'mo-engine-client' })
 //
 // 此前这三处在使用前从未声明就直接赋值（`if (!X) { X = new Map() }` 形式）。
 // `<script setup>` 是 ES module（严格模式），访问未声明标识符会抛
-// ReferenceError，导致「浏览器接管启动通知」「DASH 缺少 ffmpeg 提示」
+// ReferenceError，导致「浏览器接管启动通知」「缺少媒体引擎提示」
 // 「存储权限提示」三条路径整体失效（ESLint no-undef 抓出）。
+// （"缺媒体引擎只提示一次"的 _extensionDashNoFfmpegNotified 已并入
+//  _completeNotifier：完成通知统一按下载身份去重，见 utils/completeNotify）
 let _browserStartNotifiedKeys = null
-let _extensionDashNoFfmpegNotified = null
 let _permNotifiedGids = null
 
 const { t } = i18n.global
@@ -87,8 +100,13 @@ let lastSpeedUpdate = null
 let timer = null
 let _bootTimer = null
 let _visibilityHandler = null
-let _bilibiliMergeNotified = new Set()
+// 一条下载只弹一次完成通知（键取 pairId / gid，见 utils/completeNotify）
+const _completeNotifier = createCompleteNotifier()
 let _dashMergeJobs = new Map()
+// 「合并簿记看着像在合并、其实没有任何合并在跑」的起始时间（自愈用，见
+// reconcileStaleMergingEntries）。连续 STALE_MERGING_MS 都如此才认定是中断残迹。
+const _staleMergingSince = new Map()
+const STALE_MERGING_MS = 6000
 let _pendingSelectionNotified = new Set()
 let _pollingKickAt = 0
 let _btRetryTimers = new Map()
@@ -861,20 +879,41 @@ const dir = dirname(filePath)
             }
           }
         } catch (_) {}
-        if (!isBilibiliPart) {
-          const notifyPath = finalPath || path
-          showTaskCompleteNotify(task, isBT, notifyPath)
-          ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
-        }
-        setFileMtimeOnComplete(task, finalPath)
-
         // 如果需要合并（Bilibili DASH 分段视频 / 扩展发来的一对音视频），先设置 MERGING 状态
         const mergeGid = task && task.gid ? `${task.gid}` : ''
         // 扩展发来的一对音视频带同一个 pairId（存在任务历史里），
         // 拿到它就等于**明确知道**这一条是"一对里的一半"，配对不再靠文件名猜
         const pairInfo = getTaskPairInfo(task)
         const mergeKey = getDashMergeKey(finalPath, cfg, pairInfo)
-        if (isBilibiliPart && mergeGid) {
+        // ── 一对音视频：另一半还在下载时，这条流**不算完成** ──
+        // 判据只能看折叠记录身上的**成员状态**（`pairMembers`，唯一的权威）：
+        //   · 不能看记录自身的 status —— 合并流程一收到某条流的完成事件就会
+        //     `setTaskStatus({gid: 成员, status: MERGING})`，而它是**直接写记录
+        //     字段**的，第一次完成事件之后"记录 status"就恒为 merging；
+        //   · 不能靠任务历史 —— 历史是完成时才写的，还在下载的另一半查不到；
+        //   · 不能靠磁盘 —— 默认不配"下载中后缀"时半个文件与完整文件同形，
+        //     引擎还预分配写盘（实测下到 9/10 时盘上大小已到满），大小也骗人；
+        //     真正可靠的"还在下"信号是引擎控制文件（见 engineCtrlFilePath）。
+        // 这条必须放在 setTaskStatus(MERGING) **之前**（否则就把成员状态改脏了）。
+        const pairStillDownloading = !!isPairRecordStillDownloading(mergeGid)
+        // 这一对**是否已经产出合并文件**（另一半的完成事件晚到/重放时会走到这里）：
+        // 有产物就不再合第二次、也不把记录推回 MERGING —— 那是"都合并完了却冒出
+        // 正在合并音视频…"的入口之一（用户报的形态）。
+        const pairAlreadyMerged = !!pairInfo && isPairAlreadyMerged(pairInfo)
+
+        // 另一半还在下 → 这条流的"完成"不是整条记录的完成：不发完成通知、不试合并。
+        // （否则就是用户看到的"卡片还在下载，却已经报完成通知并合并完成"。）
+        if (!isBilibiliPart && !pairStillDownloading) {
+          notifyTaskCompleteOnce(task, isBT, finalPath || path, pairInfo && pairInfo.id)
+        }
+        setFileMtimeOnComplete(task, finalPath)
+
+        // 只有**整条记录都下完**才把状态推成 MERGING。另一半还在下载时推成
+        // merging 会让折叠记录出现"还在下载、状态却是正在合并"的自相矛盾
+        // （1Hz 刷新后聚合状态会把它改回 active，那之前的 1 秒用户看到的就是
+        //  "正在合并音视频…"）；聚合状态本身已经表达了一切 —— 有一条还在下
+        // 就还是 active，两条都下完自然进入 merging。
+        if (isBilibiliPart && mergeGid && !pairStillDownloading && !pairAlreadyMerged) {
           taskStore.addToMergingList({ gid: mergeGid, mergeKey })
           taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.MERGING })
         }
@@ -884,9 +923,19 @@ const dir = dirname(filePath)
           taskStore.clearMergeProgressByMergeKey(mergeKey)
         }
 
-        const mergeResult = await runDashMergeExclusive(mergeKey, () => {
-          return maybeMergeBilibiliDash(finalPath, task, pairInfo)
-        })
+        let mergeResult
+        if (pairStillDownloading) {
+          mergeResult = { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
+        } else if (pairAlreadyMerged) {
+          // 这一对已经有产物了：只做收尾（把整对的重试定时器与合并状态收干净），
+          // 绝不再合一次（输入文件早被第一次合并删掉，再合只会把它永久推进 MERGING）
+          finishPairMerging(task, pairInfo)
+          mergeResult = { isBilibiliPart: true, mergedPath: '', alreadyMerged: true }
+        } else {
+          mergeResult = await runDashMergeExclusive(mergeKey, () => {
+            return maybeMergeBilibiliDash(finalPath, task, pairInfo)
+          })
+        }
 
         // ── 完成闸门 ──
         // 老逻辑是"只要不是 waitingForPair 就判完成"，于是**另一半还没下完、
@@ -894,7 +943,7 @@ const dir = dirname(filePath)
         // 现在"该不该继续等"由合并函数自己判断（它们看得见配对细节），闸门只照办：
         //   · waitingForPair → 继续等 / 重试，绝不判完成；
         //   · 产出合并文件   → 判完成；
-        //   · 其余（不是一对、缺 ffmpeg 等确定合不了的情况）→ 判完成，并如实提示。
+        //   · 其余（不是一对、缺媒体引擎等确定合不了的情况）→ 判完成，并如实提示。
         const mergeDone = !!(mergeResult && mergeResult.mergedPath)
         const mergeAwait = !!(mergeResult && mergeResult.waitingForPair)
 
@@ -906,12 +955,21 @@ const dir = dirname(filePath)
           // 启动重试：前5次每3秒，之后每10秒，最多重试60次（约10分钟）
           // 重试耗尽后：另一半还在 → 保持 MERGING 等它的完成事件；
           // 另一半不存在 → 如实收尾，不会永久吊着
-          _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, 0, 60)
+          // requireMergingList=false：此刻**故意**不把记录写进 mergingList
+          //（状态要保持"下载中"），但重试照常武装 —— 否则最后一滴完成事件
+          // 没送达/被去重吞掉时，这一对就再也没人试合并，记录卡在
+          //"已完成 + 满格黄条"。到齐之后由重试内部把状态推成 merging。
+          _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, 0, 60, false)
         }
 
         // 合并完成（或确定合不了）后，通过 mergeKey 清理相关任务并恢复 COMPLETE 状态
         if (isBilibiliPart && mergeGid && (mergeDone || !mergeAwait)) {
           taskStore.removeAllMergingByMergeKey(mergeKey)
+          // 按**整对**收尾：另一半可能还武装着重试定时器，它醒来会把这条记录
+          // 又推回"正在合并"。合成功与"确定合不了"走同一条路 —— 它按成员认出整对
+          // （晚到的完成事件里配对信息可能已经从历史里查不到了），收掉定时器与
+          // 合并状态，并登记"这一对到此为止"，进度条不会停在黄条上。
+          finishPairMerging(task, pairInfo)
           taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
           taskStore.fetchList()
         }
@@ -930,39 +988,14 @@ const dir = dirname(filePath)
               }
             }
           } catch (_) {}
-          let shouldNotify = true
-          if (isBilibiliPart || (mergeResult && mergeResult.isBilibiliPart)) {
-            try {
-              const key = resolve(mergeResult.mergedPath)
-              if (!_bilibiliMergeNotified) {
-                _bilibiliMergeNotified = new Set()
-              }
-              if (_bilibiliMergeNotified.has(key)) {
-                shouldNotify = false
-              } else {
-                _bilibiliMergeNotified.add(key)
-              }
-            } catch (_) {}
-          }
-          if (shouldNotify) {
-            const notifyPath = mergeResult.mergedPath
-            showTaskCompleteNotify(task, isBT, notifyPath)
-            ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
-          }
-        } else if (mergeResult && mergeResult.isBilibiliPart && mergeResult.noFfmpeg) {
+          // 通知的唯一出口（内部按 pairId/gid 去重）：合并成功的这一支与
+          // "另一半重试定时器也合成了同一产物"那一支会先后走到这里，
+          // 以前各弹一次 → 一个视频两条完成通知
+          notifyTaskCompleteOnce(task, isBT, mergeResult.mergedPath, pairInfo && pairInfo.id)
+        } else if (mergeResult && mergeResult.isBilibiliPart && mergeResult.noMediaEngine) {
           try {
-            const gidKey = task && task.gid ? `${task.gid}` : ''
-            if (!_extensionDashNoFfmpegNotified) {
-              _extensionDashNoFfmpegNotified = new Set()
-            }
-            if (!gidKey || !_extensionDashNoFfmpegNotified.has(gidKey)) {
-              if (gidKey) {
-                _extensionDashNoFfmpegNotified.add(gidKey)
-              }
-              const notifyPath = mergeResult.fallbackNotifyPath || finalPath || path
-              showTaskCompleteNotify(task, isBT, notifyPath)
-              ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
-            }
+            const notifyPath = mergeResult.fallbackNotifyPath || finalPath || path
+            notifyTaskCompleteOnce(task, isBT, notifyPath, pairInfo && pairInfo.id)
           } catch (_) {}
         } else if (!(mergeResult && mergeResult.isBilibiliPart)) {
           autoCategorizeDownloadedFile(task, finalPath)
@@ -1185,6 +1218,94 @@ const dir = dirname(filePath)
           return null
         }
       }
+      /**
+       * 从文件名解析"分片身份"：`{ stem, seq, codecid, ext }`；不是分片就返回 null。
+       *
+       * 两类命名都要认（用户明确要求兼容）：
+       *   · `标题-1-30080.m4s`（序号在中间、尾段是 codecid）
+       *   · `标题_1.m4s` / `标题-1.mp4`（序号在结尾）
+       *
+       * 解析不出序号（如 `标题_video.mp4`）返回 null —— 那本来就不是分片，
+       * 调用方走"一对音视频"的老路径即可。
+       */
+      function parseDashFragmentName (name, cfg) {
+        try {
+          const raw = name ? `${name}` : ''
+          if (!raw) return null
+          const noDup = stripDuplicateNumberBeforeExtension(raw)
+          const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
+          const normalized = suffix ? stripDownloadingSuffixFromFilename(noDup, suffix) : noDup
+          const m1 = normalized.match(/^(.*?)[-_](\d+)-(\d{3,6})\.(m4s|mp4|m4a|ts)$/i)
+          if (m1 && m1[1] && m1[1].trim()) {
+            return {
+              stem: m1[1].trim(),
+              seq: Number(m1[2]),
+              codecid: Number(m1[3]),
+              ext: m1[4].toLowerCase()
+            }
+          }
+          const m2 = normalized.match(/^(.*?)[-_](\d+)\.(m4s|mp4|m4a|ts)$/i)
+          if (m2 && m2[1] && m2[1].trim()) {
+            return { stem: m2[1].trim(), seq: Number(m2[2]), codecid: 0, ext: m2[3].toLowerCase() }
+          }
+          return null
+        } catch (_) {
+          return null
+        }
+      }
+      /**
+       * 收集**同一个视频的全部已就绪分片**（跨分片序号）。
+       *
+       * 为什么必须收全部：一个视频被切成 `标题-1-30080.m4s`、`标题-2-30080.m4s`… 时，
+       * 只把两个文件交给引擎会让第二段之后的内容整段丢失 —— 用户看到的就是
+       * "合并完了但视频不完整"。谁是画面、谁是声音**不在这里判**（引擎读容器就知道），
+       * 这里只做三件事：找齐、剔除还在下载的、把顺序排确定。
+       */
+      function collectDashFragmentInputs (anyPath, cfg) {
+        try {
+          const p = anyPath ? `${anyPath}` : ''
+          if (!p) return null
+          const me = parseDashFragmentName(basename(p), cfg)
+          if (!me || !me.stem) return null
+          const dir = dirname(p)
+          let entries = []
+          try {
+            entries = readdirSync(dir) || []
+          } catch (_) {
+            return null
+          }
+          const found = []
+          for (const e0 of entries) {
+            const e = e0 ? `${e0}` : ''
+            if (!e || e.toLowerCase().endsWith('.xfer')) continue
+            if (e.startsWith('.') && e.includes('.lerxu-merging-')) continue
+            const info = parseDashFragmentName(e, cfg)
+            if (!info || info.stem !== me.stem) continue
+            const full = resolve(dir, e)
+            // 文件在 ≠ 可以合并：还在下载的半个文件绝不能当输入
+            if (!isMergeInputReady(full, cfg, p)) continue
+            found.push({ path: full, seq: info.seq, codecid: info.codecid, name: e })
+          }
+          if (found.length < 2) return null
+          // 排序必须确定：先分片序号、再 codecid、最后文件名。
+          // 引擎按**传入顺序**串接同角色的输入，这里的顺序直接决定成片时间轴。
+          found.sort((a, b) => (a.seq - b.seq) || (a.codecid - b.codecid) || a.name.localeCompare(b.name))
+          return { dir, stem: me.stem, inputs: found.map(f => f.path) }
+        } catch (_) {
+          return null
+        }
+      }
+      /**
+       * 组装一次合并的输入清单：优先"同一 stem 的全部分片"，凑不齐才回退到
+       * 调用方送来的那一对（老的音视频配对路径）。
+       */
+      function buildMergeInputs (primaryPath, cfg, fallbackPair) {
+        const frag = collectDashFragmentInputs(primaryPath, cfg)
+        if (frag && frag.inputs.length >= 2) {
+          return frag.inputs
+        }
+        return (Array.isArray(fallbackPair) ? fallbackPair : []).filter(Boolean)
+      }
       function deriveBilibiliDashRootDir(partDir, cfg) {
         try {
           const d = partDir ? `${partDir}` : ''
@@ -1257,21 +1378,37 @@ const dir = dirname(filePath)
           const target = p ? resolve(`${p}`) : ''
           if (!target) return false
           const pendingStatuses = new Set([TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED])
+          // 一条记录背后可能有两个引擎任务（「一对音视频」）：折叠记录的 `files`
+          // 只带**主成员**（画面流）的文件，另一半（声音流）的路径必须从
+          // `pairMembers[].files` 里取 —— 少这一层就会把"正在下载的声音流"
+          // 误判成"已下完"，拿半个文件去合并（用户报的"没下完就合并完成"）。
+          const filesOf = (entry) => {
+            const acc = Array.isArray(entry.files) ? entry.files.slice() : []
+            const members = Array.isArray(entry.pairMembers) ? entry.pairMembers : []
+            for (const m of members) {
+              if (m && Array.isArray(m.files)) acc.push(...m.files)
+            }
+            return acc
+          }
           const matches = (entry) => {
             if (!entry) return false
             const st = entry.status ? `${entry.status}` : ''
             if (!pendingStatuses.has(st)) return false
-            const files = Array.isArray(entry.files) ? entry.files : []
-            return files.some(f => {
+            return filesOf(entry).some(f => {
               try {
                 const fp = f && f.path ? resolve(`${f.path}`) : ''
-                return !!fp && (fp === target || fp === `${target}.xfer`)
+                if (!fp) return false
+                return fp === target || fp === `${target}.xfer` || hasEngineControlFile(fp)
               } catch (_) {
                 return false
               }
             })
           }
-          const lists = [taskStore.taskList || [], taskHistory.getAllHistory() || []]
+          const lists = [
+            taskStore.taskList || [],
+            taskStore.allTaskList || [],
+            taskHistory.getAllHistory() || []
+          ]
           return lists.some(list => list.some(matches))
         } catch (_) {
           return false
@@ -1279,10 +1416,42 @@ const dir = dirname(filePath)
       }
 
       /**
+       * 引擎"正在写这个文件"的**权威信号**：控制文件在不在。
+       *
+       * XferRust 把控制文件放在**引擎数据目录**里，键是目标文件的绝对路径字符串
+       * 的 SHA-256 前 24 位 hex（见 `XferRust/crates/xfer-storage/src/lib.rs` 的
+       * `ctrl_path`：`<ctrl_dir>/<sha256(path)[:24]>.xfer`，
+       * `ctrl_dir` = `$XFER_CTRL_DIR` 或 `~/.xfer/ctrl`）。
+       *
+       * 以前这里只看 `<文件>.xfer`（老 aria2 约定，与下载文件同目录）——
+       * 对现在的引擎**恒为 false**，等于没判。而默认不配"下载中后缀"时，
+       * 一个下到一半的文件与完整文件在盘上长得一模一样，**盘上大小也不能当判据**
+       * （引擎预分配写盘，实测下载到 9/10 时盘上大小已经到满）。
+       * 所以这里必须按引擎真正的键去查。（实测：下载中该文件存在，完成后消失。）
+       */
+      function engineCtrlFilePath(p) {
+        try {
+          const abs = p ? resolve(`${p}`) : ''
+          if (!abs) return ''
+          const dir = process.env.XFER_CTRL_DIR
+            ? `${process.env.XFER_CTRL_DIR}`
+            : join(homedir(), '.xfer', 'ctrl')
+          const hash = createHash('sha256').update(abs).digest('hex').slice(0, 24)
+          return resolve(dir, `${hash}.xfer`)
+        } catch (_) {
+          return ''
+        }
+      }
+      function hasEngineControlFile(p) {
+        const ctrl = engineCtrlFilePath(p)
+        return !!ctrl && existsSync(ctrl)
+      }
+
+      /**
        * 这个文件能不能当作合并的**输入**。
        *
        * 光"文件存在"是不够的：默认不配下载中后缀时，引擎是**直接写在最终路径上**的，
-       * 一个下到一半的 `xxx_audio.m4a` 也 existsSync 为真。拿它去 ffmpeg mux，
+       * 一个下到一半的 `xxx_audio.m4a` 也 existsSync 为真。拿它去合并，
        * 产物必然缺尾（`-shortest` 还会按短的那条截断），却会被判成"完成"
        * —— 用户点名的"视频不完整"。
        *
@@ -1298,10 +1467,12 @@ const dir = dirname(filePath)
           if (p.toLowerCase().endsWith('.xfer')) return false
           const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
           if (suffix && p.endsWith(suffix)) return false
-          // 引擎的控制文件还在 → 这个文件还没下完
-          if (existsSync(`${p}.xfer`)) return false
           const own = ownPath ? resolve(`${ownPath}`) : ''
           if (own && resolve(`${p}`) === own) return true
+          // 引擎的控制文件还在 → 这个文件还没下完（引擎自己记的键，见 engineCtrlFilePath）
+          if (hasEngineControlFile(p)) return false
+          // 老 aria2 约定：控制文件与下载文件同目录（保留兜底）
+          if (existsSync(`${p}.xfer`)) return false
           if (isPathBeingDownloadedByOther(p)) return false
           return true
         } catch (_) {
@@ -1327,67 +1498,70 @@ const dir = dirname(filePath)
           return { path: '', pending: false }
         }
       }
-      function resolveFfmpegPath() {
+      /**
+       * 定位媒体引擎 `zuvrust`。
+       *
+       * 合并音视频**不再用 ffmpeg**：容器细节（TS 里 AAC 要补 ADTS、fMP4 里是裸帧、
+       * `extradata` 在两种容器里形态不同……）是引擎的职责，宿主不该重复实现一遍；
+       * 更不该把"能不能合并"绑在用户机器上装没装 FFmpeg 上。
+       *
+       * 候选顺序与"二进制放哪"的约定都收在 `@shared/zuvrust` 里（纯函数，可单测），
+       * 这里只负责把本进程的环境信息喂进去、再挑出第一个真实存在的。
+       */
+      function resolveMediaEnginePath() {
         const candidates = []
-        const ffmpegExeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-
-// 检查用户数据目录中的 ffmpeg
-try {
-const userDataPath = app.getPath('userData')
-          candidates.push(resolve(userDataPath, 'ffmpeg', ffmpegExeName))
-        } catch (_) {}
-
-// 检查应用安装目录（通过 exe 路径获取）
-try {
-const exePath = app.getPath('exe')
+        const binName = mediaEngineBinName(process.platform)
+        try {
+          const userDataPath = app.getPath('userData')
+          const exePath = app.getPath('exe')
           const appDir = dirname(exePath)
-          candidates.push(resolve(appDir, ffmpegExeName))
-        } catch (_) {}
-
-        // 检查应用资源目录中的 ffmpeg
-        try {
-          const rp = process && process.resourcesPath ? `${process.resourcesPath}` : ''
-          if (rp) {
-            candidates.push(
-              resolve(rp, ffmpegExeName),
-              resolve(rp, 'ffmpeg-8.0.1-essentials_build', 'bin', ffmpegExeName),
-              resolve(rp, 'ffmpeg-8.0.1-essentials_build', ffmpegExeName)
-            )
-          }
-        } catch (_) {}
-
-        // 检查系统 PATH 中的 ffmpeg
-        candidates.push('ffmpeg')
-        return candidates.find(p => (p === 'ffmpeg' ? checkSystemFfmpeg() : existsSync(p))) || ''
+          // 开发期的工作区根目录：渲染进程里拿不到 __dirname，用主进程的
+          // app.getAppPath()（开发期就是仓库根，打包后是 app.asar 路径）
+          let repoRoot = ''
+          try {
+            repoRoot = app.getAppPath()
+          } catch (_) {}
+          candidates.push(...mediaEngineCandidates({
+            platform: process.platform,
+            arch: process.arch,
+            userDataPath,
+            appDir,
+            resourcesPath: (process && process.resourcesPath) || '',
+            devRoot: repoRoot
+          }))
+        } catch (_) {
+          candidates.push(binName)
+        }
+        return candidates.find(p => (p === binName ? checkSystemMediaEngine() : existsSync(p))) || ''
       }
-      function checkSystemFfmpeg() {
+      function checkSystemMediaEngine() {
         try {
-          const result = spawnSync('ffmpeg', ['-version'], { windowsHide: true, timeout: 5000 })
+          const result = spawnSync('zuvrust', ['version', '--json'], { windowsHide: true, timeout: 5000 })
           return result.status === 0
         } catch (_) {
           return false
         }
       }
-      async function ensureFfmpeg() {
-        // 检查是否已有 ffmpeg
-        const existingPath = resolveFfmpegPath()
+      async function ensureMediaEngine() {
+        const existingPath = resolveMediaEnginePath()
         if (existingPath) {
           return existingPath
         }
 
-// 检查用户是否已经取消过提示
-const userDataPath = app.getPath('userData')
-        const skipFlagPath = resolve(userDataPath, '.ffmpeg-skip')
-        if (existsSync(skipFlagPath)) {
-          return ''
-        }
+        // 提示只弹一次（与以前 ffmpeg 的处理一致：合并会反复触发，不能每次都弹）
+        let skipFlagPath = ''
+        try {
+          const userDataPath = app.getPath('userData')
+          skipFlagPath = resolve(userDataPath, '.zuvrust-skip')
+          if (existsSync(skipFlagPath)) {
+            return ''
+          }
+        } catch (_) {}
 
-        // 提示用户需要手动安装 FFmpeg
-        msg.warning(t('task.ffmpeg-required-manual'))
+        msg.warning(t('task.engine-missing-manual'))
 
-// 记录已提示，避免重复提示
-try {
-writeFileSync(skipFlagPath, '1')
+        try {
+          if (skipFlagPath) writeFileSync(skipFlagPath, '1')
         } catch (_) {}
 
         return ''
@@ -1409,6 +1583,45 @@ writeFileSync(skipFlagPath, '1')
           return { id: pairId, role: t.pairRole ? `${t.pairRole}` : '' }
         } catch (_) {
           return null
+        }
+      }
+
+      /**
+       * 「一对音视频」这条记录现在还有成员没下完吗。
+       *
+       * ⚠️ **必须看成员状态，不能看记录自身的 status**：合并流程一收到某一条流的
+       * 完成事件就会 `setTaskStatus({gid: 成员, status: MERGING})`，而
+       * `SET_TASK_STATUS` 是**直接写折叠记录的 status 字段**的（不走聚合）——
+       * 于是"只看记录 status"会在第一次完成事件之后立刻变成 merging，
+       * 把这个闸门彻底架空（另一半还在下载也照样去合并）。
+       * 折叠记录身上的 `pairMembers` 是**原始成员任务**，各带自己的引擎状态，
+       * 且被标记合并的那一条只会改到自己（另一个仍是 active）——所以按成员判断才准。
+       */
+      function isPairRecordStillDownloading(gidKey) {
+        try {
+          const g = gidKey ? `${gidKey}` : ''
+          if (!g) return false
+          const pending = new Set([TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED])
+          const lists = [taskStore.allTaskList || [], taskStore.taskList || []]
+          for (const list of lists) {
+            for (const row of list) {
+              if (!row) continue
+              const isMine = `${row.gid || ''}` === g ||
+                (Array.isArray(row.pairGids) && row.pairGids.some(x => `${x}` === g))
+              if (!isMine) continue
+              const members = Array.isArray(row.pairMembers) && row.pairMembers.length > 0
+                ? row.pairMembers
+                : [row]
+              // ⚠️ 必须**排除刚完成的那条流自己**：列表是 1Hz 刷新的，
+              // 完成事件到达时它往往还显示 active/paused（自己判自己"还在下"）
+              // → 最后一条流完成时闸门永远为真，合并一次都没跑过，
+              // 记录就卡在"已完成 + 满格黄条"（用户报的形态）。
+              return members.some(m => `${(m && m.gid) || ''}` !== g && pending.has(`${(m && m.status) || ''}`))
+            }
+          }
+          return false
+        } catch (_) {
+          return false
         }
       }
 
@@ -1467,8 +1680,187 @@ writeFileSync(skipFlagPath, '1')
         return false
       }
 
-      function getDashMergeKey(filePath, cfg, pair) {
+      // 已经被仲裁判死（重试耗尽且确认凑不齐）的配对：补扫不再重新武装它们，
+      // 否则每一轮轮询都会重复尝试一次注定失败的合并。
+      const _mergeGivenUp = new Set()
+
+      /**
+       * 这一对**是否已经产出合并文件**。
+       *
+       * 判据必须扫**整对**的历史（同 pairId 的任一成员带 `dashMerged`），不能只看
+       * 当前这条任务：产物由"后下完、触发合并"的那条流落库（`afterBilibiliMerge`
+       * → `consolidateTasks`），它未必是列表里的主记录，而另一半的任务/历史清理
+       * 是尽力而为的（失败只记日志）。
+       */
+      function isPairAlreadyMerged(pair) {
+        const pid = pair && pair.id ? `${pair.id}` : ''
+        if (!pid) return false
         try {
+          return (taskHistory.getAllHistory() || []).some(t =>
+            t && `${t.pairId || ''}` === pid && t.dashMerged === true)
+        } catch (_) {
+          return false
+        }
+      }
+
+      /**
+       * 一对音视频**合并收尾**：把这一对（含另一半）的合并重试定时器与"正在合并"
+       * 状态全部收掉，并记入 `_mergeGivenUp` 防止补扫重新武装。
+       *
+       * 为什么必须按**整对**收：合并由"后下完的那条流"触发，而另一半在它自己完成时
+       * 也武装了一份重试（`requireMergingList=false`）。只按 mergeKey 清理清不掉那一份
+       * —— 它醒来后看到"这一对还没合并"就又把记录推成 MERGING、再合一次（输入文件
+       * 已被第一次合并删掉），于是**合并完成之后卡片又冒出"正在合并音视频…"且长时间
+       * 不结束**（用户报的形态）。
+       */
+      function finishPairMerging(task, pair) {
+        const ids = new Set()
+        const own = task && task.gid ? `${task.gid}` : ''
+        if (own) ids.add(own)
+        const pid = pair && pair.id ? `${pair.id}` : ''
+        if (pid) {
+          try {
+            (taskHistory.getAllHistory() || []).forEach(t => {
+              if (t && `${t.pairId || ''}` === pid && t.gid) ids.add(`${t.gid}`)
+            })
+          } catch (_) {}
+        }
+        // **列表里这一对当前的全部成员**也要登记：合并收尾时历史可能已经把
+        // 某条源（或产物那条）清掉了，只查历史会漏掉仍在列表里的 gid ——
+        // 漏掉的后果就是合并完那几拍仍显示"下载完成，等待合并…"（用户报的形态）。
+        // ⚠️ 匹配**不能只看主 gid**：折叠记录的主 gid 是画面流那条，而触发合并
+        // 的常常是**声音流**（后下完那条）；历史被收编后 `pairInfo` 还为 null，
+        // 那时"按 gid 相等"一个成员都匹配不上 —— 必须按成员身份认（pairGids /
+        // pairMembers 里任意一个是自己，就说明这条记录就是这一对）。
+        try {
+          const rows = [...(taskStore.taskList || []), ...(taskStore.allTaskList || [])]
+          rows.forEach((row) => {
+            if (!row || row.isPair !== true) return
+            const memberGids = [
+              ...(Array.isArray(row.pairGids) ? row.pairGids : []),
+              ...(Array.isArray(row.pairMembers) ? row.pairMembers.map(m => m && m.gid) : [])
+            ].map(g => `${g || ''}`).filter(Boolean)
+            const samePair = (pid && `${row.pairId || ''}` === pid) ||
+              `${row.gid || ''}` === own ||
+              (own && memberGids.includes(own))
+            if (!samePair) return
+            memberGids.forEach((g) => { ids.add(g) })
+          })
+        } catch (_) {}
+        ids.forEach((gid) => {
+          try { clearMergeRetryTimer(gid) } catch (_) {}
+          try { _mergeGivenUp.add(gid) } catch (_) {}
+          try { taskStore.removeFromMergingList(gid) } catch (_) {}
+          try { taskStore.clearMergeProgress(gid) } catch (_) {}
+        })
+        // 这一对到此为止：进度条不能再停在"待合并/合并中"。
+        // 合并成功的记录靠 `dashMerged` 回普通档，但产物落库与列表刷新有先后，
+        // 中间那几拍就会显示"已完成 + 满格黄条/等待合并"（用户报的形态）。
+        // 重试耗尽收尾、确定合不了的那几条路径同样走这里 —— 一起登记掉。
+        try { taskStore.addMergeSkippedGids([...ids]) } catch (_) {}
+      }
+
+      /**
+       * 把**已中断的合并簿记**清掉（自愈）。
+       *
+       * `mergingList` 是进程内簿记，只在"合并真的跑过一遍"时才会被收掉。合并被
+       * 中途打断（下载中途暂停/退出应用/合并进程崩了/页面重载）时，它就永远留着，
+       * 于是记录**永久停在「正在合并音视频…」**：进度条不再动、卡片上没有暂停按钮
+       * （`taskActionsMap` 里没有 merging 这一档）、独立进度窗的暂停按钮也是灰的 ——
+       * 用户看到的就是"（视频+音频）任务无法暂停"，而且怎么点都没反应。
+       *
+       * 判据是"**没有任何合并真的在跑**"：既没有重试定时器，也没有 `_dashMergeJobs`
+       * 里的合并任务（合并任务从开始到进程退出一直挂在里面，所以它是最可靠的
+       * "正在合并"信号），引擎也没在报合并进度。连续几秒都如此 → 认定是残迹，
+       * 从簿记里摘掉；记录下一拍聚合状态就回到"已完成"，补扫会重新武装合并。
+       */
+      function reconcileStaleMergingEntries() {
+        try {
+          const list = taskStore.mergingList || []
+          const now = Date.now()
+          const candidates = []
+          list.forEach((gid) => {
+            const g = `${gid || ''}`.trim()
+            if (!g) return
+            if (hasMergeRetryTimer(g)) { _staleMergingSince.delete(g); return }
+            const key = (taskStore.mergeKeys || {})[g]
+            if (key && _dashMergeJobs && _dashMergeJobs.has(key)) { _staleMergingSince.delete(g); return }
+            const prog = (taskStore.mergeProgresses || {})[g]
+            if (prog && Number.isFinite(Number(prog.percent))) { _staleMergingSince.delete(g); return }
+            candidates.push(g)
+          })
+          // 清掉已离开簿记的时间戳（避免 Map 无限增长）
+          Array.from(_staleMergingSince.keys()).forEach((g) => {
+            if (!list.some(x => `${x}` === g)) {
+              _staleMergingSince.delete(g)
+            }
+          })
+          candidates.forEach((g) => {
+            const since = _staleMergingSince.get(g)
+            if (!since) {
+              _staleMergingSince.set(g, now)
+              return
+            }
+            if (now - since < STALE_MERGING_MS) {
+              return
+            }
+            console.warn(`[Lerxu] Clearing stale merging entry for ${g} (no merge running)`)
+            _staleMergingSince.delete(g)
+            try { taskStore.removeFromMergingList(g) } catch (_) {}
+            try { taskStore.clearMergeProgress(g) } catch (_) {}
+          })
+        } catch (_) {}
+      }
+      /**
+       * 补扫「两个文件都下完了、但还没合并」的配对记录，把合并重试重新武装起来。
+       *
+       * 为什么需要：合并是在"某条流完成事件"里触发的。只要那次事件因为任何原因
+       * 没走到（列表 1Hz 刷新还没把这条流标成完成、去重把它吞掉、引擎重启、
+       * 闸门把最后一条流也误判成"还在下"……），这一对就再没有任何人试合并，
+       * 记录停在"已完成 + 满格黄条"—— 用户那条 368MB 的记录就是这个样子，
+       * 两个输入文件都好好躺在下载目录里，产物却没有。
+       *
+       * 这里每轮轮询扫一次：满足条件的补一次武装，之后成功/如实收尾完全交给
+       * 既有的 `_scheduleMergeRetry` 仲裁，不在这里另写一套合并逻辑。
+       */
+      function rearmStuckPairMerges() {
+        try {
+          const rows = taskStore.allTaskList || taskStore.taskList || []
+          const cfg = preferenceConfig.value || {}
+          for (const row of rows) {
+            if (!row || row.isPair !== true) continue
+            // 已经有产物（记录自身或任一成员带 dashMerged）→ 这一对没什么可补的了。
+            // 只看 `row.dashMerged` 不够：产物可能落在**不是主记录**的那条成员上，
+            // 那时补扫会重新武装重试，把已经合并完的记录又推回"正在合并"（用户报的形态）。
+            if (row.dashMerged === true || row.pairMerged === true) continue
+            const members = Array.isArray(row.pairMembers) ? row.pairMembers : []
+            if (members.length < 2) continue
+            if (members.some(m => m && m.dashMerged === true)) continue
+            const allDone = members.every(m => {
+              const s = `${(m && m.status) || ''}`
+              if (s === TASK_STATUS.COMPLETE || s === TASK_STATUS.SEEDING) return true
+              // 成员状态可能被"正在合并"写脏过（`SET_TASK_STATUS` 会把 merging
+              // 直接写到成员对象上），而 store 的合并簿记里已经没有它 → 那只是残迹。
+              // 不这样兜一下，补扫会永远跳过这条记录，它就卡在"正在合并…"。
+              return s === TASK_STATUS.MERGING &&
+                !(taskStore.mergingList || []).some(g => `${g}` === `${m && m.gid}`)
+            })
+            if (!allDone) continue
+            const gid = `${row.gid || ''}`
+            if (!gid) continue
+            if (_mergeGivenUp.has(gid)) continue
+            if (hasMergeRetryTimer(gid)) continue
+            const pair = getTaskPairInfo(row)
+            if (!pair || !pair.id) continue
+            const path = getTaskFullPath(row) || (row.files && row.files[0] && row.files[0].path) || ''
+            if (!path) continue
+            console.warn(`[Lerxu] Stuck pair detected (${gid}), re-arming merge retry`)
+            _scheduleMergeRetry(gid, getDashMergeKey(path, cfg, pair), path, row, false, cfg, 0, 60, false)
+          }
+        } catch (_) {}
+      }
+
+      function getDashMergeKey(filePath, cfg, pair) {        try {
           // 有显式配对 ID 时，配对键就是这一对本身 ——
           // 不再靠"目录 + 文件名长得像"去猜，也就不会把两个不相干的
           // 同名视频误配成一对（用户点名）
@@ -1484,44 +1876,50 @@ writeFileSync(skipFlagPath, '1')
           return ''
         }
       }
-      function _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt, maxAttempts) {
+      function _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt, maxAttempts, requireMergingList = true) {
         // 清除已有的重试定时器
         clearMergeRetryTimer(mergeGid)
         // 检查任务是否还在合并列表中（可能已被用户删除或已合并完成）
+        // 「整条记录还没下完」的等待阶段用 requireMergingList=false 进来：
+        // 那时故意不把记录写进 mergingList（否则状态会提前显示"正在合并"），
+        // 但重试必须照常武装起来 —— 否则"最后一条流的完成事件没送达/被去重吞掉"
+        // 这一对就永远没人再试合并（用户那条 368MB 的记录就是这样卡住的）。
         const { mergingList } = taskStore
-        if (!mergingList.includes(mergeGid)) {
+        if (requireMergingList && !mergingList.includes(mergeGid)) {
           return
         }
         if (attempt >= maxAttempts) {
           // 重试耗尽：判断这一对还有没有可能凑齐。
-          //   · 还有可能（另一半任务仍在下载 / 文件已在盘上 / 磁盘上留着
-          //     它正在下载的痕迹）→ 保持 MERGING，等它的完成事件触发合并；
-          //   · 没有可能（另一半任务根本不存在，也没有下载痕迹）→ 如实收尾，
+          //   · 还有可能（**另一半的任务还在跑**）→ 保持 MERGING，等它的完成事件
+          //     触发合并；
+          //   · 没有可能（自己那份输入已经不在 / 另一半也不在跑）→ 如实收尾，
           //     不把任务永久吊在"等待配对"上（用户点名：不能一直不合并也不结束）
+          //
+          // ⚠️ 不能用"另一半的文件在盘上"当"还有希望"的判据：合并过一次之后，
+          // 另一半任务历史里记的路径就是**产物本身**，那个文件当然一直在，
+          // 于是这里恒为真 → 任务永远保持 MERGING，卡片永远显示
+          // "等待配对文件下载完成..."（用户报的形态）。
+          // 同理：自己那份输入都不在了就不可能再合并，也必须收尾。
           const pair = getTaskPairInfo(task)
+          const ownUsable = !!finalPath && existsSync(`${finalPath}`)
+          // 自己那份还在被引擎写 → 现在做不了任何判断，等它的完成事件再来一次
+          if (finalPath && hasEngineControlFile(finalPath)) {
+            console.warn(`[Lerxu] Merge retry exhausted for ${mergeGid}, own input still downloading, wait for its completion event`)
+            return
+          }
           let partnerComing = false
           try {
             if (pair) {
               const p = findPairPartnerTask(pair, task)
-              if (p) {
-                const files = Array.isArray(p.files) ? p.files : []
-                const fileOnDisk = files.some(f => {
-                  try {
-                    return !!(f && f.path && existsSync(`${f.path}`))
-                  } catch (_) {
-                    return false
-                  }
-                })
-                const st = p.status ? `${p.status}` : ''
-                // 另一半仍在进行中（下载 / 等待 / 暂停 / 正在合并）→ 还有希望
-                const pendingStatuses = new Set([
-                  TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED,
-                  TASK_STATUS.SEEDING, TASK_STATUS.MERGING
-                ])
-                partnerComing = fileOnDisk || pendingStatuses.has(st)
-              }
+              const st = p && p.status ? `${p.status}` : ''
+              // 另一半仍在进行中（下载 / 等待 / 暂停 / 做种 / 正在合并）→ 还有希望
+              const pendingStatuses = new Set([
+                TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED,
+                TASK_STATUS.SEEDING, TASK_STATUS.MERGING
+              ])
+              partnerComing = ownUsable && pendingStatuses.has(st)
             } else {
-              partnerComing = hasPendingPartnerOnDisk(finalPath, cfg)
+              partnerComing = ownUsable && hasPendingPartnerOnDisk(finalPath, cfg)
             }
           } catch (_) {
             partnerComing = false
@@ -1531,14 +1929,14 @@ writeFileSync(skipFlagPath, '1')
             return
           }
           console.warn(`[Lerxu] Merge retry exhausted for ${mergeGid}, no partner available, finalize as complete`)
+          _mergeGivenUp.add(`${mergeGid}`)
+          finishPairMerging(task, pair)
           taskStore.removeAllMergingByMergeKey(mergeKey)
           taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
           taskStore.fetchList()
           // 等不到另一半了：如实按"下载完成"收尾并通知，不让任务无声无息地结束
           try {
-            const notifyPath = finalPath || ''
-            showTaskCompleteNotify(task, isBT, notifyPath)
-            ipcRenderer.send('event', 'task-download-complete', task, notifyPath)
+            notifyTaskCompleteOnce(task, isBT, finalPath || '', pair && pair.id)
           } catch (_) {}
           return
         }
@@ -1547,16 +1945,42 @@ writeFileSync(skipFlagPath, '1')
         const timer = setTimeout(async () => {
           clearMergeRetryTimer(mergeGid)
           // 再次检查任务是否还在合并列表中
-          if (!taskStore.mergingList.includes(mergeGid)) {
+          if (requireMergingList && !taskStore.mergingList.includes(mergeGid)) {
             return
+          }
+          // 一对音视频：整条记录还没下完就继续等，**别拿半个文件去合**
+          // （判据同 handleDownloadComplete，见 isPairRecordStillDownloading）
+          const retryPair = getTaskPairInfo(task)
+          // 这一对**已经合完了**（产物落库、可能只是另一半还没被清掉）：
+          // 别再合第二次，更别把记录推回 MERGING —— 直接收尾并停掉这一对的重试。
+          if (retryPair && isPairAlreadyMerged(retryPair)) {
+            finishPairMerging(task, retryPair)
+            taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
+            taskStore.fetchList()
+            return
+          }
+          if (retryPair && isPairRecordStillDownloading(mergeGid)) {
+            _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts, requireMergingList)
+            return
+          }
+          // 到这一步整条记录都下完了：把状态正式推成"正在合并"，
+          // 让卡片从"下载中"切到"合并中"（黄条 + 绿色合并进度）
+          if (retryPair && !taskStore.mergingList.includes(mergeGid)) {
+            try {
+              taskStore.addToMergingList({ gid: mergeGid, mergeKey })
+              taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.MERGING })
+            } catch (_) {}
           }
           // 重新扫描配对文件
           try {
+            // retryPair 必须一起传下去：不传就退回"靠文件名猜"的老路径，
+            // 与首次尝试的口径不一致（谁画面谁声音、伙伴是谁都得按 pairId 定）
             const retryResult = await runDashMergeExclusive(mergeKey, () => {
-              return maybeMergeBilibiliDash(finalPath, task)
+              return maybeMergeBilibiliDash(finalPath, task, retryPair)
             })
             if (retryResult && retryResult.mergedPath) {
               // 合并成功
+              finishPairMerging(task, retryPair)
               taskStore.removeAllMergingByMergeKey(mergeKey)
               taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
               taskStore.fetchList()
@@ -1570,20 +1994,22 @@ writeFileSync(skipFlagPath, '1')
                   taskStore.setTaskDisplayName({ gid: mergeGid, name })
                 }
               } catch (_) {}
-              showTaskCompleteNotify(task, isBT, retryResult.mergedPath)
-              ipcRenderer.send('event', 'task-download-complete', task, retryResult.mergedPath)
+              // 通知的唯一出口（按 pairId 去重）：这条重试与"最后一条流的完成事件"
+              // 那一支可能合出同一个产物、双双走到这里，以前各弹一次
+              notifyTaskCompleteOnce(task, isBT, retryResult.mergedPath, retryPair && retryPair.id)
             } else if (retryResult && retryResult.waitingForPair) {
               // 仍然等待配对，继续重试
-              _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
+              _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts, requireMergingList)
             } else {
               // 合并失败（非等待配对），清理并标记完成
+              finishPairMerging(task, retryPair)
               taskStore.removeAllMergingByMergeKey(mergeKey)
               taskStore.setTaskStatus({ gid: mergeGid, status: TASK_STATUS.COMPLETE })
               taskStore.fetchList()
             }
           } catch (e) {
             console.warn(`[Lerxu] Merge retry ${attempt + 1} failed:`, e)
-            _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts)
+            _scheduleMergeRetry(mergeGid, mergeKey, finalPath, task, isBT, cfg, attempt + 1, maxAttempts, requireMergingList)
           }
         }, delay)
         setMergeRetryTimer(mergeGid, timer)
@@ -1609,56 +2035,52 @@ writeFileSync(skipFlagPath, '1')
         _dashMergeJobs.set(key, job)
         return job
       }
-      function runFfmpegMux(ffmpegPath, videoPath, audioPath, outputPath, progressGid = '') {
+      /**
+       * 调媒体引擎合并音视频：`zuvrust mux <输出> <输入>...`。
+       *
+       * 谁是画面、谁是声音由**引擎自己探测**（它读容器就知道），同角色的多个输入
+       * 由引擎按传入顺序接起来。所以这里既不需要像以前调 ffmpeg 那样先猜
+       * `-map 0:v:0 -map 1:a:0`、失败再交换参数重试，也不需要判断哪个文件是画面 ——
+       * 输入就是"一串待合并的文件"。
+       *
+       * 输出是 NDJSON：进度行按 `type` 分发，错误行带 `kind`/`retryable`
+       * —— 宿主不用去正则匹配引擎的文案（文案一改就失灵）。
+       *
+       * `--progress` **总是带上**：合并是长任务，进度必须实时往上走；没有宿主
+       * 承载进度（progressGid 为空）时那几行只是被读掉，代价可以忽略。
+       */
+      function runEngineMux(enginePath, inputPaths, outputPath, progressGid = '') {
         return new Promise((resolve, reject) => {
-          const cmd = ffmpegPath || ''
-          const args = [
-            '-y',
-            '-hide_banner',
-            '-loglevel', 'error'
-          ]
-          if (progressGid) {
-            args.push('-progress', 'pipe:1')
+          const inputs = (Array.isArray(inputPaths) ? inputPaths : [inputPaths]).filter(Boolean)
+          if (!inputs.length) {
+            reject(new Error('mux 没有任何输入文件'))
+            return
           }
-          args.push(
-            '-i', videoPath,
-            '-i', audioPath,
-            '-map', '0:v:0',
-            '-map', '1:a:0',
-            '-c', 'copy',
-            '-shortest',
-            outputPath
-          )
-          const child = spawn(cmd, args, { windowsHide: true })
+          const args = ['mux', outputPath, ...inputs, '--json', '--progress']
+          const child = spawn(enginePath, args, { windowsHide: true })
           let stderr = ''
-          let progressBuffer = ''
-          let totalInputSize = 0
-          if (progressGid) {
-            try {
-              const vStat = statSync(videoPath)
-              const aStat = statSync(audioPath)
-              totalInputSize = (vStat.size || 0) + (aStat.size || 0)
-            } catch (_) {}
-            child.stdout.on('data', (d) => {
-              progressBuffer += d.toString('utf8')
-              const lines = progressBuffer.split('\n')
-              progressBuffer = lines.pop() || ''
-              const kv = {}
-              for (const line of lines) {
-                const m = line.match(/^(\w+)=(.*)$/)
-                if (m) kv[m[1]] = m[2]
-              }
-              if (kv.progress === 'continue' || kv.progress === 'end') {
-                const totalSize = parseInt(kv.total_size || '0', 10)
-                const speed = parseFloat(kv.speed || '0')
-                const percent = totalInputSize > 0 ? Math.min(100, Math.round(totalSize / totalInputSize * 100)) : 0
-                taskStore.setMergeProgress({
-                  gid: progressGid,
-                  progress: { percent, totalSize, speed }
-                })
-              }
-            })
-          }
+          let stdoutBuf = ''
+          let lastBytes = 0
+          let lastAt = Date.now()
+          child.stdout.on('data', (d) => {
+            stdoutBuf += d.toString('utf8')
+            const lines = stdoutBuf.split('\n')
+            stdoutBuf = lines.pop() || ''
+            for (const line of lines) {
+              const parsed = progressFromEngineLine(line)
+              if (!parsed || !progressGid) continue
+              const now = Date.now()
+              const elapsed = Math.max(1, now - lastAt)
+              // 引擎的进度按"已写字节 / 输入总字节"算，所以这里的差值就是**写入速率**
+              const speed = Math.max(0, (parsed.totalSize - lastBytes) * 1000 / elapsed)
+              lastBytes = parsed.totalSize
+              lastAt = now
+              taskStore.setMergeProgress({
+                gid: progressGid,
+                progress: { percent: parsed.percent, totalSize: parsed.totalSize, speed }
+              })
+            }
+          })
           child.stderr.on('data', (d) => { stderr += d.toString('utf8') })
           child.on('error', (err) => reject(err))
           child.on('close', (code) => {
@@ -1666,56 +2088,59 @@ writeFileSync(skipFlagPath, '1')
               resolve(true)
               return
             }
-            const msg = (stderr || '').trim() || `ffmpeg exit ${code}`
-            reject(new Error(msg))
+            reject(new Error(engineErrorText(stderr, code)))
           })
         })
       }
-      async function validateDashMergeOutput(ffmpegPath, outputPath) {
+
+      /**
+       * 校验合并产物**确实同时含视频与音频**。
+       *
+       * 为什么要校验：合并最坏的形态不是报错，而是"产出了一个只有画面的文件"却被
+       * 判成完成 —— 用户点名的"视频不完整"。以前靠 `ffmpeg -f null` 探一遍，
+       * 现在用引擎自己的 `probe`：少一个外部依赖，判据也与引擎完全一致
+       * （`kind` 0=视频 / 1=音频 是引擎的对外契约）。
+       */
+      async function validateMergeOutput(enginePath, outputPath) {
         if (!outputPath || !existsSync(outputPath)) {
           return false
         }
         return new Promise((resolve) => {
           let settled = false
+          const child = spawn(enginePath, ['probe', outputPath, '--json'], { windowsHide: true })
+          let out = ''
           const done = (result) => {
             if (settled) return
             settled = true
             clearTimeout(timer)
             resolve(result)
           }
-          const child = spawn(ffmpegPath, [
-            '-hide_banner',
-            '-i', outputPath,
-            '-map', '0:v:0',
-            '-map', '0:a:0',
-            '-c', 'copy',
-            '-f', 'null',
-            '-'
-          ], { windowsHide: true })
           const timer = setTimeout(() => {
             try { child.kill('SIGKILL') } catch (_) {}
             done(false)
           }, 30000)
+          child.stdout.on('data', (d) => { out += d.toString('utf8') })
           child.on('error', () => done(false))
-          child.on('close', (code) => done(code === 0))
+          child.on('close', (code) => {
+            if (code !== 0) {
+              done(false)
+              return
+            }
+            const first = `${out}`.split('\n').map(s => s.trim()).find(Boolean) || ''
+            done(probeHasVideoAndAudio(parseEngineLine(first)))
+          })
         })
       }
-      async function mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, progressGid = '') {
+
+      async function mergeDashToOutput(enginePath, inputPaths, outputPath, progressGid = '') {
         const tempPath = resolve(dirname(outputPath), `.${basename(outputPath)}.lerxu-merging-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`)
         try {
-          try {
-            await runFfmpegMux(ffmpegPath, videoPath, audioPath, tempPath, progressGid)
-          } catch (firstError) {
-            try {
-              if (existsSync(tempPath)) unlinkSync(tempPath)
-            } catch (_) {}
-            await runFfmpegMux(ffmpegPath, audioPath, videoPath, tempPath, progressGid)
-          }
-          if (!await validateDashMergeOutput(ffmpegPath, tempPath)) {
-            throw new Error('Merged DASH output does not contain both video and audio streams')
+          await runEngineMux(enginePath, inputPaths, tempPath, progressGid)
+          if (!await validateMergeOutput(enginePath, tempPath)) {
+            throw new Error('Merged output does not contain both video and audio streams')
           }
           if (existsSync(outputPath)) {
-            throw new Error(`DASH merge output already exists: ${outputPath}`)
+            throw new Error(`merge output already exists: ${outputPath}`)
           }
           renameSync(tempPath, outputPath)
           return true
@@ -1771,57 +2196,37 @@ writeFileSync(skipFlagPath, '1')
         const { dir, base, type } = info
 
         if (type === 'm4s') {
-          let entries = []
-          try {
-            entries = readdirSync(dir) || []
-          } catch (_) {
-            entries = []
-          }
-          const group = entries
-            .filter(name => {
-              const s = `${name || ''}`
-              if (!s.toLowerCase().endsWith('.m4s')) return false
-              return s.startsWith(`${base}-`)
-            })
-            .sort()
-          if (group.length < 2) {
-            // 配对文件尚未出现，返回 waitingForPair 以便重试机制继续等待
-            return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
-          }
-          const parts = group.map(name => {
-            const full = resolve(dir, name)
-            // 统一判据：控制文件还在 / 别的任务正在写 = 还没下完，不能当合并输入
-            return { name, path: full, ready: isMergeInputReady(full, cfg, finalPath) }
-          })
-          const readyParts = parts.filter(p => p && p.ready)
-          if (readyParts.length < 2) {
-            const ffmpegPath = resolveFfmpegPath()
-            if (!ffmpegPath) {
+          // 同一 stem 的**全部分片**一起交给引擎：它判画面/声音、并按顺序把
+          // 同角色的分片接起来。老实现只取两个文件，多出来的分片整段丢失
+          // —— 用户点名的"合并完了视频却不完整"。
+          const frag = collectDashFragmentInputs(finalPath, cfg)
+          if (!frag || frag.inputs.length < 2) {
+            const enginePath = resolveMediaEnginePath()
+            if (!enginePath) {
               const notifyKey = `${dir || ''}|${base || ''}`
               const fallbackNotifyPath = finalPath || ''
-              return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
+              return { isBilibiliPart: true, mergedPath: '', noMediaEngine: true, notifyKey, fallbackNotifyPath }
             }
+            // 配对文件尚未出现 / 还在下载：返回 waitingForPair 让重试机制继续等
             return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
-          const videoPath = readyParts[0].path
-          const audioPath = readyParts[1].path
-          const ffmpegPath = await ensureFfmpeg()
-          if (!ffmpegPath) {
+          const enginePath = await ensureMediaEngine()
+          if (!enginePath) {
             const notifyKey = `${dir || ''}|${base || ''}`
             const fallbackNotifyPath = finalPath || ''
-            return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
+            return { isBilibiliPart: true, mergedPath: '', noMediaEngine: true, notifyKey, fallbackNotifyPath }
           }
           const outputBase = stripDashSequenceSuffix(base)
-          const outputPath = getDashMergeOutputPath(dir, outputBase, [videoPath, audioPath])
+          const outputPath = getDashMergeOutputPath(frag.dir || dir, outputBase, frag.inputs)
           if (!outputPath) {
             return { isBilibiliPart: true, mergedPath: '' }
           }
           try {
-            await mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
-            const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
+            await mergeDashToOutput(enginePath, frag.inputs, outputPath, task && task.gid ? `${task.gid}` : '')
+            const finalOutputPath = await afterBilibiliMerge(task, info, frag.inputs[0], frag.inputs[1], outputPath, frag.inputs)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
-            console.warn(`[Lerxu] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+            console.warn(`[Lerxu] zuvrust merge failed: ${e && e.message ? e.message : e}`)
             // 合并出错不能当作"完成"：交给重试再试几次（用户点名）
             return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
@@ -1841,37 +2246,38 @@ writeFileSync(skipFlagPath, '1')
         const audioPath = findFirstReadyPath(audioCand, cfg, finalPath).path
 
         if (!videoPath || !audioPath) {
-          const ffmpegPath = resolveFfmpegPath()
-          if (!ffmpegPath) {
+          const enginePath = resolveMediaEnginePath()
+          if (!enginePath) {
             const notifyKey = `${dir || ''}|${base || ''}`
             const fallbackNotifyPath = finalPath || ''
-            return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
+            return { isBilibiliPart: true, mergedPath: '', noMediaEngine: true, notifyKey, fallbackNotifyPath }
           }
           // 文件在但还没下完也走这里：**绝不能**拿半个文件去合并
           // （产物会缺尾，却会被判成完成 —— 用户点名的"视频不完整"）
           return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
         }
 
+        const mergeInputs = buildMergeInputs(videoPath || finalPath, cfg, [videoPath, audioPath])
         const outputDir = dirname(videoPath || finalPath || rootDir || dir)
         const outputBase = stripDashSequenceSuffix(base)
-        const outputPath = getDashMergeOutputPath(outputDir, outputBase, [videoPath, audioPath])
+        const outputPath = getDashMergeOutputPath(outputDir, outputBase, mergeInputs)
         if (!outputPath) {
           return { isBilibiliPart: true, mergedPath: '' }
         }
 
-        const ffmpegPath = await ensureFfmpeg()
-        if (!ffmpegPath) {
+        const enginePath = await ensureMediaEngine()
+        if (!enginePath) {
           const notifyKey = `${outputDir || ''}|${base || ''}`
           const fallbackNotifyPath = finalPath || ''
-          return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
+          return { isBilibiliPart: true, mergedPath: '', noMediaEngine: true, notifyKey, fallbackNotifyPath }
         }
 
         try {
-          await mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
-          const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
+          await mergeDashToOutput(enginePath, mergeInputs, outputPath, task && task.gid ? `${task.gid}` : '')
+          const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath, mergeInputs)
           return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
         } catch (e) {
-          console.warn(`[Lerxu] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+          console.warn(`[Lerxu] zuvrust merge failed: ${e && e.message ? e.message : e}`)
           // 合并出错不能当作"完成"：交给重试再试几次（用户点名）
           return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
         }
@@ -1958,31 +2364,34 @@ writeFileSync(skipFlagPath, '1')
             return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
 
+          // 显式配对只认这一对（pairId 比"同目录扫出来的文件"权威得多），
+          // 所以不在这里补分片
+          const pairInputs = [videoPath, audioPath]
           const outputDir = dirname(videoPath)
           const outputBase = stripDashSequenceSuffix(normalizeDashStemFromFilename(basename(videoPath)))
-          const outputPath = getDashMergeOutputPath(outputDir, outputBase, [videoPath, audioPath])
+          const outputPath = getDashMergeOutputPath(outputDir, outputBase, pairInputs)
           if (!outputPath) {
             return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
 
-          const ffmpegPath = await ensureFfmpeg()
-          if (!ffmpegPath) {
+          const enginePath = await ensureMediaEngine()
+          if (!enginePath) {
             return {
               isBilibiliPart: true,
               mergedPath: '',
-              noFfmpeg: true,
+              noMediaEngine: true,
               notifyKey: `${outputDir || ''}|${outputBase || ''}`,
               fallbackNotifyPath: finalPath || ''
             }
           }
 
           try {
-            await mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, gid)
+            await mergeDashToOutput(enginePath, pairInputs, outputPath, gid)
             const info = { dir: outputDir, base: outputBase, type: 'named' }
             const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
-            console.warn(`[Lerxu] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+            console.warn(`[Lerxu] zuvrust merge failed: ${e && e.message ? e.message : e}`)
             // 合并出错**不能**当作"完成"：交给重试，避免静默跳过合并
             return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
@@ -2097,11 +2506,11 @@ writeFileSync(skipFlagPath, '1')
 
           const ready = (pairParts.parts || []).filter(p => p && !p.pending && p.diskPath && existsSync(p.diskPath))
           if (ready.length < 2) {
-            const ffmpegPath = resolveFfmpegPath()
-            if (!ffmpegPath) {
+            const enginePath = resolveMediaEnginePath()
+            if (!enginePath) {
               const notifyKey = `${pairParts.dir || ''}|${pairParts.stem || ''}`
               const fallbackNotifyPath = finalPath || ''
-              return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
+              return { isBilibiliPart: true, mergedPath: '', noMediaEngine: true, notifyKey, fallbackNotifyPath }
             }
             return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
@@ -2140,26 +2549,29 @@ writeFileSync(skipFlagPath, '1')
             return { isBilibiliPart: true, mergedPath: '' }
           }
 
+          // 同一个 stem 下的分片一并交给引擎（它判角色并按顺序串接）；
+          // 凑不齐就只用这一对
+          const mergeInputs = buildMergeInputs(videoPath, cfg, [videoPath, audioPath])
           const outputBase = stripDashSequenceSuffix(pairParts.stem)
-          const outputPath = getDashMergeOutputPath(pairParts.dir, outputBase, [videoPath, audioPath])
+          const outputPath = getDashMergeOutputPath(pairParts.dir, outputBase, mergeInputs)
           if (!outputPath) {
             return { isBilibiliPart: true, mergedPath: '' }
           }
 
-          const ffmpegPath = await ensureFfmpeg()
-          if (!ffmpegPath) {
+          const enginePath = await ensureMediaEngine()
+          if (!enginePath) {
             const notifyKey = `${pairParts.dir || ''}|${pairParts.stem || ''}`
             const fallbackNotifyPath = finalPath || ''
-            return { isBilibiliPart: true, mergedPath: '', noFfmpeg: true, notifyKey, fallbackNotifyPath }
+            return { isBilibiliPart: true, mergedPath: '', noMediaEngine: true, notifyKey, fallbackNotifyPath }
           }
 
           try {
-            await mergeDashToOutput(ffmpegPath, videoPath, audioPath, outputPath, task && task.gid ? `${task.gid}` : '')
+            await mergeDashToOutput(enginePath, mergeInputs, outputPath, task && task.gid ? `${task.gid}` : '')
             const info = { dir: pairParts.dir, base: pairParts.stem, type: 'named' }
-            const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
+            const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath, mergeInputs)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
-            console.warn(`[Lerxu] FFmpeg merge failed: ${e && e.message ? e.message : e}`)
+            console.warn(`[Lerxu] zuvrust merge failed: ${e && e.message ? e.message : e}`)
             // 合并出错不能当作"完成"：交给重试再试几次（用户点名）
             return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
@@ -2167,7 +2579,7 @@ writeFileSync(skipFlagPath, '1')
           return { isBilibiliPart: false, mergedPath: '' }
         }
       }
-      async function afterBilibiliMerge(task, info, videoPath, audioPath, outputPath) {
+      async function afterBilibiliMerge(task, info, videoPath, audioPath, outputPath, extraInputs = []) {
         let finalOutputPath = outputPath
         const deletedFiles = new Set()
         const deletedCandidates = new Set()
@@ -2214,6 +2626,10 @@ writeFileSync(skipFlagPath, '1')
             try { full = resolve(p) } catch (_) { full = `${p}` }
             if (!full) return false
             if (outAbs && full === outAbs) return false
+            // **还在被引擎写**的文件绝不删：删掉之后引擎会继续往已 unlink 的 inode
+            // 写，那条任务最终"完成"了、盘上却没有文件 —— 它自己的那次合并就永远
+            // 等不到自己的输入，任务会一直挂在"等待配对文件下载完成"（用户报的形态）。
+            if (hasEngineControlFile(full) || isPathBeingDownloadedByOther(full)) return false
             for (let attempt = 0; attempt < 5; attempt++) {
               try {
                 unlinkSync(full)
@@ -2250,6 +2666,13 @@ writeFileSync(skipFlagPath, '1')
           addCandidate(videoPath)
           if (audioPath && audioPath !== videoPath) {
             addCandidate(audioPath)
+          }
+          // 多分片场景：本次合并用到的**每一个**分片都是"已被产物取代的零件"，
+          // 一起进清理名单，否则合并完还会在目录里剩一堆分片文件
+          if (Array.isArray(extraInputs)) {
+            for (const p of extraInputs) {
+              addCandidate(p)
+            }
           }
 
           try {
@@ -2513,17 +2936,12 @@ writeFileSync(skipFlagPath, '1')
                   finalOutputPath = finalTarget
                 } else {
                   try {
-                    const ffmpegPath = resolveFfmpegPath()
-                    if (ffmpegPath) {
+                    // 换容器重新封装也交给引擎（`zuvrust remux`）：它按容器规则
+                    // 处理 extradata 与音频帧形态，比再引入一个 ffmpeg 依赖可靠
+                    const enginePath = resolveMediaEnginePath()
+                    if (enginePath) {
                       const remuxOk = await new Promise((resolve) => {
-                        const child = spawn(ffmpegPath, [
-                          '-y',
-                          '-hide_banner',
-                          '-loglevel', 'error',
-                          '-i', outputPath,
-                          '-c', 'copy',
-                          finalTarget
-                        ], { windowsHide: true })
+                        const child = spawn(enginePath, ['remux', finalTarget, outputPath, '--json'], { windowsHide: true })
                         let settled = false
                         const done = (r) => { if (!settled) { settled = true; resolve(r) } }
                         const timer = setTimeout(() => {
@@ -3332,6 +3750,31 @@ writeFileSync(skipFlagPath, '1')
         // 系统通知由主进程展示（task-download-complete 事件），
         // 渲染进程只负责应用内 toast，避免重复通知
       }
+      /**
+       * 弹"下载完成"通知。**所有完成路径都必须走这里**（唯一出口）。
+       *
+       * 一条下载可能在多条路径上被判"完成"（最后一条流完成的合并成功、
+       * 另一半重试定时器醒来后的合并成功、重试耗尽后的如实收尾、缺媒体引擎的
+       * 降级完成），每一条都通知过一次 → 用户看到"一个视频弹三条完成通知"。
+       * 去重键是**下载的身份**（pairId / gid），所以整对音视频只弹一次。
+       *
+       * `pairId` 必须由调用方从任务历史里取（`getTaskPairInfo`）传进来：
+       * 引擎任务对象上没有配对信息，只按 gid 取键的话两条流会各弹一次。
+       *
+       * 返回 true 表示这一次真的弹了（调用方据此判断"通知已经发出去"）。
+       */
+      function notifyTaskCompleteOnce(task, isBT, path, pairId) {
+        const identity = {
+          pairId: pairId ? `${pairId}` : '',
+          gid: task && task.gid ? `${task.gid}` : ''
+        }
+        if (!_completeNotifier.shouldNotify(identity, path)) {
+          return false
+        }
+        showTaskCompleteNotify(task, isBT, path)
+        ipcRenderer.send('event', 'task-download-complete', task, path)
+        return true
+      }
       function bindEngineEvents() {
         api.client.on('onDownloadStart', onDownloadStart)
         api.client.on('onDownloadPause', onDownloadPause)
@@ -3431,6 +3874,10 @@ writeFileSync(skipFlagPath, '1')
           checkDataAccessStatus()
           fixResumedCompletedSuffixTasks().catch(() => {})
           fixResumedErroredTasks().catch(() => {})
+          // 被中断的合并簿记先清掉（否则记录永久停在"正在合并"，见该函数注释），
+          // 再补扫"两个文件都下完却还没合并"的配对：把漏掉的合并重试重新武装
+          reconcileStaleMergingEntries()
+          rearmStuckPairMerges()
           // 待选择文件状态每轮补扫：磁力任务重启后先以暂停的磁力形态存在，
           // 元数据重新解析完才会出现待选择的 BT 任务，只扫一次会漏掉
           scanForPendingBtTasks()
@@ -3902,13 +4349,8 @@ writeFileSync(skipFlagPath, '1')
           capSet(_resumedCompletedFixedGids, 2000)
         }
 
-        if (_bilibiliMergeNotified && _bilibiliMergeNotified.size > 0) {
-          Array.from(_bilibiliMergeNotified).forEach(gid => {
-            if (!gidSet.has(`${gid}`)) {
-              _bilibiliMergeNotified.delete(gid)
-            }
-          })
-          capSet(_bilibiliMergeNotified, 500)
+        if (_completeNotifier.size > 0) {
+          _completeNotifier.forgetGids(Array.from(gidSet))
         }
       }
       function resolveErrorReason(errorCode, errorMessage = '') {
@@ -4092,6 +4534,10 @@ writeFileSync(skipFlagPath, '1')
           const gid = t.gid ? `${t.gid}` : ''
           if (!gid) return false
           if (!activeStatuses.has(`${t.status || ''}`)) return false
+          // 「一对音视频」折叠记录不在这里修：记录的总长/已完成是两条流**求和**
+          // 出来的（单看数字判不出某一条流的状态），而且配对流程有自己的一套
+          // 完成判定与合并收尾，误判会把还在下的那条流从引擎里摘掉
+          if (t.isPair) return false
           if (checkTaskIsBT(t)) return false
           if (isMagnetTask(t)) return false
           const p = getTaskFullPath(t) || ''
@@ -4303,6 +4749,30 @@ onMounted(() => {
       if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') {
         document.addEventListener('visibilitychange', _visibilityHandler)
       }
+})
+
+// 播放器"边下边播"时要这个任务的**当前下载速度**（宿主用它和播放消耗比对，
+// 判断还能不能顺畅播下去）。主窗口本来就每秒同步任务列表，直接回报即可 ——
+// 主进程不必再单独建一条查引擎的通道。
+ipcRenderer.on('playback:query-speed', (_e, payload = {}) => {
+  try {
+    const gid = payload && payload.gid ? `${payload.gid}` : ''
+    if (!gid) {
+      return
+    }
+    // 「一对音视频」折叠成一条记录，播放的是**画面流**那一条：记录按成员 gid
+    // 也要能命中，且要取成员自己的速度（记录上的速度是两条流之和，会偏高）
+    const task = (taskStore.taskList || []).find(t => t && (`${t.gid}` === gid ||
+      (Array.isArray(t.pairGids) && t.pairGids.some(g => `${g}` === gid))))
+    const member = task && Array.isArray(task.pairMembers)
+      ? task.pairMembers.find(m => m && `${m.gid}` === gid)
+      : null
+    const speedSource = member || task
+    ipcRenderer.send('playback:report-speed', {
+      gid,
+      speed: speedSource ? Number(speedSource.downloadSpeed) || 0 : 0
+    })
+  } catch (_) {}
 })
 
 onUnmounted(() => {

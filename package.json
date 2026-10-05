@@ -1,6 +1,6 @@
 {
   "name": "lerxu",
-  "version": "v3.2.0-Beta4",
+  "version": "v3.2.0-Beta5",
   "description": "Lerxu",
   "homepage": "https://github.com/MochengCK/Lerxu",
   "author": {
@@ -24,6 +24,10 @@
     "preview": "vite preview",
     "build:extension": "node scripts/build-extension.js",
     "test:extension": "node test/extension/run.js",
+    "test:zuvrust": "node test/zuvrust/run.mjs",
+    "test:packaging": "node test/packaging/run.mjs",
+    "test:playback": "node --import ./test/playback/register-alias.mjs test/playback/run.mjs",
+    "test:taskpair": "node --import ./test/playback/register-alias.mjs test/taskpair/run.mjs",
     "lint:extension": "npx --yes web-ext@8 lint --source-dir $(ls dist/extension/artifacts/lerxu-webextension-firefox-*.zip | head -1)",
     "lint": "eslint --ext .js,.vue -f ./node_modules/eslint-friendly-formatter src",
     "lint:workflows": "node scripts/check-workflows.js",

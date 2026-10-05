@@ -98,7 +98,7 @@
   // 默认配置
   let config = {
     enabled: true,
-    formats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
+    formats: ['m4s', 'mp4', 'flv', 'm3u8', 'm3u', 'ts', 'm2ts', 'mts', 'cmfv', 'cmfa', 'mp2t', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ism', 'ismc', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
     autoCombine: true,
     excludeFormats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp', 'svg', 'ico', 'css', 'js', 'json', 'xml', 'html', 'htm', 'woff', 'woff2', 'ttf', 'otf', 'pdf', 'txt']
   }
@@ -245,6 +245,46 @@
     return false
   }
 
+  // 流媒体清单（HLS/DASH）的判定线索。
+  //
+  // 清单地址常常**没有扩展名**，或把类型藏在查询参数里（?format=hls / ?type=m3u8），
+  // 只靠扩展名会漏掉一大片真实地址；但也不能把 type=video 这种普通参数当成 HLS。
+  // 参数名统一按小写比较（mediaType / mediatype 都认）。
+  const MANIFEST_PARAM_KEYS = ['format', 'type', 'output', 'ext', 'suffix', 'filetype', 'file_type', 'mediatype', 'media_type', 'container', 'f', 'fmt']
+  const HLS_PARAM_VALUES = ['hls', 'm3u8', 'm3u', 'x-mpegurl']
+  const DASH_PARAM_VALUES = ['dash', 'mpd']
+  const HLS_PATH_HINTS = ['/hls/', '/hls_', '_hls.', 'playlist.m3u8', 'index.m3u8', 'master.m3u8', '/m3u8/']
+
+  // 返回 'm3u8' / 'mpd' / ''。只判清单本身，不把 .ts 这类分片当成清单。
+  const detectManifestKind = (url) => {
+    try {
+      const urlObj = new URL(url)
+      const pathLower = urlObj.pathname.toLowerCase()
+      const searchLower = urlObj.search.toLowerCase()
+      // 分片（.ts / m2ts / mts / cmfv / cmfa / mp2t）不是清单：即便路径里带 /hls/ 也不能当清单
+      if (/\.(ts|m2ts|mts|cmfv|cmfa|mp2t)$/.test(pathLower)) return ''
+      // 路径或查询串里出现 m3u8 / m3u（按词边界，避免把 m3u8x 之类误判）
+      const m3uRe = /(^|[^a-z0-9])m3u8?([^a-z0-9]|$)/
+      if (m3uRe.test(pathLower) || m3uRe.test(searchLower)) return 'm3u8'
+      // 路径以 .m3u8 / .m3u 结尾（可带查询串）
+      if (/\.m3u8?$/.test(pathLower)) return 'm3u8'
+      // 已知清单路径特征
+      if (HLS_PATH_HINTS.some(h => pathLower.includes(h))) return 'm3u8'
+      // DASH：路径以 .mpd 结尾
+      if (pathLower.endsWith('.mpd')) return 'mpd'
+      // 查询参数的值本身就是 HLS/DASH 语义
+      for (const [k, v] of urlObj.searchParams) {
+        if (!MANIFEST_PARAM_KEYS.includes(k.toLowerCase())) continue
+        const val = v.toLowerCase()
+        if (HLS_PARAM_VALUES.some(x => val === x || val.includes(x))) return 'm3u8'
+        if (DASH_PARAM_VALUES.includes(val)) return 'mpd'
+      }
+      return ''
+    } catch (e) {
+      return ''
+    }
+  }
+
   // 通用启发式媒体检测（适用于小众平台，当标准扩展名检测失败时）
   const detectMediaHeuristic = (url, mimeType) => {
     try {
@@ -296,9 +336,9 @@
         return isAudio ? 'm4a' : 'mp4'
       }
 
-      // 策略3：HLS/DASH 清单检测
-      if (pathLower.includes('m3u8') || searchLower.includes('m3u8') || params.get('format') === 'm3u8' || params.get('type') === 'hls') return 'm3u8'
-      if (pathLower.endsWith('.mpd') || params.get('format') === 'dash') return 'mpd'
+      // 策略3：HLS/DASH 清单检测（清单常常不带扩展名，或把类型藏在查询参数里）
+      const manifestKind = detectManifestKind(url)
+      if (manifestKind) return manifestKind
 
       return ''
     } catch (e) {
@@ -602,11 +642,16 @@
       'audio/opus': 'opus',
       'audio/vorbis': 'ogg',
       'audio/x-vorbis': 'ogg',
-      'application/x-mpegURL': 'm3u8',
+      'application/x-mpegurl': 'm3u8',
+      'application/mpegurl': 'm3u8',
+      'audio/mpegurl': 'm3u8',
+      'audio/x-mpegurl': 'm3u8',
+      'text/mpegurl': 'm3u8',
       'application/vnd.apple.mpegurl': 'm3u8',
       'application/dash+xml': 'mpd'
     }
-    return mimeToExt[mimeType.toLowerCase().split(';')[0]] || ''
+    // 去掉 `;charset=utf-8` 之类的参数、空白与大小写差异后再查表
+    return mimeToExt[mimeType.toLowerCase().split(';')[0].trim()] || ''
   }
 
   // 从URL参数中提取mime_type
@@ -758,6 +803,12 @@
           mimeLower.includes('mp2t') || mimeLower.includes('matroska') ||
           mimeLower.includes('webm') || mimeLower.includes('flv')) {
         log('Accepted by MIME type bypass:', mimeType, 'URL:', url.substring(0, 100))
+        return true
+      }
+      // application/octet-stream 太泛（大量普通文件都是它），只有地址明显是
+      // HLS 清单时才放行，不能整类通吃
+      if (mimeLower === 'application/octet-stream' && detectManifestKind(url) === 'm3u8') {
+        log('Accepted octet-stream HLS manifest:', url.substring(0, 100))
         return true
       }
     }
@@ -1487,7 +1538,7 @@
    *   页面上常有几十条分片，配上一条音频就会生成几十条"完整视频"条目，
    *   真正的清单反而被淹没（用户点名：分不清该点哪个）。
    */
-  const NON_PAIRABLE_EXTS = new Set(['m4s', 'm3u8', 'mpd', 'ts', 'm2ts', 'mts'])
+  const NON_PAIRABLE_EXTS = new Set(['m4s', 'm3u8', 'm3u', 'mpd', 'ism', 'ismc', 'ts', 'm2ts', 'mts', 'mp2t', 'cmfv', 'cmfa'])
   const isPairableStream = (r) => !!r && !NON_PAIRABLE_EXTS.has(`${r.ext || ''}`.toLowerCase())
 
   // 合并非M4S格式的音视频流（通用平台，如抖音等）

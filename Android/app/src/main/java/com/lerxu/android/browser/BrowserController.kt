@@ -25,6 +25,7 @@ import android.widget.FrameLayout
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.VelocityTracker
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
@@ -40,6 +41,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import java.net.HttpURLConnection
 import java.net.URI
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -122,6 +124,17 @@ class BrowserController(
          * 长视频页面的分片可能是上百个，每个都发一次请求既慢又费流量；列表里
          * 前几十条拿到真实大小就够用了，剩下的继续显示"大小未知"。
          */
+        /**
+         * 触发起播后，前几次轮询**只接受"不是分片"的挑源**（一次 200ms，6 次约 1.2s）。
+         *
+         * 为什么值得等：HLS 站点拉清单必然早于第一只分片，而嗅探列表是**最新在前**的
+         * —— 早先"最新那条 VIDEO"直接就是分片的概率极高，于是拿一只（加密的）分片当一路流
+         * 去播，两路播放各摔一次错（见 `VideoSniffer.playbackRank` 的说明）。
+         * 真等不到就放开（有些站点确实只有分片可见，那时候给用户一句说得清的话，
+         * 见 NativePlayerOverlay 的 segmentHint）。
+         */
+        private const val PLAY_WAIT_MANIFEST_TRIES = 6
+
         private const val MAX_SIZE_PROBES = 40
 
         /**
@@ -184,25 +197,6 @@ class BrowserController(
         private const val HOME_COLOR_TOKENS = 6
 
         /**
-         * 影视模式取页面内容的四拍（ms）。
-         *
-         * 与主题注入同一套思路（见 `onPageStarted`）：页面 DOM 是**异步渲染**的，
-         * 进影视模式的那一刻往往一个卡片都还没有，按几拍取、谁先拿到内容谁算数。
-         */
-        private val MOVIE_EXTRACT_DELAYS_MS = listOf(0L, 400L, 1200L, 2500L, 4000L, 6500L)
-
-        /** 最后一拍之后再等这么久才收尾（让这一拍的回调真正回来，见 `finishMovieExtract`）。 */
-        private const val MOVIE_EXTRACT_SETTLE_MS = 900L
-
-        /**
-         * 钉住影视模式后，连着几页都取不到内容（页面自己也没报视频）就自动退出。
-         *
-         * 分类页 / 列表页没有 `<video>`，进来只能靠提取；提取不到就是"这一页我们没东西可给"
-         * ——继续把人关在一个空壳里不如放回网页（这是"不被困住"的那条出路之一）。
-         */
-        private const val MOVIE_PIN_FAIL_LIMIT = 3
-
-        /**
          * 无痕窗口专用的 WebView profile 名（cookie / 站点数据 / 缓存自成一份）。
          *
          * 它在**应用启动时**被整个删掉（见 init）：无痕会话不跨进程，进程一结束
@@ -247,6 +241,9 @@ class BrowserController(
          */
         private const val HOME_SEARCH_ALL = 120
 
+        /** 同一页里"最近访问"那一组的条数上限（与 [HOME_SEARCH_ALL] 同一个口径）。 */
+        private const val HOME_HISTORY_ALL = 120
+
         /**
          * 必应深浅色 cookie（`SRCHHPGUSR`）要写的入口。
          *
@@ -262,6 +259,19 @@ class BrowserController(
          *  取 150ms：防抖只是为"别把中间态发出去"，而每次请求要付一个完整 RTT，
          *  这个值太大就成了纯粹的白等（原来 220ms，配上冷启动要 600ms+ 才见词）。 */
         private const val SUGGEST_DEBOUNCE_MS = 150L
+
+        /**
+         * 无痕 profile 的清理**每个进程只做一次**（见 [deleteIncognitoProfile]）。
+         *
+         * 这条口径是"清理启动时残留的无痕会话"：控制器却不止建一次 —— Activity
+         * 重建（切语言 / 换主题等 `recreate()`）会新建一个控制器，于是清理被重复
+         * 执行。而 [ProfileStore.deleteProfile] 是 `@UiThread` 的**同步**操作，
+         * 那一刻本进程很可能正有 WebView 挂在这个 profile 上（无痕标签、或刚刚
+         * 用过无痕）—— 删一个正在用的 profile 会把主线程卡住，用户看到的正是
+         * "切换语言程序卡死"。所以：只认**进程内的第一次**。
+         */
+        @Volatile
+        private var incognitoProfilePurged = false
     }
 
     /**
@@ -360,6 +370,18 @@ class BrowserController(
 
         /** 整屏覆盖的弹窗（登录罩 / 全屏弹窗）：坞干脆让开（滑走藏起来）。 */
         var bottomOverlayAll by mutableStateOf(false)
+            internal set
+
+        /**
+         * 网页**自己的底部导航**被"向上延伸"过（见 [injectDockAvoid]）—— 那条栏的背景
+         * 已经自己铺到底、内容也抬到坞之上了。
+         *
+         * 这一档恰恰**不要坞让位**（用户点名的口径："悬浮控制栏应该仍在底部，而是将网页的
+         * 底部导航栏向上扩展"），所以它不进 [bottomOverlayPx]。它只做一件事：告诉界面
+         * "网页底部那条带子已经有自己的背景了"，那条压暗渐变（`dockScrim`）因此淡掉，
+         * 别去把人家整条压暗。
+         */
+        var bottomBar by mutableStateOf(false)
             internal set
 
         /**
@@ -504,6 +526,10 @@ class BrowserController(
          * "退出应用"后就该没了。磁盘上还可能留着它那份 profile（cookie /
          * 站点数据 / 缓存）—— 启动时删掉即是清干净，而普通窗口那份
          *（默认 profile）分毫不受影响。崩溃 / 被回收走的是同一条路。
+         *
+         * **每个进程只删一次**（见 [incognitoProfilePurged]）：控制器会随
+         * Activity 重建再建一份，第二次起若还删，就是在删一个**本进程正在用**的
+         * profile（切语言卡死的那条路）。
          */
         deleteIncognitoProfile()
     }
@@ -544,15 +570,25 @@ class BrowserController(
         internal set
 
     /**
-     * 搜索页里的**历史查看页**（"查看更多"点开的那一层）是否在场。
+     * 搜索页里的**历史记录页**（"查看更多" / 「更多功能」里的"历史"点开的那一层）是否在场。
      *
-     * 与 [homePanelsOpen] 是一层套一层的关系：面板本身还开着，只是内容换成
-     * **只有搜索历史**、条数也不受面板那几条的限制。退出这一层回普通搜索界面，
+     * 与 [homePanelsOpen] 是一层套一层的关系：面板本身还开着，只是内容换成**整份历史**
+     * —— 最近访问与搜索历史两组都放到全部条数（搜索建议让位）。退出这一层回普通搜索界面，
      * 再退才离开搜索页。任何"离开搜索页"的路径（收起面板、开始输入、清空历史）
      * 都把它一起收回，免得下次聚焦进来先看到上一趟的那一页。
      */
     var homeHistoryView by mutableStateOf(false)
         internal set
+
+    /**
+     * 「一步跳到历史记录界面」的**待落标记**（见 [openHistoryPage]）。
+     *
+     * 起因是这条路可能从一个**外部网页**上发起：那就得先把自家首页载进来，而首页
+     * 就绪要等一次导航。标记活过一次导航 —— 所以它**不能**在 [closeHomePanels] 里
+     * 被清掉（导航一开始就会调它），只在两种时候作废：真正兑现（[applyPendingHistoryView]），
+     * 或用户中途拐去了别的网页（见 onPageStarted：落到非首页 = 这次跳转作废）。
+     */
+    private var pendingHistoryView = false
 
     /**
      * 面板要避开的底部高度（**CSS px**，界面下发）：坞本身 + 聚焦时多出来的前缀条。
@@ -568,8 +604,17 @@ class BrowserController(
     /** 地址栏当前输入（面板里的历史按它过滤）。 */
     private var homeQuery: String = ""
 
-    /** 浏览历史：全局一份，最近在前。落盘见 [persistHistory]。 */
-    private var history: List<HistoryEntry> = emptyList()
+    /**
+     * 浏览历史：全局一份、最近在前。落盘见 [persistHistory]。
+     *
+     * 做成 Compose 状态 + 只读出口，是因为它现在**有一个 App 侧的读者**（`BrowserHistorySheet`，
+     * 用户点名的那个历史弹窗）：弹窗开着时用户可能刚好完成一次导航，列表要跟着变；
+     * 私有的可变字段外面读不到，也没法触发重组。
+     */
+    private var historyState by mutableStateOf(emptyList<HistoryEntry>())
+
+    /** 全量浏览记录（界面只读；写入一律走 [recordVisit] / 那几个清除入口）。 */
+    val history: List<HistoryEntry> get() = historyState
 
     /** 这一次拿到的联想词（引擎给的）；空 = 还没发请求或这次没结果。 */
     private var homeSuggestions: List<String> = emptyList()
@@ -618,6 +663,18 @@ class BrowserController(
 
     /** 最近一次下发的让位带（px）：新页面注入时直接带上，别用脚本里的默认值。 */
     private var dockAvoidPad = 88
+
+    /**
+     * 坞**可见顶边**离屏幕底的距离（dp ≈ 页面里的 CSS px，界面实测下发）。
+     *
+     * 网页那条贴底整宽的**底部导航**按它向上延伸：延伸的量一直是个"坞占住了多高"
+     * 的问题，早先是按某台设备凑出来的常数（88 / 68）—— 换台设备（导航条 0 / 24 / 48dp）、
+     * 坞收起或展开，它就和坞的真实位置错开了，错开的方向正是用户看到的那条缝
+     *（"底部导航栏离底部控制栏太远，它们之间的间距应该减少"）。
+     * 现在由 [AppScreen] 里的坞把**自身实测的顶边**报下来，页面侧照它垫，
+     * 再减掉栏自己留的那段空档（见 `injectDockAvoid` 的 `barWant`）。
+     */
+    private var barPadPx = 0
 
     /**
      * 系统手势条那一截的高度（dp ≈ 页面里的 CSS px，界面下发）。
@@ -955,6 +1012,8 @@ class BrowserController(
      * 整个删掉就是"清干净"，而**普通窗口那份 profile 分毫不受影响**。
      */
     private fun deleteIncognitoProfile() {
+        if (incognitoProfilePurged) return
+        incognitoProfilePurged = true
         runCatching {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
                 ProfileStore.getInstance().deleteProfile(INCOGNITO_PROFILE)
@@ -1129,7 +1188,7 @@ class BrowserController(
         //（只有活动那个会在第一次进浏览器时真的加载，见 syncActiveView）
         restoreTabs()
         // 浏览历史同样跨启动保留：首页面板的"历史记录"要有东西可显示
-        history = BrowseHistory.decode(prefs.getString(PREF_BROWSE_HISTORY, null))
+        historyState = BrowseHistory.decode(prefs.getString(PREF_BROWSE_HISTORY, null))
         // 启动时对齐一次必应的深浅色 cookie（homeDark 的 setter 只在**变化**时跑，
         // 应用本来就是浅色时它不会触发 —— 那种情况下也要把偏好摆正）
         syncBingSchemeCookie()
@@ -1148,8 +1207,12 @@ class BrowserController(
      */
     fun persistTabs() {
         if (incognitoMode) return
-        val urls = tabs.map { it.url }
-        val titles = tabs.map { it.title }
+        val urls = tabs.map { persistUrlOf(it) }
+        val titles = tabs.map { tab ->
+            val persisted = persistUrlOf(tab)
+            if (persisted == tab.url) tab.title
+            else history.firstOrNull { it.url == persisted }?.title ?: tab.title
+        }
         val activeIndex = TabPersistence.activeIndexOf(urls, tabs.indexOfFirst { it.id == activeId })
         if (TabPersistence.isTrivial(urls)) {
             prefs.edit().remove(PREF_TABS).remove(PREF_TAB_ACTIVE).remove(PREF_TAB_TITLES).apply()
@@ -1165,11 +1228,40 @@ class BrowserController(
             // 自建访问栈：重启后"回退到上一层"靠它（WebView 的历史不跨进程）
             .putString(
                 PREF_TAB_HISTORY,
-                TabPersistence.encodeHistory(kept.map { it.visited.toList() })
+                TabPersistence.encodeHistory(kept.map { persistVisitedOf(it) })
             )
             .putInt(PREF_TAB_ACTIVE, activeIndex.coerceAtLeast(0))
             .apply()
         persistThumbnails(kept)
+    }
+
+    /**
+     * 这一页**该落盘成哪个地址**。
+     *
+     * 正常就是它自己的 URL。唯一的例外：停在自家首页、而自建访问栈里还压着上一页
+     *（用户在网页里点地址栏"过路"进搜索页，见 [loadHome] 的 keepHistory）——
+     * 这时存首页地址会被 [TabPersistence.isTrivial] 判成"什么都没开"，把整份记录
+     * 连同用户那个网页一起抹掉：搜索完直接退出应用，再进来标签页就没了（用户点名：
+     * "为什么重进应用，普通标签页就没了"）。改存**它来的那一页**，重启后恢复出的
+     * 就是用户真正在读的那一页。
+     */
+    private fun persistUrlOf(tab: Tab): String {
+        if (!tab.url.startsWith(HOME_URL)) return tab.url
+        return tab.visited.lastOrNull { !it.startsWith(HOME_URL) } ?: tab.url
+    }
+
+    /**
+     * 与 [persistUrlOf] 配套：存进去的那条地址栈也要**截到那一页为止**。
+     *
+     * 不截的话恢复出来是 `[A, 首页, A]`（见 restoreTabs 末尾那条补写），用户从 A
+     * 按返回会先退回**首页**（一个没有历史的搜索页），读起来莫名其妙 —— 那是被
+     * 我们临时路过的一层，本来就不该留在他的历史里。
+     */
+    private fun persistVisitedOf(tab: Tab): List<String> {
+        val target = persistUrlOf(tab)
+        if (target == tab.url) return tab.visited.toList()
+        val cut = tab.visited.indexOfLast { it == target }
+        return if (cut >= 0) tab.visited.take(cut + 1) else listOf(target)
     }
 
     /** 缩略图文件目录（`filesDir/tab-thumbs/<下标>.jpg`）。 */
@@ -1309,6 +1401,13 @@ class BrowserController(
     val bottomOverlayAll: Boolean get() = active.bottomOverlayAll
 
     /**
+     * 网页自己的**底部导航**已被"向上延伸"（那条栏自己把背景铺到底、内容抬到坞之上）。
+     *
+     * 它**不参与让位计算**（坞仍在底部，用户点名），界面只用它来收掉那条压暗渐变。
+     */
+    val bottomBarPresent: Boolean get() = active.bottomBar
+
+    /**
      * 当前页报上来的网页底色（`0xRRGGBB`，-1 = 量不出来）：顶部那一截系统栏
      * 用它当底色（见 [DockBridge.bg] 与 `BrowserScreen` 里的 `stripColor`）。
      */
@@ -1365,18 +1464,12 @@ class BrowserController(
      */
     fun selectTab(id: Long) {
         if (id == activeId || tabs.none { it.id == id }) return
-        // 影视模式盖的是**整屏**、状态也是"台前这一屏"的：切走就得退出，否则它会盖到
-        // 新标签页的网页上。退出**不拉黑这一站**（见 [leaveMovieModeForTabSwitch]），
-        // 切回来时重新探一次：还成立就自动回影视模式
-        val leavingMovie = movieMode
-        if (leavingMovie) leaveMovieModeForTabSwitch(active)
         // 不在切换瞬间抓旧页的缩略图：PixelCopy 是异步的，等它执行时窗口里
         // 已经换成新页（抓出来会是**别的页**）。缩略图靠"页面稳定时持续维持"，
         // 旧页离开时手里那张就是它最后一次稳定可见的样子
         activeId = id
         syncActiveView()
         persistTabs()
-        if (leavingMovie) restartMovieProbe(active)
     }
 
     /** 展开网格时"先抓帧、后形变"的令牌：期间被关掉（或又点了一次）就作废。 */
@@ -1460,7 +1553,14 @@ class BrowserController(
         tabs.firstOrNull { it.id == thumbRefreshTabId }?.let { captureThumbnail(it) }
     }
 
-    /** 滚动停止约 180ms 后补一张缩略图（去抖：滚动中抓到的也是半截画面）。 */
+    /**
+     * 滚动停止约 180ms 后补一张缩略图（去抖：滚动中抓到的也是半截画面）。
+     *
+     * **不要再加"最小间隔"之类的节流**（2026-10-04 试过一次 1.5s，用户当场否掉：
+     * "缩略图这样弄会导致缩略图画面与实际画面不一致"）：卡片预览要的就是**当下这一帧**，
+     * 省下来的那点读取开销换不来"预览是错的"。滚动结束时抓一次本来就是这笔开销的
+     * 正确代价 —— 真要省，得从"能不能少读一点像素"下手，而不是少抓几次。
+     */
     private fun scheduleThumbnailRefresh(tab: Tab) {
         thumbRefreshTabId = tab.id
         main.removeCallbacks(thumbRefreshTask)
@@ -1696,9 +1796,6 @@ class BrowserController(
         val tab = tabs[index]
         // 承载播放器的那一页被关掉了：播放器跟着走（位置与声音都留不住）
         if (tab.id == playerFrameTab) nativePlayStop = true
-        // 关掉的正是影视模式盖着的那一页：模式与提取出来的内容一起走（那一页都没了）
-        val closingMovie = movieMode && tab.id == activeId
-        if (closingMovie) leaveMovieModeForTabSwitch(tab)
         releaseTab(tab)
         tabs.removeAt(index)
 
@@ -1717,8 +1814,6 @@ class BrowserController(
             val next = tabs.getOrNull(index) ?: tabs.last()
             activeId = next.id
             syncActiveView()
-            // 影视模式刚被上面那一句收掉：接手的这一页如果是影视页，让它自己重新举手
-            if (closingMovie) restartMovieProbe(active)
         }
         persistTabs()
     }
@@ -1728,6 +1823,32 @@ class BrowserController(
         openTabsToken++
         tabsOpen = false
         gridFollow = -1f
+    }
+
+    /**
+     * **全部删除**（标签网格底部那枚按钮第二次点击）：把当前窗口的标签页一次关光。
+     *
+     * 三条口径（用户点名）：
+     * - 删完**仍停留在标签页**（网格不关）—— 用户还要在那儿继续开新页；
+     * - 不变量"至少一个标签页"照旧成立：删光后补一张**空白**新页（网格里那一格
+     *   显示"新标签页"占位，而不是凭空多出一张首页卡片）；
+     * - 承载原生播放器的那一页也在其中：播放器跟着结束（与关单页同一套判定）。
+     *
+     * 无痕窗口同理只清当前窗口这一套（无痕标签本来就不落盘）。
+     */
+    fun closeAllTabs() {
+        if (tabs.isEmpty()) return
+        if (tabs.any { it.id == playerFrameTab }) nativePlayStop = true
+        tabs.toList().forEach { releaseTab(it) }
+        tabs.clear()
+        activeId = 0L
+        val fresh = Tab(nextTabId++)
+        tabs += fresh
+        activeId = fresh.id
+        syncActiveView()
+        // 全是空白页 → [TabPersistence.isTrivial] 判定"什么都没开"，
+        // 落盘记录与缩略图一起清掉（下次启动不会凭空多出标签）
+        persistTabs()
     }
 
     /**
@@ -1865,6 +1986,15 @@ class BrowserController(
         /** 0=未定, 1=本串触摸不归手势管, 2=横向导航, 3=下拉刷新 */
         private var tracking = 0
 
+        /**
+         * 甩动速度计（px/s）：横滑导航的收尾判据有一半看它（见 [finish]）。
+         *
+         * 为什么要它（用户点名："通过左滑右滑触发的回退和前进很难触发"）：只看**行程**
+         * 的话，用户本能地用"甩"的方式滑，甩得快、行程短，于是每次都差一点、什么都不发生。
+         * 成熟的返回手势都是"甩到就认"。
+         */
+        private val velocity = VelocityTracker.obtain()
+
         init {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1872,7 +2002,28 @@ class BrowserController(
             )
         }
 
-        private fun navRange() = (width * 0.30f).coerceAtLeast(1f)
+        /**
+         * 横滑的**方向判据**（横:竖 的比值）：`|dx| > |dy| * 1.15` ⇒ 偏离水平 41° 以内都算横滑。
+         *
+         * 早先是 1.5（33°），手指横滑时天然会带一点上下，那档经常把一次正经的右滑判成"竖滑"
+         * 而当场放弃 —— 用户点名"很难触发"里有一份就是它。
+         */
+        private val SwipeAngle = 1.15f
+
+        /** 甩动阈值（dp/s）：松手时速度甩过它、方向也对，就直接认作导航（见 [finish]）。 */
+        private val FlingSpeedDp = 600f
+
+        /** 走"甩"那条路时最少要带出去多少行程（`swipeNavProgress` 的比例）——挡"原地抖一下"。 */
+        private val FlingMinProgress = 0.30f
+
+        /**
+         * 横滑**要拖过多少**才算数：屏宽的 18%（400dp 的屏上约 72dp）。
+         *
+         * 早先是 30%（≈120dp 的行程），而且必须全程保持接近水平 —— 一次很自然的右滑
+         * 常常差一点、什么都不发生（用户点名"很难触发"）。收窄到 18% 之后，再加上
+         * [finish] 里那条"甩到就认"，一次干脆的滑动就够。
+         */
+        private fun navRange() = (width * 0.18f).coerceAtLeast(1f)
         private fun pullRange() = resources.displayMetrics.density * 96f
 
         /**
@@ -1882,10 +2033,36 @@ class BrowserController(
          * 网页里的横向滑动（轮播图、图片查看器、卡片侧滑）几乎都从屏幕中间开始，
          * 之前一律被当成"后退"抢走 —— 用户点名过「网页里有东西要右滑时，
          * 右滑会触发后退」。中间起手的横滑现在原样留给网页。
+         *
+         * **宽度必须让开系统自己那条边缘手势带**（2026-10-03 用户点名"左滑右滑触发的
+         * 回退和前进很难触发"）：Android 10+ 的系统返回手势就占着屏幕最边上那一条，
+         * 起手落进去的话触摸根本轮不到我们 —— 早先写死的 24dp 在多数机器上整条都在
+         * 那条带子里，于是"几乎划不出来"。现在取 `系统边距 + 20dp`（读不到 insets 时
+         * 兜底 44dp），起手点就能落在系统带子**之外**、又仍然贴着边。
          */
-        private fun edgeZone() = resources.displayMetrics.density * 24f
+        private fun edgeZone(): Float {
+            val density = resources.displayMetrics.density
+            val system = runCatching {
+                ViewCompat.getRootWindowInsets(this)
+                    ?.getInsets(WindowInsetsCompat.Type.systemGestures())
+                    ?.let { maxOf(it.left, it.right) } ?: 0
+            }.getOrDefault(0)
+            return maxOf(density * 44f, system + density * 20f)
+        }
+
+        /** 速度计喂数据（DOWN 清表、MOVE 累积）。 */
+        private fun feed(ev: MotionEvent) {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    velocity.clear()
+                    velocity.addMovement(ev)
+                }
+                MotionEvent.ACTION_MOVE -> runCatching { velocity.addMovement(ev) }
+            }
+        }
 
         override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+            feed(ev)
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = ev.x
@@ -1898,7 +2075,10 @@ class BrowserController(
                     val dx = ev.x - downX
                     val dy = ev.y - downY
                     tracking = when {
-                        abs(dx) > slop && abs(dx) > abs(dy) * 1.5f -> {
+                        // 方向判据从 1.5 放宽到 1.15（33° → 41°）：手指横滑时天然会带一点
+                        // 上下，1.5 那档经常把一次正经的右滑判成"竖滑"、当场放弃
+                        //（用户点名"很难触发"里也有它一份）
+                        abs(dx) > slop && abs(dx) > abs(dy) * SwipeAngle -> {
                             val edge = edgeZone()
                             val fromEdge =
                                 if (dx > 0) downX <= edge else downX >= width - edge
@@ -1921,6 +2101,9 @@ class BrowserController(
         }
 
         override fun onTouchEvent(ev: MotionEvent): Boolean {
+            // 速度计要从**这一侧**也喂：拦下来之后事件都走这里，不喂的话收尾时算不出速度，
+            // 那条"甩到就认"就永远不成立
+            feed(ev)
             if (tracking != 2 && tracking != 3) return false
             when (ev.actionMasked) {
                 MotionEvent.ACTION_MOVE -> track(ev)
@@ -1941,14 +2124,32 @@ class BrowserController(
             }
         }
 
+        /**
+         * 松手时的收尾判定：**拖够行程** 或者 **往同一方向干脆地甩一下**就执行。
+         *
+         * 甩那一条是这次订正的重点（用户点名："通过左滑右滑触发的回退和前进很难触发"）：
+         * 之前只认"行程 ≥ [navRange]"（屏宽 30%），而人滑返回手势本能是**甩**——行程短、
+         * 速度快，于是十次有八次什么都不发生。现在甩过 [FlingSpeedDp] 并且已经带出去
+         * [FlingMinProgress] 一截就认（要求那点行程是为了挡掉"原地抖一下"）。
+         */
         private fun finish(ev: MotionEvent) {
             track(ev)
             when (tracking) {
-                2 -> if (swipeNavProgress >= 1f) {
-                    when (swipeNav) {
-                        SwipeNav.Forward -> goForward()
-                        SwipeNav.Back -> goBack()
-                        else -> Unit
+                2 -> {
+                    velocity.computeCurrentVelocity(1000)
+                    val vx = velocity.xVelocity
+                    val flingPx = resources.displayMetrics.density * FlingSpeedDp
+                    val flung = when (swipeNav) {
+                        SwipeNav.Back -> vx >= flingPx
+                        SwipeNav.Forward -> vx <= -flingPx
+                        else -> false
+                    }
+                    if (swipeNavProgress >= 1f || (flung && swipeNavProgress >= FlingMinProgress)) {
+                        when (swipeNav) {
+                            SwipeNav.Forward -> goForward()
+                            SwipeNav.Back -> goBack()
+                            else -> Unit
+                        }
                     }
                 }
                 3 -> if (pullProgress >= 1f) startPullRefresh()
@@ -2049,8 +2250,6 @@ class BrowserController(
         view.addJavascriptInterface(PageVideoBridge(tab), "LerxuPageVideo")
         // 那个 <video> 的位置：原生播放器据此贴在网页里原来的位置上
         view.addJavascriptInterface(VideoRectBridge(tab), "LerxuVideoRect")
-        // 影视模式的探测回传：这一页有没有像样的视频元素（见 MovieMode）
-        view.addJavascriptInterface(MovieBridge(tab), "LerxuMovie")
         view.webViewClient = browserClient
         view.webChromeClient = browserChromeClient
         // 现代模式的收起/展开**不再挂在这里**：`View.setOnScrollChangeListener` 在
@@ -2108,8 +2307,7 @@ class BrowserController(
             tab.toolsDocStart?.remove()
             tab.toolsDocStart = WebViewCompat.addDocumentStartJavaScript(
                 view,
-                AdBlocker.injectJs(adBlockEnabled) + PageVideoDetector.INJECT_JS +
-                NavAutoHide.INJECT_JS + MovieMode.INJECT_JS,
+                AdBlocker.injectJs(adBlockEnabled) + PageVideoDetector.INJECT_JS,
                 setOf("*")
             )
         }
@@ -2129,7 +2327,6 @@ class BrowserController(
             view.removeJavascriptInterface("LerxuSniffer")
             view.removeJavascriptInterface("LerxuHome")
             view.removeJavascriptInterface("LerxuDock")
-            view.removeJavascriptInterface("LerxuMovie")
             view.stopLoading()
             view.destroy()
         }
@@ -2192,6 +2389,26 @@ class BrowserController(
             // net::ERR_UNKNOWN_URL_SCHEME，看起来像"页面加载失败"。
             if (request.isForMainFrame && isExternalScheme(request.url)) {
                 openExternalScheme(request.url)
+                return true
+            }
+            // 弹窗 / 脚本跳转的广告：**没有用户手势**的主框架导航落到广告域就掐掉
+            //（`window.open` 在"禁用多窗口"下会走这里；有手势的那一类放行 ——
+            // 那是用户自己点出来的，拦了反而像"点了没反应"）。
+            // 判据与网络层同一份域名 / 路径表（见 AdBlocker）
+            if (adBlockEnabled && request.isForMainFrame && !request.hasGesture() &&
+                AdBlocker.isAdUrl(url)
+            ) {
+                return true
+            }
+            // **用户自己点出来的那一下，也要看落点是不是"确定的广告域"**（2026-10-03，
+            // 调研里影视站最常见的套路）：页面上的"立即播放 / 高速播放"是假的，一点就把
+            // 整页导航到广告落地页 —— 那种导航是**带手势**的，上面那一条放行它。
+            // 这里只对 [AdBlocker.isAdHost]（纯域名表，不含 `/ads/` 这类可能误伤的路径判据）
+            // 收紧：域名表里的域不存在"正常目的地"，拦掉它最坏也就是回到原页面让用户
+            // 再点一次真正的播放器；放过去就是一张糊脸的广告页
+            if (adBlockEnabled && request.isForMainFrame && request.hasGesture() &&
+                AdBlocker.isAdHost(url)
+            ) {
                 return true
             }
             return false
@@ -2259,6 +2476,8 @@ class BrowserController(
             // 上一页那层"贴底整宽弹窗"随导航作废：不清的话新页面一进来就被顶起来
             tab.bottomOverlayPx = 0
             tab.bottomOverlayAll = false
+            // 底部导航"向上延伸"这条也要作废：那条栏属于上一个页面
+            tab.bottomBar = false
             // 换页了坞也回展开态：跟手收起可能停在半路（滑到一半点了链接），
             // 而新页面是从顶部开始的 —— 留着半收的坞读起来就是"卡住了"。
             // 只认**当前标签页**的导航：后台标签加载完不该把坞弹开
@@ -2268,27 +2487,6 @@ class BrowserController(
             //（新页面重新嗅到同一个地址时，还要再问一次长度）。
             if (tab.sniffed.isNotEmpty()) tab.sniffed.clear()
             probedSizes.clear()
-            // 影视模式跟着**这一页**走，但"从我们自己的影视页里点出去"要留在模式里
-            //（见 [openInMovieMode]）：同 host、且不是回自家首页时才钉住 —— 分类页 /
-            // 列表页本来就没有 `<video>`，再走一遍判据必然落空。
-            // 跨站 / 回首页 / 手动敲地址照旧退出，新页面按同一套判据重新决定。
-            // `movieModeOffHosts`（用户手动关过的站）也一并清掉：那份记忆只用来挡住
-            // "关掉之后同一页上立刻又被自动打开"，**不该跨导航生效** —— 否则这一站就
-            // 再也进不去了，只能重启 App。换了页 / 重新加载就是新的一次判定。
-            val newHost = TabNaming.host(url.orEmpty())
-            val keepPinned = movieMode && moviePinHost != null && newHost.isNotEmpty() &&
-                newHost == moviePinHost && !url.orEmpty().startsWith(HOME_URL)
-            if (keepPinned) {
-                // 这一页的内容要重新提取（提取结果与标签页的地址对得上才算数）
-                clearMoviePageData()
-                movieExtracting = true
-            } else {
-                movieMode = false
-                moviePinHost = null
-                clearMoviePageData()
-            }
-            movieVideoSeen = false
-            movieModeOffHosts.clear()
             // 任何一次开始加载都意味着旧页面上的输入状态作废。
             // 面板只在自家首页有意义，导航一开就收起（联想词请求也一起放掉）
             closeHomePanels()
@@ -2299,6 +2497,9 @@ class BrowserController(
                 tab.referer = url
                 // 自家首页按地址前缀判定（主题走注入，URL 上不再带参数）
                 tab.isHomePage = url.startsWith(HOME_URL)
+                // 落到**非首页** = 用户中途拐去别的网页了：那一趟"跳到历史记录界面"
+                // 就此作废，别等到下次回首页时凭空落进去
+                if (!tab.isHomePage) pendingHistoryView = false
                 // 首页没有注入脚本、报不上底色：不带这一笔，它就会一直沿用
                 // **上一页**的颜色（从深色站回首页，顶上留着一条深色带子）。
                 // 清成"没有" = 顶部那一截退回应用底色，正好是首页自己的底色
@@ -2330,21 +2531,16 @@ class BrowserController(
             if (tab.isHomePage) {
                 refreshHomeConfig(tab)
                 // 首页刚加载完（可能是"地址栏已聚焦时打开首页"这一路径）：
-                // 面板内容补推一次，否则要等用户再敲一个字才出来
-                pushHomePanels()
+                // 面板内容补推一次，否则要等用户再敲一个字才出来。
+                // 若这一趟是「更多功能 → 历史」落下来的，[applyPendingHistoryView]
+                // 会直接把面板开在历史那一层并推一次 —— 那就不要再推一遍空的搜索页
+                if (!applyPendingHistoryView()) pushHomePanels()
                 // 顺手把联想词端点的连接热起来（见 warmUpSuggest）：从"首页就绪"
                 // 到"用户敲下第一个字"之间还有一段空档，正好用来走 DNS / TCP / TLS
                 if (tab.id == activeId) warmUpSuggest()
             } else {
                 injectSniffer(view)
                 applyWebTheme(tab)
-                // 页面加载完成 = 判据里的"视频元素"与"视频流"两个信号这时多半都到齐了，
-                // 评估一次影视模式（该开就开）
-                val hadMovieMode = movieMode
-                evaluateMovieMode(tab)
-                // 模式本来就开着（同站钉住时的正常换页）：这一页的内容也要重新取一份 ——
-                // 上面那次评估管的是"要不要开"，这里管"开了之后读什么"
-                if (hadMovieMode && tab.id == activeId) scheduleMovieExtract(tab)
             }
             // 首页是这一页的**根**：把它变成历史里的第一项 —— 清掉 WebView 自己的
             // 前后退列表，自建栈也只留首页。否则退回首页后返回键还是亮的，
@@ -2444,12 +2640,15 @@ class BrowserController(
             if (!isReload && !url.isNullOrEmpty() && urlPath(previous) != urlPath(url)) {
                 if (tab.sniffed.isNotEmpty()) tab.sniffed.clear()
                 probedSizes.clear()
-                // 影视模式里换"页"（SPA 换个视频 / 换个分类，页面不重新加载）：内容重取一份。
-                // onPageFinished 不会再来，这是这类换页唯一的取数时机
-                if (movieMode && tab.id == activeId) {
-                    clearMoviePageData()
-                    scheduleMovieExtract(tab)
-                }
+                // 承载播放器的那一页**换了视图**：上一路流不该再占着屏幕
+                //（用户点名："我在网页中都切换到另一个页面了，原生播放器却还在，
+                //  并且还在播放之前的那个视频"）。真导航那一路（onPageStarted）已经停了，
+                // 这一支补的是 **pushState 型站点** —— 它们换页不触发 onPageStarted，
+                // 于是播放器留在屏幕上继续放老片子。
+                //
+                // 判据与上面清嗅探列表**同一把尺**（只有路径真的变了才算换页）：
+                // 只动查询串 / 锚点（切画质、站内埋点）不会把正在看的片子掐掉。
+                if (tab.id == playerFrameTab) onHostPageNavigated(tab)
             }
             // 自建访问栈：每次历史变化都记一笔（后退 = 回到栈里的上一项，
             // 于是把栈顶弹掉；其余的新地址入栈）。WebView 的列表不跨进程，
@@ -2517,6 +2716,19 @@ class BrowserController(
         override fun onReceivedTitle(view: WebView, title: String?) {
             val tab = tabOf(view) ?: return
             tab.title = title.orEmpty()
+        }
+
+        /**
+         * 页面自己报上来的图标（`<link rel=icon>` 那一枚）：收进 [FaviconStore]。
+         *
+         * 这是历史弹窗左边那枚图标的**最准来源**（页面声明什么就是什么），而且顺带解决了
+         * "只有 `/favicon.ico`、拿不到 `<link>` 图标"的站点。代价是它只覆盖本次真的打开过的
+         * 页 —— 历史里那些没打开的站点由 [FaviconStore] 自己去抓 `favicon.ico` 兜着。
+         *
+         * 按**当前页的域名**存：同一站的多个路径共用一枚图标。
+         */
+        override fun onReceivedIcon(view: WebView, icon: Bitmap) {
+            FaviconStore.put(view.url.orEmpty(), icon)
         }
 
         /**
@@ -2740,6 +2952,16 @@ class BrowserController(
     var nativePlayRequest by mutableStateOf<SniffedResource?>(null)
         private set
 
+    /**
+     * 上面那个请求**要不要自动播**：false = 常规起播；true = 页面里那个播放器本来就停着，
+     * 我们只是把它换成自己的（见 [PageVideoBridge.paused]）。
+     *
+     * 与 [nativePlayRequest] 成对使用，且**必须先写它再写请求** —— 界面是
+     * `LaunchedEffect(nativePlayRequest)` 里读它的（见 AppScreen 的 `playingStartPaused`）。
+     */
+    var nativePlayPaused by mutableStateOf(false)
+        private set
+
     fun clearNativePlayRequest() {
         nativePlayRequest = null
     }
@@ -2818,6 +3040,22 @@ class BrowserController(
     /** 播放器此刻该不该画：宿主标签页在台前，而且有位置可画（量到的，或者超时兜底）。 */
     val playerOnScreen: Boolean
         get() = playerFrameTab == activeId && (playerFrame != null || playerRectFallback)
+
+    /**
+     * 承载播放器的那一页此刻是不是**在台前**（还不管位置报没报到）。
+     *
+     * 为什么要单独有这么一条：App 侧算"这一层要不要画"时，两个判据各自都不够 ——
+     * ① 只用 [playerOnScreen]：它还要求"位置已经报到"，起播头几帧必然是 false，
+     * 于是播放器会**晚一拍**才出现（`playerRectFallback` 也要等超时）；
+     * ② 只用"App 侧自己有没有在播"（`playing != null`）：切到别的标签页之后这条仍然成立
+     * （声音是故意继续放的），那一层就会**一直悬浮在别的页面上**
+     * —— 用户点名："原生播放器切换页面后，它仍显示"。
+     *
+     * 判据就是"宿主页 == 当前页"：`playerFrameTab` 是接管时钉下的那一页，切标签页时它不动
+     * （见 [setNativePlayerActive]），所以这一个比较就能区分"在台前"和"被切走了"。
+     */
+    val playerHostInFront: Boolean
+        get() = playerFrameTab >= 0L && playerFrameTab == activeId
 
     /**
      * 位置变化时的**直连出口**（覆盖层在装上时挂进来）。
@@ -2910,457 +3148,6 @@ class BrowserController(
         nativePlayStop = false
     }
 
-    // ─── 影视模式（见 [MovieMode]） ───
-
-    /**
-     * 影视模式开着：网页被自家的影视页整屏盖住（见 `MovieScreen`）。
-     *
-     * 它是**全局一个**（不是每标签页一个）：影视模式是"当前这一屏在看什么"的状态，
-     * 而屏幕上永远只有一张标签页在台前；换页 / 换标签会把它复位（见 onPageStarted），
-     * 新页面按同一套判据重新决定要不要开。
-     */
-    var movieMode by mutableStateOf(false)
-        private set
-
-    /**
-     * 页面脚本报上来的"这一页有没有像样的视频元素"（见 [MovieMode.INJECT_JS]）。
-     *
-     * 它是判据里 `hasPlayerVideo` 的**唯一来源**：页面侧从脚本安装那一刻起就低频复检，
-     * 所以它一直是当下的真值，不是"进过影视模式"的残留。
-     */
-    private var movieVideoSeen = false
-
-    /** 页面脚本报上来的 `document.title`（影视页标题，见 [moviePageTitle]）。 */
-    private var movieTitle = ""
-
-    /**
-     * **用户手动关过**影视模式的 host（内存记忆，不落盘）。
-     *
-     * 为什么必须有它：影视模式是自动开启的，用户点"关闭影视模式"之后页面条件依然
-     * 成立（脚本心跳每 2s 还会再报一次），下一次评估会立刻又把它打开 —— 读起来就是
-     * "按钮坏了 / 点了没反应"。
-     *
-     * 但它**只挡到下一次导航为止**（见 `onPageStarted` 里的 `clear()`）：它是用来
-     * 压住"同一页上关掉又立刻弹回来"的，不是"这一站永久拉黑"。跨导航一直生效的话，
-     * 用户关掉之后就再也进不去了（第一版没有手动入口），只能重启 App。
-     */
-    private val movieModeOffHosts = mutableSetOf<String>()
-
-    /**
-     * 已知是影视站的 host：**进过一次影视模式就记住**（见 [evaluateMovieMode]）。
-     *
-     * 有了它，同一站的首页 / 详情页 / 搜索页也直接用我们的 UI —— 那几种页面本来就没有
-     * `<video>` 也没有流，只按原判据永远进不来（用户口径："详情页也应该用我们的 UI，包括首页"）。
-     */
-    private val movieSiteHosts = mutableSetOf<String>()
-
-    /** 影视页标题：页面脚本报的那一份优先，空则退回 WebView 标题。 */
-    val moviePageTitle: String get() = movieTitle.ifBlank { pageTitle }
-
-    /**
-     * 影视页的"外壳"：**从网页 DOM 只读提取**（见 [MoviePageExtractor]），由我们重建。
-     *
-     * 三份数据（站点分类导航 / 内容卡片 / 推荐区块）都是"台前这一屏"的状态，与
-     * [movieMode] 同寿命：换页、退出模式、换标签页都会清掉（见 [clearMoviePageData]）。
-     */
-    var movieNav by mutableStateOf<List<MoviePageExtractor.MovieNavItem>>(emptyList())
-        private set
-
-    /** 主内容卡片：封面 + 名称 + 清晰度（名称压在封面左下角，见 `MovieScreen`）。 */
-    var movieCards by mutableStateOf<List<MoviePageExtractor.MovieCard>>(emptyList())
-        private set
-
-    /** 站点的推荐区块（猜你喜欢 / 相关推荐）。 */
-    var movieSections by mutableStateOf<List<MoviePageExtractor.MovieSection>>(emptyList())
-        private set
-
-    /**
-     * 站点的评论区（昵称 / 正文 / 时间 / 头像）。
-     *
-     * 用户口径：**网页有评论区就显示评论区**，只是把它的样式换成我们自己的（早期那版
-     * "由推荐区取代"已作废）。这里只读"谁说了什么"，样式全在 `MovieScreen` 里。
-     */
-    var movieComments by mutableStateOf<List<MoviePageExtractor.MovieComment>>(emptyList())
-        private set
-
-    /** 主内容墙**自己的名字**（站点给的那一行，如「相关推荐」）；空则见 [movieBlockTitle]。 */
-    private var movieMainTitle = ""
-
-    /** 评论区自己的标题（如「评论」）；空则界面退回默认文案。 */
-    var movieCommentTitle by mutableStateOf("")
-        private set
-
-    /** 站点搜索表单的提交地址与关键词参数名（都空 = 这一页没找到，界面不显示搜索框）。 */
-    private var movieSearchAction = ""
-    private var movieSearchParam = ""
-
-    /** 站点搜索框的占位文字（有就用它当提示语，比我们自己的文案更贴站点）。 */
-    var movieSearchHint by mutableStateOf("")
-        private set
-
-    /** 站内搜索能不能用（界面据此决定显不显示顶栏那个搜索框）。 */
-    val movieSearchReady: Boolean
-        get() = movieSearchAction.isNotEmpty() && movieSearchParam.isNotEmpty()
-
-    /**
-     * 站内搜索：**用站点自己的**搜索表单拼地址（表单的 action + 参数名 + 关键词，见
-     * [MoviePageExtractor] 里的 `searchOf`）。
-     *
-     * 走 [openInMovieMode] 那条路（同 host 钉住），所以搜完还是我们这一屏，而不是掉回网页。
-     */
-    fun searchInMovieMode(query: String) {
-        val q = query.trim()
-        if (q.isEmpty() || !movieSearchReady) return
-        val sep = if (movieSearchAction.contains('?')) '&' else '?'
-        openInMovieMode(movieSearchAction + sep + movieSearchParam + "=" + Uri.encode(q))
-    }
-
-    /**
-     * 主内容墙左上角那一行板块名（用户口径：每个内容板块左上角都要显示板块名）。
-     *
-     * 站点自己给了名字就用它；没给就退回**当前页面对应的那个分类名**（分类页就是
-     * 「电影」「连续剧」这一档）—— 站点不给板块名的页面基本都是分类页 / 列表页，
-     * 而那种页面该显示的正是这个分类名。
-     */
-    val movieBlockTitle: String
-        get() {
-            if (movieMainTitle.isNotEmpty()) return movieMainTitle
-            val cur = urlPath(active.url)
-            // 站点没给名字就退回**当前分类名**；连分类都对不上就**空着**（界面不画这一行）
-            // —— 拿页面标题顶上去读起来就是"标题被渲染成了别的文字"（用户点名过）
-            return movieNav.firstOrNull { urlPath(it.url) == cur }?.text.orEmpty()
-        }
-
-    /**
-     * 影视页里那块 16:9 占位的**真实矩形**（窗口坐标，单位 dp）：由 `MovieScreen` 量出来喂进来。
-     *
-     * 为什么不让播放器那边自己算：算式原本有两个输入（内容区顶、我们顶栏的高度）分散在
-     * 两处，只要有一处没跟上（顶栏高度变了、上面多了一层内边距），播放器就会**压住顶栏**、
-     * 或者在它和占位之间裂出一条空白（用户点名过这两个）。量真东西不会错。
-     */
-    var movieStageRect by mutableStateOf<RectF?>(null)
-        internal set
-
-    /** 正在取数：界面显示加载态（已经有内容了就只在后台更新）。 */
-    var movieExtracting by mutableStateOf(false)
-        private set
-
-    /** 取完了但一无所获：界面显示空态（连着 [MOVIE_PIN_FAIL_LIMIT] 页空还会自动退出，见 [finishMovieExtract]）。 */
-    var movieExtractFailed by mutableStateOf(false)
-        private set
-
-    /** 封面图过防盗链要带的来源页（见 [CoverImageLoader]）：就是这一页的地址。 */
-    val movieReferer: String get() = active.url
-
-    /** 封面图过防盗链要带的 UA：与网页同一条（同 [buildHeaders] 的口径）。 */
-    val movieUserAgent: String
-        get() = runCatching { active.webView?.settings?.userAgentString }.getOrNull().orEmpty()
-
-    /** 取数的竞态令箭：每次重新调度 +1，在飞的旧回调据此作废。 */
-    private var movieExtractToken = 0
-
-    /** 钉住时记住的 host（见 [openInMovieMode]）；null = 没钉住（模式是判据自己开的）。 */
-    private var moviePinHost: String? = null
-
-    /** 钉住之后连着几页取不到内容（见 [MOVIE_PIN_FAIL_LIMIT]）。 */
-    private var moviePinFailCount = 0
-
-    /**
-     * 评估"这一页该不该自动进影视模式"，该进就进。
-     *
-     * 两个时机调它：页面加载完成（onPageFinished）与嗅探结果更新（offer 末尾）——
-     * 判据里的两个信号（视频元素、视频流）谁后到都不确定，只挂一处就会漏开。
-     * 第三个时机是桥回传（[MovieBridge.video]）：页面侧探到视频元素时立刻评一次。
-     */
-    private fun evaluateMovieMode(tab: Tab) {
-        // 只对台前这一页评估：后台标签加载完 / 嗅到流不该把台前这一屏换掉
-        if (tab.id != activeId) return
-        if (movieMode) return
-        val host = TabNaming.host(tab.url)
-        if (host.isNotEmpty() && host in movieModeOffHosts) return
-        // 已知影视站（这一站进过一次影视模式）就不必再要求"有视频 + 有流"：
-        // 首页 / 详情页 / 搜索页本来就没有视频（用户口径："详情页也应该用我们的 UI，包括首页"）
-        val knownSite = host.isNotEmpty() && host in movieSiteHosts
-        if (!knownSite && !looksLikeMoviePage(movieVideoSeen, tab.sniffed, tab.isHomePage)) return
-        if (host.isNotEmpty()) movieSiteHosts += host
-        movieMode = true
-        val view = tab.webView ?: return
-        runCatching { view.evaluateJavascript(MOVIE_START_JS, null) }
-        scheduleMovieExtract(tab)
-    }
-
-    /**
-     * 取页面内容的调度：先注入一次提取脚本（幂等，见 [MoviePageExtractor]），再按六拍取数。
-     *
-     * 六拍一直取到 **6.5 秒**（[MOVIE_EXTRACT_DELAYS_MS]）：影视站的内容大多是脚本渲染的，
-     * 切换内容（换集 / 点进详情页）时那一段 DOM 往往**晚于 2.5 秒**才出来 —— 以前只取到
-     * 2.5 秒，于是新页面动不动就判成"这一页没有可显示的内容"（用户点名："切换到其他内容时
-     * 总是遇到"）。宁可多等几秒，也不要给出一个错的空态。
-     *
-     * 每一拍都带着令牌与"台前这一页"的判据回主线程（见 [extractOnce]），迟到的旧回调
-     * 自然作废；最后一拍之后再等一小会儿收尾（见 [finishMovieExtract]）。
-     */
-    private fun scheduleMovieExtract(tab: Tab) {
-        val token = ++movieExtractToken
-        movieExtracting = true
-        movieExtractFailed = false
-        runCatching { tab.webView?.evaluateJavascript(MoviePageExtractor.INJECT_JS, null) }
-        for (delay in MOVIE_EXTRACT_DELAYS_MS) {
-            main.postDelayed({
-                if (token != movieExtractToken || !movieMode || tab.id != activeId) return@postDelayed
-                extractOnce(tab, token)
-            }, delay)
-        }
-        main.postDelayed({
-            if (token != movieExtractToken || !movieMode || tab.id != activeId) return@postDelayed
-            finishMovieExtract()
-        }, MOVIE_EXTRACT_DELAYS_MS.last() + MOVIE_EXTRACT_SETTLE_MS)
-    }
-
-    /** 取一次（脚本现算，见 [MoviePageExtractor.INJECT_JS]）。 */
-    private fun extractOnce(tab: Tab, token: Int) {
-        val view = tab.webView ?: return
-        runCatching {
-            view.evaluateJavascript(MoviePageExtractor.EXTRACT_CALL_JS) { result ->
-                main.post {
-                    if (token != movieExtractToken || !movieMode || tab.id != activeId) return@post
-                    val raw = decodeJsString(result) ?: return@post
-                    val data = MoviePageExtractor.parse(raw, tab.url) ?: return@post
-                    // 回调可能晚于导航返回：读到的地址与标签页当下的地址不是同一页就作废
-                    if (urlPath(data.url) != urlPath(tab.url)) return@post
-                    applyMoviePageData(data)
-                }
-            }
-        }
-    }
-
-    /**
-     * `evaluateJavascript` 的返回值是**一层 JSON 字符串**（我们的脚本又 stringify 了一层）。
-     *
-     * 解出来才是要解析的那份 JSON；脚本没装上 / 页面把那个函数清掉了会回 `null` 字面量。
-     */
-    private fun decodeJsString(result: String?): String? {
-        if (result.isNullOrBlank() || result == "null") return null
-        return runCatching { json.decodeFromString<String>(result) }.getOrNull()
-    }
-
-    /**
-     * 收下一份提取结果。
-     *
-     * 覆盖规则是"**更丰富才覆盖**"：四拍的结果先后到，后到的常常是更完整的那一份
-     * （首拍时 DOM 还没渲染出来），但偶尔也会反过来（脚本重算出更少的内容）——
-     * 不能让用户眼看着卡片墙缩水。导航单独比大小（子页可能**没有**导航，不能把它抹掉）。
-     */
-    private fun applyMoviePageData(data: MoviePageExtractor.MoviePageData) {
-        // **一份一份比**，不比总和：总和比法会让"卡片多、没区块"的那一拍把后面"卡片少、
-        // 有猜你喜欢"的那一拍整份压掉 —— 用户侧就是"明明有猜你喜欢，影视模式里却没有"
-        //（实测第一拍容易从整文档兜底捞到一大堆卡，richness 虚高）。
-        if (data.cards.size > movieCards.size) movieCards = data.cards
-        if (data.sections.sumOf { it.cards.size } > movieSections.sumOf { it.cards.size }) {
-            movieSections = data.sections
-        }
-        if (data.comments.size > movieComments.size) movieComments = data.comments
-        if (movieCards.isNotEmpty() || movieSections.isNotEmpty() || movieComments.isNotEmpty()) {
-            movieExtractFailed = false
-        }
-        // 板块名 / 评论区标题单独补：它们是"有没有"的问题，跟卡片数量无关，
-        // 拿"更丰富才覆盖"去比会把先到的那一份名字丢掉
-        if (data.mainTitle.isNotEmpty() && movieMainTitle.isEmpty()) movieMainTitle = data.mainTitle
-        if (data.commentTitle.isNotEmpty() && movieCommentTitle.isEmpty()) {
-            movieCommentTitle = data.commentTitle
-        }
-        // 搜索表单同样单独补：它是"有没有"的问题，跟这一拍的卡片数量无关
-        if (data.searchAction.isNotEmpty() && movieSearchAction.isEmpty()) {
-            movieSearchAction = data.searchAction
-            movieSearchParam = data.searchParam
-        }
-        if (data.searchHint.isNotEmpty() && movieSearchHint.isEmpty()) movieSearchHint = data.searchHint
-        if (data.nav.size > movieNav.size) movieNav = data.nav
-    }
-
-    /**
-     * 一轮取数的收尾：一无所获就进空态。
-     *
-     * 钉住期间连着 [MOVIE_PIN_FAIL_LIMIT] 页都空、页面自己也没报视频元素，就判定
-     * "这一页我们没东西可给"并退出影视模式 —— 用户是从我们的界面点进来的，不能把人
-     * 关在一个空壳里（其余出口：顶栏的关闭、空态的「查看原网页」、返回键）。
-     */
-    private fun finishMovieExtract() {
-        movieExtracting = false
-        if (movieCards.isNotEmpty() || movieSections.isNotEmpty()) {
-            moviePinFailCount = 0
-            return
-        }
-        movieExtractFailed = true
-        if (moviePinHost == null || movieVideoSeen) return
-        moviePinFailCount++
-        if (moviePinFailCount >= MOVIE_PIN_FAIL_LIMIT) closeMovieMode()
-    }
-
-    /** 清掉这一页提取出来的内容（换页 / 退出模式 / 换标签页）。 */
-    private fun clearMoviePageData() {
-        if (movieNav.isNotEmpty()) movieNav = emptyList()
-        if (movieCards.isNotEmpty()) movieCards = emptyList()
-        if (movieSections.isNotEmpty()) movieSections = emptyList()
-        if (movieComments.isNotEmpty()) movieComments = emptyList()
-        if (movieMainTitle.isNotEmpty()) movieMainTitle = ""
-        if (movieCommentTitle.isNotEmpty()) movieCommentTitle = ""
-        if (movieSearchAction.isNotEmpty()) movieSearchAction = ""
-        if (movieSearchParam.isNotEmpty()) movieSearchParam = ""
-        if (movieSearchHint.isNotEmpty()) movieSearchHint = ""
-        movieExtracting = false
-        movieExtractFailed = false
-    }
-
-    /**
-     * 片名清洗：页面标题通常带站点后缀（`片名_立即播放 - 站点名`），这里只留下片名。
-     *
-     * 只切**明确的分隔**（`_`、`|`、`｜`、以及两侧带空格的连字符）—— 片名自己就可能带
-     * 连字符（`Spider-Man`），按单个 `-` 切会把片名切坏。
-     */
-    private fun cleanMovieTitle(raw: String): String {
-        var s = raw.replace(Regex("[\\u200B-\\u200D\\uFEFF]"), "").replace(Regex("\\s+"), " ").trim()
-        for (sep in listOf("_", "|", "｜", " - ", " – ", " — ")) {
-            val i = s.indexOf(sep)
-            if (i > 0) s = s.substring(0, i).trim()
-        }
-        return if (s.length > 60) s.substring(0, 60) else s
-    }
-
-    /**
-     * 从我们的界面点出去：**留在影视模式里**（记下 host 钉住，见 `onPageStarted`）。
-     *
-     * 站点的分类页 / 列表页本来就没有 `<video>` 也没有视频流，重新走一遍判据必然落空 ——
-     * 钉住就是"我们替它回答了这个问题"。跨 host 或回自家首页照旧退出（用户口径）。
-     */
-    fun openInMovieMode(url: String) {
-        if (url.isBlank()) return
-        moviePinHost = TabNaming.host(url).takeIf { it.isNotEmpty() }
-        viewOf(active).loadUrl(url)
-    }
-
-    /**
-     * 从我们的影视页"回网页去起播"：退出影视模式，但**不拉黑这一站**。
-     *
-     * 为什么必须有这条路：影视站很多页面的起播**必须由用户在站点自己的播放器上点一下**
-     * （详情页、以及"换了内容之后"的播放页都是这样），而我们这一屏把网页整个盖住了 ——
-     * 不给出口，用户就只能一直看着"还没识别到可播放的影视资源"（用户点名："必须首次进入
-     * 网页，原生播放器才能播放内容"）。回网页点一下起播之后，判据（视频元素 + 视频流）
-     * 成立时会自动回到影视模式：这里走的是 [leaveMovieModeForTabSwitch] 那条"退出不拉黑"
-     * 的路，再补一次 [restartMovieProbe] 让页面重新举手。
-     */
-    fun playInPage() {
-        if (!movieMode) return
-        val tab = active
-        leaveMovieModeForTabSwitch(tab)
-        restartMovieProbe(tab)
-    }
-
-    /**
-     * 这一站像不像影视站（界面据此决定显不显示"影视模式"那枚入口）。
-     *
-     * 判据与自动进模式那套同源，另加"已经取到过影视内容"这一条：用户手动关掉影视模式之后，
-     * 这一页的嗅探结果与提取结果都还在，入口不该跟着消失 —— 否则关掉就再也开不回来
-     *（用户口径：默认开，关掉之后也要能再开）。
-     */
-    val movieSiteDetected: Boolean
-        get() = movieMode || movieVideoSeen || movieNav.isNotEmpty() ||
-            movieCards.isNotEmpty() || sniffed.any { it.kind == SniffKind.VIDEO }
-
-    /**
-     * 手动进影视模式（输入框里那枚入口，见 [movieSiteDetected]）。
-     *
-     * 与自动那条路只差一处：先把这一站的"手动关过"记忆清掉 —— 用户主动点进来，
-     * 就不该再被上一次的关闭挡住。之后同 [openInMovieMode] 一样钉住 host，站内跳转也留在模式里。
-     */
-    fun enableMovieMode() {
-        if (movieMode) return
-        val tab = active
-        movieModeOffHosts.remove(TabNaming.host(tab.url))
-        moviePinHost = TabNaming.host(tab.url).takeIf { it.isNotEmpty() }
-        movieMode = true
-        clearMoviePageData()
-        movieExtracting = true
-        runCatching { tab.webView?.evaluateJavascript(MOVIE_START_JS, null) }
-        scheduleMovieExtract(tab)
-    }
-
-    /**
-     * 台前这一屏换了主人（切标签 / 关掉正在看的标签）：影视模式**退出，但不拉黑这一站**。
-     *
-     * 与用户手动关闭（[closeMovieMode]，会记 host 压住自动重开）不同：这里只是
-     * "它盖的是整屏、不能盖到别的标签页上"，切回来时重新探一次（见 [restartMovieProbe]），
-     * 判据还成立就自动回来。
-     */
-    private fun leaveMovieModeForTabSwitch(tab: Tab) {
-        movieMode = false
-        movieVideoSeen = false
-        clearMoviePageData()
-        moviePinHost = null
-        runCatching { tab.webView?.evaluateJavascript(MOVIE_STOP_JS, null) }
-    }
-
-    /**
-     * 让某个标签页的页面**重新举一次手**（切到它台前时调）。
-     *
-     * `__lerxuMovieStop` 会把页面侧"探到过什么"的标记清成 null，紧接着的
-     * `__lerxuMovieStart` 于是必然上报一次 —— 判据（视频元素 + 嗅探到的流）这时成立
-     * 就自动回到影视模式（见 [MovieBridge.video]）。少了这一下，切走再切回来就再也
-     * 回不去了：页面那套心跳只在"有 / 没有"翻面时才过桥。
-     */
-    private fun restartMovieProbe(tab: Tab) {
-        if (tab.isHomePage) return
-        val view = tab.webView ?: return
-        runCatching {
-            view.evaluateJavascript(MOVIE_STOP_JS, null)
-            view.evaluateJavascript(MOVIE_START_JS, null)
-        }
-    }
-
-    /**
-     * 关闭影视模式：网页 UI（**包括视频播放器**）变回原来的样子。
-     *
-     * 页面侧要做的只有"撤掉那个复检定时器"（见 [MovieMode.INJECT_JS]）——
-     * 影视模式全程没写过页面，所以这一步之后网页和进入前逐字节一致。
-     */
-    fun closeMovieMode() {
-        if (!movieMode) return
-        movieMode = false
-        // 页面侧的心跳停了，这个信号也就没有来源了：复位成"未知"，别留成陈旧的真值
-        movieVideoSeen = false
-        // 在飞的取数一并作废，提取出来的那一份也丢掉（退出后它没有任何用处）
-        movieExtractToken++
-        clearMoviePageData()
-        moviePinHost = null
-        moviePinFailCount = 0
-        val tab = active
-        tab.webView?.let { view ->
-            runCatching { view.evaluateJavascript(MOVIE_STOP_JS, null) }
-        }
-        // 记下这个 host（理由见 [movieModeOffHosts]）：不记的话下一次评估会立刻又开
-        TabNaming.host(tab.url).takeIf { it.isNotEmpty() }?.let { movieModeOffHosts += it }
-    }
-
-    /** 进影视模式：让页面侧把复检心跳挂上（幂等，脚本自己带守卫）。 */
-    private val MOVIE_START_JS =
-        "(function(){try{window.__lerxuMovieStart&&window.__lerxuMovieStart();}catch(e){}})();"
-
-    /** 退出影视模式：撤掉页面侧的复检心跳并复位标记。 */
-    private val MOVIE_STOP_JS =
-        "(function(){try{window.__lerxuMovieStop&&window.__lerxuMovieStop();}catch(e){}})();"
-
-    /** JS 桥：影视模式的探测回传（见 [MovieMode.INJECT_JS]）。 */
-    inner class MovieBridge internal constructor(private val tab: Tab) {
-        @JavascriptInterface
-        fun video(has: Int, title: String) {
-            main.post {
-                movieVideoSeen = has == 1
-                movieTitle = title
-                evaluateMovieMode(tab)
-            }
-        }
-    }
-
     /**
      * 播放器开着期间**反复**按住页面那一层的心跳（见 [PAGE_MUTE_INTERVAL_MS]）。
      *
@@ -3391,6 +3178,20 @@ class BrowserController(
     private val FORCE_PAGE_RECT_JS =
         "(function(){try{window.__lerxuRectKey=null;" +
             "window.__lerxuStartRect&&window.__lerxuStartRect();}catch(e){}})();"
+
+    /**
+     * 换页之后**把接管的闸门重开**（见 PageVideoDetector 的 `__lerxuPlayerRearm`）。
+     *
+     * 页面侧那套是"一页只报一次"：报完 `armed=false`，早先只有**整页重新加载**才会重置。
+     * 而 pushState 型站点换页不重载文档 —— 于是新页面里再进一个视频也不报，用户看到的
+     * 就是"网页自带的播放器"（用户点名："切换页面再进入一个视频，它默认使用的是网页
+     * 自带的播放器"）。所以在"承载页换页"那一刻（[onHostPageNavigated]）调它。
+     *
+     * 真导航那一路（`onPageStarted`）本来就有一份全新文档、闸门天然是开的，这里多调一次
+     * 是幂等的（脚本里就是 `armed=true` 一句）。
+     */
+    private val REARM_PAGE_VIDEO_JS =
+        "(function(){try{window.__lerxuPlayerRearm&&window.__lerxuPlayerRearm();}catch(e){}})();"
 
     /**
      * 播放器开着期间**反复**按住页面那一层的心跳。
@@ -3495,13 +3296,19 @@ class BrowserController(
     }
 
     /**
-     * 承载播放器的那一页开始导航（或那个 WebView 被换掉）：位置先作废（别让播放器
-     * 用上一页的矩形挂在新页面上），再给新页面一点时间 —— 新页面里又起播并接管
-     * （`nativePlayRequest`）或者报了新位置，就留着；两样都没有，说明这次是"用户
-     * 真的走了"，关掉播放器（声音也一起停）。
+     * 承载播放器的那一页**换页了**（或那个 WebView 被换掉）：位置先作废（别让播放器
+     * 用上一页的矩形挂在新页面上），然后**立刻**把播放器关掉（声音也一起停）。
      *
-     * 为什么不是立刻关：站点自己也会导航（点播放 → 跳到 /play/xxx 那种），
-     * 立刻关会把刚起播的这一路自己掐死。
+     * 两个入口，缺一不可：
+     * - [onPageStarted] —— 真导航（点链接跳走、站点自己跳 `/play/xxx`）；
+     * - [doUpdateVisitedHistory] 里"路径真的变了"那一支 —— **pushState 型站点**
+     *   换页不触发 onPageStarted，早先漏的就是这一种（用户点名："在网页中切换到
+     *   另一个页面了，原生播放器却还在，并且还在播放之前的那个视频"）。
+     *
+     * 为什么一直是"立刻关"而不是等一拍：新页面里又起播并接管（`nativePlayRequest`）
+     * 或者报了新位置，自然会重新打开；而等一拍的那版，只要新页面里**任何**一个
+     * `<video>` 报了位置就把这次停止取消掉 —— 上一路的画面于是留在新页面上不走
+     *（用户点名过的"在搜索页面还会显示原生的播放器"）。
      */
     private fun onHostPageNavigated(tab: Tab) {
         playerFrame = null
@@ -3513,6 +3320,11 @@ class BrowserController(
         // 播放器位置就不停"—— 搜索结果页里只要有任何一个视频元素报位置，这一停就被取消，
         // 于是上一路的画面留在搜索页上不走。
         nativePlayStop = true
+        // 顺手**把闸门重开**：新页面里再进一个视频还要能接管（用户点名："切换页面再进入
+        // 一个视频，它默认使用的是网页自带的播放器"）—— 页面侧是"一页只报一次"，
+        // pushState 换页不重载文档，不重开就再也不报。真导航那份新文档天然是开的，
+        // 这里多调一次幂等。
+        tab.webView?.let { v -> runCatching { v.evaluateJavascript(REARM_PAGE_VIDEO_JS, null) } }
     }
 
     /**
@@ -3571,9 +3383,24 @@ class BrowserController(
     private var playPoll: Runnable? = null
 
     /** 从嗅探结果里挑一条"最像这一路"的：优先视频，其次任意一条。 */
-    private fun pickPlayable(tab: Tab): SniffedResource? =
-        tab.sniffed.firstOrNull { it.kind == SniffKind.VIDEO }
-            ?: tab.sniffed.firstOrNull()
+    /**
+     * 挑一条"最该交给原生播放器"的嗅探结果（见 [VideoSniffer.pickForPlayback]）。
+     *
+     * **不能再写 `firstOrNull { kind == VIDEO }`**：嗅探列表是**最新在前**的
+     * （`offer()` 里 `sniffed.add(0, …)`），而 hls.js 起播时先拉清单、紧接着就狂拉分片 ——
+     * 那一刻最新的往往是一只**分片**。加密分片是一团随机字节，于是两路一起失败
+     * （不是 `#EXTM3U`、也没有提取器认得），看起来就像"加密的 m3u8 播不了"
+     *（用户 2026-10-04 连报两次，最后靠界面上的错误码定位）。档位规则与原因见
+     * [VideoSniffer.playbackRank]。
+     */
+    private fun pickPlayable(tab: Tab, avoidSegments: Boolean): SniffedResource? {
+        if (!avoidSegments) return VideoSniffer.pickForPlayback(tab.sniffed)
+        // "先只要不是分片的"：hls.js 起播的次序是**先拉清单、紧接着狂拉分片**，清单必然
+        // 更早进列表 —— 多等它一会儿，就绝不会把一只分片当成一路流去播（用户 2026-10-04
+        // 连报两次"加密 m3u8 播不了"，真凶就是这个）。等不到（下面轮询用完）才退到分片。
+        val usable = tab.sniffed.filter { VideoSniffer.playbackRank(it) < VideoSniffer.RANK_SEGMENT }
+        return VideoSniffer.pickForPlayback(usable)
+    }
 
     /**
      * 页面报"开始播视频了"：挑一条最像"这一路"的嗅探结果交给原生播放器。
@@ -3583,9 +3410,12 @@ class BrowserController(
      * 网页自己那套播放器"（用户点名）。改成短时间轮询等它出现；真的等不到才放手，
      * 那时用户再点一次播放就是网页自己播（脚本里的闸门已关，不会再抢）。
      */
-    private fun onPageVideoPlayed(tab: Tab) {
+    private fun onPageVideoPlayed(tab: Tab, paused: Boolean) {
         if (nativePlayRequest != null) return
         if (tab.id != activeId) return
+        // 先记下"这一路要不要自动播"**再**发请求：界面那边是 `LaunchedEffect(nativePlayRequest)`
+        // 里读它的，顺序反了就会读到上一条的值
+        nativePlayPaused = paused
         // **先把网页那一层全屏撤掉**，再交给 App 的播放器。
         // 影视站的播放按钮几乎都在 `play()` 的同时 `requestFullscreen()`，那段会走到
         // [onShowCustomView]：往 decorView 上盖一层黑底容器，而它盖在 Activity 的
@@ -3601,7 +3431,7 @@ class BrowserController(
         )
         hideFullscreen()
 
-        pickPlayable(tab)?.let {
+        pickPlayable(tab, avoidSegments = true)?.let {
             nativePlayRequest = it
             return
         }
@@ -3611,7 +3441,9 @@ class BrowserController(
         val task = object : Runnable {
             override fun run() {
                 if (nativePlayRequest != null || tab.id != activeId) return
-                val pick = pickPlayable(tab)
+                // 前 [PLAY_WAIT_MANIFEST_TRIES] 次（约 1.2s）**只接受非分片的挑源**：
+                // 清单只会比第一只分片早、不会晚，这一段时间足够它进列表
+                val pick = pickPlayable(tab, avoidSegments = tries < PLAY_WAIT_MANIFEST_TRIES)
                 if (pick != null) {
                     nativePlayRequest = pick
                 } else if (++tries < 15) {
@@ -3623,11 +3455,25 @@ class BrowserController(
         main.postDelayed(task, 200)
     }
 
-    /** JS 桥：网页视频起播的通知（见 [PageVideoDetector]）。 */
+    /** JS 桥：网页视频的通知（见 [PageVideoDetector]）。 */
     inner class PageVideoBridge internal constructor(private val tab: Tab) {
+        /** 页面里那个 `<video>` **开始播**了 —— 常规的接管入口。 */
         @JavascriptInterface
         fun played() {
-            main.post { onPageVideoPlayed(tab) }
+            main.post { onPageVideoPlayed(tab, paused = false) }
+        }
+
+        /**
+         * 页面里那个 `<video>` **还停着**（用户进页面看到站点自己的封面 / 大播放按钮）
+         * —— 也要接管（用户点名："刚进入网页时，播放器如果处于暂停状态，显示的就是
+         * 他们自己的播放器，不是我们原生播放"）。
+         *
+         * 与 [played] 的唯一区别是**我们这边也不自动播**（见 `NativePlayerOverlay.open`
+         * 的 `startPaused`）：用户没按过播放，替他播等于凭空开始放片子。
+         */
+        @JavascriptInterface
+        fun paused() {
+            main.post { onPageVideoPlayed(tab, paused = true) }
         }
     }
 
@@ -3658,9 +3504,11 @@ class BrowserController(
                 ?: return
             val h = (parsed["h"] as? JsonPrimitive)?.intOrNull ?: 0
             val all = (parsed["all"] as? JsonPrimitive)?.booleanOrNull ?: false
+            val bar = (parsed["bar"] as? JsonPrimitive)?.booleanOrNull ?: false
             main.post {
                 tab.bottomOverlayPx = h.coerceIn(0, 400)
                 tab.bottomOverlayAll = all
+                tab.bottomBar = bar
             }
         }
 
@@ -3738,14 +3586,11 @@ class BrowserController(
         val existing = tab.sniffed.indexOfFirst { it.dedupKey == item.dedupKey }
         if (existing >= 0) {
             if (item.size > tab.sniffed[existing].size) tab.sniffed[existing] = item
-            evaluateMovieMode(tab)
             return
         }
         tab.sniffed.add(0, item)
         // 大小多半是 0（响应头没给 Content-Length）：补一次探测
         probeSize(tab, item)
-        // 嗅探结果更新 = 判据里的"视频流"这一半到齐了：评估一次影视模式
-        evaluateMovieMode(tab)
     }
 
     // ─── 资源大小兜底探测 ───
@@ -3980,7 +3825,11 @@ class BrowserController(
             // 这一趟是"从网页点地址栏过路进搜索页"（见 [Tab.homeKeepHistory]）：
             // 页面据此让 logo 与面板**首帧就在终态** —— 用户是从网页跳过来的，
             // 没有"首页品牌飞入"这个语境，再放一遍居中→顶部的位移就是多余的动画（用户点名）
-            append("\"search\":").append(if (tab.homeKeepHistory) "true" else "false").append('}')
+            append("\"search\":").append(if (tab.homeKeepHistory) "true" else "false").append(',')
+            // 这一趟是「更多功能 → 历史」落下来的（见 [openHistoryPage]）：页面据此
+            // 首帧就停在**历史记录那一屏**（字标已淡出、标题已就位），而不是先演一遍
+            // "logo 归位 + 搜索页展开"再切过去 —— 那两步的终点才是用户点的那一下
+            append("\"hist\":").append(if (pendingHistoryView) "true" else "false").append('}')
         }
         tab.pendingHomeFocus = false
         val html = template
@@ -4074,7 +3923,13 @@ class BrowserController(
         // 一开始打字就退出历史查看页：那一层是"只看历史"的静态一屏，
         // 用户在输入的是**新的一搜**，建议与命中的历史才该在场（与"全部清除"
         // 在有输入时让位同一条规则）
-        if (text.isNotBlank()) homeHistoryView = false
+        if (text.isNotBlank()) {
+            homeHistoryView = false
+            // 那一层已经由别的路径收掉了：上一条"从网页跳过来的"记忆就此作废
+            //（见 [historyFromWeb]）——留着它，下一次从面板点"查看更多"再返回时
+            // 会莫名其妙地退回一个早就不在场的网页
+            historyFromWeb = false
+        }
         requestSuggest(text)
         pushHomePanels()
     }
@@ -4088,16 +3943,71 @@ class BrowserController(
      */
     fun openHomeHistory() {
         if (homeHistoryView || !homePanelsOpen || !active.isHomePage) return
+        // 面板里那枚"查看更多"：起点就是搜索界面，返回自然回搜索界面
+        historyFromWeb = false
         homeHistoryView = true
         pushHomePanels()
+    }
+
+    /**
+     * 从**别处**一步跳到历史记录界面（「更多功能」弹窗里的"历史"）。
+     *
+     * 与 [openHomeHistory]（面板里那枚"查看更多"）的差别只在**起点**：这一条可能
+     * 落在下载器页、标签网格、甚至一个外部网页上，所以它得自己把路铺到那一屏：
+     *
+     * - 已经在自家首页：直接把面板开起来并落到历史那一层；
+     * - 不在首页（正在看网页 / 刚切回浏览器页）：先把自家首页载进当前标签
+     *  （keepHistory：正看的那页留着，返回键能退回去），首页就绪后由
+     *  [applyPendingHistoryView] 兑现这次跳转。
+     *
+     * 用待落标记而不是"载完再跳"的两次往返：页面与面板一起就位，读起来才是一步
+     * 跳过去，而不是先闪一下搜索页再切历史。
+     */
+    fun openHistoryPage() {
+        pendingHistoryView = true
+        // 这一趟是**从网页上跳过来的**（而不是本来就在首页 / 搜索界面里点"查看更多"）：
+        // 记一笔 —— 返回时该退回那一页，而不是把人丢在搜索界面上（用户点名）。
+        // 判据就是"现在不在首页"：onPageFinished 里兑现这一跳时首页还没就位。
+        historyFromWeb = !active.isHomePage
+        if (active.isHomePage) applyPendingHistoryView() else loadHome(keepHistory = true)
+    }
+
+    /**
+     * 兑现"跳到历史记录界面"这个待落标记。返回是否**已经**由这里推过面板 ——
+     * 调用方据此决定要不要再推一次（见 onPageFinished）。
+     */
+    private fun applyPendingHistoryView(): Boolean {
+        if (!pendingHistoryView || !active.isHomePage) return false
+        pendingHistoryView = false
+        homeHistoryView = true
+        setHomePanels(true)
+        return true
     }
 
     /** 退出历史查看页（页面左上角返回键 / 系统返回）：回到普通搜索界面。 */
     fun closeHomeHistory() {
         if (!homeHistoryView) return
         homeHistoryView = false
+        // 「更多功能 → 历史」是从一个网页上跳过来的：返回该回**那一页**
+        //（用户点名："返回应该是返回他之前所在的页面，而不是返回到搜索界面"）。
+        // 首页是 keepHistory 载进来的，所以 WebView 自己就能退回去；
+        // 面板与焦点跟着收起（与 exitSearch 同一套收尾）。
+        if (historyFromWeb) {
+            historyFromWeb = false
+            addressBlurTick++
+            closeHomePanels()
+            goBack()
+            return
+        }
         pushHomePanels()
     }
+
+    /**
+     * 这一趟历史页是**从一个网页上**跳下来的（见 [openHistoryPage]）：
+     * 收藏在控制器里，直到兑现（[closeHomeHistory] 退回那一页）或作废
+     *（面板被别的路径收起 —— 用户已经在别处了）。
+     */
+    private var historyFromWeb = false
 
     /**
      * 面板要避开的底部高度（**CSS px**，界面下发）：网页底边到坞顶的实测距离。
@@ -4112,6 +4022,9 @@ class BrowserController(
     /** 收起面板（导航开始时、离开浏览器页时由界面调用）。 */
     fun closeHomePanels() {
         cancelSuggest()
+        // 搜索页整个收了：历史页那一层与"从网页跳过来"的记忆一起作废
+        //（下一条历史页要么是新的，要么由 [closeHomeHistory] 自己处理）
+        historyFromWeb = false
         if (!homePanelsOpen && homeQuery.isEmpty()) return
         homePanelsOpen = false
         // 历史查看页是搜索页里的一层：搜索页收了，这一层跟着走（见 homeHistoryView）
@@ -4205,14 +4118,13 @@ class BrowserController(
         // - searches：**搜索历史** —— 从记录里认出来的关键词（去重、最近在前）。
         //   这一组**没输入时也要给**：它固定显示在"最近访问"下方。
         //
-        // 历史查看页只要搜索历史这一组：另外两组给空数组，页面侧它们自己收起来
-        //（0fr 补间），搜索历史则放到全部条数 —— "查看更多"看到的就是**全部**搜索历史
+        // 历史查看页是**整份历史**（用户点名："进去以后要显示全部历史，而不是继续
+        // 把多出来的藏起来"）：两组都放到全部条数，搜索建议让位。
         val inHistoryView = homeHistoryView
-        val recentRows = if (inHistoryView) {
-            emptyList()
-        } else {
-            BrowseHistory.query(history, homeQuery, HOME_HISTORY_RECENT)
-        }
+        val recentRows = BrowseHistory.query(
+            history, homeQuery,
+            if (inHistoryView) HOME_HISTORY_ALL else HOME_HISTORY_RECENT
+        )
         val searchWords = BrowseHistory.searchQueries(
             history, SearchEngines.all, homeQuery,
             if (inHistoryView) HOME_SEARCH_ALL else HOME_SEARCH_RECENT
@@ -4300,29 +4212,49 @@ class BrowserController(
     private fun rememberVisit(tab: Tab) {
         if (incognitoMode) return
         if (!BrowseHistory.isRecordable(tab.url)) return
-        val next = BrowseHistory.record(history, tab.url, tab.title, System.currentTimeMillis())
-        if (next === history) return
-        history = next
+        val current = historyState
+        val next = BrowseHistory.record(current, tab.url, tab.title, System.currentTimeMillis())
+        if (next === current) return
+        historyState = next
         persistHistory()
     }
 
     private fun persistHistory() {
-        prefs.edit().putString(PREF_BROWSE_HISTORY, BrowseHistory.encode(history)).apply()
+        prefs.edit().putString(PREF_BROWSE_HISTORY, BrowseHistory.encode(historyState)).apply()
     }
 
     /** 清空浏览记录（搜索页「最近访问」整组的数据源）。 */
     fun clearBrowseHistory() {
-        if (history.isEmpty()) return
-        history = emptyList()
+        if (historyState.isEmpty()) return
+        historyState = emptyList()
+        persistHistory()
+        pushHomePanels()
+    }
+
+    /**
+     * 删掉记录里的这几条（历史弹窗「移除模式」的落点）。
+     *
+     * 传的是**地址**而不是下标：界面那份列表是按时间排过、又按自然日分过组的，
+     * 下标在"界面看到的行"与"存储里的记录"之间根本不是一回事。
+     *
+     * 落盘与首页面板的推送都走既有那两条（[persistHistory] / [pushHomePanels]）——
+     * 删完首页那份"最近访问"要跟着变，否则用户会在那儿又看见刚删掉的那条。
+     */
+    fun removeHistory(urls: Collection<String>) {
+        if (urls.isEmpty()) return
+        val drop = urls.toHashSet()
+        val next = historyState.filterNot { it.url in drop }
+        if (next.size == historyState.size) return
+        historyState = next
         persistHistory()
         pushHomePanels()
     }
 
     /** 清掉记录里的搜索项（搜索页「搜索历史」那一组），普通浏览记录保留。 */
     fun clearSearchHistory() {
-        val next = BrowseHistory.clearSearches(history, SearchEngines.all)
-        if (next.size == history.size) return
-        history = next
+        val next = BrowseHistory.clearSearches(historyState, SearchEngines.all)
+        if (next.size == historyState.size) return
+        historyState = next
         persistHistory()
         // 历史清空了，历史查看页也就没有内容可看：退回普通搜索界面
         //（否则留在一屏空白上，还得用户自己按返回）
@@ -4339,6 +4271,23 @@ class BrowserController(
     }
 
     fun loadUrl(url: String) = viewOf(active).loadUrl(url)
+
+    /**
+     * **App 侧的界面**（目前只有历史弹窗）点一条地址：与首页面板里点一条历史**同一条路**
+     * （见 [HomeBridge.open]）。
+     *
+     * 为什么不能直接用 [loadUrl]：那一条只是把地址丢给 WebView，不置 [navSubmitting]、
+     * 也不推 [addressBlurTick]。历史弹窗是从「更多功能」进来的，地址栏此时可能正带着
+     * 上一次的输入停在聚焦前后，不推那一下就会留下"地址栏里还写着别的地址、页面却换了"
+     * 的错位；面板那条路当年就是为了这个才带上这两件事。
+     */
+    fun openFromUi(url: String) {
+        val target = url.trim()
+        if (target.isEmpty()) return
+        navSubmitting = true
+        addressBlurTick++
+        viewOf(active).loadUrl(target)
+    }
 
     fun reload() {
         active.webView?.reload()
@@ -4446,6 +4395,22 @@ class BrowserController(
         syncNavState(tab, view)
     }
 
+    /**
+     * 原生播放器按返回键时问它一句：**这一下该不该算"网页后退"**。
+     *
+     * 能退就退掉并返回 true。用户点名："回退网页时首先关掉的是原生播放器，这是不应该的" ——
+     * 播放器是网页里那块视频的替身，不是用户"跳进去的一屏"，所以返回键该跟没接管时一样
+     * 往历史里退一步；页面一换，播放器由 [onHostPageNavigated] 收摊，不用谁手动关。
+     *
+     * 复用的就是坞上那枚返回、左滑手势走的那条 [goBack]（同一套判据，包括"重启后历史不
+     * 跨进程、退回自建栈那一层"）。
+     */
+    fun backInPageIfPossible(): Boolean {
+        if (!canGoBack) return false
+        goBack()
+        return true
+    }
+
     private fun syncNavState(tab: Tab, view: WebView) {
         // 可退 = WebView 自己有历史，或者自建访问栈里还有上一层
         //（重启后恢复出来的页面就是后者 —— 只看 WebView 会把返回键错误地置灰）
@@ -4480,7 +4445,6 @@ class BrowserController(
             //（原生全屏只合成视频画面，DOM 覆盖层不参与），控件怎么改都唤不出来。
             // 现在改成把嗅探到的流交给 App 自己的播放器（见 PlayerScreen）
             AdBlocker.injectJs(adBlockEnabled) + PageVideoDetector.INJECT_JS +
-                NavAutoHide.INJECT_JS + MovieMode.INJECT_JS +
             "window.__lerxuTheme.set(\"" + jsString(theme.native) + "\",\"" +
             jsString(theme.fallback) + "\"," + homeDark + ");"
         runCatching { view.evaluateJavascript(payload, null) }
@@ -4497,13 +4461,20 @@ class BrowserController(
      * **① 悬浮元素**（宽度不到整宽、或底边离屏底有距离：cookie 小条、B 站那种
      * 圆角悬浮按钮）→ 整体**上移**。它们本来就飘着，往上挪没有任何违和感。
      *
-     * **② 贴底且整宽的元素**（全宽操作条、半屏弹窗、登录罩）→ **绝不上移**。
+     * **② 贴底且整宽的元素**（全宽操作条、底部导航、半屏弹窗、登录罩）→ **绝不上移**。
      * 这种元素是"铺满整宽、贴着屏底"的，抬起来必定在下方空出一条缝（用户点名的
-     * 问题）。矮的那一档（网页自己的**底部导航**）改成**向上延伸**：补一段
-     * `padding-bottom` 把手势条那一截垫进它自己的背景里，内容抬到小横条之上、
-     * 背景仍然贴到屏幕底，下方不会露出应用底色；同时把它**报给原生**
-     *（[bottomOverlayPx] / [bottomOverlayAll]），由坞自己让位：矮的抬到它上面去，
-     * 从**底部升起来**的整屏弹层干脆滑走藏起来。
+     * 问题）。分两档处理：
+     *
+     * - **矮的那一档**（网页自己的**底部导航**）→ 让**那条栏向上延伸**，坞留在原地
+     *   （用户点名的口径："悬浮控制栏应该仍在底部，而是将网页的底部导航栏向上扩展"）。
+     *   做法是把那条栏的盒子转成 `content-box` + 写死内容高，再补一段 `padding-bottom`：
+     *   背景从屏底一直铺到坞之上、内容（图标/文字）抬到坞之上，坞就"装在这条栏里"。
+     *   这一段垫多少**不再写死**（88 / 68 是按某台设备凑出来的）—— 由原生把**坞的可见顶边**
+     *   （`__lerxuBarPad`）实测下发，页面再减掉栏自己留的空档（见脚本里的 `barWant`），
+     *   "底部导航离坞太远"那条反馈就是这么来的。这条栏**不报高度**，坞一点不让；
+     * - **高一些的那一档**（底部操作条 / 半屏卡）→ 照旧**把高度报给原生**
+     *  （[bottomOverlayPx] / [bottomOverlayAll]），由坞抬到它上面去；从**底部升起来**
+     *   的整屏弹层干脆滑走藏起来。
      *
      * **顶部整屏层**（顶部导航面板、它那层遮罩 —— 常见写法 `top:44px;bottom:0`，
      * 从导航条下沿铺到屏幕底）不算"底部元素"：这种层在场时坞**原地不动**。它一开
@@ -4528,17 +4499,18 @@ class BrowserController(
         // 退回读方案设置 —— 漏注入的页面要等下次导航才会补上
         if (!(dockAvoidOn ?: dockModern)) return
         val js = "window.__lerxuDockPad=$dockAvoidPad;window.__lerxuGesture=$gesturePad;" +
+            "window.__lerxuBarPad=$barPadPx;" +
             "(function(){" +
             "if(window.__lerxuDockAvoidApply)return;" +
             // 上一次被停过（切到传统模式）：这次是重新启用的，把停止标记清掉
             "window.__lerxuDockAvoidOff=false;" +
             // 状态变了才过桥（每帧都 push 会把主线程刷爆）
-            "function report(h,all){" +
+            "function report(h,all,bar){" +
             "if(window.__lerxuDockAvoidOff)return;" +
-            "var key=h+'|'+all;" +
+            "var key=h+'|'+all+'|'+bar;" +
             "if(window.__lerxuDockReport===key)return;" +
             "window.__lerxuDockReport=key;" +
-            "try{if(typeof LerxuDock!=='undefined'&&LerxuDock)LerxuDock.report('{\\\"h\\\":'+h+',\\\"all\\\":'+all+'}');}catch(e){}" +
+            "try{if(typeof LerxuDock!=='undefined'&&LerxuDock)LerxuDock.report('{\\\"h\\\":'+h+',\\\"all\\\":'+all+',\\\"bar\\\":'+bar+'}');}catch(e){}" +
             "}" +
             // 祖先是否已经被处理过（上移过 / 为手势条垫过内边距）：
             // 被处理过的后代不再自己动 —— 否则外层那条底部导航垫高之后，
@@ -4550,16 +4522,77 @@ class BrowserController(
             "p.dataset.lerxuPadded==='1'))return true;" +
             "p=p.parentElement;}" +
             "return false;}" +
+            // 把"向上延伸"过的那条栏还原：盒子模式、高度、内边距、过渡全部还回原值。
+            // 两条路径共用它 —— 页面自己长高了（apply 里退掉），以及切到传统模式（OFF 段）。
+            "function restoreBar(el){" +
+            "if(el.dataset.lerxuBar!=='1')return;" +
+            "el.style.boxSizing=el.dataset.lerxuBarBox||'';" +
+            "el.style.height=el.dataset.lerxuBarStyleH||'';" +
+            "el.style.paddingBottom=el.dataset.lerxuBarPb||'';" +
+            "el.style.transition='';" +
+            "delete el.dataset.lerxuBar;delete el.dataset.lerxuBarH;" +
+            "delete el.dataset.lerxuBarOrig;delete el.dataset.lerxuBarPb;" +
+            "delete el.dataset.lerxuBarBox;delete el.dataset.lerxuBarStyleH;" +
+            "delete el.dataset.lerxuPadded;" +
+            "}" +
             "function apply(){" +
             // 停过就别再算了：注入时挂的 setTimeout 与观察器可能在停之后才轮到
             "if(window.__lerxuDockAvoidOff)return;" +
             "var pad=window.__lerxuDockPad||88;" +
             // 手势条那一截（dp ≈ CSS px）：贴底整宽的底部导航要把它垫进自己的背景里
             "var g=window.__lerxuGesture||0;" +
+            // "矮到可以当成底部导航"的阈值：**常量**，不跟 pad 走 —— 跟着走的话，
+            // 坞收起/展开（pad 68↔88）会让一条 84~104 高的栏来回改判，又是一次上下跳
+            "var BAR_MAX=110;" +
+            // 垫完之后栏内容离坞顶留的这一档呼吸位（px）。6 → 14 → **20**
+            //（2026-09-26 用户连着两轮："底部导航栏离控制栏太近了，增加一点"、
+            // "还是太近了，再向上移动一点点"）。这个数就是唯一的手感旋钮 —— 要再调只改它
+            //（+ 桩测里那几处期望）
+            "var BAR_GAP=20;" +
+            // 这条栏该垫多少：**坞的可见顶边**（原生实测下发 `__lerxuBarPad`）+ 一档呼吸位
+            //（BAR_GAP）－ 栏内容盒下沿到"最下面那片内容"的空档。
+            //
+            // 为什么不再用写死的让位带（88 / 68）：那是按某台设备的导航条高度凑出来的数，
+            // 换台设备（导航条 0 / 24 / 48dp）、坞收起或展开，它就和坞的真实位置错开了 ——
+            // 错开的方向正是用户看到的那条缝（"底部导航栏离底部控制栏太远"）。
+            //
+            // 为什么要减那段空档：底部导航多半是"按钮撑满、图标/文字居中"，站点自己在内容
+            // 下沿还留着一截；盒子对盒子贴上去了，看上去图标离坞还很远。空档按**叶子元素**
+            // 量（图标/文字那一层），量多少减多少，所以**最下面那片内容永远停在坞顶之上
+            // BAR_GAP 处** —— 每个站点量出来的空档都不同，正是它保证了不同站点读到的
+            // 间距一致（用户点名："每个网页底部导航栏给我们控制栏让的位置都不一样，
+            // 应该统一"）。空档只用栏自己的原始外框高封顶（再大说明量到了别的东西），
+            // **不再有 24px 的上限** —— 那个上限会让"内部留白比 24 多"的站点反而更靠上，
+            // 正是"不一样"的一半来源。
+            "function barWant(el){" +
+            "var base=(window.__lerxuBarPad||0);" +
+            "if(!(base>0))base=(pad>g?pad:g);" +
+            "var slack=0;" +
+            "try{" +
+            "var rb=el.getBoundingClientRect().bottom-" +
+            "(parseFloat(getComputedStyle(el).paddingBottom||'0')||0);" +
+            "var inner=el.querySelectorAll('*');" +
+            "for(var i=0;i<inner.length;i++){var c=inner[i];" +
+            "if(c.children&&c.children.length)continue;" +
+            "var cs2=getComputedStyle(c);" +
+            "if(cs2.display==='none'||cs2.visibility==='hidden')continue;" +
+            "if(parseFloat(cs2.opacity||'1')<0.05)continue;" +
+            "var rr=c.getBoundingClientRect();" +
+            "if(rr.width<1||rr.height<1)continue;" +
+            "var d=rb-rr.bottom;if(d>slack)slack=d;}" +
+            "}catch(e){}" +
+            "var hLim=(el.dataset.lerxuBarOrig!==undefined)?" +
+            "parseFloat(el.dataset.lerxuBarOrig):el.getBoundingClientRect().height;" +
+            "if(!(hLim>0))hLim=slack;" +
+            "if(slack>hLim)slack=hLim;" +
+            "if(slack<0)slack=0;" +
+            "var v=base+BAR_GAP-slack;" +
+            "if(v<g)v=g;" +
+            "return Math.round(v);}" +
             "var vw=window.innerWidth;" +
             "var vh=window.innerHeight;" +
             "var els=document.querySelectorAll('body *');" +
-            "var fullH=0,coverAll=false,topModal=false;" +
+            "var fullH=0,coverAll=false,topModal=false,barPadded=false;" +
             "for(var i=0;i<els.length;i++){var el=els[i];var cs;" +
             "try{cs=getComputedStyle(el);}catch(e){continue;}" +
             "if(cs.position!=='fixed')continue;" +
@@ -4597,25 +4630,60 @@ class BrowserController(
             "if(r.top<=vh*0.2&&topPanel)topModal=true;else coverAll=true;" +
             "}" +
             "}else{" +
-            // 矮的贴底整宽条（网页自己的底部导航）：让它**向上延伸**而不是上移 ——
-            // 补一段 padding-bottom，把手势条那一截垫进它自己的背景里。内容
-            //（图标/文字）因此抬到小横条之上，而它仍然贴到屏幕底，下方不会露出
-            // 应用底色（用户点名的"割裂感"）。
-            // 透明外壳**不垫**：垫了只是把它里面那条导航顶上去，下方反而露缝。
-            "var pb=parseFloat(cs.paddingBottom||'0')||0;" +
-            "if(g>0&&solid&&pb<g-0.5&&!ancMarked(el)&&el.dataset.lerxuPadNo!=='1'){" +
-            "var h0=r.height;var saved=el.style.paddingBottom;" +
-            "el.style.paddingBottom=g+'px';" +
-            // 高度被写死（box-sizing:border-box + 固定高）时垫内边距只会压扁内容，
-            // 那不算"向上延伸"：量一下没长高就原样还原，并打上"试过没用"的标记 ——
-            // 否则每次复检都会再写一次内边距，样式变更又触发复检，白白空转
-            "if(el.getBoundingClientRect().height<=h0+0.5){el.style.paddingBottom=saved;" +
-            "el.dataset.lerxuPadNo='1';}" +
-            "else{el.dataset.lerxuPadded='1';" +
-            "if(el.dataset.lerxuPadBase===undefined)el.dataset.lerxuPadBase=saved;}" +
+            // 网页自己的**底部导航**（矮的、贴底整宽）：**不把坞抬起来**（用户点名的
+            // 口径："悬浮控制栏应该仍在底部"），改成让这条栏**向上延伸** —— 把它的盒子
+            // 改成"内容高 + 一段底部内边距"，内边距取坞那条带（pad）。于是它的背景从屏底
+            // 一路铺到坞之上、内容（图标 / 文字）也抬到坞之上，而**坞原地不动** ——
+            // 读起来就是"坞装在这条栏里"，不是浮在半空（用户点名的"违和感"就是这么来的）。
+            //
+            // 为什么必须转成 content-box + 写死内容高：底部导航十有八九是
+            // `box-sizing:border-box` + 固定高度，光加 padding-bottom 只会把内容压扁
+            //（盒子不长高），那种"垫"是假的 —— 早先那版就栽在这一步上，退回去改成抬坞，
+            // 于是又变成"坞浮在半空"。转过来之后，加多少 padding 就是真正往外长多少。
+            //
+            // 太高的整宽条（底部操作条 / 半屏卡）**不这么干**：垫上坞那条带等于凭空盖掉
+            // 一大片网页，那种还是老办法 —— 报高度，让坞抬到它上面（下面那一支）。
+            // 透明外壳也不垫：垫了只是把它里面那条导航顶上去，下方反而露缝。
+            // 量"这条栏自己有多高"：**延伸过的一定要用当初存下的原始高**，
+            // 拿当前 rect 去量，量到的已经是"原高 + 我垫的那一段" —— 于是永远判成
+            // "太高了"→ 还原，下一轮又判成"够矮"→ 再延伸，配合 MutationObserver
+            // 400ms 的复检就是稳定的上下跳（用户报的正是这个）。
+            "var barH=(el.dataset.lerxuBar==='1'&&el.dataset.lerxuBarOrig!==undefined)?" +
+            "parseFloat(el.dataset.lerxuBarOrig):r.height;" +
+            "if(solid&&!ancMarked(el)&&el.dataset.lerxuBarNo!=='1'&&" +
+            "(pad<=0||barH<=BAR_MAX)){" +
+            "if(el.dataset.lerxuBar!=='1'){" +
+            "var pt=parseFloat(cs.paddingTop||'0')||0;" +
+            "var pb0=parseFloat(cs.paddingBottom||'0')||0;" +
+            "var bt=parseFloat(cs.borderTopWidth||'0')||0;" +
+            "var bb=parseFloat(cs.borderBottomWidth||'0')||0;" +
+            "var ch=el.getBoundingClientRect().height-pt-pb0-bt-bb;" +
+            "if(ch>0){" +
+            "el.dataset.lerxuBarH=ch+'px';" +
+            "el.dataset.lerxuBarOrig=String(r.height);" +
+            "el.dataset.lerxuBarPb=pb0+'px';" +
+            "el.dataset.lerxuBarBox=cs.boxSizing||'';" +
+            "el.dataset.lerxuBarStyleH=el.style.height||'';" +
+            "el.style.boxSizing='content-box';" +
+            "el.style.height=ch+'px';" +
+            // 坞收起 / 展开时那一截跟着**平滑**变（与坞的形变同一条 300ms 时间线）：
+            // 不挂过渡的话每次跨档它都是一帧跳过去
+            "el.style.transition='padding-bottom 300ms cubic-bezier(.22,.61,.36,1)';" +
+            "el.dataset.lerxuBar='1';" +
+            "}else{el.dataset.lerxuBarNo='1';}" +
             "}" +
+            "if(el.dataset.lerxuBar==='1'){" +
+            "el.style.paddingBottom=barWant(el)+'px';" +
+            "el.dataset.lerxuPadded='1';barPadded=true;" +
+            "}" +
+            "}else if(el.dataset.lerxuBar==='1'){" +
+            // 这条栏后来长高了（超出上面那一档）：不再延伸，原样还回去
+            "restoreBar(el);}" +
+            // 延伸过的那条**不再报高度**：坞不需要让位（用户点名"应该仍在底部"）。
+            // 只有没延伸成的（太高的整宽条）才照旧报高度，让坞抬到它上面
+            "if(el.dataset.lerxuBar!=='1'){" +
             "var rh=el.getBoundingClientRect().height;" +
-            "if(rh>fullH)fullH=rh;" +
+            "if(rh>fullH)fullH=rh;}" +
             "}" +
             "continue;}" +
             "if(r.height>vh*0.45)continue;" +
@@ -4646,7 +4714,8 @@ class BrowserController(
             "}" +
             // 顶部整屏层在场：坞原地不动 —— 既不上抬（页面自己的底栏这时被它盖着），
             // 也不滑走（那是"从底部升起来的整屏弹层"才有的待遇）
-            "report(topModal?0:Math.round(fullH),topModal?false:coverAll);" +
+            "report(topModal?0:Math.round(fullH),topModal?false:coverAll," +
+            "topModal?false:barPadded);" +
             "};" +
             "window.__lerxuDockAvoidApply=apply;" +
             "apply();" +
@@ -4729,11 +4798,16 @@ class BrowserController(
             "el.style.transition='transform 300ms cubic-bezier(.22,.61,.36,1)';" +
             "el.style.transform=el.dataset.lerxuBase||'';" +
             "el.dataset.lerxuShift='0';}" +
-            // 为手势条补的那段 padding 也要还回去：传统模式网页本来就留了底边，
-            // 留着它只会把底部导航凭空撑高一截
-            "if(el.dataset&&el.dataset.lerxuPadBase!==undefined){" +
-            "el.style.paddingBottom=el.dataset.lerxuPadBase;" +
-            "delete el.dataset.lerxuPadBase;}" +
+            // "向上延伸"补的那段 padding 也要还回去（传统模式网页本来就留了底边，
+            // 留着它只会把底部导航凭空撑高一截），连盒子的模式与高度一起还原
+            "if(el.dataset&&el.dataset.lerxuBar==='1'){" +
+            "el.style.boxSizing=el.dataset.lerxuBarBox||'';" +
+            "el.style.height=el.dataset.lerxuBarStyleH||'';" +
+            "el.style.paddingBottom=el.dataset.lerxuBarPb||'';" +
+            "el.style.transition='';" +
+            "delete el.dataset.lerxuBar;delete el.dataset.lerxuBarH;" +
+            "delete el.dataset.lerxuBarOrig;delete el.dataset.lerxuBarPb;" +
+            "delete el.dataset.lerxuBarBox;delete el.dataset.lerxuBarStyleH;}" +
             "if(el.dataset&&el.dataset.lerxuPadded!==undefined){" +
             "delete el.dataset.lerxuPadded;}" +
             "if(el.dataset&&el.dataset.lerxuPadNo!==undefined){" +
@@ -4748,14 +4822,19 @@ class BrowserController(
      *（收起只剩一枚小胶囊：68；展开是整条控制栏：88；坞被抬到整宽弹窗上面时再叠加
      * 那段高度，悬浮元素才不会正好落在抬起来的坞下面），立即重跑。
      *
-     * [gesturePx] = 系统手势条那一截（dp ≈ CSS px）：贴底整宽的底部导航按它向上延伸。
+     * [gesturePx] = 系统手势条那一截（dp ≈ CSS px）：坞整个收起时（[padPx] 为 0，
+     * 也就是坞还是"浏览器按钮"形态）底部导航至少按它向上延伸，别让内容压在系统手势条上。
+     * [barPx] = **坞可见顶边**离屏幕底的距离（dp ≈ CSS px，界面实测）：网页那条贴底整宽
+     * 的**底部导航**按它垫（不再用上面那个凑出来的让位带），坞收起 / 展开 / 被抬起来都
+     * 自动跟上；坞不在地址形态（[padPx] 为 0）时给 0，让页面退回"至少垫一个手势条"。
      * [enabled] = 现代界面方案。两个方向都要处理：
      * - 关（传统）：停脚本 + 复位位移 + 把旧上报值作废 —— 传统工具栏永不避让；
      * - 开（现代）：给已经加载过的页面**补一次注入**（否则要等下次导航才生效）。
      */
-    fun updateDockAvoid(padPx: Int, enabled: Boolean, gesturePx: Int) {
+    fun updateDockAvoid(padPx: Int, enabled: Boolean, gesturePx: Int, barPx: Int) {
         dockAvoidPad = padPx
         gesturePad = gesturePx
+        barPadPx = barPx
         val changed = dockAvoidOn != enabled
         dockAvoidOn = enabled
         if (changed) {
@@ -4763,6 +4842,7 @@ class BrowserController(
             tabs.forEach { tab ->
                 tab.bottomOverlayPx = 0
                 tab.bottomOverlayAll = false
+                tab.bottomBar = false
             }
         }
         tabs.forEach { tab ->
@@ -4776,6 +4856,7 @@ class BrowserController(
                 view.evaluateJavascript(
                     "window.__lerxuDockPad=$padPx;" +
                         "window.__lerxuGesture=$gesturePx;" +
+                        "window.__lerxuBarPad=$barPx;" +
                         "window.__lerxuDockAvoidApply&&window.__lerxuDockAvoidApply();",
                     null
                 )

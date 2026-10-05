@@ -225,9 +225,29 @@
     <string name="browser_dock_more_tabs">分頁</string>
     <string name="browser_dock_more_new_tab">新增分頁</string>
     <string name="browser_dock_more_home">首頁</string>
+    <string name="browser_dock_more_history">歷史記錄</string>
     <string name="browser_dock_more_downloads">下載頁</string>
     <string name="browser_dock_more_settings">設定</string>
+    <string name="history_filter_all">全部</string>
+    <string name="history_filter_visits">最近瀏覽</string>
+    <string name="history_filter_searches">搜尋記錄</string>
+    <string name="history_bucket_today">今天</string>
+    <string name="history_bucket_yesterday">昨天</string>
+    <string name="history_empty">還沒有瀏覽記錄</string>
+    <string name="history_empty_filtered">這一檔裡還沒有記錄</string>
+    <string name="history_empty_search">沒有符合的記錄</string>
+    <string name="history_search">搜尋瀏覽記錄</string>
+    <string name="history_search_hint">搜尋瀏覽記錄</string>
     <string name="settings_appearance">外觀</string>
+    <string name="settings_category_bt">BT 設定</string>
+    <string name="settings_category_browser">瀏覽器</string>
+    <string name="settings_category_appearance">個性外觀</string>
+    <string name="settings_category_general">一般</string>
+    <string name="settings_category_about">關於</string>
+    <string name="settings_category_download">下載設定</string>
+    <string name="settings_group_transfer">下載與傳輸</string>
+    <string name="settings_group_browsing">瀏覽與外觀</string>
+    <string name="settings_group_system">系統與關於</string>
     <string name="theme">主題</string>
     <string name="theme_follow_system">跟隨系統</string>
     <string name="theme_light">淺色</string>
@@ -386,6 +406,9 @@
     <string name="browser_tabs_done">完成</string>
     <string name="browser_new_tab">新增分頁</string>
     <string name="browser_close_tab">關閉分頁</string>
+    <!-- 標籤格狀底部那一排：返回（收合格狀）/ 全部刪除（兩段式：先展開再刪） -->
+    <string name="browser_tabs_back">返回</string>
+    <string name="browser_tabs_close_all">全部刪除</string>
     <string name="browser_tab_untitled">新分頁</string>
     <string name="browser_sniff_collapse">收合</string>
     <string name="browser_downloads_page">下載頁</string>
@@ -396,19 +419,12 @@
     <string name="browser_dock_style">介面方案</string>
     <string name="browser_dock_style_classic">傳統</string>
     <string name="browser_dock_style_modern">現代</string>
-    <!-- 影視模式（識別到影視頁時自動開啟） -->
-    <string name="movie_mode">影視模式</string>
-    <string name="movie_mode_close">關閉影視模式</string>
-    <string name="movie_mode_empty">這一頁還沒識別到可播放的影視資源</string>
-    <string name="movie_mode_loading">正在讀取這一頁…</string>
-    <string name="movie_mode_no_content">這一頁沒有可顯示的內容</string>
-    <string name="movie_mode_view_page">檢視原網頁</string>
-    <string name="movie_mode_lines">播放線路</string>
-    <string name="movie_mode_recommend">猜你喜歡</string>
-    <string name="movie_mode_comments">評論</string>
-    <string name="movie_mode_nav_open">瀏覽分類</string>
-    <string name="movie_mode_search_hint">搜尋站內內容</string>
-    <string name="movie_mode_play_in_page">在網頁裡播放</string>
+    <!-- 設定頁裡的「底部控制列」：與塢的長按設定面板同一個開關，這裡是文字入口 -->
+    <string name="settings_dock_mode_title">底部控制列</string>
+    <string name="settings_dock_mode_modern">現代模式</string>
+    <string name="settings_dock_mode_classic">傳統模式</string>
+    <string name="settings_dock_mode_modern_desc">懸浮控制列，捲動網頁時自動收合</string>
+    <string name="settings_dock_mode_classic_desc">貼底整條工具列，始終完整顯示</string>
     <!-- Window mode selection -->
     <string name="browser_window_mode">視窗模式</string>
     <string name="normal_window">一般視窗</string>

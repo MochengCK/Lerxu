@@ -6,12 +6,21 @@
   Media3 1.5 的 PlayerView 还没把 `setSurfaceType` 开成公开 API（常量也是私有的）。
   而"窗口内合成"（TextureView 而不是独立 SurfaceView 合成面）正是这套覆盖层能干净
   叠在网页上的前提：没有打洞、没有层级跳、页面那块画面也不会从播放器底下透出来。
+
+  `resize_mode` 用 fill（而不是 fit/zoom）：画面**该多大**由覆盖层按视频自己的宽高比
+  算好（见 NativePlayerOverlay.fitRect），这块 View 只是把它铺满 —— fit/zoom 是"让
+  Media3 去改这块的尺寸"，两套尺寸一起算就会互相打架（边对不齐）。
+
+  `android:background` 是**黑**：换片时 Media3 会清掉上一帧（见
+  `setKeepContentOnPlayerReset(false)`），那一小段露出来的就是这层底 —— 给黑色是
+  "正在起播"的常规读法；不铺底的话它会透出下面的网页，读起来像画面塌了一块。
 -->
 <androidx.media3.ui.PlayerView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@android:color/black"
     app:surface_type="texture_view"
     app:use_controller="false"
-    app:resize_mode="fit" />
+    app:resize_mode="fill" />

@@ -386,31 +386,6 @@
           </el-form-item>
         </div>
 
-        <!-- 视频合并设置卡片 -->
-        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ t('preferences.video-merge') }}</h3>
-          <el-form-item size="small">
-            <el-col class="form-item-sub" :span="24">
-              <div style="margin-bottom: 12px;">
-                <strong>{{ t('preferences.ffmpeg-status') }}：</strong>
-                <span :style="{ color: ffmpegStatus.installed ? '#67c23a' : '#f56c6c' }">
-                  {{ ffmpegStatus.installed ? t('preferences.ffmpeg-installed') : t('preferences.ffmpeg-not-installed') }}
-                </span>
-              </div>
-              <div v-if="ffmpegStatus.installed && ffmpegStatus.path" style="margin-bottom: 12px;">
-                <strong>{{ t('preferences.ffmpeg-path') }}：</strong>
-                <span style="word-break: break-all;">{{ ffmpegStatus.path }}</span>
-              </div>
-            </el-col>
-            <el-col class="form-item-sub" :span="24" v-if="ffmpegStatus.installed && ffmpegStatus.path">
-              <el-button size="small" @click="openFfmpegFolder">
-                <el-icon><FolderOpened /></el-icon>
-                {{ t('preferences.ffmpeg-open-folder') }}
-              </el-button>
-            </el-col>
-          </el-form-item>
-        </div>
-
         <!-- 引擎信息卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ t('preferences.engine') }}</h3>
@@ -550,10 +525,9 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import is from 'electron-is'
-import { app, dialog, shell } from '@electron/remote'
+import { dialog, shell } from '@electron/remote'
 import { existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
-import { spawn } from 'node:child_process'
 import { ipcRenderer } from 'electron'
 import { ElMessage } from 'element-plus'
 import { cloneDeep, isEmpty } from 'lodash'
@@ -746,7 +720,6 @@ const updatePreviewContent = ref('')
 // 预览层顶部显示的版本号（远端最新版本，按当前更新渠道选定）
 const updatePreviewVersion = ref('')
 const hasNoResults = ref(false)
-const ffmpegStatus = ref({ installed: false, path: '' })
 const uaOptions = ref([
   { value: 'aria2', label: 'Aria2' },
   { value: 'transmission', label: 'Transmission' },
@@ -932,7 +905,6 @@ onMounted(async () => {
   } catch (e) {
     console.warn('[Lerxu] Failed to fetch engine info:', e)
   }
-  checkFfmpegStatus()
   previousGithubMirrorUrls.value = [...(form.value.githubMirrorUrls || [])]
   if (form.value.githubMirrorUrls && form.value.githubMirrorUrls.length > 0) {
     setTimeout(() => {
@@ -1375,95 +1347,6 @@ onBeforeUnmount(() => {
           return '#E6A23C' // 橙色 - 中等
         }
         return '#F56C6C' // 红色 - 慢
-      }
-      function checkFfmpegStatus() {
-        // 异步检测，避免阻塞 UI
-        setTimeout(() => {
-          doCheckFfmpegStatus()
-        }, 0)
-      }
-function doCheckFfmpegStatus() {
-const ffmpegExeName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-
-// 检查用户数据目录
-try {
-const userDataPath = app.getPath('userData')
-          const userFfmpegPath = resolve(userDataPath, 'ffmpeg', ffmpegExeName)
-          if (existsSync(userFfmpegPath)) {
-            ffmpegStatus.value = { installed: true, path: userFfmpegPath }
-            return
-          }
-        } catch (e) {
-          console.warn('[FFmpeg] Check userData failed:', e)
-        }
-
-// 检查应用安装目录（通过 exe 路径获取）
-try {
-const exePath = app.getPath('exe')
-          const appDir = dirname(exePath)
-          const appFfmpegPath = resolve(appDir, ffmpegExeName)
-          console.log('[FFmpeg] Checking app dir:', appFfmpegPath)
-          if (existsSync(appFfmpegPath)) {
-            ffmpegStatus.value = { installed: true, path: appFfmpegPath }
-            return
-          }
-        } catch (e) {
-          console.warn('[FFmpeg] Check appDir failed:', e)
-        }
-
-        // 检查应用资源目录
-        try {
-          const rp = process.resourcesPath || ''
-          if (rp) {
-            const candidates = [
-              resolve(rp, ffmpegExeName),
-              resolve(rp, 'ffmpeg-8.0.1-essentials_build', 'bin', ffmpegExeName),
-              resolve(rp, 'ffmpeg-8.0.1-essentials_build', ffmpegExeName)
-            ]
-            for (const p of candidates) {
-              if (existsSync(p)) {
-                ffmpegStatus.value = { installed: true, path: p }
-                return
-              }
-            }
-          }
-        } catch (e) {
-          console.warn('[FFmpeg] Check resourcesPath failed:', e)
-        }
-
-// 检查系统 PATH（使用异步 spawn 避免阻塞）
-try {
-const child = spawn('ffmpeg', ['-version'], { windowsHide: true })
-          child.on('error', () => {
-            ffmpegStatus.value = { installed: false, path: '' }
-          })
-          child.on('close', (code) => {
-            if (code === 0) {
-              ffmpegStatus.value = { installed: true, path: '' }
-            } else {
-              ffmpegStatus.value = { installed: false, path: '' }
-            }
-          })
-          // 设置超时
-          setTimeout(() => {
-            try {
-              child.kill()
-            } catch (_) {}
-          }, 3000)
-        } catch (_) {
-          ffmpegStatus.value = { installed: false, path: '' }
-        }
-      }
-function openFfmpegFolder() {
-if (!ffmpegStatus.value.path) return
-const path = ffmpegStatus.value.path
-        // 打开文件所在目录
-        try {
-          const folderPath = dirname(path)
-          shell.openPath(folderPath)
-        } catch (e) {
-          console.warn('[FFmpeg] Open folder failed:', e)
-        }
       }
 function openEngineLogFolder() {
 

@@ -1,4 +1,8 @@
 export default {
+  // Sidebar section labels (same structure as the main window sidebar)
+  'section-settings': 'Settings',
+  'section-download': 'Downloads',
+  'section-extension': 'Extensions',
   'basic': 'Basic',
   'advanced': 'Advanced',
   'theme-and-ui': 'Theme & Interface',
@@ -340,12 +344,6 @@ export default {
   'extension-open-manual': 'Edge was not opened automatically: please paste {{url}} into the Edge address bar and press Enter to open the extensions page (URL copied to clipboard)',
   'extension-open-running': 'Browser is already running: switch to its window, paste {{url}} into the address bar and press Enter (URL copied to clipboard)',
 
-  'video-merge': 'Video Merge',
-  'ffmpeg-status': 'FFmpeg Status',
-  'ffmpeg-installed': 'Installed',
-  'ffmpeg-not-installed': 'Not Installed',
-  'ffmpeg-path': 'Path',
-  'ffmpeg-open-folder': 'Open Folder',
   'auto-check-update-desc': 'Automatically check for updates when the app starts',
   'auto-hide-window-desc': 'Hide the main window to the tray instead of quitting when it is closed',
   'auto-open-task-progress-window-desc': 'Automatically open the progress window when a task starts downloading',

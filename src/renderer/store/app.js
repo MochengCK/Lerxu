@@ -113,10 +113,20 @@ export const useAppStore = defineStore('app', () => {
   }
 
   function updateAddTaskOptions (options) {
-    addTaskOptions.value = {
+    const next = {
       ...addTaskOptions.value,
       ...options
     }
+    // 「一对音视频」的配对信息（pairId/pairRole）是**本次请求**的属性，不能像
+    // 其它选项那样沿用上一次的值：扩展"完整视频"发完一对流之后紧接着再发一个
+    // 普通资源（新任务对话框、或另一个单独文件），那个普通任务就会继承上一对
+    // 的 pairId —— 于是它被折叠进上一对、甚至被当成"另一半"参与合并
+    // （2026-10-02 端到端验证时抓到）。载荷没带 pairId 就把它清掉。
+    if (!options || options.pairId === undefined) {
+      delete next.pairId
+      delete next.pairRole
+    }
+    addTaskOptions.value = next
   }
 
   function resetAddTaskOptions () {

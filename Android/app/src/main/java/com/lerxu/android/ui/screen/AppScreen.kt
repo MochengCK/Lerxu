@@ -3,7 +3,6 @@ package com.lerxu.android.ui.screen
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.graphics.RectF
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -12,6 +11,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -39,6 +39,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -67,13 +68,11 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -84,6 +83,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -95,7 +95,9 @@ import com.lerxu.android.browser.SearchEngine
 import com.lerxu.android.browser.SearchEngineDetector
 import com.lerxu.android.browser.SearchEngines
 import com.lerxu.android.browser.SniffedResource
+import com.lerxu.android.browser.VideoSniffer
 import com.lerxu.android.ui.player.NativePlayerOverlay
+import com.lerxu.android.ui.player.PlayerDownload
 import com.lerxu.android.engine.EngineManager
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -106,22 +108,20 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.Tab
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
+import androidx.compose.material.icons.outlined.AddBox
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -135,7 +135,6 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -167,7 +166,6 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -184,7 +182,6 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.material.icons.filled.Tab
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.luminance
@@ -244,7 +241,12 @@ fun AppScreen(
     /** 外部链接的序号：同一个地址连着进来两次也要各处理一次（见下面的 LaunchedEffect）。 */
     intentTick: Int = 0,
     themePref: String = "system",
-    onThemeChange: (String) -> Unit = {}
+    onThemeChange: (String) -> Unit = {},
+    /**
+     * 语言选了哪一档（设置里那个语言弹窗）。**不重建 Activity**（见 `AppLocale`）：
+     * 调用方只是把偏好写下去 + 推一下全局状态，整棵树当帧换语言。
+     */
+    onLanguageChange: (String) -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     // 窗口根 View 与密度：首页面板要按"像素"算让位高度（网页里的 CSS px ≈ dp），
@@ -279,10 +281,29 @@ fun AppScreen(
     var page by rememberSaveable {
         mutableStateOf(StartPagePrefs.toAppPage(StartPagePrefs.read(context)))
     }
+    /**
+     * 设置**以底部弹窗呈现**（用户点名：不再是一页）。
+     *
+     * 用一个开关控制显隐：弹窗里自带返回 / 下滑关闭，关掉就回到原来那一页 ——
+     * 因此不再需要"记住用户是从下载器还是浏览器进来的"那套页面状态：
+     * 设置压根没有把用户从当前页面上带走，浏览器里正放着的网页 / 视频原地还在。
+     */
+    var settingsOpen by remember { mutableStateOf(false) }
+    /**
+     * 历史记录**也是底部弹窗**（用户点名："从更多设置进入的历史记录面板要跟现在的设置面板
+     * 一样由底部弹出"）—— 同一个理由：它盖在当前页面之上，关掉即回到原处。
+     *
+     * 于是它不再走"切回浏览器页 + 把首页那层落到历史界面"那条路（`openHistoryPage`）：
+     * 那条路会把用户正在看的网页**换成自家首页**，只是为了让历史有地方显示。
+     */
+    var historyOpen by remember { mutableStateOf(false) }
     // 搜索引擎：首次进入按当前网络自动挑一次，之后一律以用户选择为准
     var searchEngineKey by remember { mutableStateOf(SearchEngineDetector.currentKey(context)) }
     val searchEngine = remember(searchEngineKey) { SearchEngines.byKey(searchEngineKey) }
     val snackbarHostState = remember { SnackbarHostState() }
+    // 当前这条提示是**成功还是失败**。SnackbarData 里读不出来（只有文案与动作），
+    // 而这两者要的图标 / 用色不同，所以在 showSnackbar 之前把它记下来给提示条用
+    var snackbarOk by remember { mutableStateOf(true) }
     val uiScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
@@ -300,6 +321,7 @@ fun AppScreen(
                 headers = handoff.headers
             )
             val ok = !gid.isNullOrBlank()
+            snackbarOk = ok
             val result = snackbarHostState.showSnackbar(
                 message = context.getString(
                     if (ok) R.string.browser_download_sent else R.string.browser_download_failed
@@ -308,6 +330,34 @@ fun AppScreen(
                 // 带 actionLabel 时 showSnackbar 的默认时长是 **Indefinite**：
                 // 提示会一直挂在屏幕上，非得点一下"查看任务"才消失（用户点名）。
                 // 这里明确给 Short 自动收起，并补一个关闭按钮 —— 想手动关也有路
+                withDismissAction = true,
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) page = AppPage.Tasks
+        }
+    }
+
+    /**
+     * 原生播放器里点了「下载」：把这一路 **M3U8** 交给下载引擎。
+     *
+     * 与浏览器那条路同一个出口（[submitDownload]）：引擎自己认 HLS 清单，抓分片拼成一个
+     * 文件；文件名用弹窗里那个（可改过的）名字，请求头照旧带 Referer / UA / Cookie。
+     */
+    fun submitPlayerDownload(req: PlayerDownload) {
+        uiScope.launch {
+            val gid = viewModel.addBrowserDownload(
+                uri = req.url,
+                dir = EngineManager.getDownloadDirSafe(),
+                out = req.fileName,
+                headers = req.headers.map { (k, v) -> "$k: $v" }
+            )
+            val ok = !gid.isNullOrBlank()
+            snackbarOk = ok
+            val result = snackbarHostState.showSnackbar(
+                message = context.getString(
+                    if (ok) R.string.browser_download_sent else R.string.browser_download_failed
+                ),
+                actionLabel = if (ok) context.getString(R.string.browser_view_tasks) else null,
                 withDismissAction = true,
                 duration = SnackbarDuration.Short
             )
@@ -327,8 +377,26 @@ fun AppScreen(
         onDispose { browserController.onDestroy() }
     }
 
-    // 不在任务页时，系统返回键先回任务页
-    BackHandler(enabled = page != AppPage.Tasks) { page = AppPage.Tasks }
+    // 退到后台补落一次盘（用户点名："为什么重进应用，普通标签页就没了"）：
+    // 标签页此前只在显式动作（新建 / 切换 / 关页）与**页面加载完**时落盘 ——
+    // 用户点开一页、还没加载完就切走 / 进程随后被系统回收时，最新那份就没进去。
+    // 切后台这一刻补一次，代价只有一次 prefs 写入 + 几张缩略图编码（都很小）。
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                browserController.persistTabs()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 不在任务页时，系统返回键先回任务页。
+    // 设置已是底部弹窗（它自己处理返回 / 下滑关闭），这里只剩浏览器 ⇄ 任务这一条。
+    BackHandler(enabled = page != AppPage.Tasks) {
+        page = AppPage.Tasks
+    }
 
     // 底部坞里的地址栏：文本与焦点状态（坞在页面之外常驻，状态也放这里）
     var addressInput by remember { mutableStateOf("") }
@@ -372,6 +440,9 @@ fun AppScreen(
     // 原生播放器当前在播的那条资源（null = 没在播）。点「本页资源」里的一条就设它，
     // 播放页盖在整个界面之上（见文件末尾）
     var playing by remember { mutableStateOf<SniffedResource?>(null) }
+    // 这一路要不要**自动播**：页面里那个播放器本来就停着时（站点自己的封面 / 大播放按钮）
+    // 我们只换成自己的播放器、不替用户按下播放（见 BrowserController.nativePlayPaused）
+    var playingStartPaused by remember { mutableStateOf(false) }
 
     // 网页里**开始播视频** → App 接管：直接开原生播放器（见 PageVideoDetector）。
     // 这是"换成我们的播放器"那条路的主入口 —— 用户不必先点「本页资源」。
@@ -379,6 +450,7 @@ fun AppScreen(
     LaunchedEffect(browserController.nativePlayRequest) {
         browserController.nativePlayRequest?.let { item ->
             playing = item
+            playingStartPaused = browserController.nativePlayPaused
             sniffOpen = false
             browserController.clearNativePlayRequest()
         }
@@ -550,7 +622,11 @@ fun AppScreen(
         browserController.homeDark = isDarkTheme
         browserController.themeBackground = themeBackgroundArgb
         browserController.homeColors = homeColors
-        browserController.homeLang = if (java.util.Locale.getDefault().language == "en") "en" else "zh"
+        // 首页的语言：跟着**应用语言**（不是系统语言）—— 切了语言首页那句提示也该跟着换
+        browserController.homeLang =
+            if (com.lerxu.android.ui.AppLocale.localeOf(com.lerxu.android.ui.AppLocale.current)
+                    .language == "en"
+            ) "en" else "zh"
         browserController.dockModern = dockModern
         browserController.adBlockEnabled = adBlock
         // 聚焦态同步给控制器：网页滚动回传要据此闭嘴（见 DockBridge.scroll），
@@ -659,10 +735,10 @@ fun AppScreen(
         }
     }
 
-    // 坞：设置页不渲染。
-    // 另外两种"要让位"的情况：浏览器页展开标签网格（网格要盖满整屏）、
+    // 坞：设置已改为底部弹窗（不再是"要让位"的一页），所以它在任何页面都常驻。
+    // 另一种"要让位"的情况：浏览器页展开标签网格（网格要盖满整屏）、
     // 任务页进入编辑模式（底部那条选择控制栏在坞下面，现在是悬浮层会压住它）
-    val dockPresent = page != AppPage.Settings
+    val dockPresent = true
     val dockOpaque = !(page == AppPage.Browser && browserController.tabsOpen) &&
         !(page == AppPage.Tasks && (selectionMode || deleteConfirming))
 
@@ -685,7 +761,7 @@ fun AppScreen(
                 modifier = Modifier.padding(
                     bottom = if (dockPresent && dockOpaque) 64.dp else 0.dp
                 )
-            )
+            ) { data -> LerxuSnackbar(data, snackbarOk) }
         },
         topBar = {
             // 浏览器页自带地址栏，不共用顶栏
@@ -702,14 +778,13 @@ fun AppScreen(
                     LerxuTopBar(
                         state = state,
                         connected = state.connected,
-                        page = page,
                         onOpenSettings = {
                             // 进设置前退出编辑模式，避免残留选中状态
                             selectionMode = false
                             selectedGids.clear()
-                            page = AppPage.Settings
+                            // 设置是**底部弹窗**：打开它不换页，关掉就回到任务页
+                            settingsOpen = true
                         },
-                        onBackToTasks = { page = AppPage.Tasks },
                         sortBy = sortBy,
                         onSelectSort = { key ->
                             sortBy = key
@@ -759,46 +834,38 @@ fun AppScreen(
             // 正在滑出 / 滑入的内容会被连带闪跳一下（用户点名的"来回跳"）。
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                if (targetState == AppPage.Browser || initialState == AppPage.Browser) {
-                    // 下载器 ⇄ 浏览器：**进出两页共用一套动画、一条时间线**，
-                    // 形变原点锚在**底部中央**（坞那枚浏览器按钮所在的位置）——
-                    // 进来的一页从下方 `pageSlideDist` 处升起来 + 从 0.96 放大 + 淡入，
-                    // 出去的一页沉回控制栏 + 收回成 0.94 + 淡出。
-                    //
-                    // 时间线跟坞的形变**完全一致**（340ms + FastOutSlowIn）：坞那条
-                    // 34% → 100% 的胶囊长成整条控制栏，和整页的升起来是同一个动作，
-                    // 谁也不会"先出现、后到位"（用户点名：控制栏都出来了，链接输入框
-                    // 才开始动 —— 那一条的根因在 DockAddressContent 的宽度推导，
-                    // 这里把两边的时长对齐，剩下的交给同一条曲线收尾）。
-                    //
-                    // 关键：位移与缩放**必须同向**（都在"往上长 / 往下收"）——
-                    // 若滑入向上而缩放缩小，用户会看到内容先缩再走，产生两次位移错觉。
-                    // 两个方向因此共用同一套（不再按 goingToBrowser 分叉）：
-                    // 对坞来说"进"和"出"本来就是同一个动作的正反播放。
-                    val slideSpec = tween<IntOffset>(340, easing = FastOutSlowInEasing)
-                    val scaleSpec = tween<Float>(340, easing = FastOutSlowInEasing)
-                    val fadeSpec = tween<Float>(240, easing = FastOutSlowInEasing)
-                    val origin = TransformOrigin(0.5f, 1f)
+                // 页面切换现在只有"下载器 ⇄ 浏览器"这一种（设置已改为底部弹窗，不再是页面），
+                // 于是这一段不再分叉：进出两页共用一套动画、一条时间线，形变原点锚在
+                // **底部中央**（坞那枚浏览器按钮所在的位置）——
+                // 进来的一页从下方 `pageSlideDist` 处升起来 + 从 0.96 放大 + 淡入，
+                // 出去的一页沉回控制栏 + 收回成 0.94 + 淡出。
+                //
+                // 时间线跟坞的形变**完全一致**（340ms + FastOutSlowIn）：坞那条
+                // 34% → 100% 的胶囊长成整条控制栏，和整页的升起来是同一个动作，
+                // 谁也不会"先出现、后到位"（用户点名：控制栏都出来了，链接输入框
+                // 才开始动 —— 那一条的根因在 DockAddressContent 的宽度推导，
+                // 这里把两边的时长对齐，剩下的交给同一条曲线收尾）。
+                //
+                // 关键：位移与缩放**必须同向**（都在"往上长 / 往下收"）——
+                // 若滑入向上而缩放缩小，用户会看到内容先缩再走，产生两次位移错觉。
+                // 两个方向因此共用同一套（不再按 goingToBrowser 分叉）：
+                // 对坞来说"进"和"出"本来就是同一个动作的正反播放。
+                val slideSpec = tween<IntOffset>(340, easing = FastOutSlowInEasing)
+                val scaleSpec = tween<Float>(340, easing = FastOutSlowInEasing)
+                val fadeSpec = tween<Float>(240, easing = FastOutSlowInEasing)
+                val origin = TransformOrigin(0.5f, 1f)
 
-                    (
-                        // 进场：从控制栏里升起来（下方 +d → 0），同时放大 + 淡入
-                        slideInVertically(slideSpec) { pageSlideDist } +
-                            scaleIn(scaleSpec, initialScale = 0.96f, transformOrigin = origin) +
-                            fadeIn(fadeSpec)
-                        ) togetherWith (
-                        // 出场：沉回控制栏（0 → 下方 +d），同时收小 + 淡出
-                        slideOutVertically(slideSpec) { pageSlideDist } +
-                            scaleOut(scaleSpec, targetScale = 0.94f, transformOrigin = origin) +
-                            fadeOut(fadeSpec)
-                        )
-                } else {
-                    // 任务 ↔ 设置：小幅交叉滑动 + 淡入淡出，方向感保留但幅度收敛
-                    val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                    (slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { dir * it / 8 } +
-                        fadeIn(tween(220))) togetherWith
-                        (slideOutHorizontally(tween(260, easing = FastOutSlowInEasing)) { -dir * it / 8 } +
-                            fadeOut(tween(200)))
-                }
+                (
+                    // 进场：从控制栏里升起来（下方 +d → 0），同时放大 + 淡入
+                    slideInVertically(slideSpec) { pageSlideDist } +
+                        scaleIn(scaleSpec, initialScale = 0.96f, transformOrigin = origin) +
+                        fadeIn(fadeSpec)
+                    ) togetherWith (
+                    // 出场：沉回控制栏（0 → 下方 +d），同时收小 + 淡出
+                    slideOutVertically(slideSpec) { pageSlideDist } +
+                        scaleOut(scaleSpec, targetScale = 0.94f, transformOrigin = origin) +
+                        fadeOut(fadeSpec)
+                    )
             },
             label = "appPageSwitch"
         ) { current ->
@@ -817,29 +884,8 @@ fun AppScreen(
                         TRADITIONAL_DOCK_HEIGHT
                     },
                     modern = dockModern,
-                    topInset = windowTopInset,
-                    // 影视模式：识别到影视内容后自动开（见 MovieMode），这一页改用自家
-                    // 的影视页整屏呈现；点列表里的一条就走 App 自己的播放器
-                    movieMode = browserController.movieMode,
-                    onPlayMovie = { item -> playing = item }
+                    topInset = windowTopInset
                 )
-
-                AppPage.Settings -> Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(top = topInsetWithBar)
-                ) {
-                    SettingsScreen(
-                        viewModel = viewModel,
-                        engineVersion = state.engineVersion,
-                        themePref = themePref,
-                        onThemeChange = onThemeChange,
-                        searchEngineKey = searchEngineKey,
-                        onSearchEngineChange = { key -> searchEngineKey = key },
-                        adBlock = adBlock,
-                        onAdBlockChange = { setAdBlock(it) }
-                    )
-                }
 
                 AppPage.Tasks -> Column(
                     modifier = Modifier
@@ -985,9 +1031,16 @@ fun AppScreen(
             // 网页内容始终能从底部透出来，读起来是一层投影而不是色块
             // 网页里有"贴底整宽弹窗"时，坞会抬到它上面（见 BrowserDock 的 overlayLift），
             // 而这条底部渐变是压在坞身后的：让它跟着淡掉，别把人家整条弹窗压暗 ——
-            // 整屏覆盖型（overlayAll）更要把这一条收干净
-            val overlayPresent = dockModern &&
-                (browserController.bottomOverlayPx > 0 || browserController.bottomOverlayAll)
+            // 整屏覆盖型（overlayAll）更要把这一条收干净。
+            // **网页自己的底部导航**（bottomBar）也走这一档：坞这时不抬（用户点名"坞仍在
+            // 底部"），但那条栏已经把背景铺到底、坞就装在它里面，再压一层渐变只会把人家的
+            // 底色抹脏。
+            // 网页上报的"贴底弹窗"只在**浏览器页**成立：这份值挂在当前标签上，离开
+            // 浏览器页后不会自己清零（只在导航 / 换方案时清）—— 任务页若还认它，
+            // 底部的淡出层会在浏览器按钮后面凭空消失，看着就是按钮下方少了一块
+            val overlayPresent = page == AppPage.Browser && dockModern &&
+                (browserController.bottomOverlayPx > 0 || browserController.bottomOverlayAll ||
+                    browserController.bottomBarPresent)
             val dockScrim by animateFloatAsState(
                 targetValue = if (dockPresent && dockOpaque && !overlayPresent) 1f else 0f,
                 animationSpec = tween(220, easing = FastOutSlowInEasing),
@@ -1095,7 +1148,9 @@ fun AppScreen(
                         items = browserController.sniffed,
                         onPlay = { item ->
                             // 交给 App 自己的播放器（见 PlayerScreen）：控件、全屏、
-                            // 手势都归我们，不再受 WebView 怎么合成页面的影响
+                            // 手势都归我们，不再受 WebView 怎么合成页面的影响。
+                            // 这是用户自己点的播放，**当然要自动播**
+                            playingStartPaused = false
                             playing = item
                             sniffOpen = false
                         },
@@ -1159,30 +1214,25 @@ fun AppScreen(
                         onAddressFocusChange = { addressFocused = it },
                         focusRequester = addressFocusRequester,
                         bottomPadding = dockBottom,
-                        sniffOpen = shelfOpen,
-                        // 影视模式入口：检测到影视站才出现（本页资源那枚按钮已按用户要求移除）。
-                        // **进和出都走它**（用户口径）：不在模式里 → 进；在模式里 → 退（斜杠）
-                        movieSite = browserController.movieSiteDetected,
-                        movieMode = browserController.movieMode,
-                        onMovieMode = {
-                            if (browserController.movieMode) {
-                                browserController.closeMovieMode()
-                            } else {
-                                browserController.enableMovieMode()
-                            }
-                        },
                         onLaunch = { page = AppPage.Browser },
                         // 长按返回键 = 直接回下载器（退出浏览器）；标签页留着，再进还在
                         onExitBrowser = { page = AppPage.Tasks },
+                        onHistory = {
+                            // 「更多功能」里的"历史"：**开一张底部弹窗**（用户点名，与设置同款），
+                            // 不再切页、也不再把当前网页换成自家首页 —— 关掉就回到原处。
+                            // 这里**不碰焦点**：地址栏不聚焦，键盘就不会自己弹起来
+                            sniffOpen = false
+                            historyOpen = true
+                        },
                         onTabs = {
                             sniffOpen = false
                             browserController.openTabs()
                         },
                         onOpenSettings = {
                             sniffOpen = false
-                            page = AppPage.Settings
+                            // 设置是底部弹窗：关掉就回到当前那个网页，用户不算被带走
+                            settingsOpen = true
                         },
-                        onSniff = { sniffOpen = !sniffOpen },
                         onEnginePick = { key ->
                             SearchEngineDetector.setEngine(context, key, pinned = true)
                             searchEngineKey = key
@@ -1193,6 +1243,47 @@ fun AppScreen(
                 }
             }
         }
+    }
+
+    // 设置：底部弹窗（用户点名——左返回、中标题；首页只列一级分类，点进去才是具体设置项）。
+    // 它盖在任何页面之上，关掉即回到原处，浏览器里正放着的网页 / 视频原地不动。
+    if (settingsOpen) {
+        SettingsScreen(
+            viewModel = viewModel,
+            engineVersion = state.engineVersion,
+            themePref = themePref,
+            onThemeChange = onThemeChange,
+            searchEngineKey = searchEngineKey,
+            onSearchEngineChange = { key -> searchEngineKey = key },
+            adBlock = adBlock,
+            onAdBlockChange = { setAdBlock(it) },
+            // 底部控制栏模式：设置与坞内设置面板共用一个状态/偏好，
+            // 在这里改完立即生效（坞自己会连续形变过去）
+            dockModern = dockModern,
+            onDockModernChange = { setDockModern(it) },
+            // 语言：当前档位直接读全局状态（改完立刻反映到勾选与整棵树）
+            currentLanguage = com.lerxu.android.ui.AppLocale.current,
+            onLanguageChange = onLanguageChange,
+            onDismiss = { settingsOpen = false }
+        )
+    }
+
+    // 历史记录：同样是一张底部弹窗，盖在当前页面之上（见 historyOpen 的说明）。
+    // 点某一行＝去那个地址：**先关弹窗再导航**，否则动画会和页面加载抢同一拍；
+    // 路由交给控制器（openFromUi：与首页面板里点一条历史走同一条路），界面只负责切到浏览器页
+    if (historyOpen) {
+        BrowserHistorySheet(
+            entries = browserController.history,
+            onOpen = { url ->
+                historyOpen = false
+                page = AppPage.Browser
+                browserController.openFromUi(url)
+            },
+            // 移除模式里按下「删除」：记录是全局一份（控制器持有 + 落盘），
+            // 删完这份 entries 自己就变了，弹窗里的列表跟着更新
+            onDelete = { urls -> browserController.removeHistory(urls) },
+            onDismiss = { historyOpen = false }
+        )
     }
 
     // 添加任务对话框
@@ -1258,11 +1349,23 @@ fun AppScreen(
     LaunchedEffect(playing != null) {
         browserController.setNativePlayerActive(playing != null)
     }
+    // 播放器里点「下载」的回调发生在 Compose 之外，用 ref 把最新闭包递进去
+    // （与浏览器那条 submitRef 同一个套路）
+    val playerDownloadRef = remember { mutableStateOf<(PlayerDownload) -> Unit>({}) }
     val playerOverlay = remember {
         (context as? android.app.Activity)?.let { act ->
-            NativePlayerOverlay(act) { playing = null }
+            NativePlayerOverlay(
+                activity = act,
+                onClosed = { playing = null },
+                onDownload = { req -> playerDownloadRef.value(req) },
+                // 贴在网页里的那一档按返回键：该**网页后退**，而不是先关播放器
+                //（用户点名："回退网页时首先关掉的是原生播放器，这是不应该的"）——
+                // 能退就退，页面一换播放器自己就收摊了（见 BrowserController.onHostPageNavigated）
+                onBackToPage = { browserController.backInPageIfPossible() }
+            )
         }
     }
+    SideEffect { playerDownloadRef.value = { submitPlayerDownload(it) } }
     LaunchedEffect(playerOverlay, playing) {
         val overlay = playerOverlay ?: return@LaunchedEffect
         val item = playing
@@ -1272,47 +1375,16 @@ fun AppScreen(
             overlay.open(
                 url = item.url,
                 title = item.title.ifBlank { item.pageUrl },
-                headers = browserController.playbackHeaders(item.url)
+                headers = browserController.playbackHeaders(item.url),
+                // M3U8 才给下载入口（用户口径：播放 m3u8 内容时右上角显示下载）
+                isHls = VideoSniffer.isHlsManifest(item.url, item.mime),
+                // 嗅探到的 MIME 一并带上：播前探测拿它当"这是什么容器"的第一手线索
+                mime = item.mime,
+                // 页面里那个播放器本来就停着 → 我们只换壳、不替他按播放
+                startPaused = playingStartPaused
             )
         }
     }
-    /**
-     * 影视模式下播放器该落在哪儿用的两个数：**内容区顶**（状态栏那一截之下）与屏幕宽。
-     *
-     * 起点与 `BrowserScreen` 的 `topInset` **同源**（两处都是
-     * `ScaffoldDefaults.contentWindowInsets` 的顶内边距）—— 影视页那块 16:9 占位就贴在
-     * 这个起点上，播放器按同一个数落下来才盖得住它。
-     */
-    val movieTopInsetDp = ScaffoldDefaults.contentWindowInsets
-        .asPaddingValues().calculateTopPadding().value
-    val movieWidthDp = LocalConfiguration.current.screenWidthDp.toFloat()
-
-    /**
-     * 影视模式下的播放器落点：**我们自己的那一块**（整宽 16:9、在影视页顶栏之下）。
-     *
-     * 原生播放器是按"网页里那个 `<video>` 的矩形"摆位的，而影视模式把网页整个盖住了
-     * —— 那块矩形在我们这一屏后面，播放器会摆到看不见的地方。所以影视模式开着且正在
-     * 播放时，推给覆盖层的 frame 换成我们自己的位置。
-     *
-     * **必须与 `MovieScreen` 顶部那块占位 Box 同源**（起点、高度都出自 MovieScreen.kt
-     * 里那两个算式）。两边一旦对不齐，播放器就盖不住那块占位、底下会露出一条黑边。
-     * 返回 null = 不接管（照旧用网页报上来的矩形）。
-     */
-    fun movieFrame(): RectF? {
-        if (!browserController.movieMode) return null
-        // 影视模式自己保证有落点（那一块 16:9 占位），所以只要这一屏真有东西在放就接管：
-        // 我们的播放器（[playing]）与**网页自己那个播放器**（`playerOnScreen`，页面起播时
-        // 自动接管的那一路）都算。以前只认前者 —— 页面自己起播时播放器就照着网页里那块
-        // 矩形摆，正好压住我们的顶栏、还在它和内容之间留出一条空白（用户点名）。
-        if (playing == null && !browserController.playerOnScreen) return null
-        // 落点以 **MovieScreen 量出来的真实矩形**为准（见 `movieStageRect`）：原先两边各算
-        // 一遍，只要有一处没跟上（顶栏高度变了、上面多了一层内边距）就会错位。量真东西不会错。
-        browserController.movieStageRect?.let { return RectF(it) }
-        // 还没量到（首帧）：退回算式 —— 起点在影视页顶栏之下、高度整宽 16:9
-        val top = movieStageTopDp(movieTopInsetDp)
-        return RectF(0f, top, movieWidthDp, top + movieStageHeightDp(movieWidthDp))
-    }
-
     /**
      * 把播放器此刻该有的状态推给覆盖层。
      *
@@ -1323,12 +1395,18 @@ fun AppScreen(
      */
     fun pushPlayerState(browserPage: Boolean) {
         playerOverlay?.update(
-            frame = movieFrame() ?: browserController.playerFrame,
-            // 影视模式下"真有东西在放"才显示：我们的播放器（[playing]）或网页自己那个
-            // 播放器（`playerOnScreen`）。**不能只因为"在影视模式里"就显示** —— 那样换页
-            //（比如用我们的站内搜索换了内容）之后，播放器会照着上一份矩形停在上一路的画面上
-            // 不走（用户点名："站内搜索内容后，原生播放器还在"）。
-            visible = browserPage && (browserController.playerOnScreen || playing != null),
+            frame = browserController.playerFrame,
+            // "真有东西在放"才显示：我们的播放器（[playing]）或网页自己那个播放器
+            //（`playerOnScreen`，页面起播时自动接管的那一路）。
+            //
+            // `playing != null` 那一路**还要加一道"宿主页在台前"**（`playerHostInFront`）：
+            // 切到别的标签页之后我们自己的播放器仍在放（声音继续是有意的），但那一层不能
+            // 跟着飘到新页面上（用户点名："原生播放器切换页面后，它仍显示"）。
+            // `playerOnScreen` 自己已经含了这条，所以不必再套。
+            visible = browserPage && (
+                browserController.playerOnScreen ||
+                    (playing != null && browserController.playerHostInFront)
+                ),
             morph = browserController.pageGridMorph,
             target = browserController.pageGridClip,
             alpha = browserController.pageGridAlpha,
@@ -1340,11 +1418,13 @@ fun AppScreen(
     DisposableEffect(playerOverlay) {
         browserController.frameSink = { frame, visible ->
             playerOverlay?.update(
-                // 影视模式下网页报上来的位置没有意义（那块矩形被我们盖住了）：
-                // 换成我们自己的落点，两处推送必须同源（见 [movieFrame]）
-                frame = movieFrame() ?: frame,
-                visible = page == AppPage.Browser &&
-                    (visible || playing != null),
+                frame = frame,
+                // 与 [pushPlayerState] 同一套判据：切走之后**宿主页不在台前**就不画 ——
+                // 后台那一页偶尔还会报一次位置（心跳 / 慢一拍的回调），这里要是只认
+                // `playing != null`，那层就会随着这些报告一亮一灭（用户点名的"不断闪烁"）
+                visible = page == AppPage.Browser && (
+                    visible || (playing != null && browserController.playerHostInFront)
+                    ),
                 morph = browserController.pageGridMorph,
                 target = browserController.pageGridClip,
                 alpha = browserController.pageGridAlpha,
@@ -1361,11 +1441,9 @@ fun AppScreen(
     // 切 App 页面时**立刻**重推一次：位置是网页主动报上来的，切页面这一下不一定有新位置，
     // 不重推就会停在上一页的状态（播放器留在屏幕上不消失）
     LaunchedEffect(page) { pushPlayerState(page == AppPage.Browser) }
-    // 播放区那块矩形变了（转屏、顶栏高度变化）也要重推一次：位置是**推**给覆盖层的，
-    // 没人推它就停在上一份上 —— 那正是"播放器压住顶栏 / 和内容之间裂出一条空白"的来源
-    LaunchedEffect(browserController.movieStageRect) {
-        pushPlayerState(page == AppPage.Browser)
-    }
+    // 切**标签页**同理（用户点名："原生播放器切换页面后，它仍显示"）：承载播放器的那一页
+    // 被切到后台时这一层要收起来，切回来再出现 —— 光等 [page] 那一次推不到这里
+    LaunchedEffect(browserController.activeId) { pushPlayerState(page == AppPage.Browser) }
 
     // 承载播放器的那一页走了（导航走了 / 标签页被关）：播放器跟着结束
     LaunchedEffect(browserController.nativePlayStop) {
@@ -1502,18 +1580,14 @@ private fun BrowserDock(
     onAddressFocusChange: (Boolean) -> Unit,
     focusRequester: FocusRequester,
     bottomPadding: Dp,
-    sniffOpen: Boolean,
-    /** 影视模式入口的三个入参：检测到影视站才显示、开着时实心、点了手动进模式。 */
-    movieSite: Boolean,
-    movieMode: Boolean,
-    onMovieMode: () -> Unit,
     onLaunch: () -> Unit,
     /** 长按左侧返回键：直接回下载器（退出浏览器）。 */
     onExitBrowser: () -> Unit,
+    /** 「更多功能」弹窗里的"历史"：切回浏览器页并直接落到历史记录界面。 */
+    onHistory: () -> Unit,
     onTabs: () -> Unit,
     /** 「更多功能」弹窗里的"设置"：切到设置页（这个状态在 AppScreen 手里）。 */
     onOpenSettings: () -> Unit,
-    onSniff: () -> Unit,
     onEnginePick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1547,7 +1621,11 @@ private fun BrowserDock(
      *
      * 这种元素由注入脚本判定后**不再上移**（抬起来必定在下方留一条空隙 —— 用户
      * 点名的问题），改成让坞自己让位：
-     * - 矮的（宽度整宽、贴底、高度不过半屏）→ 坞整体**抬到它上面**去；
+     * - **网页自己的底部导航**（矮的）→ **坞原地不动**（用户点名："悬浮控制栏应该仍在
+     *   底部"）：脚本把那条栏**向上延伸**（转 content-box + 补底部内边距），背景铺到底、
+     *   内容抬到坞之上，坞就装在这条栏里。这一档**不报高度**，所以这里算出来的抬升是 0，
+     *   界面只用 `bottomBarPresent` 收掉那条压暗渐变；
+     * - **高一些的整宽条**（底部操作条 / 半屏卡）→ 坞整体**抬到它上面**去；
      * - 整屏覆盖的 → 坞**滑走藏起来**，别去盖人家的按钮（见下面的 progress）。
      *
      * **只在现代模式生效**：传统模式的网页本来就预留了底边（见 `bottomInset`），
@@ -1556,8 +1634,11 @@ private fun BrowserDock(
      * 底部全覆盖弹窗的避让）。控制器里那份上报值在切方案时已作废（见
      * `BrowserController.updateDockAvoid`），这里再按方案兜一道。
      */
-    val overlayPx = if (modern) controller.bottomOverlayPx else 0
-    val overlayAll = if (modern) controller.bottomOverlayAll else false
+    // `address` 也进判据：让位只在**浏览器页的地址形态**下成立。网页上报值挂在当前
+    // 标签上，离开浏览器页（下载器那侧的"浏览器"按钮 = Launch 形态）它并不会清零 ——
+    // 抬起来的坞会在按钮下方留出一条空白（用户点名）
+    val overlayPx = if (modern && address) controller.bottomOverlayPx else 0
+    val overlayAll = if (modern && address) controller.bottomOverlayAll else false
     // 抬多少：让坞的**底边正好落在弹窗上沿**。坞本身已经离屏底 `bottomPadding`
     //（导航条 + 4dp），所以只需补上差额；矮于这段间距的弹窗不用抬
     val overlayLift by animateDpAsState(
@@ -1599,29 +1680,6 @@ private fun BrowserDock(
     // 系统手势条那一截（导航条 inset）：现代模式网页铺到屏幕底，网页自己的
     // 贴底底部导航会有一截落进小横条区域 —— 下发给脚本让它向上延伸
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    // 坞收起 / 展开时，网页里的底部固定按钮**实时**跟着让位
-    //（收起只剩一枚小胶囊：68px；展开是整条控制栏：88px）。
-    // 收起那一档不能再按"整条控制栏"的量算 —— 胶囊又矮又靠下，让位带跟着收一点，
-    // 否则悬浮按钮离胶囊太远（用户点名：收起状态下上移的距离要少一点）。
-    // 坞被抬到整宽弹窗上面时再叠加那段高度：否则悬浮按钮正好落在抬起来的坞下面。
-    // `enabled` = 现代方案：传统模式**要主动把脚本停掉**，不能只下发 0 ——
-    // 网页本来就预留了底边，可脚本（含它的 MutationObserver）是跟着页面活的，
-    // 留着它传统工具栏仍会按弹窗让位/藏起来（用户点名的 bug）。
-    // !address 那档（坞还是"浏览器按钮"形态）保持脚本活着、让位带给 0：
-    // 不然进了地址形态还得等下一次注入。
-    //
-    // **跟手时这个量每帧都在变，但下发给网页是跨进程的 evaluateJavascript** ——
-    // 每帧发一次太贵（每个标签页都要发）。所以量化成 DOCK_AVOID_STEPS 档，
-    // 只在跨档时下发；网页那边对位移本身挂了 300ms 过渡，档与档之间是平滑补上的
-    val avoidStep = (collapse * DOCK_AVOID_STEPS).roundToInt()
-    LaunchedEffect(avoidStep, overlayPx, modern, address, navBottom) {
-        controller.updateDockAvoid(
-            padPx = if (!address) 0 else
-                (88f - 20f * avoidStep / DOCK_AVOID_STEPS).roundToInt() + overlayPx,
-            enabled = modern,
-            gesturePx = navBottom.value.toInt()
-        )
-    }
     val pickerHeight by animateDpAsState(
         targetValue = if (enginePickerOpen) ENGINE_PICKER_HEIGHT else 0.dp,
         animationSpec = tween(300, easing = FastOutSlowInEasing),
@@ -1771,6 +1829,48 @@ private fun BrowserDock(
         label = "dockBarHeight"
     )
 
+    // ── 让位带：下发给网页，网页里的底部固定元素按它让位 ──
+    //
+    // 坞收起 / 展开时实时跟着变（收起只剩一枚小胶囊：68px；展开是整条控制栏：88px）。
+    // 收起那一档不能再按"整条控制栏"的量算 —— 胶囊又矮又靠下，让位带跟着收一点，
+    // 否则悬浮按钮离胶囊太远（用户点名：收起状态下上移的距离要少一点）。
+    // 坞被抬到整宽弹窗上面时再叠加那段高度：否则悬浮按钮正好落在抬起来的坞下面。
+    // `enabled` = 现代方案：传统模式**要主动把脚本停掉**，不能只下发 0 ——
+    // 网页本来就预留了底边，可脚本（含它的 MutationObserver）是跟着页面活的，
+    // 留着它传统工具栏仍会按弹窗让位/藏起来（用户点名的 bug）。
+    // !address 那档（坞还是"浏览器按钮"形态）保持脚本活着、让位带给 0：
+    // 不然进了地址形态还得等下一次注入。
+    //
+    // **跟手时这个量每帧都在变，但下发给网页是跨进程的 evaluateJavascript** ——
+    // 每帧发一次太贵（每个标签页都要发）。所以量化成 DOCK_AVOID_STEPS 档，
+    // 只在跨档时下发；网页那边对位移本身挂了 300ms 过渡，档与档之间是平滑补上的
+    val avoidStep = (collapse * DOCK_AVOID_STEPS).roundToInt()
+    // 坞**可见顶边**离屏幕底的距离（dp；网页里 1 CSS px = 1 dp）：网页那条贴底整宽的
+    // **底部导航**要往上延伸多少，答案就是它。
+    //
+    // 为什么由这边实测下发、而不是让页面照"88 / 68"猜：那个让位带是按某台设备凑出来的
+    // 数，换台设备（导航条 0 / 24 / 48dp）、坞收起或展开，它就跟坞的真实位置错开了 ——
+    // 错开的方向正是用户看到的那条缝（"底部导航栏离底部控制栏太远，间距应该减少"）。
+    // 材质在盒子里是**居中收缩**的（见 dockSurfaceMaterial），所以上边 =
+    // 底边 + （盒子高 + 材质高）/ 2，再减掉收起时的下沉量。
+    val dockSurfaceHeight = dockBarHeight + pickerHeight + settingsHeight + prefixExtra +
+        dockNavStrip + dockDivider
+    val dockVisibleHeight = dockSurfaceHeight +
+        (minOf(COLLAPSED_PILL_HEIGHT, dockSurfaceHeight) - dockSurfaceHeight) * collapseMorph
+    val dockVisibleTop = (dockBottomPad + (dockSurfaceHeight + dockVisibleHeight) / 2 -
+        collapseDrop).value
+    // 量化到 4dp 一档（同 DOCK_AVOID_STEPS 的理由：跨进程调用不能每帧一次）
+    val barPadPx = if (!address) 0 else (dockVisibleTop / 4f).roundToInt() * 4
+    LaunchedEffect(avoidStep, barPadPx, overlayPx, modern, address, navBottom) {
+        controller.updateDockAvoid(
+            padPx = if (!address) 0 else
+                (88f - 20f * avoidStep / DOCK_AVOID_STEPS).roundToInt() + overlayPx,
+            enabled = modern,
+            gesturePx = navBottom.value.toInt(),
+            barPx = barPadPx
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -1782,8 +1882,16 @@ private fun BrowserDock(
             ),
         contentAlignment = Alignment.Center
     ) {
-        // progress 到 0 就整个撤掉：不可见时不再抢触摸事件
-        if (progress > 0f) {
+        // progress 到 0 就整个撤掉：不可见时不再抢触摸事件。
+        //
+        // **但正在跟手拖网格时不能撤**：网格一开（`tabsOpen`）坞就往下滑走，
+        // `progress` 落到 0 时这个节点会被整块移出组合 —— 而手指**还按在输入框上**，
+        // 节点一没，正在进行的拖拽手势就被取消，取消分支里的 `settleGrid()` 于是
+        // 在手指未松开时先吸附一次：拖到一半停一下，它就自己进去了 / 退出来了
+        //（用户点名："拖拽过程中停顿的话，它就自动进入或者退出了，不应该是松开
+        // 才触发吸附吗"）。跟手期间把它留在树里（alpha 已是 0、什么都不画），
+        // 抬手那一刻 settleGrid 清掉 gridFollow，节点才真正退场。
+        if (progress > 0f || controller.gridFollowing) {
             Surface(
                 modifier = Modifier
                     .fillMaxWidth(widthFraction)
@@ -1933,11 +2041,6 @@ private fun BrowserDock(
                                         onAddressFocusChange(focused)
                                     },
                                     focusRequester = focusRequester,
-                                    sniffOpen = sniffOpen,
-                                    onSniff = onSniff,
-                                    movieSite = movieSite,
-                                    movieMode = movieMode,
-                                    onMovieMode = onMovieMode,
                                     onEngineIcon = {
                                         // 收起态下先恢复完整控制栏，再谈引擎选择
                                         if (controller.dockCollapsed) {
@@ -1993,6 +2096,7 @@ private fun BrowserDock(
             onTabs = { moreOpen = false; onTabs() },
             onNewTab = { moreOpen = false; controller.newTab() },
             onHome = { moreOpen = false; controller.loadHome() },
+            onHistory = { moreOpen = false; onHistory() },
             onDownloads = { moreOpen = false; onExitBrowser() },
             onSettings = { moreOpen = false; onOpenSettings() }
         )
@@ -2189,19 +2293,103 @@ private fun DockSettingsPanel(
 }
 
 /**
+ * 底部提示条（用户点名：从浏览器端直接交给引擎下载的那条回执要更好看、更像本应用）。
+ *
+ * Material 默认的 Snackbar 是"深底 + 白字"的一枚实心条，与本应用"浅色卡片 + 主色"
+ * 的语言并不同源；下载回执又几乎是唯一一类会走到这里的提示，值得按自家口径画一遍：
+ * 圆角卡片、左侧一枚**带色底的圆形状态图标**（成功对勾 / 失败感叹号，色与图标一一对应），
+ * 右侧"查看任务"是与卡片同源的文字按钮。不用阴影：这层的存在感来自色块与留白，
+ * 加投影反而会在坞的边缘上叠出第二道边。
+ *
+ * [ok] 由调用方在 `showSnackbar` 之前记下（见 `snackbarOk`）：[SnackbarData] 里只有
+ * 文案与动作，读不出成败。
+ */
+@Composable
+private fun LerxuSnackbar(data: SnackbarData, ok: Boolean) {
+    val colorScheme = MaterialTheme.colorScheme
+    val accent = if (ok) colorScheme.primary else colorScheme.error
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = colorScheme.surfaceContainerHigh,
+        contentColor = colorScheme.onSurface
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 14.dp, end = 8.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (ok) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(
+                data.visuals.message,
+                modifier = Modifier.weight(1f),
+                fontSize = 14.sp,
+                lineHeight = 19.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            data.visuals.actionLabel?.let { label ->
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    label,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { data.performAction() }
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                    color = accent,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            // 关闭按钮跟着 `withDismissAction` 走（material3 1.3 的 SnackbarVisuals 里
+            // 没有独立的 dismiss 文案字段）：调用方开了它就画一枚叉
+            if (data.visuals.withDismissAction) {
+                IconButton(onClick = { data.dismiss() }, modifier = Modifier.size(34.dp)) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.close),
+                        tint = colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * 「更多功能」弹窗（用户点名：底部功能栏右侧那枚标签按钮换成"更多"，点开就是这一屏）。
  *
  * **独立弹窗，样式照播放器设置弹窗来**（用户点名）：同一个 [ModalBottomSheet]，同一套
- * 标题字号与内边距。不再从坞里向上长出来 —— 那块"长高"的地方只留给坞自己的设置面板
- * （见 BrowserDock）。
+ * 内边距；不再从坞里向上长出来 —— 那块"长高"的地方只留给坞自己的设置面板（见
+ * BrowserDock）。用户后来点名**删掉左上角那行"更多功能"标题**：六枚图标各自的文字
+ * （标签页 / 新建标签 / 主页……）已经把每一格是什么说清了，标题只是白占一档高度。
  *
- * 只放动作，不放开关：标签页／新建标签／主页／下载页／设置。标签页入口从坞上挪到
+ * 只放动作，不放开关：标签页／新建标签／主页／历史／下载页／设置。标签页入口从坞上挪到
  * 这里之后，进标签页还剩两条路：这个弹窗，以及**按住链接输入框往上拖**。
  *
- * 五个动作排成**图标宫格**：原先的竖排列表每行只挂一枚 ">"，五个动作摊满一屏很空、
- * 也不够一眼扫完；换成"图标居中在上、名称在下"的等距排布后，图标本身就是最快的识别锚点。
- * 宫格用普通 [Row] 而不是 LazyVerticalGrid —— 弹窗里再嵌一层可滚动网格会和底部弹窗自己的
- * 下拉收起抢手势，五个固定项也不值得为它引入懒加载。
+ * 六个动作排成 **3 × 2 宫格**（用户点名重做）：早先是一行五个等距小项，每项只有
+ * 孤零零一枚图标，既窄又挤不出层次。现在每项是一块**等宽的整块**、图标自己带色
+ *（见 [dockMoreColors]），宫格本身有了可扫的"面"，一次点到的面积也大得多。
+ * 图标**直接用 Material Icons Extended 里现成的那几枚**（用户点名："直接接入现成的成熟
+ * 图标库"）：标签页 / 新建标签 / 主页 / 历史 / 下载页 / 设置，各自都是 Material 的标准
+ * 形状，一笔都不用自己画。用普通 [Row] 而不是 LazyVerticalGrid —— 弹窗里再嵌一层可滚动
+ * 网格会和底部弹窗自己的下拉收起抢手势，六个固定项也不值得为它引入懒加载。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2210,86 +2398,163 @@ private fun DockMoreSheet(
     onTabs: () -> Unit,
     onNewTab: () -> Unit,
     onHome: () -> Unit,
+    onHistory: () -> Unit,
     onDownloads: () -> Unit,
     onSettings: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    // 动作清单在组合里排好再切行：宫格的形状与配色只有一处真相
+    val actions = listOf(
+        DockMoreAction(Icons.Outlined.Tab, dockMoreColors[0], stringResource(R.string.browser_dock_more_tabs), tabCount, onTabs),
+        DockMoreAction(Icons.Outlined.AddBox, dockMoreColors[1], stringResource(R.string.browser_dock_more_new_tab), null, onNewTab),
+        DockMoreAction(Icons.Outlined.Home, dockMoreColors[2], stringResource(R.string.browser_dock_more_home), null, onHome),
+        DockMoreAction(Icons.Outlined.History, dockMoreColors[3], stringResource(R.string.browser_dock_more_history), null, onHistory),
+        DockMoreAction(Icons.Outlined.Download, dockMoreColors[4], stringResource(R.string.browser_dock_more_downloads), null, onDownloads),
+        DockMoreAction(Icons.Outlined.Settings, dockMoreColors[5], stringResource(R.string.browser_dock_more_settings), null, onSettings)
+    )
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        // 顶部那枚拖动条**不画**（用户点名："可以拖动，但不应该额外占位置"）。
+        // 它是 Material 默认给的一枚把手加它自带的上下留白，而这一屏本来就不宽裕 ——
+        // 把手既不传达信息，又把弹窗白顶高一截。拖拽本身不靠它：整张弹窗（内容区也算）
+        // 都能往下拽（sheetGesturesEnabled 默认开着），所以去掉只影响那一条视觉留白。
+        dragHandle = null,
+        // 只让**导航条**那一截：Material 默认给的是"竖方向全部系统栏"，而这张弹窗
+        // 只有半屏高、根本够不到状态栏 —— 那份顶部内边距会原样变成图标上方的一块空白
+        //（与去掉把手、删掉标题是同一个诉求：不该额外占位置）。底部那一截要留着，
+        // 否则内容会压到手势条上。
+        contentWindowInsets = { WindowInsets.navigationBars }
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // 与播放器设置弹窗同一套内边距（底面留厚一点，避开手势条）
-                .padding(start = 20.dp, end = 20.dp, bottom = 24.dp)
+                // 没有标题了（用户点名删掉左上角那行"更多功能"），顶端只留一档呼吸位
+                .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 20.dp)
         ) {
-            Text(
-                stringResource(R.string.browser_dock_more),
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
-            )
-            Spacer(Modifier.height(18.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                // 等距铺开：两侧留白与项间留白一致，整排看起来才是"一个宫格"而不是挤在一起
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                // 图标统一顶对齐：标签页那项名下多一行数量小字、整项更高，
-                // 若按居中对齐，它的图标会被压低、和旁边四项错开一格
-                verticalAlignment = Alignment.Top
-            ) {
-                DockMoreItem(Icons.Rounded.Tab, stringResource(R.string.browser_dock_more_tabs), tabCount.toString(), onTabs)
-                DockMoreItem(Icons.Rounded.Add, stringResource(R.string.browser_dock_more_new_tab), null, onNewTab)
-                DockMoreItem(Icons.Rounded.Home, stringResource(R.string.browser_dock_more_home), null, onHome)
-                DockMoreItem(Icons.Rounded.Download, stringResource(R.string.browser_dock_more_downloads), null, onDownloads)
-                DockMoreItem(Icons.Rounded.Settings, stringResource(R.string.browser_dock_more_settings), null, onSettings)
+            actions.chunked(3).forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    row.forEach { action ->
+                        DockMoreItem(
+                            icon = action.icon,
+                            tint = action.tint,
+                            label = action.label,
+                            count = action.count,
+                            onClick = action.onClick,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
         }
     }
 }
 
+/** 宫格里的一个动作。排好清单再切行，见 [DockMoreSheet]。 */
+private data class DockMoreAction(
+    val icon: ImageVector,
+    val tint: Color,
+    val label: String,
+    /** 要写进图标里的数字（目前只有"标签页"用），null = 这枚图标不带数字。 */
+    val count: Int?,
+    val onClick: () -> Unit
+)
+
 /**
- * 宫格里的一项：图标居中在上、名称在下。
+ * 宫格六枚图标各自的颜色（用户点名："不应该全是蓝色"）。
  *
- * [badge] 不为空时（目前只有"标签页"用）把数量**画进图标**（右上角一枚小圆标）——
- * 用户点名："标签页图标应该重新设计一下，应该让文字融入图标，而不是单独显示在下方"。
- * 用 Material 的 [BadgedBox] 而不是自己在名称下面再排一行字：数量是"这枚图标自己的
- * 状态"，挂在图标上才读得出归属；摊在下方既拉高整项、又会让人以为它是第二行名称。
+ * 取的是本应用色板同一族的**扁平中调色**（与主题里那几枚 #1A7FE0 / #67C23A / #F56C6C
+ * 同一个语系）：六个动作各占一色，扫一眼就能靠颜色定位，而不是六块一样的蓝。
  *
- * 命中区撑到 56dp 见方 —— 宫格把横向空间摊开之后每项都比原来的一整行窄得多，沿用列表那套
- * 高度会让相邻项挨得太近、很容易误触；56dp 是 Material 建议的最小可点尺寸，保证每项好按。
- * 图标颜色取 [LocalContentColor] 而不是写死，深浅色主题与弹窗自身的内容色都能自动跟上。
+ * 都是中调色（明度接近 50%），浅色底与深色底上都读得清，所以不跟随主题明暗各配一套。
+ * 顺序与 [DockMoreSheet] 里的动作一一对应。
+ */
+private val dockMoreColors = listOf(
+    Color(0xFF4A90E2), // 标签页：蓝
+    Color(0xFF52C41A), // 新建标签：绿
+    Color(0xFFFA8C16), // 主页：橙
+    Color(0xFF9254DE), // 历史：紫
+    Color(0xFF13C2C2), // 下载页：青
+    Color(0xFF8C9BAB) // 设置：灰
+)
+
+/**
+ * 宫格里的一项：图标在上、名称在下，整块**等宽**（由调用方给 weight）。
+ *
+ * **没有容器、也没有底色**（用户点名三连）："点击后应该只是图标有反馈，不应该出现一个
+ * 背景""它们本身也不应该被装在一个容器内"。所以这里
+ * ① 不裁圆角、不画底色、不摆白图标（早先那版是主色圆角方底里放一枚白图标，六个色块
+ *    摊开像一组按钮）；图标靠**自己的颜色**（[tint]，见 [dockMoreColors]）与形状区分；
+ * ② `indication = null` —— 连 Material 的水波纹都不要，按下去的反馈**只有图标自己**
+ *    那一下缩放（与播放器上那几枚 `PlayerIconButton` 同一套手感）；
+ * ③ 命中区靠 [Modifier.padding] 撑开：那是点击区，不是容器，视觉上什么都没有画。
+ *
+ * [count] 不为空时（目前只有"标签页"用）数字**画在图标里面**（用户点名："标签数量应该和
+ * 图标融为一体，而不是在右上角单独显示一个气泡"）：标签页那枚的前面那张卡正居中、里面还有
+ * 一层同色薄面，数字用同一个颜色写在卡心 —— 读起来是"这张卡里写着 3"，而不是旁边挂了个牌子。
+ * 落点比格子中心高 1dp：卡心在 24 视口里是 y=11.4，不是 12。
  */
 @Composable
 private fun DockMoreItem(
     icon: ImageVector,
+    tint: Color,
     label: String,
-    badge: String?,
-    onClick: () -> Unit
+    count: Int?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.86f else 1f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 900f),
+        label = "dockMorePress"
+    )
     Column(
-        modifier = Modifier
-            .widthIn(min = 56.dp)
-            .heightIn(min = 56.dp)
-            .pointerInput(Unit) { detectTapGestures { onClick() } },
+        modifier = modifier
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        BadgedBox(
-            badge = {
-                if (badge != null) {
-                    Badge(containerColor = MaterialTheme.colorScheme.primary) {
-                        Text(badge)
-                    }
-                }
-            }
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                },
+            contentAlignment = Alignment.Center
         ) {
             Icon(
                 icon,
                 contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = LocalContentColor.current
+                modifier = Modifier.size(26.dp),
+                tint = tint
             )
+            if (count != null) {
+                Text(
+                    text = if (count > 9) "9+" else count.toString(),
+                    color = tint,
+                    fontSize = if (count > 9) 8.sp else 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.offset(y = (-1).dp)
+                )
+            }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(label, fontSize = 12.sp, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(9.dp))
+        Text(
+            label,
+            fontSize = 12.sp,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -2335,14 +2600,6 @@ private fun DockAddressContent(
     onValueChange: (String) -> Unit,
     onFocusChange: (Boolean) -> Unit,
     focusRequester: FocusRequester,
-    sniffOpen: Boolean,
-    onSniff: () -> Unit,
-    /** 这一站像不像影视站（见 `movieSiteDetected`）：是才在输入框里显示影视模式入口。 */
-    movieSite: Boolean,
-    /** 影视模式是否开着（开着时那枚入口是实心的）。 */
-    movieMode: Boolean,
-    /** 点那枚入口 = 手动进影视模式（默认自动开，手动关掉之后从这里再开回来）。 */
-    onMovieMode: () -> Unit,
     onEngineIcon: () -> Unit,
     pickerOpen: Boolean,
     /** 引擎选择框 / 设置面板是否占着坞的上半截（两者都与前缀条互斥）。 */
@@ -2507,21 +2764,6 @@ private fun DockAddressContent(
     )
     val rowPadStart = rowPad
     val rowPadEnd = rowPad
-    // 嗅探入口的占位宽（宽度与透明度都走动画）。
-    // 它住在**输入框内部**、刷新按钮右侧（用户点名：不再额外占一个位置）。
-    // 宽度恒为 30dp —— 就是一枚**标准圆形**图标钮，与刷新按钮同档；
-    // 有没有资源靠图标的着色区分（有内容染主色），不再用数字把圆撑成胶囊。
-    // **收起过半就不再挂**：这时它已经缩得只剩零头，留着只会变成一枚
-    // 画在圆外面的"隐形按钮"（点击判定跟着 28dp 的圆心走，比看到的宽）
-    val sniffCount = controller.sniffed.size
-    val sniffShown = (sniffCount > 0 || sniffOpen) && hide < 0.5f
-    val sniffSlot by animateFloatAsState(
-        targetValue = if (sniffShown) 1f else 0f,
-        animationSpec = tween(260, easing = FastOutSlowInEasing),
-        label = "sniffBtnSlot"
-    )
-    val sniffWidth = (30f * sniffSlot * (1f - hide)).dp
-    val sniffAlpha = sniffSlot * (1f - hide)
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -2573,18 +2815,17 @@ private fun DockAddressContent(
                 TextAlign.Start
             }
             // 居中档的水平补偿：文字区**左侧 = 输入行左内边距 + 引擎徽标**
-            //（8 + 34·(1−hide)），右侧 = 右内边距 + 刷新 + 嗅探
-            //（2 + 30·(1−hide) + 嗅探宽）。两侧不等宽，直接在文字区里居中 =
-            // 相对胶囊中心偏左或偏右，且随嗅探显隐漂移 —— 用户点名"输入的内容
-            // 还是会左右偏移"。偏移量就是 (左 − 右)/2，反号抵消。
+            //（8 + 34·(1−hide)），右侧 = 右内边距 + 刷新（2 + 30·(1−hide)）。
+            // 两侧不等宽，直接在文字区里居中 = 相对胶囊中心偏左或偏右 ——
+            // 用户点名"输入的内容还是会左右偏移"。偏移量就是 (左 − 右)/2，反号抵消。
             // **两端的 8 / 2 必须算进来**：漏掉它们补偿就会差 3dp 左右，看着还在偏
             val nameShift = if (nameAlignOpen == TextAlign.Center) {
                 (-((8f + 34f * (1f - hide)) -
-                    (2f + 30f * (1f - hide) + sniffWidth.value)) / 2f).dp
+                    (2f + 30f * (1f - hide))) / 2f).dp
             } else {
                 0.dp
             }
-            // 收起层的水平补偿：收起态引擎 / 刷新 / 嗅探都让位，只剩输入行两端
+            // 收起层的水平补偿：收起态引擎 / 刷新都让位，只剩输入行两端
             // 内边距的差（左 8 / 右 2）
             val nameShiftCollapsed = (-((8f - 2f) / 2f)).dp
             // 手势闭包要读**最新**的补偿值：pointerInput 的 key 是 collapsedNow，
@@ -2651,13 +2892,13 @@ private fun DockAddressContent(
             // 也不淡出重生（那有空档）。
             //
             // "居中要滑多远" = (文字区宽 − 实测文字宽)/2。文字区是**胶囊内部**留给
-            // 文字的那一段：胶囊内宽 − 左右内边距(8/2) − 引擎徽标 − 刷新 − 嗅探。
+            // 文字的那一段：胶囊内宽 − 左右内边距(8/2) − 引擎徽标 − 刷新。
             // 这里**不能用整行宽**（above 的 available，之前就是用错了它）：它比文字区
             // 宽出一大截 —— 展开档会偏出去小半屏，收起档那一截甚至宽过整枚胶囊，
             // 位移直接把文字推出可视范围（用户点名"展开也不居中，收起后直接滑出"）。
             // 两个档位的文字区宽**各算各的**：展开档三颗按钮都在（hide=0），
             // 收起档它们收到 0、胶囊也收成"刚好包住文字"的窄条
-            val nameAreaOpen = (maxPill - 10.dp - 34.dp - 30.dp - (30f * sniffSlot).dp)
+            val nameAreaOpen = (maxPill - 10.dp - 34.dp - 30.dp)
                 .coerceAtLeast(0.dp)
             val nameAreaCollapsed = (collapsedWidth - 10.dp).coerceAtLeast(0.dp)
             // 文字宽**在组合期量**（TextMeasurer）。不能用 onTextLayout 量：那是
@@ -3065,62 +3306,6 @@ private fun DockAddressContent(
                         }
                     }
                 }
-                    // ── 影视模式入口：住在输入框**内部**、刷新按钮右侧 ──
-                    //
-                    // 用户口径：
-                    // - 原来这一格是「本页资源」按钮，移除它、把影视模式入口放进来；
-                    // - **不带背景**：只画图标 / 斜杠，底色交给坞本身；
-                    // - 不在影视模式时是**胶片图标**（点了进），在影视模式时是**一条斜杠**（点了退）。
-                    if (movieSite && sniffWidth > 0.dp) {
-                        Box(
-                            modifier = Modifier
-                                .size(sniffWidth)
-                                // 跟着收回来的槽位会把 28dp 的圆切掉一截：裁掉而不是
-                                // 让圆溢出到槽位外面（与引擎徽标同一处理）
-                                .clipToBounds()
-                                .graphicsLayer { alpha = sniffAlpha },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    // 缩到零头时别再吃点击（判定区比看到的大）
-                                    .clickable(enabled = hide < 0.4f) { onMovieMode() },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (movieMode) {
-                                    // 在影视模式里：**胶片图标 + 一道斜杠**（用户口径：斜杠表示点了退出）。
-                                    // 图标压暗一点，斜杠才读得出来是"划掉"而不是图标本身的花纹
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Movie,
-                                            contentDescription = stringResource(R.string.movie_mode),
-                                            modifier = Modifier.size(17.dp),
-                                            tint = colorScheme.primary.copy(alpha = 0.45f)
-                                        )
-                                        Box(
-                                            Modifier
-                                                .rotate(-45f)
-                                                .width(2.dp)
-                                                .height(20.dp)
-                                                .background(
-                                                    colorScheme.primary,
-                                                    RoundedCornerShape(1.dp)
-                                                )
-                                        )
-                                    }
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.Movie,
-                                        contentDescription = stringResource(R.string.movie_mode),
-                                        modifier = Modifier.size(17.dp),
-                                        tint = colorScheme.primary
-                                    )
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -3194,143 +3379,67 @@ private fun DockAddressContent(
 private fun LerxuTopBar(
     state: EngineRepository.UiState,
     connected: Boolean,
-    page: AppPage,
     onOpenSettings: () -> Unit,
-    onBackToTasks: () -> Unit,
     sortBy: String,
     onSelectSort: (String) -> Unit,
     onAddTask: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
-    // 任务页显示速度信息与排序/添加入口；设置页显示标题。
-    // 浏览器页不共用这条顶栏（它有地址栏），故不在此处理。
-    val inSettings = page == AppPage.Settings
-    val tasksActive = page == AppPage.Tasks
+    // 这条顶栏现在只在任务页出现（设置已是底部弹窗、不再是页；浏览器页有自己的地址栏）。
+    // 左侧速度信息 + 右侧排序 / 添加 / 设置；未连接时不显示速度。
     TopAppBar(
-        // 左侧不放入口：浏览器入口在底部坞，返回按钮在右侧（设置页那一格）
+        // 左侧不放入口：浏览器入口在底部坞
         navigationIcon = { Spacer(Modifier.width(0.dp)) },
         title = {
-            // 标题随页面切换交叉滑动：速度信息 ↔ "设置"，无跳变
-            AnimatedContent(
-                targetState = inSettings,
-                transitionSpec = {
-                    val dir = if (targetState) 1 else -1
-                    (slideInHorizontally(tween(280, easing = FastOutSlowInEasing)) { dir * it / 3 } +
-                        fadeIn(tween(280))) togetherWith
-                        (slideOutHorizontally(tween(200, easing = FastOutSlowInEasing)) { -dir * it / 3 } +
-                        fadeOut(tween(180)))
-                },
-                label = "topBarTitle"
-            ) { inSettings ->
-                when {
-                    inSettings -> {
-                        Text(stringResource(R.string.settings))
+            if (connected) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.ArrowDownward,
+                            contentDescription = stringResource(R.string.download_speed),
+                            modifier = Modifier.size(15.dp),
+                            tint = colorScheme.primary
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            formatSpeed(state.globalStat.downloadSpeed),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colorScheme.onSurface
+                        )
                     }
-                    connected -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.ArrowDownward,
-                                    contentDescription = stringResource(R.string.download_speed),
-                                    modifier = Modifier.size(15.dp),
-                                    tint = colorScheme.primary
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    formatSpeed(state.globalStat.downloadSpeed),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = colorScheme.onSurface
-                                )
-                            }
-                            Spacer(Modifier.width(16.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.ArrowUpward,
-                                    contentDescription = stringResource(R.string.upload_speed),
-                                    modifier = Modifier.size(15.dp),
-                                    tint = colorScheme.tertiary
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    formatSpeed(state.globalStat.uploadSpeed),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = colorScheme.onSurface
-                                )
-                            }
-                        }
+                    Spacer(Modifier.width(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.ArrowUpward,
+                            contentDescription = stringResource(R.string.upload_speed),
+                            modifier = Modifier.size(15.dp),
+                            tint = colorScheme.tertiary
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            formatSpeed(state.globalStat.uploadSpeed),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colorScheme.onSurface
+                        )
                     }
                 }
             }
         },
         actions = {
-            // 单一进度驱动整条按钮带右移两格（排序+添加的槽位宽度）：
-            // 返回按钮终点与旧布局右对齐后的位置一致，但全程连续插值无跳变；
-            // 排序/添加按钮同带速跟随右移并淡出。
-            val actionsProgress by animateFloatAsState(
-                targetValue = if (tasksActive) 0f else 1f,
-                animationSpec = tween(240, easing = FastOutSlowInEasing),
-                label = "topBarActionsProgress"
-            )
-            // 设置入口 / 返回：始终占最右这一格，进入设置页时齿轮原地变成返回箭头。
-            // 排序与添加往右滑走（两格），这一格顺势滑到最右 —— 一个进度值驱动，
-            // 全程连续插值，所以不会有"按钮换位置"的跳变。
-            IconButton(
-                onClick = { if (inSettings) onBackToTasks() else onOpenSettings() },
-                enabled = inSettings || tasksActive,
-                modifier = Modifier.graphicsLayer {
-                    translationX = size.width * 2f * actionsProgress
-                }
-            ) {
-                val iconProgress by animateFloatAsState(
-                    targetValue = if (inSettings) 1f else 0f,
-                    animationSpec = tween(320, easing = FastOutSlowInEasing),
-                    label = "settingsIconProgress"
-                )
-                val backDesc = stringResource(R.string.back)
-                val settingsDesc = stringResource(R.string.settings)
-                Box(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .clipToBounds()
-                        .semantics {
-                            contentDescription = if (inSettings) backDesc else settingsDesc
-                        }
-                ) {
-                    // 齿轮：进度 0 → 1 时向右滑出一格（超出部分被裁掉）
-                    Icon(
-                        Icons.Default.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.graphicsLayer {
-                            translationX = size.width * iconProgress
-                        }
-                    )
-                    // 返回箭头：进度 0 → 1 时从左侧一格滑入就位
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = null,
-                        modifier = Modifier.graphicsLayer {
-                            translationX = size.width * (iconProgress - 1f)
-                        }
-                    )
-                }
+            // 设置入口：齿轮常驻。设置打开的是底部弹窗（不换页），
+            // 所以这里不再需要在"齿轮 ⇄ 返回箭头"之间做形变动画。
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings))
             }
-            // 排序/添加按钮：槽位固定不移除，随按钮带同速右移并淡出，
-            // 全程 graphicsLayer 连续插值；淡出后禁用点击。
-            // 排序按钮：仅主页显示；进设置时随带右移淡出。
-            // 点击弹出锚定在按钮右下方的局部菜单（与桌面端同源：点同项切方向，点新字段默认升序）
-            Box(
-                modifier = Modifier.graphicsLayer {
-                    translationX = size.width * 2f * actionsProgress
-                    alpha = 1f - actionsProgress
-                }
-            ) {
+            // 排序按钮：点击弹出锚定在按钮右下方的局部菜单（与桌面端同源：点同项切方向，点新字段默认升序）
+            Box {
                 var sortMenuExpanded by remember { mutableStateOf(false) }
                 Box {
                     IconButton(
                         onClick = { sortMenuExpanded = true },
-                        enabled = connected && tasksActive
+                        enabled = connected
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = stringResource(R.string.sort))
                     }
@@ -3375,16 +3484,9 @@ private fun LerxuTopBar(
                     }
                 }
             }
-            // 添加按钮：仅主页显示；进设置时向右淡出。
-            Box(
-                modifier = Modifier.graphicsLayer {
-                    translationX = size.width * 2f * actionsProgress
-                    alpha = 1f - actionsProgress
-                }
-            ) {
-                IconButton(onClick = onAddTask, enabled = connected && tasksActive) {
-                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_task))
-                }
+            // 添加按钮
+            IconButton(onClick = onAddTask, enabled = connected) {
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_task))
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -3443,6 +3545,11 @@ private fun SelectionBar(
     onConfirmDelete: (deleteFiles: Boolean) -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
+    // 底部要让开**手势条 / 导航条**（用户点名："下载器页面的底部移除控制栏，它底部间距应该
+    // 增加"）：这一栏原来是"离屏幕底 12dp"，而手势条正好压在它下沿上（应用是 edge-to-edge，
+    // 导航条区域没有系统垫底）。任务列表那条路是自己加 insets 的（见 TaskList 的
+    // bottomPadding），所以这里也得自己加 —— 不然就是"贴屏幕底"，手势条跟按钮叠在一起
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     Surface(
         color = colorScheme.surfaceContainerHigh,
         contentColor = colorScheme.onSurface,
@@ -3450,7 +3557,12 @@ private fun SelectionBar(
         shadowElevation = 10.dp,
         tonalElevation = 2.dp,
         modifier = Modifier
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(
+                start = 16.dp,
+                end = 16.dp,
+                top = 12.dp,
+                bottom = 12.dp + navBottom
+            )
             .fillMaxWidth()
     ) {
         // 双态内容交叉切换：普通态 ⇄ 删除确认态（面板高度平滑扩展/收缩）

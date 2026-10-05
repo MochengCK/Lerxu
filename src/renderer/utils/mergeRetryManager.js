@@ -19,6 +19,11 @@ export function clearMergeRetryTimer (gid) {
   }
 }
 
+/** 这个 gid 当前有没有 armed 着的合并重试（补扫逻辑靠它避免重复武装） */
+export function hasMergeRetryTimer (gid) {
+  return timers.has(`${gid || ''}`)
+}
+
 export function clearAllMergeRetryTimers () {
   timers.forEach((timer) => {
     clearTimeout(timer)

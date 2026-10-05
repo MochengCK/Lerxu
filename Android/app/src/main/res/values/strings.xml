@@ -225,9 +225,29 @@
     <string name="browser_dock_more_tabs">Tabs</string>
     <string name="browser_dock_more_new_tab">New tab</string>
     <string name="browser_dock_more_home">Home page</string>
+    <string name="browser_dock_more_history">History</string>
     <string name="browser_dock_more_downloads">Downloads</string>
     <string name="browser_dock_more_settings">Settings</string>
+    <string name="history_filter_all">All</string>
+    <string name="history_filter_visits">Recent visits</string>
+    <string name="history_filter_searches">Search history</string>
+    <string name="history_bucket_today">Today</string>
+    <string name="history_bucket_yesterday">Yesterday</string>
+    <string name="history_empty">No history yet</string>
+    <string name="history_empty_filtered">Nothing in this filter</string>
+    <string name="history_empty_search">No matching history</string>
+    <string name="history_search">Search history</string>
+    <string name="history_search_hint">Search history</string>
     <string name="settings_appearance">Appearance</string>
+    <string name="settings_category_bt">BitTorrent</string>
+    <string name="settings_category_browser">Browser</string>
+    <string name="settings_category_appearance">Personalization</string>
+    <string name="settings_category_general">General</string>
+    <string name="settings_category_about">About</string>
+    <string name="settings_category_download">Downloads</string>
+    <string name="settings_group_transfer">Downloads &amp; Transfer</string>
+    <string name="settings_group_browsing">Browsing &amp; Appearance</string>
+    <string name="settings_group_system">System &amp; About</string>
     <string name="theme">Theme</string>
     <string name="theme_follow_system">Follow system</string>
     <string name="theme_light">Light</string>
@@ -386,6 +406,9 @@
     <string name="browser_tabs_done">Done</string>
     <string name="browser_new_tab">New tab</string>
     <string name="browser_close_tab">Close tab</string>
+    <!-- Bottom row of the tab grid: back (close grid) / delete all (two-step) -->
+    <string name="browser_tabs_back">Back</string>
+    <string name="browser_tabs_close_all">Delete all</string>
     <string name="browser_tab_untitled">New tab</string>
     <string name="browser_sniff_collapse">Hide</string>
     <string name="browser_downloads_page">Downloads</string>
@@ -396,19 +419,12 @@
     <string name="browser_dock_style">Interface style</string>
     <string name="browser_dock_style_classic">Classic</string>
     <string name="browser_dock_style_modern">Modern</string>
-    <!-- Movie mode (auto-enabled on pages that look like a video site) -->
-    <string name="movie_mode">Movie mode</string>
-    <string name="movie_mode_close">Close movie mode</string>
-    <string name="movie_mode_empty">No playable video found on this page yet</string>
-    <string name="movie_mode_loading">Reading this page…</string>
-    <string name="movie_mode_no_content">This page has nothing to show</string>
-    <string name="movie_mode_view_page">View original page</string>
-    <string name="movie_mode_lines">Streams</string>
-    <string name="movie_mode_recommend">You may also like</string>
-    <string name="movie_mode_comments">Comments</string>
-    <string name="movie_mode_nav_open">Browse categories</string>
-    <string name="movie_mode_search_hint">Search this site</string>
-    <string name="movie_mode_play_in_page">Play in the page</string>
+    <!-- Bottom control bar entry in Settings: same switch as the dock\'s long-press panel -->
+    <string name="settings_dock_mode_title">Bottom control bar</string>
+    <string name="settings_dock_mode_modern">Modern</string>
+    <string name="settings_dock_mode_classic">Classic</string>
+    <string name="settings_dock_mode_modern_desc">Floating bar that hides as you scroll</string>
+    <string name="settings_dock_mode_classic_desc">Full-width toolbar pinned to the bottom</string>
     <!-- Window mode selection -->
     <string name="browser_window_mode">Window Mode</string>
     <string name="normal_window">Normal Window</string>

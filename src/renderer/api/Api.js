@@ -29,8 +29,7 @@ const DASH_PART_CACHE_LIMIT = 500
 const aria2ControlCache = new Map()
 const ARIA2_CONTROL_CACHE_LIMIT = 500
 
-const looksLikeBilibiliDashPart = (task) => {
-  try {
+const looksLikeBilibiliDashPart = (task) => {  try {
     if (!task || typeof task !== 'object') {
       return false
     }
@@ -84,6 +83,58 @@ const looksLikeBilibiliDashPart = (task) => {
     return false
   }
 }
+
+/**
+ * 「一对音视频」的源文件（扩展带 `pairId` 发来的画面流 / 声音流）在**合并完成前
+ * 不能按"DASH 分片"隐藏掉**。
+ *
+ * 隐藏规则（`looksLikeBilibiliDashPart`）是按**文件名**判断的：`_video.mp4` /
+ * `_audio.m4a` / `.m4s`。一对音视频的两条流正好长这样 —— 于是**某条流一下完
+ * 就从列表里消失**，折叠记录的成员数掉到 1：
+ *   · 进度条"待合并"（黄）的判据 `memberCount >= 2` 失效 → 100% 了还是绿的；
+ *   · 两条都下完时整条记录会**从列表里整个消失** → 合并那几秒根本没有卡片，
+ *     合并进度看不到，等合并结束、记录重新出现（产物名）时"一下子跳出来"。
+ * 合并成功后 `afterBilibiliMerge` 会把源任务收拢成一条产物记录
+ * （`dashMerged: true`）并删掉源条目，所以这里只对"还没合并的配对源"放行。
+ */
+const isUnmergedPairSource = (task) => {
+  try {
+    if (!task || typeof task !== 'object') {
+      return false
+    }
+    if (task.dashMerged === true) {
+      return false
+    }
+    const pairId = task.pairId || (task.pair && task.pair.id) || ''
+    if (!`${pairId}`) {
+      return false
+    }
+    // 源文件**还在盘上**才算"还没合并的配对源"：文件已经被清理掉（合并过的残留、
+    // 用户自己删的）就照旧隐藏，别让一条已经没文件的记录占着列表。
+    // （`looksLikeBilibiliDashPart` 的判据也是"文件缺失"，这里与它对齐。）
+    const files = Array.isArray(task.files) ? task.files : []
+    const first = files[0] || {}
+    const raw = first && first.path ? `${first.path}` : ''
+    if (!raw) {
+      return false
+    }
+    const taskDir = task && task.dir ? `${task.dir}` : ''
+    let absolutePath = raw
+    try {
+      if (!isAbsolute(raw) && taskDir) {
+        absolutePath = resolve(taskDir, raw)
+      }
+    } catch (_) {
+      absolutePath = raw
+    }
+    return existsSync(absolutePath)
+  } catch (_) {
+    return false
+  }
+}
+
+/** 真正该从列表里隐藏的 DASH 分片（未合并的配对源不算）。 */
+const isHiddenDashPart = (task) => looksLikeBilibiliDashPart(task) && !isUnmergedPairSource(task)
 
 const isStoppedCategoryStatus = (status) => {
   const s = `${status || ''}`
@@ -575,6 +626,19 @@ export default class Api {
           mergedFields.files = cloneTaskFiles(historyTask.files)
         }
 
+        // 「一对音视频」的配对信息（扩展发来时带的 pairId / pairRole）只存在
+        // **任务历史**里 —— 引擎侧没有这个概念。列表要按它把画面流与声音流
+        // 折叠成一条记录（见 @/utils/taskPair），所以必须透传到任务对象上；
+        // 否则下载中的两条流会各自成卡片，用户看到的就是两个任务。
+        const historyPairId = historyTask.pairId != null ? `${historyTask.pairId}` : ''
+        if (historyPairId) {
+          mergedFields.pairId = historyPairId
+          mergedFields.pairRole = historyTask.pairRole != null ? `${historyTask.pairRole}` : ''
+        }
+        if (historyTask.fromBrowserExtension) {
+          mergedFields.fromBrowserExtension = true
+        }
+
         const liveBtName = task && task.bittorrent && task.bittorrent.info && task.bittorrent.info.name
           ? `${task.bittorrent.info.name}`
           : ''
@@ -818,7 +882,9 @@ export default class Api {
           result = result.filter(task => task && task.gid && !deletedGids.has(`${task.gid}`))
         }
 
-        result = result.filter(task => !looksLikeBilibiliDashPart(task))
+        // 只隐藏真正的 DASH 分片；未合并的「一对音视频」源要留着
+        // （否则成员一下完就从列表消失 → 记录退化成单成员、合并期间整个不见）
+        result = result.filter(task => !isHiddenDashPart(task))
 
         return result
       }).catch((err) => {
@@ -842,7 +908,7 @@ export default class Api {
           // 如果没有从Aria2获取到已停止的任务，直接返回历史记录
           if (stoppedTasks.length === 0) {
             return historyStoppedTasks
-              .filter(task => !looksLikeBilibiliDashPart(task))
+              .filter(task => !isHiddenDashPart(task))
           }
 
           // 保存从Aria2获取到的已停止任务到历史记录
@@ -867,7 +933,7 @@ export default class Api {
             merged = merged.filter(task => task && task.gid && !deletedGids.has(`${task.gid}`))
           }
 
-          return merged.filter(task => !looksLikeBilibiliDashPart(task))
+          return merged.filter(task => !isHiddenDashPart(task))
         })
         .catch(err => {
           console.log('[Lerxu] fetch stopped task list fail, fallback to history:', err)
@@ -875,7 +941,7 @@ export default class Api {
           return history
             .filter(task => isHistoryStoppedStatus(task && task.status))
             .filter(task => !isTransientMagnetTask(task))
-            .filter(task => !looksLikeBilibiliDashPart(task))
+            .filter(task => !isHiddenDashPart(task))
         })
     default:
       return this.fetchDownloadingTaskList(params)

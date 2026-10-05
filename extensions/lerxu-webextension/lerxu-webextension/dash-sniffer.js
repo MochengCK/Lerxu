@@ -38,7 +38,7 @@
     }
     
     // 常见视频格式
-    const videoExts = ['.mp4', '.flv', '.m3u8', '.ts', '.webm', '.mkv', '.avi']
+    const videoExts = ['.mp4', '.flv', '.m3u8', '.m3u', '.ts', '.mp2t', '.m2ts', '.mts', '.cmfv', '.cmfa', '.mpd', '.webm', '.mkv', '.avi']
     return videoExts.some(ext => lowerUrl.includes(ext))
   }
 

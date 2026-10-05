@@ -1,4 +1,8 @@
 export default {
+  // 側邊欄分組標籤（與主視窗側邊欄同構：設定 / 下載 / 擴充）
+  'section-settings': '設定',
+  'section-download': '下載',
+  'section-extension': '擴充',
   'basic': '基本設定',
   'advanced': '進階設定',
   'theme-and-ui': '主題與介面',
@@ -338,12 +342,6 @@ export default {
   'extension-open-failed': '無法啟動瀏覽器，請手動開啟 {{url}} 並載入擴充功能',
   'extension-open-manual': '未自動開啟 Edge：請將 {{url}} 貼到 Edge 網址列並按 Enter，開啟擴充功能管理頁面（網址已複製到剪貼板）',
   'extension-open-running': '瀏覽器已在執行：請切換到瀏覽器視窗，將 {{url}} 貼到網址列並按 Enter（網址已複製到剪貼板）',
-  'video-merge': '影片合併',
-  'ffmpeg-status': 'FFmpeg 狀態',
-  'ffmpeg-installed': '已安裝',
-  'ffmpeg-not-installed': '未安裝',
-  'ffmpeg-path': '路徑',
-  'ffmpeg-open-folder': '開啟資料夾',
   'auto-check-update-desc': '啟動應用程式時自動檢查更新',
   'auto-hide-window-desc': '關閉主視窗時隱藏到系統匣而不是退出',
   'auto-open-task-progress-window-desc': '任務開始下載時自動開啟進度視窗',

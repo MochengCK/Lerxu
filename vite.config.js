@@ -19,6 +19,12 @@ const copyMainAssets = () => ({
   buildStart () {
     const outDir = resolve('dist/electron')
     cpSync(resolve('src/main/pages'), resolve(outDir, 'pages'), { recursive: true })
+    // PLAYBACK API 的频道名：播放器页面（原生 script，不能用 ESM）要 require 它，
+    // 与主进程读的是同一份 —— 避免"两边各写一份常量"慢慢漂移
+    cpSync(
+      resolve('src/shared/playback-channels.json'),
+      resolve(outDir, 'pages', 'playback-channels.json')
+    )
     cpSync(resolve('src/shared/locales'), resolve(outDir, 'shared/locales'), { recursive: true })
     const dataSrcDir = resolve('src/shared/data')
     const dataOutDir = resolve(outDir, 'shared/data')

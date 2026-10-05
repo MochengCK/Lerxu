@@ -43,6 +43,7 @@
             <mo-task-progress
               :completed="Number(task.completedLength)"
               :total="Number(task.totalLength)"
+              :gid="task.gid ? `${task.gid}` : ''"
               :status="taskStatus"
               :speed="Number(task.downloadSpeed)"
               :pending-selection="isPendingFileSelection"

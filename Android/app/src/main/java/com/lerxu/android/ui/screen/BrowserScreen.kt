@@ -20,6 +20,8 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -41,6 +43,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -59,6 +62,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
@@ -69,7 +73,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -102,19 +105,25 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -122,6 +131,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
@@ -129,8 +139,6 @@ import com.lerxu.android.R
 import com.lerxu.android.browser.BrowserController
 import com.lerxu.android.browser.DownloadHandoff
 import com.lerxu.android.browser.PullRefreshGlyph
-import com.lerxu.android.browser.SniffKind
-import com.lerxu.android.browser.SniffedResource
 import com.lerxu.android.browser.TabNaming
 import com.lerxu.android.util.PasswordAuthHelper
 import kotlinx.coroutines.delay
@@ -302,15 +310,7 @@ fun BrowserScreen(
     bottomInset: Dp = 0.dp,
     modern: Boolean = false,
     /** 顶部系统信息栏的高度：**只有网页内容**要让出它，标签网格铺到顶。 */
-    topInset: Dp = 0.dp,
-    /**
-     * 影视模式开着：这一页的影视内容改用自家的 [MovieScreen] 整屏呈现（盖在网页之上）。
-     *
-     * 默认值给 `false` / 空实现，调用点可以渐进更新（与其它可选参数同一口径）。
-     */
-    movieMode: Boolean = false,
-    /** 点影视页列表里的一条 → 交给 App 自己的播放器（第一版：点播才进播放器）。 */
-    onPlayMovie: (SniffedResource) -> Unit = {}
+    topInset: Dp = 0.dp
 ) {
     // 返回键优先级：网格开着 → 收网格；页面可后退 → 退网页；否则交给外层（回任务页）
     BackHandler(enabled = controller.tabsOpen) { controller.closeTabs() }
@@ -749,6 +749,16 @@ fun BrowserScreen(
                     alpha = if (controller.tabsOpen) 1f - cardReveal else 1f
                 }
         ) {
+            // 顶部进度条的显隐（比 `controller.loading` **晚一拍**，见下面那处说明）
+            var showLoadBar by remember { mutableStateOf(false) }
+            LaunchedEffect(controller.loading) {
+                if (controller.loading) {
+                    delay(LoadBarDelayMs)
+                    showLoadBar = true
+                } else {
+                    showLoadBar = false
+                }
+            }
             Column(modifier = Modifier.fillMaxSize()) {
                 // weight(1f)：只占剩余高度（用 fillMaxSize 会按整列高度撑开，
                 // 把内容顶出可视区）。[animatedBottomInset] 作为底部留白，
@@ -769,49 +779,17 @@ fun BrowserScreen(
                             .padding(bottom = webBottomInset)
                     )
 
-                    // 影视模式：**替代网页**的一整屏（识别到影视内容后自动开，见
-                    // MovieMode）。插在这里 = 在 WebView 之上、又在 TabGrid 之下 ——
-                    // 它盖住网页，但网格展开时照样能被网格盖住（网格是更上层的一层）。
-                    // 加载进度条 / 滑动提示 / 失败页都排在它之后，也就是**盖在它上面**：
-                    // 影视页不是"页面加载失败"的替身，失败页该露出来的时候要露。
-                    if (movieMode) {
-                        MovieScreen(
-                            title = controller.moviePageTitle,
-                            nav = controller.movieNav,
-                            // 主内容墙左上角那一行板块名（站点给的名字 → 当前分类名，见 movieBlockTitle）
-                            blockTitle = controller.movieBlockTitle,
-                            cards = controller.movieCards,
-                            sections = controller.movieSections,
-                            // 站点的评论区：内容借它的，样式是我们的（用户口径）
-                            comments = controller.movieComments,
-                            commentTitle = controller.movieCommentTitle,
-                            items = controller.sniffed.filter { it.kind == SniffKind.VIDEO },
-                            loading = controller.movieExtracting,
-                            empty = controller.movieExtractFailed,
-                            // 封面图过防盗链要带的来源页 / UA：与网页同一条（见 CoverImageLoader）
-                            referer = controller.movieReferer,
-                            userAgent = controller.movieUserAgent,
-                            // 内容区让出底部功能栏：功能栏浮在网页之上，不让出来最后一排卡片会被压在栏里
-                            bottomInset = bottomInset,
-                            // 播放区那块 16:9 的**真实矩形**喂给原生播放器（见 AppScreen.movieFrame）
-                            onStageRect = { controller.movieStageRect = it },
-                            // 顶栏的站内搜索：用**站点自己的**搜索表单（见 searchInMovieMode）
-                            searchReady = controller.movieSearchReady,
-                            searchHint = controller.movieSearchHint,
-                            // 站内跳转交给控制器：它会钉住 host，让影视模式跟着走（跨站才退出）
-                            onNavigate = { controller.openInMovieMode(it) },
-                            onSearch = { controller.searchInMovieMode(it) },
-                            onPlay = onPlayMovie,
-                            // 回网页去起播（退出但不拉黑这一站）：起播后判据成立会自动回到影视模式
-                            onPlayInPage = { controller.playInPage() },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
                     // 加载进度：**叠在网页最上沿**（正好落在状态栏那条带子下面），
                     // 不占布局高度 —— 这样 WebView 的窗口顶边就等于"状态栏带子的下沿"，
                     // 播放器按它算出来的吸附位置不会在顶上留缝
-                    if (controller.loading) {
+                    //
+                    // **晚一拍才出现**（用户点名："为什么有时候回退网页会进入加载界面"）：
+                    // `loading` 在 `onPageStarted` 就翻真，而回退这一趟常常是**瞬间**完成的
+                    // （WebView 自己那份缓存命中 / 页面本来就还在）—— 立刻画的话，
+                    // 用户看到的就是"顶上闪一下进度条"，读起来像"又加载了一遍"。
+                    // Chrome 也是这么做的：加载超过一小会儿才把进度条淡进来。
+                    // 真慢的加载照样看得见（延迟只有 [LoadBarDelayMs]）。
+                    if (showLoadBar) {
                         LinearProgressIndicator(
                             progress = { controller.progress / 100f },
                             modifier = Modifier
@@ -1158,12 +1136,39 @@ private fun TabGrid(
     // 顶部浮条的位置：状态栏下沿留 [TAB_GRID_HEADER_GAP]，下面才是网格的起排线
     val headerTop = topInset + TAB_GRID_HEADER_GAP
     val contentTop = headerTop + TAB_GRID_HEADER
+    // 「全部删除」的**两段式**展开态（第一次点先长开、露文字；第二次点才真删）。
+    // 提到这一层是因为它还有一个**外部读者**：网格里任何一处按下都把它收回一级
+    //（用户点名："点击后，然后用户没选择点击，点击了其他区域它应该恢复为一级状态"）。
+    var wipeArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(controller.tabsOpen) { if (!controller.tabsOpen) wipeArmed = false }
+    /** 「全部删除」那一段在**窗口坐标**里的位置：按下时用它判断这一下是不是点在它自己身上。 */
+    var wipeSlot by remember { mutableStateOf<Rect?>(null) }
+    /** 整个网格在窗口坐标里的原点（把手指位置换算到窗口坐标去比 [wipeSlot]）。 */
+    var gridOrigin by remember { mutableStateOf(Offset.Zero) }
     // 需要知道自己铺了多大：首页那张卡要按"整页"的尺寸重画一遍预览
     //（见 HomePreview —— 与整页形变用同一套缩放裁法，落位那一刻才对得齐）
     BoxWithConstraints(
         modifier = modifier
             .graphicsLayer { alpha = progress }
             .background(backdrop)
+            .onGloballyPositioned { gridOrigin = it.boundsInWindow().topLeft }
+            // 网格里**任何一处按下**（除了「全部删除」自己）都把它的展开态收回去。
+            //
+            // 为什么挂在根上、且走 `Initial` 这一趟：`Initial` 是**从父到子**先过一遍，
+            // 所以这里能在卡片/按钮拿到这一下**之前**把状态复位 —— 而它**不消费**事件，
+            // 卡片照样能选中、别处的按钮照样能按。只有「全部删除」自己那一下要放过：
+            // 那一枚的两种状态共用同一次点击（第二次点才真删），收回去就永远删不掉。
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val change = event.changes.firstOrNull() ?: continue
+                        if (!change.pressed || change.previousPressed) continue
+                        val slot = wipeSlot ?: continue
+                        if (!slot.contains(change.position + gridOrigin)) wipeArmed = false
+                    }
+                }
+            }
     ) {
         val pageWidth = maxWidth
         val pageHeight = (maxHeight - topInset).coerceAtLeast(1.dp)
@@ -1283,9 +1288,12 @@ private fun TabGrid(
                 )
         )
 
-        // 顶部浮条（滑块 + 关闭按钮）：画在落影**之后**，因此始终压在影之上
-        //（影只压网格）。这一行本身不带底色 —— 滑块自己那层外壳保留、关闭按钮裸着放；
-        // 左右留边 + 下移的状态栏间距保留：两个控件都不贴边、不伸进状态栏
+        // 顶部浮条（窗口模式滑块）：画在落影**之后**，因此始终压在影之上
+        //（影只压网格）。这一行本身不带底色 —— 滑块自己那层外壳保留；
+        // 左右留边 + 下移的状态栏间距保留：不贴边、不伸进状态栏。
+        //
+        // **右上角那枚 ✕ 已挪走**（用户点名）：返回（收起网格）挪到底部那一排、
+        // 「新建标签」的左侧，与"全部删除"同排 —— 网格的两件收尾动作都在手边。
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -1294,68 +1302,251 @@ private fun TabGrid(
                 .fillMaxWidth()
                 .height(TAB_GRID_HEADER)
         ) {
-            // 窗口模式滑块：居中（左右各留出让位的余量，见下面的关闭按钮）
+            // 窗口模式滑块：居中
             WindowModeSwitch(
                 incognito = controller.incognitoMode,
                 onSelect = onWindowModeChange,
                 modifier = Modifier.align(Alignment.Center)
             )
-            IconButton(
-                onClick = { controller.closeTabs() },
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 4.dp)
-            ) {
-                Icon(
-                    Icons.Default.Close,
-                    contentDescription = stringResource(R.string.browser_tabs_done),
-                    modifier = Modifier.size(20.dp)
-                )
-            }
         }
 
-        // 新建标签：**底部居中**的一枚渐变按钮，只显示一个加号。
-        // 背景与下载器页底部的浏览器按钮同一套渐变（自下而上淡出到页面底色）。
-        // 它不再占网格里的一格 —— 网格只放标签页本身。
+        // ── 底部那一排：返回 · 新建标签 · 全部删除 ──
+        // 用户口径（这一版）：返回 / 全部删除**只留图标**——不铺底色、不裁胶囊、
+        // 连水波纹也不要，按下去只看得见**图标自己那一下缩放**；两枚不再贴屏幕最边，
+        // 而是**居中在左右两侧**——底部一排按左右等宽三段（左·中·右）排布，
+        // 每枚按钮都居中在自己那一段里，与中间「新建标签」拉开距离（用户点名：
+        // 左右间距加大、居中在两侧、别靠边）。两枚图标也一并放大（用户点名）。
+        // 「新建标签」保持原样：它是这一排唯一一枚"按钮"，仍是带渐变底的圆角胶囊。
+        // 「全部删除」仍是**两段式**：第一次点先横向长开、露出文字（防误触），
+        // 再点一次才真删；删光之后**仍留在标签页**。
+        //
         // 出场**与底部控制栏的消失同一条时间线**：坞滑走的这两百多毫秒里
-        // 它就从下方浮上来（不是等卡片内容那一拍才出现）。
+        // 它们就从下方浮上来（不是等卡片内容那一拍才出现）。
         val newTabAppear = (progress / 0.55f).coerceIn(0f, 1f)
+        // 全部删除的"展开"状态（`wipeArmed`）在 [TabGrid] 顶上声明：网格里点别处要把它收回一级
+        val wipeExtra by animateDpAsState(
+            targetValue = if (wipeArmed) TAB_GRID_WIPE_EXPAND else 0.dp,
+            animationSpec = tween(240, easing = FastOutSlowInEasing),
+            label = "tabGridWipeWidth"
+        )
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .padding(horizontal = TAB_GRID_PAD_H)
                 .padding(bottom = navBottom + 6.dp)
-                .fillMaxWidth(TAB_NEW_TAB_WIDTH)
-                .height(TAB_NEW_TAB_HEIGHT)
+                .fillMaxWidth()
                 .graphicsLayer {
                     alpha = newTabAppear
                     translationY = (1f - newTabAppear) * 18.dp.toPx()
                 }
-                .clip(RoundedCornerShape(TAB_NEW_TAB_HEIGHT / 2))
-                // 渐变但**不留全透明的头**：上一版从全透明起，按钮上半截像被
-                // 渐变糊掉了一样（用户报"被渐变遮挡"）。现在是一枚实心的圆角
-                // 渐变胶囊：上浅下深，与下载器底部那条渐变的用料一致。
-                .background(
-                    Brush.verticalGradient(
-                        0f to colorScheme.background.copy(alpha = 0.78f),
-                        1f to colorScheme.background
-                    )
-                )
-                .clickable(onClick = onNewTab),
-            contentAlignment = Alignment.Center
         ) {
-            // 图标：比 Material 自带的 Add 粗一档、也大一点（用户点名）
-            BoldPlus(
-                size = 22.dp,
-                stroke = 2.8.dp,
-                color = colorScheme.onSurface
-            )
+            // 左右等宽三段（左 · 中 · 右）：每枚按钮都**居中在自己那一段里**——
+            // 返回居左段正中、新建标签居中段正中、全部删除居右段正中。这样两枚
+            // 幽灵按钮既不贴屏幕最边（左右间距自然加大），又严格左右对称。
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 返回：收起网格（同系统返回键 / 点卡片之外的那一下），居左段正中
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    TabGridGhostButton(
+                        contentDescription = stringResource(R.string.browser_tabs_back),
+                        onClick = { controller.closeTabs() }
+                    ) {
+                        // 重新画过的那枚返回箭头（见 [LerxuBackArrow]）
+                        Icon(
+                            LerxuBackArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(26.dp),
+                            tint = colorScheme.onSurface
+                        )
+                    }
+                }
+                // 新建标签：居中段正中。图标比 Material 自带的 Add 粗一档、也大一点（用户点名）
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    TabGridBarButton(
+                        contentDescription = stringResource(R.string.browser_new_tab),
+                        width = TAB_GRID_NEW_TAB_WIDTH,
+                        onClick = onNewTab
+                    ) {
+                        BoldPlus(
+                            size = 22.dp,
+                            stroke = 2.8.dp,
+                            color = colorScheme.onSurface
+                        )
+                    }
+                }
+                // 全部删除：两段式（先展开、再执行），居右段正中
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    TabGridGhostButton(
+                        contentDescription = stringResource(R.string.browser_tabs_close_all),
+                        width = TAB_GRID_WIPE_WIDTH + wipeExtra,
+                        // 把这一枚的**实测位置**报上去（窗口坐标）：网格里那只看门狗靠它
+                        // 区分"点在它自己身上"与"点了别处"（见 [TabGrid] 根上那个 pointerInput）
+                        modifier = Modifier.onGloballyPositioned {
+                            wipeSlot = it.boundsInWindow()
+                        },
+                        onClick = {
+                            if (wipeArmed) {
+                                wipeArmed = false
+                                controller.closeAllTabs()
+                            } else {
+                                wipeArmed = true
+                            }
+                        }
+                    ) {
+                        Icon(
+                            Icons.Filled.DeleteOutline,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp),
+                            tint = colorScheme.onSurface
+                        )
+                        // 展开出来的文字：**与宽度同一条 240ms 时间线**淡入（宽度归零时
+                        // 它已经贴到 0，不会在没长开的时候露出来）
+                        if (wipeExtra > 0.dp) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                stringResource(R.string.browser_tabs_close_all),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                color = colorScheme.onSurface,
+                                modifier = Modifier.graphicsLayer {
+                                    alpha = (wipeExtra / TAB_GRID_WIPE_EXPAND).coerceIn(0f, 1f)
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
+}
+
+/**
+ * 标签网格底部那一排里的一枚按钮：与「新建标签」同一套用料（`TAB_NEW_TAB_HEIGHT`
+ * 高的圆角胶囊 + 自下而上淡出的渐变底）。宽度固定（[width] 给了就按它），内容
+ * 居中 —— 「全部删除」的展开就是这个宽度在 240ms 里连续长出来。
+ */
+@Composable
+private fun TabGridBarButton(
+    contentDescription: String,
+    onClick: () -> Unit,
+    width: Dp = TAB_GRID_BAR_BUTTON,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Row(
+        modifier = modifier
+            .width(width)
+            .height(TAB_NEW_TAB_HEIGHT)
+            .clip(RoundedCornerShape(TAB_NEW_TAB_HEIGHT / 2))
+            // 渐变但**不留全透明的头**：上一版从全透明起，按钮上半截像被
+            // 渐变糊掉了一样（用户报"被渐变遮挡"）。现在是一枚实心的圆角
+            // 渐变胶囊：上浅下深，与下载器底部那条渐变的用料一致。
+            .background(
+                Brush.verticalGradient(
+                    0f to colorScheme.background.copy(alpha = 0.78f),
+                    1f to colorScheme.background
+                )
+            )
+            .clickable(onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        content()
+    }
+}
+
+/**
+ * 底部那一排里的**幽灵按钮**（返回 / 全部删除，用户点名："只显示图标，不应该显示背景，
+ * 点击后也只是图标反馈、也不应该有背景"）。
+ *
+ * 所以这一枚身上**什么都不画**：不裁胶囊、不铺底色、连 Material 的水波纹都不要
+ * （`indication = null`）—— 按下去的反馈只有**图标自己那一下缩放**（与播放器上那几枚
+ * `PlayerIconButton`、「更多功能」宫格同一套手感）。命中区仍是 [width] × `TAB_NEW_TAB_HEIGHT`
+ * 的一整块（那是点击区，不是容器）：比图标本身大一圈，点得到、又看不出来。
+ *
+ * 「全部删除」的展开复用同一枚：宽度在 240ms 里连续长出来，图标与文字始终居中 ——
+ * 长开的只是一段**空白**，正好把两端的按钮留在原处不互相挤。
+ */
+@Composable
+private fun TabGridGhostButton(
+    contentDescription: String,
+    onClick: () -> Unit,
+    width: Dp = TAB_GRID_BAR_BUTTON,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.84f else 1f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 900f),
+        label = "tabGridGhostPress"
+    )
+    Row(
+        modifier = modifier
+            .width(width)
+            .height(TAB_NEW_TAB_HEIGHT)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Row(
+            modifier = Modifier.graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            content()
+        }
+    }
+}
+
+/**
+ * 标签网格底部那枚**返回**图标：**重新画过**，不再用 Material 那枚实心 `ArrowBack`。
+ *
+ * 设计取"细杆 + 圆头 + 收一点的箭羽"这一版：24 格画布、箭杆从 19.4 拉到 5.0、
+ * 箭羽在左侧合成尖，张开约 **78°**（Material 是 90°，收一点读起来更利落），
+ * 描边 2.1 圆头圆角 —— 与整机其它自绘图标（播放器那几枚、坞里的加号）同一条笔法，
+ * 着色交给 `Icon(tint = …)` 统一给（透明度之外的 RGB 全部替换）。
+ *
+ * 设置弹窗左上角那枚返回也用它：同一个"退回去"的符号，整机只有一种画法。
+ */
+internal val LerxuBackArrow: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "LerxuBackArrow",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        addPath(
+            pathData = addPathNodes(
+                "M19.4 12 H5.0 M11.5 5.5 L5.0 12 L11.5 18.5"
+            ),
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 2.1f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round
+        )
+    }.build()
 }
 
 /** 无痕模式的网格底色：**深靛**（不是粉紫 —— 浅色主题下粉紫会读成"泛红"）。 */
 private val INCOGNITO_TINT = Color(0xFF3B3552)
 
-/** 新建标签按钮：宽占比 / 高度，以及网格底部为它让出的高度。 */
-private const val TAB_NEW_TAB_WIDTH = 0.30f
+/** 底部那一排（返回 · 新建标签 · 全部删除）的尺寸与网格底部的让位。 */
+private val TAB_GRID_BAR_BUTTON = 44.dp
+private val TAB_GRID_NEW_TAB_WIDTH = 96.dp
+private val TAB_GRID_WIPE_WIDTH = 44.dp
+/** 「全部删除」展开出来的那一段宽度（图标右侧给文字腾的位置）。 */
+private val TAB_GRID_WIPE_EXPAND = 68.dp
 private val TAB_NEW_TAB_HEIGHT = 40.dp
 
 /**
@@ -2013,6 +2204,20 @@ private fun PageLoadingGlyph() {
 /** 加载弧弧长呼吸的上下限（度）。上限留出缺口，读起来是"在扫"而不是一条闭合圆环。 */
 private const val PAGE_LOAD_SWEEP_MIN = 68f
 private const val PAGE_LOAD_SWEEP_MAX = 288f
+
+/**
+ * 顶部进度条**晚多久才出现**（毫秒）。
+ *
+ * 为什么不是"`loading` 一翻真就画"（用户点名："为什么有时候回退网页会进入加载界面，
+ * 谷歌不都是秒回退的吗"）：`loading` 在 `onPageStarted` 就翻真，而回退这一趟常常是
+ * **瞬间**完成的（WebView 自己那份缓存命中 / 页面本来就还在内存里）—— 立刻画的话，
+ * 用户看到的就是"顶上闪一下进度条"，读起来像"又加载了一遍"。Chrome 也是这么做的：
+ * 只有加载超过一小会儿才把进度条淡进来。
+ *
+ * 200ms 起步：比一帧长得多（不会因为抖动闪进来），又远短于人能感知的"卡住了"
+ * （真慢的加载照样看得见）。
+ */
+private const val LoadBarDelayMs = 200L
 
 /** 首页字标（assets 里那张）解一次记住：卡片预览与页面加载动画共用。 */
 @Composable

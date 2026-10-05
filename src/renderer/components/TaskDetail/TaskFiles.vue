@@ -53,6 +53,35 @@
           width="100">
           <template #default="scope">{{ bytesToSize(scope.row.length) }}</template>
         </el-table-column>
+        <!-- 操作列（表头「操作」）：只对**可播放的媒体文件**出现播放按钮
+             （其它类型不显示）。视频与音频都走同一个独立播放器窗口。
+             表头单元格也会带上 class-name，所以 .task-file-actions .cell 的
+             padding:0 / 居中 对表头同样生效，52px 宽放得下这两个字。 -->
+        <el-table-column
+          v-if="mode === 'DETAIL'"
+          :label="t('task.file-actions')"
+          align="center"
+          width="52"
+          class-name="task-file-actions">
+          <template #default="scope">
+            <mo-hover-tip
+              v-if="mediaKindOf(scope.row.name)"
+              :content="playTip(scope.row)"
+              placement="top"
+              :open-delay="200">
+              <button
+                type="button"
+                class="file-play-btn"
+                :class="{ 'is-disabled': !canPlay(scope.row) }"
+                @click.stop="playFile(scope.row)"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+                  <path d="M8.2 5.4c0-.95 1.05-1.53 1.85-1.02l9.5 6.05c.75.48.75 1.57 0 2.05l-9.5 6.05A1.2 1.2 0 0 1 8.2 18.6V5.4z" fill="currentColor" />
+                </svg>
+              </button>
+            </mo-hover-tip>
+          </template>
+        </el-table-column>
       </el-table>
     </div>
     <div class="file-filters">
@@ -93,6 +122,9 @@
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { isEmpty } from 'lodash'
+import { ipcRenderer } from 'electron'
+import { basename, isAbsolute, resolve } from 'node:path'
+import { mediaKindOf } from '@shared/mediaKinds'
 import '@/components/Icons/video'
 import '@/components/Icons/audio'
 import '@/components/Icons/image'
@@ -135,6 +167,23 @@ const props = defineProps({
     default: function () {
       return []
     }
+  },
+  // 任务目录：列表里的文件只有**相对名**（Aria2 的 files[].name），
+  // 而播放要知道文件的绝对路径，所以由调用方把 dir 递进来
+  dir: {
+    type: String,
+    default: ''
+  },
+  // 任务 gid：播放"还在下载的文件"时，宿主要靠它查下载速度来判断能否顺畅播下去
+  gid: {
+    type: String,
+    default: ''
+  },
+  // 是不是 BT 任务：只有 BT 才有"优先下载"通道（宿主会把播放头转达给下载引擎，
+  // 让播放位置附近的片先下；HTTP/本地文件没有这条通道）
+  bt: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -154,6 +203,89 @@ const overflowState = reactive({})
 function getOverflow (row, field) {
   if (!row || row.idx === undefined || row.idx === null) return false
   return !!overflowState[`${row.idx}:${field}`]
+}
+
+// ── 播放（视频 / 音频都走同一个独立播放器窗口）────────────────────
+
+/**
+ * 文件在磁盘上的绝对路径：优先用列表里给的绝对路径，
+ * 否则由任务目录 + 相对名拼出来。
+ */
+function absolutePathOf (row) {
+  try {
+    if (!row) return ''
+    const listed = row.path ? `${row.path}` : ''
+    if (listed && isAbsolute(listed)) return listed
+    // 相对路径要拼**引擎给的 path**，不是文件名：BT 多文件种子的文件在自己的
+    // 目录里（`FC2PPV-4981875/xxx.mp4`），只拿 name 拼出来的路径根本不存在
+    // —— 播放时会以"文件不存在"收场（2026-09-27 实测踩到）。
+    const rel = listed || (row.name ? `${row.name}` : '')
+    if (!rel) return ''
+    const dir = props.dir ? `${props.dir}` : ''
+    if (dir) return resolve(dir, rel)
+    return rel
+  } catch (_) {
+    return ''
+  }
+}
+
+/**
+ * 本文件在**种子总数据**里的起始字节。
+ *
+ * 选片是按整份种子的片位图做的（前面文件占掉的字节要先减掉），所以播放头
+ * 报给下载引擎之前必须换算成这个坐标 —— 单文件种子自然是 0。
+ */
+function fileOffsetOf (row) {
+  try {
+    const idx = Number(row && row.idx) || 0
+    return props.files.reduce((sum, f) => {
+      const i = Number(f && f.idx) || 0
+      return i > 0 && i < idx ? sum + (Number(f.length) || 0) : sum
+    }, 0)
+  } catch (_) {
+    return 0
+  }
+}
+
+/** 一个字节都没下到的文件点了也是白等（服务端等不到数据），所以先禁用。 */
+function canPlay (row) {
+  return Number(row && row.completedLength) > 0
+}
+
+function playTip (row) {
+  return canPlay(row) ? t('task.play') : t('task.play-not-downloaded')
+}
+
+async function playFile (row) {
+  if (!canPlay(row)) {
+    return
+  }
+  const filePath = absolutePathOf(row)
+  if (!filePath) {
+    return
+  }
+  try {
+    const length = Number(row.length) || 0
+    const completed = Number(row.completedLength) || 0
+    const r = await ipcRenderer.invoke('open-media-player', {
+      path: filePath,
+      name: row.name || basename(filePath),
+      size: length,
+      gid: props.gid || '',
+      // 还没下完 → 宿主知道这是"边下边播"，会开启速度判据与优先下载
+      downloading: length > 0 && completed < length,
+      // BT 任务的"优先下载"要一个**种子内的字节偏移**（选片的坐标是整份种子，
+      // 不是单个文件）：本文件在种子里的起点 = 前面所有文件的长度之和。
+      // 多文件种子必须算对，否则会把别的文件那一段当成"播放位置"抢下来。
+      bt: props.bt,
+      fileOffset: fileOffsetOf(row)
+    })
+    if (!r || !r.ok) {
+      console.warn('[Lerxu] 打开播放器失败:', r && r.error)
+    }
+  } catch (e) {
+    console.warn('[Lerxu] 打开播放器失败:', e && e.message ? e.message : e)
+  }
 }
 
 /* 通用溢出检测：mouseenter 时检查文本是否被截断 */
@@ -610,6 +742,49 @@ defineExpose({
 
 .theme-dark .mo-task-files .el-table__body-wrapper tr:not(:last-child)::after {
   background: var(--lc-border-base);
+}
+
+/* ── 操作区：播放按钮 ──────────────────────────────────────────
+   只在悬停时给底色，保持列表本身干净（无边框、无渐变）。 */
+.mo-task-files .task-file-actions .cell {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mo-task-files .file-play-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lc-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.14s ease, transform 0.14s ease;
+}
+
+/* 只高亮图标，不给底色（与播放器控制栏一致） */
+.mo-task-files .file-play-btn:hover {
+  color: var(--lc-text-regular);
+}
+
+.mo-task-files .file-play-btn:active {
+  transform: scale(0.9);
+}
+
+.mo-task-files .file-play-btn.is-disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.mo-task-files .file-play-btn.is-disabled:hover {
+  background: transparent;
+  color: var(--lc-text-secondary);
 }
 
 .theme-dark .mo-task-files .mo-table-wrapper {

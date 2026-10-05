@@ -37,6 +37,14 @@ FluxCore/
 # 排除在版本控制之外，改动无法被 review / 回滚。
 /XferRust/
 
+# ZuvRust 媒体引擎（原名 MediaEngine）：**独立仓库**，源码不入前端仓库。
+# 它是自研的 Rust 音视频引擎（容器/mux/取流/软解），有自己的一套工作区与
+# 构建产物（target/ 上万文件），混进宿主仓库只会让 diff 与 review 失真。
+# 与上一段同理必须锚定到仓库根：未锚定的 "ZuvRust/" 会在 macOS（大小写不敏感）
+# 下匹配到别处，而 "MediaEngine/" 一样要锚定 —— 旧目录名的残留也别放进来。
+/ZuvRust/
+/MediaEngine/
+
 # Android client：源码必须入库（CI 需构建 APK），仅忽略构建产物。
 # 具体构建产物规则见 Android/.gitignore（.gradle / .kotlin / build / local.properties 等）
 Android/.gradle/
@@ -79,3 +87,12 @@ temp/
 __pycache__/
 *.pyc
 *.pyo
+
+# Jishi 引擎（已放弃，2026-09 决定改用自研 ZuvRust，当时的目录名是 MediaEngine）：
+# 该目录里只有 QML 前端 + 一份 x86_64 的 libmedia_capi.dylib —— 源码不在磁盘、
+# 无 git 仓库、没有任何 merge/mux 接口、也没有可执行 CLI，无法作为引擎使用。
+# 保留在磁盘上仅供查阅，不入库。自研引擎见 /ZuvRust/。
+/Jishi-main/
+
+# 临时试验目录（本地生成，不入库）
+/tmp_spawntest/

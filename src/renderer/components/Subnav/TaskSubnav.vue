@@ -195,12 +195,14 @@ function openPreference () {
 
 <style lang="scss">
 .subnav-inner.task-subnav {
-  margin-top: 44px;
+  /* 28px = 右侧任务面板顶部间隙 8px + 面板头部让位 20px（macOS 基准），
+     导航首个分区标签与面板头部搜索框同高 */
+  margin-top: 28px;
   padding-bottom: 16px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  height: calc(100% - 44px);
+  height: calc(100% - 28px);
 
   .subnav-scroll-area {
     flex: 1;
@@ -419,18 +421,30 @@ function openPreference () {
 }
 
 .subnav.three-column-subnav.is-auto-hide-aside .subnav-inner.task-subnav {
-  height: calc(100% - 44px);
+  height: calc(100% - 28px);
 }
 
-#app:not(.has-custom-titlebar) .subnav-inner.task-subnav {
-  margin-top: 44px;
+/* macOS：28px 让开左上角红绿灯（首个分区标签落在红绿灯下方）；
+   面板头部已上移到 14px，导航顶部不再与头部对齐，
+   见 Task/TaskView.vue 的 `#app.is-mac .content.panel .panel-header` */
+#app.is-mac .subnav-inner.task-subnav {
+  margin-top: 28px;
+  height: calc(100% - 28px);
 }
 
-/* Windows/Linux 关闭自定义标题栏（使用系统原生标题栏/菜单栏）时，
-   左侧导航与任务面板一致顶部贴边，不留 44px 标题栏占位 */
+/* Windows/Linux 关闭自定义标题栏（用系统原生标题栏/菜单栏）时，
+   面板顶部只有 8px 间隙，导航跟着上移 */
 #app:not(.has-custom-titlebar):not(.is-mac) .subnav-inner.task-subnav {
-  margin-top: 0;
-  height: 100%;
+  margin-top: 14px;
+  height: calc(100% - 14px);
+}
+
+/* Windows/Linux 保留自定义标题栏（38px 窗口按钮带）时，
+   左侧导航与面板头部对齐：头部在面板内让出 38px 按钮带，
+   顶部落在 52px（面板 8px + 头部 margin 44px），见 Task/TaskView.vue */
+#app.has-custom-titlebar .subnav-inner.task-subnav {
+  margin-top: 52px;
+  height: calc(100% - 52px);
 }
 
 .subnav-inner {

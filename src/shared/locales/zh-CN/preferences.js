@@ -1,4 +1,8 @@
 export default {
+  // 侧边栏分组标签（与主窗口侧边栏同构：设置 / 下载 / 扩展）
+  'section-settings': '设置',
+  'section-download': '下载',
+  'section-extension': '扩展',
   'basic': '基础设置',
   'advanced': '进阶设置',
   'theme-and-ui': '主题与界面',
@@ -340,12 +344,6 @@ export default {
   'extension-open-manual': '未自动打开 Edge：请将 {{url}} 粘贴到 Edge 地址栏并回车，打开扩展管理页面（地址已复制到剪贴板）',
   'extension-open-running': '浏览器已在运行：请切换到浏览器窗口，将 {{url}} 粘贴到地址栏并回车（地址已复制到剪贴板）',
 
-  'video-merge': '视频合并',
-  'ffmpeg-status': 'FFmpeg 状态',
-  'ffmpeg-installed': '已安装',
-  'ffmpeg-not-installed': '未安装',
-  'ffmpeg-path': '路径',
-  'ffmpeg-open-folder': '打开目录',
   'auto-check-update-desc': '启动应用时自动检查更新',
   'auto-hide-window-desc': '关闭主窗口时隐藏到托盘而不是退出',
   'auto-open-task-progress-window-desc': '任务开始下载时自动打开进度窗口',

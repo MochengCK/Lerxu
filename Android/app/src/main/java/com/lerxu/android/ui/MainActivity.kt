@@ -37,26 +37,21 @@ class MainActivity : FragmentActivity() {
     private val sharedIntentTick = mutableStateOf(0)
 
     companion object {
-        private const val PREFS_NAME = "lerxu_prefs"
+        private const val PREFS_NAME = AppLocale.PREFS_NAME
         private const val KEY_ONBOARDING_DONE = "onboarding_done"
-        const val KEY_LANGUAGE = "language"
+        /** 语言偏好的键（真正的读写都在 [AppLocale] 里，这里留一个别名给老调用点）。 */
+        const val KEY_LANGUAGE = AppLocale.KEY_LANGUAGE
         const val KEY_THEME = "theme"
 
-        /** 语言切换后由设置页调用，recreate 重建界面并重连引擎 RPC */
-        fun updateLanguage(context: Context, tag: String) {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit().putString(KEY_LANGUAGE, tag).apply()
-            (context as? MainActivity)?.recreate()
-        }
-
-        /** 计算应使用的 Locale：pref 为空时跟随系统 */
-        private fun resolveLocale(context: Context): Locale {
-            val pref = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .getString(KEY_LANGUAGE, "") ?: ""
-            val sys = context.resources.configuration.locales[0]
-            if (pref.isEmpty() || pref == "system") return sys
-            return Locale.forLanguageTag(pref)
-        }
+        /**
+         * 计算应使用的 Locale：偏好为空（跟随系统）时用**系统**语言。
+         *
+         * 只在 [attachBaseContext] 里用 —— 那是"冷启动第一帧就得上对语言"那一段；
+         * 运行中切语言走 [AppLocale.select] + `ProvideAppLanguage`，**不重建 Activity**
+         *（见 [AppLocale] 的类注释：老那套 `recreate()` 会拆掉整棵树与两层弹窗窗口，
+         * 顺序怎么排都会踩到窗口生命周期，切语言崩溃的根就在那儿）。
+         */
+        private fun resolveLocale(context: Context): Locale = AppLocale.localeOf(AppLocale.read(context))
     }
 
     override fun attachBaseContext(newBase: Context) {
@@ -68,6 +63,9 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 语言偏好读进 `AppLocale.current`（全局 Compose 状态）：`setContent` 之前读一次，
+        // 首帧就是对的（attachBaseContext 那边已经按它套过 Configuration）
+        AppLocale.load(this)
         // 偶发崩溃留一份记录（外部目录，便于取出）
         CrashLog.install(this)
         // 导航条区域**完全透明**：默认的 `enableEdgeToEdge()` 在 API < 29 上会给
@@ -105,29 +103,34 @@ class MainActivity : FragmentActivity() {
                 else -> isSystemInDarkTheme()
             }
             LerxuTheme(darkTheme = darkTheme) {
-                var showOnboarding by remember { mutableStateOf(!onboardingDone) }
+                // 语言在这一层换（见 AppLocale）：不是"重建 Activity"，只是换掉这棵树
+                // 看到的 Configuration / Resources —— 切语言不再拆窗口，也就不可能崩
+                ProvideAppLanguage {
+                    var showOnboarding by remember { mutableStateOf(!onboardingDone) }
 
-                OnboardingTransition(
-                    showOnboarding = showOnboarding,
-                    onOnboardingFinished = {
-                        // 标记引导完成
-                        prefs.edit { putBoolean(KEY_ONBOARDING_DONE, true) }
-                        showOnboarding = false
-                        // 引导完成后启动引擎
-                        EngineService.startEngine(this)
-                        viewModel.start()
-                    }
-                ) {
-                    AppScreen(
-                        viewModel = viewModel,
-                        initialIntentData = sharedIntentData.value,
-                        intentTick = sharedIntentTick.value,
-                        themePref = themePref,
-                        onThemeChange = { pref ->
-                            themePref = pref
-                            prefs.edit { putString(KEY_THEME, pref) }
+                    OnboardingTransition(
+                        showOnboarding = showOnboarding,
+                        onOnboardingFinished = {
+                            // 标记引导完成
+                            prefs.edit { putBoolean(KEY_ONBOARDING_DONE, true) }
+                            showOnboarding = false
+                            // 引导完成后启动引擎
+                            EngineService.startEngine(this)
+                            viewModel.start()
                         }
-                    )
+                    ) {
+                        AppScreen(
+                            viewModel = viewModel,
+                            initialIntentData = sharedIntentData.value,
+                            intentTick = sharedIntentTick.value,
+                            themePref = themePref,
+                            onThemeChange = { pref ->
+                                themePref = pref
+                                prefs.edit { putString(KEY_THEME, pref) }
+                            },
+                            onLanguageChange = { tag -> AppLocale.select(this, tag) }
+                        )
+                    }
                 }
             }
         }

@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events'
 import { spawn } from 'node:child_process'
-import { readFile, unlink, existsSync } from 'node:fs'
+import { readFile, unlink, unlinkSync, existsSync, mkdirSync } from 'node:fs'
 import { extname, basename, join, dirname } from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
-import { app, clipboard, shell, dialog, ipcMain } from 'electron'
+import { app, clipboard, shell, dialog, ipcMain, screen } from 'electron'
 import { createServer } from 'node:http'
 import WS from 'ws'
 import is from 'electron-is'
@@ -23,7 +23,7 @@ import {
   TASK_STATUS
 } from '@shared/constants'
 import { bytesToSize, checkIsNeedRunAdvanced, detectResource, sanitizeLink, getTaskName, getTaskUriForComparison, removeExtensionDot, timeFormat, timeRemaining } from '@shared/utils'
-import { parsePieceStatuses } from '@shared/utils/piece-status'
+import { parsePieceStatuses, combinePieceStatuses } from '@shared/utils/piece-status'
 import {
   deduplicateTrackers,
   fetchBtTrackerFromSource,
@@ -38,6 +38,16 @@ import { showItemInFolder, getEngineList, getSystemHttpProxy } from './utils'
 import logger from './core/LogManager'
 import Context from './core/Context'
 import ConfigManager from './core/ConfigManager'
+import MediaStreamServer, { mimeOf } from './core/MediaStreamServer'
+import PlaybackSession from './playback/PlaybackSession'
+import EnginePlayer from './playback/EnginePlayer'
+import { createPlayheadHint } from './playback/PlayheadHint'
+import { buildAvailability, writeAvailabilityFile } from './playback/AvailabilityMap'
+import { hasFileHead, STREAM_MAX_ATTEMPTS, STREAM_POLL_MS, STREAM_WAIT_MS } from './playback/StreamWait'
+import { resolveMediaEnginePath } from './utils'
+import { PLAYBACK } from '@shared/playback-api'
+import { planPlayback } from '@shared/playback-plan'
+import { readMediaMeta, mediaKindOf } from './utils/mediaMeta'
 import { setupLocaleManager } from './ui/Locale'
 import Engine from './core/Engine'
 import EngineClient from './core/EngineClient'
@@ -66,7 +76,7 @@ export default class Application extends EventEmitter {
     this._taskPlanScheduledNotBeforeTime = null
     this._videoSnifferConfig = {
       enabled: true,
-      formats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
+      formats: ['m4s', 'mp4', 'flv', 'm3u8', 'm3u', 'ts', 'm2ts', 'mts', 'cmfv', 'cmfa', 'mp2t', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ism', 'ismc', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
       autoCombine: true
     }
     this._clipboardWatchTimer = null
@@ -89,6 +99,18 @@ export default class Application extends EventEmitter {
       this.cleanupExpiredChallenges()
       this.cleanupExpiredSessionTokens()
     }, 60000) // 每分钟清理一次
+
+    // 播放（独立播放器窗口）：数据侧句柄与"边下边播"的状态
+    this.playbackSession = null
+    this.playbackEngine = null
+    this.mediaStream = null
+    // 优先下载提示（播放头 → 下载引擎）与"等数据"重试
+    this.playbackHint = null
+    this._streamRetryTimer = null
+    this._streamRetryAttempts = 0
+    // 可用性图（下载引擎片位图 → 媒体引擎）与它的定时器
+    this._availTimer = null
+    this._availPath = ''
 
     // 早期就绪 Promise：窗口创建只依赖 init 前半段（配置/菜单/窗口管理器/
     // IPC handler），后半段的引擎启动、系统代理解析、RPC 获取等耗时步骤
@@ -674,7 +696,7 @@ export default class Application extends EventEmitter {
                 skipFileExtensions: [],
                 excludeDomains: [],
                 videoSnifferEnabled: false,
-                videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
+                videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'm3u', 'ts', 'm2ts', 'mts', 'cmfv', 'cmfa', 'mp2t', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ism', 'ismc', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
                 videoSnifferAutoCombine: true,
                 theme: APP_THEME.AUTO,
                 effectiveTheme: APP_THEME.LIGHT
@@ -1070,7 +1092,7 @@ export default class Application extends EventEmitter {
       if (savedEnabled !== undefined || savedFormats !== undefined || savedAutoCombine !== undefined) {
         this._videoSnifferConfig = {
           enabled: savedEnabled !== undefined ? savedEnabled : true,
-          formats: Array.isArray(savedFormats) ? savedFormats : ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
+          formats: Array.isArray(savedFormats) ? savedFormats : ['m4s', 'mp4', 'flv', 'm3u8', 'm3u', 'ts', 'm2ts', 'mts', 'cmfv', 'cmfa', 'mp2t', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ism', 'ismc', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
           autoCombine: savedAutoCombine !== undefined ? savedAutoCombine : true
         }
         logger.log('[Lerxu] Video sniffer config loaded from disk:', this._videoSnifferConfig)
@@ -3848,6 +3870,395 @@ export default class Application extends EventEmitter {
     }
   }
 
+  /**
+   * 打开独立播放器窗口播放一个本地文件。
+   *
+   * 这里只做"装配"：把数据来源包成 Provider、开一个播放会话、把会话推给播放器。
+   * **播放器完全不知道数据从哪来**（可能是一个还在下载、中间有大片空洞的文件）——
+   * 它只认 `@shared/playback-api` 里那套契约。
+   */
+  async openMediaPlayer (payload = {}, opts = {}) {
+    const filePath = payload && payload.path ? `${payload.path}` : ''
+    if (!filePath) {
+      return { ok: false, error: 'no-path' }
+    }
+    const kind = mediaKindOf(filePath)
+    if (!kind) {
+      return { ok: false, error: 'unsupported' }
+    }
+    // 用户开的这次播放：把"等数据重试"的次数清零（自动重试不重置，否则会无限重开）
+    if (!opts.retry) {
+      this._streamRetryAttempts = 0
+    }
+    try {
+      if (!this.mediaStream) {
+        this.mediaStream = new MediaStreamServer({ logger })
+      }
+      // 播放器窗口一次只服务一个文件：先把上一个会话收掉
+      this.closePlaybackSession()
+
+      const gid = payload.gid ? `${payload.gid}` : ''
+      const downloading = !!payload.downloading
+      const totalBytes = Number(payload.size) || 0
+
+      // ── 边下边播的"优先下载"通道 ─────────────────────────────────
+      //
+      // 只有 **BT 任务**有这条通道（本地完整文件、HTTP 任务不需要）。宿主把
+      // 播放头（种子内的字节偏移）转达给下载引擎，选片随即把这一带提到最前 ——
+      // 位置来源是**媒体引擎每读一段在 stderr 上报的播放头**（`sourceOffset`，
+      // 它就是"引擎正在读文件里的哪个字节"，比按播放位置 × 码率估算准得多）。
+      // 换文件时必须先清掉上一条提示，否则选片会一直朝着上一个文件的
+      // 播放位置使劲（那正是"没人在看却只下某一段"的来源）。
+      this.closePlaybackHint()
+      const hint = payload.bt && gid
+        ? createPlayheadHint({
+          fileOffset: Number(payload.fileOffset) || 0,
+          send: (offset) => {
+            // 尽力而为：引擎不在（暂停中/非 BT）时回 applied:false，不是错误
+            return this.engineClient?.call('task.setPlayhead', { gid, offset })
+          },
+          logger
+        })
+        : null
+      this.playbackHint = hint
+      // **开播先给"文件开头"**：容器头（MP4 的 moov / TS 的 PMT）没到，
+      // 媒体引擎连流都起不来、也就报不出播放头 —— 这个初始提示是打破死锁的那一下。
+      hint?.push(0)
+
+      // 可用性图：让媒体引擎知道"哪些字节已经真的下到了"。没有它，引擎读到
+      // 空洞里的一片零会当成码流损坏（实测：H.264 找不到起始码 → 播放终止）。
+      const availPath = payload.bt && gid && downloading
+        ? this.startAvailabilityPolling(gid, {
+          fileOffset: Number(payload.fileOffset) || 0,
+          total: totalBytes
+        })
+        : ''
+
+      // 元数据（标题/艺术家/封面只读文件头里的一小段）
+      let meta = {}
+      try {
+        meta = readMediaMeta(filePath) || {}
+      } catch (_) {
+        meta = {}
+      }
+
+      // ① 数据侧：**只有媒体引擎这一个内核**（视频与音频都是）。
+      //
+      // 把裸文件交给 `<video>` 只在"文件完整、且容器与编码都在浏览器支持面内"时
+      // 成立：TS、fMP4 分片、还没下完的文件全都播不了 —— 那正是"这个文件浏览器
+      // 无法直接播放"的由来。现在连**解码**也在引擎里（视频出 NV12 帧、音频出
+      // PCM，见 `--video=frames --audio=pcm`），播放器页只负责上屏与发声 ——
+      // 这样"引擎能脱离浏览器播放"这条路线才立得住（换成别的前端也照样能播）。
+      //
+      // 引擎解不了的（H.265/AV1/VP9、引擎还没接的音频编码、引擎不认的容器）
+      // **明确报错、不回退浏览器**：回退只会把引擎的缺口藏起来，用户看到的原因
+      // 也就不准了（详细口径见 `@shared/playback-plan`）。
+      const enginePath = resolveMediaEnginePath()
+      const plan = planPlayback({ enginePath })
+      if (!plan.engine) {
+        logger.warn(`[Lerxu] 播放器不可用：没有找到媒体引擎（${plan.reason}）`)
+        dialog.showErrorBox?.('播放器不可用', '没有找到媒体引擎（zuvrust），无法播放这个文件。')
+        return { ok: false, error: plan.reason }
+      }
+      // 引擎解码（出帧 + PCM）是**默认**：它才是"播放不依赖浏览器解码器"的那条路。
+      // `video-frames` 配置项 / `LERXU_VIDEO_FRAMES=0` 只留作**诊断开关** ——
+      // 关掉时退回"引擎转封装 + MSE（浏览器解码）"，方便两边对比着排查问题。
+      const engineDecode = this.configManager?.getUserConfig?.('video-frames') !== false &&
+        process.env.LERXU_VIDEO_FRAMES !== '0'
+      const enginePlayer = new EnginePlayer({
+        enginePath,
+        input: filePath,
+        size: totalBytes,
+        // 边下边播是常态；文件已下完时它照样读完（读不动就判定 EOF）
+        grow: true,
+        // 引擎上报的播放头 = "正在读文件里的哪个位置"，比按码率估算准得多
+        onPlayhead: hint ? (p) => hint.push(Number(p && p.sourceOffset) || 0) : null,
+        onPrioritize: hint ? (bytes) => hint.push(bytes) : null,
+        availPath,
+        engineDecode,
+        logger
+      })
+      const provider = enginePlayer
+      const streamUrl = await this.mediaStream.registerEngine(enginePlayer)
+      const mseMode = true
+      logger.info(`[Lerxu] 播放内核：媒体引擎 ${enginePath}（${plan.reason}·${engineDecode ? '引擎解码' : '转封装+MSE（诊断）'}）`)
+
+      // ② 会话：把数据、进度、下载速度汇在一起，算出播放器该显示什么
+      const id = randomBytes(8).toString('hex')
+      const session = new PlaybackSession({
+        id,
+        name: payload.name || basename(filePath),
+        kind,
+        provider,
+        mime: mimeOf(filePath),
+        durationSecs: Number(payload.duration) || 0,
+        totalBytes,
+        meta,
+        streaming: downloading,
+        mse: mseMode,
+        frames: engineDecode,
+        onState: (state) => this.pushPlaybackState(state),
+        logger
+      })
+      session.taskGid = gid
+      // 记住这次的参数：等数据重试（BT 空洞）要按同样的参数重开
+      this._playbackPayload = { ...payload, path: filePath }
+
+      session.streamUrl = streamUrl
+      this.playbackSession = session
+      this.playbackEngine = enginePlayer
+      this.playbackToken = this.mediaStream.tokenOf(streamUrl)
+
+      // ④ 边下边播才需要"下载速度"这个判据；下载中的任务让主窗口定时回报
+      if (downloading && gid) {
+        this.startPlaybackSpeedPolling(gid)
+      }
+
+      // ⑤ 打开窗口：先按视频比例把客户区调好，再推会话
+      const win = this.windowManager.openWindow('player', { hidden: false })
+      this._playerAspect = 0
+      if (meta && meta.videoSize) {
+        this._playerAspect = meta.videoSize.width / meta.videoSize.height
+        this.applyVideoAspect(win, meta.videoSize)
+      }
+      const pushSession = () => {
+        try {
+          win.webContents.send(PLAYBACK.OPEN, session.toSession())
+        } catch (_) {}
+      }
+      if (win.webContents.isLoading()) {
+        win.webContents.once('did-finish-load', pushSession)
+      } else {
+        pushSession()
+      }
+
+      if (!this._playerWindowBound) {
+        this._playerWindowBound = true
+        win.on('closed', () => {
+          this._playerWindowBound = false
+          this.closePlaybackSession()
+        })
+      }
+      session.start()
+      return { ok: true }
+    } catch (e) {
+      logger.warn('[Lerxu] 打开播放器失败:', e && e.message ? e.message : e)
+      return { ok: false, error: `${e && e.message ? e.message : e}` }
+    }
+  }
+
+  /**
+   * 让窗口客户区的比例 = 视频比例。
+   *
+   * 为什么必须做：`<video>` 用 `object-fit: contain`（画面不裁边），
+   * 窗口比例只要和画面不一致，就一定有黑边 —— 用户说的"有黑边"全是这个原因。
+   * 控制栏是**覆盖在画面上**的浮层、不占高度，所以直接把客户区调成视频比例即可；
+   * 再用 `setAspectRatio` 让用户手动缩放时也保持这个比例。
+   */
+  applyVideoAspect (win, { width, height }) {
+    try {
+      if (!win || win.isDestroyed() || !width || !height) {
+        return
+      }
+      const ratio = width / height
+      // 以窗口当前所在的那块屏幕为准（多显示器时别按主屏算）
+      const area = screen.getDisplayMatching(win.getBounds()).workAreaSize
+      const maxW = Math.max(480, Math.min(1400, Math.round(area.width * 0.82)))
+      const maxH = Math.max(320, Math.min(900, Math.round(area.height * 0.82)))
+      let w = maxW
+      let h = Math.round(w / ratio)
+      if (h > maxH) {
+        h = maxH
+        w = Math.round(h * ratio)
+      }
+      win.setContentSize(w, h)
+      win.setAspectRatio(ratio)
+      win.center()
+    } catch (e) {
+      logger.warn('[Lerxu] 按视频比例调整窗口失败:', e && e.message ? e.message : e)
+    }
+  }
+
+  /** 把状态推给播放器窗口（播放器只显示，不做任何推导）。 */
+  pushPlaybackState (state) {    const win = this.windowManager.getWindow('player')
+    if (!win || win.isDestroyed()) {
+      return
+    }
+    try {
+      win.webContents.send(PLAYBACK.STATE, state)
+    } catch (_) {}
+  }
+
+  /** 收掉当前播放会话（换文件 / 关窗口时）。 */
+  closePlaybackSession () {
+    if (this._playbackSpeedTimer) {
+      clearInterval(this._playbackSpeedTimer)
+      this._playbackSpeedTimer = null
+    }
+    this.cancelStreamRetry()
+    this.closePlaybackHint()
+    this.stopAvailabilityPolling()
+    if (this.playbackToken && this.mediaStream) {
+      this.mediaStream.release(this.playbackToken)
+    }
+    // 引擎播放器要显式停掉：它持有子进程，光释放 token 不够（release 会调到
+    // player.stop()，这里再清引用，避免下次换文件时误用旧实例）
+    this.playbackEngine = null
+    this.playbackToken = ''
+    try {
+      this.playbackSession?.close?.()
+    } catch (_) {}
+    this.playbackSession = null
+  }
+
+  /**
+   * 每秒把下载引擎的**片位图**翻译成可用性图，原子写到一个临时文件里。
+   *
+   * 为什么每秒：媒体引擎在空洞上等的时候会反复读它；宿主一停，图就判过期，
+   * 引擎退回老行为（照读）—— 所以刷新必须比"过期阈值"（引擎侧 10 秒）快得多。
+   * 为什么由宿主做：位图只有管下载任务的一侧有，引擎只认"哪些字节可用"。
+   *
+   * @returns {string} 图文件路径（传给引擎 `--avail=`）；失败时也给路径（引擎会按"不知道"处理）
+   */
+  startAvailabilityPolling (gid, { fileOffset = 0, total = 0 } = {}) {
+    this.stopAvailabilityPolling()
+    const dir = join(app.getPath('userData'), 'playback-avail')
+    try {
+      mkdirSync(dir, { recursive: true })
+    } catch (_) {}
+    const path = join(dir, `${gid}-${randomBytes(4).toString('hex')}.json`)
+    this._availPath = path
+    const tick = async () => {
+      try {
+        const status = await this.engineClient?.call('task.tell', {
+          gid,
+          keys: ['bitfield', 'pieceLength']
+        })
+        const map = buildAvailability({
+          bitfield: status && status.bitfield,
+          pieceLength: status && Number(status.pieceLength),
+          fileOffset,
+          total
+        })
+        if (map) {
+          writeAvailabilityFile(path, map)
+        }
+      } catch (_) {
+        // 查询失败（引擎重启中、任务刚被删）不该刷屏：下一轮再试
+      }
+    }
+    tick()
+    this._availTimer = setInterval(tick, 1000)
+    return path
+  }
+
+  /** 停掉可用性图刷新，并把图删掉（引擎下次按"不知道"处理）。 */
+  stopAvailabilityPolling () {
+    if (this._availTimer) {
+      clearInterval(this._availTimer)
+      this._availTimer = null
+    }
+    if (this._availPath) {
+      try { unlinkSync(this._availPath) } catch (_) {}
+      this._availPath = ''
+    }
+  }
+
+  /** 收掉"优先下载"提示（停止播放 / 关窗 / 换文件时）：选片退回 rarest-first。 */
+  closePlaybackHint () {
+    try {
+      this.playbackHint?.clear?.()
+    } catch (_) {}
+    this.playbackHint = null
+  }
+
+  /**
+   * 媒体引擎"数据还没到"时的等待：**不判失败，等文件开头的数据到达**。
+   *
+   * 为什么需要：BT 文件（尤其刚下到中段的）开头常常还是空洞，媒体引擎读到的
+   * 是零字节 → 立刻报"无法识别的容器"。这不是这次播放失败，而是数据还在路上，
+   * 而**它恰恰是优先下载要解决的问题**：宿主已把播放头（文件开头）报给下载引擎，
+   * 此刻正在抢那几片。
+   *
+   * 做法：每 `STREAM_POLL_MS` 看一眼本地文件开头有没有数据（空洞读出来是零），
+   * 有就重开一次引擎流（重开后引擎自己会等后续数据 —— 它有 NeedMore 重试）。
+   * 为什么不在数据没到时就去试：每次尝试都要起一个引擎进程 + 让播放器闪一下
+   * "正在打开…"，而结果必然是同一个错误 —— 等数据到了再试才有意义。
+   *
+   * 两道闸：等 `STREAM_WAIT_MS` 还没等到数据、或重开次数到 `STREAM_MAX_ATTEMPTS`，
+   * 就停下等待、把原因留在提示条上（**没有别的内核可退**：桌面播放器只有引擎）。
+   * 播放头提示**不清** —— 用户稍后再点播放时，开头那几片还在抢。
+   *
+   * @returns {boolean} 是否接管了这次失败
+   */
+  waitForStreamData () {
+    const payload = this._playbackPayload
+    if (!payload || !payload.path || this._streamRetryTimer) {
+      return false
+    }
+    if (this._streamRetryAttempts >= STREAM_MAX_ATTEMPTS) {
+      return false
+    }
+    const deadline = Date.now() + STREAM_WAIT_MS
+    this.playbackSession?.setNotice?.('文件开头还没下到，正在优先下载…（就绪后会自动开始播放）')
+    const attempt = () => {
+      this._streamRetryTimer = null
+      // 期间换了文件 / 关了窗口：这次等待作废
+      if (this._playbackPayload !== payload || !this.playbackSession) {
+        return
+      }
+      if (!hasFileHead(payload.path)) {
+        if (Date.now() >= deadline) {
+          // 等不到就是等不到（没有别的来源/下载已停）：如实把状态留在提示条上，
+          // 等用户下次点播放再抢一次 —— 这里**不回退浏览器**（它读同一个文件，
+          // 面对的还是同一片空洞，只会把原因掩盖成"无法直接播放"）。
+          logger.warn('[Lerxu] 等不到文件开头的数据，停止自动重试（点击播放可再试）')
+          this.playbackSession?.setNotice?.('文件开头还没下到（暂时没有可用的数据来源），稍后再点播放试试')
+          return
+        }
+        this._streamRetryTimer = setTimeout(attempt, STREAM_POLL_MS)
+        return
+      }
+      this._streamRetryAttempts += 1
+      logger.info(`[Lerxu] 文件开头已有数据，重开引擎流（第 ${this._streamRetryAttempts}/${STREAM_MAX_ATTEMPTS} 次）`)
+      this.openMediaPlayer(payload, { retry: true }).catch((e) => {
+        logger.warn('[Lerxu] 重开引擎流失败:', e && e.message ? e.message : e)
+      })
+    }
+    this._streamRetryTimer = setTimeout(attempt, STREAM_POLL_MS)
+    return true
+  }
+
+  cancelStreamRetry () {
+    if (this._streamRetryTimer) {
+      clearTimeout(this._streamRetryTimer)
+      this._streamRetryTimer = null
+    }
+  }
+
+  /**
+   * 边下边播时，每秒向主窗口要一次"这个任务的当前下载速度"。
+   *
+   * 为什么找主窗口要而不是自己去查引擎：主窗口本来就每秒同步任务列表，
+   * 主进程再建一条查询通道等于把同一份数据维护两遍。将来若要独立，
+   * 换成直接查 `EngineClient.client` 即可 —— 会话侧完全不用改。
+   */
+  startPlaybackSpeedPolling (gid) {
+    if (this._playbackSpeedTimer) {
+      clearInterval(this._playbackSpeedTimer)
+    }
+    const ask = () => {
+      const win = this.windowManager.getWindow('index')
+      if (win && !win.isDestroyed()) {
+        try {
+          win.webContents.send('playback:query-speed', { gid })
+        } catch (_) {}
+      }
+    }
+    ask()
+    this._playbackSpeedTimer = setInterval(ask, 1000)
+  }
+
   handleProgressChange (progress) {
     if (this.updateManager && this.updateManager.isChecking) {
       return
@@ -4070,6 +4481,200 @@ export default class Application extends EventEmitter {
       this.windowManager.openWindow('file-categories-settings', {
         hidden: false
       })
+    })
+
+    // ── 媒体播放 ────────────────────────────────────────────────────
+    //
+    // 分两层，别混：
+    // · **宿主入口**（主窗口用）：`open-media-player` —— 只回答"播哪个文件"；
+    // · **PLAYBACK API**（播放器窗口用）：下面那组 `playback:*` —— 播放器只认它们，
+    //   不知道数据来自本地文件还是正在下载的 BT 文件（契约见 @shared/playback-api）。
+    ipcMain.handle('open-media-player', async (_event, payload = {}) => {
+      return this.openMediaPlayer(payload)
+    })
+
+    // 播放器就绪：主动拉当前会话（首次打开时 OPEN 事件可能早于页面就绪）
+    ipcMain.handle(PLAYBACK.READY, () => {
+      return this.playbackSession ? this.playbackSession.toSession() : null
+    })
+
+    // 播放器上报进度：① 优先下载这一带 ② 健康度判据
+    ipcMain.on(PLAYBACK.PROGRESS, (_event, payload = {}) => {
+      try {
+        this.playbackSession?.updateProgress(payload)
+      } catch (_) {}
+    })
+
+    // 播放器请求跳转。
+    //
+    // 引擎供流（MSE）时 seek 不是"设个时间"就完了：MSE 要丢掉旧缓冲、
+    // 从新位置重新取流，所以这里让**引擎从新位置重启**，播放器随后重新
+    // 请求同一个地址（每次请求 = 一条新流，见 EnginePlayer.openStream）。
+    // 直接播放（浏览器自解）时播放器自己设 currentTime，不走这里。
+    ipcMain.handle(PLAYBACK.SEEK, (_event, payload = {}) => {
+      const player = this.playbackEngine
+      if (!player) {
+        return { ok: false, error: 'no-engine-session' }
+      }
+      try {
+        const sec = Math.max(0, Number(payload && payload.position) || 0)
+        player.seek(sec)
+        logger.info(`[Lerxu] 引擎播放器跳转到 ${sec.toFixed(2)}s`)
+        return { ok: true }
+      } catch (e) {
+        logger.warn('[Lerxu] 引擎跳转失败:', e && e.message ? e.message : e)
+        return { ok: false, error: `${e && e.message ? e.message : e}` }
+      }
+    })
+
+    // 播放器上报它**实测**到的时长与画面尺寸：
+    // ① 时长比"打开时猜的"准，健康度判据的分母用它；
+    // ② 画面尺寸用来把窗口比例调成与画面一致 —— 这是"没有黑边"的关键，
+    //    而且任何能播的格式都覆盖（不依赖宿主解析各种容器）。
+    ipcMain.on(PLAYBACK.METADATA, (_event, payload = {}) => {
+      try {
+        const session = this.playbackSession
+        if (!session) {
+          return
+        }
+        const dur = Number(payload.duration) || 0
+        if (dur > 0) {
+          session.duration = dur
+        }
+        const w = Number(payload.width) || 0
+        const h = Number(payload.height) || 0
+        if (w > 0 && h > 0) {
+          const win = this.windowManager.getWindow('player')
+          if (win && !win.isDestroyed() && this._playerAspect !== w / h) {
+            this._playerAspect = w / h
+            this.applyVideoAspect(win, { width: w, height: h })
+          }
+        }
+      } catch (_) {}
+    })
+
+    // 播放器上报错误（宿主负责留痕；提示由播放器自己显示）
+    ipcMain.on(PLAYBACK.ERROR, (_event, payload = {}) => {
+      logger.warn('[Lerxu] 播放错误:', payload && payload.message ? payload.message : payload)
+      const session = this.playbackSession
+      // 文件压根不存在：既不是"数据还没到"（BT 的文件在任务开始时就建好了，
+      // 没下到的位置读出来是零），也不是引擎的锅 —— 保留引擎那句"文件不存在"
+      // （它比任何兜底文案都准），不做任何重试。
+      const playingPath = this._playbackPayload && this._playbackPayload.path
+      if (playingPath && !existsSync(playingPath)) {
+        logger.warn('[Lerxu] 播放失败：文件不存在（路径可能是错的）:', playingPath)
+        return
+      }
+      // 边下边播 + 数据还没到：**等数据**，别急着判失败。
+      // 判据是"还在下载的 BT 任务（有优先下载通道）+ 还没播起来"——
+      // 文件开头是个空洞时媒体引擎必然报"无法识别的容器"，那正是
+      // "刚打开就失败"的真相（见 waitForStreamData 的说明）；
+      // 已经播起来之后再失败不能走这条路：重开会从文件开头重新播，
+      // 用户的位置就丢了（那是"中断"，该按中断处理）。
+      if (
+        this.playbackHint &&
+        session &&
+        session.streaming &&
+        session.position <= 0 &&
+        this.waitForStreamData()
+      ) {
+        return
+      }
+      // 其余失败（引擎解不了这个编码、容器不认、中途断了…）**就这样失败**：
+      // 桌面播放器只有引擎一个内核，没有"回退浏览器"这一档 —— 回退会把引擎的
+      // 缺口掩盖成"浏览器能播"，用户看到的原因也就不再是真正的原因。
+      // 原因已经由播放器窗口显示（引擎原话）+ 上面这行日志留痕。
+    })
+
+    // 播放器请求关闭自己
+    ipcMain.on(PLAYBACK.REQUEST_CLOSE, () => {
+      const win = this.windowManager.getWindow('player')
+      if (win && !win.isDestroyed()) {
+        win.close()
+      }
+    })
+
+    // 播放器窗口的**窗口控制**（最小化/最大化）——故意不放进 PLAYBACK API：
+    // 那是"窗口管理"的语义，与播放无关。
+    ipcMain.on('player:window-control', (_event, action) => {
+      const win = this.windowManager.getWindow('player')
+      if (!win || win.isDestroyed()) {
+        return
+      }
+      try {
+        if (action === 'minimize') {
+          win.minimize()
+        } else if (action === 'close') {
+          win.close()
+        } else if (action === 'toggle-maximize') {
+          if (win.isMaximized()) {
+            win.unmaximize()
+          } else {
+            win.maximize()
+          }
+        } else if (action === 'traffic-lights-hide' || action === 'traffic-lights-show') {
+          // macOS 的红绿灯是**原生控件**，网页里的 CSS 碰不到它 ——
+          // 只能让主进程调这个原生 API 才能让它跟着控制栏一起隐掉。
+          if (is.macOS() && typeof win.setWindowButtonVisibility === 'function') {
+            win.setWindowButtonVisibility(action === 'traffic-lights-show')
+          }
+        }
+      } catch (e) {
+        logger.warn('[Lerxu] 播放器窗口控制失败:', e && e.message ? e.message : e)
+      }
+    })
+
+    // 主窗口回报"某个任务的当前下载速度"（健康度判据要用；
+    // 主窗口本来就每秒同步任务列表，主进程不必再建一条查询通道）
+    ipcMain.on('playback:report-speed', (_event, payload = {}) => {
+      try {
+        const gid = payload && payload.gid ? `${payload.gid}` : ''
+        const session = this.playbackSession
+        if (session && gid && session.taskGid === gid) {
+          session.setDownloadSpeed(Number(payload.speed) || 0)
+        }
+      } catch (_) {}
+    })
+
+    // 播放器要知道"系统给了哪些窗口装饰"，好决定自己要不要画。
+    // **按窗口实际形态回答，不让页面猜平台**：
+    //   · macOS 默认 hiddenInset —— 系统给红绿灯（左上角）但没有标题栏；
+    //   · Windows/Linux 默认有完整原生标题栏（自带拖拽与窗口按钮）；
+    //   · 用户开"隐藏应用菜单"时窗口被强制 frameless —— 什么系统装饰都没有，
+    //     这时页面才需要自己画拖拽条与窗口按钮。
+    ipcMain.handle('app:frame-mode', () => {
+      const hideAppMenu = !!this.configManager?.getUserConfig?.('hide-app-menu')
+      return {
+        platform: process.platform,
+        trafficLights: is.macOS() && !hideAppMenu,
+        nativeTitleBar: !is.macOS() && !hideAppMenu
+      }
+    })
+
+    // 播放器里"加载本地字幕"
+    ipcMain.handle(PLAYBACK.PICK_SUBTITLE, async () => {
+      try {
+        const win = this.windowManager.getWindow('player')
+        const r = await dialog.showOpenDialog(win || undefined, {
+          title: '选择字幕文件',
+          properties: ['openFile'],
+          filters: [
+            { name: '字幕文件', extensions: ['srt', 'vtt'] },
+            { name: '全部文件', extensions: ['*'] }
+          ]
+        })
+        if (!r || r.canceled || !r.filePaths || !r.filePaths.length) {
+          return null
+        }
+        const filePath = r.filePaths[0]
+        const content = await new Promise((resolve, reject) => {
+          readFile(filePath, 'utf8', (err, data) => (err ? reject(err) : resolve(data)))
+        })
+        return { name: basename(filePath), content }
+      } catch (e) {
+        logger.warn('[Lerxu] 选择字幕失败:', e && e.message ? e.message : e)
+        return null
+      }
     })
 
     // Handle open-preference-window
@@ -4526,35 +5131,98 @@ export default class Application extends EventEmitter {
     ipcMain.handle('task-progress:fetch', async (_event, payload = {}) => {
       const gid = payload && payload.gid ? String(payload.gid) : ''
       const includeConnections = !!(payload && payload.includeConnections)
+      // 渲染层在合并阶段把记录的 status 标成 merging（合并是渲染层做的事，
+      // 引擎侧看到的两条流都已经是 complete）——此时不能判定"完成"，
+      // 否则独立进度窗口会在合并还没跑完时自己关掉。
+      const merging = !!(payload && payload.merging)
+      // 「一对音视频」折叠记录的成员 gid（普通任务不传）：进度窗口自身的
+      // 1Hz 轮询也要按同一批成员求和，与主窗口推送的"合计值"同口径。
+      const memberGids = Array.isArray(payload && payload.gids)
+        ? payload.gids.map(g => `${g}`).filter(Boolean)
+        : []
+      // 窗口自己声明"这是一对音视频"。**不能靠"引擎里还查得到几条"来判断**：
+      // 成员下完被引擎清理后只剩一条（甚至一条都查不到），靠条数判断就会退回
+      // 单条流口径 —— 进度/大小/速度只剩一条流（与卡片的合计值每秒交替跳动）、
+      // pairGids 回空（窗口永久忘掉配对），并且那条流下完时直接 done=true 让
+      // 窗口自己关掉，而卡片还在下载。
+      const declaredPair = !!(payload && payload.isPair)
+      const titleHint = payload && payload.title ? `${payload.title}` : ''
       if (!gid) {
         return { success: false, error: 'invalid-gid' }
       }
 
-      let task
-      try {
-        task = await this.engineClient.call('tellStatus', gid)
-      } catch (e) {
-        this._progressSpeedSamples.delete(gid)
-        return { success: false, done: true, error: 'task-not-found' }
-      }
-      if (!task || !task.gid) {
+      // 请求的成员集合（记录 gid + 窗口记住的成员），保持窗口给的顺序
+      const requested = memberGids.includes(gid)
+        ? memberGids.slice()
+        : [gid, ...memberGids.filter(g => g !== gid)]
+      const isPairRecord = declaredPair || requested.length > 1
+
+      // 各成员状态并发取。查不到的成员（引擎已清理/会话恢复丢失）只跳过，
+      // 不当致命错误 —— 但也不能因此就把整条记录当成"已完成"（见下面的 done）。
+      const fetched = new Map()
+      await Promise.all(requested.map(async (g) => {
+        try {
+          const t = await this.engineClient.call('tellStatus', g)
+          if (t && t.gid) {
+            fetched.set(`${t.gid}`, t)
+          }
+        } catch (e) {}
+      }))
+      const task = fetched.get(gid) || [...fetched.values()][0]
+      if (!task) {
         this._progressSpeedSamples.delete(gid)
         return { success: false, done: true, error: 'task-not-found' }
       }
 
-      const status = task.status
       const doneStatuses = [TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED]
-      if (doneStatuses.includes(status)) {
+
+      const members = requested.map(g => fetched.get(g)).filter(Boolean)
+      // 成员一个都不能少，才允许判"完成"：成员缺失时宁可让窗口留着（关窗由
+      // 持有聚合记录的主窗口负责），也绝不把"一条流下完"当成"这一对完成"。
+      const allMembersKnown = members.length === requested.length
+      const statusOf = (m) => `${(m && m.status) || ''}`
+      const anyActive = members.some(m => statusOf(m) === TASK_STATUS.ACTIVE)
+      const anyError = members.some(m => statusOf(m) === TASK_STATUS.ERROR)
+      const anyWaiting = members.some(m => statusOf(m) === TASK_STATUS.WAITING)
+      const anyPaused = members.some(m => statusOf(m) === TASK_STATUS.PAUSED)
+      const allDone = members.every(m => doneStatuses.includes(statusOf(m)))
+
+      // 状态聚合顺序与渲染层 @/utils/taskPair 的 aggregateStatus 一致：
+      // active > error > (合并) > complete > waiting > paused
+      let status = task.status
+      if (isPairRecord) {
+        if (anyActive) {
+          status = TASK_STATUS.ACTIVE
+        } else if (anyError) {
+          status = TASK_STATUS.ERROR
+        } else if (allDone) {
+          status = merging ? TASK_STATUS.MERGING : TASK_STATUS.COMPLETE
+        } else if (anyWaiting) {
+          status = TASK_STATUS.WAITING
+        } else if (anyPaused) {
+          status = TASK_STATUS.PAUSED
+        }
+      } else if (doneStatuses.includes(status) && merging) {
+        status = TASK_STATUS.MERGING
+      }
+
+      if (allMembersKnown && doneStatuses.includes(status) && !merging) {
         this._progressSpeedSamples.delete(gid)
         return { success: true, done: true }
       }
 
-      const completed = Number(task.completedLength || 0)
-      const total = Number(task.totalLength || 0)
-      const speed = Number(task.downloadSpeed || 0)
-      const connections = Number(task.connections || 0)
+      // 进度/速度/连接数：一对音视频按成员求和（与任务卡片同口径）
+      const sumOf = (key) => members.reduce((acc, m) => acc + (Number(m && m[key]) || 0), 0)
+      const completed = isPairRecord ? sumOf('completedLength') : Number(task.completedLength || 0)
+      const total = isPairRecord ? sumOf('totalLength') : Number(task.totalLength || 0)
+      const speed = isPairRecord ? sumOf('downloadSpeed') : Number(task.downloadSpeed || 0)
+      const connections = isPairRecord ? sumOf('connections') : Number(task.connections || 0)
       const percent = total > 0 ? Math.floor((completed * 100) / total) : 0
-      const title = getTaskName(task, {
+      // 名字优先用窗口回带的那一个（推送路径算出的折叠记录产物名）：
+      // 它是这条记录在列表/卡片上的显示名。缺省才退回引擎侧任务名 ——
+      // 一对音视频的成员任务名是"画面流 / 声音流"的文件名，用它会和卡片
+      // 的名字每秒交替，看起来像窗口在两个任务之间跳。
+      const title = titleHint || getTaskName(task, {
         defaultName: this.i18n.t('task.get-task-name'),
         hashFallbackLabel: this.i18n.t('task.magnet-pending-name'),
         maxLen: -1
@@ -4565,10 +5233,17 @@ export default class Application extends EventEmitter {
       const speedValue = speed > 0 ? `${bytesToSize(speed, 2)}/s` : `${bytesToSize(0, 2)}/s`
 
       // 平均速度直取引擎 averageSpeed（active 阶段实时累计、随会话
-      // 持久化）；引擎未提供该字段时退回主进程本地采样
+      // 持久化）；引擎未提供该字段时退回主进程本地采样。
+      // 一对音视频：成员各自的 averageSpeed 都齐时求和（与进度/速度同口径）。
       const PROGRESS_SPEED_SAMPLE_MAX = 60 // 60 个采样点（约60秒）
       let avgSpeed = 0
-      if (task.averageSpeed != null) {
+      const pairAverageSpeed = isPairRecord && members.every(m => m && m.averageSpeed != null)
+        ? sumOf('averageSpeed')
+        : null
+      if (pairAverageSpeed != null) {
+        avgSpeed = Number.isFinite(pairAverageSpeed) && pairAverageSpeed >= 0 ? pairAverageSpeed : 0
+        this._progressSpeedSamples.delete(gid)
+      } else if (task.averageSpeed != null) {
         const v = Number(task.averageSpeed)
         avgSpeed = Number.isFinite(v) && v >= 0 ? v : 0
         this._progressSpeedSamples.delete(gid)
@@ -4612,15 +5287,28 @@ export default class Application extends EventEmitter {
       // 此前这里用 Math.floor(hex/4) 且忽略 partialBitfield，与推送路径
       // 不一致，导致独立进度窗口分片网格被两条 1Hz 数据流来回刷成不同
       // 颜色（持续闪烁）。
-      const pieces = parsePieceStatuses(
-        task.bitfield,
-        task.partialBitfield,
-        Number(task.numPieces || 0),
-        task.wantedBitfield || ''
-      )
-      if (pieces) {
+      // 一对音视频：把两条流各自的位图**合成一张**网格（与推送路径同一实现，
+      // 否则两条数据流一个给合成网格、一个给"无分片数据"，分片页会每秒闪一次）。
+      // 引擎的位图是下载开始之后才有的，零进度时为空 → 两条都没开工时无网格。
+      const memberPieceGrids = isPairRecord
+        ? members.map(m => parsePieceStatuses(
+          m.bitfield,
+          m.partialBitfield,
+          Number(m.numPieces || 0),
+          m.wantedBitfield || ''
+        ))
+        : null
+      const pieces = isPairRecord
+        ? combinePieceStatuses(memberPieceGrids)
+        : parsePieceStatuses(
+          task.bitfield,
+          task.partialBitfield,
+          Number(task.numPieces || 0),
+          task.wantedBitfield || ''
+        )
+      if (pieces && pieces.length > 0) {
         piecesData = {
-          numPieces: Number(task.numPieces || 0),
+          numPieces: isPairRecord ? pieces.length : Number(task.numPieces || 0),
           pieces,
           tabText: this.i18n.t('task.task-pieces-progress')
         }
@@ -4655,11 +5343,24 @@ export default class Application extends EventEmitter {
 
       let connectionsData = null
       if (includeConnections && (status === TASK_STATUS.ACTIVE || status === TASK_STATUS.WAITING)) {
-        let servers
-        try {
-          servers = await this.engineClient.call('getServers', gid)
-        } catch (e) {
-          servers = []
+        // 一对音视频按成员汇总连接列表（与进度/速度同口径）；查不到的成员跳过
+        let servers = []
+        if (isPairRecord && members.length > 1) {
+          const collected = await Promise.all(members.map(async (m) => {
+            try {
+              const s = await this.engineClient.call('getServers', `${m.gid}`)
+              return Array.isArray(s) ? s : []
+            } catch (e) {
+              return []
+            }
+          }))
+          servers = collected.flat()
+        } else {
+          try {
+            servers = await this.engineClient.call('getServers', gid)
+          } catch (e) {
+            servers = []
+          }
         }
         const serverList = []
         let totalConnections = 0
@@ -4717,7 +5418,22 @@ export default class Application extends EventEmitter {
           status,
           percent,
           percentText: `${percent}%`,
+          // 原始字节数与速度：独立窗口的进度条动画（与任务卡片同一套）要按
+          // 速度外推"估计进度"，只给百分比它只能一步步跳
+          completedLength: completed,
+          totalLength: total,
+          downloadSpeed: speed,
           nameText: title,
+          // 一对音视频：把**请求的成员 gid**原样回带下去（不是"实际查到的那几条"），
+          // 成员被引擎清理时窗口也不会丢掉配对身份
+          pairGids: isPairRecord ? requested : [],
+          // 合并进度只存在于渲染进程的 mergeProgresses（引擎进度行由渲染进程
+          // 解析），主进程拿不到 —— 轮询**不下发**该字段，窗口会保留推送来的
+          // 那一帧的合并进度。merged / pairPending 同理只在推送断流兜底时给一个
+          // 近似值（配对 + 完成且不在合并中），避免窗口永远停在黄底。
+          merged: isPairRecord && !merging && status === TASK_STATUS.COMPLETE,
+          pairPending: isPairRecord && !merging && total > 0 && completed >= total * 0.999 &&
+            (status === TASK_STATUS.COMPLETE || status === TASK_STATUS.MERGING),
           isPaused,
           pendingSelection,
           tabInfoText: this.i18n.t('task.task-progress-info'),
@@ -5260,3 +5976,4 @@ export default class Application extends EventEmitter {
     }
   }
 }
+

@@ -1,22 +1,28 @@
 <template>
   <div class="task-progress-info-wrap">
-  <el-row class="task-progress-info">
-  <el-col
-      class="task-progress-info-left"
-      :xs="leftColSpan.xs"
-      :sm="leftColSpan.sm"
-      :md="leftColSpan.md"
-      :lg="leftColSpan.lg"
-    >
+  <div class="task-progress-info">
+  <div class="task-progress-info-left">
+      <!-- 合并期间**进度属于合并**：下载已结束，再显示"已下载 / 总大小"就是
+           一直停在 100% 不动，看不出还在干活。 -->
+      <div v-if="mergePercentText">
+        <span>{{ t('task.merging') }}</span>
+        <span class="task-progress-sep"></span>
+        <span class="task-progress-percent">{{ mergePercentText }}</span>
+      </div>
       <!-- 有进度可显示就**优先显示进度**：已下载 / 已知总大小 / 百分比。
            HLS 的总大小是逐步收敛的（先来自清单码率、再被实测外推修正），
            所以这里只要 `totalLength > 0` 就带上它，不再等"精确总长"。
            提示文字退到后面去，否则「正在获取数据…」会把大小和百分比盖住。 -->
-      <div v-if="task.completedLength > 0 || task.totalLength > 0">
+      <div v-else-if="task.completedLength > 0 || task.totalLength > 0">
         <span>{{ bytesToSize(task.completedLength, 2) }}</span>
         <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
         <span v-if="downloadPercentText" class="task-progress-sep"></span>
         <span v-if="downloadPercentText" class="task-progress-percent">{{ downloadPercentText }}</span>
+        <!-- 「一对音视频」：一条记录背后是两个文件（视频流 + 音频流），
+             大小与百分比都是两者之和；合并完成后也继续显示（这条记录仍然
+             是"一对流合出来的"） -->
+        <span v-if="showPairHint" class="task-progress-sep"></span>
+        <span v-if="showPairHint" class="task-pair-hint">{{ t('task.pair-streams-hint') }}</span>
       </div>
       <mo-hover-tip
         v-else-if="connectingStatusText"
@@ -32,14 +38,8 @@
           {{ connectingStatusText }}
         </div>
       </mo-hover-tip>
-    </el-col>
-    <el-col
-      class="task-progress-info-right"
-      :xs="rightColSpan.xs"
-      :sm="rightColSpan.sm"
-      :md="rightColSpan.md"
-      :lg="rightColSpan.lg"
-    >
+    </div>
+    <div class="task-progress-info-right">
       <div class="task-completion-time" v-if="statusRightText">
         <span>{{ statusRightText }}</span>
       </div>
@@ -79,9 +79,13 @@
           <span>{{ t('task.priority-short') }} {{ taskPriority }}</span>
         </div>
       </div>
-      <div class="task-completion-time" v-else-if="isMerging">
+      <!-- 「已下载完、还没合并」与「正在合并」共用同一句话：进度条此刻是满格
+           黄条（见 TaskProgress.vue 的 resolveProgressView，唯一实现），
+           说"完成"是假的 —— 产物还没生成。这两者必须同一个口径，
+           否则就会出现"条是黄的、文案写着下载完成"（用户报的形态）。 -->
+      <div class="task-completion-time" v-else-if="isMerging || isPendingMerge">
         <span v-if="mergeProgressText">{{ mergeProgressText }}</span>
-        <span v-else>{{ t('task.merging') }}</span>
+        <span v-else>{{ isPendingMerge && !isMerging ? t('task.merging-pending') : t('task.merging') }}</span>
       </div>
       <div class="task-completion-time" v-else-if="isCompleted">
         <span>{{ isError ? t('task.error-at') : t('task.completed-at') }} {{ completionTime }}</span>
@@ -104,8 +108,8 @@
           <span>{{ t('task.task-ratio') }} {{ shareRatio }}</span>
         </div>
       </div>
-    </el-col>
-  </el-row>
+    </div>
+  </div>
   </div>
 </template>
 
@@ -123,6 +127,7 @@ import {
   calcRatio
 } from '@shared/utils'
 import { TASK_STATUS } from '@shared/constants'
+import { getPairGidCandidates, resolveProgressView } from '@/utils/taskPair'
 import '@/components/Icons/arrow-up'
 import '@/components/Icons/arrow-down'
 import '@/components/Icons/node'
@@ -158,20 +163,6 @@ const isStatusTruncated = ref(false)
 
 let _handleResize = null
 
-const leftColSpan = computed(() => {
-  if (props.viewMode === 'grid') {
-    return { xs: 10, sm: 9, md: 8, lg: 8 }
-  }
-  return { xs: 12, sm: 7, md: 6, lg: 6 }
-})
-
-const rightColSpan = computed(() => {
-  if (props.viewMode === 'grid') {
-    return { xs: 14, sm: 15, md: 16, lg: 16 }
-  }
-  return { xs: 12, sm: 17, md: 18, lg: 18 }
-})
-
 const isActive = computed(() => {
   const task = props.task || {}
   return task.status === TASK_STATUS.ACTIVE
@@ -194,20 +185,94 @@ const isError = computed(() => {
   return task.status === TASK_STATUS.ERROR
 })
 
+/**
+ * 这条记录当前的**合并进度**（引擎实时上报的 percent / 已写字节 / 速率）。
+ *
+ * 只认带 `percent` 的条目。「先下完的那条流」留下的 `{waitingForPair:true}`
+ * 是内部状态（合并闸门用它避免提前合并、避免删掉还在写的输入文件），
+ * **不再往上翻成文案**：折叠记录本身就是两条流的总进度，
+ * 一条下完时用户看到的应该是"还在下载 + 总量进度"，而不是"等待配对文件下载完成"
+ * —— 那个状态对用户没有信息量，还和进度条上的总进度自相矛盾。
+ * 两条都下完、合并真的开始之后才有 percent，界面才切到合并进度。
+ */
 const mergeProgress = computed(() => {
-  const gid = props.task && props.task.gid ? `${props.task.gid}` : ''
-  if (!gid) return null
-  return mergeProgresses.value && mergeProgresses.value[gid] ? mergeProgresses.value[gid] : null
+  // 合并进度挂在"后下完的那条流"的 gid 上，未必是这条记录的主 gid，
+  // 所以要遍历记录背后的全部成员（折叠记录的 pairGids）。
+  const map = mergeProgresses.value || {}
+  for (const gid of getPairGidCandidates(props.task)) {
+    const entry = map[gid]
+    if (!entry || entry.waitingForPair) {
+      continue
+    }
+    if (Number.isFinite(Number(entry.percent))) {
+      return entry
+    }
+  }
+  return null
+})
+
+/**
+ * 「一对音视频」标记要不要显示。
+ *
+ * **合并完成后也继续显示**：合并流程会把记录收敛成一条（pairCount 变 1），
+ * 但它仍然是"一对流合出来的产物"，标记不该跟着消失 —— 所以这里只看
+ * `isPair` / `pairId`，不看还剩几条成员。
+ */
+const showPairHint = computed(() => {
+  const task = props.task || {}
+  return task.isPair === true || !!task.pairId
+})
+
+/**
+ * 「两个文件都下完了、还没合并」阶段（进度条是满格黄条那一档）。
+ *
+ * 判据直接复用进度条那条唯一实现 `resolveProgressView`，两者不允许各判一次 ——
+ * 一旦分叉就会复现"黄条 + 完成文案"的自相矛盾。
+ * 注意成员全部完成时聚合状态本身就是 complete（`dashMerged` 还没落），
+ * 所以不能只看 status。
+ */
+const isPendingMerge = computed(() => {
+  const task = props.task || {}
+  if (!(task.isPair === true || task.pairId)) {
+    return false
+  }
+  const view = resolveProgressView({
+    isPair: true,
+    merged: task.dashMerged === true || task.pairMerged === true,
+    mergeSkipped: task.mergeSkipped === true,
+    status: `${task.status || ''}`,
+    total: Number(task.totalLength) || 0,
+    completed: Number(task.completedLength) || 0,
+    mergePercent: -1
+  })
+  return view.mode !== 'plain'
 })
 
 const mergeProgressText = computed(() => {
   const p = mergeProgress.value
   if (!p) return ''
-  if (p.waitingForPair) return t('task.merging-waiting-pair')
-  const parts = [t('task.merging')]
-  if (p.totalSize > 0) parts.push(bytesToSize(p.totalSize))
-  if (p.speed > 0) parts.push(`${p.speed}x`)
-  return parts.join(' · ')
+  const parts = []
+  // 已写 / 输入总量：合并是"只搬字节"，这两个数的比值就是进度条的分母
+  if (p.totalSize > 0) {
+    parts.push(p.inputBytes > 0
+      ? `${bytesToSize(p.totalSize)} / ${bytesToSize(p.inputBytes)}`
+      : bytesToSize(p.totalSize))
+  }
+  // 引擎报的是**写入速率**（字节/秒）。以前把它当倍数显示（"123456x"）是错的
+  if (p.speed > 0) parts.push(`${bytesToSize(p.speed)}/s`)
+  return parts.length ? parts.join(' · ') : t('task.merging')
+})
+
+/**
+ * 合并百分比（引擎实时上报）。合并期间左侧显示它，而不是"已下载 / 总大小" ——
+ * 那时下载早就 100% 了，再显示那两个数字看不出合并在动。
+ */
+const mergePercentText = computed(() => {
+  const p = mergeProgress.value
+  if (!p) return ''
+  const v = Number(p.percent)
+  if (!Number.isFinite(v) || v <= 0) return ''
+  return `${Math.min(100, Math.round(v))}%`
 })
 
 const isBT = computed(() => {
@@ -486,7 +551,18 @@ onBeforeUnmount(() => {
 </script>
 
 <style lang="scss">
+/* 左右两栏改成**内容自适应的 flex**：以前用 el-col 按栅格定死宽度
+   （左栏 lg 只有 25%），「一对音视频」的大小 + 百分比 + 标记一长就被裁掉，
+   而右边明明还有大片空余。现在左栏按需伸展、右栏只占自己需要的宽度。 */
 .task-progress-info {
+  display: flex;
+  /* 必须 center，不能用 baseline：右栏（速度/ETA 那一列）第一行里带着
+     14px 的行内图标（vertical-align:middle 的 <i>），它会把右栏的
+     "首行基线"压到比自己文字更低的位置——baseline 对齐时右栏整体被顶低
+     约 4px，看起来就是"右下角信息比左侧往下偏"。两侧都是一行、行高一致，
+     center 与 baseline 的差异只体现在这段偏移上（实测：改前右侧文字 top
+     比左侧低 4px，改后完全一致）。 */
+  align-items: center;
   font-size: 0.75rem;
   line-height: 0.875rem;
   min-height: 0.875rem;
@@ -499,12 +575,14 @@ onBeforeUnmount(() => {
 }
 
 .task-progress-info-left {
+  flex: 1 1 auto;
+  min-width: 0; // 允许被右栏挤压：真放不下时才省略，而不是溢出压住右栏
   min-height: 0.875rem;
   text-align: left;
   overflow: hidden;
 
   // 进度文字仅保证不换行，不进入省略模式：右边 speed-info 列还有空余空间时
-  // 不应在本列固定宽度内提前截断成 "12.3 MB / 45.6 MB …"
+  // 不应提前截断成 "12.3 MB / 45.6 MB …"
   & > div {
     white-space: nowrap;
     min-width: 0; // 允许flex收缩但保持内容可见
@@ -530,7 +608,12 @@ onBeforeUnmount(() => {
   position: relative;
   top: -1px;
 }
+/* 「一对音视频」标记：与大小文字同色系但更淡，不抢进度数字的注意力 */
+.task-pair-hint {
+  opacity: 0.75;
+}
 .task-progress-info-right {
+  flex: 0 0 auto; // 速度/时间等右栏内容只占自己需要的宽度
   min-height: 0.875rem;
   text-align: right;
   overflow: hidden;

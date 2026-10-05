@@ -58,6 +58,9 @@
           ref="detailFileList"
           mode="DETAIL"
           :files="fileList"
+          :dir="task && task.dir ? `${task.dir}` : ''"
+          :gid="task && task.gid ? `${task.gid}` : ''"
+          :bt="isBT"
           @selection-change="handleSelectionChange"
           @confirm-selection="saveTaskFilesSelection"
         />
@@ -77,6 +80,7 @@
 <script setup>
 import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { debounce } from 'lodash'
+import is from 'electron-is'
 import {
   checkTaskIsBT,
   isEd2kTask,
@@ -174,7 +178,12 @@ const shouldEnableBackdrop = computed(() => taskDetailDefaultTransparentEnabled.
 
 const drawerClass = computed(() => {
   const base = 'panel task-detail-drawer'
-  return shouldEnableBackdrop.value ? `${base} task-detail-drawer--backdrop` : base
+  const mods = []
+  if (shouldEnableBackdrop.value) mods.push('task-detail-drawer--backdrop')
+  // 抽屉挂在 body 上，够不到 #app 的平台类，需自带 mac 标记
+  // 用于启用标题区拖拽带（见样式里的 task-detail-drawer--mac）
+  if (is.macOS()) mods.push('task-detail-drawer--mac')
+  return [base, ...mods].join(' ')
 })
 
 const isBT = computed(() => checkTaskIsBT(props.task))
@@ -261,6 +270,9 @@ const selectedFileList = computed(() => fileList.value.filter((item) => item.sel
 
 // Lifecycle
 onMounted(() => {
+  // 组件随抽屉开关整体挂载（Main.vue 的 v-if），挂载即代表本次打开，
+  // 在这里同步顶部行位最可靠（el-drawer 首次以 v-model=true 挂载时不发 open 事件）
+  syncTaskDetailNavTop()
   resizeHandler = debounce(() => {
     if (activeTab.value === 'activity' && taskGraphic.value) {
       taskGraphic.value.updateGraphicWidth()
@@ -302,6 +314,16 @@ watch(isEd2k, () => {
 })
 
 // Methods
+// 抽屉顶部控制行与任务视图控件行对齐：打开时实时量取主面板控件行的
+// 实际位置写入 CSS 变量，macOS / Windows / Linux（含 Windows 自定义
+// 标题栏的窗口按钮让位）都跟随同一份布局，抽屉里不再另抄一套平台算术。
+function syncTaskDetailNavTop () {
+  const row = document.querySelector('.panel-header.task-panel-header .task-actions')
+  if (!row) return
+  const top = Math.round(row.getBoundingClientRect().top)
+  document.documentElement.style.setProperty('--task-detail-nav-top', `${top}px`)
+}
+
 function handleOpen () {
   drawerAnimationDone.value = false
 }
@@ -641,6 +663,11 @@ function saveTaskFilesSelection () {
   .el-drawer__header {
     padding: 0 !important;
     margin-bottom: 0 !important;
+    /* 顶部控制行与任务视图控件行同高：--task-detail-nav-top 由组件在打开时
+       实时量取主面板控件行位置写入（三平台通用，见 syncTaskDetailNavTop）。
+       标题区自抽屉顶部 8px + 正文内边距 20px 之后起算，行内再下探 6px，
+       因此偏移 = 变量 − 34px；兜底值 20px 对应 macOS / 原生标题栏布局。 */
+    margin-top: calc(var(--task-detail-nav-top, 20px) - 34px);
   }
   .el-drawer__header > .el-drawer__title {
     width: 100%;
@@ -651,6 +678,10 @@ function saveTaskFilesSelection () {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    /* 内容显示区左右留白收紧：正文两侧 20px→8px，
+       叠加 .task-detail-content 的 4px 后内容距抽屉边缘 12px */
+    padding-left: 8px;
+    padding-right: 8px;
   }
   .task-detail-hint {
     padding: 0.25rem 0.75rem 0.5rem;
@@ -668,8 +699,19 @@ function saveTaskFilesSelection () {
     align-items: center;
     justify-content: flex-start;
     width: 100%;
-    padding: 1.125rem 0.1875rem 1rem 0.3125rem; /* 上间距减小；左（滑块）保持收紧、右（关闭按钮）再收紧 */
+    /* 顶部行位由 .el-drawer__header 的 margin-top（--task-detail-nav-top）
+       驱动，与任务视图控件行实时对齐；这里只保留行内间距与左右收紧。 */
+    padding: 0.375rem 0.1875rem 1rem 0.3125rem;
     box-sizing: border-box;
+  }
+  /* macOS：抽屉标题区参与顶部拖拽带（与主面板头部同一套模式）——
+     标题区空白处可拖窗口；标签滑块 / 对等搜索 / 关闭按钮 no-drag 保持可点击 */
+  &.task-detail-drawer--mac .task-detail-drawer-title {
+    -webkit-app-region: drag;
+    .task-detail-nav-bar,
+    .task-detail-nav-actions {
+      -webkit-app-region: no-drag;
+    }
   }
   .task-detail-nav-wrapper {
     display: flex;

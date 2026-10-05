@@ -83,6 +83,7 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 import { getCurrentWindow } from '@electron/remote'
 import { ipcRenderer } from 'electron'
+import is from 'electron-is'
 import { commands } from '@/components/CommandManager/instance'
 import { TASK_STATUS } from '@shared/constants'
 import { useTaskStore } from '@/store/task'
@@ -284,6 +285,120 @@ const handleMaximize = () => {
 }
 const handleClose = () => win.value.close()
 
+// --- macOS 顶部拖拽带：按住控件拖动 ---
+// 顶部带的控件是 no-drag（保证可点击/输入），但 no-drag 会把拖拽整个吞掉；
+// 弹窗遮罩打开时遮罩还会接管按压，控件自身根本收不到事件。因此在 document
+// 层统一判断：按压点（用 elementsFromPoint 穿透遮罩与各层级栈）落在顶部带
+// 控件上时进入“按住拖动”——位移超过阈值才移动窗口（普通点击不受影响），
+// 拖动期间按屏幕坐标差 setPosition 跟手，结束后短时吞掉一次 click，
+// 避免拖完顺手触发控件或误触弹窗遮罩的关闭。
+const TITLE_DRAG_THRESHOLD = 4
+const TITLE_DRAG_CLICK_SUPPRESS_MS = 250
+const TITLE_BAND_CONTROL_SELECTOR = [
+  // 主面板头部控件
+  '.task-control-group', '.task-search-box', '.task-action-group', '.view-mode-nav',
+  // 任务详情抽屉导航控件（抽屉挂在 body 上，同样属于顶部带）
+  '.task-detail-nav-bar', '.task-detail-nav-actions'
+].join(', ')
+
+let _titleDrag = null
+let _titleDragRaf = 0
+let _titleDragSuppressClickUntil = 0
+
+function _hitTitleBandControl (x, y) {
+  const stack = document.elementsFromPoint
+    ? document.elementsFromPoint(x, y)
+    : [document.elementFromPoint(x, y)]
+  return stack.some(el => el && el.closest && el.closest(TITLE_BAND_CONTROL_SELECTOR))
+}
+
+function onDocumentPointerDown (e) {
+  if (!is.macOS() || e.button !== 0 || !e.isPrimary) {
+    return
+  }
+  if (!_hitTitleBandControl(e.clientX, e.clientY)) {
+    return
+  }
+  const pos = getCurrentWindow().getPosition()
+  _titleDrag = {
+    pointerId: e.pointerId,
+    startScreenX: e.screenX,
+    startScreenY: e.screenY,
+    lastScreenX: e.screenX,
+    lastScreenY: e.screenY,
+    winX: pos[0],
+    winY: pos[1],
+    started: false
+  }
+  window.addEventListener('pointermove', onDocumentPointerMove, true)
+  window.addEventListener('pointerup', onDocumentPointerEnd, true)
+  window.addEventListener('pointercancel', onDocumentPointerEnd, true)
+}
+
+function onDocumentPointerMove (e) {
+  const st = _titleDrag
+  if (!st || e.pointerId !== st.pointerId) {
+    return
+  }
+  // 指针拖出窗口再回来时收不到 pointerup，用按键状态兜底结束
+  if (!(e.buttons & 1)) {
+    onDocumentPointerEnd(e)
+    return
+  }
+  st.lastScreenX = e.screenX
+  st.lastScreenY = e.screenY
+  if (!st.started) {
+    if (Math.abs(e.screenX - st.startScreenX) < TITLE_DRAG_THRESHOLD &&
+        Math.abs(e.screenY - st.startScreenY) < TITLE_DRAG_THRESHOLD) {
+      return
+    }
+    st.started = true
+  }
+  if (_titleDragRaf) {
+    return
+  }
+  _titleDragRaf = window.requestAnimationFrame(() => {
+    _titleDragRaf = 0
+    const s = _titleDrag
+    if (!s || !s.started) {
+      return
+    }
+    getCurrentWindow().setPosition(
+      Math.round(s.winX + (s.lastScreenX - s.startScreenX)),
+      Math.round(s.winY + (s.lastScreenY - s.startScreenY))
+    )
+  })
+}
+
+function onDocumentPointerEnd (e) {
+  const st = _titleDrag
+  if (!st || e.pointerId !== st.pointerId) {
+    return
+  }
+  if (st.started) {
+    _titleDragSuppressClickUntil = Date.now() + TITLE_DRAG_CLICK_SUPPRESS_MS
+  }
+  _detachDocumentTitleDrag()
+}
+
+function _detachDocumentTitleDrag () {
+  if (_titleDragRaf) {
+    window.cancelAnimationFrame(_titleDragRaf)
+    _titleDragRaf = 0
+  }
+  _titleDrag = null
+  window.removeEventListener('pointermove', onDocumentPointerMove, true)
+  window.removeEventListener('pointerup', onDocumentPointerEnd, true)
+  window.removeEventListener('pointercancel', onDocumentPointerEnd, true)
+}
+
+function onDocumentClickCapture (e) {
+  if (Date.now() < _titleDragSuppressClickUntil) {
+    e.stopPropagation()
+    e.preventDefault()
+  }
+}
+
 onMounted(() => {
   _handleDocumentClick = () => {
     if (logoMenuVisible.value) {
@@ -291,12 +406,19 @@ onMounted(() => {
     }
   }
   document.addEventListener('click', _handleDocumentClick)
+  document.addEventListener('pointerdown', onDocumentPointerDown, true)
+  document.addEventListener('click', onDocumentClickCapture, true)
   observeAppClass()
 })
 
 onBeforeUnmount(() => {
   if (_handleDocumentClick) {
     document.removeEventListener('click', _handleDocumentClick)
+  }
+  document.removeEventListener('pointerdown', onDocumentPointerDown, true)
+  document.removeEventListener('click', onDocumentClickCapture, true)
+  if (_titleDrag) {
+    _detachDocumentTitleDrag()
   }
   if (_appObserver) {
     _appObserver.disconnect()
@@ -389,8 +511,11 @@ onBeforeUnmount(() => {
     }
   }
 }
+/* Windows/Linux 自定义标题栏：拖拽区收窄到与窗口控制按钮同高的 38px，
+   不再向下探出按钮行；内容顶部另留 8px 间隙，见 Task/TaskView.vue */
 .has-custom-titlebar .title-bar .title-bar-dragger {
   margin-left: 0;
+  height: 38px;
 }
 .has-custom-titlebar .title-bar .window-actions {
   height: 38px;
@@ -573,6 +698,14 @@ onBeforeUnmount(() => {
   -webkit-app-region: no-drag;
   pointer-events: none;
 }
+/* macOS：顶部拖拽条 = 20px（面板间隙 8px + 头部 margin 6px + 头部内偏移 6px），
+   正好停在任务面板控件行（搜索框/按钮）的上沿，不会吃掉控件点击；
+   控件行所在的头部本身也参与拖拽（见 Task/TaskView.vue），
+   拖拽带从窗口顶一直延伸到控件行下沿，只有控件本体是 no-drag。
+   左侧导航首个分区标签在 28px 起（让开红绿灯），且不可交互，不冲突。 */
+#app.is-mac .title-bar {
+  height: 20px;
+}
 .has-custom-titlebar .title-bar .title-bar-title {
   margin-left: 16px;
   @media only screen and (min-width: 568px) { margin-left: 36px; }
@@ -593,6 +726,15 @@ onBeforeUnmount(() => {
 .is-task-detail-open .title-bar { z-index: 5000; }
 .is-add-task-open .title-bar,
 .is-task-plan-open .title-bar { z-index: 5000; }
+/* macOS：新建任务/任务计划等居中弹窗打开后，弹窗遮罩盖住面板头部，
+   头部自带的拖拽区失效——把顶部拖拽条顺势延伸到头部带下沿
+   （58px = 面板顶部 8px + 头部 margin 6px + 头部高 44px），
+   让打开弹窗前后的顶部可拖拽区域保持一致（弹窗本体居中，
+   此 58px 带内没有弹窗的交互元素，不会挡住弹窗操作）。 */
+#app.is-mac.is-add-task-open .title-bar,
+#app.is-mac.is-task-plan-open .title-bar {
+  height: 58px;
+}
 .is-task-detail-open.show-window-actions .title-bar,
 .is-add-task-open.show-window-actions .title-bar,
 .is-task-plan-open.show-window-actions .title-bar {

@@ -1,0 +1,12 @@
+{
+  "OPEN": "playback:open",
+  "STATE": "playback:state",
+  "CLOSE": "playback:close",
+  "READY": "playback:ready",
+  "PROGRESS": "playback:progress",
+  "SEEK": "playback:seek",
+  "METADATA": "playback:metadata",
+  "ERROR": "playback:error",
+  "PICK_SUBTITLE": "playback:pick-subtitle",
+  "REQUEST_CLOSE": "playback:request-close"
+}

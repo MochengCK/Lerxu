@@ -101,3 +101,53 @@ export function parsePieceStatuses (
   }
   return pieces
 }
+
+/**
+ * 把「一对音视频」两条流各自的格状态合成**一张**网格。
+ *
+ * 为什么需要：一条折叠记录背后是两个引擎任务、**两张位图**（画面流与声音流
+ * 的分片数/分片长度通常都不一样）。此前两条数据流（主窗口推送 / 进度窗口
+ * 轮询）在配对时都直接不下发分片，于是独立进度窗口的「分片」页对一对音视频
+ * 永远是「无分片数据」——用户看到的"分片进度没有显示"。
+ *
+ * 合成规则：
+ * - 格数取最长的一条（短的那条按比例抽样映射到同一套格子上）；
+ * - 每格取**两条流里的最小值** —— 只有画面与声音对应的那一段都下完，
+ *   这一格才算下完，网格因此单调不回退、且与总进度口径一致；
+ * - 值为 5（未选择）只在所有成员都是 5 时才成立（min 天然满足）。
+ *
+ * 引擎的位图是**下载开始之后**才有的（零进度时 bitfield 为空），所以
+ * 刚开始时只有先开始下载的那条流有网格，另一条按"全 0"并入；两条都还没
+ * 开工时返回 null，调用方据此显示「无分片数据」。
+ *
+ * @param {Array<number[]|null>} grids 各成员的格状态数组
+ * @returns {number[]|null} 合成后的格状态数组；没有任何成员有网格时返回 null
+ */
+export function combinePieceStatuses (grids) {
+  const list = (Array.isArray(grids) ? grids : []).filter(g => Array.isArray(g) && g.length > 0)
+  if (list.length === 0) {
+    return null
+  }
+  let cellCount = 0
+  for (const g of list) {
+    if (g.length > cellCount) {
+      cellCount = g.length
+    }
+  }
+  if (cellCount <= 0) {
+    return null
+  }
+  const out = new Array(cellCount)
+  for (let i = 0; i < cellCount; i++) {
+    let min = 5
+    for (const g of list) {
+      const idx = Math.min(g.length - 1, Math.floor((i * g.length) / cellCount))
+      const v = Number(g[idx])
+      if (Number.isFinite(v) && v < min) {
+        min = v
+      }
+    }
+    out[i] = min
+  }
+  return out
+}

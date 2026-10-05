@@ -15,6 +15,8 @@ const getVideoSnifferAddFormatUrl = () => getPageUrl('video-sniffer-add-format.h
 
 const getFileCategoriesUrl = () => getPageUrl('file-categories.html')
 
+const getPlayerUrl = () => getPageUrl('player.html')
+
 /* 偏好设置已内嵌在主窗口 SPA 中（/preference 路由），
    不再打开独立窗口，因此没有对应的 page 配置。 */
 
@@ -73,5 +75,26 @@ export default {
     bindCloseToHide: false,
     openDevTools: is.dev(),
     url: getFileCategoriesUrl()
+  },
+  /* 独立播放器窗口：视频与音频共用一套界面（按媒体类型切布局）。
+     数据不走 file://，而是由主进程的本地媒体流服务以支持 Range 的 HTTP 流提供，
+     这样**正在下载的 BT 文件也能边下边播**。
+
+     窗口装饰**不在这里分平台**：WindowManager 的默认值已经是对的
+     （macOS 是 `hiddenInset`，系统给红绿灯；其它平台是原生标题栏），
+     而用户开"隐藏应用菜单"时 getPageOptions 会统一把窗口变成 frameless。
+     页面按 `app:frame-mode` 回报的实际形态决定要不要自己画按钮与拖拽条。 */
+  player: {
+    attrs: {
+      title: '播放器',
+      width: 1000,
+      height: 620,
+      minWidth: 460,
+      minHeight: 320,
+      backgroundColor: '#101114'
+    },
+    bindCloseToHide: false,
+    openDevTools: is.dev(),
+    url: getPlayerUrl()
   }
 }

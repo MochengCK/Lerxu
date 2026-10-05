@@ -3,11 +3,12 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import api from '@/api'
 import { EMPTY_STRING, TASK_STATUS, AUDIO_SUFFIXES, DOCUMENT_SUFFIXES, IMAGE_SUFFIXES, SUB_SUFFIXES, VIDEO_SUFFIXES } from '@shared/constants'
-import { checkTaskIsBT, getFileNameFromFile, getFileExtension, getTaskUri, intersection, isGithubUrl, getGithubUrlsWithMirrors, repairMagnetDisplayName } from '@shared/utils'
+import { checkTaskIsBT, getFileNameFromFile, getFileExtension, getTaskUri, intersection, isGithubUrl, getGithubUrlsWithMirrors, repairMagnetDisplayName, unwrapMulticallValues } from '@shared/utils'
 import taskHistory from '@/api/TaskHistory'
 import pendingFileSelectionStore from '@/api/PendingFileSelection'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
 import { getTaskInfoHash, isTaskPendingSelectionCandidate, isTaskPendingSelectionTarget, isTaskFileSelectionConfirmed, isHlsManifestUri } from '@/utils/task'
+import { collapseTaskPairs, expandPairGids } from '@/utils/taskPair'
 import { useAppStore } from './app'
 import { usePreferenceStore } from './preference'
 
@@ -24,6 +25,65 @@ const ALL_LIST_REFRESH_INTERVAL = 3000
 let _lastAllListFetchAt = 0
 
 let saveSessionDebounceTimer = null
+
+/* ── 「一对音视频」折叠的簿记 ───────────────────────────────────────────────
+ * 扩展把同一个视频的画面流与声音流拆成两个任务发过来（带同一个 pairId），
+ * 列表里应当只占**一条记录**（细节见 `@/utils/taskPair`）。折叠发生在下面两个
+ * UPDATE_* 里，这里放它需要的四份簿记：
+ *
+ *  · rawTaskByGid / rawAllTaskByGid —— **折叠前**的上一轮任务。
+ *    折叠之后 this.taskList 里已经找不到成员各自的记录了，而
+ *    ①「条目没变化就复用旧对象」②「合并期间条目从引擎消失也要保留」
+ *    这两处必须比对原始任务，否则每轮都会误判成"整个列表变了" → 全量重建。
+ *  · pairRowsByPairId(ForAll) —— 上一轮折叠出来的记录，内容一致时复用同一个
+ *    对象，避免每轮生成的"新对象"让 v-memo 失效、子组件全量重渲染。
+ *  · pairMemberIndex —— 任一成员 gid → 该记录的全部成员 gid（批量操作按它展开）。
+ */
+let rawTaskByGid = new Map()
+let rawAllTaskByGid = new Map()
+let pairRowsByPairId = new Map()
+let pairRowsByPairIdForAll = new Map()
+let pairMemberIndex = new Map()
+
+/**
+ * 一条记录背后的引擎任务。
+ *
+ * 「一对音视频」折叠成一条记录之后，**引擎里仍然是两条独立任务**：暂停、继续、
+ * 删除都必须落到两条上，否则会出现"画面停了、声音还在跑"或"删了记录另一半还在下"。
+ * 非配对任务返回 `[task]` 本身。
+ */
+function pairMemberTasks (task) {
+  if (!task) {
+    return []
+  }
+  const members = Array.isArray(task.pairMembers) ? task.pairMembers.filter(Boolean) : []
+  if (members.length > 0) {
+    return members
+  }
+  return [task]
+}
+
+/**
+ * 对同一条记录背后的多个成员执行同一个操作。
+ *
+ * 主成员（index 0）的失败照旧抛给调用方 —— 用户要看到"暂停失败"这类提示；
+ * 伙伴的失败只记日志：合并流程可能已经把伙伴从引擎里摘掉了，那不是错误。
+ */
+function runForMembers (members, fn, label) {
+  const list = Array.isArray(members) ? members.filter(Boolean) : []
+  if (list.length === 0) {
+    return Promise.resolve([])
+  }
+  return Promise.all(list.map((member, index) => Promise.resolve()
+    .then(() => fn(member))
+    .catch((err) => {
+      if (index === 0) {
+        throw err
+      }
+      console.warn(`[Lerxu] ${label || 'pair op'} on pair partner failed:`, err && err.message ? err.message : err)
+      return null
+    })))
+}
 
 function normalizeGid (gid) {
   const s = `${gid || ''}`
@@ -151,6 +211,11 @@ function sortTaskList (taskList, field, order) {
     case 'name': {
       // 文件名排序 - 从files数组中获取文件名，或使用dir作为备选
       const getTaskName = (task) => {
+        // 「一对音视频」折叠记录显示的是**产物名**（画面流名字去掉角色标记），
+        // 排序必须跟显示用同一个名字，否则"看到的顺序"和"排序键"不一致
+        if (task && task.pairDisplayName && Number(task.pairCount) >= 2) {
+          return `${task.pairDisplayName}`.toLowerCase()
+        }
         // 尝试从files数组获取第一个文件的路径
         if (task.files && task.files.length > 0 && task.files[0].path) {
           const filePath = task.files[0].path
@@ -265,6 +330,10 @@ const state = () => ({
   currentTaskPeers: [],
   seedingList: [],
   mergingList: [],
+  // 已确定**不会再合并**的成员 gid（合并重试耗尽、缺另一半、合并失败收尾）。
+  // 与 mergingList 同一套做法：折叠记录要据此停止显示"待合并/合并中"，
+  // 否则只有一条流的记录会永远挂在黄条上（详见 taskPair.resolveProgressView）。
+  mergeSkippedList: [],
   mergeProgresses: {},
   mergeKeys: {},
   taskList: [],
@@ -346,15 +415,33 @@ const mutations = {
   UPDATE_MERGING_LIST(mergingList) {
     this.mergingList = mergingList
   },
+  UPDATE_MERGE_SKIPPED_LIST(mergeSkippedList) {
+    this.mergeSkippedList = mergeSkippedList
+  },
   SET_TASK_STATUS({ gid, status }) {
-    const task = this.taskList.find(t => t.gid === gid)
-    if (task) {
-      task.status = status
+    // 一对音视频折叠后列表里只有一条记录（gid 是主 gid），而引擎事件带的是
+    // **成员**的 gid（合并往往是"后下完的那条"触发的）。两种 gid 都要能改到。
+    const applyTo = (list) => {
+      const direct = list.find(t => `${t.gid}` === `${gid}`)
+      if (direct) {
+        direct.status = status
+        return
+      }
+      const row = list.find(t => Array.isArray(t.pairGids) && t.pairGids.some(g => `${g}` === `${gid}`))
+      if (!row) {
+        return
+      }
+      row.status = status
+      if (Array.isArray(row.pairMembers)) {
+        row.pairMembers.forEach(m => {
+          if (`${m.gid}` === `${gid}`) {
+            m.status = status
+          }
+        })
+      }
     }
-    const allTask = this.allTaskList.find(t => t.gid === gid)
-    if (allTask) {
-      allTask.status = status
-    }
+    applyTo(this.taskList)
+    applyTo(this.allTaskList)
   },
   SET_MERGE_PROGRESS({ gid, progress }) {
     this.mergeProgresses = { ...this.mergeProgresses, [gid]: progress }
@@ -375,15 +462,14 @@ const mutations = {
     this.mergeKeys = next
   },
   UPDATE_TASK_LIST(taskList) {
-    const oldList = this.taskList
-    const oldMap = new Map(oldList.map(t => [t.gid, t]))
+    // 比对基准是**上一轮的原始任务**（不是 this.taskList —— 那里面已经是折叠后
+    // 的记录了），否则每个配对成员都会被当成"新条目" → 每轮全量重建
+    const oldMap = rawTaskByGid
     const newList = []
-    // 数量变化（含清空场景）时必然需要更新数组，
-    // 否则任务全部移除后旧卡片会残留显示
-    let changed = oldList.length !== taskList.length
+    let changed = false
 
     taskList.forEach(newTask => {
-      const oldTask = oldMap.get(newTask.gid)
+      const oldTask = oldMap.get(`${newTask.gid}`)
       if (oldTask) {
         // Engine-derived transient hint fields must be cleared when absent
         // in latest payload, otherwise stale paused/checking/magnet text may stick.
@@ -441,13 +527,32 @@ const mutations = {
       })
     }
 
+    // 一对音视频折叠成**一条记录**：进度/速度按成员求和、状态按成员聚合。
+    // 必须在上面两步之后——那两步都是按"引擎任务"口径做的。
+    const collapsed = collapseTaskPairs(newList, {
+      mergingGids: this.mergingList,
+      mergeSkippedGids: this.mergeSkippedList,
+      previousRows: pairRowsByPairId
+    })
+    pairMemberIndex = collapsed.index
+    pairRowsByPairId = collapsed.rows
+    if (collapsed.changed) {
+      changed = true
+    }
+    // 折叠让"条数"与原始任务数不再相等，清空/删任务的场景靠这条兜住
+    if (this.taskList.length !== collapsed.list.length) {
+      changed = true
+    }
+
+    rawTaskByGid = new Map(newList.map(t => [`${t.gid}`, t]))
+
     // 本轮无任何变化时不替换数组，避免任务列表组件与下游
     // getter 在每个轮询周期内无谓重算/重渲染
     if (changed) {
       // 直接替换整个数组，确保 Vue 能检测到变化
       // 使用 splice 方法清空并重新填充数组，这样可以保持数组引用不变
       // 同时触发 Vue 的响应式更新
-      this.taskList.splice(0, this.taskList.length, ...newList)
+      this.taskList.splice(0, this.taskList.length, ...collapsed.list)
 
       // 重新应用当前的排序（如果有的话）
       if (this.sortField && this.sortOrder && this.sortField !== 'name') {
@@ -466,12 +571,11 @@ const mutations = {
     }
   },
   UPDATE_ALL_TASK_LIST(taskList) {
-    const oldList = this.allTaskList
-    const oldMap = new Map(oldList.map(t => [t.gid, t]))
+    const oldMap = rawAllTaskByGid
     const newList = []
-    let changed = oldList.length !== taskList.length
+    let changed = false
     taskList.forEach(newTask => {
-      const oldTask = oldMap.get(newTask.gid)
+      const oldTask = oldMap.get(`${newTask.gid}`)
       if (oldTask) {
         const oldKeys = Object.keys(oldTask)
         const updatedKeys = Object.keys(newTask)
@@ -486,10 +590,26 @@ const mutations = {
         changed = true
       }
     })
+
+    // 侧边栏计数同样按"一条记录"数：一对音视频算一条（与列表显示一致）
+    const collapsed = collapseTaskPairs(newList, {
+      mergingGids: this.mergingList,
+      mergeSkippedGids: this.mergeSkippedList,
+      previousRows: pairRowsByPairIdForAll
+    })
+    pairRowsByPairIdForAll = collapsed.rows
+    if (collapsed.changed) {
+      changed = true
+    }
+    if (this.allTaskList.length !== collapsed.list.length) {
+      changed = true
+    }
+    rawAllTaskByGid = new Map(newList.map(t => [`${t.gid}`, t]))
+
     // 本轮无任何变化时不替换数组，避免侧边栏计数等 getter 与
     // 依赖 allTaskList 的组件在每个轮询周期内无谓重算/重渲染
     if (changed) {
-      this.allTaskList.splice(0, this.allTaskList.length, ...newList)
+      this.allTaskList.splice(0, this.allTaskList.length, ...collapsed.list)
     }
   },
   UPDATE_SELECTED_GID_LIST(gidList) {
@@ -734,6 +854,14 @@ const mutations = {
     this.confirmedFileSelection = pruneBySet(this.confirmedFileSelection)
     pendingFileSelectionStore.setAll(this.pendingFileSelection)
     pendingFileSelectionStore.setConfirmedAll(this.confirmedFileSelection)
+
+    // 「不再合并」的登记也要跟着删：gid 复用/重新下载时不能被上一次的结论罩住
+    if (this.mergeSkippedList && this.mergeSkippedList.length > 0) {
+      const left = this.mergeSkippedList.filter(gid => !gidSet.has(`${gid}`))
+      if (left.length !== this.mergeSkippedList.length) {
+        this.UPDATE_MERGE_SKIPPED_LIST(left)
+      }
+    }
   },
   PRUNE_TASK_CACHES(payload) {
     const gids = Array.isArray(payload && payload.gids) ? payload.gids : []
@@ -1327,7 +1455,12 @@ const actions = {
     return api.addUri({ uris: normalizedUris, outs: newOuts, options: normalizedOptions, optionsList, dirs })
       .then(async (res) => {
         if (Array.isArray(res)) {
-          const gids = res.map(r => r && r[0]).filter(Boolean)
+          // gid 的取法必须**同时认两族协议**（aria2 的 [gid] 包裹 vs 原生协议的裸
+          // gid）：只按前者取 r[0] 时，原生协议下拿到的是 gid 的第一个字符，
+          // 下面那些"写进任务历史"的字段（配对 id / 创建时间 / 来源标记）就全
+          // 挂到了不存在的 gid 上 —— 一对音视频因此永远折叠不成一条记录，
+          // 合并也一直靠文件名猜（见 @shared/utils 的 unwrapMulticallValues）
+          const gids = unwrapMulticallValues(res).filter(Boolean).map(gid => normalizeGid(gid))
           const hasBrowserExtensionHeader = (opt) => {
             try {
               const o = opt && typeof opt === 'object' ? opt : {}
@@ -1446,46 +1579,119 @@ const actions = {
     return api.changeOption({ gid, options })
   },
   removeTask (task) {
-    const { gid } = task
+    const gid = task && task.gid ? `${task.gid}` : ''
     if (gid === this.currentTaskGid) {
       this.hideTaskDetail()
     }
 
-    return api.removeTask({ gid })
+    const members = this.resolvePairMembers(task)
+    return runForMembers(members, (member) => {
+      const memberGid = member && member.gid ? `${member.gid}` : ''
+      if (!memberGid) {
+        return Promise.resolve(true)
+      }
+      return api.removeTask({ gid: memberGid })
+    }, 'removeTask')
       .finally(() => {
-        this.CLEAR_TASK_CACHES_FOR_GIDS([gid])
+        this.CLEAR_TASK_CACHES_FOR_GIDS(members.map(m => `${m.gid}`))
         this.fetchList()
         useAppStore().fetchGlobalStat(null)
         this.saveSession()
       })
   },
   forcePauseTask (task) {
-    const { gid, status } = task
-    if (status !== TASK_STATUS.ACTIVE) {
+    // 排队中的成员也一起停：删除流程里让它继续排队，删掉之前可能就启动了
+    const pausable = this.pausableMemberStatuses()
+    const targets = this.resolvePairMembers(task).filter(m => pausable.includes(`${m.status || ''}`))
+    if (targets.length === 0) {
       return Promise.resolve(true)
     }
 
-    return api.forcePauseTask({ gid })
+    // 任务可能处于无法暂停的状态（如已完成、正在完成、已被移除等）。
+    // 调用方均为删除流程，暂停失败不应阻塞后续的任务移除操作。
+    return Promise.all(targets.map(m => api.forcePauseTask({ gid: `${m.gid}` })
       .catch((e) => {
-        // 任务可能处于无法暂停的状态（如已完成、正在完成、已被移除等）。
-        // 调用方均为删除流程，暂停失败不应阻塞后续的任务移除操作。
         console.warn('[Lerxu] forcePauseTask failed, continuing with removal:', e && e.message)
-      })
+      })))
       .finally(() => {
         this.fetchList()
         this.saveSession()
       })
   },
-  pauseTask (task) {
-    const { gid, status } = task
-    if (status !== TASK_STATUS.ACTIVE) {
-      return Promise.resolve(true)
+  /**
+   * 拿出"这条记录背后的全部引擎任务"。
+   *
+   * ⚠️ 调用方给的 `task` **未必是列表里的折叠记录**：独立进度窗、托盘菜单、
+   * 详情抽屉拿到的是**单条引擎任务**（`api.fetchTaskItem` 的结果，没有
+   * `pairMembers`、也没有 `pairId`）。只按它自己暂停/删除，就会漏掉另一半 ——
+   * 表现就是用户说的"（视频+音频）任务无法暂停"（画面停了、声音还在下，
+   * 记录仍是"下载中"）。
+   *
+   * 所以先按**当前列表里的折叠记录**认：gid / pairGids / pairId 任一命中即可；
+   * pairId 还可以从任务历史里按 gid 反查（引擎任务对象上没有它）。
+   */
+  resolvePairMembers (task) {
+    const gid = task && `${task.gid || ''}`
+    if (!task) {
+      return []
     }
-    const isBT = checkTaskIsBT(task)
-    // BT任务使用强制暂停以加快暂停速度
-    // 普通HTTP/FTP任务使用普通暂停
-    const promise = isBT ? api.forcePauseTask({ gid }) : api.pauseTask({ gid })
-    return promise
+    let pairId = task.pairId ? `${task.pairId}` : ''
+    if (!pairId && gid) {
+      try {
+        const entry = (taskHistory.getAllHistory() || []).find(x => x && `${x.gid || ''}` === gid)
+        if (entry && entry.pairId) {
+          pairId = `${entry.pairId}`
+        }
+      } catch (_) {}
+    }
+    if (gid || pairId) {
+      const lists = [this.taskList || [], this.allTaskList || []]
+      for (const list of lists) {
+        for (const row of list) {
+          if (!row || row.isPair !== true) {
+            continue
+          }
+          const matched = (gid && `${row.gid || ''}` === gid) ||
+            (pairId && `${row.pairId || ''}` === pairId) ||
+            (gid && Array.isArray(row.pairGids) && row.pairGids.some(g => `${g}` === gid))
+          if (!matched) {
+            continue
+          }
+          if (Array.isArray(row.pairMembers) && row.pairMembers.length > 0) {
+            return row.pairMembers.filter(Boolean)
+          }
+        }
+      }
+    }
+    return pairMemberTasks(task)
+  },
+  /**
+   * 可以被"暂停"的成员状态。
+   *
+   * `waiting`（排队中）**必须算**：引擎把它停下完全可行，而它在配对记录里很常见 ——
+   * 第二条流刚建好还没轮到、或刚"继续"回来排在队里。只认 `active` 时点暂停会
+   * **一个目标都筛不到 → 静默什么都不做**，用户看到的就是"（视频+音频）任务无法暂停"。
+   */
+  pausableMemberStatuses () {
+    return [TASK_STATUS.ACTIVE, TASK_STATUS.WAITING]
+  },
+  pauseTask (task) {
+    // 配对记录：两条流都要暂停，只停画面会让用户看到"还在跑"
+    const pausable = this.pausableMemberStatuses()
+    const targets = this.resolvePairMembers(task).filter(m => pausable.includes(`${m.status || ''}`))
+    if (targets.length === 0) {
+      // 没有可暂停的成员：不做事，但**要让调用方知道**（它据此给出提示，
+      // 而不是像以前那样先弹"已暂停"再什么都不发生）
+      return Promise.resolve({ changed: 0, targets: 0 })
+    }
+    return runForMembers(targets, (member) => {
+      // BT任务使用强制暂停以加快暂停速度
+      // 普通HTTP/FTP任务使用普通暂停
+      return checkTaskIsBT(member)
+        ? api.forcePauseTask({ gid: `${member.gid}` })
+        : api.pauseTask({ gid: `${member.gid}` })
+    }, 'pauseTask')
+      .then(() => ({ changed: targets.length, targets: targets.length }))
       .finally(() => {
         useAppStore().resetInterval(null)
         this.fetchList()
@@ -1493,13 +1699,31 @@ const actions = {
       })
   },
   resumeTask (task) {
-    const { gid, status } = task
-    if (status === TASK_STATUS.WAITING) {
-      return Promise.resolve(true)
+    // 与暂停对称：`waiting` 也要算 —— 排队中的任务点"继续"应当把它推进（引擎
+    // 的 unpause 对排队任务是有效的），只认 `paused` 会让"排队中"的记录点了没反应
+    const targets = this.resolvePairMembers(task).filter(m => {
+      const s = `${m.status || ''}`
+      return s === TASK_STATUS.PAUSED || s === TASK_STATUS.WAITING
+    })
+    if (targets.length === 0) {
+      return Promise.resolve({ changed: 0, targets: 0 })
     }
-    if (status !== TASK_STATUS.PAUSED) {
-      return Promise.resolve(true)
-    }
+    return runForMembers(targets, (member) => this.resumeSingleTask(member), 'resumeTask')
+      .then(() => ({ changed: targets.length, targets: targets.length }))
+      .finally(() => {
+        useAppStore().resetInterval(null)
+        this.fetchList()
+        this.saveSession()
+      })
+  },
+  /**
+   * 恢复**一条引擎任务**（磁力断链修复 + out 回填 + resume）。
+   *
+   * 逻辑与原来的 `resumeTask` 一字不差，只是抽出来：折叠成一条记录的一对
+   * 音视频要对两条任务各跑一遍，而每条都要做自己那套修复。
+   */
+  resumeSingleTask (task) {
+    const { gid } = task
     const repairBtBrokenUri = async () => {
       try {
         const snapshot = await api.fetchTaskItem({ gid })
@@ -1559,11 +1783,6 @@ const actions = {
     return repairBtBrokenUri()
       .then(() => ensureBtResumeOptions())
       .then(() => api.resumeTask({ gid }))
-      .finally(() => {
-        useAppStore().resetInterval(null)
-        this.fetchList()
-        this.saveSession()
-      })
   },
   pauseAllTask () {
     // 与单个 BT 任务暂停策略一致：优先使用 forcePauseAll。
@@ -1783,15 +2002,90 @@ const actions = {
     this.UPDATE_MERGING_LIST(list)
     if (mergeKey) this.SET_MERGE_KEY({ gid, key: mergeKey })
   },
-  removeFromMergingList (gid) {
-    const { mergingList } = this
-    const idx = mergingList.indexOf(gid)
-    if (idx === -1) {
+  removeFromMergingList (gidOrTask) {
+    // 折叠成一条记录的「一对音视频」在 mergingList 里挂的是**成员** gid
+    // （合并由"后下完的那条"触发），所以既接受 gid 也接受整条记录
+    const gids = gidOrTask && typeof gidOrTask === 'object'
+      ? pairMemberTasks(gidOrTask).map(m => `${m.gid}`)
+      : [`${gidOrTask || ''}`]
+    const targets = gids.filter(Boolean)
+    if (targets.length === 0) {
       return
     }
 
-    const list = [...mergingList.slice(0, idx), ...mergingList.slice(idx + 1)]
+    const list = this.mergingList.filter(gid => !targets.includes(`${gid}`))
+    if (list.length === this.mergingList.length) {
+      return
+    }
+
     this.UPDATE_MERGING_LIST(list)
+  },
+  /**
+   * 登记"这一对不会再合并了"（重试耗尽 / 缺另一半 / 合并失败收尾 / 合并已成功）。
+   *
+   * 折叠记录据此把进度条从"待合并的黄"收回普通档：进度条的判据已经改成
+   * "配对 + 下载完成 + 没合并"就算待合并（不再看成员还剩几条 —— 成员数会被
+   * 隐藏规则和合并收敛改掉，判据时灵时不灵）。所以必须有一个**明确的"不合并了"**
+   * 信号，否则"只有一条流、永远等不到另一半"的记录会一直挂在黄条上。
+   */
+  addMergeSkippedGids (gids) {
+    const targets = (Array.isArray(gids) ? gids : [gids])
+      .map(g => `${g || ''}`)
+      .filter(Boolean)
+    if (targets.length === 0) {
+      return
+    }
+
+    const existing = new Set((this.mergeSkippedList || []).map(g => `${g}`))
+    const added = targets.filter(g => !existing.has(g))
+    if (added.length === 0) {
+      return
+    }
+
+    const list = [...(this.mergeSkippedList || []), ...added]
+    // 与 mergeRetryManager 的定时器一样是"进程内簿记"：给个上限防止无限增长
+    // （超出时丢最旧的；被丢的最坏结果是重试耗尽后多显示一次黄条）
+    const MAX = 2000
+    this.UPDATE_MERGE_SKIPPED_LIST(list.length > MAX ? list.slice(list.length - MAX) : list)
+
+    // **立刻**把已经在列表里的记录标上。折叠记录是 1Hz 轮询重建的，只更新簿记
+    // 要等下一拍才生效 —— 那半秒里进度条已经退成"已完成 + 等待合并…"的黄条，
+    // 正是用户看到的"合并完又冒出等待合并"（诊断采样实测：簿记已含两个成员 gid，
+    // 记录却还是 mergeSkipped=false）。
+    // 与 `SET_TASK_STATUS` 同一套做法：直接写记录字段，让这一拍就正确。
+    const addedSet = new Set(added)
+    const touched = this.patchPairRowsByGids(addedSet, (row) => {
+      row.mergeSkipped = true
+    })
+    // 记录被就地改了，数组引用没变 —— 递增 revision 让依赖列表的逻辑感知到
+    if (touched) {
+      this.taskListRevision++
+    }
+  },
+  /** 按成员 gid 命中折叠记录（就地打补丁用）：返回是否命中至少一条。 */
+  patchPairRowsByGids (gidSet, patch) {
+    if (!gidSet || gidSet.size === 0 || typeof patch !== 'function') {
+      return false
+    }
+    let touched = false
+    const apply = (row) => {
+      if (!row || row.isPair !== true) {
+        return
+      }
+      const gids = [
+        row.gid,
+        ...(Array.isArray(row.pairGids) ? row.pairGids : []),
+        ...(Array.isArray(row.pairMembers) ? row.pairMembers.map(m => m && m.gid) : [])
+      ].map(g => `${g || ''}`)
+      if (!gids.some(g => gidSet.has(g))) {
+        return
+      }
+      patch(row)
+      touched = true
+    }
+    ;(this.taskList || []).forEach(apply)
+    ;(this.allTaskList || []).forEach(apply)
+    return touched
   },
   setTaskStatus (payload) {
     this.SET_TASK_STATUS(payload)
@@ -1880,25 +2174,28 @@ const actions = {
     }
   },
   removeTaskRecord (task) {
-    const { gid, status } = task
+    const gid = task && task.gid ? `${task.gid}` : ''
     if (gid === this.currentTaskGid) {
       this.hideTaskDetail()
     }
 
     const { ERROR, COMPLETE, REMOVED } = TASK_STATUS
-    const validStatus = status || REMOVED // 确保状态有效
+    const validStatus = task && task.status ? task.status : REMOVED // 确保状态有效
     if (![ERROR, COMPLETE, REMOVED].includes(validStatus)) {
       return
     }
 
+    // 一对音视频要把**两条**记录都清掉：只清一条的话，下一轮轮询里那条还会
+    // 以"孤零零的配对记录"身份留在列表上（引擎侧记录删了、历史里还在）。
+    const members = this.resolvePairMembers(task)
     // 尝试从Aria2中删除任务记录，如果失败则忽略，因为任务可能已经不在Aria2中
-    return api.removeTaskRecord({ gid })
+    return Promise.all(members.map(member => api.removeTaskRecord({ gid: `${member.gid}` })
       .catch((err) => {
         console.log('[Lerxu] removeTaskRecord from aria2 fail:', err)
         // 忽略Aria2删除失败的错误，继续执行
-      })
+      })))
       .finally(() => {
-        this.clearTaskCachesForGids([gid])
+        this.clearTaskCachesForGids(members.map(m => `${m.gid}`))
         this.fetchList()
         useAppStore().fetchGlobalStat(null)
       })
@@ -1933,7 +2230,8 @@ const actions = {
     }
   },
   batchResumeSelectedTasks () {
-    const gids = this.selectedGidList
+    // 选中一条配对记录要展开成它背后的两条引擎任务，否则只恢复了其中一条流
+    const gids = expandPairGids(pairMemberIndex, this.selectedGidList)
     if (gids.length === 0) {
       return
     }
@@ -1941,7 +2239,7 @@ const actions = {
     return api.batchResumeTask({ gids })
   },
   batchPauseSelectedTasks () {
-    const gids = this.selectedGidList
+    const gids = expandPairGids(pairMemberIndex, this.selectedGidList)
     if (gids.length === 0) {
       return
     }
@@ -1949,19 +2247,20 @@ const actions = {
     return api.batchPauseTask({ gids })
   },
   batchForcePauseTask (gids) {
-    return api.batchForcePauseTask({ gids })
+    return api.batchForcePauseTask({ gids: expandPairGids(pairMemberIndex, gids) })
       .catch((e) => {
         // 批量暂停在删除流程中属于尽力而为的步骤，失败不应阻塞后续移除。
         console.warn('[Lerxu] batchForcePauseTask failed, continuing with removal:', e && e.message)
       })
   },
   batchResumeTask (gids) {
-    return api.batchResumeTask({ gids })
+    return api.batchResumeTask({ gids: expandPairGids(pairMemberIndex, gids) })
   },
   batchRemoveTask (gids) {
-    return api.batchRemoveTask({ gids })
+    const list = expandPairGids(pairMemberIndex, gids)
+    return api.batchRemoveTask({ gids: list })
       .finally(() => {
-        this.CLEAR_TASK_CACHES_FOR_GIDS(gids)
+        this.CLEAR_TASK_CACHES_FOR_GIDS(list)
         this.fetchList()
         useAppStore().fetchGlobalStat(null)
         this.saveSession()

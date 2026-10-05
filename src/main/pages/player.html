@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>播放器 - Lerxu</title>
+  <!-- 媒体与封面要能从本地流服务（127.0.0.1 的随机端口）与 blob 取，
+       所以这几条必须显式放开，否则 default-src 'self' 会把它们全拦掉 -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data: http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:*">
+  <title>Lerxu 播放器</title>
+  <style>
+    :root {
+      --bg: #101114;
+      --panel: rgba(24, 26, 31, 0.92);
+      --text: #f2f4f8;
+      --text-dim: rgba(242, 244, 248, 0.6);
+      --text-hover: #ffffff;
+      --accent: #ff6a3d;
+      --track: rgba(255, 255, 255, 0.22);
+      --track-hover: rgba(255, 255, 255, 0.34);
+      --ctrl-radius: 8px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      user-select: none;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── 顶部窗口控制（无边框窗口：自己画）─────────────────────────
+       与底部控制栏**同一条生命周期**：鼠标静止时一起淡出，鼠标一动一起回来。 */
+    #titlebar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 10px;
+      z-index: 40;
+      background: linear-gradient(to bottom, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0));
+      transition: opacity 0.22s ease, transform 0.22s ease;
+    }
+
+    /* 整条都能拖窗口（按钮自己声明 no-drag） */
+    #titleDrag {
+      position: absolute;
+      inset: 0;
+      -webkit-app-region: drag;
+    }
+
+    #titleActions {
+      position: relative;
+      /* 默认**不画**窗口按钮：macOS 用系统红绿灯（在左上角）。
+         Windows/Linux、或 macOS 上开了"隐藏应用菜单"（无边框无红绿灯）时，
+         主进程会回报 ownWindowControls，页面再把按钮显示出来。 */
+      display: none;
+      align-items: center;
+      gap: 2px;
+      -webkit-app-region: no-drag;
+    }
+
+    body.own-window-controls #titleActions {
+      display: flex;
+    }
+
+    /* 有系统标题栏时（Windows/Linux 默认），页面顶部这条整个是多余的：
+       系统标题栏本身就能拖窗口，也不需要在页面里再画一条渐变。 */
+    body.native-titlebar #titlebar {
+      display: none;
+    }
+
+    .tb-btn {
+      width: 30px;
+      height: 26px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.14s ease;
+    }
+
+    /* 只高亮图标，不给底色（与底部控制按钮一致） */
+    .tb-btn:hover {
+      color: var(--text-hover);
+    }
+
+    .tb-btn:active {
+      color: var(--text-hover);
+      opacity: 0.8;
+    }
+
+    body.controls-hidden #titlebar {
+      opacity: 0;
+      transform: translateY(-8px);
+      pointer-events: none;
+    }
+
+    /* 音频模式的控制栏不隐藏（没有画面可沉浸），顶部这条要跟着一起保持可见 */
+    body.is-audio.controls-hidden #titlebar {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
+
+    /* 全屏时顶部整条不出现（画面占满） */
+    html:fullscreen #titlebar {
+      display: none;
+    }
+
+    /* ── 画面区 ────────────────────────────────────────────── */
+    #stage {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #media {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #000;
+      outline: none;
+      /* 比例适配**默认开启**（完整显示画面，不裁边） */
+      object-fit: contain;
+    }
+
+    body.is-audio #media {
+      display: none;
+    }
+
+    /* 引擎出帧（NV12 帧流）的上屏画布：与 <video> 一样"完整显示、不裁边"。
+       画布的内部尺寸 = 帧的像素尺寸，显示尺寸由 max-width/max-height + contain 决定。 */
+    #framesCanvas {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      max-width: 100%;
+      max-height: 100%;
+      background: #000;
+      display: block;
+    }
+
+    #framesCanvas.is-hidden {
+      display: none;
+    }
+
+    /* ── 音频模式：封面 + 元数据 ───────────────────────────── */
+    #audioPane {
+      display: none;
+      flex: 1 1 auto;
+      min-height: 0;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 22px;
+      padding: 32px;
+      background:
+        radial-gradient(120% 90% at 50% 0%, rgba(255, 106, 61, 0.16), transparent 62%),
+        var(--bg);
+    }
+
+    body.is-audio #audioPane {
+      display: flex;
+    }
+
+    #coverWrap {
+      width: min(46vh, 260px);
+      height: min(46vh, 260px);
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.06);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+
+    #cover {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    #coverFallback {
+      font-size: 54px;
+      opacity: 0.32;
+    }
+
+    #audioMeta {
+      text-align: center;
+      max-width: 86%;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #audioTitle {
+      font-size: 19px;
+      font-weight: 600;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+
+    #audioArtist {
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    #audioAlbum {
+      font-size: 12px;
+      color: var(--text-dim);
+      opacity: 0.8;
+    }
+
+    /* ── 控制栏 ────────────────────────────────────────────── */
+    #controls {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 30px 16px 12px;
+      background: linear-gradient(to top, rgba(0, 0, 0, 0.86), rgba(0, 0, 0, 0));
+      transition: opacity 0.22s ease, transform 0.22s ease;
+      z-index: 5;
+    }
+
+    body.is-audio #stage {
+      flex-direction: column;
+    }
+
+    body.is-audio #controls {
+      position: relative;
+      background: none;
+      padding: 0 24px 22px;
+      flex: 0 0 auto;
+    }
+
+    /* 自动隐藏：视频模式下播放中且鼠标静止 → 淡出；鼠标一动就回来 */
+    body.controls-hidden #controls {
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+    }
+
+    body.controls-hidden {
+      cursor: none;
+    }
+
+    body.is-audio.controls-hidden #controls {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
+
+    body.is-audio.controls-hidden {
+      cursor: default;
+    }
+
+    /* 进度条上方的"当前 / 总时长"（**左上角**） */
+    #timeRow {
+      display: flex;
+      justify-content: flex-start;
+      padding: 0 0 5px 1px;
+    }
+
+    #timeText {
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-dim);
+      letter-spacing: 0.02em;
+    }
+
+    /* 时长右侧的"下载 / 播放"速度读数（边下边播时才有内容）。
+       数字常驻在这里，**不再用提示条报速度** —— 提示条只留给"跟不上"这类预警。 */
+    #speedText {
+      margin-left: 12px;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-dim);
+      opacity: 0.75;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+      transition: opacity 0.2s ease;
+    }
+
+    #speedText:empty {
+      display: none;
+    }
+
+    /* 进度条 */
+    #progressRow {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    #barHit {
+      position: relative;
+      flex: 1 1 auto;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    #barTrack {
+      position: relative;
+      width: 100%;
+      height: 4px;
+      border-radius: 3px;
+      background: var(--track);
+      transition: height 0.14s ease;
+      overflow: visible;
+    }
+
+    #barHit:hover #barTrack,
+    body.is-scrubbing #barTrack {
+      height: 6px;
+    }
+
+    #barBuffered {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0;
+      border-radius: 3px;
+      background: var(--track-hover);
+    }
+
+    #barPlayed {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0;
+      border-radius: 3px;
+      background: var(--accent);
+    }
+
+    #barThumb {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      width: 11px;
+      height: 11px;
+      margin-left: -5.5px;
+      border-radius: 50%;
+      background: #fff;
+      transform: translateY(-50%) scale(0.001);
+      transition: transform 0.14s ease;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+    }
+
+    #barHit:hover #barThumb,
+    body.is-scrubbing #barThumb {
+      transform: translateY(-50%) scale(1);
+    }
+
+    /* 按钮行 */
+    #btnRow {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .btn {
+      width: 34px;
+      height: 34px;
+      border: none;
+      border-radius: var(--ctrl-radius);
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.14s ease, transform 0.14s ease;
+      flex: 0 0 auto;
+    }
+
+    /* **只高亮，不显示底色**（用户明确要求） */
+    .btn:hover {
+      color: var(--text-hover);
+    }
+
+    .btn:active {
+      transform: scale(0.92);
+      color: var(--text-hover);
+    }
+
+    .btn.is-off {
+      opacity: 0.4;
+    }
+
+    .btn svg {
+      width: 20px;
+      height: 20px;
+      display: block;
+    }
+
+    .spacer {
+      flex: 1 1 auto;
+    }
+
+    /* 音量 */
+    #volumeWrap {
+      display: flex;
+      align-items: center;
+    }
+
+    #volumeHit {
+      width: 0;
+      overflow: hidden;
+      transition: width 0.18s ease;
+      display: flex;
+      align-items: center;
+      height: 34px;
+    }
+
+    #volumeWrap:hover #volumeHit,
+    body.is-audio #volumeHit {
+      width: 82px;
+    }
+
+    #volumeTrack {
+      position: relative;
+      width: 70px;
+      height: 4px;
+      border-radius: 3px;
+      background: var(--track);
+      cursor: pointer;
+      margin-left: 6px;
+    }
+
+    #volumeFill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 100%;
+      border-radius: 3px;
+      background: var(--text);
+    }
+
+    #volumeThumb {
+      position: absolute;
+      top: 50%;
+      left: 100%;
+      width: 10px;
+      height: 10px;
+      margin-left: -5px;
+      border-radius: 50%;
+      background: #fff;
+      transform: translateY(-50%);
+    }
+
+    /* 倍速 */
+    #speedBtn {
+      width: auto;
+      min-width: 46px;
+      padding: 0 8px;
+      font-size: 12.5px;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-dim);
+    }
+
+    /* 弹出小菜单（倍速 / 字幕） */
+    .menu {
+      position: absolute;
+      bottom: 60px;
+      min-width: 112px;
+      padding: 4px;
+      background: var(--panel);
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(14px);
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+      transition: opacity 0.16s ease, transform 0.16s ease;
+      z-index: 20;
+    }
+
+    .menu.is-open {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 10px;
+      border-radius: 7px;
+      font-size: 12.5px;
+      cursor: pointer;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .menu-item:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .menu-item .tick {
+      color: var(--accent);
+      font-size: 12px;
+      opacity: 0;
+    }
+
+    .menu-item.is-active .tick {
+      opacity: 1;
+    }
+
+    /* 中央提示（暂停图标 / 音量 / 倍速） */
+    #toast {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%) scale(0.92);
+      padding: 14px 20px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.62);
+      color: #fff;
+      font-size: 15px;
+      font-variant-numeric: tabular-nums;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.16s ease, transform 0.16s ease;
+      z-index: 30;
+    }
+
+    #toast.is-visible {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    /* 起始加载提示 */
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: var(--text-dim);
+      background: rgba(0, 0, 0, 0.35);
+      z-index: 10;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      text-align: center;
+      padding: 0 40px;
+      line-height: 1.6;
+    }
+
+    #loading.is-hidden {
+      opacity: 0;
+    }
+
+    /* 速度预警条（文案由宿主算好：平均播放消耗 vs 当前下载速度）。
+       播放器只负责显示，不做任何判断。 */
+    #notice {
+      position: absolute;
+      left: 50%;
+      top: 14px;
+      transform: translateX(-50%);
+      max-width: 86%;
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      line-height: 1.4;
+      text-align: center;
+      color: #fff;
+      background: rgba(255, 149, 0, 0.93);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      z-index: 25;
+    }
+
+    #notice.is-visible {
+      opacity: 1;
+    }
+
+    #notice.is-critical {
+      background: rgba(228, 62, 62, 0.94);
+    }
+
+    video::cue {
+      font-size: 0.9em;
+      line-height: 1.4;
+      background: rgba(0, 0, 0, 0.6);
+    }
+  </style>
+</head>
+
+<body>
+  <script>
+    (function () {
+      try {
+        const { ipcRenderer } = require('electron')
+        const cfg = ipcRenderer.sendSync('get-app-config') || {}
+        const dark = cfg.theme === 'dark' ||
+          (cfg.theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+        if (!dark) {
+          document.body.classList.add('light')
+        }
+      } catch (_) {}
+    })()
+  </script>
+
+  <!-- 无边框窗口：顶部这条自己画，且与底部控制栏同一条生命周期 -->
+  <div id="titlebar">
+    <div id="titleDrag"></div>
+    <div id="titleActions">
+      <button class="tb-btn" id="tbMinBtn" title="最小化"></button>
+      <button class="tb-btn" id="tbCloseBtn" title="关闭"></button>
+    </div>
+  </div>
+
+  <div id="stage">
+    <video id="media" playsinline></video>
+    <!-- 引擎出帧模式的上屏画布：与 <video> 叠在同一位置，尺寸按视频比例自适应 -->
+    <canvas id="framesCanvas" class="is-hidden"></canvas>
+
+    <div id="audioPane">
+      <div id="coverWrap">
+        <img id="cover" alt="">
+        <div id="coverFallback">♪</div>
+      </div>
+      <div id="audioMeta">
+        <div id="audioTitle">—</div>
+        <div id="audioArtist"></div>
+        <div id="audioAlbum"></div>
+      </div>
+    </div>
+
+    <div id="loading">正在打开…</div>
+    <div id="notice"></div>
+    <div id="toast"></div>
+
+    <div id="controls">
+      <div id="timeRow">
+        <span id="timeText">00:00 / 00:00</span>
+        <span id="speedText"></span>
+      </div>
+
+      <div id="progressRow">
+        <div id="barHit">
+          <div id="barTrack">
+            <div id="barBuffered"></div>
+            <div id="barPlayed"></div>
+            <div id="barThumb"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="btnRow">
+        <button class="btn" id="playBtn" title="播放/暂停"></button>
+        <button class="btn" id="rewBtn" title="后退 10 秒"></button>
+        <button class="btn" id="ffBtn" title="前进 10 秒"></button>
+
+        <div id="volumeWrap">
+          <button class="btn" id="muteBtn" title="静音"></button>
+          <div id="volumeHit">
+            <div id="volumeTrack">
+              <div id="volumeFill"></div>
+              <div id="volumeThumb"></div>
+            </div>
+          </div>
+        </div>
+
+        <span class="spacer"></span>
+
+        <button class="btn" id="speedBtn" title="播放速度">1.0x</button>
+        <button class="btn" id="subtitleBtn" title="字幕"></button>
+        <button class="btn" id="fullBtn" title="全屏"></button>
+      </div>
+
+      <div class="menu" id="speedMenu" style="right: 90px;"></div>
+      <div class="menu" id="subtitleMenu" style="right: 56px;"></div>
+    </div>
+  </div>
+
+  <script src="./frames-renderer.js"></script>
+  <script src="./player.js"></script>
+</body>
+
+</html>

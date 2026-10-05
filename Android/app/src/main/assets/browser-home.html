@@ -25,7 +25,9 @@
         colors: q.colors || '',
         focus: q.focus === '1',
         // 这一趟首页是"从网页点地址栏过路来的搜索页"（App 标记）：logo 与面板首帧就在终态
-        search: q.search === '1'
+        search: q.search === '1',
+        // 这一趟是"从别处一步跳到历史记录界面"（App 标记）：首帧就停在那一屏
+        hist: q.hist === '1'
       };
     }
     // 这一趟是"从网页点地址栏过路进搜索页"吗？认**两个**信号，任一条成立就算：
@@ -34,9 +36,13 @@
     // 两道都认是有原因的：URL 是页面**自己就能看到**的东西，不依赖响应体，
     // 也不受 WebView 缓存影响；万一启动配置没跟上，光靠它也不会又演一遍飞入（用户点名）
     if (/(?:^|[?&])s=\d/.test(location.search)) boot.search = true;
+    // 历史记录那一屏是"搜索页再往里一层"：它要的终态（面板已开、返回键在场）与
+    // 搜索页完全一致，所以 search 那一套照用，只多一个 hist-boot 管标题
+    if (boot.hist) boot.search = true;
     window.LERXU_BOOT = boot;
     document.documentElement.className =
-      (boot.dark ? 'dark' : '') + (boot.search ? ' search-boot' : '');
+      (boot.dark ? 'dark' : '') + (boot.search ? ' search-boot' : '') +
+      (boot.hist ? ' hist-boot' : '');
   })();
 </script>
 <style>
@@ -162,6 +168,12 @@
     visibility: visible;
     transition: none;
   }
+  /* "一步跳到历史记录界面"那趟的**首帧**（启动配置带 hist）：面板、返回键的终态
+     与搜索页那一趟完全相同（见上面），只多两笔 —— 字标已经淡出、标题已经就位。
+     少了这两笔，用户点"历史"会先看到"logo 归位 + 搜索页展开"两步动画，而他要的
+     是终点那一屏；等 App 把真实状态推来（applyPanels 会摘掉 hist-boot）时画面一动不动 */
+  html.hist-boot .brand { opacity: 0; transition: none; }
+  html.hist-boot .view-title { opacity: 1; transition: none; }
   /* 深色底上原标的深藏青会糊进背景：反色 + 色相回转保住冷色系，
      只把深色部件提亮（字标是自家资产，滤镜比换一套图更省事也不会缺图）。
      滤镜挂在**字标整体**上、不挂 img：动画期间"带滤镜的子层套在正在位移的
@@ -292,10 +304,11 @@
     cursor: pointer;
   }
   .gt-clear:active { opacity: .55; }
-  /* "查看更多"（用户点名）：搜索历史**整组完整显示**时，在最后一条下面居中给一枚。
-     点开的是专职的历史查看页 —— 只列搜索历史，条数不再受面板那几条的限制。
-     它长在搜索历史组**里面**，所以组的收放（0fr ⇄ 1fr）会带着它一起进出：
-     列表被面板高度裁掉时它自然落在可视区之外，不会浮在半截列表下面 */
+  /* "查看更多"（用户点名）：只在搜索历史**装不下**时才给 —— 它明明只有几条、
+     却挂着这枚按钮，点开一页还是那几条，"查看更多"就从信号变成了装饰（用户点名）。
+     判定在 [scheduleMoreCheck] 里按实测做：组展开完成后，最后一行是否越出面板下沿。
+     显隐用两个类而不是 inline style：inline 的 display 会盖住下面 hist-view 那条
+     （查看页里这枚按钮本来就该收掉）。`.on` 只负责淡入，出来得不那么硬 */
   .more {
     display: block;
     width: 100%;
@@ -309,15 +322,18 @@
     color: var(--primary);
     text-align: center;
     cursor: pointer;
+    opacity: 0;
+    transition: opacity 200ms ease;
   }
+  .more.on { opacity: 1; }
+  /* 不占位：判定期间它必须在场外量，否则会把自己算进溢出 */
+  .more.off { display: none; }
   .more:active { opacity: .55; }
   /* 已经在查看页里：这枚按钮的使命完成（点开的那一页就是它指向的地方） */
   body.hist-view .more { display: none; }
-  /* 历史查看页里组标题让位：这一页的名字已经摆在顶部那条中心线上了，
-     组标题再写一遍就是同一句话出现两次。标题行留着 —— 右侧的"全部清除"还在那儿
-     （只剩它一个子项了：两端对齐会把它摆到左边，这里改回右对齐） */
-  body.hist-view #histTitle { display: none; }
-  body.hist-view .group-title { justify-content: flex-end; }
+  /* 查看页里"最近访问"与"搜索历史"是**并列的两组**（用户点名：进去以后要显示全部
+     历史，而不是继续把多出来的藏起来）—— 所以组标题照旧留着，只有"查看更多"收掉 */
+
   .rows {
     margin: 0;
     padding: 0;
@@ -503,11 +519,15 @@
   var LABELS = {
     zh: {
       recent: '最近访问', history: '搜索历史', empty: '还没有浏览记录',
-      clear: '全部清除', more: '查看更多'
+      clear: '全部清除', more: '查看更多',
+      // 历史记录那一屏（"查看更多" / 「更多功能」里的"历史"点开的那一层）的页名：
+      // 它列的是**整份历史**（最近访问 + 搜索历史），与"搜索历史"这个组名不是一回事
+      histPage: '历史记录'
     },
     en: {
       recent: 'Recent', history: 'Searches', empty: 'No history yet',
-      clear: 'Clear all', more: 'See all'
+      clear: 'Clear all', more: 'See all',
+      histPage: 'History'
     }
   };
   // 图标是我们自己的常量（不含任何用户数据），可以直接 innerHTML
@@ -858,6 +878,35 @@
     }, GROUP_COLLAPSE_MS);
   }
 
+  // 「查看更多」的显隐：**只在搜索历史整组装不下时才给**（用户点名）。
+  //
+  // 判定要等组的收放补间走完再量：0fr ⇄ 1fr 期间整组高度还在长，这时候量到的
+  // 必然是"装得下"，按钮就再也不出来了（就是用户看到的那条 bug）。
+  // 所以这里按 GROUP_COLLAPSE_MS 排一次延时测量，每次渲染都重排（输入过程中
+  // 反复渲染也只留最后一次）。
+  //
+  // 量的对象是**列表自己的下沿**与**面板的下沿**：列表是这一屏最后一组，
+  // 它的末行越出面板 = 装不下。量之前先把按钮设成不占位（.off）——
+  // 按钮自己也在组里，留着它就会把自己算进溢出（量完要真溢出才放回来）。
+  var moreTimer = null;
+  function scheduleMoreCheck(enabled) {
+    if (moreTimer) { clearTimeout(moreTimer); moreTimer = null; }
+    histMore.classList.remove('on');
+    histMore.classList.add('off');
+    if (!enabled) return;
+    moreTimer = setTimeout(function () {
+      moreTimer = null;
+      if (!histList.children.length) return;
+      var overflows = histList.getBoundingClientRect().bottom >
+        panelEl.getBoundingClientRect().bottom + 0.5;
+      if (!overflows) return;
+      histMore.classList.remove('off');
+      // 下一帧再给 .on：display 从 none 变 block 与 opacity 在同一帧里改，
+      // 浏览器会把两者并成一次样式计算，淡入就白写了
+      requestAnimationFrame(function () { histMore.classList.add('on'); });
+    }, GROUP_COLLAPSE_MS);
+  }
+
   // 上一次渲染用的关键词：换了词就把列表滚回顶部（见下面的滚动重置）
   var lastQuery = null;
 
@@ -882,12 +931,15 @@
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
           document.documentElement.classList.remove('search-boot');
+          // hist-boot 是 search-boot 的上一层（首帧直接停在历史记录那一屏）：
+          // 真实状态已经到了，body.hist-view 接管，这一层跟着摘掉
+          document.documentElement.classList.remove('hist-boot');
         });
       });
     }
     if (!cfg.open) {
       document.body.classList.remove('panel-open');
-      // 历史查看页是**这一次搜索**里的一层：面板收起时一并退出去，
+      // 历史记录页是**这一次搜索**里的一层：面板收起时一并退出去，
       // 下次聚焦进搜索页必须从普通那一屏开始
       document.body.classList.remove('hist-view');
       // 收起时清空列表：下次打开是全新的一份，不会先闪一眼旧内容
@@ -898,6 +950,8 @@
       setGroupVisible(histGroup, false);
       setGroupVisible(recentGroup, false);
       setGroupVisible(panelEmpty, false);
+      // "查看更多"跟着归零：这一屏已经没有搜索历史了（待办的测量也一并取消）
+      scheduleMoreCheck(false);
       // 顺带忘掉关键词：下次打开一定从顶部开始
       lastQuery = null;
       panelEl.scrollTop = 0;
@@ -929,11 +983,13 @@
     // 负责入场，再叠一层逐行动画会两层撞在一起
     var canAnimate = document.body.classList.contains('panel-open');
 
-    // 历史查看页（"查看更多"点开的那一层）：App 只给搜索历史，其余两组空着 ——
+    // 历史记录页（"查看更多" / 「更多功能 → 历史」点开的那一层）：App 给的是**整份
+    // 历史**（最近访问 + 搜索历史两组都放全部条数），搜索建议让位 ——
     // 它们的收起走各自的 0fr ⇄ 1fr 补间，字标与标题交叉淡入，
     // 多出来的历史行由 syncRows 淡入 + 上浮补进来：整屏是一次形变，没有硬切
     document.body.classList.toggle('hist-view', !!cfg.histView);
-    viewTitle.textContent = labels().history;
+    // 页名与组名不是一回事：这一屏是"历史记录"（整份），"搜索历史"是其中一组
+    viewTitle.textContent = cfg.histView ? labels().histPage : labels().history;
 
     // ① 搜索建议（引擎联想词，异步到达；没到之前这一段不占位）。
     // 这一组**不带小标题**：它就是搜索框下方的一列词，加个"搜索建议"反而占掉
@@ -976,6 +1032,8 @@
         }
       };
     }), canAnimate, searches.length > 0);
+    // 入口的显隐交给实测（见 scheduleMoreCheck）：装得下就不给，历史记录页里也不给
+    scheduleMoreCheck(searches.length > 0 && !cfg.histView);
 
     panelEmptyText.textContent = text.empty;
     setGroupVisible(
@@ -989,6 +1047,9 @@
   // 首帧：注入配置下这是幂等的（占位符已是同一份真相）；
   // 原始资源下退回 URL 参数
   applyConfig(BOOT);
+  // "一步跳到历史记录界面"那一趟：标题也得首帧就在位（它的显隐由 hist-boot 管，
+  // 文字不在这里写上就是一屏空白标题）。真实状态推来后由 applyPanels 接管
+  if (BOOT.hist) { viewTitle.textContent = labels().histPage; }
 </script>
 </body>
 </html>

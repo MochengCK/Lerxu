@@ -4,10 +4,17 @@ package com.lerxu.android.browser
  * 网页视频的**接管探测 + 位置回传 + 只留原生播放器**（全部注入脚本都在这里）。
  *
  * 它解决四件事：
- * 1. **什么时候接管**：页面里开始播放一个"像样的"视频时通知 App（MSE 型播放器在按下
- *    播放之前根本没有可播地址，只能等它起播），由 App 把这一路交给自己的播放器
- *    （见 `ui/player/NativePlayerOverlay`）。Shadow DOM 里的 `<video>` 用
- *    `composedPath()` 认出来 —— 事件冒到 document 上时 `target` 会被重定向成宿主元素。
+ * 1. **什么时候接管**：两条路 ——
+ *    ① 页面里开始播放一个"像样的"视频时通知 App（MSE 型播放器在按下播放之前根本没有
+ *    可播地址，只能等它起播）；Shadow DOM 里的 `<video>` 用 `composedPath()` 认出来
+ *    —— 事件冒到 document 上时 `target` 会被重定向成宿主元素；
+ *    ② 页面里那个播放器**还停着**（用户进页面看到的是站点自己的封面/大播放按钮）——
+ *    也接管（用户点名："刚进入网页时，播放器如果处于暂停状态，显示的就是他们自己的
+ *    播放器，不是我们原生播放"）。这一条没有 `play` 事件当证据，所以判据更严：
+ *    **不许静音**（这是主要鉴别手段 —— 背景/装饰视频都静音，正片播放器不静音）、
+ *    有真实媒体地址且不是 `blob:`、已拿到元数据、尺寸够、不是卡片预览；
+ *    报走之后 App 那边**开着但先不自动播**（`NativePlayerOverlay.open` 的 `startPaused`）。
+ *    两条路**共用同一个闸门 `armed`**：谁先成立谁接线（见 [scanPaused] / [onPlay]）。
  * 2. **贴在哪儿**：持续把那个 `<video>` 的 `getBoundingClientRect()`（主文档视口坐标）
  *    报回去 —— App 的播放器不是页面元素，不给它位置它就只会"浮"在原地。同一域 iframe
  *    里的播放器也算得出来（逐层加上 iframe 的偏移）；跨域 iframe 读不到内容，就退而
@@ -24,7 +31,9 @@ package com.lerxu.android.browser
  *    吸附线 —— 两处数字相加时对不齐就会在顶上裂出一道缝（见脚本里的 `playerTop`）。
  *
  * 几个必要的收敛（都在脚本里）：
- * - 背景视频不算（静音 + 循环）、太小的不算；一页只报一次（报完关闸门，重新导航重置）。
+ * - 背景视频不算（静音 + 循环）、太小的不算；一页只报一次（报完关闸门 `armed=false`，
+ *   **换页时由原生侧重开**，见 `__lerxuPlayerRearm` + `BrowserController.onHostPageNavigated`
+ *   —— pushState 型站点换页不重载文档，不重开就再也不接管）。
  * - 通知前先把页面这一路 `pause()`，不然原生播放器一起来就是两路声音。
  * - 用 `visibility` 而不是 `display`：`display:none` 会抽掉布局盒、把页面顶上去。
  *
@@ -35,7 +44,10 @@ package com.lerxu.android.browser
  */
 object PageVideoDetector {
 
-    val INJECT_JS: String =
+    /** 注入脚本第 1/5 片（切片原因见 gen_kotlin.py 的文件头）。 */
+
+    /** 注入脚本第 1/5 片（切片原因见 gen_kotlin.py 的文件头）。 */
+    private val JS_PART_0: String =
 "(function(){\n" +
         "if(window.__lerxuPageVideo)return;window.__lerxuPageVideo=1;\n" +
         "var MINW=200,MINH=120,armed=true;\n" +
@@ -155,8 +167,11 @@ object PageVideoDetector {
         "    if(best)topBarEl=best;\n" +
         "  }catch(e){}\n" +
         "}\n" +
-        "/* 顶栏此刻的几何：认不到就返回 null（页面本来没有顶栏）。\n" +
-        "   `vis` = 它**露在视口顶那一条的厚度**（不是它的高度！）—— 收起/展开时这个量是\n" +
+        "/* 顶栏此刻的几何：认不到就返回 null（页面本来没有顶栏）。\n"
+
+    /** 注入脚本第 2/5 片（切片原因见 gen_kotlin.py 的文件头）。 */
+    private val JS_PART_1: String =
+"   `vis` = 它**露在视口顶那一条的厚度**（不是它的高度！）—— 收起/展开时这个量是\n" +
         "   连续变化的，见 ctAndBar。 */\n" +
         "function barGeo(){\n" +
         "  if(topBarEl&&!topBarEl.isConnected)topBarEl=null;\n" +
@@ -225,6 +240,10 @@ object PageVideoDetector {
         "var rafOn=false,lastScrollAt=0;\n" +
         "function schedule(){\n" +
         "  lastScrollAt=Date.now();\n" +
+        "  /* 滚动这一下先把页面自己的播放器按回去（见 reassert）：站点是在 `scroll` 里\n" +
+        "     把样式改回来的，心跳那 500ms/1s 追不上 —— 中间那些帧页面自己的播放器就露在\n" +
+        "     屏幕上，用户看到的是\"我们的播放器在闪\" */\n" +
+        "  reassert();\n" +
         "  /* 事件本身就是\"位置变了\"，先立刻报一次；再挂上 rAF 逐帧跟到停下来为止。\n" +
         "     （只挂 rAF 的话：某些时机下第一帧会晚于用户对\"立刻生效\"的感知，也会让\n" +
         "     强制重报那条路变成\"下一帧才报\"。） */\n" +
@@ -236,6 +255,9 @@ object PageVideoDetector {
         "    /* 原生侧已经叫停了就当场收手：不收的话还会再报满 180ms，\n" +
         "       那几十个位置是\"关掉播放器之后\"的，只会把已经收摊的原生侧再拨一下 */\n" +
         "    if(!window.__lerxuRectOn){rafOn=false;return;}\n" +
+        "    /* 逐帧复检：站点在 scroll 里改回来的东西，**这一帧就按回去** ——\n" +
+        "       与它的改动同处\"脚本阶段\"，中间没有绘制，所以永远画不出来 */\n" +
+        "    reassert();\n" +
         "    var moved=report();\n" +
         "    if(moved||Date.now()-lastScrollAt<180)window.requestAnimationFrame(step);\n" +
         "    else rafOn=false;\n" +
@@ -268,8 +290,11 @@ object PageVideoDetector {
         "window.__lerxuWake=function(){try{window.__lerxuRectKey=null;schedule();}catch(e){}};\n" +
         "\n" +
         "/* ────────────────────────── 只留原生播放器 ──────────────────────────\n" +
-        "   把页面那一层播放器**整套**按住：\n" +
-        "   1) `<video>` 自己不画（`visibility:hidden`，保住布局盒 —— 不能抽掉，\n" +
+        "   把页面那一层播放器**整套**按住：\n"
+
+    /** 注入脚本第 3/5 片（切片原因见 gen_kotlin.py 的文件头）。 */
+    private val JS_PART_2: String =
+"   1) `<video>` 自己不画（`visibility:hidden`，保住布局盒 —— 不能抽掉，\n" +
         "      否则页面排版会跳）；\n" +
         "   2) 它外面那圈\"壳\"（站点自己的控制条 / 海报 / 播放按钮所在的那几层）跟着一起\n" +
         "      隐掉 —— 用户点名\"一个网页两个播放器\"\"应该只保留原生播放器\"。\n" +
@@ -283,6 +308,10 @@ object PageVideoDetector {
         "function hideEl(el){\n" +
         "  if(!el)return;\n" +
         "  try{\n" +
+        "    /* **已经是我们要的样子就一个字都不写**（2026-10-03）：这个函数现在会被\n" +
+        "       `reassert()` 在滚动里逐帧调用，而写 style 会让这一帧的排版失效、下一帧的读数\n" +
+        "       再强制回流 —— 每帧重排比闪烁更糟。先读后写是这里唯一划算的顺序。 */\n" +
+        "    if(el.style.visibility==='hidden')return;\n" +
         "    if(!el.hasAttribute('data-lerxu-vis')){\n" +
         "      el.setAttribute('data-lerxu-vis',el.style.visibility||'');\n" +
         "      window.__lerxuTouched.push(el);\n" +
@@ -311,18 +340,29 @@ object PageVideoDetector {
         "        'background:#000;pointer-events:none;z-index:2147483000;';\n" +
         "      v.__lerxuCover=c;\n" +
         "    }\n" +
-        "    if(c.parentNode!==par)par.appendChild(c);\n" +
+        "    if(c.parentNode!==par){par.appendChild(c);c.__lerxuKey=null;}\n" +
         "    var pr=box.getBoundingClientRect(),vr=v.getBoundingClientRect();\n" +
+        "    var left=vr.left-pr.left+box.scrollLeft;\n" +
+        "    var top=vr.top-pr.top+box.scrollTop;\n" +
+        "    /* **几何没变就一个字都不写**（2026-10-03）：本函数现在被 `reassert()` 在滚动里\n" +
+        "       逐帧调用，而写 style 会让这一帧的排版失效、下一帧的读数再强制回流。\n" +
+        "       key 必须用**相对父节点的**坐标：滚动时 left/top（以及宽高）都不变，绝对坐标\n" +
+        "       可是每一帧都在变 —— 用绝对坐标等于没缓存。 */\n" +
+        "    var key=left+','+top+','+vr.width+','+vr.height;\n" +
+        "    if(c.__lerxuKey===key)return;\n" +
+        "    c.__lerxuKey=key;\n" +
         "    var ps=getComputedStyle(box).position;\n" +
         "    if(!ps||ps==='static')box.style.position='relative';\n" +
-        "    c.style.left=(vr.left-pr.left+box.scrollLeft)+'px';\n" +
-        "    c.style.top=(vr.top-pr.top+box.scrollTop)+'px';\n" +
+        "    c.style.left=left+'px';\n" +
+        "    c.style.top=top+'px';\n" +
         "    c.style.width=vr.width+'px';\n" +
         "    c.style.height=vr.height+'px';\n" +
         "  }catch(e){}\n" +
         "}\n" +
         "function hideOne(e){\n" +
-        "  try{e.pause();}catch(x){}\n" +
+        "  /* 已经暂停的别再 pause()（本函数逐帧调）：pause() 本身是幂等的，但站点可能在\n" +
+        "     `pause` 事件上挂着自己的逻辑，白叫一遍没必要。iframe 没有 paused，顺手跳过 */\n" +
+        "  try{if(e.paused===false)e.pause();}catch(x){}\n" +
         "  if(e.tagName==='VIDEO'||e.tagName==='IFRAME')coverOne(e);\n" +
         "  var base=null;try{base=e.getBoundingClientRect();}catch(x){}\n" +
         "  hideEl(e);\n" +
@@ -348,20 +388,36 @@ object PageVideoDetector {
         "     但 **Shadow DOM 里的扫不到** —— 那一类只能靠这里，不然永远按不住。 */\n" +
         "  hideOne(v);\n" +
         "}\n" +
-        "window.__lerxuHideVideos=function(){\n" +
+        "/* 把\"我们已经按下去的那些\"**再按一遍**（只补差异：已经是我们要的样子就一个字都不写，\n" +
+        "   见 hideEl / coverOne 里那两道缓存）。\n" +
+        "\n" +
+        "   为什么要有它、而且要在滚动里**逐帧**调（2026-10-03，用户点名\"原生播放器在滑动过程中\n" +
+        "   会不断闪烁，停下就不闪烁\"）：站点自己在 `scroll` 处理里会重排播放器那一块 —— 重挂\n" +
+        "   `<video>`、把 `visibility` 改回来、把我们插的黑板连着它的父节点一起重建。这些每滚一帧\n" +
+        "   都可能发生，而心跳那 500ms / 1s 追不上：**被改回来的那几百毫秒里，页面自己的播放器\n" +
+        "   （或它的封面）就被画到屏幕上**，读起来正是\"我们的播放器在闪\"。\n" +
+        "   放进 rAF 里调，\"改回来\"与\"再按下去\"落在**同一帧的脚本阶段**，中间没有绘制 ⇒ 永远\n" +
+        "   闪不出来。滚停后这条循环 180ms 内收手，之后仍由心跳兜着（那时站点也不再改回来了）。 */\n" +
+        "function reassert(){\n" +
         "  hidePick();\n" +
         "  eachDoc(function(d){\n" +
         "    var vs=siblings(d);\n" +
         "    for(var i=0;i<vs.length;i++)hideOne(vs[i]);\n" +
         "  });\n" +
+        "}\n" +
+        "window.__lerxuHideVideos=function(){\n" +
+        "  reassert();\n" +
         "  try{window.__lerxuRectKey=null;report();}catch(e){}\n" +
         "};\n" +
         "window.__lerxuShowVideos=function(){\n" +
         "  var list=window.__lerxuTouched||[];\n" +
         "  for(var i=0;i<list.length;i++){\n" +
         "    var e=list[i];\n" +
-        "    try{e.style.visibility=e.getAttribute('data-lerxu-vis')||'';}catch(x){}\n" +
-        "    try{e.removeAttribute('data-lerxu-vis');}catch(x){}\n" +
+        "    try{e.style.visibility=e.getAttribute('data-lerxu-vis')||'';}catch(x){}\n"
+
+    /** 注入脚本第 4/5 片（切片原因见 gen_kotlin.py 的文件头）。 */
+    private val JS_PART_3: String =
+"    try{e.removeAttribute('data-lerxu-vis');}catch(x){}\n" +
         "    try{\n" +
         "      var c=e.__lerxuCover;\n" +
         "      if(c&&c.parentNode)c.parentNode.removeChild(c);\n" +
@@ -380,7 +436,38 @@ object PageVideoDetector {
         "  });\n" +
         "};\n" +
         "\n" +
-        "/* 新出现的 iframe 也要挂上监听（列表页常见\"点一下才插进来的播放器\"） */\n" +
+        "/* ── 预览视频不接管（用户点名：优酷那种\"卡片上的预览\"）──\n" +
+        "   首页 / 列表页的卡片上会**自动静音播放**一段预览，那不是\"用户在网页里开始\n" +
+        "   播视频\"——把原生播放器叫起来是错的（用户点进去才是正式播放）。三条判据，\n" +
+        "   都要求**静音**才成立（预览几乎都是静音自动播的，用户点了播放的正片几乎\n" +
+        "   不会静音，所以这条闸门把误伤压到最小）：\n" +
+        "   ① 住在**链接卡片**里：<a href> 一路往上六层之内有——那是\"点进去看正式\n" +
+        "      播放\"的入口，不是播放器本体；\n" +
+        "   ② 同页还有 **≥2 个同样大小**的 <video>：一屏成排的预览（信息流），\n" +
+        "      正式播放页不会同时放着三个一样大的播放器；\n" +
+        "   ③ 页面已经进**全屏**的例外：那是用户自己按的，按正片处理。 */\n" +
+        "function inLinkCard(v){\n" +
+        "  try{var p=v.parentElement,n=0;\n" +
+        "  while(p&&n<6){\n" +
+        "    if(p.tagName==='A'&&p.getAttribute&&p.getAttribute('href'))return true;\n" +
+        "    p=p.parentElement;n++;}}catch(e){}\n" +
+        "  return false;}\n" +
+        "function similarVideos(v,r){\n" +
+        "  var n=0;try{var vs=document.querySelectorAll('video');\n" +
+        "  for(var i=0;i<vs.length;i++){if(vs[i]===v)continue;\n" +
+        "    var rr=null;try{rr=vs[i].getBoundingClientRect();}catch(e){continue;}\n" +
+        "    if(!rr||rr.width<MINW||rr.height<MINH)continue;\n" +
+        "    var ratio=(rr.width*rr.height)/(r.w*r.h);\n" +
+        "    if(ratio>0.5&&ratio<2)n++;}}catch(e){}\n" +
+        "  return n;}\n" +
+        "function isPreview(v,r){\n" +
+        "  try{\n" +
+        "    if(document.fullscreenElement)return false;\n" +
+        "    if(!(v.muted||v.volume===0))return false;\n" +
+        "    if(inLinkCard(v))return true;\n" +
+        "    if(similarVideos(v,r)>=2)return true;\n" +
+        "  }catch(e){}\n" +
+        "  return false;}\n" +
         "function onPlay(e){\n" +
         "  var v=e.target;\n" +
         "  /* Shadow DOM 里的 <video> 起播时，事件冒到 document 上 target 会被重定向成宿主元素：\n" +
@@ -391,12 +478,28 @@ object PageVideoDetector {
         "  try{if(getComputedStyle(v).display==='none')return;}catch(e){}\n" +
         "  var r=rectOf(v);\n" +
         "  if(!r||r.w<MINW||r.h<MINH)return;\n" +
+        "  /* 卡片预览不算起播：**不吃掉闸门**（armed 不动）—— 用户随后点进正片，\n" +
+        "     那一路还要能接管 */\n" +
+        "  if(isPreview(v,r))return;\n" +
         "  if(!armed)return;armed=false;\n" +
         "  window.__lerxuVid=v;\n" +
         "  try{v.pause();}catch(e){}\n" +
         "  try{start();}catch(e){}\n" +
         "  try{window.LerxuPageVideo&&window.LerxuPageVideo.played();}catch(e){}\n" +
         "}\n" +
+        "/* 换页之后**把闸门重开**：这套脚本是「一页只报一次」（报完 armed=false），早先只有\n" +
+        "   **整页重新加载**才会重置。而 pushState 型站点换页不重载文档 —— 新页面里的视频再起播\n" +
+        "   也不报，用户看到的就是「网页自带的播放器」（用户点名：「切换页面再进入一个视频，\n" +
+        "   它默认使用的是网页自带的播放器」）。原生侧在「承载页换页」那一刻调它（见\n" +
+        "   BrowserController.onHostPageNavigated）。\n" +
+        "\n" +
+        "   只重开闸门、别的一概不碰：\n" +
+        "   - 上一路那个元素接管时已经被我们 pause 过，它自己不会再发 play 事件；\n" +
+        "   - 站点把同一个 <video> 换一集复用（同一节点放新片子）时，也只有闸门开着才接得住 ——\n" +
+        "     所以**不能**按元素身份把它跳过（那会把这类站点全漏掉）；\n" +
+        "   - `__lerxuVid` 留着不清：万一那个元素还在，pick() 仍认得它。 */\n" +
+        "window.__lerxuPlayerRearm=function(){armed=true;scheduleScan();};\n" +
+        "\n" +
         "function attach(){\n" +
         "  eachDoc(function(d){\n" +
         "    if(d.__lerxuPlayHooked)return;\n" +
@@ -404,10 +507,84 @@ object PageVideoDetector {
         "    try{\n" +
         "      d.addEventListener('play',onPlay,true);\n" +
         "      d.addEventListener('playing',onPlay,true);\n" +
+        "      /* 元数据一到就再扫一遍\"还停着的播放器\"（见 scanPaused）：比定时轮询更准，\n" +
+        "         站点把地址填进 <video> 的那一刻就是我们该接管的时刻。 */\n" +
+        "      d.addEventListener('loadedmetadata',onMeta,true);\n" +
+        "      d.addEventListener('canplay',onMeta,true);\n" +
         "    }catch(e){}\n" +
         "  });\n" +
         "}\n" +
         "window.__lerxuAttach=attach;\n" +
+        "\n" +
+        "/* ──────────────── 页面里\"还停着\"的那个播放器**也要接管** ────────────────\n" +
+        "   用户点名：\"刚进入网页时，播放器如果处于暂停状态，显示的就是他们自己的播放器，\n" +
+        "   不是我们原生播放\"。\n" +
+        "\n" +
+        "   与 onPlay 那条**不是一回事**：那条有 `play` 事件当证据，这条没有，所以判据必须更严，\n" +
+        "   否则会把页面上的装饰性视频（背景循环、预告片、广告位）统统接管掉：\n" +
+        "   - **不许静音**（`muted` 或 `volume===0` 一律跳过）—— 这是这里最主要的鉴别手段：\n" +
+        "     背景/装饰视频基本都是静音的，而正片播放器在等用户点播时一定带声音；\n" +
+        "   - 有**真实媒体地址**、且不是 `blob:`（blob 是 MSE，原生侧拿不到可播的地址）；\n" +
+        "   - 已经拿到元数据（`readyState>=1` / `duration>0` / `videoWidth>0`），\n" +
+        "     说明这确实是一路媒体，不是刚建出来还没喂东西的空壳；\n" +
+        "   - 尺寸同样要够（MINW×MINH）、不是卡片预览（isPreview）、不是 display:none。\n" +
+        "\n" +
+        "   只报一次：**与起播那条共用同一个闸门 armed**，谁先成立谁接线。报走之后原生侧\n" +
+        "   把整路交给我们的播放器，**开着但先不自动播** —— 用户根本没按过播放，替他播\n" +
+        "   等于凭空开始放片子。 */\n" +
+        "function scanPaused(){\n" +
+        "  if(!armed)return;\n" +
+        "  if(window.__lerxuVid)return;\n" +
+        "  var best=null;\n" +
+        "  eachDoc(function(d){\n"
+
+    /** 注入脚本第 5/5 片（切片原因见 gen_kotlin.py 的文件头）。 */
+    private val JS_PART_4: String =
+"    if(best)return;\n" +
+        "    var vs=siblings(d);\n" +
+        "    for(var i=0;i<vs.length;i++){\n" +
+        "      var v=vs[i];\n" +
+        "      try{\n" +
+        "        if(v.loop&&v.muted)continue;\n" +
+        "        if(v.muted||v.volume===0)continue;\n" +
+        "        var src=v.currentSrc||v.src||'';\n" +
+        "        if(!src||src.indexOf('blob:')===0||src.indexOf('data:')===0)continue;\n" +
+        "        if(!(v.readyState>=1||v.duration>0||v.videoWidth>0))continue;\n" +
+        "        if(getComputedStyle(v).display==='none')continue;\n" +
+        "        var r=rectOf(v);\n" +
+        "        if(!r||r.w<MINW||r.h<MINH)continue;\n" +
+        "        if(isPreview(v,r))continue;\n" +
+        "        best=v;break;\n" +
+        "      }catch(e){}\n" +
+        "    }\n" +
+        "  });\n" +
+        "  if(!best)return;\n" +
+        "  armed=false;\n" +
+        "  window.__lerxuVid=best;\n" +
+        "  try{start();}catch(e){}\n" +
+        "  try{window.LerxuPageVideo&&window.LerxuPageVideo.paused();}catch(e){}\n" +
+        "}\n" +
+        "function onMeta(){try{scanPaused();}catch(e){}}\n" +
+        "/* 定时兜底：站点五花八门，有的既不发 loadedmetadata 也不发 canplay（自己接管了\n" +
+        "   <source> / 换 src），所以再补几轮扫描。间隔先密后疏，**armed 一关就停**。 */\n" +
+        "var scanTimer=null,scanLeft=0;\n" +
+        "function scheduleScan(){\n" +
+        "  if(scanTimer){try{clearTimeout(scanTimer);}catch(e){}scanTimer=null;}\n" +
+        "  scanLeft=8;\n" +
+        "  stepScan();\n" +
+        "}\n" +
+        "function stepScan(){\n" +
+        "  if(scanLeft<=0)return;\n" +
+        "  scanLeft--;\n" +
+        "  scanPaused();\n" +
+        "  if(!armed||window.__lerxuVid)return;\n" +
+        "  scanTimer=setTimeout(stepScan,scanLeft>4?400:1200);\n" +
+        "}\n" +
+        "window.__lerxuScanPaused=scanPaused;\n" +
         "attach();\n" +
+        "/* 进页面就先扫一轮\"还停着的播放器\"（见 scanPaused），随后按 scheduleScan 的节奏再补几轮 */\n" +
+        "scheduleScan();\n" +
         "})();\n"
+
+    val INJECT_JS: String = JS_PART_0 + JS_PART_1 + JS_PART_2 + JS_PART_3 + JS_PART_4
 }

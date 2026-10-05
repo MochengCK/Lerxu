@@ -489,8 +489,14 @@ function showAddTaskDialog (uri, options = {}) {
 async function deleteTaskFiles (task) {
   const config = preferenceConfig.value || {}
   const downloadingFileSuffix = config.downloadingFileSuffix || ''
+  // 「一对音视频」折叠成一条记录，但磁盘上是**两个**文件（画面流 + 声音流）：
+  // 带文件删除要把两个都清掉，否则会剩一个"零件"文件在下载目录里。
+  const members = Array.isArray(task && task.pairMembers) ? task.pairMembers.filter(Boolean) : []
+  const targets = members.length > 1 ? members : [task]
   try {
-    await moveTaskFilesToTrash(task, downloadingFileSuffix, config)
+    for (const target of targets) {
+      await moveTaskFilesToTrash(target, downloadingFileSuffix, config)
+    }
   } catch (err) {
     console.warn('[Lerxu] deleteTaskFiles error:', err)
     const taskName = (task && task.name) ? task.name : (task && task.gid ? task.gid : '')
@@ -500,8 +506,8 @@ async function deleteTaskFiles (task) {
 async function removeTask (task, taskName, isRemoveWithFiles = false) {
   const isMerging = task && task.status === TASK_STATUS.MERGING
   if (isMerging) {
-    _clearMergeRetryTimer(task.gid)
-    await taskStore.removeFromMergingList(task.gid)
+    clearTaskMergeTimers(task)
+    await taskStore.removeFromMergingList(task)
     try { await taskStore.removeTask(task) } catch (e) {}
     if (isRemoveWithFiles) {
       await deleteTaskFiles(task)
@@ -542,8 +548,8 @@ async function removeTask (task, taskName, isRemoveWithFiles = false) {
 async function removeTaskRecord (task, taskName, isRemoveWithFiles = false) {
   const isMerging = task && task.status === TASK_STATUS.MERGING
   if (isMerging) {
-    _clearMergeRetryTimer(task.gid)
-    await taskStore.removeFromMergingList(task.gid)
+    clearTaskMergeTimers(task)
+    await taskStore.removeFromMergingList(task)
     try { await taskStore.removeTaskRecord(task) } catch (e) {}
     if (isRemoveWithFiles) {
       await deleteTaskFiles(task)
@@ -587,6 +593,19 @@ function _clearMergeRetryTimer (gid) {
   } catch (e) {}
 }
 
+/**
+ * 清理一条记录的合并重试定时器。
+ *
+ * 「一对音视频」折叠成一条记录，但合并重试定时器是按**成员** gid 挂的
+ * （合并由"后下完的那条"触发），所以要遍历记录背后的全部成员一起清 ——
+ * 否则删掉记录后那个定时器还会醒过来跑一次。
+ */
+function clearTaskMergeTimers (task) {
+  const pairGids = task && Array.isArray(task.pairGids) ? task.pairGids : []
+  const gids = pairGids.length > 0 ? pairGids : [task && task.gid]
+  gids.filter(Boolean).forEach(gid => _clearMergeRetryTimer(`${gid}`))
+}
+
 async function removeTaskItem (task, taskName) {
   try {
     await taskStore.removeTask(task)
@@ -614,8 +633,8 @@ async function removeTasks (taskList, isRemoveWithFiles = false) {
   const normalTasks = taskList.filter(t => t && t.status !== TASK_STATUS.MERGING)
   if (mergingTasks.length > 0) {
     for (const task of mergingTasks) {
-      _clearMergeRetryTimer(task.gid)
-      await taskStore.removeFromMergingList(task.gid)
+      clearTaskMergeTimers(task)
+      await taskStore.removeFromMergingList(task)
       try { await taskStore.removeTask(task) } catch (e) {}
       if (isRemoveWithFiles) {
         await deleteTaskFiles(task)
@@ -664,7 +683,18 @@ async function removeTasks (taskList, isRemoveWithFiles = false) {
 function batchDeleteTaskFiles (taskList) {
   const config = preferenceConfig.value || {}
   const downloadingFileSuffix = config.downloadingFileSuffix || ''
-  const promises = taskList.map((task, index) => {
+  // 「一对音视频」折叠成一条记录、磁盘上是两个文件：先摊平成"待删除文件"清单
+  // （与 deleteTaskFiles 同一口径），否则批量删除只清掉画面流
+  const flattened = []
+  ;(Array.isArray(taskList) ? taskList : []).forEach((task) => {
+    const members = Array.isArray(task && task.pairMembers) ? task.pairMembers.filter(Boolean) : []
+    if (members.length > 1) {
+      flattened.push(...members)
+      return
+    }
+    flattened.push(task)
+  })
+  const promises = flattened.map((task, index) => {
     return delayDeleteTaskFiles(task, index * 200, downloadingFileSuffix, config)
   })
   Promise.allSettled(promises).then(results => {
@@ -688,25 +718,32 @@ async function removeTaskItems (gids) {
   }
 }
 
-function handlePauseTask (payload) {
+async function handlePauseTask (payload) {
   const { task, taskName } = payload
-  msg.info(t('task.download-pause-message', { taskName }))
-  taskStore.pauseTask(task)
-    .catch(({ code }) => {
-      if (code === 1) {
-        msg.error(t('task.pause-task-fail', { taskName }))
-      }
-    })
+  // 先看能不能暂停再提示：以前是"先弹已暂停、再看有没有目标"，于是合并中/
+  // 已完成的任务点了没反应却显示"已暂停"（用户报的"任务无法暂停"就是这样来的）
+  try {
+    const res = await taskStore.pauseTask(task)
+    if (res && res.changed > 0) {
+      msg.info(t('task.download-pause-message', { taskName }))
+    } else {
+      msg.warning(t('task.pause-task-unavailable', { taskName }))
+    }
+  } catch (e) {
+    msg.error(t('task.pause-task-fail', { taskName }))
+  }
 }
 
-function handleResumeTask (payload) {
+async function handleResumeTask (payload) {
   const { task, taskName } = payload
-  taskStore.resumeTask(task)
-    .catch(({ code }) => {
-      if (code === 1) {
-        msg.error(t('task.resume-task-fail', { taskName }))
-      }
-    })
+  try {
+    const res = await taskStore.resumeTask(task)
+    if (!(res && res.changed > 0)) {
+      msg.warning(t('task.resume-task-unavailable', { taskName }))
+    }
+  } catch (e) {
+    msg.error(t('task.resume-task-fail', { taskName }))
+  }
 }
 
 function handleStopTaskSeeding (payload) {
@@ -720,8 +757,32 @@ function handleStopTaskSeeding (payload) {
 
 function handleRestartTask (payload) {
   const { task, taskName, showDialog } = payload
-  const { gid } = task
+  const { gid, status } = task
   const uri = getTaskUri(task)
+  // 失败的任务**就地重跑**，不要走"删记录 + 新建同名任务"。
+  //
+  // 引擎的 unpause 现在也认失败态：任务的产物路径、控制文件与段目录（HLS 的
+  // `<产物>.hlseg/`）都原样保留，重跑走的是**断点续传**。旧路径会畸形地丢掉进度 ——
+  // 它先用原地址新建一条任务、再 `removeTaskRecord` 删掉旧记录，而删记录会连带清掉
+  // 控制文件；新任务于是既找不到续传现场、又因为同名文件已存在而改名成 `xxx.1.ts`，
+  // 用户看到的就是"一出错，重新下载必定从零开始"。
+  //
+  // 只对 `error` 这么做：`complete` / `removed` 本来就要走新建（前者是重下、
+  // 后者引擎记录已经没了），所以它们的入口仍然给 `showDialog`。
+  if (!showDialog && status === TASK_STATUS.ERROR) {
+    taskStore.resumeSingleTask(task)
+      .then(() => taskStore.fetchList())
+      .catch(() => {
+        // 就地重跑没成功（如引擎不支持失败态 unpause）→ 退回原来的
+        // "删记录 + 新建任务"，至少不会点了没反应
+        return taskStore.getTaskOption(gid).then((data) => {
+          const { dir, header, split } = data
+          directAddTask(uri, { dir, header, split, out: taskName })
+          taskStore.removeTaskRecord(task)
+        })
+      })
+    return
+  }
   taskStore.getTaskOption(gid)
     .then((data) => {
       console.log('[Lerxu] get task option:', data)
@@ -949,23 +1010,40 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* 右侧任务面板：四角圆角 + 悬浮卡片。
+   顶部/右侧/底部统一留 8px 窗口间隙（露出 --lc-bg-main 底色），
+   与任务详情抽屉（8px 间隙 + 12px 圆角）是同一套「浮起面板」语言。 */
 .content.panel {
-  height: calc(100% - 38px);
+  height: calc(100% - 16px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   background-color: var(--lc-bg-panel);
-  border-top-left-radius: 10px;
-  margin: 38px 0 0 0;
+  border-radius: 12px;
+  margin: 8px 8px 8px 0;
 }
 
-/* Windows/Linux 关闭自定义标题栏（使用系统原生标题栏/菜单栏）时，
-   不再需要为自定义标题栏保留 38px 顶部占位：任务面板顶部贴边、左上角直角。
-   macOS 始终使用原生标题栏且布局已适配，保持不变。 */
-#app:not(.has-custom-titlebar):not(.is-mac) .content.panel {
-  height: 100%;
-  margin-top: 0;
-  border-top-left-radius: 0;
+/* Windows/Linux 保留自定义标题栏（右上角有 38px 高的窗口按钮）时，
+   面板本体仍按 8px 窗口间隙悬浮（顶部不额外下移），只在面板内部
+   给头部让出 38px 窗口按钮带 + 6px 常规头部间距 = 44px，控件行仍落在
+   52px（与之前一致），净空在卡片内部而不是把整张卡片推下去。 */
+#app.has-custom-titlebar .content.panel .panel-header.task-panel-header {
+  margin-top: 44px;
+}
+
+/* macOS：面板头部不再追加留白（回到通用 6px margin），控件行整体上移到
+   20px（8px 面板间隙 + 6px 头部 margin + 6px 头部内偏移）。
+   顶部拖拽条随之收到控件行上沿（见 Native/TitleBar.vue 的 `#app.is-mac .title-bar`）；
+   控件行所在的头部本身也参与拖拽——除控件外的空白都能拖窗口，
+   控件 no-drag，因此处于拖拽带里仍可点击/输入。 */
+#app.is-mac .content.panel .panel-header.task-panel-header {
+  -webkit-app-region: drag;
+}
+#app.is-mac .content.panel .panel-header.task-panel-header .task-control-group,
+#app.is-mac .content.panel .panel-header.task-panel-header .task-search-box,
+#app.is-mac .content.panel .panel-header.task-panel-header .task-action-group,
+#app.is-mac .content.panel .panel-header.task-panel-header .view-mode-nav {
+  -webkit-app-region: no-drag;
 }
 
 .content.panel .panel-header {

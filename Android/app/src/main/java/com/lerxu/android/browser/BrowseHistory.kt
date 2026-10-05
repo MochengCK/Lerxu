@@ -1,11 +1,49 @@
 package com.lerxu.android.browser
 
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
 /** 一条浏览记录：地址、标题（可能为空，取到标题前就落库了）与最后访问时间。 */
 data class HistoryEntry(
     val url: String,
     val title: String,
     val visitedAt: Long
 )
+
+/**
+ * 历史弹窗顶部那三个筛选项（用户点名："顶部要有筛选选项，只显示最近访问、只显示搜索历史、
+ * 默认全部"）。
+ */
+enum class HistoryFilter { All, Visits, Searches }
+
+/**
+ * 一组标题怎么念 —— **只影响文案**，准确的日期在 [HistoryGroup.date] 里。
+ *
+ * 用户点名："时间分类应该细致一点，而不是今天之外就是最近一周，然后就是更早，应该始终显示
+ * 完整的时间，不应该出现最近一周更早这类没有准确时间的" ⇒ 于是分组单位从"档"变成**自然日**
+ * （一天一组，组标题带完整日期），只剩"今天/昨天"这两个因为本身就没有歧义而特殊念法。
+ */
+enum class HistoryDay { Today, Yesterday, Dated }
+
+/** 弹窗上的一行：文案都在这里成型，界面不再做判断。 */
+data class HistoryRow(
+    val url: String,
+    val title: String,
+    val subtitle: String,
+    val visitedAt: Long,
+    /** 这一行是**一次搜索**（地址是引擎的结果页）：标题是关键词，不是网页标题。 */
+    val isSearch: Boolean
+)
+
+/**
+ * 一组 = **一个自然日**（[date] 就是它的完整日期，组标题由界面本地化）。
+ *
+ * 行里不再带日期（行右侧只给时刻）：日期在组标题上，两边不重复 —— 用户点名
+ * "每个选项右侧不应该重复显示时间"。
+ */
+data class HistoryGroup(val date: LocalDate, val rows: List<HistoryRow>)
 
 /**
  * 浏览历史：全局一份，按 URL 去重、最近访问在前。
@@ -193,4 +231,96 @@ object BrowseHistory {
         title.replace(FIELD_SEP, ' ').replace(ROW_SEP, ' ').take(MAX_TITLE)
 
     private const val MAX_TITLE = 200
+
+    // ─────────────────────── 历史弹窗要的形状（纯函数，JVM 单测可覆盖） ───────────────────────
+
+    /**
+     * 把记录摊成**一条按时间排的时间轴**（用户点名："搜索历史跟最近访问不要按分类来排序，
+     * 按时间排序"）—— 搜索与访问混在同一条里，谁新谁在上，再**按自然日分组**
+     * （用户点名："时间分类应该细致一点……应该始终显示完整的时间"）。
+     *
+     * 两条与面板一致的规则：
+     * - **搜索行的标题换成关键词**（"柯基视频"才是用户认得出的东西，结果页标题是噪声）；
+     * - 同一条关键词**只留最近那次**（同一句话搜两遍不该出两行）—— 与 [searchQueries] 同口径。
+     *
+     * 副标题统一是"站点 + 路径"（[subtitleOf]），搜索行因此显示引擎域名。
+     * 组间新的在前，组内也是新的在前（`sortedByDescending` 之后 `groupBy` 保序）。
+     */
+    fun timeline(
+        list: List<HistoryEntry>,
+        engines: List<SearchEngine>,
+        filter: HistoryFilter,
+        /**
+         * 顶部搜索框里的关键词（空 = 不过滤）。
+         *
+         * 命中规则与 [query] 同口径：**标题或地址**含它就留下；搜索行比的是**关键词
+         * 本身**（那一行的标题就是关键词，见下），不是结果页地址 —— 用户搜"柯基"，
+         * 输入"柯基"当然要能搜到那一条。
+         */
+        text: String = "",
+        zone: ZoneId = ZoneId.systemDefault()
+    ): List<HistoryGroup> {
+        val q = text.trim().lowercase()
+        val seenSearch = HashSet<String>()
+        val rows = ArrayList<HistoryRow>(list.size)
+        list.sortedByDescending { it.visitedAt }.forEach { e ->
+            val word = searchQueryOf(e.url, engines)
+            if (word != null) {
+                if (filter == HistoryFilter.Visits) return@forEach
+                // 关键词不匹配就**在去重之前**退出：否则一次不匹配的搜索会把
+                // 后面那条真正匹配的同名记录一起按"已经见过"丢掉
+                if (q.isNotEmpty() && !word.lowercase().contains(q)) return@forEach
+                if (!seenSearch.add(word.lowercase())) return@forEach
+            } else {
+                if (filter == HistoryFilter.Searches) return@forEach
+                if (q.isNotEmpty() &&
+                    !e.title.lowercase().contains(q) && !e.url.lowercase().contains(q)
+                ) {
+                    return@forEach
+                }
+            }
+            rows += HistoryRow(
+                url = e.url,
+                title = word ?: displayTitle(e),
+                subtitle = subtitleOf(e.url),
+                visitedAt = e.visitedAt,
+                isSearch = word != null
+            )
+        }
+        return rows.groupBy { dayOf(it.visitedAt, zone) }
+            .map { (date, group) -> HistoryGroup(date, group) }
+            // groupBy 已经保序（新的在前），这里再按日期倒序排一次：万一数据里
+            // 某个未来的时间戳（时钟被改过）混进来，也不至于把组的顺序打乱
+            .sortedByDescending { it.date }
+    }
+
+    /** 这一条属于哪个自然日（时间戳缺失的老数据统一落到 [LocalDate.MIN]，排在最末）。 */
+    fun dayOf(at: Long, zone: ZoneId = ZoneId.systemDefault()): LocalDate =
+        if (at <= 0L) LocalDate.MIN else Instant.ofEpochMilli(at).atZone(zone).toLocalDate()
+
+    /** 组标题怎么念：今天 / 昨天 / 其余走完整日期（由界面按语言格式化 [HistoryGroup.date]）。 */
+    fun dayKind(date: LocalDate, now: LocalDate): HistoryDay = when (date) {
+        now -> HistoryDay.Today
+        now.minusDays(1) -> HistoryDay.Yesterday
+        else -> HistoryDay.Dated
+    }
+
+    /**
+     * 行右侧那个**时刻**（只给时刻，不给日期 —— 日期在组标题上，见 [HistoryGroup]）。
+     *
+     * [hour24] 由调用方按**系统设置**给（[android.text.format.DateFormat.is24HourFormat]）——
+     * 这里不碰 Context，才能留在 JVM 单测里。
+     */
+    fun clockLabel(at: Long, zone: ZoneId = ZoneId.systemDefault(), hour24: Boolean = true): String =
+        DateTimeFormatter.ofPattern(if (hour24) "HH:mm" else "h:mm")
+            .format(Instant.ofEpochMilli(at).atZone(zone))
+
+    /**
+     * 一行下面的副标题：站点 + 路径（与首页面板同一口径，见 `panelSubtitle`）。
+     *
+     * 比面板那条多一步 `trimEnd('/')`：面板是先砍查询串再显示的原串，而这里砍完往往
+     * 正好把一个目录层级留在最后（`…/a/b/?x=1` → `…/a/b/`），那条尾巴在列表里看着像没写完。
+     */
+    fun subtitleOf(url: String): String =
+        TabNaming.subtitle(url).substringBefore('?').substringBefore('#').trimEnd('/')
 }

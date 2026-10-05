@@ -11,6 +11,7 @@ import {
   PORTABLE_EXECUTABLE_DIR
 } from '@shared/constants'
 import { engineBinMap, engineArchMap } from '../configs/engine'
+import { mediaEngineBinName, mediaEngineCandidates } from '@shared/zuvrust'
 import logger from '../core/LogManager'
 
 export const getUserDataPath = () => {
@@ -96,6 +97,40 @@ export const getProdEnginePath = () => {
 
 export const getEnginePath = (platform, arch) => {
   return is.dev() ? getDevEnginePath(platform, arch) : getProdEnginePath()
+}
+
+/**
+ * **媒体引擎**（`zuvrust`）的候选路径，按优先级排列。
+ *
+ * 与下载引擎同一套回填约定（`extra/<平台>/<架构>/engine/` 与 `resourcesPath/engine`），
+ * 区别只在文件名与"哪些平台目录"：
+ *   1. 用户数据目录（可热替换升级 —— 用户拿到新引擎不必重装应用）
+ *   2. 应用安装目录 / 资源目录（打包时回填）
+ *   3. 开发期工作区的 extra/<平台>/<架构>/engine（本机开发直接用构建产物）
+ *
+ * 候选顺序由 `@shared/zuvrust` 决定（**与渲染进程共用同一份纯函数**），
+ * 这样"前端去哪找引擎"与"主进程去哪找引擎"不可能漂移。
+ */
+export const getMediaEngineCandidates = () => {
+  const binName = mediaEngineBinName(process.platform)
+  try {
+    return mediaEngineCandidates({
+      platform: process.platform,
+      arch: process.arch,
+      userDataPath: getUserDataPath(),
+      appDir: resolve(app.getPath('exe'), '..'),
+      resourcesPath: process.resourcesPath || '',
+      // __dirname = <workspace>/dist/electron（vite-plugin-electron 主进程产物目录）
+      devRoot: resolve(__dirname, '../..')
+    }).filter((p) => p !== binName) // 裸文件名要查 PATH，主进程侧不做（下面单独试）
+  } catch (_) {
+    return []
+  }
+}
+
+/** 找到可用的媒体引擎；找不到返回空串（调用方回退到"浏览器直接播放"）。 */
+export const resolveMediaEnginePath = () => {
+  return getMediaEngineCandidates().find((p) => existsSync(p)) || ''
 }
 
 export const getAria2BinPath = (platform, arch) => {

@@ -9,14 +9,25 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -40,10 +51,17 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.SwapVert
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -63,6 +81,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -144,9 +163,10 @@ private fun dlLimitPresets(): List<DlLimitPreset> = listOf(
 )
 
 /**
- * 设置页 —— 保存目录、下载并发、任务记录维护与关于。
- * 与主界面统一：surfaceContainerLow 分区卡片 + primary 点缀。
+ * 设置 —— 以**底部弹窗**呈现（用户点名：左返回 / 中标题）。
+ * 首页只列一级分类，点进去才显示该类下的具体设置项；不再默认把所有项全铺出来。
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: TaskViewModel,
@@ -156,12 +176,20 @@ fun SettingsScreen(
     searchEngineKey: String = "bing",
     onSearchEngineChange: (String) -> Unit = {},
     adBlock: Boolean = true,
-    onAdBlockChange: (Boolean) -> Unit = {}
+    onAdBlockChange: (Boolean) -> Unit = {},
+    /** 底部控制栏 = 现代（悬浮、滚动收起）/ 传统（贴底整条）。与坞长按面板同一个开关。 */
+    dockModern: Boolean = true,
+    onDockModernChange: (Boolean) -> Unit = {},
+    /** 当前语言档位（`""` = 跟随系统）。放在上层状态里，改完勾选立刻跟上。 */
+    currentLanguage: String = "",
+    /** 选了某一档语言：写偏好 + 换全局状态（**不重建 Activity**，见 `AppLocale`）。 */
+    onLanguageChange: (String) -> Unit = {},
+    /** 关闭弹窗（下滑 / 点遮罩 / 头部返回都会走到这里） */
+    onDismiss: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
     val clipboard = LocalClipboardManager.current
-    val scrollState = rememberScrollState()
 
     val prefs = remember { context.getSharedPreferences("lerxu_prefs", Context.MODE_PRIVATE) }
     var maxConcurrent by remember {
@@ -229,10 +257,8 @@ fun SettingsScreen(
     var showPurgeConfirm by remember { mutableStateOf(false) }
 
     // ── 语言切换 ──
+    // 档位由上层状态给（`AppLocale.current`），选完立刻生效、**不重建 Activity**
     var showLanguageDialog by remember { mutableStateOf(false) }
-    val languagePref = remember {
-        prefs.getString(MainActivity.KEY_LANGUAGE, "") ?: ""
-    }
 
     // ── 应用更新检测 ──
     var autoUpdateCheck by remember {
@@ -259,6 +285,8 @@ fun SettingsScreen(
     // ── 主题切换 ──
     var showThemeDialog by remember { mutableStateOf(false) }
     var showSearchEngineDialog by remember { mutableStateOf(false) }
+    // ── 底部控制栏模式（现代 / 传统）──
+    var showDockModeDialog by remember { mutableStateOf(false) }
     // 跟随网络自动选择是否仍生效（用户手动选过就不再自动改）
     var enginePinned by remember {
         mutableStateOf(
@@ -284,16 +312,71 @@ fun SettingsScreen(
         subscriptions = viewModel.fetchSubscriptions()
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp)
-    ) {
-        Spacer(Modifier.height(6.dp))
+    // ── 底部弹窗外壳：左返回 / 中标题；首页只列一级分类，点进去才显示该类设置项 ──
+    // 下滑关闭照旧开着，只是阈值抬高了（见 [rememberSheetStateFirmDismiss]）——
+    // 早先这一张被整段关掉过（"内容区不参与往下拽"），结果是"设置弹窗无法通过下移关闭"
+    //（用户点名）。阈值那一套现在与历史弹窗**同一处出处**，不会再各写一份对不上。
+    val sheetState = rememberSheetStateFirmDismiss()
+    // 当前展开的分类；null = 停在分类首页
+    var category by remember { mutableStateOf<SettingsCategory?>(null) }
+    // 先收起再回调关闭：直接置 false 会让弹窗"啪"地消失，没有下滑动画
+    val dismissAnimated: () -> Unit = {
+        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+    }
 
-        // ── 下载 ──
-        SettingsSection(stringResource(R.string.settings_download)) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        // 顶部不画那条小横杆：标题行自带返回按钮，视觉更整
+        dragHandle = null,
+        // **只让开顶部，底部不让**（见 [sheetContentInsets] 的说明）：material3 的默认值
+        // `safeDrawing` 会把**手势条那一整条**当成内容的 `windowInsetsPadding` 加在
+        // Surface 内部 —— 面板底色铺到了屏幕底，内容却永远差那一截画不下来
+        //（用户点名："设置弹窗和历史记录弹窗内容无法显示到底部小横条区域"）。
+        // 让开底部之后内容能滚进那条带子；该留的呼吸由内容末尾自己加（见下面的
+        // `sheetBottomGap`），**不要**再靠这里的 inset 顶出空白。
+        contentWindowInsets = { sheetContentInsets() }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+            // 高度交给弹窗自己：里面的 `weight(1f)` 会把内容撑到弹窗给的上限，
+            // 也就是"铺满整屏"——不要再写 `fillMaxHeight(0.92f)` 那种百分比，
+            // 那一截空白就是它留下的（见上）
+        ) {
+            SettingsSheetHeader(
+                title = category?.let { stringResource(it.titleRes) } ?: stringResource(R.string.settings),
+                onBack = {
+                    // 分类里：返回上一级（回分类首页）；首页：关闭弹窗
+                    if (category != null) category = null else dismissAnimated()
+                }
+            )
+            // 一级 ↔ 二级之间用横向滑动 + 淡入淡出过渡，而不是直接"跳"
+            AnimatedContent(
+                targetState = category,
+                transitionSpec = {
+                    // 进二级：新页自右滑入；回一级：新页自左滑入
+                    val dir = if (targetState != null) 1 else -1
+                    (slideInHorizontally(tween(260)) { w -> dir * w / 3 } + fadeIn(tween(260))) togetherWith
+                        (slideOutHorizontally(tween(260)) { w -> -dir * w / 3 } + fadeOut(tween(180)))
+                },
+                label = "settings_category",
+                modifier = Modifier.weight(1f)
+            ) { cat ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp)
+                ) {
+                    if (cat == null) {
+                        SettingsCategoryHome(onPick = { category = it })
+                        Spacer(Modifier.height(sheetBottomGap(12.dp)))
+                    } else {
+                        Spacer(Modifier.height(6.dp))
+
+                        // ── 下载 ──
+                        if (cat == SettingsCategory.Download) SettingsSection(stringResource(R.string.settings_download)) {
             // 保存目录：点击复制，方便到文件管理器中定位
             Row(
                 modifier = Modifier
@@ -329,12 +412,6 @@ fun SettingsScreen(
                 )
             }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
-
             // 同时下载任务数：步进调节，运行中的引擎立即生效
             Row(
                 modifier = Modifier
@@ -363,12 +440,6 @@ fun SettingsScreen(
                     }
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
 
             // 单任务连接数：HTTP 分片参数，下载时生效
             Row(
@@ -399,12 +470,6 @@ fun SettingsScreen(
                 )
             }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
-
             // 单服务器连接数：与单任务连接数取较小值作为 HTTP 实际连接上限
             Row(
                 modifier = Modifier
@@ -433,12 +498,6 @@ fun SettingsScreen(
                     }
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
 
             // 全局下载限速：预设档位 + 末档"自定义"（点档位数值或选中自定义弹输入框），立即生效
             Row(
@@ -478,12 +537,6 @@ fun SettingsScreen(
                     onEdit = { showDlLimitDialog = true }
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
 
             // 全局上传限速：主要影响 BT 做种上传，立即生效
             Row(
@@ -526,7 +579,7 @@ fun SettingsScreen(
         }
 
         // ── BitTorrent ──
-        SettingsSection(stringResource(R.string.settings_bt_section)) {
+        if (cat == SettingsCategory.Bt) SettingsSection(stringResource(R.string.settings_bt_section)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -556,12 +609,6 @@ fun SettingsScreen(
                 )
             }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
-
             // 智能连接调度：按吞吐边际收益动态增减节点连接
             Row(
                 modifier = Modifier
@@ -590,12 +637,6 @@ fun SettingsScreen(
                     colors = lerxuSwitchColors()
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
 
             // BT 加密：立即热下发到活动 BT 引擎
             Row(
@@ -630,12 +671,6 @@ fun SettingsScreen(
                 )
             }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
-
             // 传输协议：立即热下发到活动 BT 引擎
             Row(
                 modifier = Modifier
@@ -669,12 +704,6 @@ fun SettingsScreen(
                 )
             }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
-
             // 完成后自动做种
             Row(
                 modifier = Modifier
@@ -703,12 +732,6 @@ fun SettingsScreen(
                     colors = lerxuSwitchColors()
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
 
             // 停止做种分享率（0 = 不限）
             Row(
@@ -742,12 +765,6 @@ fun SettingsScreen(
                 )
             }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
-
             // BT 监听端口：点击弹输入对话框；新建 BT 任务时生效
             Row(
                 modifier = Modifier
@@ -775,12 +792,6 @@ fun SettingsScreen(
                 )
             }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
-
             // DHT 监听端口：点击弹输入对话框
             Row(
                 modifier = Modifier
@@ -807,12 +818,6 @@ fun SettingsScreen(
                     color = colorScheme.onSurfaceVariant
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
 
             // 本地节点发现（LSD 组播）：无需 tracker 即可发现同一局域网内的节点
             Row(
@@ -842,12 +847,6 @@ fun SettingsScreen(
                     colors = lerxuSwitchColors()
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
 
             // 端口映射（UPnP/NAT-PMP）：自动在路由器上建立映射以提升可连接性
             Row(
@@ -880,7 +879,7 @@ fun SettingsScreen(
         }
 
         // ── BT 服务器（tracker 订阅源） ──
-        SettingsSection(stringResource(R.string.settings_bt_servers)) {
+        if (cat == SettingsCategory.Bt) SettingsSection(stringResource(R.string.settings_bt_servers)) {
             // 自动更新开关
             Row(
                 modifier = Modifier
@@ -909,12 +908,6 @@ fun SettingsScreen(
                     colors = lerxuSwitchColors()
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
 
             // 全部刷新
             Row(
@@ -977,11 +970,6 @@ fun SettingsScreen(
                         pendingRemoveSub = sub
                     }
                 )
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    color = colorScheme.outlineVariant,
-                    thickness = 0.5.dp
-                )
             }
 
             // 添加订阅源
@@ -1009,7 +997,7 @@ fun SettingsScreen(
         }
 
         // ── 启动：默认入口（下载器 / 浏览器）──
-        SettingsSection(stringResource(R.string.settings_section_start)) {
+        if (cat == SettingsCategory.General) SettingsSection(stringResource(R.string.settings_section_start)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1039,7 +1027,7 @@ fun SettingsScreen(
         }
 
         // ── 浏览器 ──
-        SettingsSection(stringResource(R.string.settings_browser)) {
+        if (cat == SettingsCategory.Browser) SettingsSection(stringResource(R.string.settings_browser)) {
             // 自动拦截广告：**默认开**。开关只改这一件事——拦网络 + 隐藏广告位
             //（见 AdBlocker），不碰页面自己的内容
             Row(
@@ -1069,7 +1057,7 @@ fun SettingsScreen(
         }
 
         // ── 外观 ──
-        SettingsSection(stringResource(R.string.settings_appearance)) {
+        if (cat == SettingsCategory.Appearance) SettingsSection(stringResource(R.string.settings_appearance)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1099,7 +1087,7 @@ fun SettingsScreen(
         }
 
         // ── 语言 ──
-        SettingsSection(stringResource(R.string.settings_language)) {
+        if (cat == SettingsCategory.Appearance) SettingsSection(stringResource(R.string.settings_language)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1114,7 +1102,9 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        languageLabel(prefs.getString(MainActivity.KEY_LANGUAGE, "") ?: ""),
+                        // 档位从上层状态来（`AppLocale.current`），不再读偏好 ——
+                        // 读盘的话切完语言这一行还是旧值（Compose 不会因为偏好变了重组）
+                        languageLabel(currentLanguage),
                         style = MaterialTheme.typography.bodySmall,
                         color = colorScheme.onSurfaceVariant
                     )
@@ -1129,7 +1119,7 @@ fun SettingsScreen(
         }
 
         // ── 浏览器：搜索引擎（内置浏览器用） ──
-        SettingsSection(stringResource(R.string.tab_browser)) {
+        if (cat == SettingsCategory.Browser) SettingsSection(stringResource(R.string.tab_browser)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1156,10 +1146,42 @@ fun SettingsScreen(
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
+
+            // 底部控制栏：现代（悬浮、滚动收起）/ 传统（贴底整条）。
+            // 与浏览器里长按坞那枚"更多"弹出的面板是同一个开关，两处都改都记
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showDockModeDialog = true }
+                    .padding(horizontal = 16.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(R.string.settings_dock_mode_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        stringResource(
+                            if (dockModern) R.string.settings_dock_mode_modern_desc
+                            else R.string.settings_dock_mode_classic_desc
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
         }
 
         // ── 维护 ──
-        SettingsSection(stringResource(R.string.settings_maintenance)) {
+        if (cat == SettingsCategory.General) SettingsSection(stringResource(R.string.settings_maintenance)) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1189,14 +1211,8 @@ fun SettingsScreen(
         }
 
         // ── 关于 ──
-        SettingsSection(stringResource(R.string.settings_about)) {
+        if (cat == SettingsCategory.About) SettingsSection(stringResource(R.string.settings_about)) {
             SettingsInfoRow(stringResource(R.string.about_version), BuildConfig.VERSION_NAME)
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
-
             // 自动检测更新开关（启动时检查 GitHub Releases）
             Row(
                 modifier = Modifier
@@ -1225,12 +1241,6 @@ fun SettingsScreen(
                     colors = lerxuSwitchColors()
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
 
             // ── 设为默认浏览器 ──
             // 默认关闭：开关状态**直接读系统**（我们现在是不是默认浏览器），不另存偏好 ——
@@ -1307,11 +1317,6 @@ fun SettingsScreen(
                     )
                 }
 
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    color = colorScheme.outlineVariant,
-                    thickness = 0.5.dp
-                )
             }
             // 更新渠道：切换后立即按新渠道重新检查（与桌面端一致）
             Row(
@@ -1340,12 +1345,6 @@ fun SettingsScreen(
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
 
             // 手动检查更新
             Row(
@@ -1376,18 +1375,17 @@ fun SettingsScreen(
                 )
             }
 
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
             SettingsInfoRow(
                 stringResource(R.string.about_engine),
                 engineVersion?.let { "${it.name} v${it.version}" } ?: "—"
             )
         }
 
-        Spacer(Modifier.height(24.dp))
+                        Spacer(Modifier.height(sheetBottomGap(12.dp)))
+                    }
+                }
+            }
+        }
     }
 
     // 清除任务记录：二次确认
@@ -1420,17 +1418,27 @@ fun SettingsScreen(
         )
     }
 
-    // 语言切换：保存偏好后 recreate 重建 Activity（引擎服务不受影响）
+    // 语言切换：写完偏好 + 推全局状态，整棵树当帧换语言（不重建 Activity，见 AppLocale）
     if (showLanguageDialog) {
         LanguageDialog(
-            current = languagePref,
+            current = currentLanguage,
             onSelect = { tag ->
                 showLanguageDialog = false
-                if (tag != languagePref) {
-                    MainActivity.updateLanguage(context, tag)
-                }
+                if (tag != currentLanguage) onLanguageChange(tag)
             },
             onDismiss = { showLanguageDialog = false }
+        )
+    }
+
+    // 底部控制栏模式：选完即生效并持久化（AppScreen 那边的坞立即变形）
+    if (showDockModeDialog) {
+        DockModeDialog(
+            current = dockModern,
+            onSelect = { modern ->
+                showDockModeDialog = false
+                if (modern != dockModern) onDockModernChange(modern)
+            },
+            onDismiss = { showDockModeDialog = false }
         )
     }
 
@@ -1762,6 +1770,127 @@ private fun AddSubscriptionDialog(
     )
 }
 
+// ─── 设置弹窗：头部与一级分类首页 ───
+
+/**
+ * 设置的一级分类（用户点名：首页只放这些，点进去才是具体设置项）。
+ * `titleRes` 供头部标题与首页条目共用；`icon` 是首页每行左侧那枚图标。
+ */
+private enum class SettingsCategory(
+    val titleRes: Int,
+    val icon: ImageVector
+) {
+    Download(R.string.settings_category_download, Icons.Outlined.Download),
+    Bt(R.string.settings_category_bt, Icons.Outlined.SwapVert),
+    Browser(R.string.settings_category_browser, Icons.Outlined.Language),
+    Appearance(R.string.settings_category_appearance, Icons.Outlined.Palette),
+    General(R.string.settings_category_general, Icons.Outlined.Tune),
+    About(R.string.settings_category_about, Icons.Outlined.Info)
+}
+
+/**
+ * 弹窗头部：返回按钮在左、标题居中（用户点名）。
+ * 返回箭头复用项目统一重绘的那枚（与标签页底部栏同款），不是系统默认样式。
+ *
+ * `internal` 是为了让历史弹窗（`HistorySheet.kt`）用同一颗头 —— 两张底部弹窗的头部
+ * 高度、返回键位置、标题居中方式本来就该完全一样（用户对历史弹窗的要求就是
+ * "跟现在的设置面板一样由底部弹出"）。
+ */
+@Composable
+internal fun SettingsSheetHeader(title: String, onBack: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier.align(Alignment.CenterStart)
+        ) {
+            Icon(
+                LerxuBackArrow,
+                contentDescription = stringResource(R.string.back)
+            )
+        }
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** 一级分类的分组：首页按用途把分类分块（用户点名"一级分类也应该进行划分"）。 */
+private enum class SettingsCategoryGroup(
+    val titleRes: Int,
+    val categories: List<SettingsCategory>
+) {
+    Transfer(R.string.settings_group_transfer, listOf(SettingsCategory.Download, SettingsCategory.Bt)),
+    Browsing(R.string.settings_group_browsing, listOf(SettingsCategory.Browser, SettingsCategory.Appearance)),
+    System(R.string.settings_group_system, listOf(SettingsCategory.General, SettingsCategory.About))
+}
+
+/**
+ * 分类首页：按用途分组，每组一张卡片。
+ * 卡片用 surfaceContainerHigh——弹窗容器自身是 surfaceContainerLow，同色会导致"看不见背景"；
+ * 条目之间不再画横杠，靠分组标题与卡片间距区分。
+ */
+@Composable
+private fun SettingsCategoryHome(onPick: (SettingsCategory) -> Unit) {
+    val colorScheme = MaterialTheme.colorScheme
+    Column(modifier = Modifier.padding(top = 12.dp)) {
+        SettingsCategoryGroup.entries.forEach { group ->
+            Text(
+                stringResource(group.titleRes),
+                style = MaterialTheme.typography.labelMedium,
+                color = colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 6.dp, bottom = 6.dp)
+            )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = colorScheme.surfaceContainerHigh
+            ) {
+                Column {
+                    group.categories.forEach { cat ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPick(cat) }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                cat.icon,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = colorScheme.primary
+                            )
+                            Spacer(Modifier.width(14.dp))
+                            Text(
+                                stringResource(cat.titleRes),
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+    }
+}
+
 // ─── 分区卡片 ───
 
 @Composable
@@ -1775,7 +1904,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
         )
         Surface(
             shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(content = content)
@@ -2048,11 +2177,7 @@ private fun LanguageDialog(
             Spacer(Modifier.height(10.dp))
             LANGUAGE_OPTIONS.forEachIndexed { index, option ->
                 if (index > 0) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        color = colorScheme.outlineVariant,
-                        thickness = 0.5.dp
-                    )
+                    DialogDivider()
                 }
                 val selected = option.tag == current || (current.isEmpty() && option.tag == "system")
                 Row(
@@ -2158,18 +2283,10 @@ private fun SearchEngineDialog(
                     )
                 }
             }
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 4.dp),
-                color = colorScheme.outlineVariant,
-                thickness = 0.5.dp
-            )
+            DialogDivider()
             SearchEngines.all.forEachIndexed { index, engine ->
                 if (index > 0) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        color = colorScheme.outlineVariant,
-                        thickness = 0.5.dp
-                    )
+                    DialogDivider()
                 }
                 val selected = !autoActive && engine.key == currentKey
                 Row(
@@ -2245,11 +2362,7 @@ private fun StartPageDialog(
             Spacer(Modifier.height(6.dp))
             options.forEachIndexed { index, (page, icon, labelRes) ->
                 if (index > 0) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        color = colorScheme.outlineVariant,
-                        thickness = 0.5.dp
-                    )
+                    DialogDivider()
                 }
                 val selected = page == current
                 Row(
@@ -2302,11 +2415,7 @@ private fun ThemeDialog(
             Spacer(Modifier.height(10.dp))
             THEME_OPTIONS.forEachIndexed { index, option ->
                 if (index > 0) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        color = colorScheme.outlineVariant,
-                        thickness = 0.5.dp
-                    )
+                    DialogDivider()
                 }
                 val selected = option.key == current
                 Row(
@@ -2334,6 +2443,68 @@ private fun ThemeDialog(
                         color = if (selected) colorScheme.primary else colorScheme.onSurface,
                         modifier = Modifier.weight(1f)
                     )
+                    if (selected) {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            tint = colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    )
+}
+
+// ─── 底部控制栏模式弹窗（现代 / 传统） ───
+
+/**
+ * 底部控制栏的两档形态（用户点名：设置里要能选"现代模式 / 传统模式"）。
+ *
+ * 与浏览器里长按坞那枚"更多"弹出的坞内设置面板是**同一个开关**：这里选完
+ * AppScreen 立即换形（连续形变），并持久化到 `dock_modern`。
+ */
+@Composable
+private fun DockModeDialog(
+    current: Boolean,
+    onSelect: (Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val options = listOf(
+        Triple(true, R.string.settings_dock_mode_modern, R.string.settings_dock_mode_modern_desc),
+        Triple(false, R.string.settings_dock_mode_classic, R.string.settings_dock_mode_classic_desc)
+    )
+    BottomConfirmDialog(
+        title = stringResource(R.string.settings_dock_mode_title),
+        confirmLabel = null,
+        onDismiss = onDismiss,
+        content = {
+            Spacer(Modifier.height(10.dp))
+            options.forEachIndexed { index, (modern, labelRes, descRes) ->
+                if (index > 0) DialogDivider()
+                val selected = modern == current
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(modern) }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            stringResource(labelRes),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (selected) colorScheme.primary else colorScheme.onSurface
+                        )
+                        Text(
+                            stringResource(descRes),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colorScheme.onSurfaceVariant
+                        )
+                    }
                     if (selected) {
                         Icon(
                             Icons.Default.Check,
@@ -2379,11 +2550,7 @@ private fun UpdateChannelDialog(
             Spacer(Modifier.height(10.dp))
             ReleaseChannel.entries.forEachIndexed { index, option ->
                 if (index > 0) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        color = colorScheme.outlineVariant,
-                        thickness = 0.5.dp
-                    )
+                    DialogDivider()
                 }
                 val selected = option == current
                 Row(

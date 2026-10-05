@@ -12,6 +12,9 @@ export default {
   'thunder-link-tips': 'Tip: Thunder links may not be downloadable after decoding',
   'file-name': 'Name',
   'file-extension': 'Extension',
+  'file-actions': 'Actions',
+  'play': 'Play',
+  'play-not-downloaded': 'No data downloaded yet — cannot play',
   'file-size': 'Size',
   'selected-files-sum': 'Selected: {{selectedFilesCount}} files, total size {{selectedFilesTotalSize}}',
   'select-at-least-one': 'Please select at least one file',
@@ -106,8 +109,10 @@ export default {
   'navigate-to-downloading': 'Navigate to Downloading',
   'show-advanced-options': 'Advanced Options',
   'pause-task-fail': 'Failed to pause task "{{taskName}}"',
+  'pause-task-unavailable': 'Task "{{taskName}}" cannot be paused (already finished or merging)',
   'resume-task': 'Resume Task',
   'resume-task-fail': 'Failed to resume task "{{taskName}}"',
+  'resume-task-unavailable': 'Task "{{taskName}}" cannot be resumed (not paused or queued)',
   'delete-task': 'Delete Task',
   'delete-selected-tasks': 'Delete Selected Tasks',
   'delete-task-confirm': 'Are you sure you want to remove download task "{{taskName}}"?',
@@ -238,7 +243,10 @@ export default {
   'completed-at': 'Completed at',
   'error-at': 'Errored at',
   'merging': 'Merging audio and video...',
-  'merging-waiting-pair': 'Waiting for paired file to download...',
+  'merging-pending': 'Download complete, waiting to merge...',
+  // Badge on a collapsed "video + audio stream pair" row: one row stands for two
+  // files, and both the size and the percentage are the sum of the two.
+  'pair-streams-hint': 'video+audio',
   'select-torrent': 'Drag torrent file here, or click to select',
   'task-detail-general': 'General',
   'task-detail-activity': 'Activity',
@@ -372,8 +380,8 @@ export default {
   'connection-status': 'Status',
   'connection-status-active': 'Active',
   'connection-status-idle': 'Idle',
-  // FFmpeg related
-  'ffmpeg-required-manual': 'FFmpeg is required to merge videos. Please check the installation guide in Settings.',
+  // Audio/video merging is now done by our own media engine (no FFmpeg needed).
+  'engine-missing-manual': 'Merging audio/video requires the zuvrust binary. Please make sure it is deployed under extra/<platform>/<arch>/engine/ or the engine/ folder next to the app resources.',
   'date-filter': 'Date Filter',
   'all-tasks': 'All Tasks',
   'clear-filter': 'Clear',

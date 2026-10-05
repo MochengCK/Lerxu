@@ -19,10 +19,16 @@
       <mo-task-progress
         :completed="Number(task.completedLength)"
         :total="Number(task.totalLength)"
+        :gid="task.gid ? `${task.gid}` : ''"
         :status="taskStatus"
         :speed="Number(task.downloadSpeed)"
         :pending-selection="isPendingFileSelection"
         :fetching-metadata="isFetchingMetadata"
+        :pair-gids="pairGids"
+        :pair-member-count="pairMemberCount"
+        :is-pair="isPairTask"
+        :merged="isMergedPair"
+        :merge-skipped="isMergeSkippedPair"
       />
       <mo-task-progress-info :task="task" :view-mode="viewMode" />
     </div>
@@ -36,6 +42,7 @@ import { basename } from 'node:path'
 import { checkTaskIsSeeder, getTaskName, ellipsis, isEd2kTask, isMagnetTask } from '@shared/utils'
 import { TASK_STATUS } from '@shared/constants'
 import { openItem, getTaskActualPath } from '@/utils/native'
+import { getPairGidCandidates, isPairRow } from '@/utils/taskPair'
 import { commands } from '@/components/CommandManager/instance'
 import TaskItemActions from './TaskItemActions'
 import TaskProgress from './TaskProgress'
@@ -136,6 +143,12 @@ const isFetchingMetadata = computed(() => {
 })
 
 function getCompletedDisplayName (task) {
+  // 「一对音视频」在列表里显示的是**合并产物**的名字（画面流名字去掉角色标记，
+  // 与合并落盘的名字同一套规则），而不是 `xxx_video.mp4` 这种"零件名"。
+  // 只剩一条成员时（合并已完成 / 伙伴被删）不再用它：那时磁盘上就是那一个文件。
+  if (isPairRow(task) && Number(task.pairCount) >= 2 && task.pairDisplayName) {
+    return `${task.pairDisplayName}`
+  }
   const config = preferenceConfig.value || {}
   const suffix = config.downloadingFileSuffix || ''
   const path = getTaskActualPath(task, config)
@@ -146,14 +159,76 @@ function getCompletedDisplayName (task) {
   return base
 }
 
+/** 折叠记录身上"已经固定下来的显示名"：任一成员 gid 上写着都算。 */
+function getCachedDisplayName (task) {
+  const map = taskDisplayNames.value || {}
+  for (const gid of getPairGidCandidates(task)) {
+    if (map[gid]) {
+      return `${map[gid]}`
+    }
+  }
+  return ''
+}
+
+/**
+ * 这条记录是"一对音视频"折叠出来的，**而且还没合并出产物** —— 显示名用
+ * 折叠后的产物名（`pairDisplayName`）。
+ *
+ * 判据不能用 `pairCount >= 2`：成员下完被摘掉后（历史/引擎侧的正常变化）它会掉到 1，
+ * 名字就会退回成零件的名字（`xxx_audio.m4a`）。合并成功后
+ * `afterBilibiliMerge` 会把记录的名字改成落盘产物名（`task.name`），
+ * 所以这里用 `dashMerged` 收口即可。
+ */
+const isPendingPair = computed(() => {
+  const task = props.task
+  const merged = task && (task.dashMerged === true || task.pairMerged === true)
+  return !!(isPairRow(task) && !merged && task.pairDisplayName)
+})
+
+const pairGids = computed(() => {
+  const task = props.task
+  if (!isPairRow(task)) {
+    return []
+  }
+  return (task.pairGids || []).map(g => `${g}`)
+})
+
+const pairMemberCount = computed(() => {
+  const task = props.task
+  return isPairRow(task) ? Number(task.pairCount) || 0 : 0
+})
+
+// 记录级的"这是一对音视频"标记：**用 isPair/pairId，不看还剩几条流**。
+// 折叠记录在成员被摘掉后仍带 isPair/pairId，用它才能让进度条在
+// "下载完成 → 待合并 → 合并中" 这几档之间稳定切换。
+const isPairTask = computed(() => {
+  const task = props.task || {}
+  return task.isPair === true || !!task.pairId
+})
+
+// 已经合并出产物（`afterBilibiliMerge` 落的 dashMerged）：回到普通满格绿。
+// 判据看**整对**（`pairMerged`：任一成员带 dashMerged）—— 产物通常落在
+// "后下完、触发合并"的那条成员上，而它未必是记录的主记录；只看主记录的
+// `dashMerged` 会在另一半还没被清掉时判成"没合并"，于是又回到"待合并/正在合并"。
+const isMergedPair = computed(() => {
+  const task = props.task || {}
+  return task.dashMerged === true || task.pairMerged === true
+})
+
+// 这一对**不会再合并**了（重试耗尽 / 缺另一半 / 合并失败收尾）：进度条与文案
+// 都按普通"已完成"收尾，不再显示黄条与"等待合并…"。
+const isMergeSkippedPair = computed(() => {
+  const task = props.task || {}
+  return task.mergeSkipped === true
+})
+
 const taskFullName = computed(() => {
   const task = props.task
-  if (task && (task.status === TASK_STATUS.COMPLETE || task.status === TASK_STATUS.MERGING)) {
-    const gid = task.gid ? `${task.gid}` : ''
-    const cached = gid && taskDisplayNames.value ? taskDisplayNames.value[gid] : ''
-    if (cached) return cached
-    return getCompletedDisplayName(task)
-  }
+  const isStopped = !!task && (task.status === TASK_STATUS.COMPLETE || task.status === TASK_STATUS.MERGING)
+  const cached = isStopped ? getCachedDisplayName(task) : ''
+  if (cached) return cached
+  if (isPendingPair.value) return `${task.pairDisplayName}`
+  if (isStopped) return getCompletedDisplayName(task)
   return getTaskName(task, {
     defaultName: t('task.get-task-name'),
     hashFallbackLabel: t('task.magnet-pending-name'),
@@ -163,12 +238,11 @@ const taskFullName = computed(() => {
 
 const taskName = computed(() => {
   const task = props.task
-  if (task && (task.status === TASK_STATUS.COMPLETE || task.status === TASK_STATUS.MERGING)) {
-    const gid = task.gid ? `${task.gid}` : ''
-    const cached = gid && taskDisplayNames.value ? taskDisplayNames.value[gid] : ''
-    if (cached) return ellipsis(cached, 64)
-    return ellipsis(getCompletedDisplayName(task), 64)
-  }
+  const isStopped = !!task && (task.status === TASK_STATUS.COMPLETE || task.status === TASK_STATUS.MERGING)
+  const cached = isStopped ? getCachedDisplayName(task) : ''
+  if (cached) return ellipsis(cached, 64)
+  if (isPendingPair.value) return ellipsis(`${task.pairDisplayName}`, 64)
+  if (isStopped) return ellipsis(getCompletedDisplayName(task), 64)
   return getTaskName(task, {
     defaultName: t('task.get-task-name'),
     hashFallbackLabel: t('task.magnet-pending-name')
@@ -193,8 +267,9 @@ function ensureFixedDisplayName () {
   const task = props.task
   const gid = task?.gid ? `${task.gid}` : ''
   if (!gid) return
-  const cached = taskDisplayNames.value ? taskDisplayNames.value[gid] : ''
-  if (cached) return
+  // 配对记录：任一成员 gid 上已经有固定名就不用再写（合并完成后主流程会写
+  // 在"最后下完的那条"的 gid 上）
+  if (getCachedDisplayName(task)) return
   const name = getCompletedDisplayName(task)
   if (name) {
     taskStore.setTaskDisplayName({ gid, name })

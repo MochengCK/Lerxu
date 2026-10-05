@@ -21,12 +21,18 @@
   --pref-radius-lg: 12px;
   --pref-radius-md: 8px;
   --pref-radius-sm: 6px;
+  /* 弹窗外壳圆角：右上角关闭按钮的悬停底色圆角跟它保持一致 */
+  --pref-radius-window: 14px;
   --pref-control-h: 30px;
   --pref-row-min-h: 42px;
   --pref-gap: 10px;
   --pref-pad-x: 20px;
   /* 卡片标题（位于卡片外左上角）占用的高度：标题行高 + 与卡片的间距 */
   --pref-title-h: 24px;
+  /* 顶栏高度：只剩右上角关闭按钮（28px），只占右侧内容区一列 */
+  --pref-header-h: 36px;
+  /* 侧边栏宽度：顶栏、正文都按它让位（窄窗口下见文件末尾的媒体查询） */
+  --pref-sidebar-w: 196px;
 
   /* 整窗统一底色 */
   --pref-surface: var(--lc-preference-surface, var(--lc-bg-panel, #ffffff));
@@ -57,7 +63,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
+  border-radius: var(--pref-radius-window);
   border: 1px solid var(--pref-line);
   background-color: var(--pref-surface);
   box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18), 0 2px 8px rgba(15, 23, 42, 0.06);
@@ -81,34 +87,29 @@
 }
 
 /* --------------------------------------------------------------------------
-   2. 顶栏：标题 + 搜索 + 关闭
+   2. 顶栏：只剩右上角关闭按钮
+   --------------------------------------------------------------------------
+   原来的「偏好设置」大标题与右上角搜索框都已移除：
+   标题由侧边栏第一个分组标签「设置」承担（见第 4 节）。
+   顶栏只横跨右侧内容区一列（margin-left 让开侧边栏），
+   侧边栏则通过负 margin-top 顶到弹窗最上沿，与主窗口侧边栏同构。
    -------------------------------------------------------------------------- */
 .el-dialog.preference-dialog .el-dialog__header {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
   flex-shrink: 0;
-  height: 54px;
-  margin: 0;
-  padding: 0 14px 0 20px;
+  height: var(--pref-header-h);
+  margin: 0 0 0 var(--pref-sidebar-w);
+  /* 右内边距 8px：关闭按钮再往右靠一点（原来是 14px） */
+  padding: 0 8px 0 20px;
   box-sizing: border-box;
   /* 与弹窗同底色，且不用横线分隔顶栏与内容区 */
   background-color: transparent;
 }
 
-.el-dialog.preference-dialog .preference-dialog-title {
-  flex: 1;
-  min-width: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
-  color: var(--pref-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 关闭按钮：默认是绝对定位，这里改为 flex 项，与搜索框并排 */
+/* 关闭按钮：默认是绝对定位，这里改为 flex 项 */
 .el-dialog.preference-dialog .el-dialog__headerbtn {
   position: static;
   flex: 0 0 auto;
@@ -116,17 +117,25 @@
   height: 28px;
   margin: 0;
   padding: 0;
-  border-radius: 8px;
+  /* 悬停不加底色，只让图标本身高亮（与任务详情抽屉的关闭按钮同一套反馈）。
+     圆角保留为弹窗外壳圆角，万一以后要恢复底色也不会与外壳圆角打架。 */
+  border-radius: var(--pref-radius-window);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--pref-text-2);
-  transition: background-color 0.16s ease, color 0.16s ease;
+  transition: color 0.16s ease;
 
   &:hover,
   &:focus-visible {
-    background-color: var(--pref-hover);
-    color: var(--pref-text);
+    background-color: transparent;
+    color: var(--pref-accent);
+
+    /* 图标颜色直接写成主题色：Element Plus 默认也会把 .el-dialog__close
+       置成 --el-color-primary，这里显式覆盖一遍，不再依赖它的内部实现 */
+    .el-dialog__close {
+      color: var(--pref-accent);
+    }
   }
 
   .el-dialog__close {
@@ -141,83 +150,20 @@
   display: none !important;
 }
 
-/* 顶栏搜索框 */
-.pref-search {
-  flex: 0 0 auto;
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 216px;
-  height: 30px;
-  padding: 0 10px;
-  box-sizing: border-box;
-  border-radius: var(--pref-radius-md);
-  border: 1px solid var(--lc-border-base, #d3dde6);
-  background-color: transparent;
-  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
-
-  &:hover {
-    border-color: var(--lc-border-hover, #8492a6);
-  }
-
-  &.is-focused {
-    border-color: var(--pref-accent);
-    box-shadow: 0 0 0 3px var(--pref-accent-soft);
-  }
-
-  &__icon {
-    flex: 0 0 auto;
-    margin-right: 6px;
-    font-size: 14px;
-    color: var(--pref-text-2);
-  }
-
-  &__input {
-    flex: 1;
-    min-width: 0;
-    height: 100%;
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 12.5px;
-    color: var(--pref-text);
-
-    &::placeholder {
-      color: var(--lc-text-placeholder, #8492a6);
-      opacity: 0.85;
-    }
-  }
-
-  &__clear {
-    flex: 0 0 auto;
-    margin-left: 4px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    color: var(--pref-text-2);
-    background-color: var(--pref-hover);
-    font-size: 10px;
-    transition: color 0.16s ease, background-color 0.16s ease;
-
-    &:hover {
-      color: var(--pref-text);
-      background-color: var(--lc-bg-active, #eef2f7);
-    }
-  }
-}
-
 /* --------------------------------------------------------------------------
    3. 弹窗主体：侧边栏 + 内容画布
    -------------------------------------------------------------------------- */
+/* 注意 overflow 必须是 visible：侧边栏要越过正文上沿顶到弹窗最顶部
+   （见 .preference-sidebar 的负 margin-top），任何一层 overflow: hidden
+   都会把侧边栏顶上那一截裁掉——「设置」分组标签整个消失、第一个选项
+   上半截被切掉，就是这个原因。真正需要裁剪的只有弹窗本体
+   （.el-dialog.preference-dialog 自带 overflow: hidden + 圆角），
+   内容区的滚动由 .preference-content 自己的 overflow-y: auto 负责。 */
 .el-dialog.preference-dialog .el-dialog__body {
   flex: 1;
   min-height: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   color: var(--lc-text-regular, #3d4d5c);
   font-size: 13px;
 }
@@ -226,15 +172,15 @@
   display: flex;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* --------------------------------------------------------------------------
    4. 侧边栏导航
    -------------------------------------------------------------------------- */
 .preference-sidebar {
-  flex: 0 0 196px;
-  width: 196px;
+  flex: 0 0 var(--pref-sidebar-w);
+  width: var(--pref-sidebar-w);
   display: flex;
   flex-direction: column;
   padding: 10px 10px 12px;
@@ -242,17 +188,39 @@
   /* 与整窗同底色，不用横线/竖线切分区域 */
   background-color: transparent;
   overflow: hidden;
+  /* 侧边栏从弹窗最上沿开始（顶栏那一行只属于右侧内容区），
+     第一个分组标签「设置」因此正好落在原「偏好设置」大标题的位置。
+     负 margin 抵消顶栏占掉的高度（--pref-header-h）。
+     前提：正文那两级容器不能有 overflow: hidden，否则这一截会被裁掉。 */
+  margin-top: calc(-1 * var(--pref-header-h));
 }
 
-.preference-nav-list {
-  flex: 1;
-  min-height: 0;
+/* 分组容器：标签 + 该组的选项，与主窗口侧边栏（TaskSubnav）同构 */
+.preference-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 4px;
+
+  & + .preference-section {
+    margin-top: 6px;
+  }
+}
+
+/* 分组标签：与主窗口侧边栏的 .subnav-section-label 完全一致的视觉 */
+.preference-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--lc-text-placeholder, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 10px 4px;
+  user-select: none;
+}
+
+/* 侧边栏滚动容器（分组多了以后整列滚动，而不是每组各自滚） */
+.preference-nav-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 
@@ -263,6 +231,15 @@
     border-radius: 2px;
     background: var(--lc-scrollbar-thumb, rgba(26, 35, 50, 0.18));
   }
+}
+
+.preference-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 /* 与主程序侧边栏（TaskSubnav 的 .task-nav-list li）保持完全一致的样式：
@@ -1051,17 +1028,9 @@ html.mac-native-transparent .el-dialog.preference-dialog {
    15. 窄窗口自适应
    -------------------------------------------------------------------------- */
 @media (max-width: 720px) {
-  .preference-sidebar {
-    flex-basis: 168px;
-    width: 168px;
-  }
-
   .el-dialog.preference-dialog {
     --pref-pad-x: 14px;
-  }
-
-  .pref-search {
-    width: 160px;
+    --pref-sidebar-w: 168px;
   }
 }
 

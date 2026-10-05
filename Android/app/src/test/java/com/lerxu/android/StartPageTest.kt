@@ -27,8 +27,9 @@ class StartPageTest {
     fun `maps onto the landing page`() {
         assertEquals(AppPage.Tasks, StartPagePrefs.toAppPage(StartPage.Downloader))
         assertEquals(AppPage.Browser, StartPagePrefs.toAppPage(StartPage.Browser))
-        // 设置页那一栏要能反映"当前入口"；设置页本身不算入口（读回来当下载器）
+        // 只有浏览器算入口；其余（任务页）读回来当下载器。
+        // 设置改成底部弹窗后已不再是一页（AppPage 里没有 Settings）
         assertEquals(StartPage.Browser, StartPagePrefs.fromAppPage(AppPage.Browser))
-        assertEquals(StartPage.Downloader, StartPagePrefs.fromAppPage(AppPage.Settings))
+        assertEquals(StartPage.Downloader, StartPagePrefs.fromAppPage(AppPage.Tasks))
     }
 }

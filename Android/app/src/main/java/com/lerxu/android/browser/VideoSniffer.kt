@@ -32,10 +32,69 @@ data class SniffedResource(
 object VideoSniffer {
 
     /** 可嗅探的媒体格式（视频 + 音频）。 */
+    /**
+     * **清单**格式（HLS / DASH）：它们本身不是媒体数据，而是"去哪儿取分片"的说明书。
+     * 交给播放器时，这一档永远优先（见 [playbackRank]）。
+     */
+    val manifestFormats: List<String> = listOf("m3u8", "m3u", "mpd")
+
+    /**
+     * **分片**格式：单独一只根本放不了（要么只有几秒、要么像加密分片那样是一团随机字节）。
+     * 它们是"清单的下游"，只有在**连清单都没嗅到**时才退而取之。
+     */
+    val segmentFormats: List<String> = listOf(
+        "ts", "m2ts", "mts", "mp2t", "m4s", "cmfv", "cmfa", "aac", "cmf"
+    )
+
+    /**
+     * **自包含**的单一文件（一个地址就是一部片子）：没有清单也能直接播。
+     */
+    val progressiveFormats: List<String> = listOf(
+        "mp4", "m4v", "webm", "mkv", "flv", "mov", "avi", "wmv", "ogv", "3gp", "mpeg"
+    )
+
+    /**
+     * 一条嗅探结果"该不该优先交给原生播放器"的档位（**越小越优先**）。
+     *
+     * 为什么要有它（2026-10-04 用户连报两次"加密 m3u8 播不了"，最后靠界面上的错误码定位）：
+     * `offer()` 是**最新在前**（`sniffed.add(0, …)`），而挑源原来只写了一句
+     * `firstOrNull { it.kind == VIDEO }` —— 于是它拿的是"最新嗅到的那条"。而 hls.js 起播时
+     * **先拉清单、紧接着就狂拉分片**，那一刻最新的往往是一只**分片**：
+     * - 加密分片是一团随机字节 ⇒ 既不以 `#EXTM3U` 开头（`HLS[3002]`）、
+     *   也没有任何提取器认得（`PROGRESSIVE[3003]`）——**两个错误同时命中**；
+     * - 明文 TS 分片提取器**认**，勉强能放一小段 ⇒ 所以只有"加密的"看起来才是"彻底播不了"。
+     *
+     * 档位顺序就是"这地址有多像一部能播的东西"：清单 > 自包含单文件 > 分片 > 其余，音频放最后
+     * （这一路要的是画面）。
+     */
+    fun playbackRank(item: SniffedResource): Int {
+        val ext = item.extension.lowercase()
+        return when {
+            ext in manifestFormats -> 0
+            ext in progressiveFormats -> 1
+            ext in segmentFormats -> 3
+            item.kind == SniffKind.VIDEO -> 2 // MIME 说是视频、扩展名却不认识：介于两者之间
+            item.kind == SniffKind.AUDIO -> 4
+            else -> 5
+        }
+    }
+
+    /**
+     * 从嗅探结果里挑出"这一路最该交给原生播放器的那条"（见 [playbackRank]）。
+     *
+     * 同档取**列表里靠前的**（= 最新的那份）：`minByOrNull` 在相等时保序。
+     * 一条都没有（或只有认不出的东西）时返回 null —— 交给调用方继续轮询等清单出现。
+     */
+    fun pickForPlayback(list: List<SniffedResource>): SniffedResource? =
+        list.minByOrNull { playbackRank(it) }
+
+    /** [playbackRank] 里"分片"那一档的档位值（调用方据此筛掉分片，见 `pickPlayable`）。 */
+    const val RANK_SEGMENT = 3
+
     val mediaFormats: List<String> = listOf(
-        "m4s", "mp4", "flv", "m3u8", "ts", "webm", "mkv", "mov", "avi", "wmv",
-        "mpd", "ogv", "3gp", "m4v", "mpeg", "mp3", "m4a", "aac", "ogg", "wav",
-        "flac", "opus"
+        "m4s", "mp4", "flv", "m3u8", "m3u", "ts", "m2ts", "mts", "cmfv", "cmfa",
+        "mp2t", "webm", "mkv", "mov", "avi", "wmv", "mpd", "ogv", "3gp", "m4v",
+        "mpeg", "mp3", "m4a", "aac", "ogg", "wav", "flac", "opus"
     )
 
     /** 明确排除（绝不当媒体）。 */
@@ -63,7 +122,10 @@ object VideoSniffer {
         "audio/x-ms-wma" to "wma", "audio/x-aac" to "aac", "audio/aac" to "aac",
         "audio/flac" to "flac", "audio/x-flac" to "flac", "audio/opus" to "opus",
         "audio/vorbis" to "ogg", "audio/x-vorbis" to "ogg",
-        "application/x-mpegurl" to "m3u8", "application/vnd.apple.mpegurl" to "m3u8",
+        "application/x-mpegurl" to "m3u8", "application/mpegurl" to "m3u8",
+        "audio/mpegurl" to "m3u8", "audio/x-mpegurl" to "m3u8",
+        "text/mpegurl" to "m3u8",
+        "application/vnd.apple.mpegurl" to "m3u8",
         "application/dash+xml" to "mpd"
     )
 
@@ -99,6 +161,23 @@ object VideoSniffer {
     /** 查询参数键（值是媒体类型线索，如 `?mime_type=video_mp4`）。 */
     val mimeQueryKeys: List<String> = listOf(
         "mime_type", "content_type", "media_type", "video_type", "format"
+    )
+
+    /** HLS 清单的查询参数线索：参数名 → 值表示 HLS（清单常常不带扩展名）。 */
+    private val hlsQueryKeys: Set<String> = setOf(
+        "format", "type", "output", "ext", "suffix", "filetype", "file_type",
+        "mediatype", "media_type", "container", "f", "fmt"
+    )
+    private val hlsQueryValues: List<String> = listOf("hls", "m3u8", "m3u", "x-mpegurl")
+
+    /** 已知的 HLS 清单路径特征（无扩展名时的兜底）。 */
+    private val hlsPathHints: List<String> = listOf(
+        "/hls/", "playlist.m3u8", "index.m3u8", "master.m3u8", "/m3u8/"
+    )
+
+    /** 分片后缀：它们是分片而非清单，绝不能当清单交给引擎。 */
+    private val segmentSuffixes: List<String> = listOf(
+        ".ts", ".m2ts", ".mts", ".cmfv", ".cmfa", ".mp2t"
     )
 
     /** 噪音路径：埋点/统计/缩略图/头像等，命中直接丢。 */
@@ -308,6 +387,43 @@ object VideoSniffer {
             }
         }
         return best.values.toList()
+    }
+
+    /**
+     * 查询串里是否写着 HLS 语义（`?format=hls` / `?type=m3u8` …）。
+     *
+     * 纯字符串解析（不依赖 android.net.Uri），因为本文件有 JVM 单测。
+     */
+    private fun hasHlsQueryHint(url: String): Boolean {
+        val query = url.substringBefore('#').substringAfter('?', "")
+        if (query.isEmpty()) return false
+        for (pair in query.split('&')) {
+            val key = pair.substringBefore('=', "").lowercase()
+            if (key !in hlsQueryKeys) continue
+            val value = pair.substringAfter('=', "").lowercase()
+            if (value.isEmpty()) continue
+            if (hlsQueryValues.any { value == it || value.contains(it) }) return true
+        }
+        return false
+    }
+
+    /**
+     * 是不是 M3U8（HLS）清单：扩展名 / MIME / 路径特征 / 查询参数任一命中即可。
+     *
+     * 判它只为一件事：**给不给下载入口**。HLS 的地址是一条清单（不是产物），
+     * 交给引擎之后引擎会按清单把分片抓下来再拼成一个文件（大小见 [HlsProbe]）。
+     *
+     * 清单常常**没有扩展名**（`.../hls/playlist?token=…`）或把类型藏在查询参数里
+     * （`?format=hls`），只认 `.m3u8` 会漏掉一大片真实地址。但分片（`.ts` 等）
+     * 绝不是清单 —— 即便路径里带 `/hls/` 也不能当清单，否则引擎会去"下载一个分片"。
+     */
+    fun isHlsManifest(url: String, mime: String = ""): Boolean {
+        val path = url.substringBefore('#').substringBefore('?').lowercase()
+        if (segmentSuffixes.any { path.endsWith(it) }) return false
+        if (path.endsWith(".m3u8") || path.endsWith(".m3u")) return true
+        if (extensionFromMime(mime) == "m3u8") return true
+        if (hlsPathHints.any { path.contains(it) }) return true
+        return hasHlsQueryHint(url)
     }
 
     /** 明确的下载链接 → 交给引擎（扩展名白名单）。 */

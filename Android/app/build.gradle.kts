@@ -153,8 +153,13 @@ android {
 }
 
 dependencies {
-    // Compose BOM
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+    // Compose BOM：**2025.10.01 起 material3 到了 1.4.0**（我们要的就是它 —— 1.4 才有
+    // `ModalBottomSheet(sheetGesturesEnabled = …)` 这个开关，用来关掉底部弹窗"往下拖 = 关掉"
+    // 那条容易误触的手势；1.3.1 上只能靠 `nestedScroll` + 指针两道闸去堵，属于绕路）。
+    // 这一版 BOM 里的 ui / foundation / animation 是 1.9.4，它们依赖的 kotlin-stdlib 仍是
+    // **2.0.21** ⇒ 本项目的 Kotlin 2.0.21 **不用跟着升**（元数据版本对得上）。
+    // 再往上的 BOM（2026.x）material3 也还是 1.4.0，但 ui 会继续涨 —— 没必要，别顺手升。
+    val composeBom = platform("androidx.compose:compose-bom:2025.10.01")
     implementation(composeBom)
 
     // AndroidX Core
@@ -208,9 +213,11 @@ dependencies {
     // ── 原生播放器（Media3 / ExoPlayer）──
     // 网页里注入控件那条路走不通（WebView 的原生全屏只合成视频画面，DOM 覆盖层不参与
     // 合成），改成把嗅探到的流地址交给 App 自己播：控件、全屏、手势全归我们。
-    // hls 单独一个包：影视站的流几乎都是 m3u8
+    // hls / dash 各单独一个包：影视站的流几乎都是 m3u8，少数站点用 mpd；
+    // 播放前会先探一次容器（见 MediaProbe），探到哪种就走哪种数据源
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+    implementation("androidx.media3:media3-exoplayer-dash:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
 
     // Debugging

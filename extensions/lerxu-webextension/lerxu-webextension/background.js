@@ -28,7 +28,7 @@ const extConfigDefaults = {
   minFileSize: 0,
   shiftToggleEnabled: false,
   videoSnifferEnabled: true,
-  videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
+  videoSnifferFormats: ['m4s', 'mp4', 'flv', 'm3u8', 'm3u', 'ts', 'm2ts', 'mts', 'cmfv', 'cmfa', 'mp2t', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ism', 'ismc', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus'],
   videoSnifferAutoCombine: true
 }
 
@@ -868,7 +868,7 @@ const syncExtConfigFromClient = async () => {
     
     // 视频嗅探器配置
     const videoSnifferEnabled = data.videoSnifferEnabled !== undefined ? !!data.videoSnifferEnabled : true
-    const videoSnifferFormats = Array.isArray(data.videoSnifferFormats) ? data.videoSnifferFormats : ['m4s', 'mp4', 'flv', 'm3u8', 'ts', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus']
+    const videoSnifferFormats = Array.isArray(data.videoSnifferFormats) ? data.videoSnifferFormats : ['m4s', 'mp4', 'flv', 'm3u8', 'm3u', 'ts', 'm2ts', 'mts', 'cmfv', 'cmfa', 'mp2t', 'webm', 'mkv', 'mov', 'avi', 'wmv', 'mpd', 'ism', 'ismc', 'ogv', '3gp', 'm4v', 'mpeg', 'mp3', 'm4a', 'aac', 'ogg', 'wav', 'flac', 'opus']
     const videoSnifferAutoCombine = data.videoSnifferAutoCombine !== undefined ? !!data.videoSnifferAutoCombine : true
 
     const normalizeTheme = (v) => {
