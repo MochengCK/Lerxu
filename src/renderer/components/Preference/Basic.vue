@@ -2042,20 +2042,6 @@
             :span="24"
           >
             <div class="pref-row-text">
-              <span class="pref-row-label">{{ t('preferences.merge-tracks') }}</span>
-              <div class="pref-row-desc">{{ t('preferences.merge-tracks-desc') }}</div>
-            </div>
-            <mo-extend-select
-              :model-value="videoSettings.mergeTracks"
-              :options="MERGE_TRACKS_OPTIONS"
-              @change="(v) => saveVideoSetting('mergeTracks', v)"
-            />
-          </el-col>
-          <el-col
-            class="form-item-sub form-item-sub--inline form-item-sub--inline-video"
-            :span="24"
-          >
-            <div class="pref-row-text">
               <span class="pref-row-label">{{ t('preferences.decode-threads') }}</span>
               <div class="pref-row-desc">{{ t('preferences.decode-threads-desc') }}</div>
             </div>
@@ -2066,16 +2052,18 @@
             />
           </el-col>
           <el-col
-            class="form-item-sub"
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-video"
             :span="24"
           >
             <div class="pref-row-text">
-              <span class="pref-row-label">{{ t('preferences.prefer-software-decode') }}</span>
-              <div class="pref-row-desc">{{ t('preferences.prefer-software-decode-desc') }}</div>
+              <span class="pref-row-label">{{ t('preferences.decode-mode') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.decode-mode-desc') }}</div>
             </div>
-            <el-switch
-              :model-value="videoSettings.preferSoftwareDecode"
-              @change="(v) => saveVideoSetting('preferSoftwareDecode', v)"
+            <mo-segmented-slider
+              :value="videoSettings.decodeMode"
+              :options="DECODE_MODE_OPTIONS"
+              size="mini"
+              @change="(v) => saveVideoSetting('decodeMode', v)"
             />
           </el-col>
         </el-form-item>
@@ -2461,6 +2449,7 @@ import {
   TRACKER_SOURCE_OPTIONS
 } from '@shared/constants'
 import { reduceTrackerString } from '@shared/utils/tracker'
+import { decodeModeOf } from '@shared/zuvrust'
 import keymap from '@shared/keymap'
 import '@/components/Icons/dice'
 import '@/components/Icons/sync'
@@ -2512,11 +2501,6 @@ const MERGE_FRAGMENT_OPTIONS = [
   { value: 4000, label: '4 s' },
   { value: 10000, label: '10 s' }
 ]
-const MERGE_TRACKS_OPTIONS = [
-  { value: 'both', label: t('preferences.merge-tracks-both') },
-  { value: 'audio', label: t('preferences.merge-tracks-audio') },
-  { value: 'video', label: t('preferences.merge-tracks-video') }
-]
 const DECODE_THREADS_OPTIONS = [
   { value: 0, label: t('preferences.decode-threads-auto') },
   { value: 1, label: '1' },
@@ -2525,21 +2509,25 @@ const DECODE_THREADS_OPTIONS = [
   { value: 6, label: '6' },
   { value: 8, label: '8' }
 ]
+const DECODE_MODE_OPTIONS = [
+  { value: 'auto', label: t('preferences.decode-mode-auto') },
+  { value: 'hardware', label: t('preferences.decode-mode-hardware') },
+  { value: 'software', label: t('preferences.decode-mode-software') }
+]
 const videoSettings = ref({
   mergeFormat: 'mp4',
   mergeFragmentMs: 0,
-  mergeTracks: 'both',
   decodeThreads: 0,
-  preferSoftwareDecode: false
+  decodeMode: 'auto'
 })
 function initVideoSettings () {
   const c = preferenceConfig.value || {}
   videoSettings.value = {
     mergeFormat: c.mergeFormat || 'mp4',
     mergeFragmentMs: Number(c.mergeFragmentMs || 0),
-    mergeTracks: c.mergeTracks || 'both',
     decodeThreads: Number(c.decodeThreads || 0),
-    preferSoftwareDecode: c.preferSoftwareDecode === true
+    // 归一化也在这里：旧配置里的布尔 preferSoftwareDecode（"强制软解"）会迁移成 software
+    decodeMode: decodeModeOf(c)
   }
 }
 initVideoSettings()
@@ -2548,9 +2536,8 @@ watch(() => preferenceConfig.value, () => initVideoSettings())
 const VIDEO_SETTING_KEYS = {
   mergeFormat: 'merge-format',
   mergeFragmentMs: 'merge-fragment-ms',
-  mergeTracks: 'merge-tracks',
   decodeThreads: 'decode-threads',
-  preferSoftwareDecode: 'prefer-software-decode'
+  decodeMode: 'decode-mode'
 }
 function saveVideoSetting (camelKey, value) {
   videoSettings.value[camelKey] = value

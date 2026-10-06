@@ -15,6 +15,8 @@ export default {
   'file-actions': '操作',
   'play': '播放',
   'play-not-downloaded': '尚未下載到資料，暫時無法播放',
+  'play-not-media': '這個檔案不是視訊或音訊，無法播放',
+  'play-dash-part': '這是 DASH 影音分片，合併成成品後才能播放',
   'file-size': '大小',
   'selected-files-sum': '已選取：{{selectedFilesCount}}個檔案，總計 {{selectedFilesTotalSize}}',
   'select-at-least-one': '請選擇至少一個檔案',

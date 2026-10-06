@@ -215,9 +215,8 @@ export default class ConfigManager {
         // 「视频」分类：合并产物与解码偏好（媒体引擎的可设置项）
         'merge-format': 'mp4',
         'merge-fragment-ms': 0,
-        'merge-tracks': 'both',
         'decode-threads': 0,
-        'prefer-software-decode': false,
+        'decode-mode': 'auto',
         'background-type': 'color',
         'background-image': EMPTY_STRING,
         'background-image-opacity': 0.4,

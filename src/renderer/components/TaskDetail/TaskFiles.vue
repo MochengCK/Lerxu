@@ -53,8 +53,9 @@
           width="100">
           <template #default="scope">{{ bytesToSize(scope.row.length) }}</template>
         </el-table-column>
-        <!-- 操作列（表头「操作」）：只对**可播放的媒体文件**出现播放按钮
-             （其它类型不显示）。视频与音频都走同一个独立播放器窗口。
+        <!-- 操作列（表头「操作」）：**每一行都有播放按钮** —— 不能播的置灰
+             （不是干脆不显示：按钮突然消失会让人以为"这个文件没有播放功能"，
+             置灰 + 悬停说明原因才说得清）。视频与音频都走同一个独立播放器窗口。
              表头单元格也会带上 class-name，所以 .task-file-actions .cell 的
              padding:0 / 居中 对表头同样生效，52px 宽放得下这两个字。 -->
         <el-table-column
@@ -65,7 +66,6 @@
           class-name="task-file-actions">
           <template #default="scope">
             <mo-hover-tip
-              v-if="mediaKindOf(scope.row.name)"
               :content="playTip(scope.row)"
               placement="top"
               :open-delay="200">
@@ -247,12 +247,26 @@ function fileOffsetOf (row) {
   }
 }
 
-/** 一个字节都没下到的文件点了也是白等（服务端等不到数据），所以先禁用。 */
+/**
+ * 这一行能不能播：**要是可播放的媒体**（视频/音频，见 `mediaKindOf`），
+ * 且已经下到过数据 —— 一个字节都没有时点了也是白等（服务端等不到数据）。
+ *
+ * 两类"不能播"是两回事，`playTip` 会分别说清（不是媒体 / 还没下到数据）。
+ */
 function canPlay (row) {
+  if (!mediaKindOf(row && row.name)) {
+    return false
+  }
   return Number(row && row.completedLength) > 0
 }
 
 function playTip (row) {
+  const name = `${(row && row.name) || ''}`
+  if (!mediaKindOf(name)) {
+    // DASH 分片值得单独说一句：它**是**音视频数据，只是单条放不了
+    // （索引在初始化段里），用户看到"不是视频或音频"会更糊涂。
+    return /\.m4s$/i.test(name) ? t('task.play-dash-part') : t('task.play-not-media')
+  }
   return canPlay(row) ? t('task.play') : t('task.play-not-downloaded')
 }
 

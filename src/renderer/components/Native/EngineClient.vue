@@ -60,13 +60,12 @@ defineOptions({ name: 'mo-engine-client' })
 
 // 通知去重标记（组件级共享）
 //
-// 此前这三处在使用前从未声明就直接赋值（`if (!X) { X = new Map() }` 形式）。
+// 此前这几处在使用前从未声明就直接赋值（`if (!X) { X = new Map() }` 形式）。
 // `<script setup>` 是 ES module（严格模式），访问未声明标识符会抛
 // ReferenceError，导致「浏览器接管启动通知」「缺少媒体引擎提示」
 // 「存储权限提示」三条路径整体失效（ESLint no-undef 抓出）。
-// （"缺媒体引擎只提示一次"的 _extensionDashNoFfmpegNotified 已并入
-//  _completeNotifier：完成通知统一按下载身份去重，见 utils/completeNotify）
-let _browserStartNotifiedKeys = null
+// （"浏览器启动通知"与"缺媒体引擎只提示一次"现在都按**下载身份**去重：
+//  见 _downloadStartNotifier / _completeNotifier，utils/completeNotify）
 let _permNotifiedGids = null
 
 const { t } = i18n.global
@@ -106,6 +105,12 @@ let _bootTimer = null
 let _visibilityHandler = null
 // 一条下载只弹一次完成通知（键取 pairId / gid，见 utils/completeNotify）
 const _completeNotifier = createCompleteNotifier()
+// 「开始下载」类通知同理：**一次下载只弹一次**，一对音视频（画面流 + 声音流，
+// 两个 gid 一个 pairId）算同一次下载 —— 用户看到的是"媒体任务添加时弹两个
+// 通知"（2026-10-06 交接）。旧实现按"文件名 + 10 秒窗口"去重，两条流在刚下发、
+// 文件还没建时认不出配对，键会退化成各自的 gid ⇒ 各弹一次；两条流先后开始
+// （隔得久）时 10 秒窗口也过期。身份口径与完成通知一致 ⇒ 窗口给足 10 分钟。
+const _downloadStartNotifier = createCompleteNotifier({ ttlMs: 10 * 60 * 1000 })
 let _dashMergeJobs = new Map()
 // 正在跑的 `zuvrust mux` 子进程：合并是长任务，宿主退出 / 组件卸载时要能一把
 // 收掉，否则引擎进程会被留下继续吃 CPU 与磁盘（正常结束它会自己退出）。
@@ -322,83 +327,15 @@ const dir = dirname(filePath)
               const fromHeader = headers.some(h => /X-Lerxu-Source\s*:\s*BrowserExtension/i.test(`${h}`))
               const fromBrowserExtension = fromHeader || fromHistory
               if (fromBrowserExtension) {
-                const key = buildBrowserStartNotifyKey(task, cfg)
-                if (!_browserStartNotifiedKeys) {
-                  _browserStartNotifiedKeys = new Map()
-                }
-                const now = Date.now()
-                const windowMs = 10000
-                let shouldNotify = true
-                if (key) {
-                  const prev = Number(_browserStartNotifiedKeys.get(key) || 0)
-                  if (prev && (now - prev) < windowMs) {
-                    shouldNotify = false
-                  }
-                  _browserStartNotifiedKeys.set(key, now)
-                  if (_browserStartNotifiedKeys.size > 500) {
-                    for (const [k, t] of _browserStartNotifiedKeys.entries()) {
-                      if (!t || (now - Number(t)) > (windowMs * 3)) {
-                        _browserStartNotifiedKeys.delete(k)
-                      }
-                    }
-                  }
-                }
-                if (shouldNotify) {
-                  const message = t('task.download-start-browser-message')
-                  msg.info(message)
-                  if (is.windows()) {
-                    showNativeNotification({
-                      title: message,
-                      body: taskName,
-                      onClick: () => {
-                        ipcRenderer.send('command', 'application:show', { page: 'index' })
-                      }
-                    })
-                  }
-                }
+                notifyDownloadStartOnce(task, taskName, true)
               } else if (!isBilibiliPart) {
-                const message = t('task.download-start-message', { taskName })
-                msg.info(message)
+                notifyDownloadStartOnce(task, taskName, false)
               }
             } catch (_) {
               if (fromHistory) {
-                const key = buildBrowserStartNotifyKey(task, cfg)
-                if (!_browserStartNotifiedKeys) {
-                  _browserStartNotifiedKeys = new Map()
-                }
-                const now = Date.now()
-                const windowMs = 10000
-                let shouldNotify = true
-                if (key) {
-                  const prev = Number(_browserStartNotifiedKeys.get(key) || 0)
-                  if (prev && (now - prev) < windowMs) {
-                    shouldNotify = false
-                  }
-                  _browserStartNotifiedKeys.set(key, now)
-                  if (_browserStartNotifiedKeys.size > 500) {
-                    for (const [k, t] of _browserStartNotifiedKeys.entries()) {
-                      if (!t || (now - Number(t)) > (windowMs * 3)) {
-                        _browserStartNotifiedKeys.delete(k)
-                      }
-                    }
-                  }
-                }
-                if (shouldNotify) {
-                  const message = t('task.download-start-browser-message')
-                  msg.info(message)
-                  if (is.windows()) {
-                    showNativeNotification({
-                      title: message,
-                      body: taskName,
-                      onClick: () => {
-                        ipcRenderer.send('command', 'application:show', { page: 'index' })
-                      }
-                    })
-                  }
-                }
+                notifyDownloadStartOnce(task, taskName, true)
               } else if (!isBilibiliPart) {
-                const message = t('task.download-start-message', { taskName })
-                msg.info(message)
+                notifyDownloadStartOnce(task, taskName, false)
               }
             }
 
@@ -1057,32 +994,36 @@ const dir = dirname(filePath)
         }
         return false
       }
-      function buildBrowserStartNotifyKey(task, cfg) {
-        try {
-          const gid = task && task.gid ? `${task.gid}` : ''
-          const config = cfg && typeof cfg === 'object' ? cfg : (preferenceConfig.value || {})
-          const suffix = config && config.downloadingFileSuffix ? `${config.downloadingFileSuffix}` : ''
-          const p = getTaskActualPath(task, config) || ''
-          const raw = p ? basename(p) : ''
-          const file0 = suffix ? stripDownloadingSuffixFromFilename(raw, suffix) : raw
-          const file = stripDuplicateNumberBeforeExtension(file0)
-          const lower = file.toLowerCase()
-          const isPairLike =
-            lower.endsWith('_video.mp4') ||
-            lower.endsWith('_audio.m4a') ||
-            /\.m4s$/i.test(file) ||
-            /(video\s*stream|audio\s*stream|videostream|audiostream|视频流|音频流)/i.test(file)
-          if (!isPairLike) {
-            return gid
-          }
-          const stem = normalizeDashStemFromFilename(file)
-          const dir = p ? dirname(p) : ''
-          if (!stem || !dir) {
-            return gid
-          }
-          return `${resolve(dir)}|${stem}`
-        } catch (_) {
-          return ''
+      /**
+       * 「开始下载」类通知：**一次下载只弹一次**。
+       *
+       * 为什么按"下载身份"而不是"文件名 + 时间窗"去重（老实现就是后者，见
+       * utils/completeNotify 的抬头）：一对音视频是**两个引擎任务**（两个 gid、
+       * 一个 pairId），而刚下发时两边的文件都还没建、从名字上认不出是配对 ⇒
+       * 各弹一次（用户看到的"媒体任务添加时弹两个通知"）；两条流先后开始、
+       * 隔得久时老实现的 10 秒窗口也早过期。身份（pairId）不受这些影响，
+       * 且与完成通知同口径 ⇒ 一对只弹一次，重新下载（新 pairId）照常弹。
+       *
+       * `fromBrowserExtension` 决定文案与是否顺带发系统通知（仅 Windows）。
+       */
+      function notifyDownloadStartOnce(task, taskName, fromBrowserExtension) {
+        const pair = getTaskPairInfo(task)
+        const source = pair ? { pairId: pair.id, gid: task && task.gid } : task
+        if (!_downloadStartNotifier.shouldNotify(source, '')) {
+          return
+        }
+        const message = fromBrowserExtension
+          ? t('task.download-start-browser-message')
+          : t('task.download-start-message', { taskName })
+        msg.info(message)
+        if (fromBrowserExtension && is.windows()) {
+          showNativeNotification({
+            title: message,
+            body: taskName,
+            onClick: () => {
+              ipcRenderer.send('command', 'application:show', { page: 'index' })
+            }
+          })
         }
       }
       function looksLikeExtensionDashStreamPath(p, downloadingFileSuffix) {
@@ -2055,8 +1996,8 @@ const dir = dirname(filePath)
             reject(new Error('mux 没有任何输入文件'))
             return
           }
-          // 「视频」设置项 → 引擎参数（分片时长 / 只留声音 / 只留画面）与环境变量
-          //（线程数 / 强制软解）。容器由输出扩展名决定，见 `getDashMergeOutputPath`。
+          // 「视频」设置项 → 引擎参数（分片时长）与环境变量（线程数 / 强制软解）。
+          // 容器由输出扩展名决定，见 `getDashMergeOutputPath`。
           const muxCfg = preferenceConfig.value || {}
           const args = [
             'mux',
@@ -2064,8 +2005,7 @@ const dir = dirname(filePath)
             ...inputs,
             ...buildMuxArgs({
               fragmentMs: Number(muxCfg.mergeFragmentMs || 0),
-              format: muxCfg.mergeFormat,
-              tracks: muxCfg.mergeTracks
+              format: muxCfg.mergeFormat
             })
           ]
           const child = spawn(enginePath, args, {
@@ -2206,7 +2146,7 @@ const dir = dirname(filePath)
         // ⚠️ 这个临时文件的**扩展名就是引擎的容器选择**（引擎按扩展名选封装器），
         // 所以它必须与「视频 → 合并格式」一致；末了改名成正式名时用的是同一个扩展名。
         const cfg = preferenceConfig.value || {}
-        const ext = mergeOutputExtension(cfg.mergeFormat, cfg.mergeTracks)
+        const ext = mergeOutputExtension(cfg.mergeFormat)
         for (let i = 0; i < 1000; i++) {
           const rand = Math.random().toString(36).slice(2, 10)
           const candidate = resolve(dir, `.lerxu-merging-${rand}.${ext}`)
@@ -2844,7 +2784,7 @@ const dir = dirname(filePath)
           // 所以这里以设置项为准；站点元数据（bilibiliFormat）只在设置项保持默认
           // （mp4）时兜底 —— 反过来会让 .mkv 的内容被改名成 .mp4。
           const mergeCfg = preferenceConfig.value || {}
-          const settingExt = mergeOutputExtension(mergeCfg.mergeFormat, mergeCfg.mergeTracks)
+          const settingExt = mergeOutputExtension(mergeCfg.mergeFormat)
           let targetExt = `.${settingExt}`
           try {
             const gid = task && task.gid ? `${task.gid}` : ''

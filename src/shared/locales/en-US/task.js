@@ -15,6 +15,8 @@ export default {
   'file-actions': 'Actions',
   'play': 'Play',
   'play-not-downloaded': 'No data downloaded yet — cannot play',
+  'play-not-media': 'This file is not a video or audio track',
+  'play-dash-part': 'DASH media segment — playable only after the parts are merged',
   'file-size': 'Size',
   'selected-files-sum': 'Selected: {{selectedFilesCount}} files, total size {{selectedFilesTotalSize}}',
   'select-at-least-one': 'Please select at least one file',

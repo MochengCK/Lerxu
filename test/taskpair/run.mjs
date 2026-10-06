@@ -622,6 +622,35 @@ check('键数量有上限，不会无限增长', () => {
   assert(n.size <= 11, `size=${n.size}`)
 })
 
+// ── 「开始下载」通知：一次下载只弹一次（EngineClient::notifyDownloadStartOnce）──
+//
+// 老实现按"文件名 + 10 秒窗口"去重：一对音视频刚下发时文件名还认不出配对，键退化
+// 成各自的 gid ⇒ 各弹一次（用户报的"媒体任务添加时弹两个通知"）；两条流先后开始、
+// 隔得久时 10 秒窗口也过期。现在与完成通知同口径（pairId / gid）+ 10 分钟窗口。
+const START_NOTIFY_TTL_MS = 10 * 60 * 1000
+
+check('开始通知：一对音视频（两个 gid 一个 pairId）只弹一次', () => {
+  const n = createCompleteNotifier({ ttlMs: START_NOTIFY_TTL_MS })
+  assertEqual(n.shouldNotify({ pairId: 'p1', gid: 'video-gid' }, ''), true, '画面流先到 → 弹')
+  assertEqual(n.shouldNotify({ pairId: 'p1', gid: 'audio-gid' }, ''), false, '声音流后到 → 不能再弹')
+})
+
+check('开始通知：两条流隔得久也只弹一次（窗口给足 10 分钟）', () => {
+  const n = createCompleteNotifier({ ttlMs: START_NOTIFY_TTL_MS })
+  const t0 = 1000000
+  assertEqual(n.shouldNotify({ pairId: 'p1', gid: 'v' }, '', t0), true)
+  // 排队下载时两条流隔几分钟很正常 —— 老实现的 10 秒窗口早就过期了
+  assertEqual(n.shouldNotify({ pairId: 'p1', gid: 'a' }, '', t0 + 5 * 60 * 1000), false)
+})
+
+check('开始通知：普通任务按 gid，重新下载照弹', () => {
+  const n = createCompleteNotifier({ ttlMs: START_NOTIFY_TTL_MS })
+  assertEqual(n.shouldNotify({ gid: 'g1' }, ''), true)
+  assertEqual(n.shouldNotify({ gid: 'g1' }, ''), false, '同一个任务重复上报才拦')
+  assertEqual(n.shouldNotify({ gid: 'g2' }, ''), true, '另一个任务照弹')
+  assertEqual(n.shouldNotify({ pairId: 'p2', gid: 'g3' }, ''), true, '重新下载（新 pairId）照弹')
+})
+
 console.log('')
 console.log(`taskPair: ${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)

@@ -17,7 +17,9 @@
  * 前提（引擎出帧 + 引擎出 PCM 就是为它建的）。代价是引擎还没接的编码**播不了**，
  * 那就**如实说不支持**：
  *
- * - 视频：目前只有 H.264 硬解（H.265 / AV1 / VP9 会明确报"解码目前只接了 H.264"）；
+ * - 视频：H.264 走**三平台硬解**（macOS VideoToolbox / Windows Media Foundation /
+ *   Linux VA-API），AV1 走**自研软解**（Apple M3 及以后优先走硬解）；
+ *   H.265 / VP9 会明确报"解码器还没接这个编码"；
  * - 音频：FLAC / AAC-LC / MP3 / Opus（其余编码明确报 Unsupported，不会产噪声）；
  * - 容器：引擎不认的容器（wav / webm / 部分 mkv 等）同样明确报错。
  *

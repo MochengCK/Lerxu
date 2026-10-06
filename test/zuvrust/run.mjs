@@ -38,6 +38,9 @@ import {
   engineExitRetryable,
   probeHasVideoAndAudio,
   progressFromEngineLine,
+  decodeModeOf,
+  decodeModeEnv,
+  engineEnvFromConfig,
   ENGINE_EXIT
 } from '../../src/shared/zuvrust/index.js'
 
@@ -230,6 +233,36 @@ if (!bin) {
   const muxMissing = run(['mux', '/tmp/lerxu-never.mp4', '/nonexistent/a.ts', '/nonexistent/b.ts', '--json'])
   ok(muxMissing.status !== 0, 'mux 输入不存在时失败（绝不静默产出坏文件）')
   ok(lastEngineError(muxMissing.stderr) !== null, 'mux 失败时给出一行可解析的错误 JSON')
+}
+
+// ---------- 解码方式（设置项 → 引擎环境变量） ----------
+section('解码方式')
+{
+  // 「设置 → 视频 → 解码方式」三档：自适应 / 仅硬解 / 仅软解
+  eq(decodeModeOf({ decodeMode: 'auto' }), 'auto', '自适应')
+  eq(decodeModeOf({ decodeMode: 'hardware' }), 'hardware', '仅硬解')
+  eq(decodeModeOf({ decodeMode: 'software' }), 'software', '仅软解')
+  eq(decodeModeOf({}), 'auto', '没设过 = 自适应（引擎也按这个默认走）')
+  eq(decodeModeOf({ decodeMode: '???' }), 'auto', '认不出来的值按自适应（与引擎一致：不静默偏一边）')
+  eq(decodeModeOf({ 'decode-mode': 'hardware' }), 'hardware', 'kebab 形态也认（主进程读的就是它）')
+
+  // 旧布尔「强制软解」的迁移：true → 仅软解，false/缺省 → 自适应
+  eq(decodeModeOf({ preferSoftwareDecode: true }), 'software', '旧配置 true 迁到仅软解')
+  eq(decodeModeOf({ preferSoftwareDecode: false }), 'auto', '旧配置 false 不动')
+  eq(decodeModeOf({ 'prefer-software-decode': true }), 'software', 'kebab 旧键同样迁移')
+  eq(decodeModeOf({ decodeMode: 'hardware', preferSoftwareDecode: true }), 'hardware', '新键优先于旧键')
+
+  // 环境变量：只写非默认（auto 什么都不写）
+  eq(JSON.stringify(decodeModeEnv('auto')), '{}', '自适应不写环境变量（引擎的默认就是它）')
+  eq(decodeModeEnv('hardware').ME_DECODE, 'hardware', '仅硬解 → ME_DECODE=hardware')
+  eq(decodeModeEnv('software').ME_DECODE, 'software', '仅软解 → ME_DECODE=software')
+
+  // 合并那条路的组合环境变量
+  const envAuto = engineEnvFromConfig({ decodeThreads: 4, decodeMode: 'auto' })
+  eq(envAuto.ME_THREADS, '4', '线程数照旧写')
+  ok(envAuto.ME_DECODE === undefined, '自适应时不写 ME_DECODE')
+  eq(engineEnvFromConfig({ decodeMode: 'hardware' }).ME_DECODE, 'hardware', '合并路径也带上解码方式')
+  eq(engineEnvFromConfig({ preferSoftwareDecode: true }).ME_DECODE, 'software', '合并路径同样迁移旧配置')
 }
 
 // ---------- 汇总 ----------

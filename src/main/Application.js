@@ -31,6 +31,7 @@ import {
   reduceTrackerString
 } from '@shared/utils/tracker'
 import { fetchEd2kServersFromSource } from '@shared/utils/ed2k'
+import { decodeModeOf } from '@shared/zuvrust'
 import { parseAria2ControlProgress } from './utils/aria2-control'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
 import { getLanguage } from '@shared/locales'
@@ -3969,9 +3970,12 @@ export default class Application extends EventEmitter {
         enginePath,
         input: filePath,
         size: totalBytes,
-        // 「视频」设置项：解码线程数（0 = 引擎默认）与强制软解
+        // 「视频」设置项：解码线程数（0 = 引擎默认）与解码方式（自适应/仅硬解/仅软解）
         threads: Number(this.configManager?.getUserConfig?.('decode-threads') || 0),
-        preferSoftwareDecode: this.configManager?.getUserConfig?.('prefer-software-decode') === true,
+        decodeMode: decodeModeOf({
+          decodeMode: this.configManager?.getUserConfig?.('decode-mode'),
+          preferSoftwareDecode: this.configManager?.getUserConfig?.('prefer-software-decode')
+        }),
         // 边下边播是常态；文件已下完时它照样读完（读不动就判定 EOF）
         grow: true,
         // 引擎上报的播放头 = "正在读文件里的哪个位置"，比按码率估算准得多

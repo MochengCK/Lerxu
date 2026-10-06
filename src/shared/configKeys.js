@@ -40,9 +40,9 @@ const userKeys = [
   'theme',
   'merge-format',
   'merge-fragment-ms',
-  'merge-tracks',
   'decode-threads',
-  'prefer-software-decode',
+  'decode-mode',
+  'prefer-software-decode', // legacy：旧「强制软解」布尔，读侧迁移成 decode-mode=software
   'background-type',
   'background-image',
   'background-image-opacity',

@@ -12,7 +12,10 @@ const SHARED_DIR = path.join(ROOT, 'src/shared')
 export function resolve (specifier, context, nextResolve) {
   if (specifier.startsWith('@shared/')) {
     const rel = specifier.slice('@shared/'.length)
-    const candidates = [rel, `${rel}.js`, path.join(rel, 'index.js')]
+    // ⚠️ 先按**文件**找，再看目录：Node 不能 import 一个目录，早先"目录优先"的
+    // 顺序会让 `@shared/zuvrust`（目录）直接报 ERR_UNSUPPORTED_DIR_IMPORT ——
+    // 之前只有 `@shared/utils/xxx` 这种"带文件名"的写法，所以一直没暴露。
+    const candidates = [`${rel}.js`, path.join(rel, 'index.js')]
     for (const c of candidates) {
       const abs = path.join(SHARED_DIR, c)
       if (existsSync(abs)) {

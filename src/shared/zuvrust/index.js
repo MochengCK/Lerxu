@@ -191,24 +191,14 @@ export function mergeContainerOf (format) {
   return 'mp4'
 }
 
-/** 合并保留哪些内容（设置项 `merge-tracks`）。 */
-export function mergeTracksOf (tracks) {
-  const t = `${tracks || ''}`.toLowerCase()
-  if (t === 'audio' || t === 'audio-only') return 'audio'
-  if (t === 'video' || t === 'video-only') return 'video'
-  return 'both'
-}
-
 /**
  * 合并产物的扩展名。
  *
- * 容器由扩展名决定（引擎按扩展名选封装器）。只有声音时优先用各自容器的
- * "纯音频"扩展名（`.m4a` / `.mka`），因为它更诚实，播放器/资源管理器也认。
+ * 容器由扩展名决定（引擎按扩展名选封装器）。**只留声音的那个设置项已删除**
+ *（见下面 `buildMuxArgs` 的注释），所以扩展名只看容器。
  */
-export function mergeOutputExtension (format, tracks) {
+export function mergeOutputExtension (format) {
   const container = mergeContainerOf(format)
-  const only = mergeTracksOf(tracks)
-  if (only === 'audio') return container === 'mkv' ? 'mka' : container === 'ts' ? 'ts' : 'm4a'
   if (container === 'mkv') return 'mkv'
   if (container === 'ts') return 'ts'
   return 'mp4'
@@ -217,14 +207,17 @@ export function mergeOutputExtension (format, tracks) {
 /** 分片时长的可选值（毫秒）；0 表示"用引擎默认"（现在是 2 秒）。 */
 export const MERGE_FRAGMENT_MS_CHOICES = [0, 2000, 4000, 10000]
 
-/** 把设置项拼成 `mux` 的参数（输出与输入之外的那些）。 */
-export function buildMuxArgs ({ fragmentMs = 0, format = 'mp4', tracks = 'both' } = {}) {
+/**
+ * 把设置项拼成 `mux` 的参数（输出与输入之外的那些）。
+ *
+ * 合并**一律"画面 + 声音"**：「合并保留内容」（只留声音 / 只留画面）这个设置项
+ * 2026-10-06 按用户要求删掉了。引擎侧的 `--audio-only` / `--video-only` 仍在
+ * （CLI 直接调时用得上），宿主只是不再暴露这个选择。
+ */
+export function buildMuxArgs ({ fragmentMs = 0, format = 'mp4' } = {}) {
   const args = ['--json', '--progress']
   const ms = Number(fragmentMs)
   if (Number.isFinite(ms) && ms >= 20) args.push(`--fragment-ms=${Math.round(ms)}`)
-  const only = mergeTracksOf(tracks)
-  if (only === 'audio') args.push('--audio-only')
-  if (only === 'video') args.push('--video-only')
   // 容器由扩展名决定（engine 侧按 `.mp4/.mkv/.ts` 选封装器）——
   // 这里只用它做一次自检：格式与扩展名不匹配时前端就该发现
   void mergeContainerOf(format)
@@ -242,6 +235,43 @@ export function engineEnvFromConfig (config) {
   const cfg = config || {}
   const threads = Number(cfg.decodeThreads || 0)
   if (Number.isFinite(threads) && threads > 0) env.ME_THREADS = `${Math.floor(threads)}`
-  if (cfg.preferSoftwareDecode === true) env.ME_NO_HW = '1'
+  Object.assign(env, decodeModeEnv(decodeModeOf(cfg)))
   return env
+}
+
+// ───────────────────────── 解码方式（设置项 → 引擎） ─────────────────────────
+
+/** 解码方式的三档（与「设置 → 视频 → 解码方式」一一对应）。 */
+export const DECODE_MODES = ['auto', 'hardware', 'software']
+
+/**
+ * 解码方式归一化：`auto` / `hardware` / `software`。
+ *
+ * - `auto`（默认）：优先硬解，起不来落自研软解；
+ * - `hardware`（仅硬解）：硬解起不来就**明确报错**，不静默掉到慢的软解；
+ * - `software`（仅软解）：完全不碰硬件解码器（排查"是不是硬解的锅"时用）。
+ *
+ * 旧配置里的布尔 `prefer-software-decode`（"强制软解"）迁移成 `software`，
+ * 为 false 时不动（auto）。认不出来的值一律按 auto —— 与引擎那边一致。
+ */
+export function decodeModeOf (config) {
+  const cfg = config || {}
+  const raw = `${cfg.decodeMode || cfg['decode-mode'] || ''}`.trim().toLowerCase()
+  if (raw === 'hardware' || raw === 'hw' || raw === '硬解') return 'hardware'
+  if (raw === 'software' || raw === 'sw' || raw === '软解') return 'software'
+  if (raw === 'auto' || raw === '自适应') return 'auto'
+  const legacy = cfg.preferSoftwareDecode === true || cfg['prefer-software-decode'] === true
+  return legacy ? 'software' : 'auto'
+}
+
+/**
+ * 解码方式 → 引擎环境变量（`auto` 什么都不写 = 引擎默认）。
+ *
+ * 合并（`engineEnvFromConfig`）与播放（`EnginePlayer`）两条路共用这一份，
+ * 免得两边各写一套判断、以后只改了一处。
+ */
+export function decodeModeEnv (mode) {
+  if (mode === 'hardware') return { ME_DECODE: 'hardware' }
+  if (mode === 'software') return { ME_DECODE: 'software' }
+  return {}
 }

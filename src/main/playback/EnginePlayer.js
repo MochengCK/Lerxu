@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { decodeModeEnv, decodeModeOf } from '@shared/zuvrust'
 
 /**
  * 用**媒体引擎**当播放内核。
@@ -68,8 +69,8 @@ export default class EnginePlayer {
     engineDecode = true,
     /** 「视频 → 解码线程数」：0 = 引擎默认（机器并行度）。换算成 `ME_THREADS`。 */
     threads = 0,
-    /** 「视频 → 强制软解」：true 时给引擎 `ME_NO_HW=1`（硬解有兼容问题时逃生）。 */
-    preferSoftwareDecode = false,
+    /** 「视频 → 解码方式」：`auto`（默认）/ `hardware`（仅硬解）/ `software`（仅软解）。 */
+    decodeMode = 'auto',
     onPlayhead = null,
     onPrioritize = null,
     logger = console
@@ -85,7 +86,7 @@ export default class EnginePlayer {
     /** `true` = 让引擎**解码**（视频出 NV12 帧、音频出 PCM；播放器不经浏览器解码） */
     this.engineDecode = !!engineDecode
     this.threads = Number(threads) || 0
-    this.preferSoftwareDecode = !!preferSoftwareDecode
+    this.decodeMode = decodeModeOf({ decodeMode })
     this.onPlayhead = onPlayhead
     this.onPrioritize = onPrioritize
     this.logger = logger
@@ -155,7 +156,7 @@ export default class EnginePlayer {
         // 「视频」设置项 → 引擎环境变量（只写非默认项，不设 = 引擎按自己的默认走）
         const env = { ...process.env }
         if (this.threads > 0) env.ME_THREADS = `${Math.floor(this.threads)}`
-        if (this.preferSoftwareDecode) env.ME_NO_HW = '1'
+        Object.assign(env, decodeModeEnv(this.decodeMode))
         child = spawn(this.enginePath, this.args(), {
           stdio: ['ignore', 'pipe', 'pipe'],
           windowsHide: true,
