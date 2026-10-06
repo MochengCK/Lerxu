@@ -80,6 +80,7 @@ import '@/components/Icons/preference-extension'
 import '@/components/Icons/preference-task'
 import '@/components/Icons/preference-file'
 import '@/components/Icons/preference-advanced'
+import '@/components/Icons/video'
 
 const { t } = i18n.global
 const appStore = useAppStore()
@@ -114,6 +115,13 @@ const preferenceNavSections = computed(() => [
       { value: 'bt', label: t('preferences.bt-settings'), icon: 'preference-bt' },
       { value: 'task', label: t('preferences.task-manage'), icon: 'preference-task' },
       { value: 'file', label: t('preferences.file-manage'), icon: 'preference-file' }
+    ]
+  },
+  {
+    key: 'media',
+    label: t('preferences.section-media'),
+    items: [
+      { value: 'video', label: t('preferences.video'), icon: 'video' }
     ]
   },
   {

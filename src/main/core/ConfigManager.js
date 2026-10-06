@@ -212,6 +212,12 @@ export default class ConfigManager {
         'task-notification': true,
         'task-complete-notify-click-action': 'open-folder',
         'theme': APP_THEME.AUTO,
+        // 「视频」分类：合并产物与解码偏好（媒体引擎的可设置项）
+        'merge-format': 'mp4',
+        'merge-fragment-ms': 0,
+        'merge-tracks': 'both',
+        'decode-threads': 0,
+        'prefer-software-decode': false,
         'background-type': 'color',
         'background-image': EMPTY_STRING,
         'background-image-opacity': 0.4,

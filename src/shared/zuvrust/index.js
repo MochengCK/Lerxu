@@ -176,3 +176,72 @@ export function progressFromEngineLine (line) {
     durationUs: Number(data.durationUs || 0)
   }
 }
+
+// ───────────────────────── 「视频」设置项 → 引擎调用 ─────────────────────────
+//
+// 下面这几个也是**纯函数**：把设置项翻译成引擎的参数/环境变量。放在这里而不是
+// 留在 SFC 里，理由与上面一样 —— 合并与播放两条路都要用，而且这样能被
+// `test/zuvrust/run.mjs` 直接断言（界面上点一遍是看不出来参数拼错的）。
+
+/** 合并产物的容器（设置项 `merge-format`）。 */
+export function mergeContainerOf (format) {
+  const f = `${format || ''}`.toLowerCase()
+  if (f === 'mkv' || f === 'matroska') return 'mkv'
+  if (f === 'ts' || f === 'mpegts') return 'ts'
+  return 'mp4'
+}
+
+/** 合并保留哪些内容（设置项 `merge-tracks`）。 */
+export function mergeTracksOf (tracks) {
+  const t = `${tracks || ''}`.toLowerCase()
+  if (t === 'audio' || t === 'audio-only') return 'audio'
+  if (t === 'video' || t === 'video-only') return 'video'
+  return 'both'
+}
+
+/**
+ * 合并产物的扩展名。
+ *
+ * 容器由扩展名决定（引擎按扩展名选封装器）。只有声音时优先用各自容器的
+ * "纯音频"扩展名（`.m4a` / `.mka`），因为它更诚实，播放器/资源管理器也认。
+ */
+export function mergeOutputExtension (format, tracks) {
+  const container = mergeContainerOf(format)
+  const only = mergeTracksOf(tracks)
+  if (only === 'audio') return container === 'mkv' ? 'mka' : container === 'ts' ? 'ts' : 'm4a'
+  if (container === 'mkv') return 'mkv'
+  if (container === 'ts') return 'ts'
+  return 'mp4'
+}
+
+/** 分片时长的可选值（毫秒）；0 表示"用引擎默认"（现在是 2 秒）。 */
+export const MERGE_FRAGMENT_MS_CHOICES = [0, 2000, 4000, 10000]
+
+/** 把设置项拼成 `mux` 的参数（输出与输入之外的那些）。 */
+export function buildMuxArgs ({ fragmentMs = 0, format = 'mp4', tracks = 'both' } = {}) {
+  const args = ['--json', '--progress']
+  const ms = Number(fragmentMs)
+  if (Number.isFinite(ms) && ms >= 20) args.push(`--fragment-ms=${Math.round(ms)}`)
+  const only = mergeTracksOf(tracks)
+  if (only === 'audio') args.push('--audio-only')
+  if (only === 'video') args.push('--video-only')
+  // 容器由扩展名决定（engine 侧按 `.mp4/.mkv/.ts` 选封装器）——
+  // 这里只用它做一次自检：格式与扩展名不匹配时前端就该发现
+  void mergeContainerOf(format)
+  return args
+}
+
+/**
+ * 引擎进程的环境变量（设置项 → env）。
+ *
+ * 只写**非默认**的键：不设 = 引擎按自己的默认走（线程数 = 机器并行度）。
+ * 这样"设置项没动过"时，引擎行为与以前完全一致。
+ */
+export function engineEnvFromConfig (config) {
+  const env = {}
+  const cfg = config || {}
+  const threads = Number(cfg.decodeThreads || 0)
+  if (Number.isFinite(threads) && threads > 0) env.ME_THREADS = `${Math.floor(threads)}`
+  if (cfg.preferSoftwareDecode === true) env.ME_NO_HW = '1'
+  return env
+}

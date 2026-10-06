@@ -66,6 +66,10 @@ export default class EnginePlayer {
     seekSec = 0,
     availPath = '',
     engineDecode = true,
+    /** 「视频 → 解码线程数」：0 = 引擎默认（机器并行度）。换算成 `ME_THREADS`。 */
+    threads = 0,
+    /** 「视频 → 强制软解」：true 时给引擎 `ME_NO_HW=1`（硬解有兼容问题时逃生）。 */
+    preferSoftwareDecode = false,
     onPlayhead = null,
     onPrioritize = null,
     logger = console
@@ -80,6 +84,8 @@ export default class EnginePlayer {
     this.availPath = `${availPath || ''}`
     /** `true` = 让引擎**解码**（视频出 NV12 帧、音频出 PCM；播放器不经浏览器解码） */
     this.engineDecode = !!engineDecode
+    this.threads = Number(threads) || 0
+    this.preferSoftwareDecode = !!preferSoftwareDecode
     this.onPlayhead = onPlayhead
     this.onPrioritize = onPrioritize
     this.logger = logger
@@ -146,9 +152,14 @@ export default class EnginePlayer {
 
       let child
       try {
+        // 「视频」设置项 → 引擎环境变量（只写非默认项，不设 = 引擎按自己的默认走）
+        const env = { ...process.env }
+        if (this.threads > 0) env.ME_THREADS = `${Math.floor(this.threads)}`
+        if (this.preferSoftwareDecode) env.ME_NO_HW = '1'
         child = spawn(this.enginePath, this.args(), {
           stdio: ['ignore', 'pipe', 'pipe'],
-          windowsHide: true
+          windowsHide: true,
+          env
         })
       } catch (e) {
         reject(e)

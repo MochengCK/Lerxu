@@ -1377,6 +1377,11 @@ html.mac-native-transparent .el-dialog.preference-dialog {
   --pref-inline-control-w: 200px;
 }
 
+/* 「视频」卡片：与 HLS 卡片同一种行内布局（标签+副标题在左，控件在右） */
+.preference-dialog .form-item-sub--inline-video {
+  --pref-inline-control-w: 200px;
+}
+
 /* 行内行的「标题 + 副标题」文本块：与开关行的 .toggle-row__text 视觉一致 */
 .preference-dialog .pref-row-text {
   display: flex;

@@ -50,7 +50,10 @@ import {
   parseEngineLine,
   progressFromEngineLine,
   probeHasVideoAndAudio,
-  engineErrorText
+  engineErrorText,
+  buildMuxArgs,
+  engineEnvFromConfig,
+  mergeOutputExtension
 } from '@shared/zuvrust'
 
 defineOptions({ name: 'mo-engine-client' })
@@ -2052,8 +2055,23 @@ const dir = dirname(filePath)
             reject(new Error('mux 没有任何输入文件'))
             return
           }
-          const args = ['mux', outputPath, ...inputs, '--json', '--progress']
-          const child = spawn(enginePath, args, { windowsHide: true })
+          // 「视频」设置项 → 引擎参数（分片时长 / 只留声音 / 只留画面）与环境变量
+          //（线程数 / 强制软解）。容器由输出扩展名决定，见 `getDashMergeOutputPath`。
+          const muxCfg = preferenceConfig.value || {}
+          const args = [
+            'mux',
+            outputPath,
+            ...inputs,
+            ...buildMuxArgs({
+              fragmentMs: Number(muxCfg.mergeFragmentMs || 0),
+              format: muxCfg.mergeFormat,
+              tracks: muxCfg.mergeTracks
+            })
+          ]
+          const child = spawn(enginePath, args, {
+            windowsHide: true,
+            env: { ...process.env, ...engineEnvFromConfig(muxCfg) }
+          })
           _activeMuxChildren.add(child)
           let stderr = ''
           let stdoutBuf = ''
@@ -2185,14 +2203,18 @@ const dir = dirname(filePath)
       }
       function getDashMergeOutputPath(dir, stem, inputPaths = []) {
         const inputs = new Set((inputPaths || []).filter(Boolean).map(path => resolve(path)))
+        // ⚠️ 这个临时文件的**扩展名就是引擎的容器选择**（引擎按扩展名选封装器），
+        // 所以它必须与「视频 → 合并格式」一致；末了改名成正式名时用的是同一个扩展名。
+        const cfg = preferenceConfig.value || {}
+        const ext = mergeOutputExtension(cfg.mergeFormat, cfg.mergeTracks)
         for (let i = 0; i < 1000; i++) {
           const rand = Math.random().toString(36).slice(2, 10)
-          const candidate = resolve(dir, `.lerxu-merging-${rand}.mp4`)
+          const candidate = resolve(dir, `.lerxu-merging-${rand}.${ext}`)
           if (!inputs.has(candidate) && !existsSync(candidate)) {
             return candidate
           }
         }
-        const fallback = resolve(dir, `.lerxu-merging-${Date.now()}.mp4`)
+        const fallback = resolve(dir, `.lerxu-merging-${Date.now()}.${ext}`)
         return fallback
       }
       function generateUniqueFilePath(dir, stem, ext, pathsToIgnore = []) {
@@ -2818,7 +2840,12 @@ const dir = dirname(filePath)
         try {
           const dirOut = outputPath ? dirname(outputPath) : ''
           let titleBase = ''
-          let targetExt = '.mp4'
+          // 产物扩展名必须与**实际容器**一致（引擎按临时文件的扩展名封装），
+          // 所以这里以设置项为准；站点元数据（bilibiliFormat）只在设置项保持默认
+          // （mp4）时兜底 —— 反过来会让 .mkv 的内容被改名成 .mp4。
+          const mergeCfg = preferenceConfig.value || {}
+          const settingExt = mergeOutputExtension(mergeCfg.mergeFormat, mergeCfg.mergeTracks)
+          let targetExt = `.${settingExt}`
           try {
             const gid = task && task.gid ? `${task.gid}` : ''
             if (gid) {
@@ -2830,7 +2857,7 @@ const dir = dirname(filePath)
               }
               const fmt = matched && matched.bilibiliFormat ? `${matched.bilibiliFormat}`.trim().toLowerCase() : ''
               const allowed = ['mp4', 'mkv', 'mov', 'm4v', 'flv', 'ts']
-              if (fmt && allowed.includes(fmt)) {
+              if (settingExt === 'mp4' && fmt && allowed.includes(fmt)) {
                 targetExt = `.${fmt}`
               }
             }

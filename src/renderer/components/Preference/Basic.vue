@@ -1997,6 +1997,89 @@
           </el-form-item>
         </div>
       </div>
+
+      <!-- 「视频」卡片：媒体引擎（ZuvRust）的可设置项。合并相关项下一次合并生效，
+           解码偏好对**新开的**播放/合并进程生效（引擎是独立进程，不用重启应用）。 -->
+      <div
+        v-if="activeCategory === 'video'"
+        class="preference-card"
+        data-category="video"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.video-engine') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-video"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.merge-format') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.merge-format-desc') }}</div>
+            </div>
+            <mo-extend-select
+              :model-value="videoSettings.mergeFormat"
+              :options="MERGE_FORMAT_OPTIONS"
+              @change="(v) => saveVideoSetting('mergeFormat', v)"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-video"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.merge-fragment') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.merge-fragment-desc') }}</div>
+            </div>
+            <mo-extend-select
+              :model-value="videoSettings.mergeFragmentMs"
+              :options="MERGE_FRAGMENT_OPTIONS"
+              @change="(v) => saveVideoSetting('mergeFragmentMs', v)"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-video"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.merge-tracks') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.merge-tracks-desc') }}</div>
+            </div>
+            <mo-extend-select
+              :model-value="videoSettings.mergeTracks"
+              :options="MERGE_TRACKS_OPTIONS"
+              @change="(v) => saveVideoSetting('mergeTracks', v)"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub form-item-sub--inline form-item-sub--inline-video"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.decode-threads') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.decode-threads-desc') }}</div>
+            </div>
+            <mo-extend-select
+              :model-value="videoSettings.decodeThreads"
+              :options="DECODE_THREADS_OPTIONS"
+              @change="(v) => saveVideoSetting('decodeThreads', v)"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.prefer-software-decode') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.prefer-software-decode-desc') }}</div>
+            </div>
+            <el-switch
+              :model-value="videoSettings.preferSoftwareDecode"
+              @change="(v) => saveVideoSetting('preferSoftwareDecode', v)"
+            />
+          </el-col>
+        </el-form-item>
+      </div>
     </el-form>
 
     <div
@@ -2413,6 +2496,69 @@ const downloadUnit = ref(extractSpeedUnit(form.value.maxOverallDownloadLimit))
 const uploadUnit = ref(extractSpeedUnit(form.value.maxOverallUploadLimit))
 const formLabelWidth = ref(calcFormLabelWidth(preferenceConfig.value.locale))
 const formOriginal = ref(initForm(preferenceConfig.value))
+
+// --- 「视频」分类：媒体引擎的可设置项 ---
+// 这一组**不走**上面的大表单（`form` / `submitForm`）：它们是引擎侧的选项，
+// 直接 `preferenceStore.save({ kebab: value })` 落盘（白名单见 `@shared/configKeys`），
+// 渲染进程里读的是 camelCase 镜像（见 store 里 `changeKeysToCamelCase` 那段注释）。
+const MERGE_FORMAT_OPTIONS = [
+  { value: 'mp4', label: 'MP4（.mp4 / .m4a）' },
+  { value: 'mkv', label: 'Matroska（.mkv / .mka）' },
+  { value: 'ts', label: 'MPEG-TS（.ts）' }
+]
+const MERGE_FRAGMENT_OPTIONS = [
+  { value: 0, label: t('preferences.merge-fragment-default') },
+  { value: 2000, label: '2 s' },
+  { value: 4000, label: '4 s' },
+  { value: 10000, label: '10 s' }
+]
+const MERGE_TRACKS_OPTIONS = [
+  { value: 'both', label: t('preferences.merge-tracks-both') },
+  { value: 'audio', label: t('preferences.merge-tracks-audio') },
+  { value: 'video', label: t('preferences.merge-tracks-video') }
+]
+const DECODE_THREADS_OPTIONS = [
+  { value: 0, label: t('preferences.decode-threads-auto') },
+  { value: 1, label: '1' },
+  { value: 2, label: '2' },
+  { value: 4, label: '4' },
+  { value: 6, label: '6' },
+  { value: 8, label: '8' }
+]
+const videoSettings = ref({
+  mergeFormat: 'mp4',
+  mergeFragmentMs: 0,
+  mergeTracks: 'both',
+  decodeThreads: 0,
+  preferSoftwareDecode: false
+})
+function initVideoSettings () {
+  const c = preferenceConfig.value || {}
+  videoSettings.value = {
+    mergeFormat: c.mergeFormat || 'mp4',
+    mergeFragmentMs: Number(c.mergeFragmentMs || 0),
+    mergeTracks: c.mergeTracks || 'both',
+    decodeThreads: Number(c.decodeThreads || 0),
+    preferSoftwareDecode: c.preferSoftwareDecode === true
+  }
+}
+initVideoSettings()
+watch(() => preferenceConfig.value, () => initVideoSettings())
+/** camelCase（表单）→ kebab-case（落盘白名单）。 */
+const VIDEO_SETTING_KEYS = {
+  mergeFormat: 'merge-format',
+  mergeFragmentMs: 'merge-fragment-ms',
+  mergeTracks: 'merge-tracks',
+  decodeThreads: 'decode-threads',
+  preferSoftwareDecode: 'prefer-software-decode'
+}
+function saveVideoSetting (camelKey, value) {
+  videoSettings.value[camelKey] = value
+  const kebab = VIDEO_SETTING_KEYS[camelKey]
+  if (!kebab) return
+  // 引擎是独立进程：这些设置对**下一次**合并/播放生效，不需要重启应用
+  preferenceStore.save({ [kebab]: value })
+}
 const locales = ref(availableLanguages)
 const rules = ref({})
 let saveTimeout = null

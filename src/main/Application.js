@@ -3969,6 +3969,9 @@ export default class Application extends EventEmitter {
         enginePath,
         input: filePath,
         size: totalBytes,
+        // 「视频」设置项：解码线程数（0 = 引擎默认）与强制软解
+        threads: Number(this.configManager?.getUserConfig?.('decode-threads') || 0),
+        preferSoftwareDecode: this.configManager?.getUserConfig?.('prefer-software-decode') === true,
         // 边下边播是常态；文件已下完时它照样读完（读不动就判定 EOF）
         grow: true,
         // 引擎上报的播放头 = "正在读文件里的哪个位置"，比按码率估算准得多
