@@ -5543,6 +5543,10 @@ export default class Application extends EventEmitter {
             (status === TASK_STATUS.COMPLETE || status === TASK_STATUS.MERGING),
           isPaused,
           pendingSelection,
+          // 直播录制（引擎 isLive）：进度窗口的进度条改走"录制动画"（滚动斜纹，
+          // 与任务卡片同一套）。推送路径（Main.vue）也带这个字段 —— 两条 1Hz
+          // 数据流必须同口径，否则窗口里的条形每秒在"录制态/普通态"之间闪。
+          isLive: task.isLive === true,
           tabInfoText: this.i18n.t('task.task-progress-info'),
           tabConnectionsText: this.i18n.t('task.task-connections-detail'),
           tabPiecesText: this.i18n.t('task.task-pieces-progress'),

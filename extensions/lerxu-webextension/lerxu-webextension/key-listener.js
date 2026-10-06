@@ -1838,6 +1838,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         'en': 'segment',
         'zh_CN': '分片',
         'zh_TW': '分片'
+      },
+      // 直播徽章：清单已被识别为直播流（无 #EXT-X-ENDLIST，见 video-sniffer
+      // 的实时探测）。点它 = 让应用开始**录制**这条流（而不是下载一份快照）。
+      'live': {
+        'en': 'LIVE',
+        'zh_CN': '直播',
+        'zh_TW': '直播'
       }
     }
     
@@ -2150,11 +2157,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       return
     }
 
-    // 内容没变就不重画（切换语言要重画，那种调用传 force）
+    // 内容没变就不重画（切换语言要重画，那种调用传 force）。
+    // **直播状态算内容**：实时探测回来后 `resource.live` 变了，签名必须跟着变，
+    // 否则徽章要等下一次资源更新才会出现（用户看不到识别结果）。
     const signature = `${totalItems}|` +
       viewResources.manifest.concat(viewResources.segments, viewResources.combined,
         viewResources.m4s, viewResources.video, viewResources.audio)
-        .map(item => (item && item.url) || '')
+        .map(item => `${(item && item.url) || ''}|${item && item.live === true ? 1 : 0}`)
         .join('\n')
     if (!force && content.children.length > 0 && signature === lastResourceListSignature) return
     lastResourceListSignature = signature
@@ -2559,6 +2568,21 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     badges.style.display = 'flex'
     badges.style.gap = '4px'
     badges.style.flexShrink = '0'
+
+    // 直播徽章：清单已被识别为直播流（video-sniffer 实时抓清单判的 ENDLIST）。
+    // 排在最前 —— "这条是直播、点了是开始录制"比画质/大小都重要。
+    if (resource.live === true) {
+      const liveTag = document.createElement('span')
+      liveTag.textContent = getLocalizedText('live')
+      liveTag.style.fontSize = '11px'
+      liveTag.style.color = '#d4380d'
+      liveTag.style.fontWeight = 'bold'
+      liveTag.style.padding = '2px 6px'
+      liveTag.style.backgroundColor = '#fff1f0'
+      liveTag.style.borderRadius = '3px'
+      liveTag.style.border = '1px solid #ffccc7'
+      badges.appendChild(liveTag)
+    }
 
     // 质量徽章
     if (resource.quality) {

@@ -214,6 +214,12 @@ export default {
   'status-removed': '已移除',
   'status-paused-seeding': '已暫停做種',
   'status-magnet-downloading': '磁力任務下載中',
+  // 直播錄製任務卡片：錄製圖示 + 當前狀態 + 「已錄製 時長 · 大小」
+  'live-recording': '錄製中',
+  'live-paused': '已暫停',
+  'live-completed': '錄製完成',
+  'live-error': '錄製失敗',
+  'live-recorded': '已錄製',
   'download-fail-message': '{{taskName}} 下載失敗',
   'download-fail-notify': '下載失敗',
   'verify-start': '開始校驗檔案...',

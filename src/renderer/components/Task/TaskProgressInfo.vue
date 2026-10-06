@@ -2,9 +2,21 @@
   <div class="task-progress-info-wrap">
   <div class="task-progress-info">
   <div class="task-progress-info-left">
+      <!-- 直播录制任务：**当前状态 + 已录制时长 + 已录制大小**，状态左侧是
+           录制图标（录制中为红点，其余状态随文字色变灰）。它优先于下面所有
+           分支 —— 直播的总长是未知的（流在生长），"已下载 / 总大小 / 百分比"
+           那套在此没有意义。 -->
+      <div v-if="isLiveTask" class="task-live-info">
+        <i class="task-live-record" :class="{ 'is-recording': isLiveRecording }">
+          <mo-icon name="record" width="11" height="11" />
+        </i>
+        <span>{{ liveStatusText }}</span>
+        <span class="task-progress-sep"></span>
+        <span>{{ liveRecordedText }}</span>
+      </div>
       <!-- 合并期间**进度属于合并**：下载已结束，再显示"已下载 / 总大小"就是
            一直停在 100% 不动，看不出还在干活。 -->
-      <div v-if="mergePercentText">
+      <div v-else-if="mergePercentText">
         <span>{{ t('task.merging') }}</span>
         <span class="task-progress-sep"></span>
         <span class="task-progress-percent">{{ mergePercentText }}</span>
@@ -132,6 +144,7 @@ import '@/components/Icons/arrow-up'
 import '@/components/Icons/arrow-down'
 import '@/components/Icons/node'
 import '@/components/Icons/magnet'
+import '@/components/Icons/record'
 import { useTaskStore } from '@/store/task'
 import { usePreferenceStore } from '@/store/preference'
 import { storeToRefs } from 'pinia'
@@ -166,6 +179,57 @@ let _handleResize = null
 const isActive = computed(() => {
   const task = props.task || {}
   return task.status === TASK_STATUS.ACTIVE
+})
+
+/**
+ * 这条任务是不是**直播录制**（引擎在清单确认没有 `#EXT-X-ENDLIST` 时置位，
+ * 见引擎 status 的 `isLive` 字段）。
+ *
+ * 直播任务的卡片下半行换一套信息：当前状态 + 已录制时长 + 已录制大小 ——
+ * 直播的总长在录制中永远未知，"已下载 / 总大小 / 百分比"没有分母。
+ */
+const isLiveTask = computed(() => {
+  const task = props.task || {}
+  return task.isLive === true
+})
+
+/** 正在录制（红点）；暂停/完成/失败时图标随文字色（灰）。 */
+const isLiveRecording = computed(() => {
+  const task = props.task || {}
+  return task.status === TASK_STATUS.ACTIVE
+})
+
+const liveStatusText = computed(() => {
+  const task = props.task || {}
+  const status = `${task.status || ''}`
+  const map = {
+    [TASK_STATUS.ACTIVE]: 'task.live-recording',
+    [TASK_STATUS.WAITING]: 'task.status-waiting',
+    [TASK_STATUS.PAUSED]: 'task.live-paused',
+    [TASK_STATUS.COMPLETE]: 'task.live-completed',
+    [TASK_STATUS.ERROR]: 'task.live-error',
+    [TASK_STATUS.REMOVED]: 'task.status-removed'
+  }
+  const key = map[status]
+  return key ? t(key) : status
+})
+
+/**
+ * 「已录制 时长 · 大小」。时长取引擎上报的 `liveRecordedMs` —— 口径是
+ * **已拼进产物的媒体分片 `#EXTINF` 之和**（产物能播多长），不是"从按下
+ * 录制过去了多久"：断网追帧时两者会分叉，用户关心的是前者。
+ */
+const liveRecordedText = computed(() => {
+  const task = props.task || {}
+  const ms = Number(task.liveRecordedMs)
+  const secs = Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : 0
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  const s = secs % 60
+  const pad = (n) => String(n).padStart(2, '0')
+  const duration = h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
+  const size = bytesToSize(Number(task.completedLength) || 0, 2)
+  return `${t('task.live-recorded')} ${duration} · ${size}`
 })
 
 const isCompleted = computed(() => {
@@ -611,6 +675,30 @@ onBeforeUnmount(() => {
 /* 「一对音视频」标记：与大小文字同色系但更淡，不抢进度数字的注意力 */
 .task-pair-hint {
   opacity: 0.75;
+}
+/* 直播录制信息行：录制图标（状态左侧）+ 当前状态 + 已录制时长 · 大小 */
+.task-live-info {
+  display: flex;
+  align-items: center;
+  /* flex 子项在挤压时会各自换行（文本里的空格就是断点）—— 直播信息必须是
+     一行，放不下时交给外层 overflow: hidden 裁掉（与其它行的口径一致） */
+  white-space: nowrap;
+  .task-live-record {
+    display: inline-flex;
+    align-items: center;
+    height: 0.875rem;
+    margin-right: 0.25rem;
+    /* 非录制态（暂停/完成/失败）随文字色变灰；录制中才是红点 */
+    color: inherit;
+    opacity: 0.65;
+    & > svg {
+      display: block;
+    }
+    &.is-recording {
+      color: var(--lc-color-danger, #f56c6c);
+      opacity: 1;
+    }
+  }
 }
 .task-progress-info-right {
   flex: 0 0 auto; // 速度/时间等右栏内容只占自己需要的宽度

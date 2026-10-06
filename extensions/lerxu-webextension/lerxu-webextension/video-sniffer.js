@@ -153,6 +153,47 @@
   const videoContextMap = new WeakMap()
   const videoContextState = new Map()
 
+  // === 直播流识别 ===
+  // 嗅探到 HLS 清单（m3u8）后问一次后台"这是不是直播"（后台代抓清单判
+  // `#EXT-X-ENDLIST`，不受页面 CORS 限制），把结论回填到资源对象的 `live`
+  // 上 —— 下拉框里的清单条目据此显示「直播」徽章。每个资源同时只问一次
+  // （失败留下重试机会，后续资源更新会再来；成功结果由后台缓存）。
+  const isManifestLikeResource = (entry) => {
+    try {
+      if (!entry) return false
+      if (`${entry.ext || ''}`.toLowerCase() === 'm3u8') return true
+      return /\.m3u8?(?:[?#]|$)/i.test(`${entry.url || ''}`)
+    } catch (e) {
+      return false
+    }
+  }
+
+  const scheduleLiveProbe = (entry) => {
+    try {
+      if (!entry || entry.liveProbed || !isManifestLikeResource(entry)) return
+      const url = `${entry.url || ''}`
+      if (!/^https?:/i.test(url)) return
+      entry.liveProbed = true
+      chrome.runtime.sendMessage({ type: 'probeLiveStream', url }, (resp) => {
+        try {
+          if (chrome.runtime.lastError) {
+            entry.liveProbed = false
+            return
+          }
+          if (!resp || !resp.ok) {
+            // 无法判定（网络失败 / 不是清单）：留一条重试机会
+            entry.liveProbed = false
+            return
+          }
+          if (entry.live !== !!resp.live) {
+            entry.live = !!resp.live
+            requestUIUpdate(false)
+          }
+        } catch (e) {}
+      })
+    } catch (e) {}
+  }
+
   const coreUrl = (raw) => {
     try {
       if (!raw) return ''
@@ -2002,6 +2043,8 @@
         log('Updated existing video quality:', newInfo.quality)
       }
       
+      scheduleLiveProbe(existingVideo)
+
       if (shouldUpdate) {
         requestUIUpdate(false)
       }
@@ -2038,6 +2081,8 @@
         log('Updated existing audio quality:', newInfo.quality)
       }
       
+      scheduleLiveProbe(existingAudio)
+
       if (shouldUpdate) {
         requestUIUpdate(false)
       }
@@ -2048,6 +2093,9 @@
     if (videoContextId) {
       info.videoContextId = videoContextId
     }
+
+    // HLS 清单：问一次"是不是直播"（结论回填到 info.live，界面显示「直播」徽章）
+    scheduleLiveProbe(info)
 
     // 立即添加资源到列表，不等待大小获取
     if (info.type === 'audio') {
@@ -2109,10 +2157,12 @@
             existing.quality = info.quality
             changed = true
           }
+          scheduleLiveProbe(existing)
           if (changed) requestUIUpdate(false)
           return
         }
         sniffedResources.audio.push(info)
+        scheduleLiveProbe(info)
         requestUIUpdate((sniffedResources.video.length + sniffedResources.audio.length) <= 1)
         return
       }
@@ -2136,11 +2186,13 @@
           existing.quality = info.quality
           changed = true
         }
+        scheduleLiveProbe(existing)
         if (changed) requestUIUpdate(false)
         return
       }
 
       sniffedResources.video.push(info)
+      scheduleLiveProbe(info)
       requestUIUpdate((sniffedResources.video.length + sniffedResources.audio.length) <= 1)
     } catch (e) {}
   }

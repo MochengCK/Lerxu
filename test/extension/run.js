@@ -611,6 +611,69 @@ const main = async () => {
     }
   })
 
+  check('直播判定：无 ENDLIST 且非 VOD 才算直播；主清单跟一层变体', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'background.js'), 'utf8')
+    const start = src.indexOf('const analyzeManifestTextForLive = (text) => {')
+    const end = src.indexOf('const readManifestHead =', start)
+    assert(
+      start >= 0 && end > start,
+      '未能在 background.js 中定位直播判定函数（结构变了？测试需同步）'
+    )
+    // 包一层函数：脚本顶层不允许 return
+    const code = `(function () {\n${src.slice(start, end)}\nreturn { analyzeManifestTextForLive }\n})()`
+    const sandbox = { console: { log () {}, warn () {}, error () {} } }
+    vm.createContext(sandbox)
+    const { analyzeManifestTextForLive } = new vm.Script(code, { filename: 'live-analyze.js' }).runInContext(sandbox)
+
+    assert(
+      analyzeManifestTextForLive('#EXTM3U\n#EXTINF:4,\na.ts\n#EXT-X-ENDLIST\n').live === false,
+      '带 ENDLIST 的是点播清单，不能标直播'
+    )
+    assert(
+      analyzeManifestTextForLive('#EXTM3U\n#EXTINF:4,\na.ts\n').live === true,
+      '无 ENDLIST 的媒体清单是直播'
+    )
+    assert(
+      analyzeManifestTextForLive('#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:4,\na.ts\n').live === false,
+      '显式 PLAYLIST-TYPE:VOD（即使没有 ENDLIST）不算直播'
+    )
+    const master = analyzeManifestTextForLive('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=100\nv.m3u8\n')
+    assert(
+      master.master === true && master.variantUri === 'v.m3u8',
+      '主清单自身没有 ENDLIST（媒体层标签），必须能取到第一个变体往下判'
+    )
+    assert(
+      analyzeManifestTextForLive('<html>not a manifest</html>').manifest === false,
+      '非清单文本不能判成直播'
+    )
+  })
+
+  check('直播识别链路已接通（video-sniffer → background → 徽章）', () => {
+    const sniffer = fs.readFileSync(path.join(EXT_DIR, 'video-sniffer.js'), 'utf8')
+    const bg = fs.readFileSync(path.join(EXT_DIR, 'background.js'), 'utf8')
+    const kl = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    assert(
+      /scheduleLiveProbe/.test(sniffer) && /probeLiveStream/.test(sniffer),
+      'video-sniffer 未对 m3u8 资源调度直播探测'
+    )
+    assert(
+      /msg\.type === 'probeLiveStream'/.test(bg),
+      'background 未处理 probeLiveStream 消息'
+    )
+    assert(
+      /const probeStreamLive = async \(url\)/.test(bg),
+      'background 缺少 probeStreamLive 实现'
+    )
+    assert(
+      /'live':\s*\{[^}]*'zh_CN'/.test(kl),
+      'getLocalizedText 缺少 live 文案'
+    )
+    assert(
+      /resource\.live === true/.test(kl),
+      '清单条目未渲染直播徽章'
+    )
+  })
+
   // ------------------------------------------------------- 行内下载入口 DOM
   console.log('\n[5] 行内下载入口（DOM 桩）')
 
@@ -752,6 +815,30 @@ const main = async () => {
       dom.fireClick(item)
       assert(sent.length === 1, `点 ${resource.ext} 条目应只发一次，实际 ${sent.length} 次`)
     }
+  })
+
+  check('直播清单条目带「直播」徽章（识别结果可视化）', () => {
+    const { createResourceItem, dom } = loadItemRenderers()
+    const liveItem = createResourceItem(
+      { url: 'https://cdn.example.com/live/index.m3u8', ext: 'm3u8', live: true },
+      'https://page.example.com/watch',
+      0,
+      { primary: true }
+    )
+    assert(
+      dom.walk(liveItem).some((n) => n.textContent === 'live'),
+      '识别为直播的清单条目应渲染「直播」徽章（桩里 getLocalizedText 返回 key）'
+    )
+    const vodItem = createResourceItem(
+      { url: 'https://cdn.example.com/vod/index.m3u8', ext: 'm3u8', live: false },
+      'https://page.example.com/watch',
+      0,
+      { primary: true }
+    )
+    assert(
+      !dom.walk(vodItem).some((n) => n.textContent === 'live'),
+      '非直播清单不应出现直播徽章'
+    )
   })
 
   check('分片组默认收起、点击标题才展开（几十条分片不该占版面）', () => {

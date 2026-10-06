@@ -336,6 +336,96 @@ const fetchWithTimeout = (url, options = {}, timeout = 2000) => {
   })
 }
 
+// === 直播流识别 ===
+// 内容脚本嗅探到 HLS 清单（m3u8）后询问"这是不是直播"：由 SW 代抓清单
+// （host_permissions 不受页面 CORS 限制）。判定口径与下载引擎一致：
+// 没有 `#EXT-X-ENDLIST` 且不是 `#EXT-X-PLAYLIST-TYPE:VOD` 就是直播/滚动
+// 窗口；主清单自身没有 ENDLIST（那是媒体清单层级的标签），往下跟一层变体。
+const liveProbeCache = new Map() // url → { at, result }
+const LIVE_PROBE_TTL = 60 * 1000
+const LIVE_PROBE_MAX_BYTES = 256 * 1024
+
+/**
+ * 纯函数：分析清单文本是不是直播（供测试与 probeStreamLive 复用）。
+ * 返回 { manifest, master, live?, variantUri? }。
+ */
+const analyzeManifestTextForLive = (text) => {
+  if (!text || !text.includes('#EXTM3U')) return { manifest: false }
+  if (text.includes('#EXT-X-STREAM-INF')) {
+    // 主清单：取第一个变体地址（相对地址由调用方用清单地址解析）
+    const lines = text.split(/\r?\n/)
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].trim().startsWith('#EXT-X-STREAM-INF')) continue
+      for (let j = i + 1; j < lines.length; j++) {
+        const u = lines[j].trim()
+        if (!u || u.startsWith('#')) continue
+        return { manifest: true, master: true, variantUri: u }
+      }
+    }
+    return { manifest: true, master: true, variantUri: '' }
+  }
+  const endlist = text.includes('#EXT-X-ENDLIST')
+  const vod = /#EXT-X-PLAYLIST-TYPE\s*:\s*VOD/i.test(text)
+  return { manifest: true, master: false, live: !endlist && !vod }
+}
+
+const readManifestHead = async (url, timeout) => {
+  const resp = await fetchWithTimeout(
+    url,
+    { method: 'GET', credentials: 'include', cache: 'no-store' },
+    timeout
+  )
+  if (!resp || !resp.ok) return ''
+  let text = ''
+  try {
+    text = await resp.text()
+  } catch (e) {
+    return ''
+  }
+  if (typeof text !== 'string') return ''
+  return text.length > LIVE_PROBE_MAX_BYTES ? text.slice(0, LIVE_PROBE_MAX_BYTES) : text
+}
+
+/**
+ * 抓取清单并判定直播。返回 `{ live: boolean }`；无法判定（网络失败 /
+ * 不是清单 / 主清单没有变体）返回 null —— 调用方按"未知"处理（不显示徽章）。
+ */
+const probeStreamLive = async (url) => {
+  if (!url || !/^https?:/i.test(url)) return null
+  const now = Date.now()
+  const hit = liveProbeCache.get(url)
+  if (hit && now - hit.at < LIVE_PROBE_TTL) return hit.result
+  let result = null
+  try {
+    const text = await readManifestHead(url, 8000)
+    const a = analyzeManifestTextForLive(text)
+    if (a.manifest && !a.master) {
+      result = { live: !!a.live }
+    } else if (a.manifest && a.master && a.variantUri) {
+      let variantUrl = a.variantUri
+      try {
+        variantUrl = new URL(a.variantUri, url).toString()
+      } catch (e) {}
+      const vtext = await readManifestHead(variantUrl, 8000)
+      const va = analyzeManifestTextForLive(vtext)
+      if (va.manifest && !va.master) {
+        result = { live: !!va.live }
+      }
+    }
+  } catch (e) {
+    result = null
+  }
+  if (result) {
+    liveProbeCache.set(url, { at: now, result })
+    // 简单限容：超了删最早的一条（Map 保持插入序）
+    while (liveProbeCache.size > 200) {
+      const oldest = liveProbeCache.keys().next().value
+      liveProbeCache.delete(oldest)
+    }
+  }
+  return result
+}
+
 const CHANNEL_PORT = 16900
 
 // === WebSocket 通道(主通道) ===
@@ -1327,6 +1417,17 @@ const updateContextMenu = (locale) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === 'probe') {
     probeRpc().then(ok => sendResponse(ok))
+    return true
+  }
+
+  // 直播流识别（内容脚本嗅探到 m3u8 后询问）：SW 代抓清单、判 ENDLIST。
+  // `ok=false` = 无法判定（网络失败/不是清单），调用方按"未知"处理。
+  if (msg && msg.type === 'probeLiveStream' && msg.url) {
+    probeStreamLive(msg.url).then((result) => {
+      sendResponse({ ok: !!result, live: !!(result && result.live) })
+    }).catch(() => {
+      sendResponse({ ok: false, live: false })
+    })
     return true
   }
   

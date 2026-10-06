@@ -31,7 +31,7 @@
     :show-text="false"
     :status="isActive ? 'success' : undefined"
     :color="color"
-    :class="{ 'is-pending-selection': pendingSelection, 'is-fetching-metadata': fetchingMetadata }">
+    :class="{ 'is-pending-selection': pendingSelection, 'is-fetching-metadata': fetchingMetadata, 'is-recording': recording }">
   </el-progress>
 </template>
 
@@ -80,6 +80,13 @@ const props = defineProps({
   // （HLS 取播放列表等）都没有任何进度可展示（total 可能为 0，也可能已有
   // 估算值而 completed 仍为 0）。置位时进度条改由 CSS 扫描动效表示"在动"。
   fetchingMetadata: {
+    type: Boolean,
+    default: false
+  },
+  // 直播**录制中**（引擎 isLive + 活动状态）：没有"总长"这个分母，进度条
+  // 不画百分比，改由一套**录制专属动画**（滚动的斜纹条带）表示"持续录制中、
+  // 不知道何时结束"。它优先于 fetchingMetadata（录制已开始，只是首段还没到）。
+  recording: {
     type: Boolean,
     default: false
   },
@@ -286,6 +293,14 @@ function animateProgress () {
     return
   }
   const total = Number.isFinite(props.total) ? props.total : 0
+  // 直播录制中：没有"总长"分母、也没有"剩余时间"——内条宽度保持 0，动效完全
+  // 交给 .is-recording 的滚动斜纹（与"正在获取数据"的扫光、与真实下载进度都
+  // 区分开）。**这一支必须在下面所有判断之前**。
+  if (props.recording) {
+    lastIndeterminate.value = false
+    displayPercent.value = 0
+    return
+  }
   // 还没有任何可展示的进度（磁力取元数据 / HLS 取播放列表等）：内条保持 0 宽，
   // 动效完全交给 .is-fetching-metadata 的 CSS 扫光（避免与 5%~15% 往复叠加，
   // 也避开回跳那一下的生硬感）。**这一支必须在 total 判断之前**：HLS 的总长是
@@ -490,6 +505,59 @@ onBeforeUnmount(() => {
 
   to {
     transform: translateX(100%);
+  }
+}
+
+/* 直播**录制中**：没有总长这个分母，进度条不画"进度"，用一套独立的
+   **滚动斜纹**（红系）表示"持续录制、不知道何时结束"——与下载进度的蓝色
+   实心内条、与"正在获取数据"的单次蓝色扫光都区分开。
+   斜纹视觉上是"录像带在转"的那类语言：不指向终点，只表明一直在产出。 */
+.el-progress.is-recording {
+  .el-progress-bar__outer {
+    position: relative;
+    overflow: hidden;
+    /* 录制态底槽：淡红底，静下来也能一眼认出"这是条录制任务" */
+    background-color: rgba(245, 108, 108, 0.16);
+  }
+
+  .el-progress-bar__outer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    /* 斜纹条带：stops 6.364px/12.728px = 4.5√2/9√2 ⇒ 图案沿 x 轴的周期
+       恰好 √2 × 12.728 = 18px —— 每轮平移 18px 的整数倍即**无缝循环**
+       （平移量必须等于 x 轴周期，否则每圈接缝处会"跳"一下）。
+       往左滚动（background-position 增 x ⇒ 图案向左）像录像带在走带。 */
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgba(245, 108, 108, 0.9) 0 6.364px,
+      rgba(245, 108, 108, 0.22) 6.364px 12.728px
+    );
+    animation: lc-progress-recording-roll 0.9s linear infinite;
+  }
+}
+
+/* 深色底槽（#363b44）上提亮一档，与浅色主题观感一致 */
+.theme-dark .el-progress.is-recording .el-progress-bar__outer {
+  background-color: rgba(255, 97, 87, 0.2);
+}
+
+.theme-dark .el-progress.is-recording .el-progress-bar__outer::after {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 119, 110, 0.95) 0 6.364px,
+    rgba(255, 119, 110, 0.28) 6.364px 12.728px
+  );
+}
+
+@keyframes lc-progress-recording-roll {
+  from {
+    background-position: 0 0;
+  }
+
+  to {
+    background-position: 18px 0;
   }
 }
 </style>

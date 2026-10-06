@@ -994,6 +994,10 @@ onBeforeUnmount(() => {
           mergePercent,
           isPaused,
           pendingSelection,
+          // 直播录制（引擎 isLive）：进度窗口的进度条改走"录制动画"（滚动斜纹，
+          // 与任务卡片同一套）。轮询路径（主进程 task-progress:fetch）也带这个
+          // 字段 —— 两条 1Hz 数据流必须同口径。
+          isLive: taskData.isLive === true,
           // 单任务"完成后弹窗"偏好（进度窗口设置分类的 checkbox 初始值）
           completePopupEnabled: isCompletePopupEnabled(gid),
           // 与主进程 task-progress:fetch 返回保持一致，

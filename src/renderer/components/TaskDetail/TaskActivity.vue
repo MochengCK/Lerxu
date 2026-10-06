@@ -47,7 +47,8 @@
               :status="taskStatus"
               :speed="Number(task.downloadSpeed)"
               :pending-selection="isPendingFileSelection"
-              :fetching-metadata="isFetchingMetadata"
+              :fetching-metadata="isFetchingMetadata && !isRecordingLive"
+              :recording="isRecordingLive"
             />
           </div>
           <div class="task-progress-percent">{{ percent }}</div>
@@ -199,6 +200,11 @@ const isPendingFileSelection = computed(() => {
 const isFetchingMetadata = computed(() => {
   const task = props.task || {}
   return `${task.status || ''}` === TASK_STATUS.ACTIVE && isMagnetTask(task)
+})
+// 直播录制中（引擎 isLive + 活动态）→ 进度条走录制专属动画（红系滚动斜纹）
+const isRecordingLive = computed(() => {
+  const task = props.task || {}
+  return task.isLive === true && `${task.status || ''}` === TASK_STATUS.ACTIVE
 })
 const taskStatus = computed(() => {
   if (isSeeder.value) {

@@ -23,7 +23,8 @@
         :status="taskStatus"
         :speed="Number(task.downloadSpeed)"
         :pending-selection="isPendingFileSelection"
-        :fetching-metadata="isFetchingMetadata"
+        :fetching-metadata="isFetchingMetadata && !isRecordingLive"
+        :recording="isRecordingLive"
         :pair-gids="pairGids"
         :pair-member-count="pairMemberCount"
         :is-pair="isPairTask"
@@ -140,6 +141,16 @@ const isFetchingMetadata = computed(() => {
   // 待选择文件有自己的一档（橙色底槽），不叠加扫光
   if (isPendingFileSelection.value) return false
   return Number(task.completedLength || 0) === 0 && Number(task.downloadSpeed || 0) === 0
+})
+
+/**
+ * 直播**录制中**（引擎 isLive + 活动状态）：进度条不画百分比，改走
+ * 「录制专属动画」（红系滚动斜纹，见 TaskProgress.vue 的 .is-recording）——
+ * 录制没有"总长"这个分母，装成一根会走到 100% 的下载条是假的。
+ */
+const isRecordingLive = computed(() => {
+  const task = props.task || {}
+  return task.isLive === true && task.status === TASK_STATUS.ACTIVE
 })
 
 function getCompletedDisplayName (task) {
