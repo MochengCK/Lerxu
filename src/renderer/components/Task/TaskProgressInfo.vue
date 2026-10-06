@@ -683,6 +683,13 @@ onBeforeUnmount(() => {
   /* flex 子项在挤压时会各自换行（文本里的空格就是断点）—— 直播信息必须是
      一行，放不下时交给外层 overflow: hidden 裁掉（与其它行的口径一致） */
   white-space: nowrap;
+  /* 分隔条在 flex 行里由 align-items:center 居中即可：全局的 `top:-1px` 是
+     给**行内文本**语境校的（vertical-align:middle 的基准不同），在 flex 里
+     会把它整体抬高 1px —— 看起来就是"横杠向上偏移"（实测 sep 中心比文字
+     中心高 1px，置 0 后完全对齐）。 */
+  .task-progress-sep {
+    top: 0;
+  }
   .task-live-record {
     display: inline-flex;
     align-items: center;

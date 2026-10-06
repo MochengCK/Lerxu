@@ -47,8 +47,8 @@
               :status="taskStatus"
               :speed="Number(task.downloadSpeed)"
               :pending-selection="isPendingFileSelection"
-              :fetching-metadata="isFetchingMetadata && !isRecordingLive"
-              :recording="isRecordingLive"
+              :fetching-metadata="isFetchingMetadata && !isLiveTask"
+              :is-live="isLiveTask"
             />
           </div>
           <div class="task-progress-percent">{{ percent }}</div>
@@ -201,10 +201,11 @@ const isFetchingMetadata = computed(() => {
   const task = props.task || {}
   return `${task.status || ''}` === TASK_STATUS.ACTIVE && isMagnetTask(task)
 })
-// 直播录制中（引擎 isLive + 活动态）→ 进度条走录制专属动画（红系滚动斜纹）
-const isRecordingLive = computed(() => {
+// 直播任务（引擎 isLive 置位后恒真）→ 进度条走录制专属三态视觉
+// （录制中滚动斜纹 / 暂停减速变灰 / 完成绿色铺满，见 TaskProgress.vue 的 .is-live）
+const isLiveTask = computed(() => {
   const task = props.task || {}
-  return task.isLive === true && `${task.status || ''}` === TASK_STATUS.ACTIVE
+  return task.isLive === true
 })
 const taskStatus = computed(() => {
   if (isSeeder.value) {
@@ -214,6 +215,11 @@ const taskStatus = computed(() => {
 })
 const isActive = computed(() => taskStatus.value === TASK_STATUS.ACTIVE)
 const percent = computed(() => {
+  // 直播录制没有"百分比"这个概念（进度条的录制视觉已说明一切）：
+  // 录制中/停住时不显示 "0%"，完成后按 100% 收口。
+  if (isLiveTask.value) {
+    return `${props.task.status || ''}` === TASK_STATUS.COMPLETE ? '100%' : ''
+  }
   const { totalLength, completedLength } = props.task
   const p = calcProgress(totalLength, completedLength)
   return `${p}%`

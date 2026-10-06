@@ -31,13 +31,20 @@
     :show-text="false"
     :status="isActive ? 'success' : undefined"
     :color="color"
-    :class="{ 'is-pending-selection': pendingSelection, 'is-fetching-metadata': fetchingMetadata, 'is-recording': recording }">
+    :class="{
+      'is-pending-selection': pendingSelection,
+      'is-fetching-metadata': fetchingMetadata,
+      'is-live': isLiveTask,
+      'is-rec-running': livePhase === 'running',
+      'is-rec-stopped': livePhase === 'stopped' || livePhase === 'error',
+      'is-rec-done': livePhase === 'done'
+    }">
   </el-progress>
 </template>
 
 <script setup>
 defineOptions({ name: 'mo-task-progress' }) // 供父组件 [X.name]: X 注册
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, getCurrentInstance } from 'vue'
 import { storeToRefs } from 'pinia'
 import { TASK_STATUS } from '@shared/constants'
 import { calcProgress } from '@shared/utils'
@@ -83,10 +90,11 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
-  // 直播**录制中**（引擎 isLive + 活动状态）：没有"总长"这个分母，进度条
-  // 不画百分比，改由一套**录制专属动画**（滚动的斜纹条带）表示"持续录制中、
-  // 不知道何时结束"。它优先于 fetchingMetadata（录制已开始，只是首段还没到）。
-  recording: {
+  // 直播任务（引擎 isLive 置位后恒真）：没有"总长"这个分母，进度条不画百分比，
+  // 按 livePhase（录制中 / 停住 / 完成）走**录制专属**三态视觉——
+  // 录制中 = 滚动斜纹，暂停/失败 = 减速停住并变灰，完成 = 斜纹淡出、绿色铺满。
+  // 它优先于 fetchingMetadata（录制已开始，只是首段还没到）。
+  isLive: {
     type: Boolean,
     default: false
   },
@@ -140,6 +148,32 @@ function applyPercent (value, force = false) {
 
 const isActive = computed(() => props.status === TASK_STATUS.ACTIVE)
 
+// 组件实例（recApply 往根元素上写 --lc-rec-phase 用）
+const instance = getCurrentInstance()
+
+/** 这条任务是不是直播录制（引擎 `isLive` 置位后恒为 true）。 */
+const isLiveTask = computed(() => props.isLive === true)
+
+/**
+ * 直播任务的呈现相位：
+ * - `running`：录制中（引擎在跑；waiting 只是"重新排队的瞬时态"，同样按录制中对待）
+ * - `stopped`：停住（暂停）——条纹减速停住并变灰
+ * - `done`：完成——条纹淡出、绿色内条铺满（与普通任务完成同色，全程无百分比推进）
+ * - `error`：失败——同"停住"，文案由卡片信息行负责说明
+ * - 其余（如 removed）：不走录制视觉
+ */
+const livePhase = computed(() => {
+  if (!isLiveTask.value) {
+    return null
+  }
+  const s = `${props.status || ''}`
+  if (s === TASK_STATUS.ACTIVE || s === TASK_STATUS.WAITING) return 'running'
+  if (s === TASK_STATUS.PAUSED) return 'stopped'
+  if (s === TASK_STATUS.COMPLETE || s === TASK_STATUS.SEEDING) return 'done'
+  if (s === TASK_STATUS.ERROR) return 'error'
+  return null
+})
+
 const taskStore = useTaskStore()
 const { mergeProgresses } = storeToRefs(taskStore)
 
@@ -147,6 +181,9 @@ const { mergeProgresses } = storeToRefs(taskStore)
 // 合并进度绿（与"完成"同色 —— 盖满就是完成）
 const pairBaseColor = colors.merging
 const pairMergeColor = colors.complete
+
+// 直播录制中的红（与卡片信息行的录制图标同色，浅色主题用 --lc-color-danger 的近似值）
+const REC_LIVE_COLOR = '#f56c6c'
 
 /** 这条记录背后可能的全部引擎任务 gid（记录自身 + 配对成员，去重）。 */
 const gidCandidates = computed(() => {
@@ -229,6 +266,10 @@ const basePercent = computed(() => (
 const isCoverShowing = computed(() => progressView.value.coverPercent > 0)
 
 const percent = computed(() => {
+  // 直播非完成态没有百分比可言（呈现由录制视觉承担，见 recTick 与 .is-live）
+  if (isLiveTask.value && livePhase.value && livePhase.value !== 'done') {
+    return 0
+  }
   if (props.status === TASK_STATUS.MERGING) {
     // 有合并进度就跟着走；没有（还没开始合 / 在等另一半）就保持满格
     return mergePercent.value >= 0 ? mergePercent.value : 100
@@ -252,6 +293,11 @@ const percent = computed(() => {
 const color = computed(() => {
   if (props.pendingSelection) {
     return '#f0ad4e'
+  }
+  // 直播非完成态：录制中保持红系，停住（暂停/失败）随状态色（灰 / 红）。
+  // 内条此刻宽度为 0（不可见），颜色只为过渡瞬间与完成前后的衔接服务。
+  if (isLiveTask.value && livePhase.value && livePhase.value !== 'done') {
+    return livePhase.value === 'running' ? REC_LIVE_COLOR : (colors[props.status] || colors.paused)
   }
   // 一对音视频：两个文件都下完 → 黄（可以合并了 / 正在合并）
   if (progressView.value.mode !== 'plain') {
@@ -293,10 +339,10 @@ function animateProgress () {
     return
   }
   const total = Number.isFinite(props.total) ? props.total : 0
-  // 直播录制中：没有"总长"分母、也没有"剩余时间"——内条宽度保持 0，动效完全
-  // 交给 .is-recording 的滚动斜纹（与"正在获取数据"的扫光、与真实下载进度都
-  // 区分开）。**这一支必须在下面所有判断之前**。
-  if (props.recording) {
+  // 直播任务非完成态：没有"总长"分母、也没有"剩余时间"——内条宽度保持 0，
+  // 动效完全交给录制斜纹（相位由 recTick 逐帧推进；与"正在获取数据"的扫光、
+  // 与真实下载进度都区分开）。**这一支必须在下面所有判断之前**。
+  if (isLiveTask.value && livePhase.value && livePhase.value !== 'done') {
     lastIndeterminate.value = false
     displayPercent.value = 0
     return
@@ -370,6 +416,70 @@ watch(() => props.speed, (val) => {
   }
 }, { immediate: true })
 
+// ---------------------------------------------------------------------------
+// 直播录制：条纹相位由 JS（rAF）驱动 —— "暂停→逐渐停 / 恢复→逐渐动"需要的是
+// **速度的渐变**，CSS 的 animation-play-state 只会瞬间冻结/瞬间启动，
+// 做不到这个手感。速度用指数趋近（时间常数 ~0.16s，约 0.6~1s 内到位），
+// 相位取模 18px（= 斜纹沿 x 轴的周期，正好无缝循环）。
+// ---------------------------------------------------------------------------
+const REC_ROLL_SPEED = 20 // px/s：0.9s 走完一个 18px 周期（与旧 CSS 动画同速）
+let recRaf = null
+let recLastT = 0
+let recSpeed = 0
+let recPhase = 0
+
+function recTargetSpeed () {
+  if (isDocumentHidden()) return 0
+  return livePhase.value === 'running' ? REC_ROLL_SPEED : 0
+}
+
+function recApply () {
+  const el = instance?.proxy?.$el
+  if (el && el.style && typeof el.style.setProperty === 'function') {
+    el.style.setProperty('--lc-rec-phase', `${recPhase.toFixed(2)}px`)
+  }
+}
+
+function recTick (t) {
+  recRaf = null
+  const dt = recLastT ? Math.min(0.05, (t - recLastT) / 1000) : 0
+  recLastT = t
+  const target = recTargetSpeed()
+  const k = 1 - Math.exp(-dt / 0.16)
+  recSpeed += (target - recSpeed) * k
+  if (Math.abs(recSpeed - target) < 0.05) recSpeed = target
+  recPhase = (recPhase + recSpeed * dt) % 18
+  recApply()
+  if (recSpeed > 0 || recTargetSpeed() > 0) {
+    recScheduleRec()
+  }
+}
+
+function recScheduleRec () {
+  // ⚠️ 不要在这里重置 recLastT：recTick 每帧末尾都会回来调度下一帧，
+  //    每帧清一次会让 dt 恒为 0、速度永远涨不上去（相位不动）。
+  if (recRaf == null && !isDocumentHidden() && typeof requestAnimationFrame === 'function') {
+    recRaf = requestAnimationFrame(recTick)
+  }
+}
+
+function recStop () {
+  if (recRaf != null) {
+    cancelAnimationFrame(recRaf)
+    recRaf = null
+  }
+}
+
+// 相位变化：录制中（立即）启动/保持循环；停住/完成则**不立即停** ——
+// 让目标速度变 0，循环自己带减速跑到停止（"逐渐停止"）。
+watch(livePhase, (val) => {
+  if (!val) return
+  recApply()
+  if (val === 'running' || recSpeed > 0) {
+    recScheduleRec()
+  }
+}, { immediate: true })
+
 watch(() => props.status, (val) => {
   if (val === TASK_STATUS.COMPLETE || val === TASK_STATUS.SEEDING) {
     displayPercent.value = 100
@@ -386,10 +496,16 @@ watch(() => props.status, (val) => {
 function handleVisibilityChange () {
   if (isDocumentHidden()) {
     stopTicker()
-  } else if (isActive.value) {
-    startTicker()
-    // 立即补一次动画，避免恢复可见瞬间停留在隐藏前的旧进度
-    animateProgress()
+    recStop()
+  } else {
+    if (isActive.value) {
+      startTicker()
+      // 立即补一次动画，避免恢复可见瞬间停留在隐藏前的旧进度
+      animateProgress()
+    }
+    if (isLiveTask.value && recTargetSpeed() > 0) {
+      recScheduleRec()
+    }
   }
 }
 
@@ -405,6 +521,11 @@ onMounted(() => {
   if (isActive.value) {
     startTicker()
   }
+  // 挂载前 immediate 的 recApply 还拿不到根元素（暂停中的录制任务不会自起
+  // rAF，相位变量只能在这里补上）
+  if (livePhase.value) {
+    recApply()
+  }
   if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') {
     document.addEventListener('visibilitychange', handleVisibilityChange)
   }
@@ -412,6 +533,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopTicker()
+  recStop()
   if (typeof document !== 'undefined' && document && typeof document.removeEventListener === 'function') {
     document.removeEventListener('visibilitychange', handleVisibilityChange)
   }
@@ -508,42 +630,89 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 直播**录制中**：没有总长这个分母，进度条不画"进度"，用一套独立的
-   **滚动斜纹**（红系）表示"持续录制、不知道何时结束"——与下载进度的蓝色
-   实心内条、与"正在获取数据"的单次蓝色扫光都区分开。
-   斜纹视觉上是"录像带在转"的那类语言：不指向终点，只表明一直在产出。 */
-.el-progress.is-recording {
+/* 直播三态：录制中 = 红系滚动斜纹（相位由 JS 逐帧推进，见 recTick）；
+   暂停/失败 = 条纹**减速停住**并交叉淡化到"暂停灰"；完成 = 斜纹淡出、
+   绿色内条铺满（与普通任务完成同色，但录制任务全程没有"百分比推进"）。
+   两端的渐隐遮罩（mask）让"进入/退出"的斜纹平滑淡出，而不是在边缘缩成
+   一根细刺 —— 斜纹在左端贴边的那一条是它看上去"不标准"的来源。 */
+.el-progress.is-live {
   .el-progress-bar__outer {
     position: relative;
     overflow: hidden;
     /* 录制态底槽：淡红底，静下来也能一眼认出"这是条录制任务" */
     background-color: rgba(245, 108, 108, 0.16);
+    transition: background-color 0.45s ease;
   }
 
+  .el-progress-bar__outer::before,
   .el-progress-bar__outer::after {
     content: "";
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    /* 斜纹条带：stops 6.364px/12.728px = 4.5√2/9√2 ⇒ 图案沿 x 轴的周期
-       恰好 √2 × 12.728 = 18px —— 每轮平移 18px 的整数倍即**无缝循环**
-       （平移量必须等于 x 轴周期，否则每圈接缝处会"跳"一下）。
-       往左滚动（background-position 增 x ⇒ 图案向左）像录像带在走带。 */
+    /* 斜纹条带：stops 6.364px/12.728px = 4.5√2/9√2 ⇒ 沿 x 轴的周期恰为
+       18px（相位取模 18px 即无缝循环）。相位走 var(--lc-rec-phase)，
+       由组件脚本推进（速度渐变 = "逐渐停 / 逐渐动"的手感）。
+       两端各 10px 渐隐：斜纹进出时淡出，边缘不会出现细刺。 */
+    background-position: var(--lc-rec-phase, 0px) 0;
+    transition: opacity 0.45s ease;
+    pointer-events: none;
+    mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  }
+
+  .el-progress-bar__outer::before {
     background-image: repeating-linear-gradient(
       -45deg,
       rgba(245, 108, 108, 0.9) 0 6.364px,
       rgba(245, 108, 108, 0.22) 6.364px 12.728px
     );
-    animation: lc-progress-recording-roll 0.9s linear infinite;
+    opacity: 1;
+  }
+
+  /* 停住的条纹（灰）：录制层交叉淡化到它 —— 与暂停色（#737373）同族 */
+  .el-progress-bar__outer::after {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      rgba(115, 115, 115, 0.8) 0 6.364px,
+      rgba(115, 115, 115, 0.2) 6.364px 12.728px
+    );
+    opacity: 0;
+  }
+
+  &.is-rec-stopped .el-progress-bar__outer {
+    background-color: rgba(115, 115, 115, 0.14);
+  }
+
+  &.is-rec-stopped .el-progress-bar__outer::before {
+    opacity: 0;
+  }
+
+  &.is-rec-stopped .el-progress-bar__outer::after {
+    opacity: 1;
+  }
+
+  /* 完成：斜纹全部淡出，绿色内条（el-progress 的 percentage=100）铺满 */
+  &.is-rec-done .el-progress-bar__outer {
+    background-color: transparent;
+  }
+
+  &.is-rec-done .el-progress-bar__outer::before,
+  &.is-rec-done .el-progress-bar__outer::after {
+    opacity: 0;
   }
 }
 
 /* 深色底槽（#363b44）上提亮一档，与浅色主题观感一致 */
-.theme-dark .el-progress.is-recording .el-progress-bar__outer {
+.theme-dark .el-progress.is-live .el-progress-bar__outer {
   background-color: rgba(255, 97, 87, 0.2);
 }
 
-.theme-dark .el-progress.is-recording .el-progress-bar__outer::after {
+.theme-dark .el-progress.is-live.is-rec-stopped .el-progress-bar__outer {
+  background-color: rgba(160, 160, 160, 0.16);
+}
+
+.theme-dark .el-progress.is-live .el-progress-bar__outer::before {
   background-image: repeating-linear-gradient(
     -45deg,
     rgba(255, 119, 110, 0.95) 0 6.364px,
@@ -551,13 +720,11 @@ onBeforeUnmount(() => {
   );
 }
 
-@keyframes lc-progress-recording-roll {
-  from {
-    background-position: 0 0;
-  }
-
-  to {
-    background-position: 18px 0;
-  }
+.theme-dark .el-progress.is-live .el-progress-bar__outer::after {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(170, 170, 170, 0.85) 0 6.364px,
+    rgba(170, 170, 170, 0.25) 6.364px 12.728px
+  );
 }
 </style>
