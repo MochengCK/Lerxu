@@ -1999,7 +1999,14 @@
       </div>
 
       <!-- 「视频」卡片：媒体引擎（ZuvRust）的可设置项。合并相关项下一次合并生效，
-           解码偏好对**新开的**播放/合并进程生效（引擎是独立进程，不用重启应用）。 -->
+           解码偏好对**新开的**播放/合并进程生效（引擎是独立进程，不用重启应用）。
+
+           ⚠️ 解码线程数 / 解码方式跟着 `MEDIA_PLAYER_ENABLED` 一起隐藏（前端暂时
+           停用播放功能）：这两项是**播放**侧的偏好，界面留着只会让人以为播放器可用。
+           行内的绑定、落盘白名单、迁移逻辑一行未动，把开关改回 true 就整体回来。
+           ⚠️ 这两个键**合并那条路也在读**（`engineEnvFromConfig` 拼 ME_THREADS 与
+           软解环境变量）：隐藏只影响"能不能改"，已落盘的值照旧生效，
+           没有值时走引擎自己的默认（线程数 = 机器并行度、解码自适应）。 -->
       <div
         v-if="activeCategory === 'video'"
         class="preference-card"
@@ -2038,6 +2045,7 @@
             />
           </el-col>
           <el-col
+            v-if="MEDIA_PLAYER_ENABLED"
             class="form-item-sub form-item-sub--inline form-item-sub--inline-video"
             :span="24"
           >
@@ -2052,6 +2060,7 @@
             />
           </el-col>
           <el-col
+            v-if="MEDIA_PLAYER_ENABLED"
             class="form-item-sub form-item-sub--inline form-item-sub--inline-video"
             :span="24"
           >
@@ -2446,6 +2455,7 @@ import {
   EMPTY_STRING,
   ENGINE_MAX_CONCURRENT_DOWNLOADS,
   ENGINE_RPC_PORT,
+  MEDIA_PLAYER_ENABLED,
   TRACKER_SOURCE_OPTIONS
 } from '@shared/constants'
 import { reduceTrackerString } from '@shared/utils/tracker'
