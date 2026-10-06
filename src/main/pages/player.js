@@ -89,16 +89,53 @@
     return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
   }
 
-  function showToast (text, sticky) {
+  /** 一闪而过的读数（音量/倍速/快进几秒）停留时长。 */
+  const TOAST_SHORT_MS = 620
+  /** 需要看清的说明（只有画面、格式限制…）停留时长：够读完，但**绝不常驻**。 */
+  const TOAST_NOTICE_MS = 6000
+
+  /**
+   * 屏幕中间的提示。
+   *
+   * `holdMs` 是停留时长——**没有"永久"这一档**（早先有个 `sticky` 参数，结果一条
+   * 说明会一直挂在画面中间，用户点名"不该一直显示"）。需要用户看清的说明就传
+   * [TOAST_NOTICE_MS]，其余用默认值。
+   */
+  function showToast (text, holdMs = TOAST_SHORT_MS) {
+    if (!text) {
+      return
+    }
     toast.textContent = text
     toast.classList.add('is-visible')
     if (state.toastTimer) {
       clearTimeout(state.toastTimer)
       state.toastTimer = null
     }
-    if (!sticky) {
-      state.toastTimer = setTimeout(() => toast.classList.remove('is-visible'), 620)
+    state.toastTimer = setTimeout(() => toast.classList.remove('is-visible'), holdMs)
+  }
+
+  /**
+   * 引擎 `note` 里"用户真的需要知道"的那一句，**其余一律不显示**。
+   *
+   * 引擎的 `note` 是**给诊断看的散文**（典型形态：`画面由引擎解码（NV12 帧流）；…`），
+   * 里面既有我们内部的措辞（"引擎解码"/"NV12 帧流"），也有"文件本来就没有音轨"这种
+   * 完全正常的情况 —— 原样显示出来就是"画面中间一直挂着一句内部提示"（用户点名）。
+   *
+   * 只保留一种情形：**文件有音频、但引擎解不了** ⇒ 用户确实需要知道"为什么没声音"。
+   * 纯静音视频（没有音频轨）不提示——画面本身已经说明了一切。
+   */
+  function audioNoteText (note) {
+    const s = `${note || ''}`
+    if (!s) {
+      return ''
     }
+    if (s.includes('没有音频轨道')) {
+      return ''
+    }
+    if (s.includes('还不能自研解码')) {
+      return '这条视频只有画面：音频编码引擎还不支持'
+    }
+    return ''
   }
 
   function hideToast () {
@@ -618,11 +655,13 @@
       })
     } catch (_) {}
     if (meta.note) {
-      showToast(meta.note, true)
+      // 这条路上 note 讲的是"素材本身只有这些轨"（直播快照 / DASH 视频音频分开），
+      // 对用户有用；**但要会自己消失**（早先是常驻在画面中间）。
+      showToast(meta.note, TOAST_NOTICE_MS)
     }
     if (meta.droppedAudio) {
       // 声音装不进 fMP4 时如实提示：用户不会以为是自己的设备坏了
-      showToast(`这条流只有画面（${meta.droppedAudio} 暂不支持），已在后台提示`, true)
+      showToast(`这条流只有画面（${meta.droppedAudio} 暂不支持），已在后台提示`, TOAST_NOTICE_MS)
       try {
         ipcRenderer.send(CH.ERROR, { code: 0, message: `音频编码 ${meta.droppedAudio} 无法随画面一起播放` })
       } catch (_) {}
@@ -1127,11 +1166,15 @@
         return false
       }
     }
-    // 有画面却没有声音：引擎在 note 里说清了原因（这条流没有音频轨 / 音频编码还
-    // 不能自研解码）—— 原样显示出来。**悄悄没声音是最难排查的那种失败**。
-    // 纯音频流的 note（"只有声音"）是正常的，不打扰。
-    if (frames.hasVideo && !meta.audio && meta.note) {
-      showToast(meta.note, true)
+    // 有画面却没有声音：**只在"文件有音频、但引擎解不了"时说一句**（悄悄没声音是最难
+    // 排查的那种失败）。文件本来就没有音轨的不提示 —— 静音视频是正常的；引擎那句
+    // "画面由引擎解码（NV12 帧流）…"是内部措辞，也不显示（见 [audioNoteText]）。
+    // 提示会自己消失：早先它常驻在画面中间，用户点名"不该一直显示"。
+    if (frames.hasVideo && !meta.audio) {
+      if (meta.note) {
+        console.warn(`[Lerxu] 这条流没有音频（引擎说明）：${meta.note}`)
+      }
+      showToast(audioNoteText(meta.note), TOAST_NOTICE_MS)
     }
     render()
     return true
