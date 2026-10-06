@@ -175,8 +175,16 @@ export default class WindowManager extends EventEmitter {
       window = null
     }
     if (window) {
-      window.show()
-      window.focus()
+      // **复用已有窗口时不再无条件 `show()`**：播放器第二次开播走的就是这条分支，
+      // 早先窗口一复用就露面（带着上一个视频的比例，比例还没调好 ⇒ 黑边，
+      // 2026-10-06 用户报"还是有黑边"）。`hidden` 的语义是"这次不要主动把它亮出来"，
+      // 真要**藏**由调用方自己 `hide()`（播放器就是这么做的，见 Application 开播那段）——
+      // 不在这里代劳，因为 `showPage` 的 `hidden`（开机自启 / 自动隐藏）语义不同，
+      // 在这里 `hide()` 会把已经可见的窗口弄消失。
+      if (!hidden) {
+        window.show()
+        window.focus()
+      }
       return window
     }
 

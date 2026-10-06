@@ -53,13 +53,17 @@
           width="100">
           <template #default="scope">{{ bytesToSize(scope.row.length) }}</template>
         </el-table-column>
-        <!-- 操作列（表头「操作」）：**每一行都有播放按钮** —— 不能播的置灰
-             （不是干脆不显示：按钮突然消失会让人以为"这个文件没有播放功能"，
-             置灰 + 悬停说明原因才说得清）。视频与音频都走同一个独立播放器窗口。
-             表头单元格也会带上 class-name，所以 .task-file-actions .cell 的
-             padding:0 / 居中 对表头同样生效，52px 宽放得下这两个字。 -->
+<!-- 操作列（表头「操作」）：**每一行都有播放按钮** —— 不能播的置灰
+     （不是干脆不显示：按钮突然消失会让人以为"这个文件没有播放功能"，
+     置灰 + 悬停说明原因才说得清）。视频与音频都走同一个独立播放器窗口。
+     表头单元格也会带上 class-name，所以 .task-file-actions .cell 的
+     padding:0 / 居中 对表头同样生效，52px 宽放得下这两个字。
+     ⚠️ **播放功能暂时停用**（`MEDIA_PLAYER_ENABLED = false`，2026-10-06 用户要求
+     "暂时先把前端的播放功能给禁用掉"）：这里**整列不渲染** —— 入口在前端看不见，
+     而不是"按钮还在但点了没反应"。播放那一整条链路（`canPlay` / `playTip` /
+     `playFile` 与主进程的拦截）一行都没动，把开关改回 true 就整体回来。 -->
         <el-table-column
-          v-if="mode === 'DETAIL'"
+          v-if="mode === 'DETAIL' && MEDIA_PLAYER_ENABLED"
           :label="t('task.file-actions')"
           align="center"
           width="52"
@@ -131,6 +135,7 @@ import '@/components/Icons/image'
 import '@/components/Icons/document'
 import '@/components/Icons/select-all'
 import {
+  MEDIA_PLAYER_ENABLED,
   NONE_SELECTED_FILES,
   SELECTED_ALL_FILES
 } from '@shared/constants'

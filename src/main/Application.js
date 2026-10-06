@@ -47,6 +47,7 @@ import { buildAvailability, writeAvailabilityFile } from './playback/Availabilit
 import { hasFileHead, STREAM_MAX_ATTEMPTS, STREAM_POLL_MS, STREAM_WAIT_MS } from './playback/StreamWait'
 import { resolveMediaEnginePath } from './utils'
 import { PLAYBACK } from '@shared/playback-api'
+import { MEDIA_PLAYER_ENABLED } from '@shared/constants'
 import { planPlayback } from '@shared/playback-plan'
 import { readMediaMeta, mediaKindOf } from './utils/mediaMeta'
 import { setupLocaleManager } from './ui/Locale'
@@ -63,6 +64,29 @@ import TouchBarManager from './ui/TouchBarManager'
 import TrayManager from './ui/TrayManager'
 import DockManager from './ui/DockManager'
 import ThemeManager from './ui/ThemeManager'
+import pageConfig from './configs/page'
+
+/**
+ * 播放器窗口"等画面尺寸"的兜底时长（毫秒）。
+ *
+ * 视频尺寸读得出来（mp4 / mkv）时窗口立刻就用正确比例露面；读不出来（ts / HLS 产物 /
+ * 分片 / 边下边播）时先把窗口藏着、等首帧报尺寸 —— 但首帧可能迟迟不到（引擎起不来、
+ * 数据还没下到），那时候也必须让用户看见窗口，否则就是"点了播放，屏幕上什么都没发生"。
+ */
+const PLAYER_SHOW_FALLBACK_MS = 1800
+
+/**
+ * 播放器窗口的最小宽高（逻辑像素）—— **直接取 `configs/page.js` 里 player 的
+ * `minWidth/minHeight`**，不另写一份：两处各写一个数的话，改了一处就又是黑边。
+ *
+ * **它不能当成"按比例算出的尺寸"的下限**：`setContentSize` 会被它夹住，而竖屏 /
+ * 方形这类视频按比例算出来的宽度可能比它还窄（9:16 在 900 高的屏上只有 ~415 宽）⇒
+ * 窗口被硬撑宽、比例当场被破坏 ⇒ 画面留黑边（2026-10-06 用户点名"是不是最小大小
+ * 导致的"，确实就是它）。所以按比例调尺寸时先把它放开，调完再设回**不超过当前尺寸**
+ * 的值，见 [Application.applyVideoAspect]。
+ */
+const PLAYER_MIN_WIDTH = Number(pageConfig?.player?.attrs?.minWidth) || 460
+const PLAYER_MIN_HEIGHT = Number(pageConfig?.player?.attrs?.minHeight) || 320
 
 export default class Application extends EventEmitter {
   constructor () {
@@ -3879,6 +3903,13 @@ export default class Application extends EventEmitter {
    * 它只认 `@shared/playback-api` 里那套契约。
    */
   async openMediaPlayer (payload = {}, opts = {}) {
+    // **播放功能暂时停用**（见 `@shared/constants` 的 MEDIA_PLAYER_ENABLED）。
+    // 挡在**方法最前面**，所以人工点播放、"等数据"的自动重试、以及将来任何新入口
+    // 都走这一条规则 —— 不会出现"界面上关掉了、某条内部路径还在偷偷播"的情况。
+    if (!MEDIA_PLAYER_ENABLED) {
+      logger.info('[Lerxu] 播放功能暂时停用（MEDIA_PLAYER_ENABLED = false），已拦下这次播放请求')
+      return { ok: false, error: 'disabled' }
+    }
     const filePath = payload && payload.path ? `${payload.path}` : ''
     if (!filePath) {
       return { ok: false, error: 'no-path' }
@@ -4021,12 +4052,32 @@ export default class Application extends EventEmitter {
         this.startPlaybackSpeedPolling(gid)
       }
 
-      // ⑤ 打开窗口：先按视频比例把客户区调好，再推会话
-      const win = this.windowManager.openWindow('player', { hidden: false })
+      // ⑤ 打开窗口：**先把客户区按视频比例调好，再让它露面**。
+      // 画面尺寸读得出来（mp4 / mkv 的文件头里有）就立刻定尺寸、立刻露面；读不出来
+      // （ts / HLS 产物 / 分片 / 还在下载的文件…）就先藏着，等首帧报尺寸
+      // （PLAYBACK.METADATA）—— 否则窗口会先带着"配置里的固定尺寸或上次记住的尺寸"
+      // 出现，比例对不上就是一条黑边（用户点名："初始大小应该跟随视频"）。
+      const knownVideoSize = !!(meta && meta.videoSize)
+      const win = this.windowManager.openWindow('player', { hidden: !knownVideoSize })
       this._playerAspect = 0
-      if (meta && meta.videoSize) {
+      if (this._playerShowTimer) {
+        clearTimeout(this._playerShowTimer)
+        this._playerShowTimer = null
+      }
+      if (knownVideoSize) {
         this._playerAspect = meta.videoSize.width / meta.videoSize.height
         this.applyVideoAspect(win, meta.videoSize)
+        // 复用已有窗口时它本来就是显示的；新建的那条会由 ready-to-show 露面 —— 这句
+        // 只是把两条路都收成"尺寸定好了就露"。
+        this.showPlayerWindow()
+      } else {
+        // **自己把窗口藏起来**：WindowManager 的 `hidden` 只是"这次不主动亮出来"，
+        // 而第二次开播走的是复用分支、窗口本来就可见 —— 不显式藏，它就会带着上一个
+        // 视频的比例先露面（比例还没调好 ⇒ 黑边，2026-10-06 用户报"还是有黑边"）。
+        try {
+          win.hide()
+        } catch (_) {}
+        this._playerShowTimer = setTimeout(() => this.showPlayerWindow(), PLAYER_SHOW_FALLBACK_MS)
       }
       const pushSession = () => {
         try {
@@ -4078,12 +4129,49 @@ export default class Application extends EventEmitter {
         h = maxH
         w = Math.round(h * ratio)
       }
-      win.setContentSize(w, h)
+      // **先把最小尺寸放开**（见 PLAYER_MIN_WIDTH 的说明）：带着 `minWidth/minHeight`
+      // 时 `setContentSize` 会被夹住，竖屏这类"按比例算出来更窄"的视频就被撑宽、
+      // 比例被破坏 —— 表现正是"黑边一直在"。
+      try {
+        win.setMinimumSize(1, 1)
+      } catch (_) {}
+      // **先声明比例、再改尺寸**：比例约束一旦生效，有的平台会把 setContentSize 夹回
+      // 旧比例 —— 那样从一种比例切到另一种（16:9 → 4:3 / 21:9）时窗口永远对不上，
+      // 表现就是"黑边一直在"。两个动作都按**新**比例走，顺序必须是这个。
       win.setAspectRatio(ratio)
+      win.setContentSize(w, h)
+      // 再把下限设回去，但**不超过当前尺寸**：用户手动拖动时仍有一个合理的地板
+      //（不会缩到看不见控制栏），同时保证它这次不会反过来夹住已经调好的比例。
+      try {
+        win.setMinimumSize(Math.min(PLAYER_MIN_WIDTH, w), Math.min(PLAYER_MIN_HEIGHT, h))
+      } catch (_) {}
       win.center()
     } catch (e) {
       logger.warn('[Lerxu] 按视频比例调整窗口失败:', e && e.message ? e.message : e)
     }
+  }
+
+  /**
+   * 让播放器窗口露面（幂等，重复调用只会清掉兜底定时器）。
+   *
+   * 为什么需要"什么时候露面"这一档：窗口只要带着**与画面不一致的比例**出现就一定留黑边
+   * （`<video>` 是 `object-fit: contain`）。而画面尺寸只有 mp4 / mkv 能从文件头直接读出来
+   * （见 `readMediaMeta`），其余格式要等**首帧**报上来才知道 —— 那一路就得先把窗口藏着，
+   * 等尺寸到了再露（放行点见 PLAYBACK.METADATA）。出错与超时兜底也会调它：
+   * 宁可露一个比例还没对上的窗口，也不能"点了播放什么都没发生"。
+   */
+  showPlayerWindow () {
+    if (this._playerShowTimer) {
+      clearTimeout(this._playerShowTimer)
+      this._playerShowTimer = null
+    }
+    const win = this.windowManager.getWindow('player')
+    if (!win || win.isDestroyed()) {
+      return
+    }
+    try {
+      win.show()
+    } catch (_) {}
   }
 
   /** 把状态推给播放器窗口（播放器只显示，不做任何推导）。 */
@@ -4098,6 +4186,12 @@ export default class Application extends EventEmitter {
 
   /** 收掉当前播放会话（换文件 / 关窗口时）。 */
   closePlaybackSession () {
+    // "等画面尺寸"的兜底定时器要一起收掉：否则换文件后它还会醒来把窗口露出来
+    // （那时该由新会话决定什么时候露）。见 showPlayerWindow。
+    if (this._playerShowTimer) {
+      clearTimeout(this._playerShowTimer)
+      this._playerShowTimer = null
+    }
     if (this._playbackSpeedTimer) {
       clearInterval(this._playbackSpeedTimer)
       this._playbackSpeedTimer = null
@@ -4557,12 +4651,18 @@ export default class Application extends EventEmitter {
             this.applyVideoAspect(win, { width: w, height: h })
           }
         }
+        // **尺寸到了 ⇒ 放行窗口露面**：视频走上面那条（比例已对好）；纯音频报的是
+        // 宽高 0（音频面板不涉及黑边），也一并放行。这就是"先藏窗口等尺寸"那一路的出口。
+        this.showPlayerWindow()
       } catch (_) {}
     })
 
     // 播放器上报错误（宿主负责留痕；提示由播放器自己显示）
     ipcMain.on(PLAYBACK.ERROR, (_event, payload = {}) => {
       logger.warn('[Lerxu] 播放错误:', payload && payload.message ? payload.message : payload)
+      // 播放器把原因显示在窗口里 —— 所以窗口必须露出来（它可能还在"等画面尺寸"里藏着，
+      // 见 showPlayerWindow）。失败时"看不见任何东西"是最糟的观感。
+      this.showPlayerWindow()
       const session = this.playbackSession
       // 文件压根不存在：既不是"数据还没到"（BT 的文件在任务开始时就建好了，
       // 没下到的位置读出来是零），也不是引擎的锅 —— 保留引擎那句"文件不存在"

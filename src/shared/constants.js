@@ -41,6 +41,22 @@ export const LOG_LEVELS = [
 
 export const MAX_NUM_OF_DIRECTORIES = 5
 
+/**
+ * **前端的播放功能暂时停用**（2026-10-06 用户要求："暂时先把前端的播放功能给禁用掉"）。
+ *
+ * 播放链路（引擎出帧 / 边下边播 / 独立播放器窗口）还在收尾，先把**功能整体关掉**，
+ * 关在**这一个开关**上：
+ * · **界面**：任务详情的「操作」列（播放按钮那一列）整列不渲染 —— **入口在前端看不见**，
+ *   而不是"按钮还在、点了没反应"；
+ * · **主进程**：`Application.openMediaPlayer` 开头直接返回 `error: 'disabled'` ——
+ *   除了界面，人工点播放之外还有"等数据"的**自动重试**那条内部路径，那道拦截管住它。
+ *
+ * 两边读的是同一份常量，所以以后**新增**播放入口也会自动被同一条规则拦住。
+ * 关掉的只是"能不能发起播放"，播放器与引擎那一整套实现**一行都没动** ——
+ * 恢复播放把这里改回 `true` 即可。
+ */
+export const MEDIA_PLAYER_ENABLED = false
+
 export const ENGINE_RPC_HOST = '127.0.0.1'
 export const ENGINE_RPC_PORT = 16800
 export const ENGINE_MAX_CONCURRENT_DOWNLOADS = 10

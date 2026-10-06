@@ -87,8 +87,11 @@ export default {
   player: {
     attrs: {
       title: '播放器',
+      // 这只是**兜底尺寸**：真正的客户区尺寸由主进程按视频比例设（见 Application 的
+      // applyVideoAspect）。兜底按 **16:9** 取（消费级视频绝大多数是这个比例），
+      // 这样万一窗口在"尺寸还没定下来"时就露了面，也不至于平白多出一条黑边。
       width: 1000,
-      height: 620,
+      height: 563,
       minWidth: 460,
       minHeight: 320,
       backgroundColor: '#101114'

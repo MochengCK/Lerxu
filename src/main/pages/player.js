@@ -65,6 +65,14 @@
     controlsHidden: false,
     /** 上次上报播放进度的时刻（秒） */
     lastReportAt: 0,
+    /** 播放键当前画的是哪个图标（`ICONS.play` / `ICONS.pause`）—— 见 [syncPlayIcon]。 */
+    lastPlayIcon: '',
+    /**
+     * 上一次播放/暂停切换的 `event.timeStamp`（见播放键的 click）。
+     * 初值取一个足够小的负数：页面刚加载时 `timeStamp` 本身就只有几十毫秒，
+     * 若初值为 0，那第一次点击会被"同一次点击"的保护误吞。
+     */
+    lastToggleAt: -1e9,
     /**
      * 这个文件的媒体时间轴**从哪一刻开始**（秒）。
      *
@@ -93,6 +101,16 @@
   const TOAST_SHORT_MS = 620
   /** 需要看清的说明（只有画面、格式限制…）停留时长：够读完，但**绝不常驻**。 */
   const TOAST_NOTICE_MS = 6000
+
+  /**
+   * 播放键"同一次物理点击只切换一次"的窗口（毫秒）。
+   *
+   * 为什么需要它（2026-10-06 用户点名"点暂停**有时候**没反应、有时候点了自己又开始放"）：
+   * 播放/暂停是**切换**语义 —— 同一次点击如果把 click 派发了两遍，就会切两次、
+   * 视觉上回到原状（读起来就是"点了没反应"）；反过来双指/双击误触又会变成
+   * "暂停后马上自己开始"。220ms 比人手最快的两次**独立**点击还短，不会挡住故意连点。
+   */
+  const TOGGLE_LOCK_MS = 220
 
   /**
    * 屏幕中间的提示。
@@ -184,6 +202,24 @@
 
   // ── 进度与音量 ──────────────────────────────────────────────────
 
+  /**
+   * 播放键的图标：**只在真的变化时才写 DOM**。
+   *
+   * 为什么不能放在 `render()` 里每次重写（2026-10-06 用户点名"点暂停有时候没反应"）：
+   * 引擎出帧那条路上 `render()` **每一帧**都会被调用（30fps），而 `innerHTML = …`
+   * 会把按钮里的 `<svg>` 整个换成新节点 —— 鼠标按下到松开之间只要跨过一次替换，
+   * 这一次点击就有概率落空（按下的那个 `<svg>` 已经不在 DOM 里了）。
+   * 图标本来就只在"播放 ↔ 暂停"时变，没必要每 33ms 重建一次。
+   */
+  function syncPlayIcon () {
+    const want = (T.paused || !state.ctx) ? ICONS.play : ICONS.pause
+    if (want === state.lastPlayIcon) {
+      return
+    }
+    state.lastPlayIcon = want
+    $('playBtn').innerHTML = want
+  }
+
   function render () {
     const dur = T.duration
     const cur = state.scrubbing !== null ? state.scrubbing : T.currentTime
@@ -214,7 +250,7 @@
     // 当前 / 总时长：都放进度条**上方左侧**（用户要求）
     $('timeText').textContent = `${fmt(cur)} / ${dur > 0 ? fmt(dur) : '--:--'}`
 
-    $('playBtn').innerHTML = (T.paused || !state.ctx) ? ICONS.play : ICONS.pause
+    syncPlayIcon()
   }
 
   /**
@@ -795,7 +831,16 @@
     /** 引擎那边的字节发完了（用来判"播到片尾"） */
     eof: false,
     /** 是否已起播（有视频=第一帧到手；纯音频=第一个音频包到手） */
-    started: false
+    started: false,
+    /**
+     * 新取到一条流之后**要不要自动开始播**。
+     *
+     * 它记的是**用户的意图**，由 [T.play] / [T.pause] 维护，换流时继承（拖进度条、
+     * 播到片尾归零、暂停后换文件）。早先这里是无条件 `T.play()`：于是"暂停着拖一下
+     * 进度条"就自己开始放 —— 读起来正是"暂停按钮没反应 / 暂停后自己又开始"
+     * （用户 2026-10-06 点名）。
+     */
+    autoPlay: true
   }
 
   /** 数据源无关的"播放头"访问器：MSE/直接播放读 `<video>`，引擎出帧读帧时钟。 */
@@ -813,6 +858,9 @@
       return frames.active ? frames.position : media.currentTime
     },
     play () {
+      // **先记下"用户想播"**：这一路之后若还要换流（播到片尾归零、拖进度条 seek），
+      // 新取到的流要继承这个意图，而不是一律自动开播（见 [frames.autoPlay]）。
+      frames.autoPlay = true
       if (!frames.active) {
         media.play().catch(() => {})
         return
@@ -840,6 +888,8 @@
       reportProgress(true)
     },
     pause () {
+      // 同上：记住"用户要停"，之后换流时别替他开播
+      frames.autoPlay = false
       if (!frames.active) {
         media.pause()
         return
@@ -1109,7 +1159,13 @@
               })
             } catch (_) {}
             render()
-            T.play()
+            // 只在**用户本来就想播**时才自动开播（见 [frames.autoPlay]）：暂停状态下
+            // 拖了进度条 / 换了流，就该把这一帧画出来停住，而不是替他按播放键。
+            if (frames.autoPlay) {
+              T.play()
+            } else {
+              applyControlsHidden(false)
+            }
           } else if (!frames.hasVideo && frames.audioPackets > 0) {
             if (!frames.audio) {
               playbackFailed('这台设备没有可用的音频输出，放不了这个文件')
@@ -1127,7 +1183,12 @@
               })
             } catch (_) {}
             render()
-            T.play()
+            // 与视频那一支同一个门控（见 [frames.autoPlay]）
+            if (frames.autoPlay) {
+              T.play()
+            } else {
+              applyControlsHidden(false)
+            }
           }
         }
       }
@@ -1268,6 +1329,9 @@
     // 换文件：先把上一条流收掉（MSE 与出帧两条都收），免得两路数据同时在喂
     stopEngine()
     stopFrames()
+    // 换文件 = **新的**一条流，用户点开它就是想看 ⇒ 自动开播。
+    // （与"暂停中拖进度条"相反：那条走 [frames.autoPlay] 继承暂停意图，见自动起播处）
+    frames.autoPlay = true
     if (ctx.frames && window.LerxuFrames) {
       // 引擎出帧：视频由引擎解码，这里只负责把帧画到 canvas 上
       startFrames(0).catch((e) => {
@@ -1288,8 +1352,15 @@
 
   // ── 事件绑定 ────────────────────────────────────────────────────
 
-  $('playBtn').addEventListener('click', () => {
+  $('playBtn').addEventListener('click', (e) => {
     if (!state.ctx) return
+    // 同一次物理点击只切换一次（见 TOGGLE_LOCK_MS）：切换语义下，派发两遍 = 切两次 =
+    // 回到原状，用户看到的就是"点了没反应"。
+    if (e.timeStamp - state.lastToggleAt < TOGGLE_LOCK_MS) {
+      wakeControls()
+      return
+    }
+    state.lastToggleAt = e.timeStamp
     if (T.paused) {
       T.play()
     } else {

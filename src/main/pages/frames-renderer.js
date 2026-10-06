@@ -217,8 +217,17 @@
       }
     }
 
+    /**
+     * 回到播放。
+     *
+     * **无条件** `ctx.resume()`（不再按 `ctx.state !== 'running'` 判断）：`suspend` 与
+     * `resume` 都是异步的，用户快速"暂停 → 播放"时 resume 很可能落在 suspend 落地
+     * **之前**（那一刻 state 还是 `running`）⇒ 早先的写法会把这次 resume 直接跳过，
+     * 随后 suspend 生效：音频与时钟一起冻住，而播放器这边以为已经在播 ⇒
+     * 表现就是"点了播放没反应"（2026-10-06 用户点名"点暂停有时候没反应"）。
+     */
     function resume () {
-      if (ctx && ctx.state !== 'running') {
+      if (ctx) {
         ctx.resume().catch(() => {})
       }
     }
