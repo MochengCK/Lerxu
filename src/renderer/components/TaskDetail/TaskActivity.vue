@@ -202,7 +202,7 @@ const isFetchingMetadata = computed(() => {
   return `${task.status || ''}` === TASK_STATUS.ACTIVE && isMagnetTask(task)
 })
 // 直播任务（引擎 isLive 置位后恒真）→ 进度条走录制专属三态视觉
-// （录制中滚动斜纹 / 暂停减速变灰 / 完成绿色铺满，见 TaskProgress.vue 的 .is-live）
+// （录制中流动光带 / 暂停减速变灰 / 完成绿色铺满，见 TaskProgress.vue 的 .is-live）
 const isLiveTask = computed(() => {
   const task = props.task || {}
   return task.isLive === true

@@ -71,14 +71,15 @@ export function buildProgressWindowHtml (useCustomFrame, isMac, getThemeColors) 
           `.bar-inner{position:absolute;left:0;top:0;height:100%;background:#1a7fe0;width:0;border-radius:3px;transition:${PROGRESS_BAR_CSS_TRANSITION}, background-color .4s ease, opacity .4s ease;}`,
           '.bar-inner--cover{z-index:1;background:#2ACB42;}',
           /* 直播三态（与任务卡片 TaskProgress.vue 的 .is-live 同一套）：录制中 =
-             红系滚动斜纹（相位由 JS 推进，见 recStep）；停住 = 减速并交叉淡化到
-             "暂停灰"；完成 = 斜纹淡出、绿色内条铺满。两端 10px 渐隐遮罩让斜纹
-             进出时淡出，边缘不会出现细刺。stops 6.364/12.728px ⇒ 沿 x 轴周期
-             恰 18px（相位取模 18px 即无缝循环） */
+             红系柔光带从左向右循环流动（相位由 JS 推进，见 recStep）；停住 = 光带
+             减速并交叉淡化到"暂停灰"；完成 = 光带淡出、绿色内条铺满。
+             光带是**固定像素周期的平铺渐变**（周期 160px = REC_ROLL_PERIOD，
+             与 JS 相位取模一致 → 循环无缝），两端完全透明，被轨道边缘裁切时取值
+             随时间连续变化，不会闪出"断面"（故无需 mask）。 */
           '.bar.is-live,.bar-fixed.is-live{position:relative;}',
-          '.bar.is-live::before,.bar.is-live::after,.bar-fixed.is-live::before,.bar-fixed.is-live::after{content:"";position:absolute;inset:0;border-radius:inherit;background-position:var(--lc-rec-phase,0px) 0;transition:opacity .45s ease;pointer-events:none;mask-image:linear-gradient(90deg,transparent 0,#000 10px,#000 calc(100% - 10px),transparent 100%);-webkit-mask-image:linear-gradient(90deg,transparent 0,#000 10px,#000 calc(100% - 10px),transparent 100%);}',
-          '.bar.is-live::before,.bar-fixed.is-live::before{background-image:repeating-linear-gradient(-45deg,rgba(245,108,108,0.9) 0 6.364px,rgba(245,108,108,0.22) 6.364px 12.728px);opacity:1;}',
-          '.bar.is-live::after,.bar-fixed.is-live::after{background-image:repeating-linear-gradient(-45deg,rgba(115,115,115,0.8) 0 6.364px,rgba(115,115,115,0.2) 6.364px 12.728px);opacity:0;}',
+          '.bar.is-live::before,.bar.is-live::after,.bar-fixed.is-live::before,.bar-fixed.is-live::after{content:"";position:absolute;inset:0;border-radius:inherit;background-repeat:repeat-x;background-size:160px 100%;background-position:var(--lc-rec-phase,0px) 0;transition:opacity .45s ease;pointer-events:none;}',
+          '.bar.is-live::before,.bar-fixed.is-live::before{background-image:linear-gradient(90deg,rgba(245,108,108,0) 0px,rgba(245,108,108,0.12) 34px,rgba(245,108,108,0.66) 80px,rgba(245,108,108,0.12) 126px,rgba(245,108,108,0) 160px);opacity:1;}',
+          '.bar.is-live::after,.bar-fixed.is-live::after{background-image:linear-gradient(90deg,rgba(115,115,115,0) 0px,rgba(115,115,115,0.12) 34px,rgba(115,115,115,0.6) 80px,rgba(115,115,115,0.12) 126px,rgba(115,115,115,0) 160px);opacity:0;}',
           '.bar.is-rec-stopped::before,.bar-fixed.is-rec-stopped::before{opacity:0;}',
           '.bar.is-rec-stopped::after,.bar-fixed.is-rec-stopped::after{opacity:1;}',
           '.bar.is-rec-done::before,.bar.is-rec-done::after,.bar-fixed.is-rec-done::before,.bar-fixed.is-rec-done::after{opacity:0;}',
@@ -357,15 +358,18 @@ export function buildProgressWindowHtml (useCustomFrame, isMac, getThemeColors) 
           'const anim = { display: null, total: 0, baseCompleted: 0, baseTime: 0, speed: 0, status: "", mergePercent: -1, recording: false };',
           'let pairPendingNow = false;',
           '/* 直播录制（引擎 isLive）：进度条不画百分比，走录制三态视觉',
-          '   （与任务卡片同一套：录制中滚动斜纹 / 停住减速变灰 / 完成绿色铺满） */',
+          '   （与任务卡片同一套：录制中流动光带 / 停住减速变灰 / 完成绿色铺满） */',
           'let currentIsLive = false;',
-          '/* 斜纹相位（JS 逐帧推进）：速度指数渐变实现"逐渐停 / 逐渐动" */',
+          '/* 光带相位（JS 逐帧推进）：速度指数渐变实现"逐渐停 / 逐渐动"。',
+          '   REC_ROLL_PERIOD = 光带平铺渐变周期，必须与 CSS background-size 一致 */',
+          'var REC_ROLL_PERIOD = 160;',
+          'var REC_ROLL_SPEED = 72; /* px/s：约 2.2s 走完一个周期 */',
           'let recPhase = 0, recSpeed = 0, recRaf = null, recLastT = 0;',
           'function recTargetSpeed() {',
-          '  return (currentIsLive && (`${anim.status}` === "active" || `${anim.status}` === "waiting")) ? 20 : 0;',
+          '  return (currentIsLive && (`${anim.status}` === "active" || `${anim.status}` === "waiting")) ? REC_ROLL_SPEED : 0;',
           '}',
           'function recApply() {',
-          '  var v = (recPhase % 18).toFixed(2) + "px";',
+          '  var v = (recPhase % REC_ROLL_PERIOD).toFixed(2) + "px";',
           '  [document.querySelector(".bar"), document.querySelector(".bar-fixed")].forEach(function (el) {',
           '    if (el) el.style.setProperty("--lc-rec-phase", v);',
           '  });',
@@ -385,7 +389,7 @@ export function buildProgressWindowHtml (useCustomFrame, isMac, getThemeColors) 
           '  var k = 1 - Math.exp(-dt / 0.16);',
           '  recSpeed += (tg - recSpeed) * k;',
           '  if (Math.abs(recSpeed - tg) < 0.05) recSpeed = tg;',
-          '  recPhase = (recPhase + recSpeed * dt) % 18;',
+          '  recPhase = (recPhase + recSpeed * dt) % REC_ROLL_PERIOD;',
           '  recApply();',
           '  if (recSpeed > 0 || recTargetSpeed() > 0) recSchedule();',
           '}',
@@ -461,7 +465,7 @@ export function buildProgressWindowHtml (useCustomFrame, isMac, getThemeColors) 
           'function renderProgressBar() {',
           '  if (!barEl) return;',
           '  if (anim.recording) {',
-          '    /* 录制中：没有"进度"可言 —— 内条恒 0，动效交给 .is-recording 的斜纹 */',
+          '    /* 录制中：没有"进度"可言 —— 内条恒 0，动效交给 .is-live 的流动光带 */',
           '    barEl.style.width = "0%";',
           '    barEl.style.opacity = "1";',
           '    if (barCoverEl) { barCoverEl.style.width = "0%"; }',

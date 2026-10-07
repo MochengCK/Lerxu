@@ -92,7 +92,7 @@ const props = defineProps({
   },
   // 直播任务（引擎 isLive 置位后恒真）：没有"总长"这个分母，进度条不画百分比，
   // 按 livePhase（录制中 / 停住 / 完成）走**录制专属**三态视觉——
-  // 录制中 = 滚动斜纹，暂停/失败 = 减速停住并变灰，完成 = 斜纹淡出、绿色铺满。
+  // 录制中 = 柔光带循环流动，暂停/失败 = 减速停住并变灰，完成 = 光带淡出、绿色铺满。
   // 它优先于 fetchingMetadata（录制已开始，只是首段还没到）。
   isLive: {
     type: Boolean,
@@ -417,12 +417,13 @@ watch(() => props.speed, (val) => {
 }, { immediate: true })
 
 // ---------------------------------------------------------------------------
-// 直播录制：条纹相位由 JS（rAF）驱动 —— "暂停→逐渐停 / 恢复→逐渐动"需要的是
+// 直播录制：光带相位由 JS（rAF）驱动 —— "暂停→逐渐停 / 恢复→逐渐动"需要的是
 // **速度的渐变**，CSS 的 animation-play-state 只会瞬间冻结/瞬间启动，
 // 做不到这个手感。速度用指数趋近（时间常数 ~0.16s，约 0.6~1s 内到位），
-// 相位取模 18px（= 斜纹沿 x 轴的周期，正好无缝循环）。
+// 相位取模 REC_ROLL_PERIOD（= 平铺渐变沿 x 轴的周期，循环因此无缝）。
 // ---------------------------------------------------------------------------
-const REC_ROLL_SPEED = 20 // px/s：0.9s 走完一个 18px 周期（与旧 CSS 动画同速）
+const REC_ROLL_PERIOD = 160 // px：光带平铺周期（必须与 CSS background-size 一致）
+const REC_ROLL_SPEED = 72 // px/s：约 2.2s 走完一个周期
 let recRaf = null
 let recLastT = 0
 let recSpeed = 0
@@ -448,7 +449,7 @@ function recTick (t) {
   const k = 1 - Math.exp(-dt / 0.16)
   recSpeed += (target - recSpeed) * k
   if (Math.abs(recSpeed - target) < 0.05) recSpeed = target
-  recPhase = (recPhase + recSpeed * dt) % 18
+  recPhase = (recPhase + recSpeed * dt) % REC_ROLL_PERIOD
   recApply()
   if (recSpeed > 0 || recTargetSpeed() > 0) {
     recScheduleRec()
@@ -630,11 +631,14 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 直播三态：录制中 = 红系滚动斜纹（相位由 JS 逐帧推进，见 recTick）；
-   暂停/失败 = 条纹**减速停住**并交叉淡化到"暂停灰"；完成 = 斜纹淡出、
-   绿色内条铺满（与普通任务完成同色，但录制任务全程没有"百分比推进"）。
-   两端的渐隐遮罩（mask）让"进入/退出"的斜纹平滑淡出，而不是在边缘缩成
-   一根细刺 —— 斜纹在左端贴边的那一条是它看上去"不标准"的来源。 */
+/* 直播三态：录制中 = 红系**柔光带从左向右循环流动**（相位由 JS 逐帧推进，
+   见 recTick）；暂停/失败 = 光带减速停住并交叉淡化到"暂停灰"；完成 = 光带淡出、
+   绿色内条铺满。
+
+   光带用**固定像素周期的平铺渐变**（周期 160px = REC_ROLL_PERIOD，与 JS 相位
+   取模一致 → 循环无缝）。渐变两端**完全透明**，所以被轨道左右边缘裁切时，边缘处
+   的取值随时间**连续**变化 —— 不像高频斜纹那样每帧闪出"断面"（这正是上一版要靠
+   mask / 底色同化去补的坑，换成低频光带后机制上就不存在了）。 */
 .el-progress.is-live {
   .el-progress-bar__outer {
     position: relative;
@@ -650,33 +654,32 @@ onBeforeUnmount(() => {
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    /* 斜纹条带：stops 6.364px/12.728px = 4.5√2/9√2 ⇒ 沿 x 轴的周期恰为
-       18px（相位取模 18px 即无缝循环）。相位走 var(--lc-rec-phase)，
-       由组件脚本推进（速度渐变 = "逐渐停 / 逐渐动"的手感）。
-       两端各 10px 渐隐：斜纹进出时淡出，边缘不会出现细刺。 */
+    background-repeat: repeat-x;
+    background-size: 160px 100%;
     background-position: var(--lc-rec-phase, 0px) 0;
     transition: opacity 0.45s ease;
     pointer-events: none;
-    mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
-    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
   }
 
+  /* 流动的红色光带：透明 → 柔光 → 亮芯 → 柔光 → 透明（两端归零，循环无缝） */
   .el-progress-bar__outer::before {
-    background-image: repeating-linear-gradient(
-      -45deg,
-      rgba(245, 108, 108, 0.9) 0 6.364px,
-      rgba(245, 108, 108, 0.22) 6.364px 12.728px
-    );
+    background-image: linear-gradient(90deg,
+      rgba(245, 108, 108, 0) 0px,
+      rgba(245, 108, 108, 0.12) 34px,
+      rgba(245, 108, 108, 0.66) 80px,
+      rgba(245, 108, 108, 0.12) 126px,
+      rgba(245, 108, 108, 0) 160px);
     opacity: 1;
   }
 
-  /* 停住的条纹（灰）：录制层交叉淡化到它 —— 与暂停色（#737373）同族 */
+  /* 停住的光带（灰）：录制层原地交叉淡化到它 —— 与暂停色（#737373）同族 */
   .el-progress-bar__outer::after {
-    background-image: repeating-linear-gradient(
-      -45deg,
-      rgba(115, 115, 115, 0.8) 0 6.364px,
-      rgba(115, 115, 115, 0.2) 6.364px 12.728px
-    );
+    background-image: linear-gradient(90deg,
+      rgba(115, 115, 115, 0) 0px,
+      rgba(115, 115, 115, 0.12) 34px,
+      rgba(115, 115, 115, 0.6) 80px,
+      rgba(115, 115, 115, 0.12) 126px,
+      rgba(115, 115, 115, 0) 160px);
     opacity: 0;
   }
 
@@ -692,7 +695,7 @@ onBeforeUnmount(() => {
     opacity: 1;
   }
 
-  /* 完成：斜纹全部淡出，绿色内条（el-progress 的 percentage=100）铺满 */
+  /* 完成：光带全部淡出，绿色内条（el-progress 的 percentage=100）铺满 */
   &.is-rec-done .el-progress-bar__outer {
     background-color: transparent;
   }
@@ -703,28 +706,40 @@ onBeforeUnmount(() => {
   }
 }
 
+/* ⚠️ 下面这两条必须**比上面的暗色基础规则多一个类**（`.is-rec-stopped` /
+   `.is-rec-done`）：暗色基础红底 `.theme-dark .el-progress.is-live …` 与浅色
+   三态的 `.el-progress.is-live.is-rec-stopped …` **权重相同**（都是 4 个类），
+   而暗色块在文件里更靠后 —— 同权重下后者胜出，红底会压掉灰底，表现就是
+   "暂停后底色仍然是红的"。多带一个类（5 个类）才能稳定覆盖。
+   浅色主题没有这个问题（红底只有 3 个类，三态规则本就更高）。 */
+.theme-dark .el-progress.is-live.is-rec-stopped .el-progress-bar__outer {
+  background-color: rgba(160, 160, 160, 0.16);
+}
+
+.theme-dark .el-progress.is-live.is-rec-done .el-progress-bar__outer {
+  background-color: transparent;
+}
+
 /* 深色底槽（#363b44）上提亮一档，与浅色主题观感一致 */
 .theme-dark .el-progress.is-live .el-progress-bar__outer {
   background-color: rgba(255, 97, 87, 0.2);
 }
 
-.theme-dark .el-progress.is-live.is-rec-stopped .el-progress-bar__outer {
-  background-color: rgba(160, 160, 160, 0.16);
-}
-
 .theme-dark .el-progress.is-live .el-progress-bar__outer::before {
-  background-image: repeating-linear-gradient(
-    -45deg,
-    rgba(255, 119, 110, 0.95) 0 6.364px,
-    rgba(255, 119, 110, 0.28) 6.364px 12.728px
-  );
+  background-image: linear-gradient(90deg,
+    rgba(255, 119, 110, 0) 0px,
+    rgba(255, 119, 110, 0.14) 34px,
+    rgba(255, 119, 110, 0.74) 80px,
+    rgba(255, 119, 110, 0.14) 126px,
+    rgba(255, 119, 110, 0) 160px);
 }
 
 .theme-dark .el-progress.is-live .el-progress-bar__outer::after {
-  background-image: repeating-linear-gradient(
-    -45deg,
-    rgba(170, 170, 170, 0.85) 0 6.364px,
-    rgba(170, 170, 170, 0.25) 6.364px 12.728px
-  );
+  background-image: linear-gradient(90deg,
+    rgba(170, 170, 170, 0) 0px,
+    rgba(170, 170, 170, 0.12) 34px,
+    rgba(170, 170, 170, 0.66) 80px,
+    rgba(170, 170, 170, 0.12) 126px,
+    rgba(170, 170, 170, 0) 160px);
 }
 </style>
