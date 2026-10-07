@@ -321,12 +321,11 @@ export default {
   'status-removed': '已移除',
   'status-paused-seeding': '已暂停做种',
   'status-magnet-downloading': '磁力任务下载中',
-  // 直播录制任务卡片：录制图标 + 当前状态 + 「已录制 时长 · 大小」
+  // 直播录制任务卡片：录制图标 + 当前状态 + 「时长 · 大小」
   'live-recording': '录制中',
   'live-paused': '已暂停',
   'live-completed': '录制完成',
   'live-error': '录制失败',
-  'live-recorded': '已录制',
   'download-fail-message': '{{taskName}} 下载失败',
   'download-fail-notify': '下载失败',
   'download-fail-with-reason': '下载失败：{{reason}}',

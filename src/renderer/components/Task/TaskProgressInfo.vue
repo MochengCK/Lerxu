@@ -215,7 +215,9 @@ const liveStatusText = computed(() => {
 })
 
 /**
- * 「已录制 时长 · 大小」。时长取引擎上报的 `liveRecordedMs` —— 口径是
+ * 「时长 · 大小」——**不再加"已录制"前缀**：这一行前面已经有状态词
+ * （录制中 / 已暂停 / 录制完成），再顶一个"已录制"是重复（用户点名去掉）。
+ * 时长取引擎上报的 `liveRecordedMs` —— 口径是
  * **已拼进产物的媒体分片 `#EXTINF` 之和**（产物能播多长），不是"从按下
  * 录制过去了多久"：断网追帧时两者会分叉，用户关心的是前者。
  */
@@ -229,7 +231,7 @@ const liveRecordedText = computed(() => {
   const pad = (n) => String(n).padStart(2, '0')
   const duration = h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`
   const size = bytesToSize(Number(task.completedLength) || 0, 2)
-  return `${t('task.live-recorded')} ${duration} · ${size}`
+  return `${duration} · ${size}`
 })
 
 const isCompleted = computed(() => {

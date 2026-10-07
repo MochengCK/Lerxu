@@ -321,12 +321,11 @@ export default {
   'status-removed': 'Removed',
   'status-paused-seeding': 'Seeding paused',
   'status-magnet-downloading': 'Magnet download in progress',
-  // Live-recording task card: record icon + state + "Recorded <duration> · <size>"
+  // Live-recording task card: record icon + state + "<duration> · <size>"
   'live-recording': 'Recording',
   'live-paused': 'Paused',
   'live-completed': 'Recording finished',
   'live-error': 'Recording failed',
-  'live-recorded': 'Recorded',
   'download-fail-message': 'Failed to download {{taskName}}',
   'download-fail-notify': 'Download Failed',
   'download-fail-with-reason': 'Download failed: {{reason}}',
