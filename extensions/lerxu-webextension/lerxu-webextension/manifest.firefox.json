@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extensionName__",
-  "version": "1.7.4",
+  "version": "1.7.5",
   "description": "__MSG_extensionDescription__",
   "default_locale": "en",
   "browser_specific_settings": {
@@ -54,6 +54,17 @@
       ],
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "page-stream-watcher.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
     }
   ],
   "commands": {

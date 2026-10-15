@@ -154,9 +154,13 @@
   const videoContextState = new Map()
 
   // === 直播流识别 ===
-  // 嗅探到 HLS 清单（m3u8）后问一次后台"这是不是直播"（后台代抓清单判
-  // `#EXT-X-ENDLIST`，不受页面 CORS 限制），把结论回填到资源对象的 `live`
-  // 上 —— 下拉框里的清单条目据此显示「直播」徽章。每个资源同时只问一次
+  // 嗅探到直播形态的资源后问一次后台"这是不是直播"，把结论回填到资源对象的
+  // `live` 上 —— 下拉框里的条目据此显示「直播」徽章。两类形态：
+  //   - HLS 清单（m3u8）：后台代抓清单判 `#EXT-X-ENDLIST`；
+  //   - FLV（`.flv` / `video/x-flv`，HTTP-FLV 直播的形态）：后台代抓响应头
+  //     —— **没有 Content-Length 的 chunked 长连接才是直播**（服务器永不
+  //     收尾）；带总长的是点播文件。正文再用 FLV 文件头魔数确认。
+  // 判定都不受页面 CORS 限制（在后台发请求）；每个资源同时只问一次
   // （失败留下重试机会，后续资源更新会再来；成功结果由后台缓存）。
   const isManifestLikeResource = (entry) => {
     try {
@@ -168,13 +172,27 @@
     }
   }
 
+  const isFlvLikeResource = (entry) => {
+    try {
+      if (!entry) return false
+      if (`${entry.ext || ''}`.toLowerCase() === 'flv') return true
+      return /\.flv(?:[?#]|$)/i.test(`${entry.url || ''}`)
+    } catch (e) {
+      return false
+    }
+  }
+
+  const needsLiveProbe = (entry) => isManifestLikeResource(entry) || isFlvLikeResource(entry)
+
   const scheduleLiveProbe = (entry) => {
     try {
-      if (!entry || entry.liveProbed || !isManifestLikeResource(entry)) return
+      if (!entry || entry.liveProbed || !needsLiveProbe(entry)) return
       const url = `${entry.url || ''}`
       if (!/^https?:/i.test(url)) return
+      // 把形态告诉后台（FLV 与清单的判定完全不同，省一次白抓）
+      const kind = isFlvLikeResource(entry) && !isManifestLikeResource(entry) ? 'flv' : 'hls'
       entry.liveProbed = true
-      chrome.runtime.sendMessage({ type: 'probeLiveStream', url }, (resp) => {
+      chrome.runtime.sendMessage({ type: 'probeLiveStream', url, kind }, (resp) => {
         try {
           if (chrome.runtime.lastError) {
             entry.liveProbed = false
@@ -203,6 +221,59 @@
       return `${raw || ''}`
     }
   }
+
+  // === 页面世界观察到的流地址（接口 JSON / 长连接帧下发） ===
+  // 部分站点的直播地址不在页面直连的媒体请求里：播放器在 Worker 里取流，
+  // 或流地址只出现在接口响应 / 长连接帧 / 服务端渲染的内嵌数据中 —— 隔离
+  // 世界两种都看不到，由页面世界的观察器（page-stream-watcher.js）捞出来
+  // postMessage 过来。这里按与直连嗅探**完全同一条路**登记：同样过
+  // shouldSniff 的开关 / 站点 / 格式过滤与去重，之后照常探测直播、显示
+  // 徽章、交给下载器。
+  //
+  // 配置还没加载完时先**攒着**（shouldSniff 在配置就绪前一律拒绝，而页面
+  // 一开局就可能把地址下发完、观察器每条只上报一次 —— 直接丢就永远丢了）。
+  const pendingPageStreamUrls = []
+  /// 本页从页面世界接收的地址总数上限（页面脚本也能 postMessage 进来，
+  /// 给个上限免得被灌爆列表；正常直播页远用不到这么多）
+  const MAX_PAGE_STREAM_URLS = 64
+  let pageStreamUrlsSeen = 0
+
+  const flushPendingPageStreamUrls = () => {
+    try {
+      while (pendingPageStreamUrls.length > 0) {
+        const url = pendingPageStreamUrls.shift()
+        log('Registering buffered page stream url:', url.substring(0, 120))
+        addResource(url, null, 0)
+      }
+    } catch (e) {}
+  }
+
+  const registerPageStreamUrl = (url) => {
+    try {
+      if (typeof url !== 'string' || !/^https?:/i.test(url)) return
+      if (pageStreamUrlsSeen >= MAX_PAGE_STREAM_URLS) return
+      if (!configLoaded) {
+        if (pendingPageStreamUrls.length < MAX_PAGE_STREAM_URLS &&
+            !pendingPageStreamUrls.includes(url)) {
+          pendingPageStreamUrls.push(url)
+        }
+        return
+      }
+      pageStreamUrlsSeen++
+      log('Stream URL observed from page context:', url.substring(0, 120))
+      addResource(url, null, 0)
+    } catch (e) {}
+  }
+
+  try {
+    window.addEventListener('message', (event) => {
+      try {
+        const data = event && event.data
+        if (!data || typeof data !== 'object') return
+        registerPageStreamUrl(data.__lerxuStreamUrls)
+      } catch (e) {}
+    })
+  } catch (e) {}
 
   const isTrustedBiliHost = (hostname) => {
     const host = `${hostname || ''}`.toLowerCase()
@@ -510,6 +581,7 @@
       if (!chrome || !chrome.storage || !chrome.storage.local) {
         // Chrome storage API not available
         configLoaded = true
+        flushPendingPageStreamUrls()
         return
       }
       chrome.storage.local.get(['videoSnifferEnabled', 'videoSnifferFormats', 'videoSnifferAutoCombine'], (result) => {
@@ -517,6 +589,7 @@
         if (chrome.runtime.lastError) {
           // Storage error
           configLoaded = true
+          flushPendingPageStreamUrls()
           return
         }
         let configChanged = false
@@ -546,6 +619,8 @@
 
         configLoaded = true
         log('Config loaded from storage, marking as loaded and rechecking all resources')
+        // 配置就绪前攒下的"页面世界流地址"补登记（每条只会上报一次，错过就没了）
+        flushPendingPageStreamUrls()
         // 不清除现有资源，而是重新检查以确保完整性
         
         const resources = window.performance.getEntriesByType('resource')
@@ -564,6 +639,7 @@
     } catch (e) {
       // Failed to load config
       configLoaded = true
+      flushPendingPageStreamUrls()
     }
   }
 
@@ -1580,7 +1656,10 @@
    *   真正的清单反而被淹没（用户点名：分不清该点哪个）。
    */
   const NON_PAIRABLE_EXTS = new Set(['m4s', 'm3u8', 'm3u', 'mpd', 'ism', 'ismc', 'ts', 'm2ts', 'mts', 'mp2t', 'cmfv', 'cmfa'])
-  const isPairableStream = (r) => !!r && !NON_PAIRABLE_EXTS.has(`${r.ext || ''}`.toLowerCase())
+  // 直播条目（`live === true`，见「直播流识别」）同样不参与配对：直播流
+  // 本身就是完整的音视频流，还是一条"永不结束"的长连接 —— 拿它和页面里
+  // 某条音频拼成"完整视频"既没有意义，点了也不会按录制处理。
+  const isPairableStream = (r) => !!r && r.live !== true && !NON_PAIRABLE_EXTS.has(`${r.ext || ''}`.toLowerCase())
 
   // 合并非M4S格式的音视频流（通用平台，如抖音等）
   function combineGenericStreams() {
@@ -1831,6 +1910,11 @@
   // 专门获取资源文件大小的函数（通用且强化）
   const fetchResourceSize = async (url) => {
     try {
+      // 直播形态（清单 / FLV）**只做 HEAD**：没有总长的长连接是永不结束的
+      // 响应，Range GET / 全量 GET + blob 会一直读下去（连接、带宽、内存都
+      // 收不回来）。HEAD 只回响应头，对点播 FLV 仍能拿到大小、对直播则拿不到
+      // （本来也没有终态大小）。
+      const liveShape = isManifestLikeResource({ url }) || isFlvLikeResource({ url })
       log('Attempting to fetch size for:', url.substring(0, 100))
       
       // 策略1: HEAD请求获取Content-Length
@@ -1861,6 +1945,9 @@
         log('HEAD request failed:', e.message)
       }
       
+      // 策略2 / 3 会真的读响应体（直播形态直接跳过，只信上面的 HEAD）
+      if (liveShape) return 0
+
       // 策略2: Range请求获取总大小
       try {
         const rangeResponse = await fetch(url, {
@@ -2414,8 +2501,9 @@
           if (shouldSniff(url, contentType)) {
             addResource(url, contentType, 0)
             
-            // 异步获取准确大小
-            if (response.body && response.headers.get('Content-Type')) {
+            // 异步获取准确大小（直播形态跳过：克隆出来的流会一直读下去）
+            const liveShape = isManifestLikeResource({ url }) || isFlvLikeResource({ url })
+            if (!liveShape && response.body && response.headers.get('Content-Type')) {
               // 克隆响应以避免消费原始流
               const clonedResponse = response.clone()
               

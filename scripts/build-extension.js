@@ -54,6 +54,7 @@ const INCLUDE_FILES = [
   'firefox-compat.js',
   'i18n.js',
   'key-listener.js',
+  'page-stream-watcher.js',
   'popup.html',
   'popup.js',
   'video-sniffer.js',

@@ -549,6 +549,36 @@ const main = async () => {
     assert(countDisplayItems(items) === 3, `可见条目数应为 3，实际 ${countDisplayItems(items)}`)
   })
 
+  check('直播条目单独成栏：不混在视频资源，也不混进 HLS 完整视频', () => {
+    const { collectDisplayItems, countDisplayItems } = loadGrouping()
+    const liveFlv = { url: 'https://live.example.com/live/stream.flv', ext: 'flv', live: true }
+    const liveM3u8 = { url: 'https://live.example.com/live/index.m3u8', ext: 'm3u8', live: true }
+    const vodFlv = { url: 'https://cdn.example.com/vod/movie.flv', ext: 'flv', live: false }
+    const vodM3u8 = { url: 'https://cdn.example.com/vod/index.m3u8', ext: 'm3u8' }
+    const items = collectDisplayItems({
+      video: [liveFlv, vodFlv, liveM3u8, vodM3u8], audio: [], m4s: [], combined: []
+    })
+
+    assert(items.live.length === 2, `两条直播都该进直播栏，实际 ${items.live.length}`)
+    assert(
+      items.video.length === 1 && items.video[0].url === vodFlv.url,
+      '点播条目仍留在视频栏，直播条目不得混入'
+    )
+    assert(
+      items.manifest.length === 1 && items.manifest[0].url === vodM3u8.url,
+      '非直播清单仍在 HLS 完整视频栏（直播清单归直播栏）'
+    )
+    // 直播 2 + 清单 1 + 视频 1：按钮数字必须与列表逐条对得上
+    assert(countDisplayItems(items) === 4, `可见条目数应为 4，实际 ${countDisplayItems(items)}`)
+
+    // 直播条目也不该同时出现在音频栏（音频型直播流同理）
+    const liveAudio = { url: 'https://live.example.com/live/radio.flv', ext: 'flv', live: true }
+    const withAudio = collectDisplayItems({
+      video: [], audio: [liveAudio], m4s: [], combined: []
+    })
+    assert(withAudio.live.length === 1 && withAudio.audio.length === 0, '音频型直播也要进直播栏')
+  })
+
   check('没有清单时 .ts 不算分片（孤立的 .ts 可能真是整段视频）', () => {
     const { collectDisplayItems, countDisplayItems } = loadGrouping()
     const ts = { url: 'https://cdn.example.com/legacy/movie.ts', ext: 'ts', size: 0 }
@@ -648,6 +678,124 @@ const main = async () => {
     )
   })
 
+  check('FLV 直播判定：像 FLV 且服务器没给总长才算直播', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'background.js'), 'utf8')
+    const start = src.indexOf('const analyzeFlvHead = ({ url, contentType, contentLength, head }) => {')
+    const end = src.indexOf('const readManifestHead =', start)
+    assert(
+      start >= 0 && end > start,
+      '未能在 background.js 中定位 FLV 直播判定函数（结构变了？测试需同步）'
+    )
+    const code = `(function () {\n${src.slice(start, end)}\nreturn { analyzeFlvHead }\n})()`
+    const sandbox = { console: { log () {}, warn () {}, error () {} } }
+    vm.createContext(sandbox)
+    const { analyzeFlvHead } = new vm.Script(code, { filename: 'flv-analyze.js' }).runInContext(sandbox)
+
+    const flvHead = [0x46, 0x4c, 0x56, 0x01, 0x05, 0, 0, 0]
+    // 无总长 + FLV 魔数 = 直播（HTTP-FLV 的传输形态：长连接永不收尾）
+    assert(
+      analyzeFlvHead({ url: 'https://h/live/s', contentType: '', contentLength: null, head: flvHead }).live === true,
+      '无 Content-Length 且正文是 FLV 必须是直播'
+    )
+    // 无总长 + 地址/类型像 FLV（正文没读到）也算直播（与下载引擎同一口径）
+    assert(
+      analyzeFlvHead({ url: 'https://h/live/s.flv', contentType: '', contentLength: null, head: null }).live === true,
+      '.flv 地址且无总长必须是直播'
+    )
+    assert(
+      analyzeFlvHead({ url: 'https://h/live/s', contentType: 'video/x-flv', contentLength: null, head: null }).live === true,
+      'video/x-flv 且无总长必须是直播'
+    )
+    // 有总长 = 点播文件：不能标直播
+    assert(
+      analyzeFlvHead({ url: 'https://h/v/movie.flv', contentType: 'video/x-flv', contentLength: '10485760', head: flvHead }).live === false,
+      '带 Content-Length 的 FLV 是点播文件'
+    )
+    // 不像 FLV 的一律判不了（不显示徽章）
+    assert(
+      analyzeFlvHead({ url: 'https://h/api/data', contentType: 'application/json', contentLength: null, head: null }).flv === false,
+      '既不是 FLV 类型也不带 .flv 的不能判成直播'
+    )
+    assert(
+      analyzeFlvHead({ url: 'https://h/v/other.mp4', contentType: '', contentLength: null, head: [0, 0, 0, 0] }).flv === false,
+      '正文魔数不是 FLV 的不能判成直播'
+    )
+  })
+
+  check('接口 / 长连接流地址提取：绝对地址、host + 相对路径、转义斜杠', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'page-stream-watcher.js'), 'utf8')
+    const start = src.indexOf("  const MSG_KEY = '__lerxuStreamUrls'")
+    const end = src.indexOf('  const report = (urls) => {', start)
+    assert(
+      start >= 0 && end > start,
+      '未能在 page-stream-watcher.js 中定位流地址提取函数（结构变了？测试需同步）'
+    )
+    const code = `(function () {\n${src.slice(start, end)}\nreturn { scanText, scanJsonValue }\n})()`
+    const sandbox = { console: { log () {}, warn () {}, error () {} }, location: { protocol: 'https:' } }
+    vm.createContext(sandbox)
+    const { scanText, scanJsonValue } = new vm.Script(code, { filename: 'stream-scan.js' }).runInContext(sandbox)
+
+    // 转义斜杠的 JSON 文本（接口原样下发的样子）
+    const t = scanText('{"flv_pull_url":{"FULL_HD1":"https:\\/\\/pull-flv.example.com\\/stage\\/stream-1_or4.flv?sign=abc&expire=1"}}')
+    assert(
+      t.size === 1 && [...t][0] === 'https://pull-flv.example.com/stage/stream-1_or4.flv?sign=abc&expire=1',
+      '转义过的 JSON 文本里要能扫到 .flv 绝对地址：' + JSON.stringify([...t])
+    )
+
+    // \uXXXX 转义（JSON/JS 字符串里的 & —— 不还原就会在转义处截断签名参数）
+    const esc = scanText('self.__pace_f.push([1,"{\\"flv\\":\\"http://pull.example.com/live/s_or4.flv?expire=1\\u0026sign=abc\\u0026t=9\\"}])')
+    assert(
+      [...esc][0] === 'http://pull.example.com/live/s_or4.flv?expire=1&sign=abc&t=9',
+      '\\uXXXX 必须还原（否则地址少了签名参数就是死链）：' + JSON.stringify([...esc])
+    )
+
+    // host + 相对路径（接口把两者分开放的形态）
+    const j = scanJsonValue({ host: 'https://cn-1.example.com/', base_url: '/live/abc/live_1.flv?token=t' })
+    assert(
+      [...j][0] === 'https://cn-1.example.com/live/abc/live_1.flv?token=t',
+      'host 与相对路径必须拼出完整地址：' + JSON.stringify([...j])
+    )
+
+    // 协议相对
+    const p = scanJsonValue({ url: '//h.example.com/x.m3u8?a=1' })
+    assert(
+      [...p][0] === 'https://h.example.com/x.m3u8?a=1',
+      '协议相对地址要补上页面协议：' + JSON.stringify([...p])
+    )
+
+    // 不误报
+    assert(scanText('https://h.example.com/api/list.json').size === 0, '非媒体扩展名不能进来')
+    assert(scanJsonValue({ base_url: '/api/data' }).size === 0, '没有主机可拼的相对非媒体路径不能进来')
+    assert(scanText('<html><body>no streams here</body></html>').size === 0, '普通文本不能误报')
+    assert(scanJsonValue({ url: 'https://h.example.com/a.mp4' }).size === 0, '非流媒体扩展（mp4 等）不该被当成流地址')
+  })
+
+  check('页面世界观察器已接通（MAIN world 注入 + postMessage 登记）', () => {
+    for (const mf of ['manifest.json', 'manifest.firefox.json']) {
+      const m = JSON.parse(fs.readFileSync(path.join(EXT_DIR, mf), 'utf8'))
+      const entry = (m.content_scripts || []).find((e) => (e.js || []).includes('page-stream-watcher.js'))
+      assert(entry, `${mf} 未注入 page-stream-watcher.js`)
+      assert(entry.world === 'MAIN', `${mf} 里的观察器必须跑在 MAIN world（页面世界的 XHR/fetch/WS 才能在隔离世界里看到）`)
+      assert(entry.run_at === 'document_start', `${mf} 里的观察器要在 document_start 就跑起来`)
+    }
+    const build = fs.readFileSync(path.resolve(__dirname, '../../scripts/build-extension.js'), 'utf8')
+    assert(/page-stream-watcher\.js/.test(build), '打包白名单缺少 page-stream-watcher.js（产物会漏文件）')
+    const sniffer = fs.readFileSync(path.join(EXT_DIR, 'video-sniffer.js'), 'utf8')
+    assert(/__lerxuStreamUrls/.test(sniffer), 'video-sniffer 未接收页面世界观察器上报的流地址')
+    assert(
+      /registerPageStreamUrl\(data\.__lerxuStreamUrls\)/.test(sniffer),
+      '消息监听必须把上报的地址交给登记函数'
+    )
+    assert(
+      /const registerPageStreamUrl = \(url\) => \{[\s\S]{0,700}?addResource\(url, null, 0\)/.test(sniffer),
+      '上报的地址必须走与直连嗅探同一条登记路径（addResource）'
+    )
+    assert(
+      /flushPendingPageStreamUrls/.test(sniffer),
+      '配置就绪前攒下的地址要补登记（观察器每条只上报一次，丢一次就永远丢了）'
+    )
+  })
+
   check('直播识别链路已接通（video-sniffer → background → 徽章）', () => {
     const sniffer = fs.readFileSync(path.join(EXT_DIR, 'video-sniffer.js'), 'utf8')
     const bg = fs.readFileSync(path.join(EXT_DIR, 'background.js'), 'utf8')
@@ -657,12 +805,24 @@ const main = async () => {
       'video-sniffer 未对 m3u8 资源调度直播探测'
     )
     assert(
+      /isFlvLikeResource/.test(sniffer) && /needsLiveProbe/.test(sniffer),
+      'video-sniffer 未把 FLV 形态纳入直播探测'
+    )
+    assert(
+      /kind/.test(sniffer) && /sendMessage\(\{ type: 'probeLiveStream', url, kind \}/.test(sniffer),
+      'video-sniffer 未把形态提示（kind）随探测消息一起发出'
+    )
+    assert(
       /msg\.type === 'probeLiveStream'/.test(bg),
       'background 未处理 probeLiveStream 消息'
     )
     assert(
-      /const probeStreamLive = async \(url\)/.test(bg),
-      'background 缺少 probeStreamLive 实现'
+      /const probeStreamLive = async \(url, kind\)/.test(bg),
+      'background 缺少 probeStreamLive 实现（或未接收形态提示）'
+    )
+    assert(
+      /const readFlvHead = async \(url, timeout\)/.test(bg),
+      'background 缺少 FLV 响应头抓取实现'
     )
     assert(
       /'live':\s*\{[^}]*'zh_CN'/.test(kl),
@@ -672,6 +832,42 @@ const main = async () => {
       /resource\.live === true/.test(kl),
       '清单条目未渲染直播徽章'
     )
+    assert(
+      /r\.live !== true/.test(sniffer),
+      '直播条目必须排除在音视频配对之外'
+    )
+  })
+
+  check('资源弹窗：应用设计令牌 + 明暗主题 + 空态/分栏结构', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    // 令牌取自桌面端 Tokens.scss（浅色主色 / 深色面板底 与之一致）
+    assert(/ensureLxStyles/.test(src) && /'lerxu-ui-style'/.test(src), '缺少注入的弹窗样式表')
+    assert(/--lx-primary: #1a7fe0/.test(src), '浅色主色必须与应用一致（#1a7fe0）')
+    assert(/--lx-bg-panel: #262a31/.test(src), '深色面板底必须与应用一致（#262a31）')
+    assert(/\.lx-scope\.lx-dark/.test(src), '缺少深色令牌覆盖')
+    // 主题跟随应用：storage.uiTheme / themeChanged / prefers-color-scheme 兜底
+    assert(/storage\.local\.get\(\['uiTheme'\]/.test(src), '未读取应用主题（uiTheme）')
+    assert(/msg\.type === 'themeChanged'/.test(src), '未监听应用主题变化')
+    assert(/prefers-color-scheme: dark/.test(src), '拿不到应用主题时应跟随系统')
+    // 弹窗是一整张卡片：圆角/阴影/描边都在样式表里
+    assert(
+      /#lerxu-resource-dropdown \{[\s\S]{0,400}border-radius: 12px/.test(src),
+      '弹窗容器缺圆角（外观应在样式表里，不在内联）'
+    )
+    // 条目标记：直播徽章 / 名称 / 大小 / URL 全走 class
+    for (const cls of ['lx-item', 'lx-name', 'lx-badge-live', 'lx-size', 'lx-url']) {
+      assert(src.includes(cls), `条目缺少 ${cls} 样式类`)
+    }
+    assert(/lx-section-title/.test(src) && /lx-section-count/.test(src), '区块标题/计数未走统一样式')
+    assert(/lx-group-head/.test(src) && /lx-chevron/.test(src), '分片组未走统一样式')
+    // 空态：两行提示 + 三个语言
+    assert(/lx-empty-title/.test(src) && /lx-empty-hint/.test(src), '缺少空态样式')
+    for (const key of ['noResources', 'noResourcesHint']) {
+      assert(
+        new RegExp(`'${key}':\\s*\\{[^}]*'zh_CN'[^}]*'zh_TW'`).test(src),
+        `空态文案 ${key} 缺语言（需 en / zh_CN / zh_TW）`
+      )
+    }
   })
 
   // ------------------------------------------------------- 行内下载入口 DOM
@@ -858,8 +1054,14 @@ const main = async () => {
     dom.fireClick(group.children[0])
     assert(list.style.display === 'none', '再次点击应收起')
 
-    const label = nodes.find((n) => `${n.textContent}`.indexOf('hlsSegments') === 0)
-    assert(label && label.textContent.indexOf('5') > 0, `标题应写明分片数量，实际 ${label && label.textContent}`)
+    // 计数与栏名同在一行（栏名 + 「· 5」），标题行里的节点文本合起来必须能看到数量
+    const headerText = dom.walk(group.children[0]).map((n) => `${n.textContent || ''}`).join(' ')
+    assert(
+      headerText.indexOf('hlsSegments') >= 0 && /5/.test(headerText),
+      `标题应写明分片数量，实际 ${headerText}`
+    )
+    const chevron = nodes.find((n) => `${n.className || ''}`.indexOf('lx-chevron') >= 0)
+    assert(chevron, '分片组标题缺省应带折叠箭头（收起/展开一眼可见）')
   })
 
   // ------------------------------------------------------------- packaging

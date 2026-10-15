@@ -403,13 +403,20 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       return out
     }
     const plainPool = video.concat(audio, m4sKept)
-    const manifest = dedupeByUrl(plainPool.filter(isHlsManifestEntry))
+    // 直播条目**单独成一栏**：它既不是"下好了的完整视频"也不是"零件"，
+    // 点它是"开始录制"——混在「视频资源」里会让人以为那是一份能直接下完的
+    // 文件（用户点名）。所有 live 条目（含直播清单）都归这一栏，且从
+    // 其它栏里剔除，避免同一条出现两次。
+    const isLiveEntry = (item) => !!(item && item.live === true)
+    const live = dedupeByUrl(plainPool.filter(isLiveEntry))
+    const manifest = dedupeByUrl(plainPool.filter(item => isHlsManifestEntry(item) && !isLiveEntry(item)))
     const hasManifest = manifest.length > 0
     const segments = hasManifest ? dedupeByUrl(plainPool.filter(isTsSegmentEntry)) : []
     const strip = (list) => list.filter(item =>
-      !(item && (isHlsManifestEntry(item) || (hasManifest && isTsSegmentEntry(item)))))
+      !(item && (isLiveEntry(item) || isHlsManifestEntry(item) || (hasManifest && isTsSegmentEntry(item)))))
 
     return {
+      live,
       manifest,
       segments,
       combined,
@@ -427,7 +434,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
    */
   const countDisplayItems = (items) => {
     try {
-      return items.manifest.length + items.combined.length + items.m4s.length +
+      return items.live.length + items.manifest.length + items.combined.length + items.m4s.length +
         items.video.length + items.audio.length + (items.segments.length > 0 ? 1 : 0)
     } catch (e) {
       return 0
@@ -1839,12 +1846,30 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         'zh_CN': '分片',
         'zh_TW': '分片'
       },
-      // 直播徽章：清单已被识别为直播流（无 #EXT-X-ENDLIST，见 video-sniffer
-      // 的实时探测）。点它 = 让应用开始**录制**这条流（而不是下载一份快照）。
+      // 直播徽章：条目已被识别为直播流（HLS 清单无 #EXT-X-ENDLIST / FLV
+      // 无总长的长连接，见 video-sniffer 的实时探测）。点它 = 让应用开始
+      // **录制**这条流（而不是下载一份快照）。
       'live': {
         'en': 'LIVE',
         'zh_CN': '直播',
         'zh_TW': '直播'
+      },
+      // 直播栏的栏名：直播条目单独成栏（点一下就是开始录制）
+      'liveStreams': {
+        'en': 'Live streams',
+        'zh_CN': '直播',
+        'zh_TW': '直播'
+      },
+      // 空态：弹窗打开时还没嗅探到任何资源
+      'noResources': {
+        'en': 'No media found yet',
+        'zh_CN': '暂未发现媒体资源',
+        'zh_TW': '暫未發現媒體資源'
+      },
+      'noResourcesHint': {
+        'en': 'Play the video on the page and resources will show up here',
+        'zh_CN': '在页面上播放视频后会自动出现',
+        'zh_TW': '在頁面上播放影片後會自動出現'
       }
     }
     
@@ -1857,6 +1882,266 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // 初始化语言缓存
   updateLocaleCache()
+
+  // === 外观：与桌面端同一套设计令牌（src/renderer/components/Theme/Tokens.scss）
+  // + 明暗主题跟随应用 ===
+  //
+  // 桌面端 Tokens.scss 是配色的唯一来源，这里取同一组值（改色只改那边）。
+  // 主题来自 storage.uiTheme（background 从应用同步后写入，变更时发
+  // themeChanged）；拿不到就跟随系统 prefers-color-scheme。
+  // 令牌挂在 `.lx-scope`（按钮 + 弹窗的最外层容器）上，深色时加 `lx-dark`。
+  const LX_STYLE_ID = 'lerxu-ui-style'
+  const ensureLxStyles = () => {
+    try {
+      if (document.getElementById(LX_STYLE_ID)) return
+      const style = document.createElement('style')
+      style.id = LX_STYLE_ID
+      style.textContent = `
+/* 令牌（浅色，取桌面端 Tokens.scss 同值） */
+.lx-scope {
+  --lx-primary: #1a7fe0;
+  --lx-primary-weak: rgba(26, 127, 224, 0.08);
+  --lx-danger: #f56c6c;
+  --lx-danger-weak: rgba(245, 108, 108, 0.1);
+  --lx-success: #67c23a;
+  --lx-success-weak: rgba(103, 194, 58, 0.12);
+  --lx-text-1: #2c3e50;
+  --lx-text-2: #5a6c7d;
+  --lx-text-3: #8492a6;
+  --lx-bg-panel: #ffffff;
+  --lx-bg-head: #f7f9fc;
+  --lx-bg-hover: #f0f4f8;
+  --lx-border: rgba(26, 35, 50, 0.08);
+  --lx-border-strong: #e2e8f0;
+  --lx-shadow: 0 10px 28px rgba(26, 35, 50, 0.14);
+  /* 小尺寸浮层（嗅探按钮）用的轻阴影：弹窗那种大阴影压在 24px 高的条上会显脏 */
+  --lx-shadow-sm: 0 2px 8px rgba(26, 35, 50, 0.16);
+  --lx-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", Helvetica, Arial, sans-serif;
+}
+.lx-scope.lx-dark {
+  --lx-primary: #4a9eff;
+  --lx-primary-weak: rgba(74, 158, 255, 0.18);
+  --lx-danger-weak: rgba(245, 108, 108, 0.18);
+  --lx-text-1: #dfe3e8;
+  --lx-text-2: #8b95a3;
+  --lx-text-3: #6b7280;
+  --lx-bg-panel: #262a31;
+  --lx-bg-head: #2e333b;
+  --lx-bg-hover: #363b44;
+  --lx-border: rgba(255, 255, 255, 0.08);
+  --lx-border-strong: #3d424d;
+  --lx-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --lx-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.45);
+}
+
+/* 弹窗本体：一整张卡片（工具栏 + 列表同卡，圆角裁切） */
+#lerxu-resource-dropdown {
+  width: 350px;
+  box-sizing: border-box;
+  font-family: var(--lx-font);
+  font-variant-numeric: tabular-nums;
+  color: var(--lx-text-1);
+  background: var(--lx-bg-panel);
+  border: 1px solid var(--lx-border-strong);
+  border-radius: 12px;
+  box-shadow: var(--lx-shadow);
+  overflow: hidden;
+}
+
+/* 顶部工具栏 */
+#lerxu-dropdown-header {
+  background: var(--lx-bg-head);
+  border-bottom: 1px solid var(--lx-border);
+}
+#lerxu-dropdown-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+}
+.lx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+#lerxu-clear-resources-btn {
+  color: var(--lx-text-2);
+  border: 1px solid var(--lx-border-strong);
+  background: var(--lx-bg-panel);
+}
+#lerxu-clear-resources-btn:hover {
+  color: var(--lx-danger);
+  border-color: var(--lx-danger);
+  background: var(--lx-danger-weak);
+}
+#lerxu-download-all-btn {
+  color: #fff;
+  background: var(--lx-primary);
+  border: 1px solid transparent;
+}
+#lerxu-download-all-btn:hover { filter: brightness(1.08); }
+
+/* 列表 */
+#lerxu-resource-list {
+  max-height: 420px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+#lerxu-resource-list::-webkit-scrollbar { width: 6px; }
+#lerxu-resource-list::-webkit-scrollbar-track { background: transparent; }
+#lerxu-resource-list::-webkit-scrollbar-thumb {
+  background: rgba(132, 146, 166, 0.35);
+  border-radius: 3px;
+}
+#lerxu-resource-list::-webkit-scrollbar-thumb:hover { background: rgba(132, 146, 166, 0.55); }
+
+/* 区块标题（滚动时留在顶部） */
+.lx-section-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lx-text-2);
+  background: var(--lx-bg-panel);
+}
+.lx-section-count { font-weight: 400; font-size: 11px; color: var(--lx-text-3); }
+.lx-section-live .lx-section-title { color: var(--lx-danger); }
+.lx-section-hls .lx-section-title { color: var(--lx-primary); }
+
+/* 条目 */
+.lx-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--lx-border);
+  transition: background-color 0.15s ease;
+}
+.lx-item:last-child { border-bottom: none; }
+.lx-item:hover { background: var(--lx-bg-hover); }
+.lx-item-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.lx-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--lx-text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lx-item .lx-name.lx-name-dim { color: var(--lx-text-3); }
+.lx-size { flex: 0 0 auto; font-size: 11px; color: var(--lx-text-3); }
+.lx-badges { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.lx-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+.lx-badge-live { color: #fff; background: var(--lx-danger); }
+.lx-badge-quality { color: var(--lx-primary); background: var(--lx-primary-weak); }
+.lx-badge-success { color: var(--lx-success); background: var(--lx-success-weak); }
+.lx-badge-muted { font-weight: 500; color: var(--lx-text-3); background: var(--lx-bg-hover); }
+.lx-url {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--lx-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lx-url + .lx-url { margin-top: 2px; }
+
+/* 分片组（默认收起） */
+.lx-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lx-text-2);
+  border-bottom: 1px solid var(--lx-border);
+}
+.lx-group-head:hover { background: var(--lx-bg-hover); }
+.lx-group-head .lx-count { font-weight: 400; color: var(--lx-text-3); }
+.lx-chevron { font-size: 10px; color: var(--lx-text-3); transition: transform 0.15s ease; }
+.lx-chevron-open { transform: rotate(90deg); }
+
+/* 空态 */
+.lx-empty { padding: 28px 16px 30px; text-align: center; }
+.lx-empty-title { font-size: 12.5px; color: var(--lx-text-2); }
+.lx-empty-hint { margin-top: 6px; font-size: 11px; color: var(--lx-text-3); }
+`
+      ;(document.head || document.documentElement).appendChild(style)
+    } catch (e) {}
+  }
+  ensureLxStyles()
+
+  const normalizeLxTheme = (v) => {
+    const s = v === undefined || v === null ? '' : `${v}`.toLowerCase()
+    return s === 'dark' || s === 'light' ? s : null
+  }
+  let lxTheme = 'light'
+  const applyLxTheme = (theme) => {
+    try {
+      const t = normalizeLxTheme(theme) || 'light'
+      lxTheme = t
+      const scopes = document.querySelectorAll('.lx-scope')
+      for (const el of scopes) el.classList.toggle('lx-dark', t === 'dark')
+    } catch (e) {}
+  }
+  const initLxTheme = () => {
+    try {
+      const fallback = () => {
+        const prefersDark = window.matchMedia &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches
+        applyLxTheme(prefersDark ? 'dark' : 'light')
+      }
+      if (!chrome || !chrome.storage || !chrome.storage.local) {
+        fallback()
+        return
+      }
+      chrome.storage.local.get(['uiTheme'], (res) => {
+        const t = normalizeLxTheme(res && res.uiTheme)
+        if (t) applyLxTheme(t)
+        else fallback()
+      })
+    } catch (e) {}
+  }
+  initLxTheme()
+
+  // 主题变化（应用里切换主题 → background 存 uiTheme 并广播）
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+    try {
+      chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace === 'local' && changes.uiTheme) {
+          applyLxTheme(changes.uiTheme.newValue)
+        }
+      })
+    } catch (e) {}
+  }
 
   // 监听语言变化
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
@@ -1872,6 +2157,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
             applyClientLocaleToButton(btn)
           }
         })
+      }
+
+      // 应用里切换了主题：弹窗跟着换（令牌挂在 .lx-scope 上）
+      if (msg && msg.type === 'themeChanged') {
+        applyLxTheme(msg.theme)
       }
     })
   }
@@ -1922,23 +2212,17 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const createResourceDropdown = () => {
     const dropdown = document.createElement('div')
     dropdown.id = 'lerxu-resource-dropdown'
+    // 视觉全在注入的样式表里（`#lerxu-resource-dropdown` 等选择器）；这里只留
+    // 定位/显隐这类**功能**样式
     const dStyle = dropdown.style
     dStyle.position = 'fixed'  // 使用 fixed 定位，不受容器限制
     dStyle.top = '0'
     dStyle.left = '0'
-    dStyle.marginTop = '0'
-    dStyle.width = '350px'
-    dStyle.maxHeight = 'none' // Let content control the height
-    dStyle.backgroundColor = 'transparent'
-    dStyle.borderRadius = '6px'
-    dStyle.boxShadow = 'none'
     dStyle.zIndex = '999999'
     dStyle.display = 'none'
     dStyle.flexDirection = 'column'
-    dStyle.overflow = 'visible' // Allow shadow of floating button to show if needed, though button is inside
-    dStyle.border = 'none'
 
-    // 顶部固定区域（放置清空按钮）
+    // 顶部固定区域（工具栏：清空 / 下载全部）
     const header = document.createElement('div')
     header.id = 'lerxu-dropdown-header'
     const hStyle = header.style
@@ -1948,36 +2232,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     // 内容区域
     const content = document.createElement('div')
     content.id = 'lerxu-resource-list'
-    const cStyle = content.style
-    cStyle.flexGrow = '1'
-    cStyle.maxHeight = '400px'
-    cStyle.overflowY = 'auto'
-    cStyle.overflowX = 'hidden'
-    cStyle.backgroundColor = '#ffffff'
-    cStyle.borderRadius = '16px'
-    cStyle.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'
-    cStyle.border = '1px solid #e5e5e5'
-    cStyle.marginTop = '4px'
-
-    // 添加自定义滚动条样式
-    const style = document.createElement('style')
-    style.textContent = `
-      #lerxu-resource-list::-webkit-scrollbar {
-        width: 6px;
-        height: 6px;
-      }
-      #lerxu-resource-list::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      #lerxu-resource-list::-webkit-scrollbar-thumb {
-        background: rgba(0, 0, 0, 0.2);
-        border-radius: 3px;
-      }
-      #lerxu-resource-list::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 0, 0, 0.3);
-      }
-    `
-    dropdown.appendChild(style)
+    content.style.flexGrow = '1'
 
     dropdown.appendChild(header)
     dropdown.appendChild(content)
@@ -1988,40 +2243,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const createDropdownControls = (viewResources, referer) => {
     const container = document.createElement('div')
     container.id = 'lerxu-dropdown-controls'
-    const cStyle = container.style
-    cStyle.position = 'relative'
-    cStyle.display = 'flex'
-    cStyle.width = '100%'
-    cStyle.boxSizing = 'border-box'
-    cStyle.alignItems = 'center'
-    cStyle.gap = '8px'
-    cStyle.padding = '5px 10px'
-    cStyle.borderRadius = '16px'
-    cStyle.backgroundColor = 'rgba(255, 255, 255, 0.96)'
-    cStyle.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)'
 
     const clearBtn = document.createElement('div')
     clearBtn.id = 'lerxu-clear-resources-btn'
-    const clearStyle = clearBtn.style
-    clearStyle.flex = '1 1 0'
-    clearStyle.minWidth = '0'
-    clearStyle.padding = '3px 8px'
-    clearStyle.cursor = 'pointer'
-    clearStyle.display = 'flex'
-    clearStyle.alignItems = 'center'
-    clearStyle.justifyContent = 'center'
-    clearStyle.gap = '4px'
-    clearStyle.transition = 'background-color 0.2s ease, color 0.2s ease'
-    clearStyle.fontSize = '12px'
-    clearStyle.color = '#ff4d4f'
-    clearStyle.borderRadius = '12px'
-
-    clearBtn.addEventListener('mouseenter', () => {
-      clearBtn.style.backgroundColor = '#fff1f0'
-    })
-    clearBtn.addEventListener('mouseleave', () => {
-      clearBtn.style.backgroundColor = 'transparent'
-    })
+    clearBtn.className = 'lx-btn'
 
     clearBtn.addEventListener('click', () => {
       log('Clear button clicked')
@@ -2038,31 +2263,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     const downloadAllBtn = document.createElement('div')
     downloadAllBtn.id = 'lerxu-download-all-btn'
-    const dStyle = downloadAllBtn.style
-    dStyle.flex = '1 1 0'
-    dStyle.minWidth = '0'
-    dStyle.padding = '3px 10px'
-    dStyle.cursor = 'pointer'
-    dStyle.display = 'flex'
-    dStyle.alignItems = 'center'
-    dStyle.justifyContent = 'center'
-    dStyle.gap = '4px'
-    dStyle.transition = 'background-color 0.2s ease, color 0.2s ease'
-    dStyle.fontSize = '12px'
-    dStyle.color = '#ffffff'
-    dStyle.backgroundColor = '#1a7fe0'
-    dStyle.borderRadius = '12px'
-
-    downloadAllBtn.addEventListener('mouseenter', () => {
-      downloadAllBtn.style.backgroundColor = '#4a9eff'
-    })
-    downloadAllBtn.addEventListener('mouseleave', () => {
-      downloadAllBtn.style.backgroundColor = '#1a7fe0'
-    })
+    downloadAllBtn.className = 'lx-btn'
 
     downloadAllBtn.addEventListener('click', () => {
       try {
         const resources = viewResources || {}
+        const live = Array.isArray(resources.live) ? resources.live : []
         const manifest = Array.isArray(resources.manifest) ? resources.manifest : []
         const combined = Array.isArray(resources.combined) ? resources.combined : []
         const m4s = Array.isArray(resources.m4s) ? resources.m4s : []
@@ -2096,6 +2302,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         // 清单自己拉。绝不去遍历 segments —— 几十条 .ts 逐条发只会得到几十个
         // 几秒钟的垃圾任务，还要手删（用户点名）。
         manifest.forEach(sendSingle)
+
+        // 直播最靠前：一条直播 = 一个"开始录制"的任务，与栏内顺序一致
+        live.forEach(sendSingle)
 
         // m4s 先发：video / audio 两栏里往往就是同一批 m4s，靠上面的集合自然去重
         m4s.forEach(sendSingle)
@@ -2139,6 +2348,28 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 每来一条就把用户展开的组收回去，等于点了没法看。
   let segmentsExpanded = false
 
+  /**
+   * 区块外壳：吸顶小标题（可着色）+ 右侧计数。计数与列表内容同源 ——
+   * "栏里几条"一眼可见（按钮数字是全部栏的总和）。
+   */
+  const buildSection = (sectionClass, titleText, count) => {
+    const section = document.createElement('div')
+    if (sectionClass) section.className = sectionClass
+    const title = document.createElement('div')
+    title.className = 'lx-section-title'
+    const label = document.createElement('span')
+    label.textContent = titleText
+    title.appendChild(label)
+    if (count > 0) {
+      const badge = document.createElement('span')
+      badge.className = 'lx-section-count'
+      badge.textContent = `${count}`
+      title.appendChild(badge)
+    }
+    section.appendChild(title)
+    return section
+  }
+
   // 更新资源列表
   const updateResourceList = (force) => {
     // 与按钮上的数量**同源同算法**：同一批数据、同一套切分规则，
@@ -2150,6 +2381,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     log('Audio count:', viewResources.audio.length)
     log('M4S count:', viewResources.m4s.length)
     log('Combined count:', viewResources.combined.length)
+    log('Live count:', viewResources.live.length)
     
     const content = document.getElementById('lerxu-resource-list')
     if (!content) {
@@ -2159,10 +2391,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     // 内容没变就不重画（切换语言要重画，那种调用传 force）。
     // **直播状态算内容**：实时探测回来后 `resource.live` 变了，签名必须跟着变，
-    // 否则徽章要等下一次资源更新才会出现（用户看不到识别结果）。
+    // 否则徽章/分栏要等下一次资源更新才会出现（用户看不到识别结果）。
     const signature = `${totalItems}|` +
-      viewResources.manifest.concat(viewResources.segments, viewResources.combined,
-        viewResources.m4s, viewResources.video, viewResources.audio)
+      viewResources.live.concat(viewResources.manifest, viewResources.segments,
+        viewResources.combined, viewResources.m4s, viewResources.video, viewResources.audio)
         .map(item => `${(item && item.url) || ''}|${item && item.live === true ? 1 : 0}`)
         .join('\n')
     if (!force && content.children.length > 0 && signature === lastResourceListSignature) return
@@ -2176,123 +2408,70 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const header = document.getElementById('lerxu-dropdown-header')
     if (header) {
       header.innerHTML = ''
+      // 一条资源都没有时不摆工具栏（没东西可清空/下载，空态自会说明）
+      header.style.display = totalItems > 0 ? 'block' : 'none'
       if (totalItems > 0) {
         const controls = createDropdownControls(viewResources, referer)
-        const hStyle = header.style
-        hStyle.display = 'flex'
-        hStyle.justifyContent = 'flex-start'
-        hStyle.alignItems = 'center'
-        hStyle.padding = '0 0 4px 0'
-        hStyle.backgroundColor = 'transparent'
         header.appendChild(controls)
       }
+    }
+
+    // 直播排在最前面：点一下就**开始录制**（不是下载一份快照）——比
+    // 任何"完整视频"都该先被看到（用户点名：直播条目不能混在视频资源里）。
+    if (viewResources.live.length > 0) {
+      const liveSection = buildSection('lx-section-live', getLocalizedText('liveStreams'), viewResources.live.length)
+      viewResources.live.forEach((resource, index) => {
+        liveSection.appendChild(createResourceItem(resource, referer, index, { primary: true }))
+      })
+      content.appendChild(liveSection)
     }
 
     // HLS 清单排在最前面：一条地址 = 一个完整视频，**点这条就是下载**
     // （引擎会把全部分片拉下来拼成一个文件）。这一栏必须在分片前面 ——
     // 用户点开列表第一眼看到的就是该点的那条。
     if (viewResources.manifest.length > 0) {
-      const hlsSection = document.createElement('div')
-
-      const hlsTitle = document.createElement('div')
-      hlsTitle.textContent = getLocalizedText('hlsCompleteVideo')
-      hlsTitle.style.fontSize = '12px'
-      hlsTitle.style.fontWeight = 'bold'
-      hlsTitle.style.padding = '10px 12px 5px'
-      hlsTitle.style.color = '#1a7fe0'
-      hlsTitle.style.backgroundColor = '#eef6ff'
-      hlsSection.appendChild(hlsTitle)
-
+      const hlsSection = buildSection('lx-section-hls', getLocalizedText('hlsCompleteVideo'), viewResources.manifest.length)
       viewResources.manifest.forEach((resource, index) => {
         hlsSection.appendChild(createResourceItem(resource, referer, index, { primary: true }))
       })
-
       content.appendChild(hlsSection)
     }
 
     // 优先显示组合的DASH视频（视频+音频）
     if (viewResources.combined.length > 0) {
-      const combinedSection = document.createElement('div')
-
-      const combinedTitle = document.createElement('div')
-      combinedTitle.textContent = getLocalizedText('dashCompleteVideo')
-      combinedTitle.style.fontSize = '12px'
-      combinedTitle.style.fontWeight = 'bold'
-      combinedTitle.style.padding = '10px 12px 5px'
-      combinedTitle.style.color = '#1a7fe0'
-      combinedTitle.style.backgroundColor = '#f5f5f5'
-      combinedSection.appendChild(combinedTitle)
-
+      const combinedSection = buildSection('', getLocalizedText('dashCompleteVideo'), viewResources.combined.length)
       viewResources.combined.forEach((resource, index) => {
-        const item = createCombinedResourceItem(resource, referer, index)
-        combinedSection.appendChild(item)
+        combinedSection.appendChild(createCombinedResourceItem(resource, referer, index))
       })
-
       content.appendChild(combinedSection)
     }
 
     // 显示 M4S 资源（B站 DASH 视频）
     if (viewResources.m4s.length > 0) {
-      const m4sSection = document.createElement('div')
-
-      const m4sTitle = document.createElement('div')
-      m4sTitle.textContent = getLocalizedText('dashSeparateStreams')
-      m4sTitle.style.fontSize = '12px'
-      m4sTitle.style.fontWeight = 'bold'
-      m4sTitle.style.padding = '10px 12px 5px'
-      m4sTitle.style.color = '#999'
-      m4sTitle.style.backgroundColor = '#f5f5f5'
-      m4sSection.appendChild(m4sTitle)
-
+      const m4sSection = buildSection('', getLocalizedText('dashSeparateStreams'), viewResources.m4s.length)
       viewResources.m4s.forEach((resource, index) => {
-        const item = createResourceItem(resource, referer, index)
-        m4sSection.appendChild(item)
+        m4sSection.appendChild(createResourceItem(resource, referer, index))
       })
-
       content.appendChild(m4sSection)
     }
 
     // 显示普通视频资源
     if (viewResources.video.length > 0) {
-      const videoSection = document.createElement('div')
-
-      const videoTitle = document.createElement('div')
-      videoTitle.textContent = getLocalizedText('videoResources')
-      videoTitle.style.fontSize = '12px'
-      videoTitle.style.fontWeight = 'bold'
-      videoTitle.style.padding = '10px 12px 5px'
-      videoTitle.style.color = '#333'
-      videoTitle.style.backgroundColor = '#f5f5f5'
-      videoSection.appendChild(videoTitle)
-
+      const videoSection = buildSection('', getLocalizedText('videoResources'), viewResources.video.length)
       // 归到「DASH 分离流」的分片在切分时已剔除，这里剩下的是纯视频流
       viewResources.video.forEach((resource, index) => {
-        const item = createResourceItem(resource, referer, index)
-        videoSection.appendChild(item)
+        videoSection.appendChild(createResourceItem(resource, referer, index))
       })
-
       content.appendChild(videoSection)
     }
 
     // 显示音频资源
     if (viewResources.audio.length > 0) {
-      const audioSection = document.createElement('div')
-
-      const audioTitle = document.createElement('div')
-      audioTitle.textContent = getLocalizedText('audioResources')
-      audioTitle.style.fontSize = '12px'
-      audioTitle.style.fontWeight = 'bold'
-      audioTitle.style.padding = '10px 12px 5px'
-      audioTitle.style.color = '#333'
-      audioTitle.style.backgroundColor = '#f5f5f5'
-      audioSection.appendChild(audioTitle)
-
+      const audioSection = buildSection('', getLocalizedText('audioResources'), viewResources.audio.length)
       // 同上：分片已归到「DASH 分离流」，这里剩下的是纯音频流
       viewResources.audio.forEach((resource, index) => {
-        const item = createResourceItem(resource, referer, index)
-        audioSection.appendChild(item)
+        audioSection.appendChild(createResourceItem(resource, referer, index))
       })
-
       content.appendChild(audioSection)
     }
 
@@ -2304,19 +2483,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     if (content.children.length === 0) {
       const noData = document.createElement('div')
-      noData.style.textAlign = 'center'
-      noData.style.color = '#999'
-      noData.style.padding = '20px'
-      noData.style.fontSize = '12px'
+      noData.className = 'lx-empty'
 
       const tip1 = document.createElement('div')
-      tip1.textContent = getLocalizedText('noVideoResourcesDetected')
-      tip1.style.marginBottom = '8px'
+      tip1.className = 'lx-empty-title'
+      tip1.textContent = getLocalizedText('noResources')
 
       const tip2 = document.createElement('div')
-      tip2.textContent = getLocalizedText('rightClickTip')
-      tip2.style.color = '#666'
-      tip2.style.fontSize = '11px'
+      tip2.className = 'lx-empty-hint'
+      tip2.textContent = getLocalizedText('noResourcesHint')
 
       noData.appendChild(tip1)
       noData.appendChild(tip2)
@@ -2327,26 +2502,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   // 创建组合资源项（视频+音频）
   const createCombinedResourceItem = (resource, referer, index) => {
     const item = document.createElement('div')
-    const iStyle = item.style
-    iStyle.padding = '8px 12px'
-    iStyle.borderBottom = '1px solid #f0f0f0'
-    iStyle.backgroundColor = '#ffffff'
-    iStyle.cursor = 'pointer'
-    iStyle.transition = 'background-color 0.2s ease'
-    iStyle.fontSize = '12px'
-
-    item.addEventListener('mouseenter', () => {
-      item.style.backgroundColor = '#f5f5f5'
-    })
-    item.addEventListener('mouseleave', () => {
-      item.style.backgroundColor = '#ffffff'
-    })
+    item.className = 'lx-item'
 
     const info = document.createElement('div')
-    info.style.display = 'flex'
-    info.style.justifyContent = 'space-between'
-    info.style.alignItems = 'center'
-    info.style.marginBottom = '4px'
+    info.className = 'lx-item-top'
 
     // 生成友好的文件名（与普通资源项相同的逻辑）
     let displayName = ''
@@ -2387,79 +2546,46 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     const name = document.createElement('div')
     name.textContent = displayName
-    name.style.fontSize = '12px'
-    name.style.fontWeight = '500'
-    name.style.color = '#333'
-    name.style.flex = '1'
-    name.style.overflow = 'hidden'
-    name.style.textOverflow = 'ellipsis'
-    name.style.whiteSpace = 'nowrap'
-    name.style.marginRight = '8px'
+    name.className = 'lx-name'
 
     const badges = document.createElement('div')
-    badges.style.display = 'flex'
-    badges.style.gap = '4px'
-    badges.style.flexShrink = '0'
+    badges.className = 'lx-badges'
 
     // 质量徽章
     if (resource.quality) {
       const quality = document.createElement('span')
       quality.textContent = resource.quality
-      quality.style.fontSize = '11px'
-      quality.style.color = '#1a7fe0'
-      quality.style.fontWeight = 'bold'
-      quality.style.padding = '2px 6px'
-      quality.style.backgroundColor = '#e6f7ff'
-      quality.style.borderRadius = '3px'
+      quality.className = 'lx-badge lx-badge-quality'
       badges.appendChild(quality)
     }
 
     // 完整标记
     const completeTag = document.createElement('span')
     completeTag.textContent = getLocalizedText('complete')
-    completeTag.style.fontSize = '11px'
-    completeTag.style.color = '#52c41a'
-    completeTag.style.fontWeight = 'bold'
-    completeTag.style.padding = '2px 6px'
-    completeTag.style.backgroundColor = '#f6ffed'
-    completeTag.style.borderRadius = '3px'
+    completeTag.className = 'lx-badge lx-badge-success'
     badges.appendChild(completeTag)
-
-    // 文件大小徽章（只在有准确大小时显示）
-    if (resource.size && resource.size > 0) {
-      const size = document.createElement('span')
-      const sizeText = formatFileSize(resource.size)
-      size.textContent = sizeText
-      size.style.fontSize = '11px'
-      size.style.color = '#666'
-      size.style.fontWeight = '500'
-      size.style.padding = '2px 6px'
-      size.style.backgroundColor = '#f0f0f0'
-      size.style.borderRadius = '3px'
-      size.style.border = '1px solid #e0e0e0'
-      badges.appendChild(size)
-    }
 
     info.appendChild(name)
     info.appendChild(badges)
 
+    // 文件大小：纯文本
+    if (resource.size && resource.size > 0) {
+      const size = document.createElement('span')
+      size.textContent = formatFileSize(resource.size)
+      size.className = 'lx-size'
+      info.appendChild(size)
+    }
+
     // 显示两个资源的URL
     const videoUrl = document.createElement('div')
     videoUrl.textContent = `${getLocalizedText('videoStream')}: ${resource.videoUrl}`
-    videoUrl.style.fontSize = '10px'
-    videoUrl.style.color = '#999'
-    videoUrl.style.overflow = 'hidden'
-    videoUrl.style.textOverflow = 'ellipsis'
-    videoUrl.style.whiteSpace = 'nowrap'
-    videoUrl.style.marginBottom = '2px'
+    videoUrl.className = 'lx-url'
+    videoUrl.title = resource.videoUrl
 
     const audioUrl = document.createElement('div')
     audioUrl.textContent = `${getLocalizedText('audioStream')}: ${resource.audioUrl}`
-    audioUrl.style.fontSize = '10px'
-    audioUrl.style.color = '#999'
-    audioUrl.style.overflow = 'hidden'
-    audioUrl.style.textOverflow = 'ellipsis'
-    audioUrl.style.whiteSpace = 'nowrap'
+    audioUrl.className = 'lx-url'
+    audioUrl.title = resource.audioUrl
 
     item.appendChild(info)
     item.appendChild(videoUrl)
@@ -2486,30 +2612,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
    */
   const createResourceItem = (resource, referer, index, options) => {
     const opts = options || {}
-    const baseBg = opts.primary ? '#f7fbff' : '#ffffff'
-    const hoverBg = opts.primary ? '#eef6ff' : '#f5f5f5'
 
     const item = document.createElement('div')
-    const iStyle = item.style
-    iStyle.padding = '8px 12px'
-    iStyle.borderBottom = '1px solid #f0f0f0'
-    iStyle.backgroundColor = baseBg
-    iStyle.cursor = 'pointer'
-    iStyle.transition = 'background-color 0.2s ease'
-    iStyle.fontSize = '12px'
-
-    item.addEventListener('mouseenter', () => {
-      item.style.backgroundColor = hoverBg
-    })
-    item.addEventListener('mouseleave', () => {
-      item.style.backgroundColor = baseBg
-    })
+    item.className = 'lx-item'
 
     const info = document.createElement('div')
-    info.style.display = 'flex'
-    info.style.justifyContent = 'space-between'
-    info.style.alignItems = 'center'
-    info.style.marginBottom = '4px'
+    info.className = 'lx-item-top'
 
     // 生成友好的文件名
     let displayName = ''
@@ -2554,33 +2662,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     const name = document.createElement('div')
     name.textContent = displayName
-    name.style.fontSize = '12px'
-    name.style.fontWeight = '500'
     // 分片整条压暗：它是"零件"而不是能单独用的资源，视觉上就该往后退
-    name.style.color = opts.segment ? '#999' : '#333'
-    name.style.flex = '1'
-    name.style.overflow = 'hidden'
-    name.style.textOverflow = 'ellipsis'
-    name.style.whiteSpace = 'nowrap'
-    name.style.marginRight = '8px'
+    name.className = opts.segment ? 'lx-name lx-name-dim' : 'lx-name'
 
     const badges = document.createElement('div')
-    badges.style.display = 'flex'
-    badges.style.gap = '4px'
-    badges.style.flexShrink = '0'
+    badges.className = 'lx-badges'
 
-    // 直播徽章：清单已被识别为直播流（video-sniffer 实时抓清单判的 ENDLIST）。
-    // 排在最前 —— "这条是直播、点了是开始录制"比画质/大小都重要。
+    // 直播徽章：条目已被识别为直播流（HLS 清单无 ENDLIST / FLV 无总长的
+    // 长连接）。排在最前 —— "这条是直播、点了是开始录制"比画质/大小都重要。
     if (resource.live === true) {
       const liveTag = document.createElement('span')
       liveTag.textContent = getLocalizedText('live')
-      liveTag.style.fontSize = '11px'
-      liveTag.style.color = '#d4380d'
-      liveTag.style.fontWeight = 'bold'
-      liveTag.style.padding = '2px 6px'
-      liveTag.style.backgroundColor = '#fff1f0'
-      liveTag.style.borderRadius = '3px'
-      liveTag.style.border = '1px solid #ffccc7'
+      liveTag.className = 'lx-badge lx-badge-live'
       badges.appendChild(liveTag)
     }
 
@@ -2588,39 +2681,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     if (resource.quality) {
       const quality = document.createElement('span')
       quality.textContent = resource.quality
-      quality.style.fontSize = '11px'
-      quality.style.color = '#1a7fe0'
-      quality.style.fontWeight = 'bold'
-      quality.style.padding = '2px 6px'
-      quality.style.backgroundColor = '#e6f7ff'
-      quality.style.borderRadius = '3px'
+      quality.className = 'lx-badge lx-badge-quality'
       badges.appendChild(quality)
-    }
-
-    // 文件大小徽章（只在有准确大小时显示）
-    if (resource.size && resource.size > 0) {
-      const size = document.createElement('span')
-      const sizeText = formatFileSize(resource.size)
-      size.textContent = sizeText
-      size.style.fontSize = '11px'
-      size.style.color = '#666'
-      size.style.fontWeight = '500'
-      size.style.padding = '2px 6px'
-      size.style.backgroundColor = '#f0f0f0'
-      size.style.borderRadius = '3px'
-      size.style.border = '1px solid #e0e0e0'
-      badges.appendChild(size)
     }
 
     // 分片徽章：分片不是"一个视频"，标出来免得跟真资源混淆
     if (opts.segment) {
       const segTag = document.createElement('span')
       segTag.textContent = getLocalizedText('segment')
-      segTag.style.fontSize = '11px'
-      segTag.style.color = '#999'
-      segTag.style.padding = '2px 6px'
-      segTag.style.backgroundColor = '#f5f5f5'
-      segTag.style.borderRadius = '3px'
+      segTag.className = 'lx-badge lx-badge-muted'
       badges.appendChild(segTag)
     }
 
@@ -2629,13 +2698,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       info.appendChild(badges)
     }
 
+    // 文件大小：纯文本（做成徽章只是噪音，大小本来就该往后退）
+    if (resource.size && resource.size > 0) {
+      const size = document.createElement('span')
+      size.textContent = formatFileSize(resource.size)
+      size.className = 'lx-size'
+      info.appendChild(size)
+    }
+
     const url = document.createElement('div')
+    url.className = 'lx-url'
     url.textContent = resource.url
-    url.style.fontSize = '10px'
-    url.style.color = '#999'
-    url.style.overflow = 'hidden'
-    url.style.textOverflow = 'ellipsis'
-    url.style.whiteSpace = 'nowrap'
+    url.title = resource.url
 
     item.appendChild(info)
     item.appendChild(url)
@@ -2691,19 +2765,22 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const section = document.createElement('div')
 
     const header = document.createElement('div')
-    header.style.cssText = 'display:flex;align-items:center;gap:6px;padding:10px 12px 5px;' +
-      'background-color:#f5f5f5;cursor:pointer;user-select:none;'
+    header.className = 'lx-group-head'
 
     const arrow = document.createElement('span')
-    arrow.textContent = segmentsExpanded ? '▾' : '▸'
-    arrow.style.cssText = 'font-size:10px;color:#999;flex-shrink:0;'
+    arrow.textContent = '▶'
+    arrow.className = segmentsExpanded ? 'lx-chevron lx-chevron-open' : 'lx-chevron'
 
     const label = document.createElement('span')
-    label.textContent = `${getLocalizedText('hlsSegments')} · ${segments.length}`
-    label.style.cssText = 'font-size:12px;font-weight:bold;color:#999;'
+    label.textContent = getLocalizedText('hlsSegments')
+
+    const count = document.createElement('span')
+    count.className = 'lx-count'
+    count.textContent = `· ${segments.length}`
 
     header.appendChild(arrow)
     header.appendChild(label)
+    header.appendChild(count)
     section.appendChild(header)
 
     const list = document.createElement('div')
@@ -2715,7 +2792,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     header.addEventListener('click', () => {
       segmentsExpanded = !segmentsExpanded
-      arrow.textContent = segmentsExpanded ? '▾' : '▸'
+      arrow.className = segmentsExpanded ? 'lx-chevron lx-chevron-open' : 'lx-chevron'
       list.style.display = segmentsExpanded ? 'block' : 'none'
       // 展开/收起改变的是下拉框高度，它贴着按钮定位 —— 不重算就可能伸出屏幕
       const dropdown = document.getElementById('lerxu-resource-dropdown')
@@ -3177,6 +3254,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     const wrapper = document.createElement('div')
     wrapper.id = 'lerxu-bilibili-download-btn-wrapper'
+    // 资源弹窗的外观令牌挂在容器上（深色主题 = 容器加 lx-dark）
+    wrapper.classList.add('lx-scope')
+    // 此时还没进文档，applyLxTheme 选择不到它 —— 直接按当前主题落类
+    if (lxTheme === 'dark') wrapper.classList.add('lx-dark')
     const wStyle = wrapper.style
 
     // 根据容器类型设置位置
@@ -3276,18 +3357,23 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
     btn.title = label
     applyClientLocaleToButton(btn)
+    // 与「资源弹窗」同一套设计语言（令牌来自 wrapper 上的 .lx-scope）：素底描边小方卡
+    // + 主色图标 + 次级文字计数。替掉原来的蓝色实心胶囊 + 红色实心关闭点，同时把
+    // 16px 全圆角收成 8px（与弹窗里 .lx-btn 一致），整体轻一档。
     const style = btn.style
     style.position = 'relative'
-    style.padding = '4px 40px 4px 12px'
-    style.background = '#1a7fe0'
-    style.color = '#ffffff'
-    style.border = 'none'
-    style.borderRadius = '16px'
+    style.padding = '3px 32px 3px 10px' // 右侧留出关闭按钮的热区
+    style.background = 'var(--lx-bg-panel)'
+    style.color = 'var(--lx-text-1)'
+    style.border = '1px solid var(--lx-border-strong)'
+    style.borderRadius = '8px'
     style.cursor = 'pointer'
     style.fontSize = '12px'
-    style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)'
+    style.fontWeight = '500'
+    style.fontFamily = 'var(--lx-font)'
+    style.boxShadow = 'var(--lx-shadow-sm)'
     style.opacity = '0.9'
-    style.transition = 'opacity 0.2s ease'
+    style.transition = 'opacity 0.2s ease, background-color 0.15s ease, border-color 0.15s ease'
     style.pointerEvents = 'auto'
     style.display = 'inline-flex'
     style.alignItems = 'center'
@@ -3297,7 +3383,6 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     // 创建关闭按钮
     const closeBtn = document.createElement('button')
     closeBtn.id = 'lerxu-close-btn'
-    closeBtn.textContent = '×'
     closeBtn.title = 'Close'
     const closeStyle = closeBtn.style
     closeStyle.position = 'absolute'
@@ -3307,29 +3392,43 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     closeStyle.width = '18px'
     closeStyle.height = '18px'
     closeStyle.padding = '0'
-    closeStyle.background = '#ff4d4f'
-    closeStyle.color = '#ffffff'
+    // 关闭：红色实心圆点 → "幽灵"图标按钮。平时只是次级灰的 ×，hover 才浮出
+    // danger 弱底（与弹窗里"清空"按钮的 hover 语言一致）。
+    closeStyle.background = 'transparent'
+    closeStyle.color = 'var(--lx-text-3)'
     closeStyle.border = 'none'
-    closeStyle.borderRadius = '16px'
+    closeStyle.borderRadius = '6px'
     closeStyle.cursor = 'pointer'
-    closeStyle.fontSize = '12px'
-    closeStyle.fontWeight = 'bold'
-    closeStyle.boxShadow = '0 1px 3px rgba(0,0,0,0.25)'
-    closeStyle.opacity = '0.9'
-    closeStyle.transition = 'opacity 0.2s ease'
+    closeStyle.boxShadow = 'none'
+    closeStyle.transition = 'background-color 0.15s ease, color 0.15s ease'
     closeStyle.pointerEvents = 'auto'
     closeStyle.display = 'inline-flex'
     closeStyle.alignItems = 'center'
     closeStyle.justifyContent = 'center'
     closeStyle.zIndex = '1'
-    closeStyle.lineHeight = '18px'
+
+    // 关闭图标用 SVG 十字，而不是文字 '×'：文字按字体基线排版，ascent 大于
+    // descent，视觉中心天然比盒子中心低约 1px；抽掉红色圆底后这 1px 就露出来了。
+    // 换成 SVG，以 viewBox 几何居中（与左侧下载图标同一套路）。
+    const closeIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    closeIcon.setAttribute('viewBox', '0 0 24 24')
+    closeIcon.setAttribute('width', '11')
+    closeIcon.setAttribute('height', '11')
+    closeIcon.style.fill = 'currentColor'
+    closeIcon.style.display = 'block'
+    const closePath = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    closePath.setAttribute('d', 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z')
+    closeIcon.appendChild(closePath)
+    closeBtn.appendChild(closeIcon)
 
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     icon.setAttribute('viewBox', '0 0 24 24')
-    icon.setAttribute('width', '16')
-    icon.setAttribute('height', '16')
+    icon.setAttribute('width', '15')
+    icon.setAttribute('height', '15')
     icon.style.fill = 'currentColor'
+    icon.style.color = 'var(--lx-primary)' // 唯一的强调色：落在下载图标上
     icon.style.marginRight = '6px'
+    icon.style.flexShrink = '0'
     
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
     path.setAttribute('d', 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z')
@@ -3341,6 +3440,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     countStyle.display = 'inline-block'
     countStyle.minWidth = '16px'
     countStyle.textAlign = 'left'
+    countStyle.color = 'var(--lx-text-2)'
+    countStyle.whiteSpace = 'nowrap'
 
     btn.appendChild(icon)
     btn.appendChild(countSpan)
@@ -3371,14 +3472,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       log('Download button closed by user')
     })
 
-    // 关闭按钮悬停效果
+    // 关闭按钮悬停效果：浮出 danger 弱底（与弹窗里"清空"按钮同语言）
     closeBtn.addEventListener('mouseenter', () => {
-      closeBtn.style.opacity = '1'
-      closeBtn.style.background = '#ff7875'
+      closeBtn.style.background = 'var(--lx-danger-weak)'
+      closeBtn.style.color = 'var(--lx-danger)'
     })
     closeBtn.addEventListener('mouseleave', () => {
-      closeBtn.style.opacity = '0.9'
-      closeBtn.style.background = '#ff4d4f'
+      closeBtn.style.background = 'transparent'
+      closeBtn.style.color = 'var(--lx-text-3)'
     })
 
     // 将按钮添加到容器
@@ -3389,12 +3490,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       isButtonHovered = true
       clearHideTimeout() // 清除隐藏倒计时
       btn.style.opacity = '1'
+      btn.style.background = 'var(--lx-bg-hover)'
       log('Button container mouseenter, locked position')
     })
     buttonContainer.addEventListener('mouseleave', () => {
       isButtonHovered = false
       startHideTimeout() // 开始隐藏倒计时
       btn.style.opacity = '0.9'
+      btn.style.background = 'var(--lx-bg-panel)'
       log('Button container mouseleave, unlocked position')
     })
     btn.addEventListener('click', (e) => {

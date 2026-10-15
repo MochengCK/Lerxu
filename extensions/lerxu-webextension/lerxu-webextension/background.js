@@ -337,13 +337,18 @@ const fetchWithTimeout = (url, options = {}, timeout = 2000) => {
 }
 
 // === 直播流识别 ===
-// 内容脚本嗅探到 HLS 清单（m3u8）后询问"这是不是直播"：由 SW 代抓清单
-// （host_permissions 不受页面 CORS 限制）。判定口径与下载引擎一致：
-// 没有 `#EXT-X-ENDLIST` 且不是 `#EXT-X-PLAYLIST-TYPE:VOD` 就是直播/滚动
-// 窗口；主清单自身没有 ENDLIST（那是媒体清单层级的标签），往下跟一层变体。
+// 内容脚本嗅探到直播形态的资源后询问"这是不是直播"：由 SW 代抓
+// （host_permissions 不受页面 CORS 限制）。两类形态、两套判定：
+//   - HLS 清单（m3u8）：判定口径与下载引擎一致 —— 没有 `#EXT-X-ENDLIST`
+//     且不是 `#EXT-X-PLAYLIST-TYPE:VOD` 就是直播/滚动窗口；主清单自身没有
+//     ENDLIST（那是媒体清单层级的标签），往下跟一层变体；
+//   - FLV（HTTP-FLV）：判定口径同样与下载引擎一致 —— **没有 Content-Length
+//     的 chunked 长连接才是直播**（服务器永远不收尾，按点播下载会得到一条
+//     永不完成的任务）；带总长的是点播文件。正文再用 FLV 文件头魔数确认。
 const liveProbeCache = new Map() // url → { at, result }
 const LIVE_PROBE_TTL = 60 * 1000
 const LIVE_PROBE_MAX_BYTES = 256 * 1024
+const FLV_HEAD_BYTES = 8
 
 /**
  * 纯函数：分析清单文本是不是直播（供测试与 probeStreamLive 复用）。
@@ -369,6 +374,31 @@ const analyzeManifestTextForLive = (text) => {
   return { manifest: true, master: false, live: !endlist && !vod }
 }
 
+/**
+ * 纯函数：FLV 响应头 + 正文首块 → 是不是直播（供测试与 probeStreamLive 复用）。
+ *
+ * - `contentLength`：响应头的原始字符串（缺失为 null）；
+ * - `head`：正文开头若干字节（只有"没有总长"时才会去读）。
+ *
+ * 返回 `{ flv, live }`：`flv: false` = 这条不是 FLV（判不了，不显示徽章）。
+ * 判定与下载引擎同一口径：像 FLV（MIME / 地址 / 魔数）且**服务器没给总长**
+ * → 直播；有总长 → 点播文件（不是直播任务）。
+ */
+const analyzeFlvHead = ({ url, contentType, contentLength, head }) => {
+  const ct = `${contentType || ''}`.toLowerCase()
+  const urlSaysFlv = /\.flv(?:[?#]|$)/i.test(`${url || ''}`)
+  const magic = !!(
+    head && head.length >= 3 &&
+    head[0] === 0x46 && head[1] === 0x4c && head[2] === 0x56
+  )
+  if (!ct.includes('flv') && !urlSaysFlv && !magic) return { flv: false, live: false }
+  const raw = contentLength === null || contentLength === undefined || contentLength === ''
+    ? null
+    : Number(contentLength)
+  const hasLength = Number.isFinite(raw) && raw > 0
+  return { flv: true, live: !hasLength }
+}
+
 const readManifestHead = async (url, timeout) => {
   const resp = await fetchWithTimeout(
     url,
@@ -387,30 +417,84 @@ const readManifestHead = async (url, timeout) => {
 }
 
 /**
- * 抓取清单并判定直播。返回 `{ live: boolean }`；无法判定（网络失败 /
- * 不是清单 / 主清单没有变体）返回 null —— 调用方按"未知"处理（不显示徽章）。
+ * 抓 FLV 响应的判定素材：响应头 + （仅当没有总长时）正文首块。
+ *
+ * 有 `Content-Length` = 点播文件：读完响应头立刻掐断，正文一个字节都不下；
+ * 没有总长才读一点正文验 FLV 魔数（直播流是不会结束的，读完首块马上取消）。
  */
-const probeStreamLive = async (url) => {
+const readFlvHead = async (url, timeout) => {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), timeout)
+  try {
+    const resp = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      signal: ac.signal
+    })
+    if (!resp || !resp.ok) return null
+    const contentType = resp.headers.get('content-type') || ''
+    const contentLength = resp.headers.get('content-length')
+    let head = null
+    if (!contentLength && resp.body && typeof resp.body.getReader === 'function') {
+      const reader = resp.body.getReader()
+      try {
+        const first = await reader.read()
+        head = first && first.value ? first.value.slice(0, FLV_HEAD_BYTES) : null
+      } catch (e) {
+        head = null
+      }
+      try { reader.cancel() } catch (e) {}
+    }
+    return { contentType, contentLength, head }
+  } catch (e) {
+    return null
+  } finally {
+    clearTimeout(timer)
+    try { ac.abort() } catch (e) {}
+  }
+}
+
+/**
+ * 抓取并判定直播。返回 `{ live: boolean }`；无法判定（网络失败 /
+ * 不是清单也不是 FLV / 主清单没有变体）返回 null —— 调用方按"未知"
+ * 处理（不显示徽章）。
+ *
+ * `kind`：内容脚本给的形态提示（`'hls'` / `'flv'`），省一次白抓；
+ * 缺失时先按清单判、判不出来再按 FLV 判（老内容脚本也能工作）。
+ */
+const probeStreamLive = async (url, kind) => {
   if (!url || !/^https?:/i.test(url)) return null
   const now = Date.now()
   const hit = liveProbeCache.get(url)
   if (hit && now - hit.at < LIVE_PROBE_TTL) return hit.result
   let result = null
+  const probeFlv = async () => {
+    const head = await readFlvHead(url, 8000)
+    if (!head) return
+    const a = analyzeFlvHead({ url, ...head })
+    if (a.flv) result = { live: !!a.live }
+  }
   try {
-    const text = await readManifestHead(url, 8000)
-    const a = analyzeManifestTextForLive(text)
-    if (a.manifest && !a.master) {
-      result = { live: !!a.live }
-    } else if (a.manifest && a.master && a.variantUri) {
-      let variantUrl = a.variantUri
-      try {
-        variantUrl = new URL(a.variantUri, url).toString()
-      } catch (e) {}
-      const vtext = await readManifestHead(variantUrl, 8000)
-      const va = analyzeManifestTextForLive(vtext)
-      if (va.manifest && !va.master) {
-        result = { live: !!va.live }
+    if (kind === 'flv') {
+      await probeFlv()
+    } else {
+      const text = await readManifestHead(url, 8000)
+      const a = analyzeManifestTextForLive(text)
+      if (a.manifest && !a.master) {
+        result = { live: !!a.live }
+      } else if (a.manifest && a.master && a.variantUri) {
+        let variantUrl = a.variantUri
+        try {
+          variantUrl = new URL(a.variantUri, url).toString()
+        } catch (e) {}
+        const vtext = await readManifestHead(variantUrl, 8000)
+        const va = analyzeManifestTextForLive(vtext)
+        if (va.manifest && !va.master) {
+          result = { live: !!va.live }
+        }
       }
+      if (!result) await probeFlv()
     }
   } catch (e) {
     result = null
@@ -1420,10 +1504,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true
   }
 
-  // 直播流识别（内容脚本嗅探到 m3u8 后询问）：SW 代抓清单、判 ENDLIST。
-  // `ok=false` = 无法判定（网络失败/不是清单），调用方按"未知"处理。
+  // 直播流识别（内容脚本嗅探到 m3u8 / FLV 形态后询问）：SW 代抓并判定
+  // （清单判 ENDLIST；FLV 判"无总长 + 像 FLV"）。`msg.kind` 是形态提示
+  // （'hls' / 'flv'）；`ok=false` = 无法判定（网络失败/不是这类内容），
+  // 调用方按"未知"处理。
   if (msg && msg.type === 'probeLiveStream' && msg.url) {
-    probeStreamLive(msg.url).then((result) => {
+    probeStreamLive(msg.url, msg.kind).then((result) => {
       sendResponse({ ok: !!result, live: !!(result && result.live) })
     }).catch(() => {
       sendResponse({ ok: false, live: false })
