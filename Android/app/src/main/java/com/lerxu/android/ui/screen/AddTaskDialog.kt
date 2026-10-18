@@ -7,6 +7,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -16,51 +18,49 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Hub
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Description
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.Hub
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -72,34 +72,50 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.lerxu.android.engine.EngineManager
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.lerxu.android.R
+import com.lerxu.android.engine.EngineManager
 import com.lerxu.android.model.TaskFile
 import com.lerxu.android.ui.TaskViewModel
 import com.lerxu.android.ui.formatBytes
+import com.lerxu.android.ui.theme.lerxuExtraColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * 添加任务 —— 底部弹窗。
+ * 添加任务 —— 底部**悬浮卡片**。
  *
- * 三阶段流程：
- * 0 输入：链接 / 种子文件两种模式，自动检测剪贴板链接；
+ * 形态（2026-10-18 重做，用户点名）：一张四周不贴边的圆角卡片从底部浮起
+ * （左右 14dp、底部 = 导航条 + 12dp，软键盘弹出时整体抬到键盘之上）；
+ * 卡片上半是圆角输入框，下半是「＋ │ 种子文件 …… 添加」功能条 ——
+ * **两块同处一张卡、中间不画任何分隔线**，功能条里的元素只有图标与文字，
+ * 不带任何底色/描边（原「粘贴链接 / 选择种子文件」两段式切换已取消，
+ * 选种子文件降级为一枚图标）。
+ *
+ * 三阶段流程不变：
+ * 0 输入：链接 / 磁力 / 种子文件，自动检测剪贴板链接（有可用链接时输入框右侧
+ *   出现「粘贴」图标，点了直接填入）；
  * 1 解析：磁力/种子以 bt-file-selection 添加，轮询元数据（就绪后引擎自动暂停）；
  * 2 勾选：文件表格（默认全选），确认后 select-file + 恢复下载；
  *   未确认即退出则任务保留，状态"待选择文件"，点击任务可重开选择。
  * 直链（http/https/ftp）不经勾选流程，直接添加。
+ *
+ * 底部那行灰字是**当前保存目录**（点击可改）。它放在卡片最下沿而不是单独一栏，
+ * 是为了不打断"输入框 + 功能条"这一整块。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddTaskDialog(
     viewModel: TaskViewModel,
@@ -109,21 +125,34 @@ fun AddTaskDialog(
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val keyboard = LocalSoftwareKeyboardController.current
 
+    // ── 入场/退场动画 ──
+    // 退出时先播滑出动画再真正拆掉这扇 Dialog（与 BottomConfirmDialog 同一套路），
+    // 否则点遮罩会"啪"地消失。
+    var visible by remember { mutableStateOf(false) }
+    var exiting by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    LaunchedEffect(exiting) {
+        if (exiting) {
+            delay(220)
+            onDismiss()
+        }
+    }
     val dismissAnimated: () -> Unit = {
-        scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
-        Unit
+        if (visible && !exiting) {
+            exiting = true
+            visible = false
+        }
     }
 
     var phase by remember { mutableIntStateOf(0) }
-    var mode by remember { mutableIntStateOf(0) }
     var url by remember { mutableStateOf(initialUrl ?: "") }
-    var fileName by remember { mutableStateOf("") }
     var downloadDir by remember { mutableStateOf(EngineManager.getDownloadDirSafe()) }
     var torrentName by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var clipboardSuggestion by remember { mutableStateOf<String?>(null) }
+    var editingDir by remember { mutableStateOf(false) }
 
     var pendingGid by remember { mutableStateOf<String?>(null) }
     var pendingName by remember { mutableStateOf("") }
@@ -148,6 +177,7 @@ fun AddTaskDialog(
     }
 
     val startSelectionFlow: (add: suspend () -> String) -> Unit = { add ->
+        keyboard?.hide()
         scope.launch {
             val gid = try {
                 add()
@@ -209,6 +239,22 @@ fun AddTaskDialog(
         }
     }
 
+    /** 提交：磁力走元数据→勾选流程；直链直接建任务 */
+    val submit: () -> Unit = {
+        val target = url.trim()
+        if (target.isNotEmpty()) {
+            keyboard?.hide()
+            if (target.startsWith("magnet:")) {
+                startSelectionFlow {
+                    viewModel.getRpcClient().addMagnet(target, downloadDir, awaitSelection = true)
+                }
+            } else {
+                viewModel.addUriTask(target, downloadDir, "")
+                dismissAnimated()
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         if (initialUrl == null && url.isEmpty()) {
             try {
@@ -256,6 +302,7 @@ fun AddTaskDialog(
      * 一句"设备上没有选择器"只会误导（用户点名）。
      */
     val pickTorrent: () -> Unit = {
+        keyboard?.hide()
         val first = tryLaunch { torrentPicker.launch("application/x-bittorrent") }
         if (first != null) {
             val second = tryLaunch { torrentPicker.launch("*/*") }
@@ -268,393 +315,507 @@ fun AddTaskDialog(
         }
     }
 
-    ModalBottomSheet(
+    val bottomInset = WindowInsets.ime
+        .union(WindowInsets.navigationBars)
+        .only(WindowInsetsSides.Bottom)
+
+    Dialog(
         onDismissRequest = {
             if (phase != 0) abortPending(false)
-            onDismiss()
+            dismissAnimated()
         },
-        sheetState = sheetState,
-        containerColor = colorScheme.surface,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        dragHandle = null
+        // 自绘弹窗：窗口铺满整屏（遮罩才盖得住手势条那一带，inset 也才是真的）
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
     ) {
-        Column(
+        DialogWindowChrome()
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(top = 16.dp)
-                // 贴边全宽形态下，内容底部避让手势条/导航栏
-                .navigationBarsPadding()
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures {
+                        if (phase != 0) abortPending(false)
+                        dismissAnimated()
+                    }
+                },
+            contentAlignment = Alignment.BottomCenter
         ) {
-            // ── 标题栏 ──
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // 遮罩
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(200))
             ) {
-                Text(
-                    stringResource(R.string.add_download_task),
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.35f))
                 )
-                IconButton(
-                    onClick = {
-                        when {
-                            phase == 0 -> dismissAnimated()
-                            // 解析中：取消并移除任务，回输入页
-                            phase == 1 -> abortPending(true)
-                            // 勾选中：保留任务为"待选择文件"，直接关闭弹窗
-                            else -> {
-                                pendingGid = null
-                                pendingFiles = emptyList()
-                                dismissAnimated()
-                            }
-                        }
-                    },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = stringResource(R.string.close),
-                        modifier = Modifier.size(20.dp),
-                        tint = colorScheme.onSurfaceVariant
-                    )
-                }
             }
 
-            // ── 阶段内容（带切换动画）──
-            AnimatedContent(
-                targetState = phase,
-                transitionSpec = {
-                    (fadeIn(tween(250)) + slideInVertically(tween(250)) { it / 4 }) togetherWith
-                        (fadeOut(tween(200)) + slideOutVertically(tween(200)) { -it / 4 })
-                },
-                label = "phaseTransition"
-            ) { p ->
-                when (p) {
-                    // ── 阶段 1：解析中 ──
-                    1 -> Column(
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+            // 悬浮卡片：自底部滑入 / 滑出
+            AnimatedVisibility(
+                visible = visible,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(260, easing = FastOutSlowInEasing)
+                ) + fadeIn(tween(200)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                ) + fadeOut(tween(160))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        // 软键盘 / 导航条取**较大者**：叠着加会在键盘上方多出一条手势条高的空档
+                        .windowInsetsPadding(bottomInset)
+                        .padding(horizontal = 14.dp)
+                        .padding(bottom = 12.dp)
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // 吞掉卡片内的点击，避免穿透到遮罩上误关
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { },
+                        shape = RoundedCornerShape(26.dp),
+                        color = colorScheme.surface,
+                        shadowElevation = 18.dp
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(34.dp),
-                            strokeWidth = 3.dp,
-                            color = colorScheme.primary
-                        )
-                        Spacer(Modifier.height(14.dp))
-                        Text(
-                            stringResource(R.string.magnet_parsing),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colorScheme.onSurfaceVariant
-                        )
-                        if (torrentName.isNotEmpty()) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                torrentName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Spacer(Modifier.height(14.dp))
-                        TextButton(onClick = { abortPending(true) }) {
-                            Text(stringResource(R.string.cancel))
-                        }
-                    }
+                        AnimatedContent(
+                            targetState = phase,
+                            transitionSpec = {
+                                (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 10 }) togetherWith
+                                    (fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 10 })
+                            },
+                            label = "phaseTransition"
+                        ) { p ->
+                            when (p) {
+                                // ── 阶段 1：解析中 ──
+                                1 -> Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 150.dp)
+                                        .padding(vertical = 24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(32.dp),
+                                        strokeWidth = 3.dp,
+                                        color = colorScheme.primary
+                                    )
+                                    Spacer(Modifier.height(14.dp))
+                                    Text(
+                                        stringResource(R.string.magnet_parsing),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = colorScheme.onSurfaceVariant
+                                    )
+                                    if (torrentName.isNotEmpty()) {
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            torrentName,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.padding(horizontal = 24.dp)
+                                        )
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    Text(
+                                        stringResource(R.string.cancel),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .clickable { abortPending(true) }
+                                            .padding(horizontal = 18.dp, vertical = 8.dp)
+                                    )
+                                }
 
-                    // ── 阶段 2：文件勾选 ──
-                    2 -> Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text(
-                            stringResource(R.string.select_files_hint),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        if (pendingName.isNotEmpty()) {
-                            Text(
-                                pendingName,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = colorScheme.surfaceContainerLow,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 4.dp)
-                            ) {
-                                items(pendingFiles.size) { i ->
-                                    val file = pendingFiles[i]
-                                    val checked = i in selection
+                                // ── 阶段 2：文件勾选 ──
+                                2 -> Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            stringResource(R.string.select_files_hint),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .size(30.dp)
+                                                .clip(CircleShape)
+                                                .clickable {
+                                                    // 勾选中退出：保留任务为"待选择文件"
+                                                    pendingGid = null
+                                                    pendingFiles = emptyList()
+                                                    dismissAnimated()
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.Close,
+                                                contentDescription = stringResource(R.string.close),
+                                                modifier = Modifier.size(18.dp),
+                                                tint = colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    if (pendingName.isNotEmpty()) {
+                                        Text(
+                                            pendingName,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = colorScheme.surfaceContainerHigh,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(max = 300.dp),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 4.dp)
+                                        ) {
+                                            items(pendingFiles.size) { i ->
+                                                val file = pendingFiles[i]
+                                                val checked = i in selection
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            selection = if (checked) selection - i else selection + i
+                                                        }
+                                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        if (checked) Icons.Rounded.CheckCircle
+                                                        else Icons.Rounded.RadioButtonUnchecked,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(18.dp),
+                                                        tint = if (checked) colorScheme.primary else colorScheme.outline
+                                                    )
+                                                    Spacer(Modifier.width(10.dp))
+                                                    Text(
+                                                        file.path.substringAfterLast('/').substringAfterLast('\\')
+                                                            .ifEmpty { stringResource(R.string.file_index, file.index) },
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    Text(
+                                                        formatBytes(file.length),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            "${selection.size}/${pendingFiles.size}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            stringResource(
+                                                if (selection.size == pendingFiles.size) R.string.select_none
+                                                else R.string.select_all
+                                            ),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = colorScheme.primary,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable {
+                                                    selection = if (selection.size == pendingFiles.size) emptySet()
+                                                    else (0 until pendingFiles.size).toSet()
+                                                }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                    Button(
+                                        onClick = confirmSelection,
+                                        shape = RoundedCornerShape(16.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                    ) {
+                                        Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(stringResource(R.string.start_download), fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+
+                                // ── 阶段 0：输入 ──
+                                else -> Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(8.dp)
+                                ) {
+                                    // 输入框：圆角、有底色、无描边（聚焦时补一道主色细边）
+                                    AddUrlField(
+                                        value = url,
+                                        onValueChange = { url = it; error = null },
+                                        placeholder = stringResource(R.string.url_placeholder),
+                                        leadingIcon = if (isMagnet) Icons.Rounded.Hub else Icons.Rounded.Link,
+                                        trailing = {
+                                            when {
+                                                url.isNotBlank() -> Text(
+                                                    text = when {
+                                                        isMagnet -> stringResource(R.string.magnet)
+                                                        isHttp -> stringResource(R.string.direct_link)
+                                                        else -> stringResource(R.string.unknown)
+                                                    },
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = if (isMagnet || isHttp) colorScheme.primary else colorScheme.error,
+                                                    modifier = Modifier.padding(start = 8.dp, end = 8.dp)
+                                                )
+                                                clipboardSuggestion != null -> Box(
+                                                    modifier = Modifier
+                                                        .size(34.dp)
+                                                        .clip(CircleShape)
+                                                        .clickable {
+                                                            url = clipboardSuggestion.orEmpty()
+                                                            clipboardSuggestion = null
+                                                            error = null
+                                                        },
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        Icons.Rounded.ContentPaste,
+                                                        contentDescription = stringResource(R.string.paste_link),
+                                                        modifier = Modifier.size(17.dp),
+                                                        tint = colorScheme.primary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    )
+
+                                    error?.let {
+                                        Text(
+                                            it,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = colorScheme.error,
+                                            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 6.dp)
+                                        )
+                                    }
+
+                                    // 功能条：只有图标和文字，没有任何底色/描边；
+                                    // 与上面输入区同处一张卡，中间不画分隔线
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .clickable {
-                                                selection = if (checked) selection - i else selection + i
-                                            }
-                                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                                            .padding(start = 8.dp, end = 8.dp, top = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        ActionIcon(
+                                            icon = Icons.Rounded.Add,
+                                            contentDescription = stringResource(R.string.add),
+                                            tint = if (url.isNotBlank()) colorScheme.primary
+                                            else colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                            enabled = url.isNotBlank(),
+                                            onClick = submit
+                                        )
+                                        // 竖杠：把「添加」和「选种子」两片区隔开（用户点名要这一条）
+                                        Box(
+                                            Modifier
+                                                .padding(horizontal = 3.dp)
+                                                .width(1.dp)
+                                                .height(18.dp)
+                                                .background(lerxuExtraColors.dialogDivider)
+                                        )
+                                        ActionIcon(
+                                            icon = Icons.Rounded.Description,
+                                            contentDescription = stringResource(R.string.select_torrent_file),
+                                            tint = colorScheme.onSurfaceVariant,
+                                            onClick = pickTorrent
+                                        )
+                                        Spacer(Modifier.weight(1f))
+                                        Text(
+                                            stringResource(R.string.add),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (url.isNotBlank()) colorScheme.primary
+                                            else colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable(enabled = url.isNotBlank(), onClick = submit)
+                                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                        )
+                                    }
+
+                                    // 保存目录：一行灰字（点一下可改），不单独占一栏
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable { editingDir = true }
+                                            .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 6.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Icon(
-                                            if (checked) Icons.Default.CheckCircle
-                                            else Icons.Default.RadioButtonUnchecked,
+                                            Icons.Rounded.Folder,
                                             contentDescription = null,
-                                            modifier = Modifier.size(18.dp),
-                                            tint = if (checked) colorScheme.primary else colorScheme.outline
+                                            modifier = Modifier.size(13.dp),
+                                            tint = colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                                         )
-                                        Spacer(Modifier.width(10.dp))
+                                        Spacer(Modifier.width(6.dp))
                                         Text(
-                                            file.path.substringAfterLast('/').substringAfterLast('\\')
-                                                .ifEmpty { stringResource(R.string.file_index, file.index) },
-                                            style = MaterialTheme.typography.bodySmall,
+                                            downloadDir,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = colorScheme.onSurfaceVariant,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f)
                                         )
-                                        Text(
-                                            formatBytes(file.length),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = colorScheme.onSurfaceVariant
-                                        )
                                     }
                                 }
                             }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "${selection.size}/${pendingFiles.size}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colorScheme.onSurfaceVariant
-                            )
-                            TextButton(
-                                onClick = {
-                                    selection = if (selection.size == pendingFiles.size) emptySet()
-                                    else (0 until pendingFiles.size).toSet()
-                                }
-                            ) {
-                                Text(
-                                    stringResource(
-                                        if (selection.size == pendingFiles.size) R.string.select_none
-                                        else R.string.select_all
-                                    )
-                                )
-                            }
-                        }
-                        Button(
-                            onClick = confirmSelection,
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier.fillMaxWidth().height(50.dp)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(stringResource(R.string.start_download), fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-
-                    // ── 阶段 0：输入 ──
-                    else -> Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                            SegmentedButton(
-                                selected = mode == 0,
-                                onClick = { mode = 0 },
-                                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                            ) {
-                                Text(stringResource(R.string.paste_link))
-                            }
-                            SegmentedButton(
-                                selected = mode == 1,
-                                onClick = { mode = 1 },
-                                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                            ) {
-                                Text(stringResource(R.string.select_torrent_file))
-                            }
-                        }
-
-                        if (mode == 0) {
-                            CompactField(
-                                value = url,
-                                onValueChange = { url = it; error = null },
-                                placeholder = stringResource(R.string.url_placeholder),
-                                modifier = Modifier.fillMaxWidth(),
-                                leadingIcon = if (isMagnet) Icons.Default.Hub else Icons.Default.Link,
-                                suffix = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (url.isNotBlank()) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .width(1.dp)
-                                                    .height(24.dp)
-                                                    .background(colorScheme.outlineVariant)
-                                            )
-                                            Spacer(Modifier.width(10.dp))
-                                            Text(
-                                                text = when {
-                                                    isMagnet -> stringResource(R.string.magnet)
-                                                    isHttp -> stringResource(R.string.direct_link)
-                                                    else -> stringResource(R.string.unknown)
-                                                },
-                                                style = MaterialTheme.typography.labelMedium,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = if (isMagnet || isHttp) {
-                                                    colorScheme.primary
-                                                } else {
-                                                    colorScheme.error
-                                                },
-                                                modifier = Modifier.padding(end = 2.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            )
-
-                            if (clipboardSuggestion != null && url.isEmpty()) {
-                                AssistChip(
-                                    onClick = { url = clipboardSuggestion!!; clipboardSuggestion = null },
-                                    label = {
-                                        Text(
-                                            clipboardSuggestion!!,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    },
-                                    leadingIcon = {
-                                        Icon(
-                                            Icons.Default.ContentPaste,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    },
-                                    colors = AssistChipDefaults.assistChipColors(
-                                        containerColor = colorScheme.primaryContainer.copy(alpha = 0.5f),
-                                        labelColor = colorScheme.onPrimaryContainer
-                                    ),
-                                    shape = CircleShape
-                                )
-                            }
-
-                            if (isHttp) {
-                                CompactField(
-                                    value = fileName,
-                                    onValueChange = { fileName = it },
-                                    placeholder = stringResource(R.string.filename_optional),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                            }
-                        } else {
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = colorScheme.surfaceContainerLow,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        pickTorrent()
-                                    }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(16.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(42.dp)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(colorScheme.primaryContainer),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Description,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(22.dp),
-                                            tint = colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                    Spacer(Modifier.width(12.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(
-                                            torrentName.ifEmpty { stringResource(R.string.click_select_torrent) },
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = if (torrentName.isEmpty()) FontWeight.Normal else FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        if (torrentName.isEmpty()) {
-                                            Text(
-                                                stringResource(R.string.support_local_bt),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        CompactField(
-                            value = downloadDir,
-                            onValueChange = { downloadDir = it },
-                            placeholder = stringResource(R.string.save_to),
-                            modifier = Modifier.fillMaxWidth(),
-                            leadingIcon = Icons.Default.Folder
-                        )
-
-                        error?.let {
-                            Text(
-                                it,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = colorScheme.error
-                            )
-                        }
-
-                        Button(
-                            onClick = {
-                                if (isMagnet) {
-                                    startSelectionFlow {
-                                        viewModel.getRpcClient().addMagnet(url, downloadDir, awaitSelection = true)
-                                    }
-                                } else {
-                                    viewModel.addUriTask(url, downloadDir, fileName)
-                                    dismissAnimated()
-                                }
-                            },
-                            enabled = mode == 0 && url.isNotBlank(),
-                            shape = RoundedCornerShape(14.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(50.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Download,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                stringResource(if (isMagnet) R.string.confirm else R.string.start_download),
-                                fontWeight = FontWeight.SemiBold
-                            )
                         }
                     }
                 }
             }
         }
+    }
+
+    // 保存目录编辑：借用通用底部确认弹窗，避免再手写一扇窗口
+    if (editingDir) {
+        var draft by remember { mutableStateOf(downloadDir) }
+        BottomConfirmDialog(
+            title = stringResource(R.string.save_to),
+            confirmLabel = stringResource(R.string.confirm),
+            confirmEnabled = draft.isNotBlank(),
+            confirmContainerColor = colorScheme.primary,
+            confirmContentColor = colorScheme.onPrimary,
+            onConfirm = { downloadDir = draft.trim() },
+            onDismiss = { editingDir = false },
+            content = {
+                Spacer(Modifier.height(12.dp))
+                BasicTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = colorScheme.onSurface),
+                    cursorBrush = SolidColor(colorScheme.primary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(colorScheme.surfaceContainerLowest)
+                        .padding(horizontal = 14.dp, vertical = 13.dp)
+                )
+            }
+        )
+    }
+}
+
+// ─── 输入框 ───
+
+/**
+ * 圆角输入框：54dp 高、18dp 圆角、浅一档底色，聚焦时才补一道主色细边。
+ * `trailing` 放右侧的"类型"文字或"粘贴"图标 —— 两者都只有文字/图标，不带底色。
+ */
+@Composable
+private fun AddUrlField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    leadingIcon: ImageVector,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val shape = RoundedCornerShape(18.dp)
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(54.dp)
+            .clip(shape)
+            .background(colorScheme.surfaceContainerHigh)
+            .then(if (focused) Modifier.border(1.dp, colorScheme.primary, shape) else Modifier)
+            .padding(start = 15.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            leadingIcon,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+            tint = if (focused) colorScheme.primary else colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(10.dp))
+        Box(Modifier.weight(1f)) {
+            if (value.isEmpty()) {
+                Text(
+                    text = placeholder,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = colorScheme.onSurface),
+                cursorBrush = SolidColor(colorScheme.primary),
+                interactionSource = interactionSource,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        trailing?.invoke()
+    }
+}
+
+/** 功能条上的图标按钮：40dp 触摸区、只画图标，没有底色与描边 */
+@Composable
+private fun ActionIcon(
+    icon: ImageVector,
+    contentDescription: String,
+    tint: Color,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(21.dp),
+            tint = tint
+        )
     }
 }
 
@@ -677,66 +838,5 @@ private fun queryFileName(context: Context, uri: Uri): String? {
         }
     } catch (_: Exception) {
         null
-    }
-}
-
-// ─── 紧凑输入框：固定 52dp、12dp 圆角，内容始终完整可见 ───
-
-@Composable
-private fun CompactField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    modifier: Modifier = Modifier,
-    leadingIcon: ImageVector? = null,
-    suffix: (@Composable RowScope.() -> Unit)? = null
-) {
-    val colorScheme = MaterialTheme.colorScheme
-    val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-
-    Row(
-        modifier = modifier
-            .height(52.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(colorScheme.surfaceContainerLowest)
-            .border(
-                width = 1.dp,
-                color = if (focused) colorScheme.primary else colorScheme.outlineVariant,
-                shape = RoundedCornerShape(12.dp)
-            )
-            .padding(start = 14.dp, end = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (leadingIcon != null) {
-            Icon(
-                leadingIcon,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = if (focused) colorScheme.primary else colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(10.dp))
-        }
-        Box(Modifier.weight(1f)) {
-            if (value.isEmpty()) {
-                Text(
-                    text = placeholder,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(color = colorScheme.onSurface),
-                cursorBrush = SolidColor(colorScheme.primary),
-                interactionSource = interactionSource,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        suffix?.let { it() }
     }
 }
