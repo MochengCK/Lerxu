@@ -16,11 +16,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,8 +50,6 @@ import androidx.compose.material.icons.rounded.ContentPaste
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.Hub
-import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -99,22 +95,22 @@ import java.io.File
  * 添加任务 —— 底部**悬浮卡片**。
  *
  * 形态（2026-10-18 重做，用户点名）：一张四周不贴边的圆角卡片从底部浮起
- * （左右 14dp、底部 = 导航条 + 12dp，软键盘弹出时整体抬到键盘之上）；
- * 卡片上半是圆角输入框，下半是「＋ │ 种子文件 …… 添加」功能条 ——
- * **两块同处一张卡、中间不画任何分隔线**，功能条里的元素只有图标与文字，
- * 不带任何底色/描边（原「粘贴链接 / 选择种子文件」两段式切换已取消，
- * 选种子文件降级为一枚图标）。
+ * （左右 14dp、底部 = 导航条 + 12dp，软键盘弹出时整体抬到键盘之上）。
+ * **整张卡片就是那个输入框**：输入区与功能条共用同一个底色，没有任何色块差异、
+ * 分隔线或横杠；输入框里只有文字本身（左侧无图标、两侧都不显示链接类型）。
+ * 功能条一行三段：左「📁 目录」…… 右「＋ 添加」，最右「选种子文件」图标 ——
+ * 元素只有图标与文字，不带任何底色/描边。原「粘贴链接 / 选择种子文件」两段式
+ * 切换已取消，选种子文件降级为一枚图标。
+ *
+ * 链接类型由内部自动判断（磁力 → 元数据解析流程；其余直链直接建任务），
+ * 不在界面上显示。剪贴板里有可用链接时，输入框右侧会出现一枚「粘贴」图标。
  *
  * 三阶段流程不变：
- * 0 输入：链接 / 磁力 / 种子文件，自动检测剪贴板链接（有可用链接时输入框右侧
- *   出现「粘贴」图标，点了直接填入）；
+ * 0 输入：链接 / 磁力 / 种子文件；
  * 1 解析：磁力/种子以 bt-file-selection 添加，轮询元数据（就绪后引擎自动暂停）；
  * 2 勾选：文件表格（默认全选），确认后 select-file + 恢复下载；
  *   未确认即退出则任务保留，状态"待选择文件"，点击任务可重开选择。
  * 直链（http/https/ftp）不经勾选流程，直接添加。
- *
- * 底部那行灰字是**当前保存目录**（点击可改）。它放在卡片最下沿而不是单独一栏，
- * 是为了不打断"输入框 + 功能条"这一整块。
  */
 @Composable
 fun AddTaskDialog(
@@ -158,9 +154,6 @@ fun AddTaskDialog(
     var pendingName by remember { mutableStateOf("") }
     var pendingFiles by remember { mutableStateOf<List<TaskFile>>(emptyList()) }
     var selection by remember { mutableStateOf<Set<Int>>(emptySet()) }
-
-    val isMagnet = url.startsWith("magnet:")
-    val isHttp = url.startsWith("http://") || url.startsWith("https://") || url.startsWith("ftp://")
 
     val abortPending: (backToInput: Boolean) -> Unit = { back ->
         pendingGid?.let { gid ->
@@ -570,31 +563,22 @@ fun AddTaskDialog(
                                 }
 
                                 // ── 阶段 0：输入 ──
+                                // 整张卡片本身就是那个"圆角悬浮不贴边的输入框"：
+                                // 输入区与功能条**共用同一个底色**，没有色块差异、没有分隔线。
                                 else -> Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(8.dp)
+                                        .padding(horizontal = 8.dp, vertical = 6.dp)
                                 ) {
-                                    // 输入框：圆角、有底色、无描边（聚焦时补一道主色细边）
+                                    // 输入框里只有文字本身：**不显示链接类型、也没有左侧图标**
+                                    // （类型判断仍在内部做 —— 磁力走元数据→勾选，其余直接建任务）。
                                     AddUrlField(
                                         value = url,
                                         onValueChange = { url = it; error = null },
                                         placeholder = stringResource(R.string.url_placeholder),
-                                        leadingIcon = if (isMagnet) Icons.Rounded.Hub else Icons.Rounded.Link,
                                         trailing = {
-                                            when {
-                                                url.isNotBlank() -> Text(
-                                                    text = when {
-                                                        isMagnet -> stringResource(R.string.magnet)
-                                                        isHttp -> stringResource(R.string.direct_link)
-                                                        else -> stringResource(R.string.unknown)
-                                                    },
-                                                    style = MaterialTheme.typography.labelMedium,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = if (isMagnet || isHttp) colorScheme.primary else colorScheme.error,
-                                                    modifier = Modifier.padding(start = 8.dp, end = 8.dp)
-                                                )
-                                                clipboardSuggestion != null -> Box(
+                                            if (clipboardSuggestion != null && url.isEmpty()) {
+                                                Box(
                                                     modifier = Modifier
                                                         .size(34.dp)
                                                         .clip(CircleShape)
@@ -625,73 +609,80 @@ fun AddTaskDialog(
                                         )
                                     }
 
-                                    // 功能条：只有图标和文字，没有任何底色/描边；
-                                    // 与上面输入区同处一张卡，中间不画分隔线
+                                    // 功能条：左「目录」 …… 右「＋ 添加」，最右「选种子文件」。
+                                    // 只有文字和图标（无底色、无描边），与上面输入区同色、中间零分隔。
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(start = 8.dp, end = 8.dp, top = 2.dp),
+                                            .padding(start = 12.dp, end = 2.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        ActionIcon(
-                                            icon = Icons.Rounded.Add,
-                                            contentDescription = stringResource(R.string.add),
-                                            tint = if (url.isNotBlank()) colorScheme.primary
-                                            else colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                            enabled = url.isNotBlank(),
-                                            onClick = submit
-                                        )
-                                        // 竖杠：把「添加」和「选种子」两片区隔开（用户点名要这一条）
+                                        // 左：当前保存目录（点一下可改）
+                                        Row(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .heightIn(min = 40.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable { editingDir = true }
+                                                .padding(vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.Folder,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(13.dp),
+                                                tint = colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(
+                                                text = shortDir(downloadDir),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.StartEllipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+
+                                        // 右：添加（图标 + 文字整体靠右）
+                                        Row(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable(enabled = url.isNotBlank(), onClick = submit)
+                                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.Add,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(17.dp),
+                                                tint = if (url.isNotBlank()) colorScheme.primary
+                                                else colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                stringResource(R.string.add),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (url.isNotBlank()) colorScheme.primary
+                                                else colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                            )
+                                        }
+
+                                        // 竖杠：把「添加」与「选种子文件」两片区隔开
                                         Box(
                                             Modifier
-                                                .padding(horizontal = 3.dp)
+                                                .padding(horizontal = 4.dp)
                                                 .width(1.dp)
                                                 .height(18.dp)
                                                 .background(lerxuExtraColors.dialogDivider)
                                         )
+
                                         ActionIcon(
                                             icon = Icons.Rounded.Description,
                                             contentDescription = stringResource(R.string.select_torrent_file),
                                             tint = colorScheme.onSurfaceVariant,
                                             onClick = pickTorrent
-                                        )
-                                        Spacer(Modifier.weight(1f))
-                                        Text(
-                                            stringResource(R.string.add),
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = if (url.isNotBlank()) colorScheme.primary
-                                            else colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .clickable(enabled = url.isNotBlank(), onClick = submit)
-                                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                                        )
-                                    }
-
-                                    // 保存目录：一行灰字（点一下可改），不单独占一栏
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .clickable { editingDir = true }
-                                            .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            Icons.Rounded.Folder,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(13.dp),
-                                            tint = colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                                        )
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(
-                                            downloadDir,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
                                         )
                                     }
                                 }
@@ -736,40 +727,28 @@ fun AddTaskDialog(
 // ─── 输入框 ───
 
 /**
- * 圆角输入框：54dp 高、18dp 圆角、浅一档底色，聚焦时才补一道主色细边。
- * `trailing` 放右侧的"类型"文字或"粘贴"图标 —— 两者都只有文字/图标，不带底色。
+ * 输入行：只有文字本身 —— **没有左侧图标、也不在两侧显示链接类型**
+ * （卡片本身就是输入框，底色与下方功能条一致）。
+ * `trailing` 只用于「剪贴板里有链接」时那枚粘贴图标。
  */
 @Composable
 private fun AddUrlField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
-    leadingIcon: ImageVector,
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val interactionSource = remember { MutableInteractionSource() }
-    val focused by interactionSource.collectIsFocusedAsState()
-    val shape = RoundedCornerShape(18.dp)
 
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(54.dp)
-            .clip(shape)
-            .background(colorScheme.surfaceContainerHigh)
-            .then(if (focused) Modifier.border(1.dp, colorScheme.primary, shape) else Modifier)
-            .padding(start = 15.dp, end = 6.dp),
+            .padding(start = 12.dp, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            leadingIcon,
-            contentDescription = null,
-            modifier = Modifier.size(19.dp),
-            tint = if (focused) colorScheme.primary else colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.width(10.dp))
         Box(Modifier.weight(1f)) {
             if (value.isEmpty()) {
                 Text(
@@ -817,6 +796,12 @@ private fun ActionIcon(
             tint = tint
         )
     }
+}
+
+/** 目录只显示末尾两段（`/storage/emulated/0/Download/Lerxu` → `Download/Lerxu`）；完整路径在编辑弹窗里 */
+private fun shortDir(path: String): String {
+    val parts = path.trimEnd('/').split('/').filter { it.isNotEmpty() }
+    return parts.takeLast(2).joinToString("/").ifEmpty { path }
 }
 
 /**
