@@ -376,7 +376,7 @@ fun AddTaskDialog(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
                             ) { },
-                        shape = RoundedCornerShape(26.dp),
+                        shape = RoundedCornerShape(18.dp),
                         color = colorScheme.surface,
                         shadowElevation = 18.dp
                     ) {
@@ -574,7 +574,11 @@ fun AddTaskDialog(
                                     // （类型判断仍在内部做 —— 磁力走元数据→勾选，其余直接建任务）。
                                     AddUrlField(
                                         value = url,
-                                        onValueChange = { url = it; error = null },
+                                        // 换行只用于**视觉折行**：硬换行符会被剔掉，链接保持一行字符串
+                                        onValueChange = {
+                                            url = it.replace("\n", "").replace("\r", "")
+                                            error = null
+                                        },
                                         placeholder = stringResource(R.string.url_placeholder),
                                         trailing = {
                                             if (clipboardSuggestion != null && url.isEmpty()) {
@@ -609,7 +613,7 @@ fun AddTaskDialog(
                                         )
                                     }
 
-                                    // 功能条：左「目录」 …… 右「＋ 添加」，最右「选种子文件」。
+                                    // 功能条：左「目录」…… 中「选种子文件」│ 最右「＋ 添加」。
                                     // 只有文字和图标（无底色、无描边），与上面输入区同色、中间零分隔。
                                     Row(
                                         modifier = Modifier
@@ -644,7 +648,24 @@ fun AddTaskDialog(
                                             )
                                         }
 
-                                        // 右：添加（图标 + 文字整体靠右）
+                                        // 选种子文件：图标，落在「添加」左侧
+                                        ActionIcon(
+                                            icon = Icons.Rounded.Description,
+                                            contentDescription = stringResource(R.string.select_torrent_file),
+                                            tint = colorScheme.onSurfaceVariant,
+                                            onClick = pickTorrent
+                                        )
+
+                                        // 竖杠：把「选种子文件」与「添加」两片区隔开
+                                        Box(
+                                            Modifier
+                                                .padding(horizontal = 4.dp)
+                                                .width(1.dp)
+                                                .height(18.dp)
+                                                .background(lerxuExtraColors.dialogDivider)
+                                        )
+
+                                        // 最右：添加（图标 + 文字）
                                         Row(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(10.dp))
@@ -668,22 +689,6 @@ fun AddTaskDialog(
                                                 else colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                                             )
                                         }
-
-                                        // 竖杠：把「添加」与「选种子文件」两片区隔开
-                                        Box(
-                                            Modifier
-                                                .padding(horizontal = 4.dp)
-                                                .width(1.dp)
-                                                .height(18.dp)
-                                                .background(lerxuExtraColors.dialogDivider)
-                                        )
-
-                                        ActionIcon(
-                                            icon = Icons.Rounded.Description,
-                                            contentDescription = stringResource(R.string.select_torrent_file),
-                                            tint = colorScheme.onSurfaceVariant,
-                                            onClick = pickTorrent
-                                        )
                                     }
                                 }
                             }
@@ -745,8 +750,8 @@ private fun AddUrlField(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(54.dp)
-            .padding(start = 12.dp, end = 6.dp),
+            .heightIn(min = 54.dp)
+            .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.weight(1f)) {
@@ -755,14 +760,16 @@ private fun AddUrlField(
                     text = placeholder,
                     style = MaterialTheme.typography.bodyMedium,
                     color = colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
-                singleLine = true,
+                // 单行会让长链接被横向裁掉；这里允许折行（最多 4 行，超出内部滚动）
+                singleLine = false,
+                maxLines = 4,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = colorScheme.onSurface),
                 cursorBrush = SolidColor(colorScheme.primary),
                 interactionSource = interactionSource,
