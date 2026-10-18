@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,19 +26,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -73,6 +70,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -232,17 +230,34 @@ fun AddTaskDialog(
         }
     }
 
-    /** 提交：磁力走元数据→勾选流程；直链直接建任务 */
+    /**
+     * 提交。输入是**一行一个链接**：
+     * - 只有一行：磁力走元数据→勾选流程，其余直链直接建任务（原行为）；
+     * - 多行：逐行建任务。磁力以「待选择文件」状态挂起（**不自动全选下载**），
+     *   关窗后在任务列表点它再挑文件 —— 批量粘贴时不该替用户把所有文件都勾上。
+     */
     val submit: () -> Unit = {
-        val target = url.trim()
-        if (target.isNotEmpty()) {
+        val lines = url.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.isNotEmpty()) {
             keyboard?.hide()
-            if (target.startsWith("magnet:")) {
-                startSelectionFlow {
-                    viewModel.getRpcClient().addMagnet(target, downloadDir, awaitSelection = true)
+            if (lines.size == 1) {
+                val target = lines.first()
+                if (target.startsWith("magnet:")) {
+                    startSelectionFlow {
+                        viewModel.getRpcClient().addMagnet(target, downloadDir, awaitSelection = true)
+                    }
+                } else {
+                    viewModel.addUriTask(target, downloadDir, "")
+                    dismissAnimated()
                 }
             } else {
-                viewModel.addUriTask(target, downloadDir, "")
+                lines.forEach { line ->
+                    if (line.startsWith("magnet:")) {
+                        viewModel.addMagnetTask(line, downloadDir, awaitSelection = true)
+                    } else {
+                        viewModel.addUriTask(line, downloadDir, "")
+                    }
+                }
                 dismissAnimated()
             }
         }
@@ -308,9 +323,18 @@ fun AddTaskDialog(
         }
     }
 
-    val bottomInset = WindowInsets.ime
-        .union(WindowInsets.navigationBars)
-        .only(WindowInsetsSides.Bottom)
+    // 键盘 pop 出来时 inset 是**跳变量** —— 直接吃进去卡片会"啪"地跳上去。
+    // 这里把「IME / 导航条取较大者」换算成 dp 再补一段 tween，
+    // 让卡片跟键盘一起滑上来（键盘动画约 250ms，取 240ms 基本同步）。
+    val density = LocalDensity.current
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
+    val navBottomPx = WindowInsets.navigationBars.getBottom(density)
+    val targetBottom = with(density) { maxOf(imeBottomPx, navBottomPx).toDp() }
+    val animatedBottom by animateDpAsState(
+        targetValue = targetBottom,
+        animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+        label = "bottomInset"
+    )
 
     Dialog(
         onDismissRequest = {
@@ -363,8 +387,8 @@ fun AddTaskDialog(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // 软键盘 / 导航条取**较大者**：叠着加会在键盘上方多出一条手势条高的空档
-                        .windowInsetsPadding(bottomInset)
+                        // 软键盘 / 导航条取较大者（上面已算好并做了动画）
+                        .padding(bottom = animatedBottom)
                         .padding(horizontal = 14.dp)
                         .padding(bottom = 12.dp)
                 ) {
@@ -574,11 +598,8 @@ fun AddTaskDialog(
                                     // （类型判断仍在内部做 —— 磁力走元数据→勾选，其余直接建任务）。
                                     AddUrlField(
                                         value = url,
-                                        // 换行只用于**视觉折行**：硬换行符会被剔掉，链接保持一行字符串
-                                        onValueChange = {
-                                            url = it.replace("\n", "").replace("\r", "")
-                                            error = null
-                                        },
+                                        // 允许手动换行：一行一个链接（多行时逐行建任务）
+                                        onValueChange = { url = it; error = null },
                                         placeholder = stringResource(R.string.url_placeholder),
                                         trailing = {
                                             if (clipboardSuggestion != null && url.isEmpty()) {
@@ -767,9 +788,9 @@ private fun AddUrlField(
             BasicTextField(
                 value = value,
                 onValueChange = onValueChange,
-                // 单行会让长链接被横向裁掉；这里允许折行（最多 4 行，超出内部滚动）
+                // 一行一个链接：回车手动换行，最多 6 行（再多就内部滚动，避免卡片顶到屏幕外）
                 singleLine = false,
-                maxLines = 4,
+                maxLines = 6,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = colorScheme.onSurface),
                 cursorBrush = SolidColor(colorScheme.primary),
                 interactionSource = interactionSource,

@@ -103,7 +103,7 @@
     <string name="add_download_task">Add Download Task</string>
     <string name="paste_link">Paste Link</string>
     <string name="select_torrent_file">Select Torrent File</string>
-    <string name="url_placeholder">http/https/ftp/magnet link</string>
+    <string name="url_placeholder">One link per line — http / ftp / magnet</string>
     <string name="filename_optional">Filename (optional)</string>
     <string name="save_to">Save to</string>
     <string name="start_download">Start Download</string>

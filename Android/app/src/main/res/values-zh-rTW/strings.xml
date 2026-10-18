@@ -103,7 +103,7 @@
     <string name="add_download_task">新增下載任務</string>
     <string name="paste_link">貼上連結</string>
     <string name="select_torrent_file">選擇種子檔案</string>
-    <string name="url_placeholder">http/https/ftp/magnet 連結</string>
+    <string name="url_placeholder">每行一個連結，支援 http / ftp / magnet</string>
     <string name="filename_optional">檔案名稱（可選）</string>
     <string name="save_to">儲存到</string>
     <string name="start_download">開始下載</string>
