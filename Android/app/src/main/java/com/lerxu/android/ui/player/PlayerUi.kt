@@ -64,6 +64,14 @@ class PlayerUi {
     /** 播放器开着（覆盖层在场）。 */
     var open by mutableStateOf(false)
 
+    /**
+     * 这一轮放的是**本地文件**（不是网页里的流）。
+     *
+     * 影响三处：返回键 / 退出全屏直接关播放器、失败文案不再提"回到网页"、可下载源
+     * 始终为空（本地文件不需要再下一遍）。
+     */
+    var localPlayback by mutableStateOf(false)
+
     /** 宿主标签页在台前：不在台前就什么都不画（声音继续）。 */
     var visible by mutableStateOf(false)
 
@@ -198,6 +206,7 @@ class PlayerUi {
 
     /** 开新一轮时清干净上一轮的残留（进度、错误、暂停态都是上一路的）。 */
     fun reset() {
+        localPlayback = false
         visible = false
         following = false
         fullscreen = false

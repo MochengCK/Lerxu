@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.graphics.Rect
 import android.graphics.RectF
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -156,7 +157,10 @@ class NativePlayerOverlay(
                 ProvideAppLanguage {
                     PlayerControls(
                         ui = ui,
-                        onToggleFullscreen = { setFullscreen(!ui.fullscreen) },
+                        // 本地播放没有"网页里的那块矩形"可退回：退出全屏就是关播放器
+                        onToggleFullscreen = {
+                            if (ui.localPlayback) close() else setFullscreen(!ui.fullscreen)
+                        },
                         onToggleOrientation = { toggleFullscreenOrientation() },
                         onOpenSettings = { openSettings() },
                         onOpenDownload = { openDownload() },
@@ -395,6 +399,8 @@ class NativePlayerOverlay(
             when {
                 ui.settingsOpen -> closeSettings()
                 ui.downloadOpen -> closeDownload()
+                // 本地播放是用户主动打开的一屏：返回键直接退出（没有网页可回退）
+                ui.localPlayback -> close()
                 ui.locked -> ui.locked = false
                 ui.fullscreen -> setFullscreen(false)
                 onBackToPage() -> Unit
@@ -447,7 +453,11 @@ class NativePlayerOverlay(
                 playAttempt()
                 return
             }
-            ui.failed = segmentHint() ?: friendlyError(firstError ?: error)
+            ui.failed = if (ui.localPlayback) {
+                "这个文件无法播放（文件可能已损坏，或编码不受支持）"
+            } else {
+                segmentHint() ?: friendlyError(firstError ?: error)
+            }
             ui.failedDetail = describeAttempts()
         }
     }
@@ -644,6 +654,44 @@ class NativePlayerOverlay(
         startPoll()
         applyLayout()
         startProbeAndPlay(url, headers, isHls, mime)
+    }
+
+    /**
+     * 打开一个**本地文件**（添加任务弹窗 → 本地播放）。
+     *
+     * 与 [open] 的区别：不走网络容器探测、不猜可下载源、不做网页位置跟随 ——
+     * 直接以全屏形态起播。数据源仍走 `DefaultDataSource`（按 scheme 分派，`file:`
+     * 与 `content:` 都能读），所以和网页那套共用同一只 ExoPlayer 与控件层。
+     *
+     * 本地播放**没有"窗口态"**：退出全屏按钮与返回键都直接关播放器（见 backCallback
+     * 与 controlsView 的接线）；否则退出全屏后没有页面矩形可落，会变成一层看不见的
+     * 播放器继续出声。
+     */
+    fun openLocal(uri: Uri, title: String) {
+        if (ui.open) close(notify = false)
+        ui.reset()
+        ui.open = true
+        ui.localPlayback = true
+        ui.visible = true
+        ui.title = title
+        streamUrl = uri.toString()
+        streamHeaders = emptyMap()
+        streamMime = ""
+        startPausedForAttempt = false
+        firstError = null
+        attemptErrors.fill(null)
+        attemptKinds = listOf(MediaProbe.Kind.PROGRESSIVE)
+        attemptIndex = 0
+
+        restoreOrientation = activity.requestedOrientation
+        restoreLightStatusBar =
+            WindowCompat.getInsetsController(activity.window, decor)?.isAppearanceLightStatusBars
+        (activity as? LifecycleOwner)?.let { backDispatcher?.addCallback(it, backCallback) }
+        backCallback.isEnabled = true
+        host.keepScreenOn = ui.keepOn
+        setFullscreen(true)
+        startPoll()
+        playAttempt()
     }
 
     // ─── 开播：先探容器，再按"今天这一路到底该怎么播"建播放器 ───

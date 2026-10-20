@@ -233,6 +233,9 @@ import com.lerxu.android.update.UpdateManager
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
+/** 本地播放的一路：系统选择器给的 content URI + 展示名。 */
+private data class LocalPlayback(val uri: android.net.Uri, val title: String)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppScreen(
@@ -440,6 +443,8 @@ fun AppScreen(
     // 原生播放器当前在播的那条资源（null = 没在播）。点「本页资源」里的一条就设它，
     // 播放页盖在整个界面之上（见文件末尾）
     var playing by remember { mutableStateOf<SniffedResource?>(null) }
+    // 本地播放（添加任务弹窗 → 本地播放）：与网页那一路共用同一只播放器覆盖层
+    var localPlaying by remember { mutableStateOf<LocalPlayback?>(null) }
     // 这一路要不要**自动播**：页面里那个播放器本来就停着时（站点自己的封面 / 大播放按钮）
     // 我们只换成自己的播放器、不替用户按下播放（见 BrowserController.nativePlayPaused）
     var playingStartPaused by remember { mutableStateOf(false) }
@@ -1291,6 +1296,10 @@ fun AppScreen(
         AddTaskDialog(
             viewModel = viewModel,
             initialUrl = initialIntentData,
+            onPlayLocal = { uri, title ->
+                playing = null
+                localPlaying = LocalPlayback(uri, title)
+            },
             onDismiss = { showAddTask = false }
         )
     }
@@ -1346,8 +1355,10 @@ fun AppScreen(
     // 开着的时候还要让网页那边"别再全屏"：影视站的播放按钮常在 `play()` 的同一拍里
     // `requestFullscreen()`，那次请求晚到一步就会盖住我们的播放器（见
     // BrowserController.setNativePlayerActive）
-    LaunchedEffect(playing != null) {
-        browserController.setNativePlayerActive(playing != null)
+    LaunchedEffect(playing != null, localPlaying != null) {
+        // 本地播放时也让网页那一路保持接管态：否则从网页视频切去本地播放，
+        // 页面自己的播放器会被放出来，和本地声音叠在一起
+        browserController.setNativePlayerActive(playing != null || localPlaying != null)
     }
     // 播放器里点「下载」的回调发生在 Compose 之外，用 ref 把最新闭包递进去
     // （与浏览器那条 submitRef 同一个套路）
@@ -1356,7 +1367,10 @@ fun AppScreen(
         (context as? android.app.Activity)?.let { act ->
             NativePlayerOverlay(
                 activity = act,
-                onClosed = { playing = null },
+                onClosed = {
+                    playing = null
+                    localPlaying = null
+                },
                 onDownload = { req -> playerDownloadRef.value(req) },
                 // 贴在网页里的那一档按返回键：该**网页后退**，而不是先关播放器
                 //（用户点名："回退网页时首先关掉的是原生播放器，这是不应该的"）——
@@ -1366,8 +1380,13 @@ fun AppScreen(
         }
     }
     SideEffect { playerDownloadRef.value = { submitPlayerDownload(it) } }
-    LaunchedEffect(playerOverlay, playing) {
+    LaunchedEffect(playerOverlay, playing, localPlaying) {
         val overlay = playerOverlay ?: return@LaunchedEffect
+        val local = localPlaying
+        if (local != null) {
+            overlay.openLocal(local.uri, local.title)
+            return@LaunchedEffect
+        }
         val item = playing
         if (item == null) {
             overlay.close(notify = false)

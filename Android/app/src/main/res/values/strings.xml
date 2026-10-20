@@ -103,6 +103,12 @@
     <string name="add_download_task">Add Download Task</string>
     <string name="paste_link">Paste Link</string>
     <string name="select_torrent_file">Select Torrent File</string>
+    <string name="link_mode">Link</string>
+    <string name="local_playback">Local Playback</string>
+    <string name="select_file">Choose File</string>
+    <string name="local_play_hint">Pick a local video or audio file to play right away</string>
+    <string name="select_local_directory">Only folders in local storage can be selected</string>
+    <string name="directory_not_writable">This folder isn\'t writable. Choose another folder or grant All files access.</string>
     <string name="url_placeholder">One link per line — http / ftp / magnet</string>
     <string name="filename_optional">Filename (optional)</string>
     <string name="save_to">Save to</string>

@@ -103,6 +103,12 @@
     <string name="add_download_task">添加下载任务</string>
     <string name="paste_link">粘贴链接</string>
     <string name="select_torrent_file">选择种子文件</string>
+    <string name="link_mode">链接</string>
+    <string name="local_playback">本地播放</string>
+    <string name="select_file">选择文件</string>
+    <string name="local_play_hint">选择本地的视频或音频文件，直接开始播放</string>
+    <string name="select_local_directory">只能选择本机存储中的文件夹</string>
+    <string name="directory_not_writable">该文件夹不可写，请更换文件夹或授予「所有文件访问」权限</string>
     <string name="url_placeholder">每行一个链接，支持 http / ftp / magnet</string>
     <string name="filename_optional">文件名（可选）</string>
     <string name="save_to">保存到</string>

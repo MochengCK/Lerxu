@@ -431,7 +431,11 @@ fun PlayerControls(
                     Text(msg, color = Color(0xB3FFFFFF), fontSize = 13.sp)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "有些流需要登录态或已失效，可回到网页里继续看",
+                        if (ui.localPlayback) {
+                            "文件可能已损坏，或它的编码方式这台设备解不了"
+                        } else {
+                            "有些流需要登录态或已失效，可回到网页里继续看"
+                        },
                         color = Color(0x80FFFFFF),
                         fontSize = 12.sp
                     )
@@ -453,7 +457,11 @@ fun PlayerControls(
                         onClick = onFallbackToPage,
                         colors = ButtonDefaults.textButtonColors(contentColor = Color.White)
                     ) {
-                        Text("用网页播放器", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (ui.localPlayback) "关闭播放器" else "用网页播放器",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
@@ -593,7 +601,10 @@ fun PlayerControls(
                         // 窗口态左上角**什么都不放**（用户点名：没全屏时不该有那枚关闭按钮）——
                         // 关播放器挪进了设置弹窗（"关闭播放器"那一行），离开页面本来也会收
                         if (ui.fullscreen) {
-                            PlayerIconButton(LerxuExitFullscreen, "退出全屏") {
+                            PlayerIconButton(
+                                LerxuExitFullscreen,
+                                if (ui.localPlayback) "关闭播放器" else "退出全屏"
+                            ) {
                                 onToggleFullscreen()
                                 ui.controlsVisible = true
                             }

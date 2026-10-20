@@ -3,6 +3,8 @@ package com.lerxu.android.ui.screen
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
+import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -10,6 +12,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -22,16 +25,19 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,7 +50,6 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentPaste
-import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
@@ -61,19 +66,28 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -84,10 +98,15 @@ import com.lerxu.android.model.TaskFile
 import com.lerxu.android.ui.TaskViewModel
 import com.lerxu.android.ui.formatBytes
 import com.lerxu.android.ui.theme.lerxuExtraColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+
+/** 输入区的两种模式（滑块那两档）。 */
+private enum class AddMode { Link, Local }
 
 /**
  * 添加任务 —— 底部**悬浮卡片**。
@@ -96,15 +115,17 @@ import java.io.File
  * （左右 14dp、底部 = 导航条 + 12dp，软键盘弹出时整体抬到键盘之上）。
  * **整张卡片就是那个输入框**：输入区与功能条共用同一个底色，没有任何色块差异、
  * 分隔线或横杠；输入框里只有文字本身（左侧无图标、两侧都不显示链接类型）。
- * 功能条一行三段：左「📁 目录」…… 右「＋ 添加」，最右「选种子文件」图标 ——
- * 元素只有图标与文字，不带任何底色/描边。原「粘贴链接 / 选择种子文件」两段式
- * 切换已取消，选种子文件降级为一枚图标。
+ * 输入卡片**上方悬浮**一枚「链接 / 本地播放」滑块（独立组件、圆角、左右不贴边、
+ * 无阴影）；切到本地播放后，卡片里只留一个「选择文件」入口，选完直接起播。
+ * 功能条一行三段：左「📁 目录」、中「选种子文件」、右「＋ 添加」—— 元素只有图标
+ * 与文字，不带任何底色/描边；目录这一行点按也不出现背景高亮。目录 / 种子文件 /
+ * 本地播放的文件选择都走系统选择器。
  *
  * 链接类型由内部自动判断（磁力 → 元数据解析流程；其余直链直接建任务），
  * 不在界面上显示。剪贴板里有可用链接时，输入框右侧会出现一枚「粘贴」图标。
  *
  * 三阶段流程不变：
- * 0 输入：链接 / 磁力 / 种子文件；
+ * 0 输入：链接 / 磁力 / 种子文件 / 本地播放；
  * 1 解析：磁力/种子以 bt-file-selection 添加，轮询元数据（就绪后引擎自动暂停）；
  * 2 勾选：文件表格（默认全选），确认后 select-file + 恢复下载；
  *   未确认即退出则任务保留，状态"待选择文件"，点击任务可重开选择。
@@ -114,22 +135,31 @@ import java.io.File
 fun AddTaskDialog(
     viewModel: TaskViewModel,
     initialUrl: String? = null,
+    onPlayLocal: (Uri, String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val urlFocus = remember { FocusRequester() }
 
     // ── 入场/退场动画 ──
     // 退出时先播滑出动画再真正拆掉这扇 Dialog（与 BottomConfirmDialog 同一套路），
     // 否则点遮罩会"啪"地消失。
     var visible by remember { mutableStateOf(false) }
     var exiting by remember { mutableStateOf(false) }
+    // 退场动画结束后再执行的动作（本地播放要等弹窗完全收起后再开播放器，
+    // 否则覆盖层会被 Dialog 窗口压住 / 方向先转了、弹窗还挂在那儿）
+    var afterExit by remember { mutableStateOf<(() -> Unit)?>(null) }
     LaunchedEffect(Unit) { visible = true }
     LaunchedEffect(exiting) {
         if (exiting) {
             delay(220)
+            val action = afterExit
+            afterExit = null
+            action?.invoke()
             onDismiss()
         }
     }
@@ -146,7 +176,10 @@ fun AddTaskDialog(
     var torrentName by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var clipboardSuggestion by remember { mutableStateOf<String?>(null) }
-    var editingDir by remember { mutableStateOf(false) }
+    // 链接 / 本地播放
+    var mode by remember { mutableStateOf(AddMode.Link) }
+    // 自动聚焦只发生在**刚打开这一下**：从目录 / 种子 / 本地播放选择器回来时不再抢焦点
+    var autoFocusPending by remember { mutableStateOf(true) }
 
     var pendingGid by remember { mutableStateOf<String?>(null) }
     var pendingName by remember { mutableStateOf("") }
@@ -278,6 +311,23 @@ fun AddTaskDialog(
         }
     }
 
+    /**
+     * 拉起系统选择器前统一收键盘、清焦点。
+     *
+     * 用户点名：从「选择目录 / 选择文件」退出来时输入框会**重新聚焦**。根子就是
+     * 离开应用时输入框一直拿着焦点、窗口回来又把它顶出来。这里在跳出去之前显式
+     * 放掉焦点；回来时也不会再自动要一次（自动聚焦只在弹窗刚打开时）。
+     */
+    val closeInputFocus: () -> Unit = {
+        // 顺手取消还没执行的自动聚焦：否则刚打开就点选择器时，
+        // 那一拍仍可能把键盘拉起来
+        autoFocusPending = false
+        focusManager.clearFocus()
+        keyboard?.hide()
+        error = null
+    }
+
+    // ── 种子文件：系统文件选择器 ──
     val torrentPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -291,10 +341,10 @@ fun AddTaskDialog(
                 torrentName = name
                 error = null
                 startSelectionFlow {
-                    viewModel.getRpcClient().addTorrent(
-                        android.util.Base64.encodeToString(dest.readBytes(), android.util.Base64.NO_WRAP),
-                        downloadDir, awaitSelection = true
-                    )
+                    val base64 = withContext(Dispatchers.IO) {
+                        android.util.Base64.encodeToString(dest.readBytes(), android.util.Base64.NO_WRAP)
+                    }
+                    viewModel.getRpcClient().addTorrent(base64, downloadDir, awaitSelection = true)
                 }
             } catch (e: Exception) {
                 error = context.getString(R.string.read_torrent_failed, e.message ?: "")
@@ -302,15 +352,8 @@ fun AddTaskDialog(
         }
     }
 
-    /**
-     * 拉起种子选择器。
-     *
-     * 先按种子类型找，找不到退回通配类型（第三方文件管理器多半只认通配）；
-     * 两条都不行才报错，而且**把真实原因带出来** —— 系统都自带文件选择器，
-     * 一句"设备上没有选择器"只会误导（用户点名）。
-     */
     val pickTorrent: () -> Unit = {
-        keyboard?.hide()
+        closeInputFocus()
         val first = tryLaunch { torrentPicker.launch("application/x-bittorrent") }
         if (first != null) {
             val second = tryLaunch { torrentPicker.launch("*/*") }
@@ -320,6 +363,72 @@ fun AddTaskDialog(
                     second.message ?: second.javaClass.simpleName
                 )
             }
+        }
+    }
+
+    // ── 保存目录：系统文件夹选择器（SAF 树 URI → 真实路径） ──
+    val dirPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val path = treeUriToPath(uri)
+            when {
+                path == null -> Toast.makeText(
+                    context,
+                    context.getString(R.string.select_local_directory),
+                    Toast.LENGTH_SHORT
+                ).show()
+                !File(path).canWrite() -> Toast.makeText(
+                    context,
+                    context.getString(R.string.directory_not_writable),
+                    Toast.LENGTH_SHORT
+                ).show()
+                else -> downloadDir = path
+            }
+        }
+    }
+
+    val pickDirectory: () -> Unit = {
+        closeInputFocus()
+        val failure = tryLaunch { dirPicker.launch(downloadDirTreeUri(downloadDir)) }
+        if (failure != null) {
+            error = context.getString(
+                R.string.file_picker_failed,
+                failure.message ?: failure.javaClass.simpleName
+            )
+        }
+    }
+
+    // ── 本地播放：系统文件选择器（视频 / 音频） ──
+    val localPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val title = queryFileName(context, uri) ?: context.getString(R.string.local_playback)
+            // 等弹窗退场动画走完再开播放器（否则覆盖层会被 Dialog 窗口压住）
+            afterExit = { onPlayLocal(uri, title) }
+            dismissAnimated()
+        }
+    }
+
+    val pickLocalMedia: () -> Unit = {
+        closeInputFocus()
+        val failure = tryLaunch { localPicker.launch(arrayOf("video/*", "audio/*")) }
+        if (failure != null) {
+            error = context.getString(
+                R.string.file_picker_failed,
+                failure.message ?: failure.javaClass.simpleName
+            )
+        }
+    }
+
+    val selectMode: (Boolean) -> Unit = { local ->
+        val next = if (local) AddMode.Local else AddMode.Link
+        if (next != mode) {
+            autoFocusPending = false
+            focusManager.clearFocus()
+            keyboard?.hide()
+            mode = next
         }
     }
 
@@ -337,9 +446,17 @@ fun AddTaskDialog(
     )
 
     Dialog(
+        // 返回键按层级退：先退本地播放，最后才关整扇弹窗 ——
+        // 一按返回就把用户挑了一半的东西全丢掉不是好手感
         onDismissRequest = {
-            if (phase != 0) abortPending(false)
-            dismissAnimated()
+            when {
+                phase != 0 -> {
+                    abortPending(false)
+                    dismissAnimated()
+                }
+                mode == AddMode.Local -> mode = AddMode.Link
+                else -> dismissAnimated()
+            }
         },
         // 自绘弹窗：窗口铺满整屏（遮罩才盖得住手势条那一带，inset 也才是真的）
         properties = DialogProperties(
@@ -392,6 +509,26 @@ fun AddTaskDialog(
                         .padding(horizontal = 14.dp)
                         .padding(bottom = 12.dp)
                 ) {
+                    // 「链接 / 本地播放」是**独立的一枚滑块**，悬浮在输入卡片上方，
+                    // 不裹在卡片里；只有输入阶段（phase 0）出现
+                    AnimatedVisibility(
+                        visible = phase == 0,
+                        enter = fadeIn(tween(160)),
+                        exit = fadeOut(tween(120))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 10.dp),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            AddModeSwitch(
+                                local = mode == AddMode.Local,
+                                onSelect = selectMode
+                            )
+                        }
+                    }
+
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -586,129 +723,153 @@ fun AddTaskDialog(
                                     }
                                 }
 
-                                // ── 阶段 0：输入 ──
-                                // 整张卡片本身就是那个"圆角悬浮不贴边的输入框"：
-                                // 输入区与功能条**共用同一个底色**，没有色块差异、没有分隔线。
-                                else -> Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 8.dp, vertical = 6.dp)
-                                ) {
-                                    // 输入框里只有文字本身：**不显示链接类型、也没有左侧图标**
-                                    // （类型判断仍在内部做 —— 磁力走元数据→勾选，其余直接建任务）。
-                                    AddUrlField(
-                                        value = url,
-                                        // 允许手动换行：一行一个链接（多行时逐行建任务）
-                                        onValueChange = { url = it; error = null },
-                                        placeholder = stringResource(R.string.url_placeholder),
-                                        trailing = {
-                                            if (clipboardSuggestion != null && url.isEmpty()) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(34.dp)
-                                                        .clip(CircleShape)
-                                                        .clickable {
-                                                            url = clipboardSuggestion.orEmpty()
-                                                            clipboardSuggestion = null
-                                                            error = null
-                                                        },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        Icons.Rounded.ContentPaste,
-                                                        contentDescription = stringResource(R.string.paste_link),
-                                                        modifier = Modifier.size(17.dp),
-                                                        tint = colorScheme.primary
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    )
-
-                                    error?.let {
-                                        Text(
-                                            it,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = colorScheme.error,
-                                            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 6.dp)
-                                        )
-                                    }
-
-                                    // 功能条：左「目录」…… 中「选种子文件」│ 最右「＋ 添加」。
-                                    // 只有文字和图标（无底色、无描边），与上面输入区同色、中间零分隔。
-                                    Row(
+                                // ── 阶段 0：链接 / 本地播放 ──
+                                // 上方那枚滑块是独立组件；这张卡片只承载链接输入，
+                                // 或本地播放的「选择文件」入口（文件选择走系统选择器）。
+                                else -> {
+                                    Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(start = 12.dp, end = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                            .padding(horizontal = 8.dp, vertical = 6.dp)
                                     ) {
-                                        // 左：当前保存目录（点一下可改）
-                                        Row(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .heightIn(min = 40.dp)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .clickable { editingDir = true }
-                                                .padding(vertical = 10.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                Icons.Rounded.Folder,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(13.dp),
-                                                tint = colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                                            )
-                                            Spacer(Modifier.width(6.dp))
-                                            Text(
-                                                text = shortDir(downloadDir),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.StartEllipsis,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                        }
+                                        AnimatedContent(
+                                            targetState = mode,
+                                            transitionSpec = {
+                                                (fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 14 }) togetherWith
+                                                    (fadeOut(tween(120)) + slideOutVertically(tween(140)) { -it / 14 })
+                                            },
+                                            label = "inputMode"
+                                        ) { m ->
+                                            if (m == AddMode.Local) {
+                                                LocalPlayPane(onPick = pickLocalMedia)
+                                            } else {
+                                                Column(Modifier.fillMaxWidth()) {
+                                                    // 输入框里只有文字本身：**不显示链接类型、也没有左侧图标**
+                                                    // （类型判断仍在内部做 —— 磁力走元数据→勾选，其余直接建任务）。
+                                                    AddUrlField(
+                                                        value = url,
+                                                        // 允许手动换行：一行一个链接（多行时逐行建任务）
+                                                        onValueChange = { url = it; error = null },
+                                                        placeholder = stringResource(R.string.url_placeholder),
+                                                        focusRequester = urlFocus,
+                                                        autoFocus = autoFocusPending,
+                                                        onAutoFocused = { autoFocusPending = false },
+                                                        trailing = {
+                                                            if (clipboardSuggestion != null && url.isEmpty()) {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .size(34.dp)
+                                                                        .clip(CircleShape)
+                                                                        .clickable {
+                                                                            url = clipboardSuggestion.orEmpty()
+                                                                            clipboardSuggestion = null
+                                                                            error = null
+                                                                        },
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    Icon(
+                                                                        Icons.Rounded.ContentPaste,
+                                                                        contentDescription = stringResource(R.string.paste_link),
+                                                                        modifier = Modifier.size(17.dp),
+                                                                        tint = colorScheme.primary
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    )
 
-                                        // 选种子文件：图标，落在「添加」左侧
-                                        ActionIcon(
-                                            icon = Icons.Rounded.Description,
-                                            contentDescription = stringResource(R.string.select_torrent_file),
-                                            tint = colorScheme.onSurfaceVariant,
-                                            onClick = pickTorrent
-                                        )
+                                                    error?.let {
+                                                        Text(
+                                                            it,
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = colorScheme.error,
+                                                            modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 6.dp)
+                                                        )
+                                                    }
 
-                                        // 竖杠：把「选种子文件」与「添加」两片区隔开
-                                        Box(
-                                            Modifier
-                                                .padding(horizontal = 4.dp)
-                                                .width(1.dp)
-                                                .height(18.dp)
-                                                .background(lerxuExtraColors.dialogDivider)
-                                        )
+                                                    // 功能条：左「目录」…… 中「选种子文件」│ 最右「＋ 添加」。
+                                                    // 只有文字和图标（无底色、无描边），与上面输入区同色、中间零分隔。
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(start = 12.dp, end = 2.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        // 左：当前保存目录（点一下打开自研文件夹浏览器）
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .weight(1f)
+                                                                .heightIn(min = 40.dp)
+                                                                // 只做跳转，不画水波纹（用户点名：不要背景高亮）
+                                                                .clickable(
+                                                                    interactionSource = remember { MutableInteractionSource() },
+                                                                    indication = null,
+                                                                    onClick = pickDirectory
+                                                                )
+                                                                .padding(vertical = 10.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Rounded.Folder,
+                                                                contentDescription = null,
+                                                                modifier = Modifier.size(13.dp),
+                                                                tint = colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                                            )
+                                                            Spacer(Modifier.width(6.dp))
+                                                            Text(
+                                                                text = shortDir(downloadDir),
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = colorScheme.onSurfaceVariant,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.StartEllipsis,
+                                                                modifier = Modifier.weight(1f)
+                                                            )
+                                                        }
 
-                                        // 最右：添加（图标 + 文字）
-                                        Row(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .clickable(enabled = url.isNotBlank(), onClick = submit)
-                                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                Icons.Rounded.Add,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(17.dp),
-                                                tint = if (url.isNotBlank()) colorScheme.primary
-                                                else colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                            )
-                                            Spacer(Modifier.width(4.dp))
-                                            Text(
-                                                stringResource(R.string.add),
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = if (url.isNotBlank()) colorScheme.primary
-                                                else colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                            )
+                                                        // 选种子文件：图标，落在「添加」左侧
+                                                        ActionIcon(
+                                                            icon = LerxuTorrentFile,
+                                                            contentDescription = stringResource(R.string.select_torrent_file),
+                                                            tint = colorScheme.onSurfaceVariant,
+                                                            onClick = pickTorrent
+                                                        )
+
+                                                        // 竖杠：把「选种子文件」与「添加」两片区隔开
+                                                        Box(
+                                                            Modifier
+                                                                .padding(horizontal = 4.dp)
+                                                                .width(1.dp)
+                                                                .height(18.dp)
+                                                                .background(lerxuExtraColors.dialogDivider)
+                                                        )
+
+                                                        // 最右：添加（图标 + 文字）
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .clip(RoundedCornerShape(10.dp))
+                                                                .clickable(enabled = url.isNotBlank(), onClick = submit)
+                                                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Icon(
+                                                                Icons.Rounded.Add,
+                                                                contentDescription = null,
+                                                                modifier = Modifier.size(17.dp),
+                                                                tint = if (url.isNotBlank()) colorScheme.primary
+                                                                else colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                                            )
+                                                            Spacer(Modifier.width(4.dp))
+                                                            Text(
+                                                                stringResource(R.string.add),
+                                                                style = MaterialTheme.typography.titleSmall,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                color = if (url.isNotBlank()) colorScheme.primary
+                                                                else colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -719,34 +880,40 @@ fun AddTaskDialog(
             }
         }
     }
+}
 
-    // 保存目录编辑：借用通用底部确认弹窗，避免再手写一扇窗口
-    if (editingDir) {
-        var draft by remember { mutableStateOf(downloadDir) }
-        BottomConfirmDialog(
-            title = stringResource(R.string.save_to),
-            confirmLabel = stringResource(R.string.confirm),
-            confirmEnabled = draft.isNotBlank(),
-            confirmContainerColor = colorScheme.primary,
-            confirmContentColor = colorScheme.onPrimary,
-            onConfirm = { downloadDir = draft.trim() },
-            onDismiss = { editingDir = false },
-            content = {
-                Spacer(Modifier.height(12.dp))
-                BasicTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = colorScheme.onSurface),
-                    cursorBrush = SolidColor(colorScheme.primary),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(colorScheme.surfaceContainerLowest)
-                        .padding(horizontal = 14.dp, vertical = 13.dp)
-                )
-            }
+// ─── 本地播放入口 ───
+
+/**
+ * 「本地播放」面板：一句说明 + 一枚「选择文件」。
+ *
+ * 文件选择交回**系统选择器**（见 localPicker）；选完直接起播，选取消就停在这里。
+ */
+@Composable
+private fun LocalPlayPane(onPick: () -> Unit) {
+    val colorScheme = MaterialTheme.colorScheme
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            stringResource(R.string.local_play_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
         )
+        Spacer(Modifier.height(14.dp))
+        Button(
+            onClick = onPick,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+        ) {
+            Text(stringResource(R.string.select_file), fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 
@@ -755,6 +922,8 @@ fun AddTaskDialog(
 /**
  * 输入行：只有文字本身 —— **没有左侧图标、也不在两侧显示链接类型**
  * （卡片本身就是输入框，底色与下方功能条一致）。
+ * [autoFocus] 只在弹窗刚打开时为真：第一帧就把光标送进来（用户点名"不要延迟一会"）；
+ * 从系统选择器 / 本地播放回来时不再抢焦点。
  * `trailing` 只用于「剪贴板里有链接」时那枚粘贴图标。
  */
 @Composable
@@ -762,11 +931,30 @@ private fun AddUrlField(
     value: String,
     onValueChange: (String) -> Unit,
     placeholder: String,
+    focusRequester: FocusRequester,
+    autoFocus: Boolean,
+    onAutoFocused: () -> Unit,
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val interactionSource = remember { MutableInteractionSource() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    // 等这一帧的工夫里用户可能已经切走了：执行前再读一次最新值，
+    // 不在输入框已经被替换掉时还把键盘拉起来
+    val autoFocusNow by rememberUpdatedState(autoFocus)
+
+    LaunchedEffect(Unit) {
+        if (autoFocusNow) {
+            withFrameNanos { }
+            if (!autoFocusNow) return@LaunchedEffect
+            runCatching { focusRequester.requestFocus() }
+            withFrameNanos { }
+            if (!autoFocusNow) return@LaunchedEffect
+            keyboard?.show()
+            onAutoFocused()
+        }
+    }
 
     Row(
         modifier = modifier
@@ -794,10 +982,99 @@ private fun AddUrlField(
                 textStyle = MaterialTheme.typography.bodyMedium.copy(color = colorScheme.onSurface),
                 cursorBrush = SolidColor(colorScheme.primary),
                 interactionSource = interactionSource,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
             )
         }
         trailing?.invoke()
+    }
+}
+
+/**
+ * 「链接 ⇄ 本地播放」滑块：一枚**独立**的圆角胶囊，悬浮在输入卡片上方。
+ *
+ * 不裹进输入卡片里、也不带投影；只有文字（没有图标），高亮块 240ms 滑动。
+ * 选中文字用 onPrimary，在弹窗的白底/深色底上都是同一套读法。
+ */
+@Composable
+private fun AddModeSwitch(
+    local: Boolean,
+    onSelect: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val slide by animateFloatAsState(
+        targetValue = if (local) 1f else 0f,
+        animationSpec = tween(240, easing = FastOutSlowInEasing),
+        label = "addModeSlide"
+    )
+    val onAccent = colorScheme.onPrimary
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(18.dp),
+        color = colorScheme.surfaceContainerHigh
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .height(34.dp)
+                .fillMaxWidth(0.52f)
+        ) {
+            val segment = maxWidth / 2
+            val insetX = 4.dp
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = insetX, vertical = 3.dp)
+                    .width(segment - insetX)
+                    .fillMaxHeight()
+                    .offset(x = (segment - insetX) * slide)
+                    .clip(RoundedCornerShape(15.dp))
+                    .background(colorScheme.primary)
+            )
+            Row(Modifier.fillMaxSize()) {
+                AddModeSegment(
+                    label = stringResource(R.string.link_mode),
+                    selected = !local,
+                    selectedColor = if (!local) onAccent else colorScheme.onSurfaceVariant,
+                    onClick = { onSelect(false) },
+                    modifier = Modifier.weight(1f)
+                )
+                AddModeSegment(
+                    label = stringResource(R.string.local_playback),
+                    selected = local,
+                    selectedColor = if (local) onAccent else colorScheme.onSurfaceVariant,
+                    onClick = { onSelect(true) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddModeSegment(
+    label: String,
+    selected: Boolean,
+    selectedColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(15.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = if (selected) selectedColor else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -826,10 +1103,126 @@ private fun ActionIcon(
     }
 }
 
-/** 目录只显示末尾两段（`/storage/emulated/0/Download/Lerxu` → `Download/Lerxu`）；完整路径在编辑弹窗里 */
+/**
+ * 「选种子文件」图标：一张折角文稿 + 一枚下行箭头。
+ *
+ * 原来这里用的是 Material 的 `Description`（带两道正文线）—— 它读作"一份文档"，
+ * 而这一枚要读作"把一个 .torrent 文件交给下载器"。折角文稿沿用播放器
+ * `LerxuFile` 的轮廓；笔法与整机其它自绘图标一致（圆头、1.9 描边、24 视口）。
+ */
+private val LerxuTorrentFile: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "LerxuTorrentFile",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            stroke = SolidColor(Color.White),
+            strokeLineWidth = 1.9f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round
+        ) {
+            // 外轮廓：右上角被折角斜切（close 就是那条切线）
+            moveTo(13.8f, 3.0f)
+            horizontalLineTo(7.6f)
+            curveTo(6.27f, 3.0f, 5.2f, 4.07f, 5.2f, 5.4f)
+            verticalLineTo(18.6f)
+            curveTo(5.2f, 19.93f, 6.27f, 21.0f, 7.6f, 21.0f)
+            horizontalLineTo(16.4f)
+            curveTo(17.73f, 21.0f, 18.8f, 19.93f, 18.8f, 18.6f)
+            verticalLineTo(8.0f)
+            close()
+        }
+        path(
+            stroke = SolidColor(Color.White),
+            strokeLineWidth = 1.9f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round
+        ) {
+            // 折角：竖边 + 横边，与切线合成那枚小三角
+            moveTo(13.8f, 3.0f)
+            verticalLineTo(8.0f)
+            horizontalLineTo(18.8f)
+        }
+        path(
+            stroke = SolidColor(Color.White),
+            strokeLineWidth = 1.9f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round
+        ) {
+            // 下行箭头：杆 + 圆头箭羽
+            moveTo(12.0f, 10.2f)
+            verticalLineTo(15.8f)
+            moveTo(9.6f, 13.4f)
+            lineTo(12.0f, 15.8f)
+            lineTo(14.4f, 13.4f)
+        }
+    }.build()
+}
+
+/** 目录只显示末尾两段（`/storage/emulated/0/Download/Lerxu` → `Download/Lerxu`）；完整路径在设置页可见 */
 private fun shortDir(path: String): String {
     val parts = path.trimEnd('/').split('/').filter { it.isNotEmpty() }
     return parts.takeLast(2).joinToString("/").ifEmpty { path }
+}
+
+private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
+
+/**
+ * 系统文件夹选择器返回的 SAF 树 URI → 真实文件系统路径。
+ *
+ * 引擎只认 `/storage/...` 这种真实路径（SAF URI 交给它没有意义），所以这里把
+ * ExternalStorageProvider 的卷标还原出来：
+ * - `primary:Download/Lerxu` → `/storage/emulated/0/Download/Lerxu`；
+ * - `1A2B-3C4D:Movies` → `/storage/1A2B-3C4D/Movies`（可移动存储）。
+ * 网盘、媒体库等没有真实路径的提供方返回 null，交给调用方提示用户。
+ */
+private fun treeUriToPath(uri: Uri): String? = try {
+    when (uri.authority) {
+        EXTERNAL_STORAGE_AUTHORITY -> {
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            val volume = docId.substringBefore(':', missingDelimiterValue = "")
+            val relative = docId.substringAfter(':', missingDelimiterValue = "").trim('/')
+            val root = when {
+                volume.equals("primary", ignoreCase = true) -> Environment.getExternalStorageDirectory()
+                volume.isEmpty() -> null
+                else -> File("/storage/$volume")
+            }
+            root?.let { if (relative.isEmpty()) it.absolutePath else File(it, relative).absolutePath }
+        }
+        // 系统「下载」提供方：要么是逻辑上的 downloads，要么是 raw:/storage/... 真实路径
+        "com.android.providers.downloads.documents" -> {
+            val docId = DocumentsContract.getTreeDocumentId(uri)
+            when {
+                docId == "downloads" -> Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_DOWNLOADS
+                ).absolutePath
+                docId.startsWith("raw:") -> docId.removePrefix("raw:")
+                else -> null
+            }
+        }
+        else -> null
+    }
+} catch (_: Exception) {
+    null
+}
+
+/**
+ * 当前保存目录 → 文件夹选择器的初始位置（打开时就停在这儿）。
+ *
+ * 只对主存储里的目录有意义：`Android/data`、`Android/obb` 在系统选择器里
+ * 本来就不显示，给初始位置反而会让选择器跳错地方，所以直接不给。
+ */
+private fun downloadDirTreeUri(path: String): Uri? {
+    val root = Environment.getExternalStorageDirectory().absolutePath.trimEnd('/')
+    val normalized = path.trim().trimEnd('/')
+    if (normalized != root && !normalized.startsWith("$root/")) return null
+    val relative = normalized.removePrefix(root).trimStart('/')
+    if (relative.startsWith("Android/data") || relative.startsWith("Android/obb")) return null
+    val docId = if (relative.isEmpty()) "primary:" else "primary:$relative"
+    return DocumentsContract.buildDocumentUri(EXTERNAL_STORAGE_AUTHORITY, docId)
 }
 
 /**
