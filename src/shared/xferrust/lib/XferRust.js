@@ -357,6 +357,32 @@ export class XferRust extends JSONRPCClient {
         return { method: 'task.unbanPeer', params, transform: okToOK }
       }
 
+      // ---- 端手互通 · 局域网传输（引擎原生 lan.*）----
+      // 参数形状见 xfer-rpc::native：lan.send { peer, paths }，其余无参/单 id
+      case 'lan.peers':
+      case 'lan.tasks':
+      case 'lan.config':
+        return { method: name, params }
+      case 'lan.setConfig': {
+        const [patch = {}] = positional
+        Object.assign(params, patch)
+        return { method: 'lan.setConfig', params }
+      }
+      case 'lan.send': {
+        const [peer, paths] = positional
+        Object.assign(params, {
+          peer,
+          paths: (Array.isArray(paths) ? paths : []).filter(p => typeof p === 'string' && p)
+        })
+        return { method: 'lan.send', params }
+      }
+      case 'lan.remove':
+      case 'lan.cancel': {
+        const [id] = positional
+        params.id = id
+        return { method: name, params }
+      }
+
       // ---- 原生协议不支持，降级处理 ----
       case 'getServersAndTasks':
       case 'addMetalink':

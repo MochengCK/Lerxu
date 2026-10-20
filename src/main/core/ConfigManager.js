@@ -107,7 +107,8 @@ export default class ConfigManager {
         'dht-listen-port': 26701,
         'dir': getUserDownloadsPath(),
         'enable-dht': true,
-        'enable-dht6': true,
+        // DHT over IPv6 默认关：没有全局 IPv6 的网络里双栈 DHT 会拖死 IPv4 发现
+        'enable-dht6': false,
         'follow-metalink': true,
         'follow-torrent': true,
         // HLS（M3U8）：空串 = 自动/默认（清晰度取最高码率变体、乱序落盘、

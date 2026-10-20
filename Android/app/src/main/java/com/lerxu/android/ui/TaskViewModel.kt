@@ -2,6 +2,7 @@ package com.lerxu.android.ui
 
 import android.app.Application
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lerxu.android.data.EngineRepository
@@ -329,6 +330,33 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
     fun getTaskByGid(gid: String): TaskInfo? = repository.getTaskByGid(gid)
 
     fun getRpcClient() = repository.getRpcClient()
+
+    // ─── 局域网传输（引擎 lan.*；安卓端不再自己跑发现/传输） ───
+
+    val lanPeers: StateFlow<List<LanPeer>> = repository.lanPeers
+    val lanTasks: StateFlow<List<LanTask>> = repository.lanTasks
+
+    fun refreshLan() = repository.refreshLan()
+
+    suspend fun getLanConfig(): LanConfig? =
+        runCatching { repository.lanConfig() }.getOrNull()
+
+    suspend fun setLanConfig(
+        enabled: Boolean? = null,
+        deviceName: String? = null,
+        recvDir: String? = null
+    ): Result<LanConfig> = runCatching {
+        repository.setLanConfig(enabled, deviceName, recvDir)
+    }
+
+    /** 发送一组 content:// Uri；返回 null 表示已入队，否则是错误文案。 */
+    suspend fun sendLanFiles(peerId: String, uris: List<Uri>): String? =
+        repository.sendLanFiles(peerId, uris)
+
+    fun cancelLanTask(id: String) = repository.cancelLanTask(id)
+
+    fun removeLanTask(id: String, deleteFiles: Boolean = false) =
+        repository.removeLanTask(id, deleteFiles)
 
     /** 引擎启动 CLI 默认值用的偏好（EngineManager 启动时读取，见 engine_* 键） */
     private fun persistEnginePref(key: String, value: Int) {

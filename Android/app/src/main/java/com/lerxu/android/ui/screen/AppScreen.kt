@@ -107,7 +107,9 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -220,6 +222,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextStyle
 import com.lerxu.android.R
 import com.lerxu.android.data.EngineRepository
+import com.lerxu.android.model.LanTask
 import com.lerxu.android.model.TaskInfo
 import com.lerxu.android.ui.RoundedProgressBar
 import com.lerxu.android.ui.TaskViewModel
@@ -264,6 +267,8 @@ fun AppScreen(
     var currentScope by remember { mutableStateOf("all") }
     var selectionMode by remember { mutableStateOf(false) }
     val selectedGids = remember { mutableStateListOf<String>() }
+    // 传输行没有引擎 gid，单独记 id；两者一起算「已选」并一起删除
+    val selectedLanIds = remember { mutableStateListOf<String>() }
     // 控制栏删除确认态：栏内向上扩展为确认内容，不另弹窗
     var deleteConfirming by remember { mutableStateOf(false) }
     // 任务列表底部预留：普通 0 / 编辑模式 62 / 确认态控制栏更高，平滑过渡
@@ -691,6 +696,7 @@ fun AppScreen(
         mutableStateOf(if (stored != null && stored in validKeys) stored else "finished_at_desc")
     }
     var pendingDeleteGids by remember { mutableStateOf<List<String>?>(null) }
+    var pendingDeleteLanIds by remember { mutableStateOf<List<String>?>(null) }
     var searchQuery by remember { mutableStateOf("") }
 
     // 应用内更新提示：UpdateManager 发现新版本时发到 availableUpdate，
@@ -722,6 +728,23 @@ fun AppScreen(
             // finishedAt == 0 表示未知完成时间，无论升降序都排到最后
             searched.partition { it.finishedAt > 0 }.let { (known, unknown) -> known + unknown }
         } else searched
+    }
+
+    // 局域网传输任务（发送 / 接收）：来自引擎 `lan.tasks`，映射成普通 TaskInfo 后
+    // 并进同一个列表，共用同一套分类、搜索、排序、卡片与状态色。
+    val lanTasks by viewModel.lanTasks.collectAsStateWithLifecycle()
+    val lanRows = remember(lanTasks, currentScope, searchQuery) {
+        lanTasks
+            .filter { lanInScope(currentScope, it.uiStatus) }
+            .filter {
+                searchQuery.isBlank() || it.name.contains(searchQuery.trim(), ignoreCase = true)
+            }
+    }
+    val displayRows = remember(displayTasks, lanRows, sortBy) {
+        mergeTaskRows(displayTasks, lanRows, sortBy)
+    }
+    val displayCounts = remember(state.scopeCounts, lanTasks) {
+        withLanCounts(state.scopeCounts, lanTasks)
     }
 
     // 处理外部 Intent 带来的链接：**先分清是哪种链接**（用户点名）。
@@ -787,6 +810,7 @@ fun AppScreen(
                             // 进设置前退出编辑模式，避免残留选中状态
                             selectionMode = false
                             selectedGids.clear()
+                            selectedLanIds.clear()
                             // 设置是**底部弹窗**：打开它不换页，关掉就回到任务页
                             settingsOpen = true
                         },
@@ -905,7 +929,7 @@ fun AppScreen(
             if (state.connected) {
                 ScopeFilterRow(
                     currentScope = currentScope,
-                    counts = state.scopeCounts,
+                    counts = displayCounts,
                     searchQuery = searchQuery,
                     onSearchQueryChange = { searchQuery = it },
                     onSelect = {
@@ -931,15 +955,16 @@ fun AppScreen(
                             onRetry = { viewModel.clearErrorAndRetry() }
                         )
                     }
-                    state.tasks.isEmpty() && !state.loading -> {
+                    state.tasks.isEmpty() && lanRows.isEmpty() && !state.loading -> {
                         EmptyState()
                     }
                     else -> {
                         val navBottom = WindowInsets.navigationBars.asPaddingValues()
                         TaskList(
-                            tasks = displayTasks,
+                            rows = displayRows,
                             selectionMode = selectionMode,
                             selectedGids = selectedGids,
+                            selectedLanIds = selectedLanIds,
                             onTaskClick = { gid ->
                                 val t = state.tasks.find { it.gid == gid }
                                 if (t?.awaitingSelection == true) selectionTaskGid = gid
@@ -958,11 +983,24 @@ fun AppScreen(
                                 if (selectedGids.contains(gid)) selectedGids.remove(gid)
                                 else selectedGids.add(gid)
                             },
+                            onToggleLanSelect = { id ->
+                                if (selectedLanIds.contains(id)) selectedLanIds.remove(id)
+                                else selectedLanIds.add(id)
+                            },
                             onDeleteTask = { gid -> pendingDeleteGids = listOf(gid) },
                             onEnterSelection = { gid ->
                                 selectionMode = true
                                 selectedGids.add(gid)
                             },
+                            onEnterLanSelection = { id ->
+                                selectionMode = true
+                                selectedLanIds.add(id)
+                            },
+                            // 传输行没有 gid：不进任务详情。点击只在「接收完成 + 有落盘路径」时打开文件
+                            onTransferClick = { lan -> openLanTask(context, lan) },
+                            onTransferCancel = { id -> viewModel.cancelLanTask(id) },
+                            // 左滑删除与普通任务一致：先确认，再决定要不要删本地文件
+                            onTransferRemove = { id -> pendingDeleteLanIds = listOf(id) },
                             bottomPadding = navBottom.calculateBottomPadding() + 12.dp +
                                 listBottomExtra
                         )
@@ -970,35 +1008,53 @@ fun AppScreen(
                 }
 
                 // 编辑模式：底部向上滑入的圆角悬浮控制栏
+                val selectableCount = state.tasks.size + lanTasks.size
+                val selectedCount = selectedGids.size + selectedLanIds.size
+                val allSelected = selectableCount > 0 && selectedCount >= selectableCount
+                // 只有普通任务，或「接收完成」的传输记录才有可删的本地文件；
+                // 发送任务的源文件绝不能出现在这个选项里
+                val selectionCanDeleteFiles = selectedGids.isNotEmpty() ||
+                    lanTasks.any {
+                        it.id in selectedLanIds && it.direction == "in" &&
+                            it.status == "done" && !it.path.isNullOrBlank()
+                    }
                 Box(modifier = Modifier.align(Alignment.BottomCenter)) {
                     SelectionBarOverlay(
                         visible = selectionMode,
-                        count = selectedGids.size,
-                        allSelected = state.tasks.isNotEmpty() && selectedGids.size >= state.tasks.size,
+                        count = selectedCount,
+                        allSelected = allSelected,
                         confirming = deleteConfirming,
+                        deleteFilesApplicable = selectionCanDeleteFiles,
                         onClose = {
                             selectionMode = false
                             selectedGids.clear()
+                            selectedLanIds.clear()
                             deleteConfirming = false
                         },
                         onToggleSelectAll = {
-                            if (state.tasks.isNotEmpty() && selectedGids.size >= state.tasks.size) {
+                            if (allSelected) {
                                 selectedGids.clear()
+                                selectedLanIds.clear()
                             } else {
                                 selectedGids.clear()
+                                selectedLanIds.clear()
                                 selectedGids.addAll(state.tasks.map { it.gid })
+                                selectedLanIds.addAll(lanTasks.map { it.id })
                             }
                         },
                         // 删除：不弹窗，控制栏自身向上扩展为确认内容
                         onRequestConfirm = {
-                            if (selectedGids.isNotEmpty()) deleteConfirming = true
+                            if (selectedCount > 0) deleteConfirming = true
                         },
                         onCancelConfirm = { deleteConfirming = false },
                         onConfirmDelete = { deleteFiles ->
                             selectedGids.toList().forEach { viewModel.removeTask(it, deleteFiles) }
+                            // 传输记录：只有接收完成的落盘文件会跟随删除，发送源文件不动
+                            selectedLanIds.toList().forEach { viewModel.removeLanTask(it, deleteFiles) }
                             deleteConfirming = false
                             selectionMode = false
                             selectedGids.clear()
+                            selectedLanIds.clear()
                         }
                     )
                 }
@@ -1333,16 +1389,28 @@ fun AppScreen(
         }
     }
 
-    // 删除任务二次确认（单个/批量共用）
+    // 删除任务二次确认（普通任务 / 传输记录共用同一张弹窗）
     val deleteTargets = pendingDeleteGids
-    if (deleteTargets != null) {
+    val deleteLanTargets = pendingDeleteLanIds
+    if (deleteTargets != null || deleteLanTargets != null) {
+        val lanTargetTasks = lanTasks.filter { it.id in (deleteLanTargets ?: emptyList()) }
+        // 「同时删除本地文件」只对普通任务与接收完成的传输记录成立
+        val canDeleteFiles = !deleteTargets.isNullOrEmpty() || lanTargetTasks.any {
+            it.direction == "in" && it.status == "done" && !it.path.isNullOrBlank()
+        }
         DeleteConfirmDialog(
-            count = deleteTargets.size,
+            count = (deleteTargets?.size ?: 0) + (deleteLanTargets?.size ?: 0),
+            deleteFilesApplicable = canDeleteFiles,
             onConfirm = { deleteFiles ->
-                deleteTargets.forEach { viewModel.removeTask(it, deleteFiles) }
+                deleteTargets?.forEach { viewModel.removeTask(it, deleteFiles) }
+                deleteLanTargets?.forEach { viewModel.removeLanTask(it, deleteFiles) }
                 pendingDeleteGids = null
+                pendingDeleteLanIds = null
             },
-            onDismiss = { pendingDeleteGids = null }
+            onDismiss = {
+                pendingDeleteGids = null
+                pendingDeleteLanIds = null
+            }
         )
     }
 
@@ -3522,6 +3590,7 @@ private fun SelectionBarOverlay(
     count: Int,
     allSelected: Boolean,
     confirming: Boolean,
+    deleteFilesApplicable: Boolean,
     onClose: () -> Unit,
     onToggleSelectAll: () -> Unit,
     onRequestConfirm: () -> Unit,
@@ -3543,6 +3612,7 @@ private fun SelectionBarOverlay(
             count = count,
             allSelected = allSelected,
             confirming = confirming,
+            deleteFilesApplicable = deleteFilesApplicable,
             onClose = onClose,
             onToggleSelectAll = onToggleSelectAll,
             onRequestConfirm = onRequestConfirm,
@@ -3557,6 +3627,7 @@ private fun SelectionBar(
     count: Int,
     allSelected: Boolean,
     confirming: Boolean,
+    deleteFilesApplicable: Boolean,
     onClose: () -> Unit,
     onToggleSelectAll: () -> Unit,
     onRequestConfirm: () -> Unit,
@@ -3595,7 +3666,7 @@ private fun SelectionBar(
             label = "selectionBarState"
         ) { confirm ->
             if (confirm) {
-                ConfirmDeleteContent(count, onConfirmDelete, onCancelConfirm)
+                ConfirmDeleteContent(count, deleteFilesApplicable, onConfirmDelete, onCancelConfirm)
             } else {
                 SelectionBarNormalContent(
                     count = count,
@@ -3661,6 +3732,7 @@ private fun SelectionBarNormalContent(
 @Composable
 private fun ConfirmDeleteContent(
     count: Int,
+    deleteFilesApplicable: Boolean,
     onConfirmDelete: (deleteFiles: Boolean) -> Unit,
     onCancel: () -> Unit
 ) {
@@ -3676,29 +3748,31 @@ private fun ConfirmDeleteContent(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = if (deleteFiles) stringResource(R.string.delete_with_files_msg)
+            text = if (deleteFilesApplicable && deleteFiles) stringResource(R.string.delete_with_files_msg)
             else stringResource(R.string.delete_record_only_msg),
             style = MaterialTheme.typography.bodySmall,
             color = colorScheme.onSurfaceVariant
         )
-        Spacer(Modifier.height(4.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { deleteFiles = !deleteFiles },
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Checkbox(
-                checked = deleteFiles,
-                onCheckedChange = { deleteFiles = it },
-                colors = CheckboxDefaults.colors(checkedColor = colorScheme.primary)
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                stringResource(R.string.delete_local_files),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
-            )
+        if (deleteFilesApplicable) {
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { deleteFiles = !deleteFiles },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = deleteFiles,
+                    onCheckedChange = { deleteFiles = it },
+                    colors = CheckboxDefaults.colors(checkedColor = colorScheme.primary)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    stringResource(R.string.delete_local_files),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
         Spacer(Modifier.height(10.dp))
         Row(Modifier.fillMaxWidth()) {
@@ -3718,7 +3792,7 @@ private fun ConfirmDeleteContent(
             }
             Spacer(Modifier.width(10.dp))
             Button(
-                onClick = { onConfirmDelete(deleteFiles) },
+                onClick = { onConfirmDelete(deleteFilesApplicable && deleteFiles) },
                 modifier = Modifier
                     .weight(1f)
                     .height(46.dp),
@@ -4079,16 +4153,94 @@ private fun SearchField(
 
 // ─── 任务列表 ───
 
+/**
+ * 主列表的一行：引擎任务，或局域网传输任务（发送 / 接收）。
+ *
+ * 传输行把引擎 lan 任务映射成 [TaskInfo] 后用**同一个 [TaskCard]** 渲染；
+ * 它没有引擎 gid，因此不进任务详情；多选单独记 id，删除映射到 lan.remove。
+ */
+private sealed interface TaskRow {
+    val rowKey: String
+
+    class Engine(val task: TaskInfo) : TaskRow {
+        override val rowKey: String get() = "engine:${task.gid}"
+    }
+
+    class Lan(val task: LanTask) : TaskRow {
+        override val rowKey: String get() = "lan:${task.id}"
+        /** 与普通任务完全同构的卡片数据。 */
+        val card: TaskInfo get() = task.toTaskInfo()
+    }
+}
+
+/** 传输任务归到哪个分类：直接用映射后的 TaskInfo.status，口径与引擎一致。 */
+private fun lanInScope(scope: String, status: String): Boolean = when (scope) {
+    "all" -> true
+    "active" -> status == "active"
+    "waiting" -> status == "waiting"
+    "stopped" -> status == "complete" || status == "error"
+    else -> false // seeding / paused：传输任务没有这两态
+}
+
+/** 分类 chip 上的数字也要算上传输任务，否则「全部」和列表条数对不上。 */
+private fun withLanCounts(counts: Map<String, Int>, lanTasks: List<LanTask>): Map<String, Int> {
+    if (lanTasks.isEmpty()) return counts
+    val merged = counts.toMutableMap()
+    merged["all"] = (merged["all"] ?: 0) + lanTasks.size
+    merged["active"] = (merged["active"] ?: 0) + lanTasks.count { it.uiStatus == "active" }
+    merged["waiting"] = (merged["waiting"] ?: 0) + lanTasks.count { it.uiStatus == "waiting" }
+    merged["stopped"] = (merged["stopped"] ?: 0) +
+        lanTasks.count { it.uiStatus == "complete" || it.uiStatus == "error" }
+    return merged
+}
+
+/**
+ * 把引擎任务与传输任务合成一行列表并按当前排序方式排。
+ *
+ * 两边统一按 TaskInfo 的字段取排序键（传输任务的剩余时间未知，排最后）。
+ */
+private fun mergeTaskRows(
+    engineTasks: List<TaskInfo>,
+    lanTasks: List<LanTask>,
+    sortBy: String
+): List<TaskRow> {
+    val field = sortBy.substringBeforeLast('_')
+    val ascending = sortBy.endsWith("_asc")
+
+    fun key(task: TaskInfo): Long = when (field) {
+        "finished_at" -> task.finishedAt
+        "remaining" -> task.remainingSeconds.let { if (it < 0) Long.MAX_VALUE else it }
+        "speed" -> task.downloadSpeed
+        "size" -> task.totalLength
+        else -> task.finishedAt
+    }
+
+    val rows = engineTasks.map { key(it) to TaskRow.Engine(it) } +
+        lanTasks.map { key(it.toTaskInfo()) to TaskRow.Lan(it) }
+    val sorted = if (ascending) rows.sortedBy { it.first } else rows.sortedByDescending { it.first }
+    val ordered = if (field == "finished_at") {
+        val (known, unknown) = sorted.partition { it.first > 0L }
+        known + unknown
+    } else sorted
+    return ordered.map { it.second }
+}
+
 @Composable
 private fun TaskList(
-    tasks: List<TaskInfo>,
+    rows: List<TaskRow>,
     selectionMode: Boolean,
     selectedGids: List<String>,
+    selectedLanIds: List<String>,
     onTaskClick: (String) -> Unit,
     onToggleStatus: (String) -> Unit,
     onToggleSelect: (String) -> Unit,
+    onToggleLanSelect: (String) -> Unit,
     onEnterSelection: (String) -> Unit,
+    onEnterLanSelection: (String) -> Unit,
     onDeleteTask: (String) -> Unit,
+    onTransferClick: (LanTask) -> Unit,
+    onTransferCancel: (String) -> Unit,
+    onTransferRemove: (String) -> Unit,
     bottomPadding: Dp
 ) {
     LazyColumn(
@@ -4097,26 +4249,62 @@ private fun TaskList(
             start = 0.dp, end = 0.dp, top = 4.dp, bottom = bottomPadding
         )
     ) {
-        itemsIndexed(tasks, key = { _, it -> it.gid }) { index, task ->
-            SwipeActionCard(
-                task = task,
-                enabled = !selectionMode,
-                onToggleStatus = { onToggleStatus(task.gid) },
-                onDelete = { onDeleteTask(task.gid) },
-                modifier = Modifier.animateItem()
-            ) {
-                TaskCard(
-                    task = task,
-                    selectionMode = selectionMode,
-                    selected = selectedGids.contains(task.gid),
-                    onClick = { onTaskClick(task.gid) },
-                    onToggleStatus = { onToggleStatus(task.gid) },
-                    onToggleSelect = { onToggleSelect(task.gid) },
-                    onEnterSelection = { onEnterSelection(task.gid) }
-                )
+        itemsIndexed(rows, key = { _, row -> row.rowKey }) { index, row ->
+            when (row) {
+                is TaskRow.Engine -> {
+                    val task = row.task
+                    SwipeActionCard(
+                        task = task,
+                        enabled = !selectionMode,
+                        onToggleStatus = { onToggleStatus(task.gid) },
+                        onDelete = { onDeleteTask(task.gid) },
+                        modifier = Modifier.animateItem()
+                    ) {
+                        TaskCard(
+                            task = task,
+                            selectionMode = selectionMode,
+                            selected = selectedGids.contains(task.gid),
+                            onClick = { onTaskClick(task.gid) },
+                            onToggleStatus = { onToggleStatus(task.gid) },
+                            onToggleSelect = { onToggleSelect(task.gid) },
+                            onEnterSelection = { onEnterSelection(task.gid) }
+                        )
+                    }
+                }
+                is TaskRow.Lan -> {
+                    val card = row.card
+                    val onOpen: () -> Unit = { onTransferClick(row.task) }
+                    // 左滑「暂停/继续」位：排队/传输中 → 取消；已结束 → 与点击一致（打开收到的文件）
+                    val onAction: () -> Unit = {
+                        when (row.task.status) {
+                            "waiting", "active" -> onTransferCancel(row.task.id)
+                            else -> onOpen()
+                        }
+                    }
+                    SwipeActionCard(
+                        task = card,
+                        enabled = !selectionMode,
+                        onToggleStatus = onAction,
+                        onDelete = { onTransferRemove(row.task.id) },
+                        modifier = Modifier.animateItem()
+                    ) {
+                        // 与普通任务同一张卡片：同样的标题/进度/状态色/完成时间；
+                        // 长按/点按也走同一套移除模式（删除映射到 lan.remove）
+                        TaskCard(
+                            task = card,
+                            lanTask = row.task,
+                            selectionMode = selectionMode,
+                            selected = selectedLanIds.contains(row.task.id),
+                            onClick = onOpen,
+                            onToggleStatus = onAction,
+                            onToggleSelect = { onToggleLanSelect(row.task.id) },
+                            onEnterSelection = { onEnterLanSelection(row.task.id) }
+                        )
+                    }
+                }
             }
             // 任务之间的划分横杠，左右留空间
-            if (index < tasks.lastIndex) {
+            if (index < rows.lastIndex) {
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 16.dp),
                     color = MaterialTheme.colorScheme.outlineVariant,
@@ -4253,6 +4441,33 @@ private fun SwipeActionCard(
     }
 }
 
+/**
+ * 传输卡片左下角的专属标识文案：方向本身就能说明这是传输任务。
+ * 传输中 / 完成按方向给词（发送中 / 已接收…）；等待 / 失败再补上方向前缀。
+ */
+@Composable
+private fun lanTaskStatusLabel(task: LanTask): String {
+    val out = task.direction == "out"
+    val direction = stringResource(if (out) R.string.transfer_direction_out else R.string.transfer_direction_in)
+    return when (task.status) {
+        "active" -> stringResource(
+            if (out) R.string.transfer_status_out_active else R.string.transfer_status_in_active
+        )
+        "done" -> stringResource(
+            if (out) R.string.transfer_status_out_done else R.string.transfer_status_in_done
+        )
+        "waiting" -> "$direction · ${stringResource(R.string.transfer_status_waiting)}"
+        else -> {
+            val reason = when (task.error) {
+                "cancelled" -> stringResource(R.string.transfer_cancelled)
+                "interrupted" -> stringResource(R.string.transfer_interrupted)
+                else -> stringResource(R.string.transfer_status_error)
+            }
+            "$direction · $reason"
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TaskCard(
@@ -4263,7 +4478,8 @@ private fun TaskCard(
     onToggleStatus: () -> Unit,
     onToggleSelect: () -> Unit,
     onEnterSelection: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    lanTask: LanTask? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val statusColor = Color(statusColor(task.status))
@@ -4271,6 +4487,13 @@ private fun TaskCard(
     val isActive = task.status == "active"
     val isError = task.status == "error"
     val interactionSource = remember { MutableInteractionSource() }
+
+    // 传输行左下角不套下载口径：方向图标 + 方向/状态 + 设备 + 进度
+    val lan = lanTask
+    val transferLabel = lan?.let { lanTaskStatusLabel(it) } ?: ""
+    val transferPeer = lan?.let { it.peerName.ifBlank { it.peerAddress } } ?: ""
+    // 传输标识是信息行的一部分：图标与文字统一用常规色，不跟着完成态变绿
+    val transferTint = colorScheme.onSurfaceVariant
 
     // 选中态仅用卡片背景表达，布局零变化（高度恒定）
     val selectionBackground by animateColorAsState(
@@ -4328,33 +4551,84 @@ private fun TaskCard(
 
         Spacer(Modifier.height(6.dp))
 
-        // 底部信息行：左下角「已下载/总大小 ｜ 百分比」，右下角速度与剩余/完成/错误时间
+        // 底部信息行：左下角「已下载/总大小 ｜ 百分比」（传输行先放方向/状态，再放同样的大小），
+        // 右下角速度与剩余/完成/错误时间
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "${formatBytes(task.completedLength)} / ${formatBytes(task.totalLength)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = colorScheme.onSurfaceVariant,
-                maxLines = 1
-            )
-            Spacer(Modifier.width(7.dp))
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .height(13.dp)
-                    .background(colorScheme.outlineVariant)
-            )
-            Spacer(Modifier.width(7.dp))
-            Text(
-                text = "${task.percent}%",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = when {
-                    isError -> colorScheme.error
-                    isActive -> colorScheme.primary
-                    else -> colorScheme.onSurfaceVariant
+            if (lan != null) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        if (lan.direction == "out") Icons.Rounded.Upload else Icons.Rounded.Download,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = transferTint
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        transferLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = transferTint,
+                        maxLines = 1
+                    )
+                    // 设备名让位给大小：屏幕窄时先收缩它（省略号），大小与百分比始终保留
+                    if (transferPeer.isNotBlank()) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            transferPeer,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                    }
+                    if (task.totalLength > 0) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "${formatBytes(task.completedLength)} / ${formatBytes(task.totalLength)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colorScheme.onSurfaceVariant,
+                            maxLines = 1
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "${task.percent}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (isError) colorScheme.error else colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-            )
-            Spacer(Modifier.weight(1f))
+            } else {
+                Text(
+                    text = "${formatBytes(task.completedLength)} / ${formatBytes(task.totalLength)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+                Spacer(Modifier.width(7.dp))
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(13.dp)
+                        .background(colorScheme.outlineVariant)
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    text = "${task.percent}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = when {
+                        isError -> colorScheme.error
+                        isActive -> colorScheme.primary
+                        else -> colorScheme.onSurfaceVariant
+                    }
+                )
+                Spacer(Modifier.weight(1f))
+            }
             when {
                 task.status == "active" -> {
                     if (task.downloadSpeed > 0) {
@@ -4513,31 +4787,36 @@ private fun EmptyState() {
 // ─── 打开已下载的文件 ───
 
 private fun openTaskFile(context: android.content.Context, task: com.lerxu.android.model.TaskInfo) {
-    try {
-        // 路径解析：优先 files[0]（引擎会话新任务均有）；
-        // 回退「目录 + 任务名」——旧版本引擎会话恢复的任务 files 可能为空。
-        // 回退结果是目录（多文件 BT 种子名 = 数据目录）时，取目录内最大的
-        // 常规文件打开，避免只会弹"无法确定位置"。
-        var filePath = task.filePath
-        if (filePath.isEmpty() && task.fileName.isNotBlank() && task.dir.isNotBlank()) {
-            filePath = java.io.File(task.dir, task.fileName).absolutePath
-        }
-        if (filePath.isEmpty()) {
-            android.widget.Toast.makeText(context, context.getString(R.string.toast_file_location_unknown), android.widget.Toast.LENGTH_SHORT).show()
+    // 路径解析：优先 files[0]（引擎会话新任务均有）；
+    // 回退「目录 + 任务名」——旧版本引擎会话恢复的任务 files 可能为空。
+    // 回退结果是目录（多文件 BT 种子名 = 数据目录）时，取目录内最大的
+    // 常规文件打开，避免只会弹"无法确定位置"。
+    var filePath = task.filePath
+    if (filePath.isEmpty() && task.fileName.isNotBlank() && task.dir.isNotBlank()) {
+        filePath = java.io.File(task.dir, task.fileName).absolutePath
+    }
+    if (filePath.isEmpty()) {
+        android.widget.Toast.makeText(context, context.getString(R.string.toast_file_location_unknown), android.widget.Toast.LENGTH_SHORT).show()
+        return
+    }
+    var file = java.io.File(filePath)
+    if (file.isDirectory) {
+        val inner = file.listFiles()
+            ?.filter { it.isFile }
+            ?.maxByOrNull { it.length() }
+        if (inner != null && inner.exists()) {
+            file = inner
+        } else {
+            android.widget.Toast.makeText(context, context.getString(R.string.toast_is_directory), android.widget.Toast.LENGTH_SHORT).show()
             return
         }
-        var file = java.io.File(filePath)
-        if (file.isDirectory) {
-            val inner = file.listFiles()
-                ?.filter { it.isFile }
-                ?.maxByOrNull { it.length() }
-            if (inner != null && inner.exists()) {
-                file = inner
-            } else {
-                android.widget.Toast.makeText(context, context.getString(R.string.toast_is_directory), android.widget.Toast.LENGTH_SHORT).show()
-                return
-            }
-        }
+    }
+    openLocalFile(context, file)
+}
+
+/** 用系统查看器打开一个本地文件（局域网接收完成的文件也走这里）。 */
+private fun openLocalFile(context: android.content.Context, file: java.io.File) {
+    try {
         if (!file.exists()) {
             android.widget.Toast.makeText(context, context.getString(R.string.toast_file_not_exist), android.widget.Toast.LENGTH_SHORT).show()
             return
@@ -4563,4 +4842,16 @@ private fun openTaskFile(context: android.content.Context, task: com.lerxu.andro
             context, context.getString(R.string.toast_open_failed, e.message ?: ""), android.widget.Toast.LENGTH_SHORT
         ).show()
     }
+}
+
+/**
+ * 局域网传输行的点击：只有「接收完成 + 引擎给了落盘路径」才打开文件。
+ * 发送任务没有可打开的目标，其它状态（排队/传输中/失败）也不做任何事 ——
+ * 这些行没有 gid，不能进普通任务详情。
+ */
+private fun openLanTask(context: android.content.Context, task: LanTask) {
+    if (task.direction != "in" || task.status != "done") return
+    val path = task.path ?: return
+    if (path.isBlank()) return
+    openLocalFile(context, java.io.File(path))
 }

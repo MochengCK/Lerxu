@@ -1,6 +1,7 @@
 import { spawn, execFile } from 'node:child_process'
-import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile } from 'node:fs'
+import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import os from 'node:os'
 import is from 'electron-is'
 
 import logger from './LogManager'
@@ -65,6 +66,10 @@ export default class Engine {
     // 强制结束主进程），PID 文件会残留且对应进程仍存活，此时若直接
     // spawn 新进程会导致两个引擎并存，旧进程继续下载、占用端口。
     await this.killStaleProcess(pidPath)
+
+    // 首次启动给互传落一份"默认关闭"的配置：旧引擎二进制的默认值是开启，
+    // 这里在拉起前补文件，保证新安装默认不暴露设备。已有配置不覆盖。
+    this.ensureLanConfigDefault()
 
     // 启动前截断旧日志，防止日志文件无限增长占用磁盘
     this.truncateEngineLog()
@@ -144,6 +149,41 @@ export default class Engine {
     // 同步发信号杀掉引擎，否则任何异步路径（will-quit/setImmediate/
     // setTimeout）都可能在主进程退出前没机会执行。
     this.registerExitHandlers()
+  }
+
+  /** 是否至少有一张网卡带全局 IPv6（2000::/3）；仅 ULA/链路本地不算。 */
+  hasGlobalIpv6 () {
+    try {
+      const interfaces = os.networkInterfaces()
+      for (const list of Object.values(interfaces)) {
+        for (const item of list || []) {
+          const family = `${item.family || ''}`.toLowerCase()
+          if ((family !== 'ipv6' && family !== '6') || item.internal) continue
+          const first = `${item.address || ''}`.toLowerCase().split(':')[0]
+          if (/^[23][0-9a-f]{0,3}$/.test(first)) return true
+        }
+      }
+    } catch (_) {}
+    return false
+  }
+
+  /** 互传首次启动默认关闭（lan-config.json 与引擎会话同目录，即 userData 根）。 */
+  ensureLanConfigDefault () {
+    try {
+      const dir = getUserDataPath()
+      const lanConfigPath = resolve(dir, 'lan-config.json')
+      if (existsSync(lanConfigPath)) {
+        return
+      }
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(
+        lanConfigPath,
+        JSON.stringify({ enabled: false, deviceName: '', recvDir: '' }, null, 2),
+        'utf8'
+      )
+    } catch (e) {
+      logger.warn('[Lerxu] seed lan config failed:', e && e.message ? e.message : e)
+    }
   }
 
   /**
@@ -710,7 +750,17 @@ export default class Engine {
     for (const k of btToggleKeys) {
       const v = this.systemConfig[k]
       if (v !== undefined) {
-        args.push(`--${k}=${v === true || v === 'true' ? 'true' : 'false'}`)
+        let enabled = v === true || v === 'true'
+        // 没有全局 IPv6 时双栈 DHT 会让 IPv4 发现一起失效（实测所有
+        // bootstrap/get_peers 都超时）；此时强制走 IPv4，并纠正持久化配置。
+        if (k === 'enable-dht6' && enabled && !this.hasGlobalIpv6()) {
+          enabled = false
+          try {
+            this.configManager?.setSystemConfig('enable-dht6', false)
+          } catch (_) {}
+          logger.info('[Lerxu] no global IPv6; DHT over IPv6 disabled')
+        }
+        args.push(`--${k}=${enabled ? 'true' : 'false'}`)
       }
     }
     const diskCache = this.systemConfig['disk-cache']

@@ -273,3 +273,99 @@ data class EngineEvent(
 data class AddTaskResult(
     @SerialName("gid") val gid: String = ""
 )
+
+// ─── 端手互通 · 局域网传输（引擎 lan.* 原生方法） ───
+
+/** 发现到的对端设备（`lan.peers` 的元素）。 */
+/** 互传设置（`lan.config` / `lan.setConfig` 的返回）。 */
+@Serializable
+data class LanConfig(
+    @SerialName("enabled") val enabled: Boolean = true,
+    @SerialName("running") val running: Boolean = false,
+    @SerialName("deviceName") val deviceName: String = "",
+    @SerialName("deviceId") val deviceId: String = "",
+    @SerialName("platform") val platform: String = "",
+    @SerialName("recvDir") val recvDir: String = "",
+    @SerialName("defaultRecvDir") val defaultRecvDir: String = "",
+    @SerialName("error") val error: String = ""
+)
+
+@Serializable
+data class LanPeer(
+    @SerialName("id") val id: String = "",
+    @SerialName("name") val name: String = "",
+    @SerialName("platform") val platform: String = "",
+    @SerialName("address") val address: String = "",
+    @SerialName("port") val port: Int = 0
+)
+
+/**
+ * 一条局域网传输任务（`lan.tasks` / `lan.send` 的元素），字段与协议第 3 节一致。
+ *
+ * 引擎不提供速度，[speed] 是本机按两次轮询的字节增量算出来的，只用于界面显示
+ * （`@Transient`：不参与序列化）。
+ */
+@Serializable
+data class LanTask(
+    @SerialName("id") val id: String = "",
+    @SerialName("direction") val direction: String = "out",
+    @SerialName("name") val name: String = "",
+    @SerialName("size") val size: Long = -1,
+    @SerialName("transferred") val transferred: Long = 0,
+    @SerialName("status") val status: String = "waiting",
+    @SerialName("peerName") val peerName: String = "",
+    @SerialName("peerAddress") val peerAddress: String = "",
+    @SerialName("error") val error: String = "",
+    @SerialName("sas") val sas: String = "",
+    @SerialName("createdAt") val createdAt: Long = 0,
+    @SerialName("finishedAt") val finishedAt: Long? = null,
+    @SerialName("path") val path: String? = null,
+    @SerialName("peerId") val peerId: String? = null,
+    @SerialName("sourcePath") val sourcePath: String? = null,
+    @Transient val speed: Long = 0
+) {
+    /** 引擎状态 → 普通任务的 `TaskInfo.status`（卡片/状态色/筛选共用一套口径）。 */
+    val uiStatus: String
+        get() = when (status) {
+            "done" -> "complete"
+            "error" -> "error"
+            "active" -> "active"
+            else -> "waiting"
+        }
+
+    val isFinished: Boolean get() = status == "done" || status == "error"
+
+    /**
+     * 映射成普通任务：`gid = id`，进度/大小/速度/完成时间一一对应，
+     * 文件名放进 `files[0].path`（[TaskInfo.fileName] 取的就是 basename）。
+     * 接收完成的任务直接用引擎的落盘路径（[path]），打开文件时不用二次拼接。
+     * 这样卡片、分隔线、状态色、完成时间全部复用普通任务那一套，不需要独立样式。
+     */
+    fun toTaskInfo(): TaskInfo = TaskInfo(
+        gid = id,
+        status = uiStatus,
+        totalLength = if (size > 0) size else 0,
+        completedLength = transferred.coerceAtLeast(0),
+        downloadSpeed = speed,
+        errorMessage = error,
+        finishedAt = finishedAt ?: 0,
+        files = listOf(
+            TaskFile(
+                index = 1,
+                path = if (direction == "in") path?.takeIf { it.isNotBlank() } ?: name else name,
+                length = if (size > 0) size else 0,
+                completedLength = transferred.coerceAtLeast(0)
+            )
+        )
+    )
+}
+
+@Serializable
+internal data class LanPeersResponse(
+    @SerialName("peers") val peers: List<LanPeer> = emptyList()
+)
+
+@Serializable
+internal data class LanTasksResponse(
+    @SerialName("tasks") val tasks: List<LanTask> = emptyList()
+)

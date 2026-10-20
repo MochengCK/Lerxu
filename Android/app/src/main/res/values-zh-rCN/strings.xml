@@ -122,6 +122,50 @@
     <string name="file_picker_failed">无法打开文件选择器：%1$s</string>
     <string name="add_task_failed">添加任务失败: %1$s</string>
 
+    <!-- 局域网文件传输 -->
+    <string name="transfer_mode">文件传输</string>
+    <string name="transfer_send">发送</string>
+    <string name="transfer_no_devices">同一局域网内暂无设备</string>
+    <string name="transfer_pick_files">选择文件</string>
+    <string name="transfer_pick_hint">点击选择要发送的文件（可多选）</string>
+    <string name="transfer_nearby_devices">附近设备</string>
+    <string name="transfer_select_device">选择一台设备</string>
+    <string name="transfer_no_files">尚未选择文件</string>
+    <string name="transfer_saved_to">已保存到 %1$s</string>
+    <string name="transfer_direction_in">接收</string>
+    <string name="transfer_direction_out">发送</string>
+    <string name="transfer_status_out_active">发送中</string>
+    <string name="transfer_status_in_active">接收中</string>
+    <string name="transfer_status_out_done">已发送</string>
+    <string name="transfer_status_in_done">已接收</string>
+    <string name="transfer_status_waiting">等待中</string>
+    <string name="transfer_status_error">失败</string>
+    <string name="transfer_cancelled">已取消</string>
+    <string name="transfer_disabled_title">互传已关闭</string>
+    <string name="transfer_disabled_sub">在 设置 → 互传 里开启后，即可选择附近设备发送文件</string>
+    <string name="settings_category_lanshare">互传</string>
+    <string name="lan_share_enabled">启用互传</string>
+    <string name="lan_share_enabled_desc">关闭后本机不会被附近设备发现；进行中的传输会中断</string>
+    <string name="lan_share_device_name">本机设备名称</string>
+    <string name="lan_share_device_name_desc">附近设备看到的名字</string>
+    <string name="lan_share_recv_dir">接收文件保存位置</string>
+    <string name="lan_share_recv_dir_desc">修改只影响之后接收的文件</string>
+    <string name="lan_share_choose_dir">选择目录</string>
+    <string name="lan_share_use_default">恢复默认</string>
+    <string name="lan_share_default_hint">默认：%1$s</string>
+    <string name="lan_share_start_failed">互传启动失败：%1$s</string>
+    <string name="lan_share_load_failed">读取互传设置失败</string>
+    <string name="lan_share_save_failed">保存互传设置失败</string>
+    <string name="lan_share_saved">互传设置已保存</string>
+    <string name="lan_share_name_required">设备名不能为空</string>
+    <string name="lan_share_name_too_long">设备名最多 64 个字符</string>
+    <string name="lan_share_dir_invalid">请选择可写的文件夹</string>
+    <string name="lan_share_save">保存</string>
+    <string name="transfer_status_done_at">完成 · %1$s</string>
+    <string name="transfer_status_error_at">失败 · %1$s</string>
+    <string name="transfer_interrupted">已中断</string>
+    <string name="transfer_selected_count">已选 %1$d 个文件</string>
+
     <!-- Delete confirm dialog -->
     <string name="delete_one_task">删除任务？</string>
     <string name="delete_multiple_tasks">删除 %1$d 个任务？</string>

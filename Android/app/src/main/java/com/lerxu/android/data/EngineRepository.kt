@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
 import android.util.Log
 import com.lerxu.android.engine.EngineManager
 import com.lerxu.android.engine.EngineRpcClient
@@ -12,6 +13,8 @@ import com.lerxu.android.model.*
 import com.lerxu.android.R
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
@@ -45,6 +48,13 @@ class EngineRepository private constructor(
         private const val STAT_POLL_MIN_MS = 500L
         private const val STAT_POLL_MAX_MS = 30_000L
         private const val STAT_POLL_HIDDEN_MS = 3_000L
+
+        /** content:// → 本地文件的中转目录（cacheDir 下）。 */
+        private const val LAN_SEND_DIR = "lan-send"
+
+        /** 局域网任务轮询：有排队/传输中的任务就快一点，全空闲时放慢。 */
+        private const val LAN_POLL_BUSY_MS = 700L
+        private const val LAN_POLL_IDLE_MS = 2_500L
 
         @Volatile
         private var instance: EngineRepository? = null
@@ -109,6 +119,24 @@ class EngineRepository private constructor(
     private var initialSyncDone = false
     private var currentScope = "all"
 
+    // ─── 局域网传输（引擎 lan.*） ───
+    //
+    // 引擎不推送 lan 任务事件（只有 task.* 事件），只能按短周期轮询；
+    // 设备列表跟着一起刷新，代价很小（本机 WebSocket 调用）。
+
+    private val _lanPeers = MutableStateFlow<List<LanPeer>>(emptyList())
+    val lanPeers: StateFlow<List<LanPeer>> = _lanPeers.asStateFlow()
+
+    private val _lanTasks = MutableStateFlow<List<LanTask>>(emptyList())
+    val lanTasks: StateFlow<List<LanTask>> = _lanTasks.asStateFlow()
+
+    private var lanPollJob: Job? = null
+    private val lanMutex = Mutex()
+    /** 上一轮轮询的 (已传字节, 时刻)：引擎没有速度字段，靠差值算。 */
+    private val lanSpeedSamples = mutableMapOf<String, Pair<Long, Long>>()
+    /** content:// 落盘后的临时发送文件：任务 id → 文件（任务结束即删）。 */
+    private val lanTempFiles = java.util.concurrent.ConcurrentHashMap<String, MutableList<java.io.File>>()
+
     // ─── 全局速度轮询状态 ───
     // 引擎只在被问到时才算速度（stat_raw 汇总各任务的无锁原子速度），没有推送事件，
     // 所以顶栏速度必须靠这个循环刷新，否则会停在旧采样值上。
@@ -160,6 +188,8 @@ class EngineRepository private constructor(
                         // 停掉速度轮询并清零：断线后若留着上一个采样值，
                         // 顶栏会一直显示一个早已失效的速度
                         stopStatPolling()
+                        stopLanPolling()
+                        _lanPeers.value = emptyList()
                         _uiState.update { it.copy(connected = false, globalStat = GlobalStat()) }
                     }
                 }
@@ -171,6 +201,11 @@ class EngineRepository private constructor(
             rpcClient.events.collect { event ->
                 handleEvent(event)
             }
+        }
+
+        // 上次进程被杀时残留的发送临时文件：此进程刚起来，不可能有在途传输，直接清空
+        scope.launch {
+            runCatching { lanSendDir().deleteRecursively() }
         }
     }
 
@@ -186,6 +221,7 @@ class EngineRepository private constructor(
 
     fun stop() {
         stopStatPolling()
+        stopLanPolling()
         scope.launch {
             // 断开前先让引擎把会话落盘（任务进度/终态时间戳不丢）
             try {
@@ -220,6 +256,9 @@ class EngineRepository private constructor(
         // 首帧速度立刻有值，之后交给自适应轮询持续刷新
         refreshGlobalStat()
         startStatPolling()
+        // 局域网设备 + 传输任务：首次立刻拉一次，之后短周期轮询
+        refreshLan()
+        startLanPolling()
         // 内置订阅源：首次运行时注入常用 BT tracker 订阅（异步，不阻塞连接流程）
         scope.launch { seedPresetSubscriptions() }
     }
@@ -574,4 +613,190 @@ class EngineRepository private constructor(
     fun getTaskByGid(gid: String): TaskInfo? = taskMap[gid]
 
     fun getRpcClient(): EngineRpcClient = rpcClient
+
+    // ─── 局域网传输（引擎 lan.*） ───
+
+    /** 互传设置：总开关 / 设备名 / 接收目录。 */
+    suspend fun lanConfig(): LanConfig = rpcClient.lanConfig()
+
+    suspend fun setLanConfig(
+        enabled: Boolean? = null,
+        deviceName: String? = null,
+        recvDir: String? = null
+    ): LanConfig = rpcClient.setLanConfig(enabled, deviceName, recvDir)
+
+    /** 手动刷新一次设备列表与传输任务（面板打开时调用，不必等轮询）。 */
+    fun refreshLan() {
+        scope.launch { refreshLanNow() }
+    }
+
+    private fun startLanPolling() {
+        if (lanPollJob?.isActive == true) return
+        lanPollJob = scope.launch {
+            while (isActive) {
+                refreshLanNow()
+                val busy = _lanTasks.value.any { it.status == "active" || it.status == "waiting" }
+                delay(if (busy) LAN_POLL_BUSY_MS else LAN_POLL_IDLE_MS)
+            }
+        }
+    }
+
+    private fun stopLanPolling() {
+        lanPollJob?.cancel()
+        lanPollJob = null
+    }
+
+    /** 拉一次 `lan.peers` + `lan.tasks`，顺手算速度、清掉已完成任务的临时发送文件。 */
+    private suspend fun refreshLanNow() {
+        lanMutex.withLock {
+            try {
+                _lanPeers.value = rpcClient.lanPeers()
+            } catch (e: Exception) {
+                Log.w(TAG, "lan.peers failed: ${e.message}")
+            }
+
+            try {
+                val now = System.currentTimeMillis()
+                val tasks = rpcClient.lanTasks().map { task ->
+                    val previous = lanSpeedSamples[task.id]
+                    val speed = if (task.status == "active" && previous != null) {
+                        val elapsed = now - previous.second
+                        if (elapsed > 0) {
+                            ((task.transferred - previous.first) * 1000 / elapsed).coerceAtLeast(0L)
+                        } else 0L
+                    } else 0L
+                    lanSpeedSamples[task.id] = task.transferred to now
+                    task.copy(speed = speed)
+                }
+                lanSpeedSamples.keys.retainAll(tasks.map { it.id }.toSet())
+                tasks.filter { it.isFinished }.forEach { releaseLanTemp(it.id) }
+                _lanTasks.value = tasks
+            } catch (e: Exception) {
+                Log.w(TAG, "lan.tasks failed: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * 发送一组 `content://` Uri。
+     *
+     * 引擎只认**文件路径**，所以先把每个 Uri 拷到 `cacheDir/lan-send/`（保留原显示名），
+     * 再把绝对路径交给 `lan.send`：
+     * - 拷贝或入队失败 → 立刻删掉本次所有拷贝；
+     * - 入队成功 → 保留拷贝，等对应任务变成 done/error 再删（引擎是异步读文件，
+     *   传完路径就删会让它读到半个文件/报错）；进程被杀留下的残留在下次启动时清空。
+     *
+     * @return null 表示已入队；否则是给用户看的错误信息。
+     */
+    suspend fun sendLanFiles(peerId: String, uris: List<Uri>): String? {
+        if (uris.isEmpty()) return null
+        val dir = lanSendDir().apply { mkdirs() }
+        val copies = mutableListOf<java.io.File>()
+        try {
+            for (uri in uris) {
+                val target = uniqueSendFile(dir, queryDisplayName(uri))
+                val input = context.contentResolver.openInputStream(uri)
+                    ?: throw java.io.IOException("无法读取所选文件")
+                input.use { source ->
+                    target.outputStream().use { sink -> source.copyTo(sink, 64 * 1024) }
+                }
+                copies += target
+            }
+
+            val created = rpcClient.lanSend(peerId, copies.map { it.absolutePath })
+            val taskIdByPath = created.mapNotNull { task ->
+                task.sourcePath?.let { it to task.id }
+            }.toMap()
+            for (copy in copies) {
+                val taskId = taskIdByPath[copy.absolutePath]
+                if (taskId == null) {
+                    runCatching { copy.delete() }
+                } else {
+                    lanTempFiles.getOrPut(taskId) { mutableListOf() } += copy
+                }
+            }
+            refreshLanNow()
+            return null
+        } catch (e: Exception) {
+            copies.forEach { runCatching { it.delete() } }
+            Log.w(TAG, "lan.send failed: ${e.message}")
+            return e.message ?: e.javaClass.simpleName
+        }
+    }
+
+    /** 取消一条排队/传输中的传输任务。 */
+    fun cancelLanTask(id: String) {
+        scope.launch {
+            try {
+                rpcClient.lanCancel(id)
+            } catch (e: Exception) {
+                Log.w(TAG, "lan.cancel failed: ${e.message}")
+            }
+            refreshLanNow()
+        }
+    }
+
+    /**
+     * 从任务表移除一条传输任务（传输中的引擎会先取消）。
+     *
+     * [deleteFiles] 只作用于**接收完成**的落盘文件；发送任务的源文件是用户自己的，
+     * 任何时候都不能由这里删掉。
+     */
+    fun removeLanTask(id: String, deleteFiles: Boolean = false) {
+        val finishedIncoming = _lanTasks.value.firstOrNull { it.id == id }
+            ?.takeIf { it.direction == "in" && it.status == "done" }
+        scope.launch {
+            try {
+                rpcClient.lanRemove(id)
+            } catch (e: Exception) {
+                Log.w(TAG, "lan.remove failed: ${e.message}")
+            }
+            if (deleteFiles) {
+                finishedIncoming?.path
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { path -> runCatching { java.io.File(path).takeIf { f -> f.isFile }?.delete() } }
+            }
+            releaseLanTemp(id)
+            refreshLanNow()
+        }
+    }
+
+    private fun lanSendDir(): java.io.File = java.io.File(context.cacheDir, LAN_SEND_DIR)
+
+    private fun releaseLanTemp(id: String) {
+        lanTempFiles.remove(id)?.forEach { runCatching { it.delete() } }
+    }
+
+    /** SAF Uri 的显示名（引擎用路径的 file_name 当任务名，所以这里保留原名）。 */
+    private fun queryDisplayName(uri: Uri): String {
+        val displayName = try {
+            context.contentResolver.query(
+                uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getString(0) else null
+            }
+        } catch (e: Exception) {
+            null
+        }
+        val raw = displayName ?: uri.lastPathSegment.orEmpty().substringAfterLast('/')
+        val cleaned = raw.replace('\\', '/').substringAfterLast('/')
+            .filter { it.code >= 32 && it.code != 127 }
+            .trim()
+        return cleaned.ifEmpty { "file" }
+    }
+
+    private fun uniqueSendFile(dir: java.io.File, name: String): java.io.File {
+        var candidate = java.io.File(dir, name)
+        if (!candidate.exists()) return candidate
+        val dot = name.lastIndexOf('.')
+        val hasExt = dot > 0 && dot < name.length - 1
+        val base = if (hasExt) name.substring(0, dot) else name
+        val ext = if (hasExt) name.substring(dot) else ""
+        var index = 1
+        while (candidate.exists()) {
+            candidate = java.io.File(dir, "$base ($index)$ext")
+            index++
+        }
+        return candidate
+    }
 }

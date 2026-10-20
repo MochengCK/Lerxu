@@ -46,13 +46,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.ContentPaste
+import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.RadioButtonUnchecked
+import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -61,6 +67,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -94,6 +101,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.lerxu.android.R
 import com.lerxu.android.engine.EngineManager
+import com.lerxu.android.model.LanPeer
 import com.lerxu.android.model.TaskFile
 import com.lerxu.android.ui.TaskViewModel
 import com.lerxu.android.ui.formatBytes
@@ -105,8 +113,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** 输入区的两种模式（滑块那两档）。 */
-private enum class AddMode { Link, Local }
+/** 输入区的三种模式（滑块那三档）。 */
+private enum class AddMode { Link, Local, Transfer }
+
+/** 文件传输面板里已选中的本地文件（保留显示名，免得发送时再查一遍）。 */
+private data class PickedFile(val uri: Uri, val name: String)
 
 /**
  * 添加任务 —— 底部**悬浮卡片**。
@@ -115,8 +126,9 @@ private enum class AddMode { Link, Local }
  * （左右 14dp、底部 = 导航条 + 12dp，软键盘弹出时整体抬到键盘之上）。
  * **整张卡片就是那个输入框**：输入区与功能条共用同一个底色，没有任何色块差异、
  * 分隔线或横杠；输入框里只有文字本身（左侧无图标、两侧都不显示链接类型）。
- * 输入卡片**上方悬浮**一枚「链接 / 本地播放」滑块（独立组件、圆角、左右不贴边、
- * 无阴影）；切到本地播放后，卡片里只留一个「选择文件」入口，选完直接起播。
+ * 输入卡片**上方悬浮**一枚「链接 / 本地播放 / 文件传输」滑块（独立组件、圆角、
+ * 左右不贴边、无阴影）；切到本地播放后，卡片里只留一个「选择文件」入口，选完直接起播；
+ * 切到文件传输后，卡片里是同局域网设备、已选文件与传输进度。
  * 功能条一行三段：左「📁 目录」、中「选种子文件」、右「＋ 添加」—— 元素只有图标
  * 与文字，不带任何底色/描边；目录这一行点按也不出现背景高亮。目录 / 种子文件 /
  * 本地播放的文件选择都走系统选择器。
@@ -176,10 +188,24 @@ fun AddTaskDialog(
     var torrentName by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var clipboardSuggestion by remember { mutableStateOf<String?>(null) }
-    // 链接 / 本地播放
+    // 链接 / 本地播放 / 文件传输
     var mode by remember { mutableStateOf(AddMode.Link) }
     // 自动聚焦只发生在**刚打开这一下**：从目录 / 种子 / 本地播放选择器回来时不再抢焦点
     var autoFocusPending by remember { mutableStateOf(true) }
+
+    // ── 文件传输（设备与任务都来自引擎 lan.*，安卓端不再自己跑发现） ──
+    val peers by viewModel.lanPeers.collectAsState()
+    var selectedPeerId by remember { mutableStateOf<String?>(null) }
+    var pickedFiles by remember { mutableStateOf<List<PickedFile>>(emptyList()) }
+    // 总开关关闭时，传输面板只显示提示，不拉起设备/文件选择
+    var lanEnabled by remember { mutableStateOf(true) }
+    val selectedPeer = peers.firstOrNull { it.id == selectedPeerId }
+
+    // 选中的设备离线后清掉选择，避免"发给一台已经看不见的机器"
+    LaunchedEffect(peers) {
+        val current = selectedPeerId
+        if (current != null && peers.none { it.id == current }) selectedPeerId = null
+    }
 
     var pendingGid by remember { mutableStateOf<String?>(null) }
     var pendingName by remember { mutableStateOf("") }
@@ -422,13 +448,68 @@ fun AddTaskDialog(
         }
     }
 
-    val selectMode: (Boolean) -> Unit = { local ->
-        val next = if (local) AddMode.Local else AddMode.Link
+    // ── 文件传输：系统选择器（多选） ──
+    val transferPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) {
+            scope.launch {
+                val added = withContext(Dispatchers.IO) {
+                    uris.map { uri ->
+                        val fallback = uri.lastPathSegment.orEmpty().substringAfterLast('/')
+                        PickedFile(uri, queryFileName(context, uri) ?: fallback.ifEmpty { "file" })
+                    }
+                }
+                // 同一个文件重复选不叠加
+                pickedFiles = (pickedFiles + added).distinctBy { it.uri }
+            }
+        }
+    }
+
+    val pickTransferFiles: () -> Unit = {
+        closeInputFocus()
+        val failure = tryLaunch { transferPicker.launch(arrayOf("*/*")) }
+        if (failure != null) {
+            error = context.getString(
+                R.string.file_picker_failed,
+                failure.message ?: failure.javaClass.simpleName
+            )
+        }
+    }
+
+    // 入队成功就收起弹窗：进度回主页任务列表里看；失败留在弹窗里让用户重试
+    val sendTransfer: () -> Unit = {
+        val peer = selectedPeer
+        val files = pickedFiles
+        if (peer != null && files.isNotEmpty()) {
+            error = null
+            scope.launch {
+                // content:// → cacheDir 拷贝 + lan.send 都在 Repository 里做
+                val failure = viewModel.sendLanFiles(peer.id, files.map { it.uri })
+                if (failure == null) {
+                    pickedFiles = emptyList()
+                    dismissAnimated()
+                } else {
+                    error = failure
+                }
+            }
+        }
+    }
+
+    val selectMode: (AddMode) -> Unit = { next ->
         if (next != mode) {
-            autoFocusPending = false
+            // 切回「链接」要**自动聚焦并拉起键盘**（用户点名）；切到本地/传输则清焦点
+            autoFocusPending = next == AddMode.Link
             focusManager.clearFocus()
             keyboard?.hide()
             mode = next
+            if (next == AddMode.Transfer) {
+                // 不用等 2.5s 的轮询，进面板先拉一次设备与互传开关
+                viewModel.refreshLan()
+                scope.launch {
+                    viewModel.getLanConfig()?.let { lanEnabled = it.enabled }
+                }
+            }
         }
     }
 
@@ -454,7 +535,7 @@ fun AddTaskDialog(
                     abortPending(false)
                     dismissAnimated()
                 }
-                mode == AddMode.Local -> mode = AddMode.Link
+                mode != AddMode.Link -> mode = AddMode.Link
                 else -> dismissAnimated()
             }
         },
@@ -509,7 +590,7 @@ fun AddTaskDialog(
                         .padding(horizontal = 14.dp)
                         .padding(bottom = 12.dp)
                 ) {
-                    // 「链接 / 本地播放」是**独立的一枚滑块**，悬浮在输入卡片上方，
+                    // 「链接 / 本地播放 / 文件传输」是**独立的一枚滑块**，悬浮在输入卡片上方，
                     // 不裹在卡片里；只有输入阶段（phase 0）出现
                     AnimatedVisibility(
                         visible = phase == 0,
@@ -523,7 +604,7 @@ fun AddTaskDialog(
                             horizontalArrangement = Arrangement.Center
                         ) {
                             AddModeSwitch(
-                                local = mode == AddMode.Local,
+                                mode = mode,
                                 onSelect = selectMode
                             )
                         }
@@ -742,6 +823,19 @@ fun AddTaskDialog(
                                         ) { m ->
                                             if (m == AddMode.Local) {
                                                 LocalPlayPane(onPick = pickLocalMedia)
+                                            } else if (m == AddMode.Transfer) {
+                                                TransferPane(
+                                                    enabled = lanEnabled,
+                                                    peers = peers,
+                                                    selectedPeer = selectedPeer,
+                                                    onSelectPeer = { selectedPeerId = it },
+                                                    files = pickedFiles,
+                                                    onRemoveFile = { pickedFiles = pickedFiles - it },
+                                                    error = error,
+                                                    onPickFiles = pickTransferFiles,
+                                                    onSend = sendTransfer,
+                                                    sendEnabled = selectedPeer != null && pickedFiles.isNotEmpty()
+                                                )
                                             } else {
                                                 Column(Modifier.fillMaxWidth()) {
                                                     // 输入框里只有文字本身：**不显示链接类型、也没有左侧图标**
@@ -882,6 +976,360 @@ fun AddTaskDialog(
     }
 }
 
+// ─── 文件传输面板 ───
+
+/**
+ * 「文件传输」面板。
+ *
+ * 自上而下只有三块，没有任何小标题：
+ * 1. 大块可点的**文件选择框**（图标 + 文案，点击拉起系统多选）；
+ * 2. 「附近设备」选择行（左侧当前设备名称 / 平台，右侧在线点 + 箭头，点开选择面板）；
+ * 3. 发送。
+ * 传输进度不在这里重复展示 —— 主任务列表已经把它们并进去了。
+ */
+@Composable
+private fun TransferPane(
+    enabled: Boolean,
+    peers: List<LanPeer>,
+    selectedPeer: LanPeer?,
+    onSelectPeer: (String) -> Unit,
+    files: List<PickedFile>,
+    onRemoveFile: (PickedFile) -> Unit,
+    error: String?,
+    onPickFiles: () -> Unit,
+    onSend: () -> Unit,
+    sendEnabled: Boolean
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    var devicePickerOpen by remember { mutableStateOf(false) }
+
+    if (!enabled) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 30.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                Icons.Rounded.Devices,
+                contentDescription = null,
+                modifier = Modifier.size(30.dp),
+                tint = colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                stringResource(R.string.transfer_disabled_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                stringResource(R.string.transfer_disabled_sub),
+                style = MaterialTheme.typography.bodySmall,
+                color = colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+        return
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // ── 文件选择框（大块可点区域，左上角不放任何标题）──
+        // 已选文件挂在同一个框的下半部分，保证第一项就是"选文件"。
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(colorScheme.surfaceContainerHigh)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 108.dp)
+                    .clickable(onClick = onPickFiles),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        Icons.Rounded.Upload,
+                        contentDescription = null,
+                        modifier = Modifier.size(26.dp),
+                        tint = colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.transfer_pick_files),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colorScheme.onSurface
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = if (files.isEmpty()) {
+                            stringResource(R.string.transfer_pick_hint)
+                        } else {
+                            stringResource(R.string.transfer_selected_count, files.size)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            if (files.isNotEmpty()) {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 88.dp)
+                        .padding(horizontal = 12.dp)
+                ) {
+                    items(files.size) { index ->
+                        val file = files[index]
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                file.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .clickable { onRemoveFile(file) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.close),
+                                    modifier = Modifier.size(13.dp),
+                                    tint = colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+
+        error?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = colorScheme.error,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
+
+        // ── 底部一行：附近设备选择框（占剩余宽度）+ 发送（最右）──
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { devicePickerOpen = true }
+                    .padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Rounded.Devices,
+                    contentDescription = null,
+                    modifier = Modifier.size(17.dp),
+                    tint = colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = selectedPeer?.name ?: stringResource(R.string.transfer_nearby_devices),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = if (selectedPeer != null) FontWeight.SemiBold else FontWeight.Normal,
+                        color = colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    // 选中后这里只留名称；平台 / IP 属于「附近设备」弹窗里的辨识信息
+                    if (selectedPeer == null) {
+                        Text(
+                            text = if (peers.isEmpty()) stringResource(R.string.transfer_no_devices)
+                            else stringResource(R.string.transfer_select_device),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (selectedPeer != null) {
+                    Box(
+                        Modifier
+                            .size(6.dp)
+                            .background(lerxuExtraColors.success, CircleShape)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Icon(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(Modifier.width(4.dp))
+
+            // 发送 —— 主色文字，位置与「添加」一致（最右）
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(enabled = sendEnabled, onClick = onSend)
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val tint = if (sendEnabled) colorScheme.primary
+                else colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                Icon(
+                    Icons.AutoMirrored.Rounded.Send,
+                    contentDescription = null,
+                    modifier = Modifier.size(17.dp),
+                    tint = tint
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    stringResource(R.string.transfer_send),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = tint
+                )
+            }
+        }
+    }
+
+    // 设备选择面板：一行一台（名称 + 平台/IP + 在线点）
+    if (devicePickerOpen) {
+        Dialog(onDismissRequest = { devicePickerOpen = false }) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = colorScheme.surface
+            ) {
+                Column(modifier = Modifier.padding(vertical = 12.dp)) {
+                    Text(
+                        stringResource(R.string.transfer_nearby_devices),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                    if (peers.isEmpty()) {
+                        Text(
+                            stringResource(R.string.transfer_no_devices),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 320.dp)
+                                .padding(horizontal = 6.dp)
+                        ) {
+                            items(peers.size) { index ->
+                                val peer = peers[index]
+                                PeerRow(
+                                    peer = peer,
+                                    selected = peer.id == selectedPeer?.id,
+                                    onClick = {
+                                        onSelectPeer(peer.id)
+                                        devicePickerOpen = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 一行一台设备：名称 + 平台/IP + 在线点；选中时只有一层浅色高亮。 */
+@Composable
+private fun PeerRow(
+    peer: LanPeer,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(
+                if (selected) colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            if (peer.platform.equals("android", ignoreCase = true)) Icons.Rounded.PhoneAndroid
+            else Icons.Rounded.Computer,
+            contentDescription = null,
+            modifier = Modifier.size(17.dp),
+            tint = if (selected) colorScheme.primary else colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                peer.name,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (selected) colorScheme.primary else colorScheme.onSurface
+            )
+            Text(
+                "${platformLabel(peer.platform)} · ${peer.address}",
+                style = MaterialTheme.typography.labelSmall,
+                color = colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Box(
+            Modifier
+                .size(6.dp)
+                .background(lerxuExtraColors.success, CircleShape)
+        )
+    }
+}
+
+/** 平台名只是设备类型的展示，不随语言翻译。 */
+private fun platformLabel(platform: String): String = when (platform.lowercase()) {
+    "macos" -> "macOS"
+    "windows" -> "Windows"
+    "linux" -> "Linux"
+    "android" -> "Android"
+    else -> platform.ifBlank { "unknown" }
+}
+
 // ─── 本地播放入口 ───
 
 /**
@@ -992,24 +1440,27 @@ private fun AddUrlField(
 }
 
 /**
- * 「链接 ⇄ 本地播放」滑块：一枚**独立**的圆角胶囊，悬浮在输入卡片上方。
+ * 「链接 / 本地播放 / 文件传输」滑块：一枚**独立**的圆角胶囊，悬浮在输入卡片上方。
  *
  * 不裹进输入卡片里、也不带投影；只有文字（没有图标），高亮块 240ms 滑动。
+ * 三档时胶囊整体加宽到 0.88（每档宽度与两档时基本一致），位移按档位序号算。
  * 选中文字用 onPrimary，在弹窗的白底/深色底上都是同一套读法。
  */
 @Composable
 private fun AddModeSwitch(
-    local: Boolean,
-    onSelect: (Boolean) -> Unit,
+    mode: AddMode,
+    onSelect: (AddMode) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colorScheme = MaterialTheme.colorScheme
+    val modes = remember { AddMode.values().toList() }
     val slide by animateFloatAsState(
-        targetValue = if (local) 1f else 0f,
+        targetValue = mode.ordinal.toFloat(),
         animationSpec = tween(240, easing = FastOutSlowInEasing),
         label = "addModeSlide"
     )
     val onAccent = colorScheme.onPrimary
+    val inset = 4.dp
 
     Surface(
         modifier = modifier,
@@ -1019,34 +1470,38 @@ private fun AddModeSwitch(
         BoxWithConstraints(
             modifier = Modifier
                 .height(34.dp)
-                .fillMaxWidth(0.52f)
+                .fillMaxWidth(0.88f)
         ) {
-            val segment = maxWidth / 2
-            val insetX = 4.dp
+            val segment = (maxWidth - inset * 2) / modes.size
             Box(
                 modifier = Modifier
-                    .padding(horizontal = insetX, vertical = 3.dp)
-                    .width(segment - insetX)
+                    .padding(horizontal = inset, vertical = 3.dp)
+                    .width(segment)
                     .fillMaxHeight()
-                    .offset(x = (segment - insetX) * slide)
+                    .offset(x = segment * slide)
                     .clip(RoundedCornerShape(15.dp))
                     .background(colorScheme.primary)
             )
-            Row(Modifier.fillMaxSize()) {
-                AddModeSegment(
-                    label = stringResource(R.string.link_mode),
-                    selected = !local,
-                    selectedColor = if (!local) onAccent else colorScheme.onSurfaceVariant,
-                    onClick = { onSelect(false) },
-                    modifier = Modifier.weight(1f)
-                )
-                AddModeSegment(
-                    label = stringResource(R.string.local_playback),
-                    selected = local,
-                    selectedColor = if (local) onAccent else colorScheme.onSurfaceVariant,
-                    onClick = { onSelect(true) },
-                    modifier = Modifier.weight(1f)
-                )
+            Row(
+                Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = inset)
+            ) {
+                modes.forEach { entry ->
+                    AddModeSegment(
+                        label = stringResource(
+                            when (entry) {
+                                AddMode.Link -> R.string.link_mode
+                                AddMode.Local -> R.string.local_playback
+                                AddMode.Transfer -> R.string.transfer_mode
+                            }
+                        ),
+                        selected = entry == mode,
+                        selectedColor = if (entry == mode) onAccent else colorScheme.onSurfaceVariant,
+                        onClick = { onSelect(entry) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         }
     }
@@ -1179,7 +1634,7 @@ private const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.docu
  * - `1A2B-3C4D:Movies` → `/storage/1A2B-3C4D/Movies`（可移动存储）。
  * 网盘、媒体库等没有真实路径的提供方返回 null，交给调用方提示用户。
  */
-private fun treeUriToPath(uri: Uri): String? = try {
+internal fun treeUriToPath(uri: Uri): String? = try {
     when (uri.authority) {
         EXTERNAL_STORAGE_AUTHORITY -> {
             val docId = DocumentsContract.getTreeDocumentId(uri)

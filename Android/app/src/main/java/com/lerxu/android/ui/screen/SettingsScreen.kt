@@ -3,6 +3,7 @@ package com.lerxu.android.ui.screen
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Language
@@ -97,6 +99,7 @@ import com.lerxu.android.browser.SearchEngines
 import com.lerxu.android.engine.EngineManager
 import com.lerxu.android.model.BtSubscription
 import com.lerxu.android.model.EngineVersion
+import com.lerxu.android.model.LanConfig
 import com.lerxu.android.ui.MainActivity
 import com.lerxu.android.ui.TaskViewModel
 import com.lerxu.android.ui.formatBytes
@@ -370,7 +373,10 @@ fun SettingsScreen(
                         .padding(horizontal = 16.dp)
                 ) {
                     if (cat == null) {
-                        SettingsCategoryHome(onPick = { category = it })
+                        SettingsCategoryHome(
+                            showLanShare = engineVersion?.features?.contains("lan-config") == true,
+                            onPick = { category = it }
+                        )
                         Spacer(Modifier.height(sheetBottomGap(12.dp)))
                     } else {
                         Spacer(Modifier.height(6.dp))
@@ -994,6 +1000,14 @@ fun SettingsScreen(
                     color = colorScheme.primary
                 )
             }
+        }
+
+        // ── 互传：总开关 / 设备名 / 接收目录（旧引擎没有 lan-config 能力时隐藏）──
+        if (cat == SettingsCategory.LanShare &&
+            engineVersion?.features?.contains("lan-config") == true
+        ) {
+            LanShareSettings(viewModel)
+            Spacer(Modifier.height(sheetBottomGap(12.dp)))
         }
 
         // ── 启动：默认入口（下载器 / 浏览器）──
@@ -1782,6 +1796,7 @@ private enum class SettingsCategory(
 ) {
     Download(R.string.settings_category_download, Icons.Outlined.Download),
     Bt(R.string.settings_category_bt, Icons.Outlined.SwapVert),
+    LanShare(R.string.settings_category_lanshare, Icons.Outlined.Devices),
     Browser(R.string.settings_category_browser, Icons.Outlined.Language),
     Appearance(R.string.settings_category_appearance, Icons.Outlined.Palette),
     General(R.string.settings_category_general, Icons.Outlined.Tune),
@@ -1829,7 +1844,10 @@ private enum class SettingsCategoryGroup(
     val titleRes: Int,
     val categories: List<SettingsCategory>
 ) {
-    Transfer(R.string.settings_group_transfer, listOf(SettingsCategory.Download, SettingsCategory.Bt)),
+    Transfer(
+        R.string.settings_group_transfer,
+        listOf(SettingsCategory.Download, SettingsCategory.Bt, SettingsCategory.LanShare)
+    ),
     Browsing(R.string.settings_group_browsing, listOf(SettingsCategory.Browser, SettingsCategory.Appearance)),
     System(R.string.settings_group_system, listOf(SettingsCategory.General, SettingsCategory.About))
 }
@@ -1840,10 +1858,16 @@ private enum class SettingsCategoryGroup(
  * 条目之间不再画横杠，靠分组标题与卡片间距区分。
  */
 @Composable
-private fun SettingsCategoryHome(onPick: (SettingsCategory) -> Unit) {
+private fun SettingsCategoryHome(
+    showLanShare: Boolean,
+    onPick: (SettingsCategory) -> Unit
+) {
     val colorScheme = MaterialTheme.colorScheme
     Column(modifier = Modifier.padding(top = 12.dp)) {
         SettingsCategoryGroup.entries.forEach { group ->
+            val categories = group.categories.filter {
+                it != SettingsCategory.LanShare || showLanShare
+            }
             Text(
                 stringResource(group.titleRes),
                 style = MaterialTheme.typography.labelMedium,
@@ -1856,7 +1880,7 @@ private fun SettingsCategoryHome(onPick: (SettingsCategory) -> Unit) {
                 color = colorScheme.surfaceContainerHigh
             ) {
                 Column {
-                    group.categories.forEach { cat ->
+                    categories.forEach { cat ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1911,6 +1935,247 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
         }
     }
     Spacer(Modifier.height(14.dp))
+}
+
+/**
+ * 互传设置：总开关、附近设备看到的本机名称、接收文件保存目录。
+ *
+ * 全部走引擎 `lan.config` / `lan.setConfig`：改完立即生效（设备名热更新，
+ * 总开关会拉起/停掉发现与接收），不需要重启引擎。
+ */
+@Composable
+private fun LanShareSettings(viewModel: TaskViewModel) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val colorScheme = MaterialTheme.colorScheme
+
+    var config by remember { mutableStateOf<LanConfig?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var saving by remember { mutableStateOf(false) }
+    var deviceName by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+
+    fun apply(next: LanConfig) {
+        config = next
+        deviceName = next.deviceName
+        error = ""
+    }
+
+    fun save(
+        enabledChange: Boolean? = null,
+        deviceNameChange: String? = null,
+        recvDirChange: String? = null
+    ) {
+        if (saving) return
+        saving = true
+        scope.launch {
+            val result = viewModel.setLanConfig(enabledChange, deviceNameChange, recvDirChange)
+            result.onSuccess {
+                apply(it)
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.lan_share_saved),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }.onFailure {
+                error = it.message ?: context.getString(R.string.lan_share_save_failed)
+                Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+            }
+            saving = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val loaded = viewModel.getLanConfig()
+        if (loaded != null) apply(loaded) else error = context.getString(R.string.lan_share_load_failed)
+        loading = false
+    }
+
+    val dirPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val path = treeUriToPath(uri)
+            when {
+                path == null -> Toast.makeText(
+                    context,
+                    context.getString(R.string.select_local_directory),
+                    Toast.LENGTH_SHORT
+                ).show()
+                !java.io.File(path).canWrite() -> Toast.makeText(
+                    context,
+                    context.getString(R.string.directory_not_writable),
+                    Toast.LENGTH_SHORT
+                ).show()
+                else -> save(recvDirChange = path)
+            }
+        }
+    }
+
+    val current = config
+    Column(Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(4.dp))
+        Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = colorScheme.surfaceContainerHigh,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.lan_share_enabled),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            stringResource(R.string.lan_share_enabled_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = current?.enabled == true,
+                        onCheckedChange = { if (!saving && !loading) save(enabledChange = it) },
+                        enabled = !saving && !loading && current != null,
+                        colors = lerxuSwitchColors()
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.lan_share_device_name),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        stringResource(R.string.lan_share_device_name_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = deviceName,
+                        onValueChange = { deviceName = it },
+                        singleLine = true,
+                        enabled = !loading && !saving && current != null,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = {
+                                val name = deviceName.trim()
+                                when {
+                                    name.isEmpty() -> Toast.makeText(
+                                        context,
+                                        context.getString(R.string.lan_share_name_required),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    name.length > 64 -> Toast.makeText(
+                                        context,
+                                        context.getString(R.string.lan_share_name_too_long),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    else -> save(deviceNameChange = name)
+                                }
+                            },
+                            enabled = !loading && !saving && current != null &&
+                                deviceName.trim().isNotEmpty() &&
+                                deviceName.trim() != current?.deviceName
+                        ) {
+                            Text(stringResource(R.string.lan_share_save))
+                        }
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.lan_share_recv_dir),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        stringResource(R.string.lan_share_recv_dir_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        current?.recvDir ?: "-",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(
+                            onClick = { dirPicker.launch(null) },
+                            enabled = !loading && !saving && current != null
+                        ) {
+                            Text(stringResource(R.string.lan_share_choose_dir))
+                        }
+                        TextButton(
+                            onClick = { save(recvDirChange = "") },
+                            enabled = !loading && !saving && current != null
+                        ) {
+                            Text(stringResource(R.string.lan_share_use_default))
+                        }
+                    }
+                    Text(
+                        stringResource(
+                            R.string.lan_share_default_hint,
+                            current?.defaultRecvDir ?: "-"
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // 正常/关闭状态不显示文案；只有读取或启动失败时才提示原因
+                val statusText = if (error.isNotEmpty()) {
+                    error
+                } else if (loading) {
+                    ""
+                } else {
+                    val shown = config
+                    if (shown == null) {
+                        stringResource(R.string.lan_share_load_failed)
+                    } else if (shown.enabled && !shown.running) {
+                        stringResource(
+                            R.string.lan_share_start_failed,
+                            shown.error.ifBlank { "-" }
+                        )
+                    } else {
+                        ""
+                    }
+                }
+                if (statusText.isNotEmpty()) {
+                    Text(
+                        statusText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.error,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp)
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

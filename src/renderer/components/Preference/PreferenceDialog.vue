@@ -70,11 +70,13 @@ import { useAppStore } from '@/store'
 import { storeToRefs } from 'pinia'
 import PreferenceBasic from '@/components/Preference/Basic.vue'
 import PreferenceAdvanced from '@/components/Preference/Advanced.vue'
+import PreferenceLanShare from '@/components/Preference/LanShare.vue'
 
 // 导入侧边栏导航图标
 import '@/components/Icons/preference-basic'
 import '@/components/Icons/preference-appearance'
 import '@/components/Icons/preference-transfer'
+import '@/components/Icons/sync'
 import '@/components/Icons/preference-bt'
 import '@/components/Icons/preference-extension'
 import '@/components/Icons/preference-task'
@@ -85,7 +87,7 @@ import '@/components/Icons/video'
 const { t } = i18n.global
 const appStore = useAppStore()
 
-const { preferenceVisible, preferenceCategory } = storeToRefs(appStore)
+const { preferenceVisible, preferenceCategory, engineInfo } = storeToRefs(appStore)
 
 const dialogVisible = computed({
   get: () => preferenceVisible.value,
@@ -93,6 +95,12 @@ const dialogVisible = computed({
 })
 
 const currentCategory = computed(() => preferenceCategory.value || 'basic')
+
+// 互传设置依赖引擎的 lan.config / lan.setConfig；旧引擎不显示这个分类
+const lanShareSupported = computed(() => {
+  const features = engineInfo.value && engineInfo.value.features
+  return Array.isArray(features) && features.includes('lan-config')
+})
 
 const contentRef = ref(null)
 
@@ -112,6 +120,9 @@ const preferenceNavSections = computed(() => [
     label: t('preferences.section-download'),
     items: [
       { value: 'transfer', label: t('preferences.transfer-settings'), icon: 'preference-transfer' },
+      ...(lanShareSupported.value
+        ? [{ value: 'share', label: t('preferences.lan-share'), icon: 'sync' }]
+        : []),
       { value: 'bt', label: t('preferences.bt-settings'), icon: 'preference-bt' },
       { value: 'task', label: t('preferences.task-manage'), icon: 'preference-task' },
       { value: 'file', label: t('preferences.file-manage'), icon: 'preference-file' }
@@ -138,6 +149,8 @@ const preferenceFormComponent = computed(() => {
   switch (currentCategory.value) {
     case 'advanced':
       return PreferenceAdvanced
+    case 'share':
+      return PreferenceLanShare
     default:
       return PreferenceBasic
   }

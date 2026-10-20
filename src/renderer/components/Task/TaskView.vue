@@ -851,6 +851,47 @@ function handleDeleteTaskRecord (payload) {
   })
 }
 
+/**
+ * 端手互通：移除一条传输记录。
+ * 与普通任务同一条确认口径；只有「接收完成」的记录才有可删的落盘文件，
+ * 发送任务的源文件不能由这里删除。
+ */
+function handleRemoveLanTask (payload) {
+  const task = payload && payload.task
+  if (!task || !task.id) {
+    return
+  }
+  const taskName = `${task.name || ''}`.trim() || `${task.id}`
+  const canDeleteFile = task.direction === 'in' && task.status === 'done' && !!task.path
+  const confirmAndRemove = (deleteFile) => {
+    const deletePath = deleteFile && canDeleteFile ? task.path : ''
+    ipcRenderer.invoke('lan:remove', task.id, { deletePath }).then((result) => {
+      if (result && result.ok === false) {
+        msg.error(t('task.transfer-action-fail'))
+      }
+    }).catch(() => {
+      msg.error(t('task.transfer-action-fail'))
+    })
+  }
+  if (noConfirmBeforeDelete.value) {
+    confirmAndRemove(false)
+    return
+  }
+  dialog.showMessageBox({
+    type: 'warning',
+    title: t('task.transfer-remove-record'),
+    message: t('task.transfer-remove-confirm', { taskName }),
+    buttons: [t('app.yes'), t('app.no')],
+    cancelId: 1,
+    checkboxLabel: canDeleteFile ? t('task.transfer-remove-file-label') : undefined,
+    checkboxChecked: false
+  }).then(({ response, checkboxChecked }) => {
+    if (response === 0) {
+      confirmAndRemove(!!checkboxChecked)
+    }
+  })
+}
+
 function handleBatchDeleteTask (payload) {
   const { deleteWithFiles } = payload
   if (selectedGidListCount.value === 0) {
@@ -966,6 +1007,7 @@ onMounted(() => {
   commands.on('reveal-in-folder', handleRevealInFolder)
   commands.on('delete-task', handleDeleteTask)
   commands.on('delete-task-record', handleDeleteTaskRecord)
+  commands.on('remove-lan-task', handleRemoveLanTask)
   commands.on('batch-delete-task', handleBatchDeleteTask)
   commands.on('copy-task-link', handleCopyTaskLink)
   commands.on('show-task-info', handleShowTaskInfo)
@@ -997,6 +1039,7 @@ onUnmounted(() => {
   commands.off('reveal-in-folder', handleRevealInFolder)
   commands.off('delete-task', handleDeleteTask)
   commands.off('delete-task-record', handleDeleteTaskRecord)
+  commands.off('remove-lan-task', handleRemoveLanTask)
   commands.off('batch-delete-task', handleBatchDeleteTask)
   commands.off('copy-task-link', handleCopyTaskLink)
   commands.off('show-task-info', handleShowTaskInfo)

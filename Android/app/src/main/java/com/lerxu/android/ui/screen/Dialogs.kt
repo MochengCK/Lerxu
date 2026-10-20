@@ -259,6 +259,7 @@ fun DialogDivider() {
 @Composable
 fun DeleteConfirmDialog(
     count: Int,
+    deleteFilesApplicable: Boolean = true,
     onConfirm: (deleteFiles: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -267,30 +268,32 @@ fun DeleteConfirmDialog(
     BottomConfirmDialog(
         title = if (count > 1) stringResource(R.string.delete_multiple_tasks, count)
         else stringResource(R.string.delete_one_task),
-        subtitle = if (deleteFiles) stringResource(R.string.delete_with_files_msg)
+        subtitle = if (deleteFilesApplicable && deleteFiles) stringResource(R.string.delete_with_files_msg)
         else stringResource(R.string.delete_record_only_msg),
         confirmLabel = stringResource(R.string.delete),
-        onConfirm = { onConfirm(deleteFiles) },
+        onConfirm = { onConfirm(deleteFilesApplicable && deleteFiles) },
         onDismiss = onDismiss,
         content = {
-            Spacer(Modifier.height(6.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { deleteFiles = !deleteFiles },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Checkbox(
-                    checked = deleteFiles,
-                    onCheckedChange = { deleteFiles = it },
-                    colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    stringResource(R.string.delete_local_files),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
+            if (deleteFilesApplicable) {
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { deleteFiles = !deleteFiles },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = deleteFiles,
+                        onCheckedChange = { deleteFiles = it },
+                        colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        stringResource(R.string.delete_local_files),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
     )

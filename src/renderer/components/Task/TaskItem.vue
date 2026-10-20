@@ -14,7 +14,28 @@
         <span ref="taskNameText" :class="['task-name__text', { 'is-truncated': taskNameTruncated }]">{{ taskFullName }}</span>
       </mo-hover-tip>
     </div>
-    <mo-task-item-actions mode="LIST" :task="task" />
+    <mo-task-item-actions v-if="!lan" mode="LIST" :task="task" />
+    <!-- 局域网传输：没有引擎 gid，动作走 lan.*；控制按钮与普通卡片同一套外观 -->
+    <div v-else-if="lanActions.length > 0" class="task-item-actions-wrapper">
+      <ul class="task-item-actions">
+        <li
+          v-for="action in lanActions"
+          :key="action.key"
+          class="task-item-action"
+        >
+          <mo-hover-tip
+            effect="dark"
+            :content="action.label"
+            placement="top"
+            :open-delay="500"
+          >
+            <i @click.stop="runLanAction(action)">
+              <mo-icon :name="action.icon" width="14" height="14" />
+            </i>
+          </mo-hover-tip>
+        </li>
+      </ul>
+    </div>
     <div class="task-progress">
       <mo-task-progress
         :completed="Number(task.completedLength)"
@@ -39,6 +60,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, nextTick, getCurrentInstance } from 'vue'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
+import { ipcRenderer } from 'electron'
 import { basename } from 'node:path'
 import { checkTaskIsSeeder, getTaskName, ellipsis, isEd2kTask, isMagnetTask } from '@shared/utils'
 import { TASK_STATUS } from '@shared/constants'
@@ -62,6 +84,11 @@ const props = defineProps({
   resizeVersion: {
     type: Number,
     default: 0
+  },
+  // 端手互通：这条是引擎 lan 任务（没有引擎 gid），屏蔽所有引擎动作
+  lan: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -80,7 +107,51 @@ const { taskDisplayNames, pendingFileSelection } = storeToRefs(taskStore)
 const taskNameTruncated = ref(false)
 const taskNameText = ref(null)
 
-const showTaskTypeBadge = computed(() => preferenceConfig.value?.showTaskTypeBadge === true)
+const showTaskTypeBadge = computed(() => preferenceConfig.value?.showTaskTypeBadge === true && !props.lan)
+
+// ── 端手互通：引擎 lan 任务（原始对象挂在 task.lanTask 上）──────────
+const lanRaw = computed(() => (props.task && props.task.lanTask) || null)
+const lanIsActive = computed(() => {
+  const status = lanRaw.value && lanRaw.value.status
+  return status === 'waiting' || status === 'active'
+})
+
+const lanActions = computed(() => {
+  const raw = lanRaw.value
+  if (!props.lan || !raw) return []
+  const actions = []
+  if (raw.direction === 'in' && raw.status === 'done' && raw.path) {
+    actions.push({ key: 'open', run: 'open', icon: 'folder', label: t('task.transfer-open-folder') })
+  }
+  if (raw.direction === 'out' && lanIsActive.value) {
+    actions.push({ key: 'cancel', run: 'cancel', icon: 'task-stop-line', label: t('task.transfer-cancel') })
+  }
+  // 引擎的 remove 对未完成任务会先取消再删记录，所以任何状态都能移除
+  actions.push({ key: 'remove', run: 'remove', icon: 'trash', label: t('task.transfer-remove-record') })
+  return actions
+})
+
+async function runLanAction (action) {
+  const raw = lanRaw.value
+  if (!raw || !action) return
+  try {
+    if (action.run === 'open') {
+      await ipcRenderer.invoke('lan:open-folder', raw.path)
+      return
+    }
+    if (action.run === 'remove') {
+      // 与普通任务同一条确认流程（TaskView 里弹系统对话框）
+      commands.emit('remove-lan-task', { task: raw })
+      return
+    }
+    const result = await ipcRenderer.invoke('lan:cancel', raw.id)
+    if (result && result.ok === false) {
+      instance.proxy.$msg.error(t('task.transfer-action-fail'))
+    }
+  } catch (_) {
+    instance.proxy.$msg.error(t('task.transfer-action-fail'))
+  }
+}
 
 const taskType = computed(() => {
   const type = props.task?.taskType ? `${props.task.taskType}`.toLowerCase() : ''
@@ -300,6 +371,14 @@ function updateTaskNameTruncation () {
 }
 
 function onDbClick () {
+  if (props.lan) {
+    const raw = lanRaw.value
+    // 传输卡片只对"接收完成"有本地动作：打开所在文件夹
+    if (raw && raw.direction === 'in' && raw.status === 'done' && raw.path) {
+      ipcRenderer.invoke('lan:open-folder', raw.path).catch(() => {})
+    }
+    return
+  }
   const { status } = props.task
   const { COMPLETE, WAITING, PAUSED, ACTIVE, MERGING } = TASK_STATUS
   if (status === COMPLETE) {

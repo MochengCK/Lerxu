@@ -509,6 +509,60 @@ class EngineRpcClient private constructor(
         })
         return result.toString().contains("\"ok\":true")
     }
+
+    // ─── 端手互通 · 局域网传输（引擎 xfer-lan 的原生方法） ───
+
+    /** 互传设置：总开关、设备名、接收目录。 */
+    suspend fun lanConfig(): LanConfig =
+        call("lan.config", serializer = LanConfig.serializer())
+
+    /** 只提交本次改动的字段；返回应用后的完整配置。 */
+    suspend fun setLanConfig(
+        enabled: Boolean? = null,
+        deviceName: String? = null,
+        recvDir: String? = null
+    ): LanConfig {
+        val params = buildJsonObject {
+            if (enabled != null) put("enabled", enabled)
+            if (deviceName != null) put("deviceName", deviceName)
+            if (recvDir != null) put("recvDir", recvDir)
+        }
+        return call("lan.setConfig", params, LanConfig.serializer())
+    }
+
+    /** 在线设备列表。 */
+    suspend fun lanPeers(): List<LanPeer> =
+        call("lan.peers", serializer = LanPeersResponse.serializer()).peers
+
+    /** 最近 50 条传输任务（最新在前）。 */
+    suspend fun lanTasks(): List<LanTask> =
+        call("lan.tasks", serializer = LanTasksResponse.serializer()).tasks
+
+    /**
+     * 把本地文件排进发送队列。
+     *
+     * [paths] 必须是**引擎进程可读的绝对路径**（content:// 要先落到 cacheDir 再传），
+     * 返回本次新建的任务（顺序与 paths 一致，带 sourcePath 便于和临时文件对账）。
+     */
+    suspend fun lanSend(peerId: String, paths: List<String>): List<LanTask> {
+        val params = buildJsonObject {
+            put("peer", peerId)
+            put("paths", JsonArray(paths.map { JsonPrimitive(it) }))
+        }
+        return call("lan.send", params, LanTasksResponse.serializer()).tasks
+    }
+
+    /** 移除一条传输任务（正在传输的会先取消）。 */
+    suspend fun lanRemove(id: String): Boolean {
+        val result = callRaw("lan.remove", buildJsonObject { put("id", id) })
+        return result.toString().contains("\"ok\":true")
+    }
+
+    /** 取消一条排队/传输中的任务（已完成/已失败的为空操作）。 */
+    suspend fun lanCancel(id: String): Boolean {
+        val result = callRaw("lan.cancel", buildJsonObject { put("id", id) })
+        return result.toString().contains("\"ok\":true")
+    }
 }
 
 /**

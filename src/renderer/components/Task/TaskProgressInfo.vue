@@ -2,11 +2,32 @@
   <div class="task-progress-info-wrap">
   <div class="task-progress-info">
   <div class="task-progress-info-left">
+      <!-- 局域网传输任务：**方向 / 状态 / 设备名 / 百分比**。它优先于下面
+           所有分支 —— 传输任务不是下载，套用「已下载 / 总大小」会丢掉
+           "发给谁 / 来自谁"这层信息，也认不出这是传输记录。 -->
+      <div v-if="isTransferTask" class="task-transfer-info">
+        <i class="task-transfer-icon">
+          <mo-icon :name="transferMarkIcon" width="11" height="11" />
+        </i>
+        <span>{{ transferStatusText }}</span>
+        <template v-if="transferPeerText">
+          <span class="task-progress-sep"></span>
+          <span class="task-transfer-peer">{{ transferPeerText }}</span>
+        </template>
+        <template v-if="transferSizeText">
+          <span class="task-progress-sep"></span>
+          <span class="task-transfer-size">{{ transferSizeText }}</span>
+        </template>
+        <template v-if="transferPercentText">
+          <span class="task-progress-sep"></span>
+          <span class="task-progress-percent">{{ transferPercentText }}</span>
+        </template>
+      </div>
       <!-- 直播录制任务：**当前状态 + 已录制时长 + 已录制大小**，状态左侧是
            录制图标（录制中为红点，其余状态随文字色变灰）。它优先于下面所有
            分支 —— 直播的总长是未知的（流在生长），"已下载 / 总大小 / 百分比"
            那套在此没有意义。 -->
-      <div v-if="isLiveTask" class="task-live-info">
+      <div v-else-if="isLiveTask" class="task-live-info">
         <i class="task-live-record" :class="{ 'is-recording': isLiveRecording }">
           <mo-icon name="record" width="11" height="11" />
         </i>
@@ -56,40 +77,48 @@
         <span>{{ statusRightText }}</span>
       </div>
       <div class="task-speed-info" v-else-if="isActive && !isSeeder">
-        <div class="task-speed-text" v-if="isBT">
-          <i><mo-icon name="arrow-up" width="10" height="14" /></i>
-          <span>{{ bytesToSize(task.uploadSpeed) }}/s</span>
-        </div>
-        <div class="task-speed-text">
-          <i><mo-icon name="arrow-down" width="10" height="14" /></i>
+        <!-- 传输任务只有一条链路：速度按方向显示，其余下载指标（剩余时间 /
+             连接数 / 做种数）对它没有意义 -->
+        <div class="task-speed-text" v-if="isTransferTask">
+          <i><mo-icon :name="transferIcon" width="10" height="14" /></i>
           <span>{{ bytesToSize(task.downloadSpeed) }}/s</span>
         </div>
-        <div class="task-speed-text hidden-sm-and-down" v-if="remaining > 0">
-          <span>
-            {{
-              timeFormat(remaining, {
-                prefix: t('task.remaining-prefix'),
-                i18n: {
-                  'gt1d': t('app.gt1d'),
-                  'hour': t('app.hour'),
-                  'minute': t('app.minute'),
-                  'second': t('app.second')
-                }
-              })
-            }}
-          </span>
-        </div>
-        <div class="task-speed-text hidden-sm-and-down" v-if="isBT">
-          <i><mo-icon name="magnet" width="10" height="14" /></i>
-          <span>{{ task.numSeeders }}</span>
-        </div>
-        <div class="task-speed-text hidden-sm-and-down">
-          <i><mo-icon name="node" width="10" height="14" /></i>
-          <span>{{ task.connections }}</span>
-        </div>
-        <div class="task-speed-text" v-if="taskPriority > 0">
-          <span>{{ t('task.priority-short') }} {{ taskPriority }}</span>
-        </div>
+        <template v-else>
+          <div class="task-speed-text" v-if="isBT">
+            <i><mo-icon name="arrow-up" width="10" height="14" /></i>
+            <span>{{ bytesToSize(task.uploadSpeed) }}/s</span>
+          </div>
+          <div class="task-speed-text">
+            <i><mo-icon name="arrow-down" width="10" height="14" /></i>
+            <span>{{ bytesToSize(task.downloadSpeed) }}/s</span>
+          </div>
+          <div class="task-speed-text hidden-sm-and-down" v-if="remaining > 0">
+            <span>
+              {{
+                timeFormat(remaining, {
+                  prefix: t('task.remaining-prefix'),
+                  i18n: {
+                    'gt1d': t('app.gt1d'),
+                    'hour': t('app.hour'),
+                    'minute': t('app.minute'),
+                    'second': t('app.second')
+                  }
+                })
+              }}
+            </span>
+          </div>
+          <div class="task-speed-text hidden-sm-and-down" v-if="isBT">
+            <i><mo-icon name="magnet" width="10" height="14" /></i>
+            <span>{{ task.numSeeders }}</span>
+          </div>
+          <div class="task-speed-text hidden-sm-and-down">
+            <i><mo-icon name="node" width="10" height="14" /></i>
+            <span>{{ task.connections }}</span>
+          </div>
+          <div class="task-speed-text" v-if="taskPriority > 0">
+            <span>{{ t('task.priority-short') }} {{ taskPriority }}</span>
+          </div>
+        </template>
       </div>
       <!-- 「已下载完、还没合并」与「正在合并」共用同一句话：进度条此刻是满格
            黄条（见 TaskProgress.vue 的 resolveProgressView，唯一实现），
@@ -145,6 +174,8 @@ import '@/components/Icons/arrow-down'
 import '@/components/Icons/node'
 import '@/components/Icons/magnet'
 import '@/components/Icons/record'
+import '@/components/Icons/transfer-in'
+import '@/components/Icons/transfer-out'
 import { useTaskStore } from '@/store/task'
 import { usePreferenceStore } from '@/store/preference'
 import { storeToRefs } from 'pinia'
@@ -191,6 +222,68 @@ const isActive = computed(() => {
 const isLiveTask = computed(() => {
   const task = props.task || {}
   return task.isLive === true
+})
+
+/**
+ * 端手互通：传输任务（原始 lan 任务挂在 `task.lanTask` 上）。
+ * 左下角不套用下载口径，改显示「方向 + 状态 + 设备 + 百分比」。
+ */
+const transferRaw = computed(() => (props.task && props.task.lanTask) || null)
+const isTransferTask = computed(() => !!transferRaw.value)
+const isTransferOut = computed(() => !!transferRaw.value && transferRaw.value.direction === 'out')
+// 左侧标识用「上传 / 下载」式方向标；右侧速度仍用普通箭头
+const transferMarkIcon = computed(() => isTransferOut.value ? 'transfer-out' : 'transfer-in')
+const transferIcon = computed(() => isTransferOut.value ? 'arrow-up' : 'arrow-down')
+
+const transferStatusText = computed(() => {
+  const raw = transferRaw.value
+  if (!raw) return ''
+  const direction = t(isTransferOut.value ? 'task.transfer-direction-out' : 'task.transfer-direction-in')
+  if (raw.status === 'active') {
+    return t(isTransferOut.value ? 'task.transfer-out-active' : 'task.transfer-in-active')
+  }
+  if (raw.status === 'done') {
+    return t(isTransferOut.value ? 'task.transfer-out-done' : 'task.transfer-in-done')
+  }
+  if (raw.status === 'waiting') {
+    return `${direction} · ${t('task.transfer-status-waiting')}`
+  }
+  if (raw.status === 'error') {
+    const reason = raw.error === 'cancelled'
+      ? t('task.transfer-cancelled')
+      : (raw.error === 'interrupted' ? t('task.transfer-interrupted') : '')
+    return `${direction} · ${reason || t('task.transfer-status-error')}`
+  }
+  return direction
+})
+
+const transferPeerText = computed(() => {
+  const raw = transferRaw.value
+  if (!raw) return ''
+  return `${raw.peerName || raw.peerAddress || ''}`.trim()
+})
+
+// 已传 / 总大小：传输中和完成态都保留（完成后正好是 total / total）
+const transferSizeText = computed(() => {
+  const raw = transferRaw.value
+  const task = props.task || {}
+  if (!raw) return ''
+  const total = Number(task.totalLength)
+  const completed = Math.max(0, Number(task.completedLength) || 0)
+  if (!(total > 0)) return ''
+  return `${bytesToSize(completed, 2)} / ${bytesToSize(total, 2)}`
+})
+
+const transferPercentText = computed(() => {
+  const raw = transferRaw.value
+  const task = props.task || {}
+  if (!raw) return ''
+  const total = Number(task.totalLength)
+  const completed = Number(task.completedLength)
+  if (!(total > 0) || !(completed >= 0)) return ''
+  const percent = calcProgress(total, completed)
+  if (!Number.isFinite(percent)) return ''
+  return `${percent}%`
 })
 
 /** 正在录制（红点）；暂停/完成/失败时图标随文字色（灰）。 */
@@ -707,6 +800,39 @@ onBeforeUnmount(() => {
       color: var(--lc-color-danger, #f56c6c);
       opacity: 1;
     }
+  }
+}
+/* 局域网传输信息行：方向图标 + 状态 + 设备 + 百分比（与直播行同一位置口径） */
+.task-transfer-info {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+
+  .task-progress-sep {
+    top: 0;
+  }
+  .task-transfer-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 0.875rem;
+    height: 0.875rem;
+    margin-right: 0.3rem;
+    color: inherit;
+    & > svg {
+      display: block;
+    }
+  }
+  > span {
+    flex: 0 0 auto;
+  }
+  .task-transfer-peer {
+    flex: 0 1 auto;
+    min-width: 0;
+    opacity: 0.75;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 .task-progress-info-right {

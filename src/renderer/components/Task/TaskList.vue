@@ -1,11 +1,26 @@
 <template>
   <mo-drag-select
     :class="['task-list', `task-list--${viewMode}`]"
-    v-if="displayTaskList.length > 0"
+    v-if="hasAnyTask"
     attribute="attr"
     @change="handleDragSelectChange"
     @mousedown="handleListBlankClick"
   >
+    <!-- 端手互通：传输任务与普通任务共用同一个卡片组件；它们没有引擎 gid，
+         所以不给 attr（拖选会跳过），卡片内部也屏蔽了引擎动作 -->
+    <div
+      v-for="item in lanTaskRows"
+      :key="`lan:${item.gid}`"
+      :class="['task-item-wrapper', `task-item-wrapper--${viewMode}`, 'task-item-wrapper--lan']"
+      @contextmenu.prevent.stop
+    >
+      <mo-task-item
+        :task="item"
+        :view-mode="viewMode"
+        :resize-version="resizeVersion"
+        lan
+      />
+    </div>
     <div
       v-for="item in displayTaskList"
       :key="item.gid"
@@ -31,6 +46,7 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ipcRenderer } from 'electron'
 import { Menu, getCurrentWindow } from '@electron/remote'
 import { cloneDeep } from 'lodash'
 import {
@@ -96,11 +112,15 @@ defineOptions({ name: 'mo-task-list' })
 const taskStore = useTaskStore()
 const preferenceStore = usePreferenceStore()
 const { config: preferenceConfig } = storeToRefs(preferenceStore)
+const { currentList, filterDate } = storeToRefs(taskStore)
 
 const selectedList = ref(cloneDeep(taskStore.selectedGidList) || [])
 const isMultiSelectModifierPressed = ref(false)
 const isMultiSelectMode = ref(false)
 const resizeVersion = ref(0)
+
+// 端手互通：主进程通过 lan:update 推送全量（最多 50 条）传输任务
+const lanTasks = ref([])
 
 let handleKeyEvent = null
 let handleResize = null
@@ -161,6 +181,160 @@ const isMultiSelectToggleShortcut = computed(() => {
 
 const viewMode = computed(() => taskStore.viewMode)
 
+/**
+ * 传输任务归组：和引擎的 全部 / 下载中 / 等待中 / 已停止 对齐
+ * （done、error 都是"已结束"，归到 stopped；行内再显示 已完成 / 失败）
+ */
+function lanStatusGroup (status) {
+  if (status === 'active') return 'active'
+  if (status === 'waiting') return 'waiting'
+  return 'stopped'
+}
+
+function parseTaskDate (timestamp) {
+  const raw = Number(timestamp)
+  if (!Number.isFinite(raw) || raw <= 0) return null
+  return new Date(raw < 1000000000000 ? raw * 1000 : raw)
+}
+
+function lanMatchesDate (task, date) {
+  if (!date) return true
+  const created = parseTaskDate(task && task.createdAt)
+  if (!created) return false
+  const [year, month, day] = `${date}`.split('-').map(Number)
+  return created.getFullYear() === year &&
+    (created.getMonth() + 1) === month &&
+    created.getDate() === day
+}
+
+function lanMatchesCategory (task, category) {
+  const suffixes = getCategorySuffixes(category)
+  if (suffixes.size === 0) return false
+  const name = `${task && task.name ? task.name : ''}`
+  const ext = `${getFileExtension(name)}`.toLowerCase()
+  return !!ext && suffixes.has(ext)
+}
+
+/** 传输状态 → 引擎任务状态（卡片/进度条认的是这一套） */
+const LAN_TASK_STATUS = {
+  waiting: TASK_STATUS.WAITING,
+  active: TASK_STATUS.ACTIVE,
+  done: TASK_STATUS.COMPLETE,
+  error: TASK_STATUS.ERROR
+}
+
+// 引擎 lan 任务里没有速度字段：按两次轮询的字节差自己算
+const lanSpeedSamples = new Map()
+
+function lanSpeedOf (task) {
+  const now = Date.now()
+  const bytes = Math.max(0, Number(task && task.transferred) || 0)
+  const sample = lanSpeedSamples.get(task.id)
+  let bps = 0
+  if (task && task.status === 'active' && sample) {
+    const delta = bytes - sample.bytes
+    const elapsed = now - sample.at
+    if (delta > 0 && elapsed >= 100) {
+      const instant = delta * 1000 / elapsed
+      bps = sample.bps > 0 ? sample.bps * 0.6 + instant * 0.4 : instant
+    } else {
+      bps = sample.bps || 0
+    }
+  }
+  lanSpeedSamples.set(task.id, { bytes, at: now, bps })
+  return bps
+}
+
+function lanErrorText (error) {
+  const code = `${error || ''}`
+  if (code === 'cancelled') return t('task.transfer-cancelled')
+  if (code === 'interrupted') return t('task.transfer-interrupted')
+  if (code === 'disposed') return ''
+  return code
+}
+
+/**
+ * 把引擎 lan 任务映射成普通任务的字段，交给 mo-task-item 渲染。
+ * `lanTask` 保留原始对象（卡片上的取消/移除/打开文件夹要用）。
+ */
+function toLanTaskRow (task) {
+  const size = Number(task.size) > 0 ? Number(task.size) : 0
+  const transferred = Math.max(0, Number(task.transferred) || 0)
+  const fullPath = (task.direction === 'in' ? task.path : task.sourcePath) || task.name || ''
+  const finishedAt = Number(task.finishedAt) || 0
+  const status = LAN_TASK_STATUS[task.status] || TASK_STATUS.WAITING
+
+  const row = {
+    gid: task.id,
+    name: task.name,
+    filename: task.name,
+    status,
+    totalLength: size,
+    completedLength: size > 0 ? Math.min(transferred, size) : transferred,
+    downloadSpeed: lanSpeedOf(task),
+    uploadSpeed: 0,
+    // 普通卡片在下载中会显示"连接数"：局域网传输固定一条连接
+    connections: task.status === 'active' ? 1 : 0,
+    // getTaskFullPath 认 files[0].path；没有绝对路径时用文件名兜底（只为显示名字）
+    dir: '',
+    files: fullPath
+      ? [{ path: fullPath, length: String(size), completedLength: String(transferred), selected: 'true' }]
+      : [],
+    // 普通卡片用 savedAt 显示"完成于/错误于 …"（lan 任务的 finishedAt 就是本地完成时间）
+    savedAt: finishedAt,
+    lanTask: task
+  }
+
+  const reason = lanErrorText(task.error)
+  if (status === TASK_STATUS.ERROR && reason) {
+    const time = new Date(finishedAt || Date.now()).toLocaleString()
+    row.statusRightText = `${t('task.error-at')} ${time} · ${reason}`
+  }
+  return row
+}
+
+const lanTaskRows = computed(() => {
+  const list = currentList.value || 'all'
+  const category = `${props.category || ''}`
+  const date = filterDate.value || ''
+  const keyword = `${props.keyword || ''}`.trim().toLowerCase()
+
+  return (lanTasks.value || [])
+    .filter((task) => {
+      if (!task || !task.id) return false
+      if (list !== 'all' && lanStatusGroup(task.status) !== list) return false
+      if (category && !lanMatchesCategory(task, category)) return false
+      if (!lanMatchesDate(task, date)) return false
+      if (keyword) {
+        const haystack = `${task.name || ''} ${task.peerName || ''} ${task.peerAddress || ''}`.toLowerCase()
+        if (!haystack.includes(keyword)) return false
+      }
+      return true
+    })
+    .map(toLanTaskRow)
+})
+
+const hasAnyTask = computed(() => lanTaskRows.value.length > 0 || displayTaskList.value.length > 0)
+
+function applyLanPayload (payload) {
+  if (payload && Array.isArray(payload.tasks)) {
+    lanTasks.value = payload.tasks
+  }
+}
+
+function handleLanUpdate (_event, payload) {
+  applyLanPayload(payload)
+}
+
+async function refreshLanTasks () {
+  try {
+    const tasks = await ipcRenderer.invoke('lan:tasks')
+    if (Array.isArray(tasks)) {
+      lanTasks.value = tasks
+    }
+  } catch (_) {}
+}
+
 // Lifecycle
 onMounted(() => {
   handleKeyEvent = (e) => {
@@ -182,9 +356,13 @@ onMounted(() => {
     resizeVersion.value += 1
   }
   window.addEventListener('resize', handleResize)
+
+  ipcRenderer.on('lan:update', handleLanUpdate)
+  refreshLanTasks()
 })
 
 onBeforeUnmount(() => {
+  ipcRenderer.removeListener('lan:update', handleLanUpdate)
   if (handleKeyEvent) {
     window.removeEventListener('keydown', handleKeyEvent)
     window.removeEventListener('keyup', handleKeyEvent)

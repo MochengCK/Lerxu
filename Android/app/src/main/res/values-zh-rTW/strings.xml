@@ -122,6 +122,50 @@
     <string name="file_picker_failed">無法開啟檔案選擇器：%1$s</string>
     <string name="add_task_failed">新增任務失敗: %1$s</string>
 
+    <!-- 區域網路檔案傳輸 -->
+    <string name="transfer_mode">檔案傳輸</string>
+    <string name="transfer_send">傳送</string>
+    <string name="transfer_no_devices">同一區域網路內暫無裝置</string>
+    <string name="transfer_pick_files">選擇檔案</string>
+    <string name="transfer_pick_hint">點選選擇要傳送的檔案（可多選）</string>
+    <string name="transfer_nearby_devices">鄰近裝置</string>
+    <string name="transfer_select_device">選擇一台裝置</string>
+    <string name="transfer_no_files">尚未選擇檔案</string>
+    <string name="transfer_saved_to">已儲存到 %1$s</string>
+    <string name="transfer_direction_in">接收</string>
+    <string name="transfer_direction_out">傳送</string>
+    <string name="transfer_status_out_active">傳送中</string>
+    <string name="transfer_status_in_active">接收中</string>
+    <string name="transfer_status_out_done">已傳送</string>
+    <string name="transfer_status_in_done">已接收</string>
+    <string name="transfer_status_waiting">等待中</string>
+    <string name="transfer_status_error">失敗</string>
+    <string name="transfer_cancelled">已取消</string>
+    <string name="transfer_disabled_title">互傳已關閉</string>
+    <string name="transfer_disabled_sub">在 設定 → 互傳 裡開啟後，即可選擇鄰近裝置傳送檔案</string>
+    <string name="settings_category_lanshare">互傳</string>
+    <string name="lan_share_enabled">啟用互傳</string>
+    <string name="lan_share_enabled_desc">關閉後本機不會被鄰近裝置發現；進行中的傳輸會中斷</string>
+    <string name="lan_share_device_name">本機裝置名稱</string>
+    <string name="lan_share_device_name_desc">鄰近裝置看到的名稱</string>
+    <string name="lan_share_recv_dir">接收檔案儲存位置</string>
+    <string name="lan_share_recv_dir_desc">修改只影響之後接收的檔案</string>
+    <string name="lan_share_choose_dir">選擇資料夾</string>
+    <string name="lan_share_use_default">恢復預設</string>
+    <string name="lan_share_default_hint">預設：%1$s</string>
+    <string name="lan_share_start_failed">互傳啟動失敗：%1$s</string>
+    <string name="lan_share_load_failed">讀取互傳設定失敗</string>
+    <string name="lan_share_save_failed">儲存互傳設定失敗</string>
+    <string name="lan_share_saved">互傳設定已儲存</string>
+    <string name="lan_share_name_required">裝置名稱不能為空</string>
+    <string name="lan_share_name_too_long">裝置名稱最多 64 個字元</string>
+    <string name="lan_share_dir_invalid">請選擇可寫入的資料夾</string>
+    <string name="lan_share_save">儲存</string>
+    <string name="transfer_status_done_at">完成 · %1$s</string>
+    <string name="transfer_status_error_at">失敗 · %1$s</string>
+    <string name="transfer_interrupted">已中斷</string>
+    <string name="transfer_selected_count">已選 %1$d 個檔案</string>
+
     <!-- Delete confirm dialog -->
     <string name="delete_one_task">移除任務？</string>
     <string name="delete_multiple_tasks">移除 %1$d 個任務？</string>

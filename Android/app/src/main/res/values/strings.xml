@@ -122,6 +122,50 @@
     <string name="file_picker_failed">Could not open a file picker: %1$s</string>
     <string name="add_task_failed">Failed to add task: %1$s</string>
 
+    <!-- LAN transfer (peer-to-peer) -->
+    <string name="transfer_mode">File Transfer</string>
+    <string name="transfer_send">Send</string>
+    <string name="transfer_no_devices">No devices on this network</string>
+    <string name="transfer_pick_files">Choose Files</string>
+    <string name="transfer_pick_hint">Tap to pick the files to send (multiple allowed)</string>
+    <string name="transfer_nearby_devices">Nearby devices</string>
+    <string name="transfer_select_device">Choose a device</string>
+    <string name="transfer_no_files">No files selected</string>
+    <string name="transfer_saved_to">Saved to %1$s</string>
+    <string name="transfer_direction_in">Receive</string>
+    <string name="transfer_direction_out">Send</string>
+    <string name="transfer_status_out_active">Sending</string>
+    <string name="transfer_status_in_active">Receiving</string>
+    <string name="transfer_status_out_done">Sent</string>
+    <string name="transfer_status_in_done">Received</string>
+    <string name="transfer_status_waiting">Waiting</string>
+    <string name="transfer_status_error">Failed</string>
+    <string name="transfer_cancelled">Cancelled</string>
+    <string name="transfer_disabled_title">File transfer is off</string>
+    <string name="transfer_disabled_sub">Turn it on in Settings → File Transfer to send files to nearby devices</string>
+    <string name="settings_category_lanshare">File Transfer</string>
+    <string name="lan_share_enabled">Enable file transfer</string>
+    <string name="lan_share_enabled_desc">When off, this device is hidden from nearby devices; active transfers will be interrupted</string>
+    <string name="lan_share_device_name">Device name</string>
+    <string name="lan_share_device_name_desc">The name nearby devices see</string>
+    <string name="lan_share_recv_dir">Received files folder</string>
+    <string name="lan_share_recv_dir_desc">Changes apply to future transfers only</string>
+    <string name="lan_share_choose_dir">Choose folder</string>
+    <string name="lan_share_use_default">Use default</string>
+    <string name="lan_share_default_hint">Default: %1$s</string>
+    <string name="lan_share_start_failed">Could not start file transfer: %1$s</string>
+    <string name="lan_share_load_failed">Could not load file transfer settings</string>
+    <string name="lan_share_save_failed">Could not save file transfer settings</string>
+    <string name="lan_share_saved">File transfer settings saved</string>
+    <string name="lan_share_name_required">Device name cannot be empty</string>
+    <string name="lan_share_name_too_long">Device name must be 64 characters or fewer</string>
+    <string name="lan_share_dir_invalid">Choose a writable folder</string>
+    <string name="lan_share_save">Save</string>
+    <string name="transfer_status_done_at">Done · %1$s</string>
+    <string name="transfer_status_error_at">Failed · %1$s</string>
+    <string name="transfer_interrupted">Interrupted</string>
+    <string name="transfer_selected_count">%1$d file(s) selected</string>
+
     <!-- Delete confirm dialog -->
     <string name="delete_one_task">Delete task?</string>
     <string name="delete_multiple_tasks">Delete %1$d tasks?</string>
