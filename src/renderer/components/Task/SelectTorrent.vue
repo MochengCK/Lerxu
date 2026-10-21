@@ -36,6 +36,7 @@
     <mo-task-files
       ref="torrentFileList"
       mode="ADD"
+      select-all-by-default
       :files="files"
       :height="200"
       @selection-change="handleSelectionChange"
@@ -44,7 +45,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 import { remote } from 'parse-torrent'
 import api from '@/api'
@@ -101,7 +102,8 @@ watch(torrents, (fileList) => {
     if (err) throw err
     console.log('[Lerxu] parsed torrent: ', parsedTorrent)
     files.value = listTorrentFiles(parsedTorrent.files)
-    torrentFileList.value?.toggleAllSelection()
+    // 等子组件拿到新 files 再全选（props 更新在下一 tick）
+    nextTick(() => torrentFileList.value?.toggleAllSelection())
 
     getAsBase64(file.raw).then((torrent) => {
       name.value = file.name
@@ -141,10 +143,29 @@ async function loadExistingPreview (torrent = currentTorrent.value) {
       const res = await api.previewBt({ torrent, dir: props.dir })
       if (token !== previewToken) return
       if (res && res.state === 'verifying') {
-        const percent = Math.min(100, Math.max(0, Math.round((Number(res.progress) || 0) * 100)))
-        files.value.forEach((row) => {
+        const byIndex = previewFilesByIndex(res)
+        files.value.forEach((row, i) => {
+          const fp = byIndex.get(Number(row.idx)) || byIndex.get(i + 1)
+          if (fp && fp.exists === false) {
+            // 磁盘上不存在的文件不参与校验进度，显示为“—”
+            row.exists = false
+            row.hasExistingData = false
+            row.checkedLength = 0
+            row.verifiedLength = 0
+            row.previewState = 'done'
+            return
+          }
+          const length = Number(fp && fp.length) || Number(row.length) || 0
+          const verified = Number(fp && fp.verifiedLength) || 0
+          row.exists = true
+          row.hasExistingData = true
+          row.checkedLength = Number(fp && fp.checkedLength) || 0
+          row.verifiedLength = verified
           row.previewState = 'verifying'
-          row.verifyPercent = percent
+          // 单文件进度也用"已验证字节"口径，和完成后的已验证大小一致
+          row.verifyPercent = length > 0
+            ? Math.min(100, Math.round((verified / length) * 100))
+            : 0
         })
         await new Promise(resolve => setTimeout(resolve, 500))
         if (token !== previewToken) return
@@ -160,18 +181,27 @@ async function loadExistingPreview (torrent = currentTorrent.value) {
   }
 }
 
+function previewFilesByIndex (res) {
+  const map = new Map()
+  if (Array.isArray(res && res.files)) {
+    res.files.forEach((f) => {
+      map.set(Number(f.index), f)
+    })
+  }
+  return map
+}
+
 function applyPreviewResult (res) {
   const done = res && res.state === 'done'
   const hasExisting = done && res.hasExistingData === true
-  const byIndex = new Map()
-  if (done && Array.isArray(res.files)) {
-    res.files.forEach((f) => {
-      byIndex.set(Number(f.index), Number(f.verifiedLength) || 0)
-    })
-  }
+  const byIndex = previewFilesByIndex(res)
   files.value.forEach((row, i) => {
-    row.hasExistingData = hasExisting
-    row.verifiedLength = done ? (byIndex.get(Number(row.idx)) ?? byIndex.get(i + 1) ?? 0) : 0
+    const fp = byIndex.get(Number(row.idx)) || byIndex.get(i + 1)
+    const exists = fp ? fp.exists !== false : true
+    row.exists = exists
+    row.hasExistingData = hasExisting && exists
+    row.verifiedLength = done && fp ? (Number(fp.verifiedLength) || 0) : 0
+    row.checkedLength = done && exists ? (Number(row.length) || 0) : 0
     row.previewState = 'done'
     row.verifyPercent = 100
   })

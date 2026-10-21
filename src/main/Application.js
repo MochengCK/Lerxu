@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { spawn } from 'node:child_process'
-import { readFile, unlink, unlinkSync, existsSync, mkdirSync } from 'node:fs'
+import { readFile, unlink, unlinkSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { extname, basename, join, dirname } from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
 import { app, clipboard, shell, dialog, ipcMain, screen } from 'electron'
@@ -4963,6 +4963,64 @@ export default class Application extends EventEmitter {
     }
   }
 
+  /**
+   * 系统文件/文件夹图标（data URL）。
+   *
+   * - 已存在的路径直接取系统图标（macOS/Windows/Linux 均由 Electron 调系统接口）；
+   * - 添加任务阶段文件尚未落盘：用同扩展名的临时空文件取“该类型”的系统图标；
+   * - 文件夹尚未创建：退化为系统下载目录的文件夹图标。
+   * 结果按路径/扩展名缓存，避免表格滚动时反复调系统接口。
+   */
+  async getFileIconDataUrl (targetPath = '', kind = 'file', ext = '') {
+    const cache = this._fileIconCache || (this._fileIconCache = new Map())
+    const safeExt = `${ext || ''}`
+      .replace(/^\./, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 12)
+    let iconPath = targetPath ? `${targetPath}` : ''
+    let cacheKey = iconPath
+    let exists = false
+    try {
+      exists = !!iconPath && existsSync(iconPath)
+    } catch (_) {}
+    if (!exists) {
+      if (kind === 'folder') {
+        cacheKey = '__folder__'
+        iconPath = app.getPath('downloads') || app.getPath('home')
+      } else {
+        cacheKey = `ext:${safeExt}`
+        try {
+          const tempDir = join(app.getPath('temp'), 'lerxu-file-icons')
+          mkdirSync(tempDir, { recursive: true })
+          iconPath = join(tempDir, safeExt ? `icon.${safeExt}` : 'icon')
+          if (!existsSync(iconPath)) {
+            writeFileSync(iconPath, '')
+          }
+        } catch (_) {
+          iconPath = ''
+        }
+      }
+    }
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey)
+    }
+    try {
+      if (!iconPath) {
+        return null
+      }
+      const image = await app.getFileIcon(iconPath, { size: 'normal' })
+      const url = image && !image.isEmpty() ? image.toDataURL() : null
+      if (cache.size >= 500) {
+        cache.clear()
+      }
+      cache.set(cacheKey, url)
+      return url
+    } catch (_) {
+      return null
+    }
+  }
+
   handleIpcInvokes () {
     // retryStart 等路径可能重复执行初始化；ipcMain.handle 对同一频道
     // 重复注册会直接抛 "second handler"，这里做幂等保护。
@@ -4977,6 +5035,11 @@ export default class Application extends EventEmitter {
     ipcMain.handle('engine:rpc', async (event, payload) => {
       const { method, args } = payload || {}
       return this.callEngineRpc(method, args)
+    })
+
+    // 系统文件/文件夹真实图标（按路径/扩展名在 getFileIconDataUrl 内缓存）
+    ipcMain.handle('file-icon', async (_event, payload = {}) => {
+      return this.getFileIconDataUrl(payload.path, payload.kind, payload.ext)
     })
 
     ipcMain.on('get-app-config', (event) => {

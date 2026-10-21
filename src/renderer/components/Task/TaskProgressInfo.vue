@@ -225,9 +225,9 @@ const isVerifying = computed(() => {
 const verifyPercentText = computed(() => {
   const task = props.task || {}
   const p = task.verifyProgress || {}
-  const checked = Number(p.checkedLength) || 0
+  const verified = Number(p.verifiedLength) || 0
   const total = Number(p.totalLength) || 0
-  const percent = total > 0 ? Math.min(100, Math.round((checked / total) * 100)) : 0
+  const percent = total > 0 ? Math.min(100, Math.round((verified / total) * 100)) : 0
   return `${percent}%`
 })
 

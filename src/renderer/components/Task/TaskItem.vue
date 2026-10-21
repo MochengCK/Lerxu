@@ -38,7 +38,7 @@
     </div>
     <div class="task-progress">
       <mo-task-progress
-        :completed="isVerifying ? verifyChecked : Number(task.completedLength)"
+        :completed="isVerifying ? verifyVerified : Number(task.completedLength)"
         :total="isVerifying ? verifyTotal : Number(task.totalLength)"
         :gid="task.gid ? `${task.gid}` : ''"
         :status="taskStatus"
@@ -195,7 +195,7 @@ const taskStatus = computed(() => {
 
 // 已有数据校验中：进度条展示校验进度（已处理/应处理），而不是下载进度
 const isVerifying = computed(() => props.task?.verifying === true)
-const verifyChecked = computed(() => Number(props.task?.verifyProgress?.checkedLength) || 0)
+const verifyVerified = computed(() => Number(props.task?.verifyProgress?.verifiedLength) || 0)
 const verifyTotal = computed(() => Number(props.task?.verifyProgress?.totalLength) || 0)
 
 const isPendingFileSelection = computed(() => {

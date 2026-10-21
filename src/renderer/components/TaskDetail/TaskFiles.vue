@@ -7,30 +7,77 @@
       <el-table
         ref="torrentTable"
         :height="computedTableHeight"
-        :data="files"
-        :row-key="mode === 'DETAIL' ? fileRowKey : undefined"
+        :data="visibleRows"
+        row-key="id"
         style="width: 100%"
-        @row-dblclick="handleRowDbClick"
-        @selection-change="handleSelectionChange">
+        :row-class-name="rowClassName"
+        @row-click="handleRowClick"
+        @row-dblclick="handleRowDbClick">
+        <!-- 自定义勾选：文件按 idx 记录，文件夹勾选=全选其下所有文件。
+             不用 el-table 内置 selection，避免目录收起后隐藏行丢选/全选漏选 -->
         <el-table-column
-          type="selection"
           width="42"
-          :reserve-selection="mode === 'DETAIL'">
+          class-name="task-file-select">
+          <template #header>
+            <el-checkbox
+              :model-value="allFilesSelected"
+              :indeterminate="someFilesSelected && !allFilesSelected"
+              :disabled="files.length === 0"
+              @change="toggleAllSelection"
+            />
+          </template>
+          <template #default="scope">
+            <span class="task-file-check" @click.stop>
+              <el-checkbox
+                v-if="scope.row.kind === 'file'"
+                :model-value="selectedIds.has(Number(scope.row.idx))"
+                @change="toggleFileRow(scope.row)"
+              />
+              <el-checkbox
+                v-else
+                :model-value="folderState(scope.row).all"
+                :indeterminate="folderState(scope.row).some && !folderState(scope.row).all"
+                @change="toggleFolderRow(scope.row)"
+              />
+            </span>
+          </template>
         </el-table-column>
         <el-table-column
           :label="t('task.file-name')"
           min-width="200">
           <template #default="scope">
-            <mo-hover-tip :content="scope.row.name" placement="top" :disabled="!getOverflow(scope.row, 'name') || !scope.row.name" :open-delay="300">
-              <span class="mo-file-name" data-field="name" :data-row-id="scope.row.idx" :class="{ 'is-truncated': getOverflow(scope.row, 'name') }" @mouseenter="handleNameMouseEnter($event, scope.row)">{{ scope.row.name }}</span>
-            </mo-hover-tip>
+            <div class="mo-file-cell" :style="{ paddingLeft: `${scope.row.depth * 16}px` }">
+              <i class="file-type-icon">
+                <img
+                  v-if="iconSrc(scope.row)"
+                  class="file-type-img"
+                  :src="iconSrc(scope.row)"
+                  alt=""
+                />
+                <mo-icon
+                  v-else-if="iconFailed.has(iconKeyOf(scope.row))"
+                  :name="scope.row.kind === 'folder' ? 'folder' : fileIconOf(scope.row)"
+                  width="14"
+                  height="14"
+                />
+              </i>
+              <mo-hover-tip :content="scope.row.name" placement="top" :disabled="!getOverflow(scope.row, 'name') || !scope.row.name" :open-delay="300">
+                <span
+                  class="mo-file-name"
+                  data-field="name"
+                  :data-row-id="scope.row.id"
+                  :class="{ 'is-truncated': getOverflow(scope.row, 'name'), 'is-folder-name': scope.row.kind === 'folder' }"
+                  @mouseenter="handleNameMouseEnter($event, scope.row)"
+                >{{ scope.row.name }}</span>
+              </mo-hover-tip>
+            </div>
           </template>
         </el-table-column>
         <el-table-column
           :label="t('task.file-extension')"
           width="80"
           class-name="task-file-extension">
-          <template #default="scope">{{ removeExtensionDot(scope.row.extension) }}</template>
+          <template #default="scope">{{ scope.row.kind === 'folder' ? '' : removeExtensionDot(scope.row.extension) }}</template>
         </el-table-column>
         <!-- 添加任务阶段：磁盘上已有同名数据时，展示本次可继承的已校验字节。
              没有已有数据（普通新任务）时整列不出现，避免每行都是 0 B 的噪声 -->
@@ -41,6 +88,7 @@
           width="100">
           <template #default="scope">
             <span v-if="scope.row.previewState === 'verifying'">{{ scope.row.verifyPercent || 0 }}%</span>
+            <span v-else-if="scope.row.exists === false">—</span>
             <span v-else>{{ bytesToSize(scope.row.verifiedLength || 0) }}</span>
           </template>
         </el-table-column>
@@ -82,6 +130,7 @@
           class-name="task-file-actions">
           <template #default="scope">
             <mo-hover-tip
+              v-if="scope.row.kind === 'file'"
               :content="playTip(scope.row)"
               placement="top"
               :open-delay="200">
@@ -137,15 +186,17 @@
 
 <script setup>
 import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { isEmpty } from 'lodash'
 import { ipcRenderer } from 'electron'
-import { basename, isAbsolute, resolve } from 'node:path'
+import { basename, isAbsolute, relative, resolve } from 'node:path'
 import { mediaKindOf } from '@shared/mediaKinds'
 import '@/components/Icons/video'
 import '@/components/Icons/audio'
 import '@/components/Icons/image'
 import '@/components/Icons/document'
 import '@/components/Icons/select-all'
+import '@/components/Icons/folder'
+import '@/components/Icons/subnav-archives'
+import '@/components/Icons/subnav-programs'
 import {
   MEDIA_PLAYER_ENABLED,
   NONE_SELECTED_FILES,
@@ -201,6 +252,12 @@ const props = defineProps({
   bt: {
     type: Boolean,
     default: false
+  },
+  // 新建任务时默认全选（旧 el-table 由父组件 toggleAllSelection 完成，
+  // 自定义勾选改为声明式，避免 props 更新时序导致首次没选上）
+  selectAllByDefault: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -209,17 +266,25 @@ const emit = defineEmits(['selection-change', 'confirm-selection'])
 defineOptions({ name: 'mo-task-files' })
 
 const torrentTable = ref(null)
-const selectedFiles = ref([])
 const activeType = ref('all')
 const showConfirm = ref(false)
 const initialSelectedFileIndex = ref(null)
+// 勾选按文件 idx 存（不依赖行对象/可见性）：目录收起后隐藏文件仍保持勾选
+const selectedIds = reactive(new Set())
+// 展开的文件夹 id（根文件夹默认展开，子文件夹默认收起）
+const expandedFolders = reactive(new Set())
+const seenFolderIds = new Set()
+// 系统真实图标（data URL）：按目录+相对路径缓存；失败时文件回退类型图标
+const iconCache = reactive(new Map())
+const iconFailed = reactive(new Set())
+const iconLoading = new Set()
 
-// 溢出状态：key = `${rowIdx}:${field}`，value = boolean
+// 溢出状态：key = `${rowId}:${field}`，value = boolean
 const overflowState = reactive({})
 
 function getOverflow (row, field) {
-  if (!row || row.idx === undefined || row.idx === null) return false
-  return !!overflowState[`${row.idx}:${field}`]
+  if (!row || !row.id) return false
+  return !!overflowState[`${row.id}:${field}`]
 }
 
 // ── 播放（视频 / 音频都走同一个独立播放器窗口）────────────────────
@@ -323,9 +388,9 @@ async function playFile (row) {
 function handleTextOverflow (event, row, key) {
   try {
     const el = event && event.currentTarget
-    if (!el || !row || row.idx === undefined || row.idx === null) return
+    if (!el || !row || !row.id) return
     const overflow = el.scrollWidth > el.clientWidth + 1
-    const prop = `${row.idx}:${key}`
+    const prop = `${row.id}:${key}`
     if (overflowState[prop] !== overflow) {
       overflowState[prop] = overflow
     }
@@ -398,11 +463,243 @@ const showVerifiedColumn = computed(() => props.mode === 'ADD' && props.files.so
   return row.previewState === 'verifying' || row.hasExistingData === true
 }))
 
-// 行 key：优先用文件 idx（引擎 index）；缺失或 NaN 时退化为路径，
-// 避免所有行共用同一个 key 导致勾选串联
-function fileRowKey (row) {
-  return row && Number.isFinite(row.idx) ? row.idx : `p:${row && row.path ? row.path : ''}`
+// ── 目录树 ──────────────────────────────────────────────────────
+// 文件路径（parse-torrent / 引擎 status）本身带根目录：`pack/sub/a.bin`。
+// 这里按路径建树；单文件种子（路径无 `/`）直接作为顶层文件行。
+function normalizeFilePath (row) {
+  const raw = `${(row && (row.path || row.name)) || ''}`.replace(/\\/g, '/')
+  if (!raw) return ''
+  // BT 路径本来就是相对下载目录的；普通下载的 files[].path 可能是绝对路径。
+  // 绝对路径先换算成相对任务目录，避免把 /Users/xxx/Downloads 拆成系统文件夹；
+  // 不在任务目录下的绝对路径只保留文件名（文件没有根目录就不显示文件夹）。
+  if (isAbsolute(raw)) {
+    const dir = `${props.dir || ''}`
+    if (dir && isAbsolute(dir)) {
+      const rel = relative(dir, raw)
+      if (rel && !rel.startsWith('..') && !isAbsolute(rel)) {
+        return rel.replace(/\\/g, '/').replace(/^\.\//, '')
+      }
+    }
+    return basename(raw)
+  }
+  return raw.replace(/^\/+|\/+$/g, '')
 }
+
+function buildFileTree (files = []) {
+  const roots = []
+  const folders = new Map()
+  files.forEach((file) => {
+    const rel = normalizeFilePath(file)
+    if (!rel) return
+    const parts = rel.split('/').filter(Boolean)
+    const node = {
+      ...file,
+      id: `file:${file.idx}`,
+      kind: 'file',
+      name: file.name || parts[parts.length - 1] || rel,
+      depth: parts.length > 1 ? parts.length - 1 : 0
+    }
+    if (parts.length <= 1) {
+      roots.push(node)
+      return
+    }
+    let siblings = roots
+    let acc = ''
+    let depth = 0
+    for (let i = 0; i < parts.length - 1; i++) {
+      acc = acc ? `${acc}/${parts[i]}` : parts[i]
+      const id = `folder:${acc}`
+      let folder = folders.get(id)
+      if (!folder) {
+        folder = { id, kind: 'folder', name: parts[i], depth, subRows: [], path: acc }
+        folders.set(id, folder)
+        siblings.push(folder)
+      }
+      siblings = folder.subRows
+      depth++
+    }
+    node.depth = depth
+    siblings.push(node)
+  })
+  const sum = (list, key) => list.reduce((n, item) => n + (Number(item[key]) || 0), 0)
+  const finalize = (node) => {
+    if (node.kind === 'file') return
+    node.subRows.forEach(finalize)
+    const children = node.subRows
+    // 文件夹排在文件前，目录结构更清楚（仅显示顺序，不影响文件 idx）
+    children.sort((a, b) => (a.kind === 'folder' ? 0 : 1) - (b.kind === 'folder' ? 0 : 1))
+    node.length = sum(children, 'length')
+    node.completedLength = sum(children, 'completedLength')
+    node.verifiedLength = sum(children, 'verifiedLength')
+    node.exists = children.some(c => c.exists !== false)
+    node.hasExistingData = children.some(c => c.hasExistingData === true)
+    const present = children.filter(c => c.exists !== false)
+    if (present.some(c => c.previewState === 'verifying')) {
+      node.previewState = 'verifying'
+      const total = sum(present, 'length')
+      node.verifyPercent = total > 0
+        ? Math.min(100, Math.round(sum(present, 'verifiedLength') / total * 100))
+        : 0
+    } else if (children.some(c => c.previewState === 'done' || c.previewState === 'missing')) {
+      node.previewState = 'done'
+    } else {
+      node.previewState = ''
+    }
+    node.extension = ''
+  }
+  roots.forEach(finalize)
+  return roots
+}
+
+const fileTree = computed(() => buildFileTree(props.files))
+
+const visibleRows = computed(() => {
+  const rows = []
+  const walk = (nodes) => {
+    for (const node of nodes) {
+      rows.push(node)
+      if (node.kind === 'folder' && expandedFolders.has(node.id)) {
+        walk(node.subRows)
+      }
+    }
+  }
+  walk(fileTree.value)
+  return rows
+})
+
+let lastPathSignature = ''
+watch(fileTree, (roots) => {
+  const signature = props.files
+    .map(f => `${f.idx}:${normalizeFilePath(f)}`)
+    .join('|')
+  if (signature !== lastPathSignature) {
+    lastPathSignature = signature
+    expandedFolders.clear()
+    seenFolderIds.clear()
+  }
+  const markFolders = (nodes) => {
+    for (const node of nodes) {
+      if (node.kind !== 'folder') continue
+      if (!seenFolderIds.has(node.id)) {
+        seenFolderIds.add(node.id)
+        // 根文件夹默认展开；根里面的子文件夹默认收起
+        if (node.depth === 0) expandedFolders.add(node.id)
+      }
+      markFolders(node.subRows)
+    }
+  }
+  markFolders(roots)
+}, { immediate: true })
+
+function iconKeyOf (row) {
+  if (!row) return ''
+  const dir = props.dir || ''
+  return `${row.kind}:${dir}|${row.path || row.id}`
+}
+
+function iconSrc (row) {
+  return iconCache.get(iconKeyOf(row)) || ''
+}
+
+function loadRowIcon (row) {
+  const key = iconKeyOf(row)
+  if (!key || iconCache.has(key) || iconFailed.has(key) || iconLoading.has(key)) return
+  iconLoading.add(key)
+  const extMatch = `${(row && (row.name || row.path)) || ''}`.match(/\.([a-z0-9]+)$/i)
+  const ext = extMatch ? extMatch[1].toLowerCase() : ''
+  Promise.resolve(ipcRenderer.invoke('file-icon', {
+    path: absolutePathOf(row),
+    kind: row && row.kind === 'folder' ? 'folder' : 'file',
+    ext
+  })).then((src) => {
+    if (src) {
+      if (iconCache.size >= 1000) iconCache.clear()
+      iconCache.set(key, src)
+    } else {
+      iconFailed.add(key)
+    }
+  }).catch(() => {
+    iconFailed.add(key)
+  }).finally(() => {
+    iconLoading.delete(key)
+  })
+}
+
+watch(visibleRows, (rows) => {
+  for (const row of rows) loadRowIcon(row)
+}, { immediate: true })
+
+// 目录变化会改变图标查找路径（同一个相对文件在另一个目录可能是另一种真实图标）
+watch(() => props.dir, () => {
+  for (const row of visibleRows.value) loadRowIcon(row)
+})
+
+function toggleFolder (row) {
+  if (!row || row.kind !== 'folder') return
+  if (expandedFolders.has(row.id)) {
+    expandedFolders.delete(row.id)
+  } else {
+    expandedFolders.add(row.id)
+  }
+}
+
+function rowClassName ({ row }) {
+  if (!row || row.kind !== 'folder') return ''
+  // 展开状态只靠整行底色表达（不使用左侧箭头/图标）
+  return expandedFolders.has(row.id) ? 'is-folder-expanded' : ''
+}
+
+function handleRowClick (row) {
+  if (row && row.kind === 'folder') {
+    toggleFolder(row)
+  }
+}
+
+const ARCHIVE_EXTENSIONS = new Set(['zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst', 'iso'])
+const PROGRAM_EXTENSIONS = new Set(['exe', 'msi', 'apk', 'dmg', 'pkg', 'deb', 'rpm', 'appimage', 'app'])
+
+/** 普通文件按实际类型显示图标（视频/音频/图片/压缩包/程序/文档）。 */
+function fileIconOf (row) {
+  const name = `${(row && (row.name || row.path)) || ''}`
+  const kind = mediaKindOf(name)
+  if (kind === 'video' || kind === 'audio') return kind
+  const ext = (name.match(/\.([a-z0-9]+)$/i) || [])[1]?.toLowerCase() || ''
+  if (ext === 'gif' || ext === 'webp' || ['jpg', 'jpeg', 'png', 'bmp', 'svg', 'ico', 'avif', 'heic', 'tiff'].includes(ext)) {
+    return 'image'
+  }
+  if (ARCHIVE_EXTENSIONS.has(ext)) return 'subnav-archives'
+  if (PROGRAM_EXTENSIONS.has(ext)) return 'subnav-programs'
+  return 'document'
+}
+
+function collectFileIds (node, out = []) {
+  if (node.kind === 'file') {
+    const id = Number(node.idx)
+    if (Number.isFinite(id)) out.push(id)
+    return out
+  }
+  for (const child of node.subRows || []) {
+    collectFileIds(child, out)
+  }
+  return out
+}
+
+function folderState (row) {
+  const ids = collectFileIds(row)
+  let selected = 0
+  for (const id of ids) {
+    if (selectedIds.has(id)) selected++
+  }
+  return { all: ids.length > 0 && selected === ids.length, some: selected > 0 }
+}
+
+const allFileIds = computed(() => props.files
+  .map(f => Number(f.idx))
+  .filter(id => Number.isFinite(id) && id > 0))
+
+const selectedFiles = computed(() => props.files.filter(f => selectedIds.has(Number(f.idx))))
+const allFilesSelected = computed(() => allFileIds.value.length > 0 && allFileIds.value.every(id => selectedIds.has(id)))
+const someFilesSelected = computed(() => allFileIds.value.some(id => selectedIds.has(id)))
 
 const selectedFilesCount = computed(() => selectedFiles.value.length)
 
@@ -429,14 +726,36 @@ function handleNameMouseEnter (event, row) {
   handleTextOverflow(event, row, 'name')
 }
 
+function toggleFileRow (row) {
+  const id = Number(row && row.idx)
+  if (!Number.isFinite(id)) return
+  if (selectedIds.has(id)) {
+    selectedIds.delete(id)
+  } else {
+    selectedIds.add(id)
+  }
+}
+
+function toggleFolderRow (row) {
+  const ids = collectFileIds(row)
+  if (ids.length === 0) return
+  if (folderState(row).all) {
+    ids.forEach(id => selectedIds.delete(id))
+  } else {
+    ids.forEach(id => selectedIds.add(id))
+  }
+}
+
 function toggleAllSelection () {
-  if (!torrentTable.value) return
-  torrentTable.value.toggleAllSelection()
+  if (allFilesSelected.value) {
+    selectedIds.clear()
+  } else {
+    allFileIds.value.forEach(id => selectedIds.add(id))
+  }
 }
 
 function clearSelection () {
-  if (!torrentTable.value) return
-  torrentTable.value.clearSelection()
+  selectedIds.clear()
   activeType.value = 'all'
   nextTick(() => {
     initialSelectedFileIndex.value = selectedFileIndex.value
@@ -445,14 +764,21 @@ function clearSelection () {
 }
 
 function toggleSelection (rows) {
-  if (isEmpty(rows)) {
-    torrentTable.value.clearSelection()
-  } else {
-    torrentTable.value.clearSelection()
-    rows.forEach(row => {
-      torrentTable.value.toggleRowSelection(row, true)
-    })
+  selectedIds.clear()
+  const list = Array.isArray(rows) ? rows : []
+  for (const row of list) {
+    if (!row) continue
+    if (row.kind === 'folder') {
+      collectFileIds(row).forEach(id => selectedIds.add(id))
+    } else {
+      const id = Number(row.idx)
+      if (Number.isFinite(id)) selectedIds.add(id)
+    }
   }
+}
+
+function hideConfirm () {
+  showConfirm.value = false
 }
 
 function toggleTypeSelection (type) {
@@ -475,11 +801,10 @@ function confirmSelection () {
 
 
 function handleRowDbClick (row) {
-  torrentTable.value.toggleRowSelection(row)
-}
-
-function handleSelectionChange (val) {
-  selectedFiles.value = val
+  // 文件夹的展开/收起由单击整行负责；双击不再重复切换
+  if (row && row.kind === 'file') {
+    toggleFileRow(row)
+  }
 }
 
 watch(selectedFileIndex, (val) => {
@@ -492,16 +817,29 @@ watch(selectedFileIndex, (val) => {
   emit('selection-change', val)
 })
 
-watch(() => props.files, () => {
+watch(() => props.files, (files) => {
+  // 文件列表变化（换种子/任务刷新）时清掉已不存在的勾选，其余保留
+  const ids = new Set((files || []).map(f => Number(f.idx)))
+  if (props.selectAllByDefault && props.mode === 'ADD') {
+    // 新种子默认全选；后续用户勾选变化不会替换 files 数组，不会被这里覆盖
+    selectedIds.clear()
+    for (const id of ids) selectedIds.add(id)
+  } else {
+    for (const id of [...selectedIds]) {
+      if (!ids.has(id)) selectedIds.delete(id)
+    }
+  }
   initialSelectedFileIndex.value = null
   showConfirm.value = false
 }, { immediate: true })
 
 defineExpose({
   selectedFileIndex,
+  activeType,
   toggleSelection,
   toggleAllSelection,
-  clearSelection
+  clearSelection,
+  hideConfirm
 })
 </script>
 
@@ -510,6 +848,58 @@ defineExpose({
 @import '@/components/Theme/Light/Variables';
 
 .mo-task-files {
+  /* 文件表：自定义勾选 + 目录树 */
+  .task-file-select .cell {
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mo-file-cell {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .task-file-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* 文件类型图标（视频/音频/图片/压缩包/程序/文档），普通文件与文件夹名对齐 */
+  .file-type-icon {
+    flex: 0 0 20px;
+    width: 20px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--lc-text-secondary);
+  }
+  .file-type-img {
+    width: 16px;
+    height: 16px;
+    display: block;
+    object-fit: contain;
+  }
+  .is-folder-name {
+    font-weight: 500;
+    cursor: pointer;
+  }
+  /* 展开的文件夹整行用主题蓝色高亮；收起时不加底色。
+     与中性悬停色区分开，展开态一眼可见 */
+  .el-table__body tr.is-folder-expanded > td.el-table__cell,
+  .el-table--enable-row-hover .el-table__body tr.is-folder-expanded:hover > td.el-table__cell {
+    background-color: rgba(var(--lc-color-primary-rgb), 0.1) !important;
+  }
+  /* 展开的文件夹底部不再画分隔横杠，避免把整块蓝色高亮切开 */
+  .el-table__body-wrapper tr.is-folder-expanded::after {
+    display: none !important;
+  }
+  .mo-file-cell .lc-hover-tip__trigger {
+    flex: 1;
+    min-width: 0;
+  }
   .mo-table-wrapper {
     border: 1px solid var(--lc-border-base);
     border-radius: 8px;
@@ -902,5 +1292,11 @@ defineExpose({
   display: block;
   -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0) 100%);
   mask-image: linear-gradient(90deg, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 70%, rgba(0, 0, 0, 0) 100%);
+}
+
+.theme-dark .mo-task-files .el-table__body tr.is-folder-expanded > td.el-table__cell,
+.theme-dark .mo-task-files .el-table--enable-row-hover .el-table__body tr.is-folder-expanded:hover > td.el-table__cell {
+  /* 深色主题下提高一点透明度，保证蓝色高亮可见 */
+  background-color: rgba(var(--lc-color-primary-rgb), 0.18) !important;
 }
 </style>
