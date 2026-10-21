@@ -135,7 +135,7 @@
                 align="right"
               >
                 <template #default="scope">
-                  <span v-if="scope.row.btPreviewState === 'checking'">{{ t('task.verified-checking') }}</span>
+                  <span v-if="scope.row.btPreviewState === 'checking'">{{ scope.row.verifyPercent || 0 }}%</span>
                   <span v-else-if="isMagnetLink(scope.row.url) && scope.row.btPreviewState === 'done'">{{ bytesToSize(scope.row.verifiedLength || 0) }}</span>
                   <span v-else class="mo-parsed-text mo-parsed-empty">—</span>
                 </template>
@@ -1238,6 +1238,9 @@ async function startMagnetPreview (url, force = false) {
     if (res) {
       row.hasExistingData = res.hasExistingData === true
       row.verifiedLength = Number(res.verifiedLength) || 0
+      if (state === 'checking') {
+        row.verifyPercent = Math.min(100, Math.max(0, Math.round((Number(res.progress) || 0) * 100)))
+      }
       const total = Number(res.totalLength) || 0
       if (total > 0 && (!row.sizeText || row.sizeText === '-')) {
         row.sizeText = bytesToSize(total)

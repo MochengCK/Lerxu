@@ -42,6 +42,10 @@
         <span class="task-progress-sep"></span>
         <span class="task-progress-percent">{{ mergePercentText }}</span>
       </div>
+      <!-- 已有数据校验：下载还没开始，先显示实时校验进度（按已处理字节/应处理字节） -->
+      <div v-else-if="isVerifying">
+        <span class="task-progress-percent">{{ verifyPercentText }}</span>
+      </div>
       <!-- 有进度可显示就**优先显示进度**：已下载 / 已知总大小 / 百分比。
            HLS 的总大小是逐步收敛的（先来自清单码率、再被实测外推修正），
            所以这里只要 `totalLength > 0` 就带上它，不再等"精确总长"。
@@ -76,7 +80,7 @@
       <div class="task-completion-time" v-if="statusRightText">
         <span>{{ statusRightText }}</span>
       </div>
-      <div class="task-speed-info" v-else-if="isActive && !isSeeder">
+      <div class="task-speed-info" v-else-if="isActive && !isSeeder && !isVerifying">
         <!-- 传输任务只有一条链路：速度按方向显示，其余下载指标（剩余时间 /
              连接数 / 做种数）对它没有意义 -->
         <div class="task-speed-text" v-if="isTransferTask">
@@ -210,6 +214,21 @@ let _handleResize = null
 const isActive = computed(() => {
   const task = props.task || {}
   return task.status === TASK_STATUS.ACTIVE
+})
+
+// 已有数据校验中（下载尚未开始）：显示实时进度而不是 0 B / 总大小
+const isVerifying = computed(() => {
+  const task = props.task || {}
+  return task.verifying === true
+})
+
+const verifyPercentText = computed(() => {
+  const task = props.task || {}
+  const p = task.verifyProgress || {}
+  const checked = Number(p.checkedLength) || 0
+  const total = Number(p.totalLength) || 0
+  const percent = total > 0 ? Math.min(100, Math.round((checked / total) * 100)) : 0
+  return `${percent}%`
 })
 
 /**

@@ -57,7 +57,6 @@ export default {
   'play-dash-part': 'DASH media segment — playable only after the parts are merged',
   'file-size': 'Size',
   'verified-size': 'Verified',
-  'verified-checking': 'Checking…',
   'selected-files-sum': 'Selected: {{selectedFilesCount}} files, total size {{selectedFilesTotalSize}}',
   'select-at-least-one': 'Please select at least one file',
   'task-gid': 'GID',

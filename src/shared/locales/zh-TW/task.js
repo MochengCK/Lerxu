@@ -57,7 +57,6 @@ export default {
   'play-dash-part': '這是 DASH 影音分片，合併成成品後才能播放',
   'file-size': '大小',
   'verified-size': '已驗證',
-  'verified-checking': '校驗中…',
   'selected-files-sum': '已選取：{{selectedFilesCount}}個檔案，總計 {{selectedFilesTotalSize}}',
   'select-at-least-one': '請選擇至少一個檔案',
   'task-gid': 'GID',

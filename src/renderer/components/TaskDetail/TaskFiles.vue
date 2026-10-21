@@ -40,7 +40,7 @@
           align="right"
           width="100">
           <template #default="scope">
-            <span v-if="scope.row.previewState === 'verifying'">{{ t('task.verified-checking') }}</span>
+            <span v-if="scope.row.previewState === 'verifying'">{{ scope.row.verifyPercent || 0 }}%</span>
             <span v-else>{{ bytesToSize(scope.row.verifiedLength || 0) }}</span>
           </template>
         </el-table-column>

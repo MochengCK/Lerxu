@@ -136,16 +136,16 @@ let previewToken = 0
 async function loadExistingPreview (torrent = currentTorrent.value) {
   if (!torrent) return
   const token = ++previewToken
-  let polling = false
   try {
     for (let i = 0; i < 600; i++) {
       const res = await api.previewBt({ torrent, dir: props.dir })
       if (token !== previewToken) return
       if (res && res.state === 'verifying') {
-        if (!polling) {
-          polling = true
-          files.value.forEach((row) => { row.previewState = 'verifying' })
-        }
+        const percent = Math.min(100, Math.max(0, Math.round((Number(res.progress) || 0) * 100)))
+        files.value.forEach((row) => {
+          row.previewState = 'verifying'
+          row.verifyPercent = percent
+        })
         await new Promise(resolve => setTimeout(resolve, 500))
         if (token !== previewToken) return
         continue
@@ -173,6 +173,7 @@ function applyPreviewResult (res) {
     row.hasExistingData = hasExisting
     row.verifiedLength = done ? (byIndex.get(Number(row.idx)) ?? byIndex.get(i + 1) ?? 0) : 0
     row.previewState = 'done'
+    row.verifyPercent = 100
   })
 }
 

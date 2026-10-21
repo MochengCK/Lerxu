@@ -38,8 +38,8 @@
     </div>
     <div class="task-progress">
       <mo-task-progress
-        :completed="Number(task.completedLength)"
-        :total="Number(task.totalLength)"
+        :completed="isVerifying ? verifyChecked : Number(task.completedLength)"
+        :total="isVerifying ? verifyTotal : Number(task.totalLength)"
         :gid="task.gid ? `${task.gid}` : ''"
         :status="taskStatus"
         :speed="Number(task.downloadSpeed)"
@@ -193,6 +193,11 @@ const taskStatus = computed(() => {
   return props.task.status
 })
 
+// 已有数据校验中：进度条展示校验进度（已处理/应处理），而不是下载进度
+const isVerifying = computed(() => props.task?.verifying === true)
+const verifyChecked = computed(() => Number(props.task?.verifyProgress?.checkedLength) || 0)
+const verifyTotal = computed(() => Number(props.task?.verifyProgress?.totalLength) || 0)
+
 const isPendingFileSelection = computed(() => {
   const gid = props.task?.gid ? `${props.task.gid}` : ''
   if (!gid) return false
@@ -208,6 +213,7 @@ const isPendingFileSelection = computed(() => {
 const isFetchingMetadata = computed(() => {
   const task = props.task || {}
   if (`${task.status || ''}` !== TASK_STATUS.ACTIVE) return false
+  if (isVerifying.value) return false
   if (isMagnetTask(task)) return true
   // 待选择文件有自己的一档（橙色底槽），不叠加扫光
   if (isPendingFileSelection.value) return false
