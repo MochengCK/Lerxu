@@ -1,9 +1,11 @@
 // Extracted from Main.vue to avoid Vue SFC compiler issues with HTML in template literals
 
-export function buildCompletedTaskWindowHtml (task, useCustomFrame, isMac, t, getThemeColors, formatBytes, escapeHtml) {
+export function buildCompletedTaskWindowHtml (task, useCustomFrame, isMac, t, getThemeColors, formatBytes, escapeHtml, displayName = '') {
  {
         // Get task name from files or bittorrent info
         let taskName = 'Unknown'
+        // 调用方按 pairId 解析出来的最终产物名（合并完成 / 折叠记录的产物名），优先级最高
+        const resolvedName = `${displayName || ''}`.trim()
         // 「一对音视频」折叠记录显示的是合并产物名（扩展名取用户选择的合并格式），
         // 不能退回成员零件名 `xxx_video.mp4`，否则选了 MKV 也会显示成 MP4。
         // 合并已确定不会发生（mergeSkipped）时磁盘上仍是成员文件，按真实名字显示。
@@ -12,7 +14,9 @@ export function buildCompletedTaskWindowHtml (task, useCustomFrame, isMac, t, ge
           : ''
         const files = Array.isArray(task.files) ? task.files : []
         const { bittorrent } = task
-        if (pairName) {
+        if (resolvedName) {
+          taskName = resolvedName
+        } else if (pairName) {
           taskName = pairName
         } else if (bittorrent && bittorrent.info && bittorrent.info.name) {
           taskName = bittorrent.info.name

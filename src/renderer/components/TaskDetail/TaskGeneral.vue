@@ -203,6 +203,11 @@ const taskFullName = computed(() => {
   const task = props.task || {}
   const config = preferenceConfig.value || {}
   const suffix = config.downloadingFileSuffix || ''
+  // 「一对音视频」折叠记录：成员流的文件名（`xxx_video.mp4`）只是下载零件，
+  // 最终名字由合并产物决定（容器跟随「视频 → 合并格式」），优先用折叠记录算好的名字。
+  if (task.pairDisplayName && task.mergeSkipped !== true && Number(task.pairCount) >= 2) {
+    return `${task.pairDisplayName}`
+  }
   if (task.status === TASK_STATUS.COMPLETE && !isBT.value) {
     const p = getTaskActualPath(task, config)
     const base = basename(p || '')

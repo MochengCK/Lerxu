@@ -103,7 +103,7 @@ import {
 import {
   moveTaskFilesToTrash
 } from '@/utils/native'
-import { resolveProgressView } from '@/utils/taskPair'
+import { resolveProgressView, pairDisplayName } from '@/utils/taskPair'
 import i18n from '@/plugins/i18n'
 import { createMsg } from '@/components/Msg'
 import { ElMessage } from 'element-plus'
@@ -497,6 +497,66 @@ onBeforeUnmount(() => {
           }
         } catch (e) {}
         return null
+      }
+      /**
+       * 完成弹窗可能拿到的是**单条成员任务**（成员从列表消失时由 fetchTaskList
+       * 兜底找到的原始引擎任务），它身上没有 pairDisplayName，直接按文件路径取名
+       * 就会退回 `xxx_video.mp4`。这里按 pairId 找回这一对的折叠记录或合并完成时
+       * 写入的产物名，保证弹窗和卡片一样显示最终合并产物名。
+       */
+      function resolveCompletedDisplayName(task) {
+        if (!task) return ''
+        // 折叠记录本身：没被判定为合并失败时，预览名就是最终产物名（容器跟合并格式）
+        if (task.pairDisplayName && task.mergeSkipped !== true && Number(task.pairCount) >= 2) {
+          return `${task.pairDisplayName}`
+        }
+        const gid = `${task.gid || ''}`
+        if (!gid) return ''
+        const meta = getPairMetaFromHistory(gid)
+        const pairId = meta && meta.pairId ? `${meta.pairId}` : (task.pairId != null ? `${task.pairId}` : '')
+        if (!pairId) return ''
+        // 先找这一对的折叠记录（列表刷新后主 gid 可能已换成合并产物那一行）
+        for (const rows of [taskList.value || [], taskStore.allTaskList || []]) {
+          const row = rows.find(item => item && `${item.pairId || ''}` === pairId && item.mergeSkipped !== true && item.pairDisplayName)
+          if (row) return `${row.pairDisplayName}`
+        }
+        // 再取成员 gid 上最新写入的显示名：合并完成时写的是产物名，
+        // 比下载阶段缓存的零件名（`xxx_video.mp4`）更新。
+        let memberGids = []
+        try {
+          memberGids = (taskHistory.getAllHistory() || [])
+            .filter(item => item && `${item.pairId || ''}` === pairId)
+            .map(item => `${item.gid || ''}`)
+            .filter(Boolean)
+        } catch (e) {}
+        const nameMap = taskStore.taskDisplayNames || {}
+        const touchedMap = taskStore.taskDisplayNamesTouchedAt || {}
+        let bestName = ''
+        let bestTouched = -1
+        for (const memberGid of [gid, ...memberGids]) {
+          const name = nameMap[memberGid]
+          if (!name) continue
+          const touched = Number(touchedMap[memberGid]) || 0
+          if (touched >= bestTouched) {
+            bestTouched = touched
+            bestName = `${name}`
+          }
+        }
+        if (bestName) return bestName
+        // 收尾时另一半的配对历史可能已经被清掉：用成员文件名算出产物名，
+        // 再去显示名缓存里找同名产物（合并成功时写在存活的那条 gid 上）。
+        try {
+          const cfg = preferenceConfig.value || {}
+          const preview = pairDisplayName({ pairMembers: [task] }, cfg.mergeFormat || '')
+          const previewStem = `${preview || ''}`.replace(/\.[^.]+$/, '').replace(/\s+\(\d+\)$/, '')
+          if (previewStem) {
+            const productName = Object.keys(nameMap)
+              .map(key => `${nameMap[key] || ''}`)
+              .find(name => name && name.replace(/\.[^.]+$/, '').replace(/\s+\(\d+\)$/, '') === previewStem)
+            if (productName) return productName
+          }
+        } catch (e) {}
+        return ''
       }
       async function handleTaskProgressAutoOpen(payload) {
         const data = payload || {}
@@ -1515,7 +1575,7 @@ onBeforeUnmount(() => {
           completedTaskWindows.value.delete(gid)
         })
 
-        const html = buildCompletedTaskWindowHtml(task, useCustomFrame, isMac, t, getThemeColors, formatBytes, escapeHtml)
+        const html = buildCompletedTaskWindowHtml(task, useCustomFrame, isMac, t, getThemeColors, formatBytes, escapeHtml, resolveCompletedDisplayName(task))
         try {
           const tmpDir = os.tmpdir()
           const tmpFile = path.join(tmpDir, `lc-completed-${gid}.html`)
