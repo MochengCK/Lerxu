@@ -388,10 +388,11 @@
                 />
               </el-col>
             </el-row>
-          </el-form-item>
-          <el-form-item size="small">
+            <!-- 操作行与提示放在同一个 el-form-item 里：多套一层会多出 18px 的
+                 表单项间距，和上面两行的行距不一致；提示与按钮共用行的左右内边距
+                 （`.el-form-item__info` 自带 flex-basis:100%，会折到下一行）。 -->
             <el-row>
-              <el-col class="form-item-sub pref-action-row" :span="24">
+              <el-col class="form-item-sub pref-action-row" :span="24" style="row-gap: 6px;">
                 <el-button
                   class="pref-row-action"
                   :disabled="!mcpReady"
@@ -406,10 +407,10 @@
                 >
                   {{ t('preferences.mcp-copy-config') }}
                 </el-button>
+                <div class="el-form-item__info" style="margin-top: 0;">{{ mcpHintText }}</div>
               </el-col>
             </el-row>
           </el-form-item>
-          <div class="el-form-item__info" style="margin-top: 2px;">{{ mcpHintText }}</div>
         </div>
 
         <!-- 用户代理设置卡片 -->
