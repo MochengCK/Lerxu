@@ -1389,7 +1389,8 @@
                 </div>
               </div>
               <el-switch
-                v-model="form.enableDht6"
+                :model-value="hasGlobalIpv6Available ? form.enableDht6 : false"
+                :disabled="!hasGlobalIpv6Available"
                 @change="(val) => onNatToggleChange('enableDht6', val)"
               />
             </div>
@@ -2495,6 +2496,16 @@ const downloadUnit = ref(extractSpeedUnit(form.value.maxOverallDownloadLimit))
 const uploadUnit = ref(extractSpeedUnit(form.value.maxOverallUploadLimit))
 const formLabelWidth = ref(calcFormLabelWidth(preferenceConfig.value.locale))
 const formOriginal = ref(initForm(preferenceConfig.value))
+// 没有全局 IPv6 时 DHT over IPv6 无法工作，开关置灰显示为关闭；
+// 已保存的偏好不改写，换到 IPv6 网络后自动恢复。
+const hasGlobalIpv6Available = ref(true)
+async function refreshIpv6Availability () {
+  try {
+    hasGlobalIpv6Available.value = await ipcRenderer.invoke('system:has-global-ipv6')
+  } catch (_) {
+    hasGlobalIpv6Available.value = true
+  }
+}
 
 // --- 「视频」分类：媒体引擎的可设置项 ---
 // 这一组**不走**上面的大表单（`form` / `submitForm`）：它们是引擎侧的选项，
@@ -2932,6 +2943,12 @@ watch(form, () => {
   if (_syncingFromStore) return
   autoSaveForm()
 }, { deep: true })
+
+// 每次进入「BT」分类重新探测：网络从单栈切到双栈（或反过来）时，
+// 不重启应用也能立刻反映到开关的可操作状态。
+watch(() => props.category, (val) => {
+  if (val === 'bt') refreshIpv6Availability()
+})
 
 watch(() => preferenceConfig.value.engineMaxConnectionPerServer, (val) => {
   if (val === undefined || val === null) return
@@ -4616,6 +4633,7 @@ watch(trackerSourceConfigVisible, (visible) => {
 // --- Lifecycle ---
 let _trackerResizeObserver = null
 onMounted(() => {
+      if (activeCategory.value === 'bt') refreshIpv6Availability()
       rebuildTrackerSourceOptions()
       window.addEventListener('resize', updateUiScopeSelectCollapse)
       window.addEventListener('resize', updateTrackerCollapse)

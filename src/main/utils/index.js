@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { access, constants, existsSync, lstatSync } from 'node:fs'
+import os from 'node:os'
 import { app, nativeTheme, shell, session } from 'electron'
 import is from 'electron-is'
 
@@ -16,6 +17,22 @@ import logger from '../core/LogManager'
 
 export const getUserDataPath = () => {
   return IS_PORTABLE ? PORTABLE_EXECUTABLE_DIR : app.getPath('userData')
+}
+
+/** 是否至少有一张网卡带全局 IPv6（2000::/3）；仅 ULA/链路本地不算。 */
+export const hasGlobalIpv6 = () => {
+  try {
+    const interfaces = os.networkInterfaces()
+    for (const list of Object.values(interfaces)) {
+      for (const item of list || []) {
+        const family = `${item.family || ''}`.toLowerCase()
+        if ((family !== 'ipv6' && family !== '6') || item.internal) continue
+        const first = `${item.address || ''}`.toLowerCase().split(':')[0]
+        if (/^[23][0-9a-f]{0,3}$/.test(first)) return true
+      }
+    }
+  } catch (_) {}
+  return false
 }
 
 export const getSystemLogPath = () => {

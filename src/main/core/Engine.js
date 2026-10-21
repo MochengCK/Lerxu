@@ -1,7 +1,6 @@
 import { spawn, execFile } from 'node:child_process'
 import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import os from 'node:os'
 import is from 'electron-is'
 
 import logger from './LogManager'
@@ -14,7 +13,8 @@ import {
   getUserDataPath,
   getEngineLogPath,
   getEngineBin,
-  getEnginePath
+  getEnginePath,
+  hasGlobalIpv6
 } from '../utils/index'
 import { ENGINE_RPC_PORT } from '@shared/constants'
 
@@ -149,22 +149,6 @@ export default class Engine {
     // 同步发信号杀掉引擎，否则任何异步路径（will-quit/setImmediate/
     // setTimeout）都可能在主进程退出前没机会执行。
     this.registerExitHandlers()
-  }
-
-  /** 是否至少有一张网卡带全局 IPv6（2000::/3）；仅 ULA/链路本地不算。 */
-  hasGlobalIpv6 () {
-    try {
-      const interfaces = os.networkInterfaces()
-      for (const list of Object.values(interfaces)) {
-        for (const item of list || []) {
-          const family = `${item.family || ''}`.toLowerCase()
-          if ((family !== 'ipv6' && family !== '6') || item.internal) continue
-          const first = `${item.address || ''}`.toLowerCase().split(':')[0]
-          if (/^[23][0-9a-f]{0,3}$/.test(first)) return true
-        }
-      }
-    } catch (_) {}
-    return false
   }
 
   /** 互传首次启动默认关闭（lan-config.json 与引擎会话同目录，即 userData 根）。 */
@@ -752,13 +736,12 @@ export default class Engine {
       if (v !== undefined) {
         let enabled = v === true || v === 'true'
         // 没有全局 IPv6 时双栈 DHT 会让 IPv4 发现一起失效（实测所有
-        // bootstrap/get_peers 都超时）；此时强制走 IPv4，并纠正持久化配置。
-        if (k === 'enable-dht6' && enabled && !this.hasGlobalIpv6()) {
+        // bootstrap/get_peers 都超时）；此时**仅本次启动**降级为 IPv4。
+        // 绝不能回写 enable-dht6：用户可能在以后接入 IPv6 的网络，
+        // 持久化偏好必须保留（旧实现会把它改成 false，重启后开关自己关掉）。
+        if (k === 'enable-dht6' && enabled && !hasGlobalIpv6()) {
           enabled = false
-          try {
-            this.configManager?.setSystemConfig('enable-dht6', false)
-          } catch (_) {}
-          logger.info('[Lerxu] no global IPv6; DHT over IPv6 disabled')
+          logger.info('[Lerxu] no global IPv6; DHT over IPv6 disabled for this session (preference kept)')
         }
         args.push(`--${k}=${enabled ? 'true' : 'false'}`)
       }

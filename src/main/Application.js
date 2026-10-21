@@ -35,7 +35,7 @@ import { decodeModeOf } from '@shared/zuvrust'
 import { parseAria2ControlProgress } from './utils/aria2-control'
 import { inferRefererFromUrl } from '@shared/utils/referer-rules'
 import { getLanguage } from '@shared/locales'
-import { showItemInFolder, getEngineList, getSystemHttpProxy } from './utils'
+import { showItemInFolder, getEngineList, getSystemHttpProxy, hasGlobalIpv6 } from './utils'
 import logger from './core/LogManager'
 import Context from './core/Context'
 import ConfigManager from './core/ConfigManager'
@@ -5040,6 +5040,11 @@ export default class Application extends EventEmitter {
     // 系统文件/文件夹真实图标（按路径/扩展名在 getFileIconDataUrl 内缓存）
     ipcMain.handle('file-icon', async (_event, payload = {}) => {
       return this.getFileIconDataUrl(payload.path, payload.kind, payload.ext)
+    })
+
+    // 「网络发现」里 DHT over IPv6 是否可用：没有全局 IPv6 时 UI 直接置灰
+    ipcMain.handle('system:has-global-ipv6', async () => {
+      return hasGlobalIpv6()
     })
 
     ipcMain.on('get-app-config', (event) => {
