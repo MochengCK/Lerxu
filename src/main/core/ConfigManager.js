@@ -14,6 +14,7 @@ import {
   APP_THEME,
   EMPTY_STRING,
   ENGINE_RPC_PORT,
+  ENGINE_MCP_PORT,
   IP_VERSION,
   LOGIN_SETTING_OPTIONS,
   PROXY_MODE,
@@ -124,6 +125,10 @@ export default class ConfigManager {
         'max-download-limit': 0,
         'max-overall-download-limit': 0,
         'max-overall-upload-limit': 0,
+        // MCP（Model Context Protocol）：给本机 AI Agent 调用的接口，
+        // 默认关闭；端口只在启用时由引擎监听（与 RPC 分开）。
+        'mcp-enabled': false,
+        'mcp-listen-port': ENGINE_MCP_PORT,
         'no-proxy': EMPTY_STRING,
         'pause-metadata': false,
         'rpc-listen-port': ENGINE_RPC_PORT,

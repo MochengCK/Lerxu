@@ -16,7 +16,7 @@ import {
   getEnginePath,
   hasGlobalIpv6
 } from '../utils/index'
-import { ENGINE_RPC_PORT } from '@shared/constants'
+import { ENGINE_RPC_PORT, ENGINE_MCP_PORT } from '@shared/constants'
 
 const { platform, arch } = process
 
@@ -708,6 +708,14 @@ export default class Engine {
     const rpcSecret = this.systemConfig['rpc-secret']
     if (rpcSecret) {
       args.push(`--rpc-secret=${rpcSecret}`)
+    }
+
+    // MCP 服务（供本机 AI Agent 调用）：只在启用时让引擎监听独立端口，
+    // 鉴权复用上面的 rpc-secret，不额外保存一套凭据。
+    const mcpEnabled = this.systemConfig['mcp-enabled']
+    if (mcpEnabled === true || mcpEnabled === 'true') {
+      const mcpPort = Number(this.systemConfig['mcp-listen-port']) || ENGINE_MCP_PORT
+      args.push(`--mcp-listen-port=${mcpPort}`)
     }
 
     const dir = this.systemConfig['dir']

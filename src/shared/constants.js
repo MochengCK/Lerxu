@@ -60,6 +60,8 @@ export const MEDIA_PLAYER_ENABLED = false
 
 export const ENGINE_RPC_HOST = '127.0.0.1'
 export const ENGINE_RPC_PORT = 16800
+// MCP（Model Context Protocol）服务默认端口：给本机 AI Agent 调用引擎用
+export const ENGINE_MCP_PORT = 16801
 export const ENGINE_MAX_CONCURRENT_DOWNLOADS = 10
 export const ENGINE_MAX_CONNECTION_PER_SERVER = 128
 export const ENGINE_CONNECTION_FALLBACK = {

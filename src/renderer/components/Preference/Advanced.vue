@@ -361,6 +361,45 @@
           </el-form-item>
         </div>
 
+        <!-- MCP 服务卡片：把引擎能力暴露给本机 AI Agent -->
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
+          <h3 class="card-title">{{ t('preferences.mcp') }}</h3>
+          <el-form-item size="small">
+            <el-row>
+              <el-col class="form-item-sub form-item-sub--inline form-item-sub--inline-narrow" :span="24">
+                <div class="pref-row-text">
+                  <span class="pref-row-label">{{ t('preferences.mcp-enabled') }}</span>
+                  <div class="pref-row-desc">{{ t('preferences.mcp-enabled-desc') }}</div>
+                </div>
+                <el-switch v-model="form.mcpEnabled" />
+              </el-col>
+            </el-row>
+            <el-row>
+              <el-col class="form-item-sub form-item-sub--inline form-item-sub--inline-narrow" :span="24">
+                <div class="pref-row-text">
+                  <span class="pref-row-label">{{ t('preferences.mcp-listen-port') }}</span>
+                  <div class="pref-row-desc">{{ t('preferences.mcp-listen-port-desc') }}</div>
+                </div>
+                <el-input
+                  :placeholder="`${mcpDefaultPort}`"
+                  :maxlength="5"
+                  :disabled="!form.mcpEnabled"
+                  v-model="form.mcpListenPort"
+                />
+              </el-col>
+            </el-row>
+          </el-form-item>
+          <div class="mcp-actions">
+            <el-button size="small" :disabled="!mcpReady" @click="copyMcpEndpoint">
+              {{ t('preferences.mcp-copy-endpoint') }}
+            </el-button>
+            <el-button size="small" :disabled="!mcpReady" @click="copyMcpStdioConfig">
+              {{ t('preferences.mcp-copy-config') }}
+            </el-button>
+          </div>
+          <div class="el-form-item__info mcp-hint">{{ mcpHintText }}</div>
+        </div>
+
         <!-- 用户代理设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
           <h3 class="card-title">{{ t('preferences.user-agent') }}</h3>
@@ -537,6 +576,7 @@ import userAgentMap from '@shared/ua'
 import {
   EMPTY_STRING,
   ENGINE_RPC_PORT,
+  ENGINE_MCP_PORT,
   ENGINE_MAX_CONNECTION_PER_SERVER,
   LOG_LEVELS,
   PROXY_SCOPE_OPTIONS
@@ -612,6 +652,8 @@ const initForm = (config) => {
       proxy,
       rpcListenPort,
       rpcSecret,
+      mcpEnabled,
+      mcpListenPort,
       scheduler,
       useProxy,
       userAgent,
@@ -674,6 +716,8 @@ const initForm = (config) => {
       proxy: clonedProxy,
       rpcListenPort,
       rpcSecret,
+      mcpEnabled: mcpEnabled === true,
+      mcpListenPort: mcpListenPort || ENGINE_MCP_PORT,
       scheduler: clonedScheduler,
       useProxy,
       userAgent,
@@ -790,6 +834,28 @@ const subnavs = computed(() => {
   ]
 })
 const rpcDefaultPort = computed(() => ENGINE_RPC_PORT)
+const mcpDefaultPort = computed(() => ENGINE_MCP_PORT)
+
+// 引擎能力里带 mcp 才能用（旧二进制不支持，界面直接说明，而不是给个开关点不动）
+const engineSupportsMcp = computed(() => {
+  const features = (storeEngineInfo.value && storeEngineInfo.value.features) || []
+  return Array.isArray(features) && features.includes('mcp')
+})
+// 开关打开且引擎支持 → 两个复制按钮才可用
+const mcpReady = computed(() => engineSupportsMcp.value && form.value.mcpEnabled === true)
+const mcpEndpoint = computed(() => {
+  const port = Number(form.value.mcpListenPort) || ENGINE_MCP_PORT
+  return `http://127.0.0.1:${port}/mcp`
+})
+const mcpHintText = computed(() => {
+  if (!engineSupportsMcp.value) {
+    return t('preferences.mcp-unsupported')
+  }
+  if (!form.value.mcpEnabled) {
+    return t('preferences.mcp-disabled-hint')
+  }
+  return t('preferences.mcp-endpoint-hint', { endpoint: mcpEndpoint.value })
+})
 const logLevels = computed(() => LOG_LEVELS)
 const logPath = computed(() => preferenceConfig.value.logPath)
 const sessionPath = computed(() => preferenceConfig.value.sessionPath)
@@ -1609,6 +1675,27 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
           hideRpcSecret.value = true
         }, 2000)
       }
+      function copyMcpEndpoint() {
+        ipcRenderer.invoke('clipboard:write-text', mcpEndpoint.value)
+        msg.success(t('preferences.mcp-copied'))
+      }
+      /**
+       * stdio 形态的客户端配置：由客户端拉起 `xferrust mcp`，由它把 stdio
+       * 转发到已在运行的本机引擎（协议处理只有引擎里那一份）。
+       * 二进制路径取引擎信息里的 binPath，令牌复用 RPC Secret。
+       */
+      function copyMcpStdioConfig() {
+        const port = Number(form.value.mcpListenPort) || ENGINE_MCP_PORT
+        const token = `${form.value.rpcSecret || ''}`
+        const bin = (storeEngineInfo.value && storeEngineInfo.value.binPath) || 'xferrust'
+        const args = ['mcp', `--mcp-listen-port=${port}`]
+        if (token) {
+          args.push(`--mcp-token=${token}`)
+        }
+        const payload = { mcpServers: { lerxu: { command: bin, args } } }
+        ipcRenderer.invoke('clipboard:write-text', JSON.stringify(payload, null, 2))
+        msg.success(t('preferences.mcp-copied'))
+      }
       function onSessionResetClick() {
         dialog.showMessageBox({
           type: 'warning',
@@ -1740,8 +1827,19 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
 
               // NAT/uTP 开关属于"下次引擎启动生效"的设置：不触发自动重启，
               // 仅轻提示用户，避免点开关就 relaunch 整个应用。
-              const restartOnNextBootKeys = ['enable-upnp', 'enable-utp', 'enable-nat-pmp']
-              if (restartOnNextBootKeys.some(k => k in data)) {
+              const restartOnNextBootKeys = [
+                'enable-upnp',
+                'enable-utp',
+                'enable-nat-pmp',
+                'mcp-enabled',
+                'mcp-listen-port'
+              ]
+              // 表单字段是 camelCase，diffConfig 出来的键也是 camelCase
+              const restartOnNextBootCamel = ['mcpEnabled', 'mcpListenPort']
+              if (
+                restartOnNextBootKeys.some(k => k in data) ||
+                restartOnNextBootCamel.some(k => k in data)
+              ) {
                 msg.info(t('preferences.restart-to-apply'))
               }
 
@@ -2050,10 +2148,22 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
   }
 }
 
+/* MCP 卡片：两个复制按钮与说明文字 */
+.mcp-actions {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+
+.mcp-hint {
+  color: var(--lc-text-secondary, #909399);
+  line-height: 1.5;
+  word-break: break-all;
+}
+
 .proxy-scope {
   width: 100%;
-}
-.bt-tracker {
+}.bt-tracker {
   position: relative;
   .tracker-row {
     margin-bottom: 12px;
