@@ -1,10 +1,12 @@
 # Developer Documentation
 
+[中文](./DEVELOPMENT.md)
+
 For **contributors and maintainers**. End users should read the [README](../README.md) instead.
 
 - [Repository layout](#repository-layout)
 - [Desktop app](#desktop-app)
-- [Engine deployment](#engine-deployment)
+- [Runtime tests](#runtime-tests)
 - [Android client](#android-client)
 - [Browser extension](#browser-extension)
 - [Continuous integration](#continuous-integration)
@@ -13,80 +15,65 @@ For **contributors and maintainers**. End users should read the [README](../READ
 
 ```
 Lerxu/
-├── src/                        # Desktop app (Electron + Vue 3)
-│   ├── main/                   # Main process: engine lifecycle, tasks, config, IPC
-│   ├── renderer/               # Renderer process: UI and interaction
-│   └── shared/                 # Shared modules (incl. engine protocol adapter in xferrust/)
-├── extra/<platform>/engine/    # Built-in engine binaries shipped with the repo
-├── extensions/lerxu-webextension/lerxu-webextension/   # Extension source (Chromium + Firefox)
-├── Android/                    # Android client (Kotlin + Compose)
-├── scripts/                    # Build scripts (extension packaging, etc.)
-├── test/                       # Runtime tests (engine / app / extension)
-├── build/                      # electron-builder hooks and platform icons
-└── .github/workflows/          # CI (tests) and Release (publishing)
+├── src/                  # Desktop app (Electron + Vue 3)
+│   ├── main/             # Main process: windows, tasks, config, IPC
+│   ├── renderer/         # Renderer process: UI and interaction
+│   └── shared/           # Shared utilities, constants and locales
+├── Android/              # Android client (Kotlin + Compose)
+├── extensions/           # Browser extension source (Chromium + Firefox)
+├── extra/                # Runtime binaries for each platform, shipped with the app
+├── test/                 # Runtime tests
+├── scripts/              # Build and validation scripts
+├── build/                # electron-builder hooks and platform icons
+├── docs/                 # Developer documentation
+└── .github/workflows/    # CI and release pipelines
 ```
 
-`XferRust/` (the engine source) is a **separate repository** kept locally as a nested directory and is not
-tracked by this repository.
+The desktop app, the Android client and the browser extension live in this repository; the runtime
+binaries under `extra/` ship with it and are not compiled here.
 
 ## Desktop app
 
-Requirements: Node.js v22.12.0+, npm, Git.
+Requirements: Node.js 22.12.0+, npm, Git.
 
 ```bash
-npm install          # install dependencies
-npm run dev          # development mode (hot reload)
-npm run build        # build installers (outputs to release/)
-npm run build:dir    # unpacked build only (CI uses it for runtime tests)
-npm run lint         # ESLint (errors block CI)
-npm run lint:workflows   # validate GitHub Actions workflows (see below)
+npm install                 # install dependencies
+npm run dev                 # development mode (hot reload)
+npm run build               # build installers for the current platform (release/)
+npm run build:dir           # unpacked build only
+npm run build:github        # front-end bundles only (used by CI)
+npm run build:applesilicon  # build the macOS arm64 target
+npm run preview             # preview the built bundles locally
+npm run lint                # ESLint
+npm run lint:fix            # ESLint with --fix
+npm run lint:workflows      # validate .github/workflows
 ```
 
-**ESLint rule tiers**: `error` is reserved for rules that find real defects (`no-undef`,
-`no-dupe-keys`, `vue/no-ref-as-operand`, `no-empty` with empty catches allowed, …) — they have
-actually caught undeclared variables, cross-file variable misuse, computed refs used without
-`.value`, and duplicate object keys. Purely stylistic rules (`indent`, `vue/script-indent`,
-`no-unused-vars`) are `warn`: script indentation baselines differ across files, so making them
-errors would keep CI permanently red. To normalise formatting:
-`npx eslint --ext .js,.vue src --fix`, then tighten the rules.
+**ESLint rule tiers**: `error` is reserved for rules that catch real defects (`no-undef`,
+`no-dupe-keys`, `vue/no-ref-as-operand`, …); purely stylistic rules (`indent`, `vue/script-indent`,
+`no-unused-vars`) are `warn` — script indentation baselines differ across files, so making them errors
+would keep CI permanently red. To normalise formatting run `npx eslint --ext .js,.vue src --fix`, then
+tighten the rules.
 
-## Workflow validation
+**Workflow validation**: `scripts/check-workflows.js` validates every `if:` condition and `${{ }}`
+expression against GitHub's context availability table and checks that `uses` entries carry a version.
+It catches mistakes that are valid YAML but rejected by GitHub (such as using `secrets` in `if:`), and
+runs as part of the `lint-and-typecheck` job.
 
-Mistakes in `.github/workflows/*.yml` come in two kinds: YAML syntax errors (caught by
-`js-yaml`) and **expression semantics errors** (valid YAML that GitHub rejects), e.g.:
+## Runtime tests
 
-- the `secrets` context used in an `if:` condition → `Unrecognized named-value: 'secrets'`
-- misspelled context names, or `uses` without a pinned version
+All test scripts are plain Node with no dependencies and can be run directly.
 
-`npm run lint:workflows` (`scripts/check-workflows.js`) validates every `if:` condition and
-`${{ }}` expression against GitHub's context availability table, and checks that `uses` entries
-carry a version tag. It runs in the `lint-and-typecheck` job, catching these issues before they
-only surface on save/run.
-
-## Engine deployment
-
-The app does **not** compile the engine; per-platform engine binaries ship with the repository. After an
-engine upgrade, deploy it to every platform:
-
-| Platform | Path |
+| Script | Coverage |
 | --- | --- |
-| macOS Intel | `extra/darwin/x64/engine/xferrust` |
-| macOS Apple Silicon | `extra/darwin/arm64/engine/xferrust` |
-| Linux x64 | `extra/linux/x64/engine/xferrust` |
-| Linux arm64 | `extra/linux/arm64/engine/xferrust` |
-| Windows x64 | `extra/win32/x64/engine/xferrust.exe` |
-| Android arm64 | `Android/app/src/main/assets/xferrust` **and** `Android/app/src/main/jniLibs/arm64-v8a/libxferrust.so` |
+| `npm run test:extension` | Extension: dual-platform manifest differences, compat layer behaviour, archive structure |
+| `npm run test:taskpair` | Audio/video pairing: one record per pairId, progress aggregated over both streams |
+| `npm run test:mergeinput` | Merge input ownership, so the same file is never merged twice |
+| `npm run test:playback` | Playback path: segment serving and media splicing |
+| `npm run test:packaging` | Packaging completeness: per-platform runtime assets present |
 
-Notes:
-
-- **The two Android copies must be byte-identical**: the client uses the file size as its version fingerprint
-  (`filesDir/xferrust.version`), so a mismatch makes it re-extract the engine on every launch
-- **The Android engine must be an aarch64 ELF**: `abiFilters` only ships `arm64-v8a`; an x86 / armeabi
-  binary would be rejected by the installer
-- Desktop picks up a redeployed engine after a restart; Android requires rebuilding the APK
-- Engine build instructions for macOS / Linux / Windows / Android live in the engine repository
-  (`XferRust/.github/RELEASE_*.md`); a local machine can usually only build its own platform, the rest come
-  from that repository's CI
+The app-level smoke test (launch the packaged app and complete one HTTP download) runs in the `app-tests`
+composite action across the three desktop platforms in CI.
 
 ## Android client
 
@@ -102,25 +89,24 @@ JAVA_HOME=<jdk17 path> ./gradlew :app:lintDebug                           # stat
 
 Artifacts: `Android/app/build/outputs/apk/{debug,release}/*.apk`
 
-**Signing**: release APKs are **always signed** (the workflows no longer build debug or unsigned
-APKs). `app/build.gradle.kts` reads signing credentials from environment variables:
+**Signing** (optional): `app/build.gradle.kts` reads signing credentials from environment variables and
+produces an unsigned APK when they are absent.
 
 ```bash
 ANDROID_KEYSTORE_PATH=/path/to/release.keystore \
 ANDROID_KEYSTORE_PASSWORD=*** \
 ANDROID_KEY_ALIAS=*** \
 ANDROID_KEY_PASSWORD=*** \
-  ./gradlew :app:assembleRelease      # → app-release.apk (signed)
+  ./gradlew :app:assembleRelease
 ```
 
-**Unit tests** (`Android/app/src/test/`, executed by CI, currently 13 test classes):
+**Unit tests** (`Android/app/src/test/`, executed by CI):
 
-- `EngineBinaryTest`: engine binary integrity — byte-identical copies, ELF header (64-bit little-endian
-  AArch64), size floor, capability strings (guards against stale engines or wrong architectures)
-- `FormatUtilsTest`: progress / speed / duration formatting and per-status colours, including boundaries
-- The rest cover the built-in browser and the UI state machine: `AdBlockerTest`, `BrowseHistoryTest`,
-  `BrowserRulesTest`, `StartPageTest`, `DockFollowTest`, `TabCardMotionTest`, `TabPersistenceTest`
-- Plus the app / update side: `AppPageBackTest`, `AppUpdateTest`, `ReleaseNotesTest`, `StatPollingTest`
+- `FormatUtilsTest`: progress, speed and duration formatting plus per-status colours, including boundaries
+- Built-in browser and UI state machine: `AdBlockerTest`, `BrowseHistoryTest`, `BrowserRulesTest`,
+  `StartPageTest`, `DockFollowTest`, `TabCardMotionTest`, `TabPersistenceTest`
+- Media and updates: `HlsManifestFixerTest`, `MediaProbeTest`, `VideoSnifferPickTest`, `AppUpdateTest`,
+  `ReleaseNotesTest`, `StatPollingTest`, `AppPageBackTest`
 
 ### Android SDK setup in CI
 
@@ -129,23 +115,16 @@ the SDK preinstalled on the runner, accepts licenses, installs `platform-tools` 
 `platforms;android-<API>` / `build-tools;<version>` and exports `ANDROID_SDK_ROOT` / `ANDROID_HOME` for
 Gradle (`Android/local.properties` is not tracked, so Gradle relies on those environment variables).
 
-**Why not `android-actions/setup-android@v3`**: that action runs `sdkmanager tools` internally, and Google
-has removed the `tools` package from the SDK repository, so it fails outright:
-
-```
-Warning: Failed to find package 'tools'
-Error: The process '.../sdkmanager' failed with exit code 1
-```
-
-Two traps when maintaining this action (both enforced by `npm run lint:workflows` — do not regress):
+`android-actions/setup-android@v3` is not used: it runs `sdkmanager tools`, and Google has removed the
+`tools` package from the SDK repository, so it fails outright. Two rules must hold when maintaining the
+action (enforced by `npm run lint:workflows`):
 
 1. **Quote package names containing semicolons**: in `sdkmanager --install platforms;android-35` the `;`
-   is a shell metacharacter — it separates commands even without spaces, yielding
-   `Failed to find package 'platforms'`. Always write `--install "platforms;android-35"` (same for
-   `build-tools;35.0.0`).
+   is a shell metacharacter that separates commands even without spaces — write
+   `--install "platforms;android-35"` (same for `build-tools;35.0.0`).
 2. **Use `${VAR}` when a variable is adjacent to non-ASCII text**: under a non-UTF-8 locale bash folds the
    multibyte bytes into the variable name (`$API、` is parsed as the variable `API、`), and with `set -u`
-   that fails with `unbound variable` — reproduced locally.
+   that fails with `unbound variable`.
 
 ## Browser extension
 
@@ -154,67 +133,48 @@ The extension runs identical code on both platforms (unified `chrome.*` callback
 
 | Aspect | Chromium (Chrome / Edge / Opera) | Firefox |
 | --- | --- | --- |
-| Background | `background.service_worker` (single-file SW) | `background.scripts` (event page; **Firefox does not support MV3 `service_worker`**) |
+| Background | `background.service_worker` | `background.scripts` (event page; Firefox does not support MV3 `service_worker`) |
 | Extension ID | Not required (store-assigned) | Required in MV3 via `browser_specific_settings.gecko.id` |
 | Platform-only permission | Includes `downloads.ui` (download bubble control) | Excluded (Firefox has no such permission) |
-| `downloads.onDeterminingFilename` | Supported (intercepts before the file is written) | Not supported → falls back to `downloads.onCreated` (functionally equivalent) |
-| `downloads.setUiOptions` | Supported | Not supported → bubble control is skipped |
-| Data collection declaration | Not required | Required `gecko.data_collection_permissions` (mandatory for all new AMO submissions since 2025-11-03) |
+| `downloads.onDeterminingFilename` | Supported (intercepts before the file is written) | Not supported, falls back to `downloads.onCreated` (functionally equivalent) |
+| `downloads.setUiOptions` | Supported | Not supported, bubble control is skipped |
+| Data collection declaration | Not required | Required `gecko.data_collection_permissions` (mandatory for new AMO submissions) |
 
-Full build, packaging, testing and AMO submission instructions live in the
-**[extension developer notes](../extensions/lerxu-webextension/README.md)**; the AMO listing copy
-(name / summary / description / reviewer notes) is in
+Build, packaging, testing and AMO submission instructions live in the
+[extension developer notes](../extensions/lerxu-webextension/README.md); the listing copy is in
 [AMO-LISTING.md](../extensions/lerxu-webextension/AMO-LISTING.md).
 
 ## Continuous integration
 
-Both workflows share one rule: **engine binaries ship with the repository and CI never compiles the engine**,
-so every workflow verifies the engine artifacts first, then builds and tests.
+Both workflows follow the same order: validate configuration and shipped artifacts first, then build and
+test.
 
 ### CI Tests (`.github/workflows/main.yml`)
 
 | Job | Runner | Coverage |
 | --- | --- | --- |
-| `lint-and-typecheck` | ubuntu | ESLint, `package.json` / electron-builder config checks, **all engine artifacts** (5 desktop + 2 Android: existence, byte-identical copies, architecture) |
-| `build-and-test` | ubuntu / windows / macos | Build the unpacked app → engine runtime tests (RPC probe, HTTP download, BT local-swarm loop) → app smoke test (launch app → engine subprocess → RPC auth → one HTTP download through the app engine) |
-| `android-build-and-test` | ubuntu | Engine verification (aarch64 / identical copies / capability strings) → unit tests → lint. **Does not build APKs** (the signed APK is produced by the android job in release.yml) |
-| `extension-test` | ubuntu | Dual-platform manifest checks (Firefox has no `service_worker`, requires `gecko.id`, must not carry Chromium-only permissions, requires the data-collection declaration) → compat layer behaviour (callback wrapping / `runtime.lastError` / event objects untouched / idempotency) → archive layout checks (root-level `manifest.json`, no macOS metadata, no dev scripts) → build and `web-ext lint` (zero errors required) |
+| `lint-and-typecheck` | ubuntu | ESLint, workflow validation, `package.json` / electron-builder config, shipped binary integrity (existence, byte-identical copies, architecture) |
+| `build-and-test` | ubuntu / windows / macos | Build the unpacked app → runtime tests (app launch, local RPC auth, HTTP download loop), uploads logs on failure |
+| `android-build-and-test` | ubuntu | Unit tests → lint. Does not build APKs (the signed APK comes from release.yml) |
+| `extension-test` | ubuntu | Dual-platform manifest checks → compat layer behaviour → archive structure → build and `web-ext lint` (zero errors required) |
 | `test-report` | ubuntu | Aggregated results |
 
-Triggers: pushes to `main` / `develop`, PRs to `main`, a weekly full run (Monday 06:00), and manual dispatch.
+Triggers: pushes to `main` / `develop`, PRs to `main`, a weekly full run, and manual dispatch.
 
 ### Release (`.github/workflows/release.yml`)
 
-On pushes to `main` it builds release artifacts for every platform and uploads them to one draft release only
+On pushes to `main` it builds release artifacts for every platform and uploads them to one draft release
 after the tests pass:
 
-- Desktop (ubuntu / windows / macos): `.exe`, `.dmg`, `.zip`, `.AppImage`, `.deb`
-- Android (ubuntu): `app-release.apk` only (**signed**; the job fails if the signing secrets are missing — no debug / unsigned packages)
-- Browser extension (ubuntu): `lerxu-webextension-firefox-<version>.zip` / `.xpi`, `lerxu-webextension-chromium-<version>.zip`
-- Both workflows run engine and app runtime tests through the shared `app-tests` composite action; any failure blocks the upload
+- Desktop: `.exe`, `.dmg`, `.zip`, `.AppImage`, `.deb`
+- Android: `app-release.apk` only (signed; the job fails when signing credentials are missing)
+- Browser extension: `lerxu-webextension-firefox-<version>.zip` / `.xpi`,
+  `lerxu-webextension-chromium-<version>.zip`
 
-**Android signing secrets** (**required**; the android job fails without them):
+**Android signing secrets** (required; the android job fails without them): `ANDROID_KEYSTORE_BASE64`
+(base64 of the keystore), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 
-`ANDROID_KEYSTORE_BASE64` (base64 of the keystore file), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
-
-> ⚠️ **The `secrets` context cannot be used in `if:` conditions** — GitHub rejects the workflow with
-> `Unrecognized named-value: 'secrets'` (the `if` context list is limited to
-> github / needs / strategy / matrix / job / runner / env / vars / steps / inputs).
-> To branch on whether a credential exists, inject the secret into a job-level `env` and test it in the shell:
->
-> ```yaml
-> jobs:
->   android:
->     env:
->       KEY_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
->     steps:
->       - name: Decode keystore (required)
->         run: |
->           if [ -z "$KEY_B64" ]; then echo "not configured, skipping signing"; exit 0; fi
->           printf '%s' "$KEY_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
->           echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
-> ```
->
-> Such mistakes are valid YAML and `js-yaml` cannot catch them, so `scripts/check-workflows.js`
-> (`npm run lint:workflows`) validates every `if:` condition and `${{ }}` expression against GitHub's
-> context availability table; it runs as part of the `lint-and-typecheck` job.
+**`secrets` cannot be used in `if:` conditions**: GitHub rejects the workflow with
+`Unrecognized named-value: 'secrets'` (`if` only allows github / needs / strategy / matrix / job / runner /
+env / vars / steps / inputs). To branch on whether a credential exists, inject the secret into a job-level
+`env` and test it in the shell.

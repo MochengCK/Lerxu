@@ -27,7 +27,7 @@
 
 ## Introduction
 
-A modern download manager powered by the in-house XferRust engine (native Rust implementation), optimized for Windows, macOS, Linux, and Android. Downloads run over **HTTP(S)**, **BitTorrent** (including magnet links) and **HLS (M3U8)** playlists, with uTP transport, automatic port mapping, automatic tracker synchronization, task prioritization, batch management, and advanced download presets. Browser-extracted links such as `ed2k://` and `thunder://` are also recognized and handed over to the app — pair the desktop app with the browser extension to grab web videos, or use the Android client's built-in browser with resource sniffing and a native player.
+Lerxu is a download manager for Windows, macOS, Linux and Android, powered by the in-house XferRust engine (native Rust). It handles **HTTP(S)**, **BitTorrent** (including magnet links) and **HLS (M3U8)** tasks. On desktop it pairs with a browser extension that detects web videos; the Android client ships its own browser with resource sniffing and a native player.
 
 ## Screenshots
 
@@ -52,255 +52,109 @@ A modern download manager powered by the in-house XferRust engine (native Rust i
   </tr>
 </table>
 
-## Engine & Connections
+## Features
 
-- Lerxu runs the XferRust engine as a **separate process** and drives it over local JSON-RPC (`127.0.0.1:16800`). The app automatically picks the best "Max Connections per Server" strategy for the engine in use.
-- Each task supports up to **128 concurrent segments** (32 connections per server by default), backed by a built-in **128M disk cache** and connection reuse for smoother parallel downloads.
-- HLS (M3U8) tasks are driven by the engine itself, which reads the playlist, downloads the segments and splices them into a single file. Variant selection, segment concurrency (cap 64), write mode and segment retries are configurable in Preferences, and interrupted downloads resume.
-- Up to **10 concurrent tasks** by default — adjustable in Preferences.
-- Up to **128 peer connections** per torrent by default (the engine cap is 200).
-- The engine restarts automatically after a crash (up to 5 attempts with backoff), with task and session state restored. Unfinished tasks stay **paused** after a restart and can be resumed manually.
-- Note: real concurrency for single-source downloads depends on the segment count; torrent and multi-mirror downloads can stack concurrency for faster overall speed.
+### Downloads
 
-## Core Features
-
-### Performance & Reliability
-- **High-speed Downloads**: Optimized for maximum download performance, with a built-in disk cache and connection reuse for smoother multi-task downloads
-- **Multi-threaded Support**: Up to 128 concurrent segments per task
-- **Concurrent Downloads**: Manage up to 10 download tasks simultaneously
-- **Stable Connections**: Robust error handling, automatic retry, and resume support
-- **Crash Self-healing**: The engine restarts automatically after an abnormal exit, restoring task state
-- **Memory Optimization**: Automatically releases memory when all windows are hidden or minimized
-
-### Protocol Support
-- **HTTP/HTTPS**: Download directly from websites, with multi-connection acceleration, Gzip, Keep-Alive, and resume support
-- **HLS (M3U8)**: The manifest is parsed by the engine, which downloads the playlist's segments and splices them into one file; supports bitrate variant selection, AES-128 encrypted segments, configurable segment concurrency and retries, and resume
-- **BitTorrent**: Full torrent file support with selective downloading; uTP/TCP dual transport, DHT, LPD, PeX, and encryption work out of the box
-- **Magnet Links**: Direct downloads without .torrent files; choose files freely once metadata is ready
-- **Request Headers**: Per-task `Referer` and `User-Agent`, plus arbitrary custom headers, so links that require them can be fetched
-- **Link Takeover**: `ed2k://` and `thunder://` links are recognized and handed over to the app (`thunder://` decodes to a plain HTTP download and is off by default)
-- **Not supported**: FTP/SFTP and Metalink — the engine only implements HTTP(S) and BitTorrent. `ed2k://` is link recognition and browser takeover only; native ED2K downloading is not implemented.
-
-### BitTorrent / Magnet Links
-- **Transport Protocols**: uTP (BEP 29) and TCP dual stack, configurable as "uTP-first with TCP fallback / uTP-only / TCP-only", with runtime hot switching
-- **Port Mapping**: Automatic UPnP and NAT-PMP mapping for the BT listen port to improve connection success
-- **Network Discovery**: DHT (IPv4/IPv6 dual stack), Local Peer Discovery (LPD), and Peer Exchange (PeX)
-- **Built-in Trackers & Auto Sync**: Pre-configured tracker servers plus subscription-based scheduled updates, so downloads work out of the box
-- **BT Encryption**: Adaptive / forced encryption modes for compatibility with various network environments
-- **Peer Management**: Live peer list in task details (client identification, piece progress), manual peer banning, and a custom IP ban list
-- **File Selection**: Freely choose which files to download for magnet and torrent tasks once metadata is ready
-- **Seeding Control**: Set share-ratio and seeding-time goals; auto-pause or keep seeding on completion
+- **Protocols**: HTTP/HTTPS, BitTorrent, magnet links and HLS (M3U8); FTP/SFTP and Metalink are not supported
+- **Concurrency**: up to 128 segments per task (32 connections per server by default) and 10 concurrent tasks by default, both adjustable in Preferences
+- **HLS**: the playlist and its segments are handled by the downloader and spliced into a single file; bitrate variants, AES-128 encrypted segments, segment concurrency, retries and resume are supported
+- **BitTorrent**: uTP/TCP dual stack (hot-switchable), DHT (IPv4/IPv6), LPD, PeX, UPnP/NAT-PMP port mapping and encryption; pre-configured trackers with scheduled subscription updates; ratio- and time-based seeding goals; 128 peer connections per torrent by default
+- **Task handling**: priority, batch operations, speed limits, scheduled start/pause with an action on completion (shut down, sleep, quit) and resume; the download process restarts automatically after an abnormal exit and restores task state
+- **File handling**: automatic categorization by type, user-defined rules, favorite and recent directories, a custom suffix for in-progress files, and an option to set file modification time to the completion time
+- **Request control**: per-task `Referer`, `User-Agent` and arbitrary headers; system or custom proxy applied per scope (downloads, app updates, tracker updates); optional antivirus or custom scanner after completion
+- **Link takeover**: `ed2k://` and `thunder://` links are recognized and handed over (`thunder://` decodes to a plain HTTP download, off by default); `ed2k://` is recognition only, native ED2K downloading is not implemented
+- **Also**: clipboard auto-paste, drag-and-drop, advanced option presets, custom shortcuts, completion notifications
 
 ### Video Download
-- **Online Video Download (Browser Extension)**: Recognize web videos via the browser extension and send them to the app with one click to create download tasks; works in Chrome, Edge, Opera and other Chromium-based browsers as well as Firefox (now published on the official Firefox add-ons store)
-- **Download Takeover**: Clicks on download links on web pages (e.g., links with a download attribute or common file extensions) can be handed over to Lerxu, with support for excluding specific sites or file types and a shortcut to temporarily bypass
-- **Video Recognition**: Supports multiple video formats, including DASH (audio and video streams are paired and merged after download) and HLS (the M3U8 manifest is handed to the engine as a single item — segments are never expanded by the extension)
-- **Unified Task Management**: Video resources appear as regular download tasks in the task list, supporting the same pause/resume/delete management experience as other tasks
-- **Merge Progress Display**: Audio/video that needs merging enters a "merging" state with visible progress after download, and correctly merges when multiple segmented videos are sent at once; the FFmpeg status is shown in Preferences
 
-### Android Built-in Browser
+- **Browser extension**: detects web videos and creates tasks in one click; works in Chromium-based browsers and Firefox
+- **Download takeover**: download links on web pages can be handed over to Lerxu, with site and file-type exclusions and a shortcut to bypass temporarily
+- **Video detection**: DASH audio and video streams are downloaded separately and merged; an HLS playlist is handed over as one task instead of being expanded into segments
+- **Merge progress**: audio/video that needs merging enters a "merging" state with live progress, and multiple segmented videos sent at once still merge correctly
 
-- **Built-in Browser**: The Android client ships its own browser with tab management, history and pull-to-refresh, so you can switch between the downloader and the browser at any time
-- **Resource Sniffing**: Media addresses found while browsing are collected in a resource panel and can be sent to the download engine with one tap
-- **Native Player**: Page videos can be played fullscreen in the app's own player, with play/pause, double-tap to seek, playback speed and aspect ratio, looping, keep-screen-on, and a screen lock against mistaps; the player also carries a download entry that hands the current video (with filename and estimated size) to the engine
-- **Incognito Windows**: Open an incognito window with a separate identity, gated behind biometric or device-password authentication
-- **Ad Blocking**: Ad requests are blocked and ad slots hidden by default; can be turned off in Settings
-- **Search Engine & Default Browser**: Picks a reachable search engine for the current network, and can register as the system default browser for http / https links
-- **Default Entry**: Choose whether the app opens into the downloader or the browser
+### Android Client
 
-### User Experience
-- **Clean Interface**: Modern, intuitive design with dark / light / system-following themes
-- **Custom Background**: Background images and solid colors, UI opacity, frosted-glass blur (native macOS Vibrancy transparency)
-- **Native Experience**: Custom title bar on Windows / Linux; preferences embedded in the main window for faster startup
-- **Live Speed Display**: The macOS tray icon and Dock icon show both download and upload speeds, with a brand-new tray icon
-- **Task Details Drawer**: Overview, activity, trackers, peers, files, and BT piece map in one place
-- **Standalone Progress Window**: Open a task's progress in its own window, automatically for the first task or for every new task
-- **Completion Dialog**: A dedicated window when a download completes (toggleable in Preferences)
-- **Clipboard Auto-paste**: Copied download links are automatically filled into the new-task dialog
-- **System Tray Integration**: Quick access and status monitoring
-- **Download Notifications**: Real-time alerts when downloads complete, with configurable click actions
-- **Task Plan**: Schedule task start / pause, and pick an action for when everything finishes (shut down, sleep, quit)
-- **Speed Control**: Set upload and download speed limits
-- **File Management**: Organize downloaded files by category and location, with favorite and recent directories
-- **Drag & Drop**: Drop links or torrent files onto the window to create tasks
-- **Multilingual**: Simplified Chinese, Traditional Chinese, and English
+- **Built-in browser**: tabs, history and pull-to-refresh, so you can switch between the downloader and the browser at any time
+- **Resource sniffing**: media addresses found while browsing are collected in a resource panel and sent to the downloader in one tap
+- **Native player**: fullscreen playback, double-tap seek, playback speed and aspect ratio, looping, keep-screen-on and a screen lock; the player can hand the current video (with filename and estimated size) to the downloader
+- **Incognito and blocking**: incognito windows with a separate identity, gated behind biometric or device-password authentication; ad requests are blocked and ad slots hidden by default
+- **System integration**: picks a reachable search engine for the current network, can register as the system default browser for http / https links, and lets you choose whether the app opens into the downloader or the browser
 
-### Advanced Features
-- **Tracker Auto Sync**: Automatic scheduled tracker list updates for improved torrent performance
-- **Automatic Port Mapping**: UPnP and NAT-PMP automatically open network ports
-- **Custom Download Identity**: Customize the download request identity (User-Agent) for enhanced compatibility
-- **Batch Operations**: Multi-select tasks to pause, resume, or remove them together
-- **Download Security Scan**: Scan completed files with the system antivirus tool or a custom scanner
-- **Proxy Support**: System proxy or custom proxy, applied per download scope (downloads, app updates, tracker updates)
-- **Update Channels**: Choose between stable, preview, or all release channels, with automatic installation after the update package downloads
-- **Engine Info**: The current engine, its version, architecture, and the capability list reported by the engine itself
-- **Local RPC Service**: Optional JSON-RPC endpoint so external tools can drive the same engine
+### Interface and Experience
 
-### Unique Features
-- **File Categorization**: Auto-sort files by type
-- **Custom Categories**: User-defined file categorization rules
-- **Task Priority**: Set task priority values to influence download order and resource allocation
-- **Custom Download File Extension**: Customize the file extension for in-progress downloads
-- **Set File Modification Date to Completion Time**: Optionally set downloaded file modification dates to match completion time
-- **Advanced Option Presets**: Name, save, apply, and delete presets for advanced options
-- **Link Input Optimization**: Auto-deduplicate links; auto-newline and cursor positioning after paste or autofill
-- **Custom Shortcuts**: Set or reset shortcuts for common commands in the "Preferences > Basic > Shortcuts" card
+- Dark, light and system-following themes; background images or solid colors, UI opacity and frosted glass (native macOS Vibrancy)
+- Custom title bar on Windows / Linux; preferences embedded in the main window for faster startup
+- Task details drawer (overview, activity, trackers, peers, files and the BT piece map), standalone progress window and a completion dialog
+- Download and upload speeds in both the macOS tray and Dock icons; system tray menu and download notifications
+- Languages: Simplified Chinese, Traditional Chinese and English
+
+### Updates and Integration
+
+- **Update channels**: stable, preview or all releases, with automatic installation once the package is downloaded
+- **Local RPC service**: an optional JSON-RPC endpoint so external tools can drive the same download process
+- **Engine info**: the current engine, its version, architecture and the capability list it reports
 
 ## Supported Platforms
 
-Lerxu currently supports the following platforms:
-- **Windows** (10, 11) x64
-- **macOS** (Intel x64; Apple Silicon arm64)
-- **Linux** (x64, arm64)
-- **Android** (arm64): shares the same download engine as the desktop app, with a mobile-first interface; besides the downloader it ships a built-in browser (tabs, resource sniffing, native player, incognito windows, ad blocking) and can register as the system default browser. It also has its own update-channel selection (stable / beta / all releases)
+- **Windows** 10 / 11, x64
+- **macOS** Intel x64, Apple Silicon arm64
+- **Linux** x64, arm64
+- **Android** arm64 (ships a built-in browser besides the downloader, can be set as the system default browser, and has its own update channels)
 
 ## Installation
 
+All packages are published on [GitHub Releases](https://github.com/MochengCK/Lerxu/releases).
+
 ### Windows
 
-1. Visit the [GitHub Releases](https://github.com/MochengCK/Lerxu/releases) page
-2. Download the latest `Lerxu-Setup-<version>.exe` installer
-3. Run the installer and follow the on-screen instructions
+Download `Lerxu-Setup-<version>.exe` and run the installer.
 
 ### macOS
 
-1. Visit the [GitHub Releases](https://github.com/MochengCK/Lerxu/releases) page
-2. Download `*.dmg` (x64/arm64) or `*-mac.zip` / `*-arm64-mac.zip` (x64/arm64)
-3. Using `*.dmg`: Double-click to open, drag the app to `/Applications`
-4. Using `*.zip`: Extract and move the app to `/Applications`
-5. If prompted "cannot verify developer" on first launch, go to "System Settings > Privacy & Security" and click "Open Anyway", or right-click the app icon in Finder and select "Open"
+Download `*.dmg` (or `*-mac.zip`): open the dmg and drag the app into `/Applications`, or unzip and move it there. If macOS reports an unverified developer on first launch, click "Open Anyway" under "System Settings → Privacy & Security", or right-click the app in Finder and choose "Open".
 
 ### Linux
 
-- AppImage (Recommended):
-  1. Download `*.AppImage` (`x64` or `arm64`)
-  2. Grant execute permission: `chmod +x Lerxu-*.AppImage`
-  3. Run: `./Lerxu-*.AppImage`
-
-- Debian/Ubuntu (`.deb` package):
-  1. Download `lerxu_*_amd64.deb` or `lerxu_*_arm64.deb`
-  2. Install: `sudo dpkg -i lerxu_*.deb`
-  3. If dependency issues occur: `sudo apt -f install`
-
-- Other distributions: Use the AppImage method.
+- **AppImage (recommended)**: download `*.AppImage`, then `chmod +x Lerxu-*.AppImage` and run it
+- **Debian / Ubuntu**: `sudo dpkg -i lerxu_*.deb`, followed by `sudo apt -f install` if dependencies are missing
 
 ### Android
 
-1. Visit the [GitHub Releases](https://github.com/MochengCK/Lerxu/releases) page
-2. Download `app-release.apk`
-3. Install on an **arm64** device (the app only supports `arm64-v8a`)
+Download `app-release.apk` and install it. `arm64-v8a` devices only.
 
-## Development Guide
+## Development
 
-### Prerequisites
+Requirements: Node.js 22.12.0 or newer, npm, Git.
 
-- Node.js (v22.12.0 or higher)
-- npm
-- Git
-
-> Extra tooling needed for the Android client or the browser extension (JDK 17 / Android SDK, etc.)
-> is listed in the [developer documentation](docs/DEVELOPMENT.en.md).
-
-### Setup
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/MochengCK/Lerxu.git
-   cd Lerxu
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-4. Build for production (installers land in `release/`):
-   ```bash
-   npm run build
-   ```
-
-### Scripts
-
-| Script | What it does |
-| --- | --- |
-| `npm run dev` | Development mode with hot reload |
-| `npm run build` | Build installers for the current platform |
-| `npm run build:dir` | Build an unpacked directory only (used by CI for runtime tests) |
-| `npm run build:applesilicon` | Build the macOS arm64 target |
-| `npm run build:github` | Build the front-end bundles only (used by CI, no installer) |
-| `npm run release` | Build and publish (used by CI for releases) |
-| `npm run preview` | Preview the built front-end bundles locally |
-| `npm run build:extension` | Package the browser extension (Chromium + Firefox) |
-| `npm run test:extension` | Run the browser extension tests |
-| `npm run lint:extension` | Lint the packaged Firefox extension with `web-ext` |
-| `npm run lint` | ESLint over `src` |
-| `npm run lint:fix` | ESLint with `--fix` |
-| `npm run lint:workflows` | Validate GitHub Actions workflows (YAML + expression semantics) |
-
-### Project Structure
-
-```
-Lerxu/
-├── src/                  # Application source
-│   ├── main/             # Electron main process (engine lifecycle, tasks, config, IPC)
-│   ├── renderer/         # Electron renderer process (Vue 3)
-│   └── shared/           # Shared utilities, locales and the engine protocol adapter
-├── extra/                # Built-in download engine binaries per platform
-├── extensions/           # Browser extension (video sniffing & download takeover)
-├── Android/              # Android client (Kotlin + Compose)
-├── static/               # Static assets
-├── scripts/              # Build scripts (extension packaging, workflow checks)
-├── test/                 # Runtime tests (engine / app / extension)
-├── build/                # Packaging hooks and platform icons
-├── docs/                 # Developer documentation
-├── screenshots/          # Documentation screenshots
-├── .github/workflows/    # CI and release pipelines
-├── package.json          # Project configuration
-└── README.md             # Project documentation
+```bash
+npm install      # install dependencies
+npm run dev      # development mode (hot reload)
+npm run build    # build installers for the current platform (release/)
+npm run lint     # ESLint
 ```
 
-The engine source (a separate repository), engine binary backfill, Android/extension build steps,
-tests and CI configuration are covered in the [developer documentation](docs/DEVELOPMENT.en.md).
+Extra requirements for the Android client and the browser extension, the remaining scripts, tests and
+CI are covered in the [developer documentation](docs/DEVELOPMENT.en.md).
 
 ## Contributing
 
-Contributions are welcome! Whether you're fixing bugs, adding new features, or improving documentation, we appreciate your help.
-
-### How to Contribute
-
-1. Fork the repository
-2. Create a new branch (`git checkout -b feature/your-feature`)
-3. Make your changes
-4. Commit your changes (`git commit -m 'Add some feature'`)
-5. Push to the branch (`git push origin feature/your-feature`)
-6. Create a Pull Request
-
-### Guidelines
-
-- Follow the existing code style
-- Write clear and concise commit messages
-- Add tests for new features
-- Update documentation as needed
+Issues and pull requests are welcome: fork the repository, create a branch, make your changes and open a
+PR. Please follow the existing code style, keep commit messages concise, and add tests and documentation
+where they are needed.
 
 ## Acknowledgments
 
-- This project is based on the agalwood open-source project [Motrix](https://github.com/agalwood/Motrix), with extensive modifications and feature extensions
-- UI Framework: [Vue.js](https://vuejs.org/) + [Element Plus](https://element-plus.org/)
-- Desktop Framework: [Electron](https://www.electronjs.org/)
-- Download Engine: [XferRust](https://github.com/MochengCK/XferRust) (in-house Rust download engine)
+- Based on the agalwood open-source project [Motrix](https://github.com/agalwood/Motrix), with extensive modifications and feature extensions
+- UI: [Vue.js](https://vuejs.org/) + [Element Plus](https://element-plus.org/)
+- Desktop: [Electron](https://www.electronjs.org/)
+- Download engine: [XferRust](https://github.com/MochengCK/XferRust) (in-house Rust engine)
 
 ## Support
 
-If you encounter any issues or have questions:
-
-- Submit an [issue](https://github.com/MochengCK/Lerxu/issues/new/choose) on GitHub
-- Join our community for discussion and support
+- Open an [issue](https://github.com/MochengCK/Lerxu/issues/new/choose)
+- Join the community for discussion and support
 
 ## License
 
-This project is open-sourced under the [Apache License 2.0](LICENSE).
+Released under the [Apache License 2.0](LICENSE).
