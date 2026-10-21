@@ -388,26 +388,28 @@
                 />
               </el-col>
             </el-row>
-            <!-- 操作行与提示放在同一个 el-form-item 里：多套一层会多出 18px 的
-                 表单项间距，和上面两行的行距不一致；提示与按钮共用行的左右内边距
-                 （`.el-form-item__info` 自带 flex-basis:100%，会折到下一行）。 -->
+            <!-- 客户端配置：标题与复制按钮都在代码框顶部（框内一行），
+                 代码内容直接摊在下面，长路径折行显示。 -->
             <el-row>
-              <el-col class="form-item-sub pref-action-row" :span="24" style="row-gap: 6px;">
-                <el-button
-                  class="pref-row-action"
-                  :disabled="!mcpReady"
-                  @click="copyMcpEndpoint"
-                >
-                  {{ t('preferences.mcp-copy-endpoint') }}
-                </el-button>
-                <el-button
-                  class="pref-row-action"
-                  :disabled="!engineSupportsMcp"
-                  @click="copyMcpStdioConfig"
-                >
-                  {{ t('preferences.mcp-copy-config') }}
-                </el-button>
-                <div class="el-form-item__info" style="margin-top: 0;">{{ mcpHintText }}</div>
+              <el-col class="form-item-sub" :span="24">
+                <div class="mcp-config">
+                  <div class="mcp-config-box">
+                    <div class="mcp-config-head">
+                      <span class="mcp-config-title">{{ t('preferences.mcp-client-config') }}</span>
+                      <button
+                        type="button"
+                        class="mcp-copy-btn"
+                        :disabled="!engineSupportsMcp"
+                        @click="copyMcpConfig"
+                      >
+                        <mo-icon name="copy" width="12" height="12" />
+                        <span>{{ t('preferences.mcp-copy-config') }}</span>
+                      </button>
+                    </div>
+                    <pre class="mcp-config-code">{{ mcpClientConfig }}</pre>
+                  </div>
+                  <div class="el-form-item__info">{{ mcpHintText }}</div>
+                </div>
               </el-col>
             </el-row>
           </el-form-item>
@@ -612,6 +614,7 @@ import { usePreferenceStore } from '@/store/preference'
 import { useTaskStore } from '@/store/task'
 import { storeToRefs } from 'pinia'
 import '@/components/Icons/dice'
+import '@/components/Icons/copy'
 import '@/components/Icons/refresh'
 import '@/components/Icons/folder'
 import { getLanguage } from '@shared/locales'
@@ -854,11 +857,38 @@ const engineSupportsMcp = computed(() => {
   const features = (storeEngineInfo.value && storeEngineInfo.value.features) || []
   return Array.isArray(features) && features.includes('mcp')
 })
-// 开关打开且引擎支持 → 两个复制按钮才可用
-const mcpReady = computed(() => engineSupportsMcp.value && form.value.mcpEnabled === true)
 const mcpEndpoint = computed(() => {
   const port = Number(form.value.mcpListenPort) || ENGINE_MCP_PORT
   return `http://127.0.0.1:${port}/mcp`
+})
+/**
+ * stdio 形态的客户端配置：由客户端拉起 `xferrust mcp`，没有本机引擎时它会
+ * 在进程内自起一个，所以这份配置开不开应用都能用。二进制路径取引擎信息里的
+ * binPath，令牌复用 RPC Secret。
+ *
+ * 手工按行拼是为了让卡片里的代码框刚好放得下（`JSON.stringify(obj, null, 2)`
+ * 会把 args 拆成四五行的短句）；每个字符串都过 JSON.stringify，Windows 路径
+ * 里的反斜杠、令牌里的引号都不会拼坏。
+ */
+const mcpClientConfig = computed(() => {
+  const port = Number(form.value.mcpListenPort) || ENGINE_MCP_PORT
+  const token = `${form.value.rpcSecret || ''}`
+  const bin = (storeEngineInfo.value && storeEngineInfo.value.binPath) || 'xferrust'
+  const args = ['mcp', `--mcp-listen-port=${port}`]
+  if (token) {
+    args.push(`--mcp-token=${token}`)
+  }
+  const q = (value) => JSON.stringify(value)
+  return [
+    '{',
+    '  "mcpServers": {',
+    '    "lerxu": {',
+    `      "command": ${q(bin)},`,
+    `      "args": [${args.map(q).join(', ')}]`,
+    '    }',
+    '  }',
+    '}'
+  ].join('\n')
 })
 const mcpHintText = computed(() => {
   if (!engineSupportsMcp.value) {
@@ -1688,25 +1718,9 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
           hideRpcSecret.value = true
         }, 2000)
       }
-      function copyMcpEndpoint() {
-        ipcRenderer.invoke('clipboard:write-text', mcpEndpoint.value)
-        msg.success(t('preferences.mcp-copied'))
-      }
-      /**
-       * stdio 形态的客户端配置：由客户端拉起 `xferrust mcp`，由它把 stdio
-       * 转发到已在运行的本机引擎（协议处理只有引擎里那一份）。
-       * 二进制路径取引擎信息里的 binPath，令牌复用 RPC Secret。
-       */
-      function copyMcpStdioConfig() {
-        const port = Number(form.value.mcpListenPort) || ENGINE_MCP_PORT
-        const token = `${form.value.rpcSecret || ''}`
-        const bin = (storeEngineInfo.value && storeEngineInfo.value.binPath) || 'xferrust'
-        const args = ['mcp', `--mcp-listen-port=${port}`]
-        if (token) {
-          args.push(`--mcp-token=${token}`)
-        }
-        const payload = { mcpServers: { lerxu: { command: bin, args } } }
-        ipcRenderer.invoke('clipboard:write-text', JSON.stringify(payload, null, 2))
+      /** 复制代码框里的客户端配置（与框里显示的是同一份字符串） */
+      function copyMcpConfig() {
+        ipcRenderer.invoke('clipboard:write-text', mcpClientConfig.value)
         msg.success(t('preferences.mcp-copied'))
       }
       function onSessionResetClick() {
@@ -2163,7 +2177,81 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
 
 .proxy-scope {
   width: 100%;
-}.bt-tracker {
+}
+
+/* MCP 客户端配置：一个代码框，标题行（标题 + 复制按钮）钉在框顶。
+   长路径用 pre-wrap 折行而不是横向滚动（卡片窄，横滚会把路径藏起来）。 */
+.mcp-config {
+  width: 100%;
+}
+
+.mcp-config-box {
+  border: 1px solid var(--pref-line, var(--lc-border-light, #e2e8f0));
+  border-radius: var(--pref-radius-md, 8px);
+  background-color: var(--pref-inset, var(--lc-preference-inset, rgba(128, 128, 128, 0.08)));
+  overflow: hidden;
+}
+
+.mcp-config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px 0;
+}
+
+.mcp-config-title {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pref-text-2, var(--lc-text-secondary, #5a6c7d));
+}
+
+/* 复制按钮：图标 + 文字，无边框无底色，悬停只换颜色 */
+.mcp-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--pref-text-2, var(--lc-text-secondary, #5a6c7d));
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: color 0.16s ease;
+
+  &:hover:not(:disabled) {
+    color: var(--pref-accent, var(--lc-color-primary, #1a7fe0));
+  }
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .mo-icon {
+    display: block;
+  }
+}
+
+.mcp-config-code {
+  margin: 0;
+  padding: 6px 10px 9px;
+  color: var(--pref-text, var(--lc-text-primary, #2c3e50));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 200px;
+  overflow-y: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.bt-tracker {
   position: relative;
   .tracker-row {
     margin-bottom: 12px;
