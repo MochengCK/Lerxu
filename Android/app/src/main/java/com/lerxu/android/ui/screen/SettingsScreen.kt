@@ -39,24 +39,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BrightnessAuto
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.BrightnessAuto
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Devices
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -411,7 +410,7 @@ fun SettingsScreen(
                 }
                 Spacer(Modifier.width(10.dp))
                 Icon(
-                    Icons.Default.ContentCopy,
+                    Icons.Outlined.ContentCopy,
                     contentDescription = stringResource(R.string.copy),
                     modifier = Modifier.size(15.dp),
                     tint = colorScheme.onSurfaceVariant
@@ -987,7 +986,7 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    Icons.Default.Add,
+                    Icons.Outlined.Add,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.primary
@@ -1032,7 +1031,7 @@ fun SettingsScreen(
                     )
                 }
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -1092,7 +1091,7 @@ fun SettingsScreen(
                     )
                 }
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -1124,7 +1123,7 @@ fun SettingsScreen(
                     )
                 }
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -1154,7 +1153,7 @@ fun SettingsScreen(
                     )
                 }
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -1186,7 +1185,7 @@ fun SettingsScreen(
                     )
                 }
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -1216,7 +1215,7 @@ fun SettingsScreen(
                     )
                 }
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -1353,7 +1352,7 @@ fun SettingsScreen(
                     )
                 }
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -1382,7 +1381,7 @@ fun SettingsScreen(
                     )
                 }
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -1655,7 +1654,7 @@ private fun SubscriptionRow(
         }
         IconButton(onClick = onRefresh, modifier = Modifier.size(34.dp)) {
             Icon(
-                Icons.Default.Refresh,
+                Icons.Outlined.Refresh,
                 contentDescription = stringResource(R.string.refresh_subscription),
                 modifier = Modifier.size(16.dp),
                 tint = colorScheme.onSurfaceVariant
@@ -1663,7 +1662,7 @@ private fun SubscriptionRow(
         }
         IconButton(onClick = onRemove, modifier = Modifier.size(34.dp)) {
             Icon(
-                Icons.Default.Close,
+                Icons.Outlined.Close,
                 contentDescription = stringResource(R.string.remove_subscription),
                 modifier = Modifier.size(16.dp),
                 tint = colorScheme.onSurfaceVariant
@@ -1901,7 +1900,7 @@ private fun SettingsCategoryHome(
                                 modifier = Modifier.weight(1f)
                             )
                             Icon(
-                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp),
                                 tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
@@ -2221,7 +2220,7 @@ private fun Stepper(
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
-                    Icons.Default.Remove,
+                    Icons.Outlined.Remove,
                     contentDescription = stringResource(R.string.decrease),
                     modifier = Modifier.size(15.dp)
                 )
@@ -2240,7 +2239,7 @@ private fun Stepper(
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
-                    Icons.Default.Add,
+                    Icons.Outlined.Add,
                     contentDescription = stringResource(R.string.increase),
                     modifier = Modifier.size(15.dp)
                 )
@@ -2270,7 +2269,7 @@ private fun PresetCycler(
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
                     contentDescription = stringResource(R.string.prev_preset),
                     modifier = Modifier.size(16.dp)
                 )
@@ -2294,7 +2293,7 @@ private fun PresetCycler(
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
-                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    Icons.AutoMirrored.Outlined.KeyboardArrowRight,
                     contentDescription = stringResource(R.string.next_preset),
                     modifier = Modifier.size(16.dp)
                 )
@@ -2464,7 +2463,7 @@ private fun LanguageDialog(
                     }
                     if (selected) {
                         Icon(
-                            Icons.Default.Check,
+                            Icons.Outlined.Check,
                             contentDescription = null,
                             tint = colorScheme.primary,
                             modifier = Modifier.size(18.dp)
@@ -2541,7 +2540,7 @@ private fun SearchEngineDialog(
                 }
                 if (autoActive) {
                     Icon(
-                        Icons.Default.Check,
+                        Icons.Outlined.Check,
                         contentDescription = null,
                         tint = colorScheme.primary,
                         modifier = Modifier.size(18.dp)
@@ -2570,7 +2569,7 @@ private fun SearchEngineDialog(
                     )
                     if (selected) {
                         Icon(
-                            Icons.Default.Check,
+                            Icons.Outlined.Check,
                             contentDescription = null,
                             tint = colorScheme.primary,
                             modifier = Modifier.size(18.dp)
@@ -2610,8 +2609,8 @@ private fun StartPageDialog(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val options = listOf(
-        Triple(StartPage.Downloader, Icons.Default.CloudDownload, R.string.start_page_downloader),
-        Triple(StartPage.Browser, Icons.Default.Language, R.string.start_page_browser)
+        Triple(StartPage.Downloader, Icons.Outlined.CloudDownload, R.string.start_page_downloader),
+        Triple(StartPage.Browser, Icons.Outlined.Language, R.string.start_page_browser)
     )
     BottomConfirmDialog(
         title = stringResource(R.string.settings_start_page),
@@ -2653,7 +2652,7 @@ private fun StartPageDialog(
                     )
                     if (selected) {
                         Icon(
-                            Icons.Default.Check,
+                            Icons.Outlined.Check,
                             contentDescription = null,
                             tint = colorScheme.primary,
                             modifier = Modifier.size(18.dp)
@@ -2692,9 +2691,9 @@ private fun ThemeDialog(
                 ) {
                     Icon(
                         when (option.key) {
-                            "light" -> Icons.Default.LightMode
-                            "dark" -> Icons.Default.DarkMode
-                            else -> Icons.Default.BrightnessAuto
+                            "light" -> Icons.Outlined.LightMode
+                            "dark" -> Icons.Outlined.DarkMode
+                            else -> Icons.Outlined.BrightnessAuto
                         },
                         contentDescription = null,
                         tint = if (selected) colorScheme.primary else colorScheme.onSurfaceVariant,
@@ -2710,7 +2709,7 @@ private fun ThemeDialog(
                     )
                     if (selected) {
                         Icon(
-                            Icons.Default.Check,
+                            Icons.Outlined.Check,
                             contentDescription = null,
                             tint = colorScheme.primary,
                             modifier = Modifier.size(18.dp)
@@ -2772,7 +2771,7 @@ private fun DockModeDialog(
                     }
                     if (selected) {
                         Icon(
-                            Icons.Default.Check,
+                            Icons.Outlined.Check,
                             contentDescription = null,
                             tint = colorScheme.primary,
                             modifier = Modifier.size(18.dp)
@@ -2834,7 +2833,7 @@ private fun UpdateChannelDialog(
                     )
                     if (selected) {
                         Icon(
-                            Icons.Default.Check,
+                            Icons.Outlined.Check,
                             contentDescription = null,
                             tint = colorScheme.primary,
                             modifier = Modifier.size(18.dp)

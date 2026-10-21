@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -45,20 +46,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Computer
-import androidx.compose.material.icons.rounded.ContentPaste
-import androidx.compose.material.icons.rounded.Devices
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Folder
-import androidx.compose.material.icons.rounded.PhoneAndroid
-import androidx.compose.material.icons.rounded.RadioButtonUnchecked
-import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -103,6 +90,20 @@ import com.lerxu.android.R
 import com.lerxu.android.engine.EngineManager
 import com.lerxu.android.model.LanPeer
 import com.lerxu.android.model.TaskFile
+import com.lerxu.android.ui.LerxuAdd
+import com.lerxu.android.ui.LerxuCheckCircle
+import com.lerxu.android.ui.LerxuChevronRight
+import com.lerxu.android.ui.LerxuCircle
+import com.lerxu.android.ui.LerxuClose
+import com.lerxu.android.ui.LerxuComputer
+import com.lerxu.android.ui.LerxuDevices
+import com.lerxu.android.ui.LerxuDownload
+import com.lerxu.android.ui.LerxuFolder
+import com.lerxu.android.ui.LerxuPaste
+import com.lerxu.android.ui.LerxuPhone
+import com.lerxu.android.ui.LerxuPlay
+import com.lerxu.android.ui.LerxuSend
+import com.lerxu.android.ui.LerxuUpload
 import com.lerxu.android.ui.TaskViewModel
 import com.lerxu.android.ui.formatBytes
 import com.lerxu.android.ui.theme.lerxuExtraColors
@@ -701,7 +702,7 @@ fun AddTaskDialog(
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
-                                                Icons.Rounded.Close,
+                                                LerxuClose,
                                                 contentDescription = stringResource(R.string.close),
                                                 modifier = Modifier.size(18.dp),
                                                 tint = colorScheme.onSurfaceVariant
@@ -741,8 +742,8 @@ fun AddTaskDialog(
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Icon(
-                                                        if (checked) Icons.Rounded.CheckCircle
-                                                        else Icons.Rounded.RadioButtonUnchecked,
+                                                        if (checked) LerxuCheckCircle
+                                                        else LerxuCircle,
                                                         contentDescription = null,
                                                         modifier = Modifier.size(18.dp),
                                                         tint = if (checked) colorScheme.primary else colorScheme.outline
@@ -798,7 +799,7 @@ fun AddTaskDialog(
                                             .fillMaxWidth()
                                             .height(48.dp)
                                     ) {
-                                        Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Icon(LerxuDownload, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(6.dp))
                                         Text(stringResource(R.string.start_download), fontWeight = FontWeight.SemiBold)
                                     }
@@ -862,7 +863,7 @@ fun AddTaskDialog(
                                                                     contentAlignment = Alignment.Center
                                                                 ) {
                                                                     Icon(
-                                                                        Icons.Rounded.ContentPaste,
+                                                                        LerxuPaste,
                                                                         contentDescription = stringResource(R.string.paste_link),
                                                                         modifier = Modifier.size(17.dp),
                                                                         tint = colorScheme.primary
@@ -904,7 +905,7 @@ fun AddTaskDialog(
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
                                                             Icon(
-                                                                Icons.Rounded.Folder,
+                                                                LerxuFolder,
                                                                 contentDescription = null,
                                                                 modifier = Modifier.size(13.dp),
                                                                 tint = colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
@@ -946,7 +947,7 @@ fun AddTaskDialog(
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
                                                             Icon(
-                                                                Icons.Rounded.Add,
+                                                                LerxuAdd,
                                                                 contentDescription = null,
                                                                 modifier = Modifier.size(17.dp),
                                                                 tint = if (url.isNotBlank()) colorScheme.primary
@@ -1011,7 +1012,7 @@ private fun TransferPane(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
-                Icons.Rounded.Devices,
+                LerxuDevices,
                 contentDescription = null,
                 modifier = Modifier.size(30.dp),
                 tint = colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
@@ -1041,50 +1042,16 @@ private fun TransferPane(
     ) {
         // ── 文件选择框（大块可点区域，左上角不放任何标题）──
         // 已选文件挂在同一个框的下半部分，保证第一项就是"选文件"。
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(colorScheme.surfaceContainerHigh)
+        PickFileCard(
+            icon = LerxuUpload,
+            title = stringResource(R.string.transfer_pick_files),
+            hint = if (files.isEmpty()) {
+                stringResource(R.string.transfer_pick_hint)
+            } else {
+                stringResource(R.string.transfer_selected_count, files.size)
+            },
+            onClick = onPickFiles
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 108.dp)
-                    .clickable(onClick = onPickFiles),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        Icons.Rounded.Upload,
-                        contentDescription = null,
-                        modifier = Modifier.size(26.dp),
-                        tint = colorScheme.primary
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        stringResource(R.string.transfer_pick_files),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        text = if (files.isEmpty()) {
-                            stringResource(R.string.transfer_pick_hint)
-                        } else {
-                            stringResource(R.string.transfer_selected_count, files.size)
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-
             if (files.isNotEmpty()) {
                 LazyColumn(
                     modifier = Modifier
@@ -1114,7 +1081,7 @@ private fun TransferPane(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
-                                    Icons.Rounded.Close,
+                                    LerxuClose,
                                     contentDescription = stringResource(R.string.close),
                                     modifier = Modifier.size(13.dp),
                                     tint = colorScheme.onSurfaceVariant
@@ -1150,43 +1117,24 @@ private fun TransferPane(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    Icons.Rounded.Devices,
+                    LerxuDevices,
                     contentDescription = null,
                     modifier = Modifier.size(17.dp),
                     tint = colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = selectedPeer?.name ?: stringResource(R.string.transfer_nearby_devices),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = if (selectedPeer != null) FontWeight.SemiBold else FontWeight.Normal,
-                        color = colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    // 选中后这里只留名称；平台 / IP 属于「附近设备」弹窗里的辨识信息
-                    if (selectedPeer == null) {
-                        Text(
-                            text = if (peers.isEmpty()) stringResource(R.string.transfer_no_devices)
-                            else stringResource(R.string.transfer_select_device),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                if (selectedPeer != null) {
-                    Box(
-                        Modifier
-                            .size(6.dp)
-                            .background(lerxuExtraColors.success, CircleShape)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                }
+                // 未选设备时只留「附近设备」一个主标题；设备名选中后再占位
+                Text(
+                    text = selectedPeer?.name ?: stringResource(R.string.transfer_nearby_devices),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = if (selectedPeer != null) FontWeight.SemiBold else FontWeight.Normal,
+                    color = colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
                 Icon(
-                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    LerxuChevronRight,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
                     tint = colorScheme.onSurfaceVariant
@@ -1206,7 +1154,7 @@ private fun TransferPane(
                 val tint = if (sendEnabled) colorScheme.primary
                 else colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
                 Icon(
-                    Icons.AutoMirrored.Rounded.Send,
+                    LerxuSend,
                     contentDescription = null,
                     modifier = Modifier.size(17.dp),
                     tint = tint
@@ -1289,8 +1237,7 @@ private fun PeerRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            if (peer.platform.equals("android", ignoreCase = true)) Icons.Rounded.PhoneAndroid
-            else Icons.Rounded.Computer,
+            if (peer.platform.equals("android", ignoreCase = true)) LerxuPhone else LerxuComputer,
             contentDescription = null,
             modifier = Modifier.size(17.dp),
             tint = if (selected) colorScheme.primary else colorScheme.onSurfaceVariant
@@ -1313,11 +1260,6 @@ private fun PeerRow(
                 overflow = TextOverflow.Ellipsis
             )
         }
-        Box(
-            Modifier
-                .size(6.dp)
-                .background(lerxuExtraColors.success, CircleShape)
-        )
     }
 }
 
@@ -1333,35 +1275,81 @@ private fun platformLabel(platform: String): String = when (platform.lowercase()
 // ─── 本地播放入口 ───
 
 /**
- * 「本地播放」面板：一句说明 + 一枚「选择文件」。
+ * 文件选择的通用大卡片：图标 + 主标题 + 一句提示。
  *
+ * 「文件传输」和「本地播放」共用同一块，保证两个入口的尺寸、圆角、
+ * 图标笔法与点击热区完全一致；下方内容由调用方追加（如已选文件列表）。
+ */
+@Composable
+private fun PickFileCard(
+    icon: ImageVector,
+    title: String,
+    hint: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit = {}
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(colorScheme.surfaceContainerHigh)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 108.dp)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(26.dp),
+                    tint = colorScheme.primary
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colorScheme.onSurface
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    hint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        content()
+    }
+}
+
+/**
+ * 「本地播放」面板：与文件传输同一块选择文件卡片。
  * 文件选择交回**系统选择器**（见 localPicker）；选完直接起播，选取消就停在这里。
  */
 @Composable
 private fun LocalPlayPane(onPick: () -> Unit) {
-    val colorScheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 8.dp, vertical = 8.dp)
     ) {
-        Text(
-            stringResource(R.string.local_play_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
+        PickFileCard(
+            icon = LerxuPlay,
+            title = stringResource(R.string.select_file),
+            hint = stringResource(R.string.local_play_hint),
+            onClick = onPick
         )
-        Spacer(Modifier.height(14.dp))
-        Button(
-            onClick = onPick,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(46.dp)
-        ) {
-            Text(stringResource(R.string.select_file), fontWeight = FontWeight.SemiBold)
-        }
     }
 }
 

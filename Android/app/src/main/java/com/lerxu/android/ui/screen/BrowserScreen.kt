@@ -57,16 +57,16 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
@@ -934,8 +934,8 @@ private fun SwipeHints(controller: BrowserController) {
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            if (forward) Icons.AutoMirrored.Filled.ArrowForward
-                            else Icons.AutoMirrored.Filled.ArrowBack,
+                            if (forward) Icons.AutoMirrored.Outlined.ArrowForward
+                            else Icons.AutoMirrored.Outlined.ArrowBack,
                             contentDescription = null,
                             modifier = Modifier.size(21.dp),
                             tint = colorScheme.onSurface
@@ -1396,7 +1396,7 @@ private fun TabGrid(
                         }
                     ) {
                         Icon(
-                            Icons.Filled.DeleteOutline,
+                            Icons.Outlined.DeleteOutline,
                             contentDescription = null,
                             modifier = Modifier.size(24.dp),
                             tint = colorScheme.onSurface
@@ -1692,7 +1692,7 @@ private fun TabCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Default.Close,
+                    Icons.Outlined.Close,
                     contentDescription = null,
                     modifier = Modifier
                         .size(26.dp)
@@ -1809,7 +1809,7 @@ private fun TabCard(
             ) {
                 if (!hasPicture) {
                     Icon(
-                        Icons.Default.Language,
+                        Icons.Outlined.Language,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                         tint = colorScheme.primary
@@ -1864,7 +1864,7 @@ private fun TabCard(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        Icons.Default.Close,
+                        Icons.Outlined.Close,
                         contentDescription = stringResource(R.string.browser_close_tab),
                         modifier = Modifier.size(16.dp)
                     )
@@ -2036,7 +2036,7 @@ private fun PageErrorView(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Default.CloudOff,
+                        Icons.Outlined.CloudOff,
                         contentDescription = null,
                         modifier = Modifier
                             .size(38.dp)
@@ -2294,7 +2294,7 @@ private fun WindowModeSwitch(
             Row(modifier = Modifier.fillMaxSize()) {
                 WindowModeSegment(
                     label = stringResource(R.string.window_normal_short),
-                    icon = Icons.Default.Home,
+                    icon = Icons.Outlined.Home,
                     selected = !incognito,
                     selectedColor = if (!incognito) onAccent else colorScheme.onSurfaceVariant,
                     onClick = { onSelect(false) },
@@ -2302,7 +2302,7 @@ private fun WindowModeSwitch(
                 )
                 WindowModeSegment(
                     label = stringResource(R.string.window_incognito_short),
-                    icon = Icons.Default.Lock,
+                    icon = Icons.Outlined.Lock,
                     selected = incognito,
                     selectedColor = if (incognito) onAccent else colorScheme.onSurfaceVariant,
                     onClick = { onSelect(true) },
@@ -2362,7 +2362,7 @@ private fun IncognitoBadge(modifier: Modifier = Modifier) {
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(13.dp))
+            Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.size(13.dp))
             Spacer(Modifier.width(5.dp))
             Text(
                 stringResource(R.string.incognito_window),

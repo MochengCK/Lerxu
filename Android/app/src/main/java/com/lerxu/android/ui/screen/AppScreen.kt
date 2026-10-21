@@ -52,7 +52,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import kotlin.math.abs
 import kotlin.math.roundToInt
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.graphics.SolidColor
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -81,7 +80,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.SnackbarHost
@@ -99,29 +97,26 @@ import com.lerxu.android.browser.VideoSniffer
 import com.lerxu.android.ui.player.NativePlayerOverlay
 import com.lerxu.android.ui.player.PlayerDownload
 import com.lerxu.android.engine.EngineManager
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.MoreHoriz
-import androidx.compose.material.icons.rounded.Upload
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.AddBox
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.material3.Button
@@ -224,6 +219,10 @@ import com.lerxu.android.R
 import com.lerxu.android.data.EngineRepository
 import com.lerxu.android.model.LanTask
 import com.lerxu.android.model.TaskInfo
+import com.lerxu.android.ui.LerxuCheckCircle
+import com.lerxu.android.ui.LerxuCircle
+import com.lerxu.android.ui.LerxuDownload
+import com.lerxu.android.ui.LerxuUpload
 import com.lerxu.android.ui.RoundedProgressBar
 import com.lerxu.android.ui.TaskViewModel
 import com.lerxu.android.ui.UpdateNoticeCard
@@ -1187,7 +1186,7 @@ fun AppScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                Icons.Default.Download,
+                                Icons.Outlined.Download,
                                 contentDescription = null,
                                 modifier = Modifier.size(15.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2202,7 +2201,7 @@ private fun DockLaunchContent(onOpen: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            Icons.Default.Language,
+            Icons.Outlined.Language,
             contentDescription = null,
             modifier = Modifier.size(18.dp),
             tint = colorScheme.onSurface
@@ -2448,7 +2447,7 @@ private fun LerxuSnackbar(data: SnackbarData, ok: Boolean) {
             if (data.visuals.withDismissAction) {
                 IconButton(onClick = { data.dismiss() }, modifier = Modifier.size(34.dp)) {
                     Icon(
-                        Icons.Filled.Close,
+                        Icons.Outlined.Close,
                         contentDescription = stringResource(R.string.close),
                         tint = colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
@@ -3053,7 +3052,7 @@ private fun DockAddressContent(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
+                        Icons.AutoMirrored.Outlined.ArrowBack,
                         contentDescription = stringResource(R.string.browser_back),
                         modifier = Modifier.size(18.dp),
                         tint = if (backEnabled) androidx.compose.material3.LocalContentColor.current
@@ -3384,7 +3383,7 @@ private fun DockAddressContent(
                                 )
                             } else {
                                 Icon(
-                                    Icons.Default.Refresh,
+                                    Icons.Outlined.Refresh,
                                     contentDescription = stringResource(R.string.refresh),
                                     modifier = Modifier.size(16.dp),
                                     tint = colorScheme.onSurfaceVariant
@@ -3414,7 +3413,7 @@ private fun DockAddressContent(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Rounded.MoreHoriz,
+                        Icons.Outlined.MoreHoriz,
                         contentDescription = stringResource(R.string.browser_dock_more),
                         modifier = Modifier.size(22.dp),
                         tint = colorScheme.onSurfaceVariant
@@ -3482,7 +3481,7 @@ private fun LerxuTopBar(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Default.ArrowDownward,
+                            Icons.Outlined.ArrowDownward,
                             contentDescription = stringResource(R.string.download_speed),
                             modifier = Modifier.size(15.dp),
                             tint = colorScheme.primary
@@ -3498,7 +3497,7 @@ private fun LerxuTopBar(
                     Spacer(Modifier.width(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Default.ArrowUpward,
+                            Icons.Outlined.ArrowUpward,
                             contentDescription = stringResource(R.string.upload_speed),
                             modifier = Modifier.size(15.dp),
                             tint = colorScheme.tertiary
@@ -3518,7 +3517,7 @@ private fun LerxuTopBar(
             // 设置入口：齿轮常驻。设置打开的是底部弹窗（不换页），
             // 所以这里不再需要在"齿轮 ⇄ 返回箭头"之间做形变动画。
             IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings))
+                Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.settings))
             }
             // 排序按钮：点击弹出锚定在按钮右下方的局部菜单（与桌面端同源：点同项切方向，点新字段默认升序）
             Box {
@@ -3528,7 +3527,7 @@ private fun LerxuTopBar(
                         onClick = { sortMenuExpanded = true },
                         enabled = connected
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = stringResource(R.string.sort))
+                        Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = stringResource(R.string.sort))
                     }
                     DropdownMenu(
                         expanded = sortMenuExpanded,
@@ -3554,7 +3553,7 @@ private fun LerxuTopBar(
                                     // 与桌面端一致：仅选中项右侧显示方向三角
                                     if (fieldSelected) {
                                         Icon(
-                                            if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                                            if (ascending) Icons.Outlined.ArrowUpward else Icons.Outlined.ArrowDownward,
                                             contentDescription = null,
                                             tint = colorScheme.primary,
                                             modifier = Modifier.size(15.dp)
@@ -3573,7 +3572,7 @@ private fun LerxuTopBar(
             }
             // 添加按钮
             IconButton(onClick = onAddTask, enabled = connected) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_task))
+                Icon(Icons.Outlined.Add, contentDescription = stringResource(R.string.add_task))
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
@@ -3697,7 +3696,7 @@ private fun SelectionBarNormalContent(
     ) {
         // 勾选图标 = 全选/取消全选切换按钮
         Icon(
-            if (allSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+            if (allSelected) LerxuCheckCircle else LerxuCircle,
             contentDescription = stringResource(if (allSelected) R.string.select_none else R.string.select_all),
             modifier = Modifier
                 .size(22.dp)
@@ -3722,7 +3721,7 @@ private fun SelectionBarNormalContent(
             Text(stringResource(R.string.delete), fontWeight = FontWeight.SemiBold)
         }
         IconButton(onClick = onClose) {
-            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.exit_edit_mode))
+            Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.exit_edit_mode))
         }
     }
 }
@@ -4084,7 +4083,7 @@ private fun SearchField(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                Icons.Default.Search,
+                Icons.Outlined.Search,
                 contentDescription = null,
                 modifier = Modifier
                     .padding(start = 10.dp)
@@ -4122,7 +4121,7 @@ private fun SearchField(
                     modifier = Modifier.size(28.dp).padding(end = 2.dp)
                 ) {
                     Icon(
-                        Icons.Default.Close,
+                        Icons.Outlined.Close,
                         contentDescription = stringResource(R.string.close),
                         modifier = Modifier.size(16.dp),
                         tint = colorScheme.onSurfaceVariant
@@ -4142,7 +4141,7 @@ private fun SearchField(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                Icons.Default.Search,
+                Icons.Outlined.Search,
                 contentDescription = stringResource(R.string.search),
                 tint = colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp)
@@ -4375,7 +4374,7 @@ private fun SwipeActionCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    if (canPause) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    if (canPause) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                     contentDescription = stringResource(if (canPause) R.string.pause else R.string.resume),
                     tint = if (canPause) colorScheme.onPrimary else colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(19.dp)
@@ -4397,7 +4396,7 @@ private fun SwipeActionCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Default.Delete,
+                    Icons.Outlined.Delete,
                     contentDescription = stringResource(R.string.delete),
                     tint = colorScheme.onError,
                     modifier = Modifier.size(19.dp)
@@ -4488,10 +4487,9 @@ private fun TaskCard(
     val isError = task.status == "error"
     val interactionSource = remember { MutableInteractionSource() }
 
-    // 传输行左下角不套下载口径：方向图标 + 方向/状态 + 设备 + 进度
+    // 传输行左下角不套下载口径：方向图标 + 方向/状态 + 进度
     val lan = lanTask
     val transferLabel = lan?.let { lanTaskStatusLabel(it) } ?: ""
-    val transferPeer = lan?.let { it.peerName.ifBlank { it.peerAddress } } ?: ""
     // 传输标识是信息行的一部分：图标与文字统一用常规色，不跟着完成态变绿
     val transferTint = colorScheme.onSurfaceVariant
 
@@ -4560,7 +4558,7 @@ private fun TaskCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        if (lan.direction == "out") Icons.Rounded.Upload else Icons.Rounded.Download,
+                        if (lan.direction == "out") LerxuUpload else LerxuDownload,
                         contentDescription = null,
                         modifier = Modifier.size(13.dp),
                         tint = transferTint
@@ -4573,18 +4571,6 @@ private fun TaskCard(
                         color = transferTint,
                         maxLines = 1
                     )
-                    // 设备名让位给大小：屏幕窄时先收缩它（省略号），大小与百分比始终保留
-                    if (transferPeer.isNotBlank()) {
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            transferPeer,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                    }
                     if (task.totalLength > 0) {
                         Spacer(Modifier.width(6.dp))
                         Text(
@@ -4707,7 +4693,7 @@ private fun EngineErrorScreen(error: String, onRetry: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Default.ErrorOutline,
+                    Icons.Outlined.ErrorOutline,
                     contentDescription = null,
                     modifier = Modifier.size(40.dp),
                     tint = colorScheme.error
@@ -4750,7 +4736,7 @@ private fun EngineErrorScreen(error: String, onRetry: () -> Unit) {
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.retry), fontWeight = FontWeight.SemiBold)
