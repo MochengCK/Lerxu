@@ -406,7 +406,9 @@
                         <span>{{ t('preferences.mcp-copy-config') }}</span>
                       </button>
                     </div>
-                    <pre class="mcp-config-code">{{ mcpClientConfig }}</pre>
+                    <!-- 每行由若干分片拼成，分片之间插入 <wbr>：只在目录分隔符处折行；
+                         分片与 <wbr> 都不产生额外字符，框里看到的仍是完整 JSON。 -->
+                    <pre class="mcp-config-code"><span v-for="(line, i) in mcpConfigLines" :key="i"><span v-for="(seg, j) in line.segments" :key="j"><wbr v-if="j > 0" />{{ seg }}</span>{{ line.newline }}</span></pre>
                   </div>
                   <div class="el-form-item__info">{{ mcpHintText }}</div>
                 </div>
@@ -861,6 +863,17 @@ const mcpEndpoint = computed(() => {
   const port = Number(form.value.mcpListenPort) || ENGINE_MCP_PORT
   return `http://127.0.0.1:${port}/mcp`
 })
+/** 客户端配置用到的字段：复制与显示共用一份，避免两处各拼一遍 */
+const mcpConfigFields = computed(() => {
+  const port = Number(form.value.mcpListenPort) || ENGINE_MCP_PORT
+  const token = `${form.value.rpcSecret || ''}`
+  const bin = (storeEngineInfo.value && storeEngineInfo.value.binPath) || 'xferrust'
+  const args = ['mcp', `--mcp-listen-port=${port}`]
+  if (token) {
+    args.push(`--mcp-token=${token}`)
+  }
+  return { bin, args }
+})
 /**
  * stdio 形态的客户端配置：由客户端拉起 `xferrust mcp`，没有本机引擎时它会
  * 在进程内自起一个，所以这份配置开不开应用都能用。二进制路径取引擎信息里的
@@ -871,14 +884,8 @@ const mcpEndpoint = computed(() => {
  * 里的反斜杠、令牌里的引号都不会拼坏。
  */
 const mcpClientConfig = computed(() => {
-  const port = Number(form.value.mcpListenPort) || ENGINE_MCP_PORT
-  const token = `${form.value.rpcSecret || ''}`
-  const bin = (storeEngineInfo.value && storeEngineInfo.value.binPath) || 'xferrust'
-  const args = ['mcp', `--mcp-listen-port=${port}`]
-  if (token) {
-    args.push(`--mcp-token=${token}`)
-  }
   const q = (value) => JSON.stringify(value)
+  const { bin, args } = mcpConfigFields.value
   return [
     '{',
     '  "mcpServers": {',
@@ -889,6 +896,31 @@ const mcpClientConfig = computed(() => {
     '  }',
     '}'
   ].join('\n')
+})
+/**
+ * 代码框的显示分片：命令里的路径按 `/` 切开，渲染时用 `<wbr>` 相连 ——
+ * 折行只发生在目录分隔符处，不会把路径从中间截断（`xfer` / `rust` 那种）；
+ * `<wbr>` 不占字符，手选复制的仍是完整路径（复制按钮用的本来就是
+ * `mcpClientConfig` 那份完整字符串）。
+ */
+const mcpConfigLines = computed(() => {
+  const q = (value) => JSON.stringify(value)
+  const { bin, args } = mcpConfigFields.value
+  const lines = [
+    ['{'],
+    ['  "mcpServers": {'],
+    ['    "lerxu": {'],
+    ['      "command": ', ...q(bin).split(/(?<=\/)/), ','],
+    [`      "args": [${args.map(q).join(', ')}]`],
+    ['    }'],
+    ['  }'],
+    ['}']
+  ]
+  // 换行放在每行最后一个分片里：模板里就不用写比较表达式了
+  return lines.map((segments, index) => ({
+    segments,
+    newline: index === lines.length - 1 ? '' : '\n'
+  }))
 })
 const mcpHintText = computed(() => {
   if (!engineSupportsMcp.value) {
