@@ -863,12 +863,24 @@ const mcpEndpoint = computed(() => {
   const port = Number(form.value.mcpListenPort) || ENGINE_MCP_PORT
   return `http://127.0.0.1:${port}/mcp`
 })
+/**
+ * 应用数据目录（`<userData>`）：由会话文件路径推出来，用于给独立模式指定
+ * `--host-config` —— 便携版/自定义安装位置下引擎按平台惯例找不到那份 system.json，
+ * 显式传入才能保证下载目录、代理这些和应用完全一致。
+ */
+const mcpHostDir = computed(() => {
+  const session = `${preferenceConfig.value.sessionPath || ''}`
+  return session.replace(/[\\/][^\\/]+$/, '')
+})
 /** 客户端配置用到的字段：复制与显示共用一份，避免两处各拼一遍 */
 const mcpConfigFields = computed(() => {
   const port = Number(form.value.mcpListenPort) || ENGINE_MCP_PORT
   const token = `${form.value.rpcSecret || ''}`
   const bin = (storeEngineInfo.value && storeEngineInfo.value.binPath) || 'xferrust'
   const args = ['mcp', `--mcp-listen-port=${port}`]
+  if (mcpHostDir.value) {
+    args.push(`--host-config=${mcpHostDir.value}`)
+  }
   if (token) {
     args.push(`--mcp-token=${token}`)
   }
@@ -877,7 +889,8 @@ const mcpConfigFields = computed(() => {
 /**
  * stdio 形态的客户端配置：由客户端拉起 `xferrust mcp`，没有本机引擎时它会
  * 在进程内自起一个，所以这份配置开不开应用都能用。二进制路径取引擎信息里的
- * binPath，令牌复用 RPC Secret。
+ * binPath，令牌复用 RPC Secret，`--host-config` 指到应用数据目录，独立模式据此
+ * 沿用同一份下载目录/全局设置，并把任务写回应用会话。
  *
  * 手工按行拼是为了让卡片里的代码框刚好放得下（`JSON.stringify(obj, null, 2)`
  * 会把 args 拆成四五行的短句）；每个字符串都过 JSON.stringify，Windows 路径

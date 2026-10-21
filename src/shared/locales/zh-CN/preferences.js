@@ -324,7 +324,7 @@ export default {
   'mcp-copy-config': '复制',
   'mcp-copied': '已复制到剪贴板',
   'mcp-unsupported': '当前引擎二进制不支持 MCP，更新引擎后可用。',
-  'mcp-disabled-hint': '未启用：引擎不会监听 MCP 端口；上面的客户端配置仍可用（由客户端自行拉起引擎）。',
+  'mcp-disabled-hint': '未启用：引擎不会监听 MCP 端口；上面的客户端配置仍可用（由客户端自行拉起引擎，沿用这里的下载目录与设置，任务在下次启动应用后可见）。',
   'mcp-endpoint-hint': '地址 {endpoint}，Bearer 令牌与 RPC 授权密钥相同；开关与端口修改后需重启应用生效。',
   'developer': '开发者',
   'user-agent': 'User-Agent',

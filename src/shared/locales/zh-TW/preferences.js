@@ -324,7 +324,7 @@ export default {
   'mcp-copy-config': '複製',
   'mcp-copied': '已複製到剪貼簿',
   'mcp-unsupported': '目前引擎二進位不支援 MCP，更新引擎後即可使用。',
-  'mcp-disabled-hint': '未啟用：引擎不會監聽 MCP 埠；上方的用戶端設定仍可用（由用戶端自行拉起引擎）。',
+  'mcp-disabled-hint': '未啟用：引擎不會監聽 MCP 埠；上方的用戶端設定仍可用（由用戶端自行拉起引擎，沿用這裡的下載目錄與設定，任務在下次啟動應用程式後可見）。',
   'mcp-endpoint-hint': '位址 {endpoint}，Bearer 權杖與 RPC 授權金鑰相同；開關與埠修改後需重新啟動應用程式才會生效。',
   'developer': '開發者',
   'user-agent': 'User-Agent',
