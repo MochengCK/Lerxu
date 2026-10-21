@@ -389,15 +389,27 @@
               </el-col>
             </el-row>
           </el-form-item>
-          <div class="mcp-actions">
-            <el-button size="small" :disabled="!mcpReady" @click="copyMcpEndpoint">
-              {{ t('preferences.mcp-copy-endpoint') }}
-            </el-button>
-            <el-button size="small" :disabled="!mcpReady" @click="copyMcpStdioConfig">
-              {{ t('preferences.mcp-copy-config') }}
-            </el-button>
-          </div>
-          <div class="el-form-item__info mcp-hint">{{ mcpHintText }}</div>
+          <el-form-item size="small">
+            <el-row>
+              <el-col class="form-item-sub pref-action-row" :span="24">
+                <el-button
+                  class="pref-row-action"
+                  :disabled="!mcpReady"
+                  @click="copyMcpEndpoint"
+                >
+                  {{ t('preferences.mcp-copy-endpoint') }}
+                </el-button>
+                <el-button
+                  class="pref-row-action"
+                  :disabled="!engineSupportsMcp"
+                  @click="copyMcpStdioConfig"
+                >
+                  {{ t('preferences.mcp-copy-config') }}
+                </el-button>
+              </el-col>
+            </el-row>
+          </el-form-item>
+          <div class="el-form-item__info" style="margin-top: 2px;">{{ mcpHintText }}</div>
         </div>
 
         <!-- 用户代理设置卡片 -->
@@ -2146,19 +2158,6 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
   &::before {
     left: 6px !important;
   }
-}
-
-/* MCP 卡片：两个复制按钮与说明文字 */
-.mcp-actions {
-  display: flex;
-  gap: 8px;
-  margin: 4px 0 8px;
-}
-
-.mcp-hint {
-  color: var(--lc-text-secondary, #909399);
-  line-height: 1.5;
-  word-break: break-all;
 }
 
 .proxy-scope {

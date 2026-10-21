@@ -324,7 +324,7 @@ export default {
   'mcp-copy-config': 'Copy stdio config',
   'mcp-copied': 'Copied to clipboard',
   'mcp-unsupported': 'The current engine binary does not support MCP. Update the engine to use it.',
-  'mcp-disabled-hint': 'Not enabled: the engine does not listen on the MCP port.',
+  'mcp-disabled-hint': 'Not enabled: the engine does not listen on the MCP port. The stdio config below still works — the client starts the engine itself.',
   'mcp-endpoint-hint': 'Endpoint {endpoint}; the bearer token is the RPC secret. Switch and port changes take effect after restarting the app.',
   'developer': 'Developer',
   'user-agent': 'User-Agent',

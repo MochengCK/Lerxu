@@ -902,6 +902,23 @@
     color: var(--pref-accent);
     background-color: var(--pref-accent-soft);
   }
+
+  /* 禁用态：上面那条 border/color 与 Element Plus 的 .is-disabled 同特异性，
+     会把它盖掉 —— 不补这一段，禁用按钮看起来和可点的一模一样。 */
+  &.is-disabled,
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    border-color: var(--lc-border-base, #d3dde6);
+    color: var(--pref-text-2);
+    background-color: transparent;
+
+    &:hover {
+      border-color: var(--lc-border-base, #d3dde6);
+      color: var(--pref-text-2);
+      background-color: transparent;
+    }
+  }
 }
 
 /* 危险操作的文字链接 */
