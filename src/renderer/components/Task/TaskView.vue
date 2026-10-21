@@ -144,8 +144,6 @@ const noConfirmBeforeDelete = computed(() => preferenceConfig.value.noConfirmBef
 const dateFilterFrosted = computed(() => preferenceConfig.value.dateFilterFrosted)
 const autoHideAside = computed(() => preferenceConfig.value.autoHideAside)
 
-const selectedGidListCount = computed(() => selectedGidList.value.length)
-
 
 const taskSearchQuery = computed({
   get () { return taskSearchKeyword.value },
@@ -372,6 +370,13 @@ function onDateFilterClick ({ event, rect }) {
   toggleDatePicker(rect)
 }
 
+function lanMatchesCurrentList (task, list) {
+  if (!list || list === 'all') return true
+  if (list === 'active') return task.status === 'active'
+  if (list === 'waiting') return task.status === 'waiting'
+  return task.status === 'done' || task.status === 'error'
+}
+
 async function loadTaskDateCounts () {
   const counts = {}
   const normalizeTimestamp = (value) => {
@@ -406,6 +411,24 @@ async function loadTaskDateCounts () {
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
     counts[dateStr] = (counts[dateStr] || 0) + 1
   })
+
+  // 传输记录与普通历史同一口径：终态按完成时间归档
+  let lanTasks = []
+  try {
+    lanTasks = await ipcRenderer.invoke('lan:tasks')
+  } catch (_) {
+    lanTasks = []
+  }
+  ;(Array.isArray(lanTasks) ? lanTasks : []).forEach(task => {
+    if (!task || !lanMatchesCurrentList(task, currentList.value)) return
+    const finished = task.status === 'done' || task.status === 'error'
+    const timestamp = normalizeTimestamp(finished ? (task.finishedAt || task.createdAt) : task.createdAt)
+    if (timestamp <= 0) return
+    const date = new Date(timestamp)
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+    counts[dateStr] = (counts[dateStr] || 0) + 1
+  })
+
   taskDateCounts.value = counts
 }
 
@@ -892,30 +915,90 @@ function handleRemoveLanTask (payload) {
   })
 }
 
-function handleBatchDeleteTask (payload) {
-  const { deleteWithFiles } = payload
-  if (selectedGidListCount.value === 0) {
-    return
+const LAN_SELECTION_PREFIX = 'lan:'
+
+async function fetchSelectedLanTasks () {
+  const ids = (selectedGidList.value || [])
+    .filter(id => `${id}`.startsWith(LAN_SELECTION_PREFIX))
+    .map(id => `${id}`.slice(LAN_SELECTION_PREFIX.length))
+  if (ids.length === 0) return []
+  try {
+    const tasks = await ipcRenderer.invoke('lan:tasks')
+    const wanted = new Set(ids)
+    return (Array.isArray(tasks) ? tasks : []).filter(task => task && wanted.has(task.id))
+  } catch (_) {
+    return []
   }
-  const selectedTaskList = taskList.value.filter((task) => {
-    return selectedGidList.value.includes(task.gid)
+}
+
+function removeLanTaskRecords (lanTasks, deleteWithFiles, silentSuccess) {
+  const tasks = Array.isArray(lanTasks) ? lanTasks : []
+  if (tasks.length === 0) return
+  const ids = new Set(tasks.map(task => `${task.id}`))
+  const jobs = tasks.map(task => {
+    // 与单条移除同一口径：只有接收完成的记录才有可删的落盘文件
+    const canDeleteFile = task.direction === 'in' && task.status === 'done' && !!task.path
+    const deletePath = deleteWithFiles && canDeleteFile ? task.path : ''
+    return ipcRenderer.invoke('lan:remove', task.id, { deletePath })
+      .then(result => !(result && result.ok === false))
+      .catch(() => false)
   })
-  if (noConfirmBeforeDelete.value) {
-    removeTasks(selectedTaskList, deleteWithFiles)
+  Promise.all(jobs).then(results => {
+    const rest = (selectedGidList.value || []).filter(id => {
+      const text = `${id}`
+      return !text.startsWith(LAN_SELECTION_PREFIX) ||
+        !ids.has(text.slice(LAN_SELECTION_PREFIX.length))
+    })
+    taskStore.selectTasks(rest)
+    if (results.every(Boolean)) {
+      if (!silentSuccess) msg.success(t('task.batch-delete-task-success'))
+    } else {
+      msg.error(t('task.transfer-action-fail'))
+    }
+  })
+}
+
+async function handleBatchDeleteTask (payload) {
+  const { deleteWithFiles } = payload
+  const selectedIds = selectedGidList.value || []
+  if (selectedIds.length === 0) {
     return
   }
-  const count = `${selectedGidListCount.value}`
+  const engineGids = new Set(
+    selectedIds
+      .filter(id => !`${id}`.startsWith(LAN_SELECTION_PREFIX))
+      .map(id => `${id}`)
+  )
+  const selectedTaskList = taskList.value.filter(task => engineGids.has(`${task.gid}`))
+  const lanTasks = await fetchSelectedLanTasks()
+  const totalCount = selectedTaskList.length + lanTasks.length
+  if (totalCount === 0) {
+    taskStore.selectTasks([])
+    return
+  }
+  const runDelete = (withFiles) => {
+    if (selectedTaskList.length > 0) {
+      removeTasks(selectedTaskList, withFiles)
+    }
+    if (lanTasks.length > 0) {
+      removeLanTaskRecords(lanTasks, withFiles, selectedTaskList.length > 0)
+    }
+  }
+  if (noConfirmBeforeDelete.value) {
+    runDelete(deleteWithFiles)
+    return
+  }
   dialog.showMessageBox({
     type: 'warning',
     title: t('task.delete-selected-task'),
-    message: t('task.batch-delete-task-confirm', { count }),
+    message: t('task.batch-delete-task-confirm', { count: `${totalCount}` }),
     buttons: [t('app.yes'), t('app.no')],
     cancelId: 1,
     checkboxLabel: t('task.delete-task-label'),
     checkboxChecked: deleteWithFiles
   }).then(({ response, checkboxChecked }) => {
     if (response === 0) {
-      removeTasks(selectedTaskList, checkboxChecked)
+      runDelete(!!checkboxChecked)
     }
   })
 }

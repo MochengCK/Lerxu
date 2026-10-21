@@ -6,34 +6,22 @@
     @change="handleDragSelectChange"
     @mousedown="handleListBlankClick"
   >
-    <!-- 端手互通：传输任务与普通任务共用同一个卡片组件；它们没有引擎 gid，
-         所以不给 attr（拖选会跳过），卡片内部也屏蔽了引擎动作 -->
+    <!-- 端手互通：传输任务与普通任务共用同一个卡片组件。传输记录也参与
+         框选/多选，选中 ID 加 `lan:` 前缀与引擎 gid 区分（批量操作按前缀分流）。 -->
     <div
-      v-for="item in lanTaskRows"
-      :key="`lan:${item.gid}`"
-      :class="['task-item-wrapper', `task-item-wrapper--${viewMode}`, 'task-item-wrapper--lan']"
-      @contextmenu.prevent.stop
+      v-for="entry in renderRows"
+      :key="entry.key"
+      :attr="entry.attr"
+      v-memo="entry.memo"
+      :class="entry.classes"
+      @click.stop="(e) => handleRowClick(entry, e)"
+      @contextmenu.stop.prevent="(e) => handleRowContextMenu(entry, e)"
     >
       <mo-task-item
-        :task="item"
+        :task="entry.row"
         :view-mode="viewMode"
         :resize-version="resizeVersion"
-        lan
-      />
-    </div>
-    <div
-      v-for="item in displayTaskList"
-      :key="item.gid"
-      :attr="item.gid"
-      v-memo="[item.status, item.completedLength, item.downloadSpeed, item.uploadSpeed, item.uploadLength, item.connections, item.numSeeders, viewMode, resizeVersion, selectedList.includes(item.gid)]"
-      :class="getItemClass(item)"
-      @click.stop="(e) => handleItemClick(item, e)"
-      @contextmenu.stop.prevent="(e) => handleItemContextMenu(item, e)"
-    >
-      <mo-task-item
-        :task="item"
-        :view-mode="viewMode"
-        :resize-version="resizeVersion"
+        :lan="entry.lan"
       />
     </div>
   </mo-drag-select>
@@ -199,12 +187,15 @@ function parseTaskDate (timestamp) {
 
 function lanMatchesDate (task, date) {
   if (!date) return true
-  const created = parseTaskDate(task && task.createdAt)
-  if (!created) return false
+  // 与普通任务一致：终态记录按完成时间归档，进行中的才按创建时间
+  const finished = task && (task.status === 'done' || task.status === 'error')
+  const stamp = finished ? (task.finishedAt || task.createdAt) : (task && task.createdAt)
+  const at = parseTaskDate(stamp)
+  if (!at) return false
   const [year, month, day] = `${date}`.split('-').map(Number)
-  return created.getFullYear() === year &&
-    (created.getMonth() + 1) === month &&
-    created.getDate() === day
+  return at.getFullYear() === year &&
+    (at.getMonth() + 1) === month &&
+    at.getDate() === day
 }
 
 function lanMatchesCategory (task, category) {
@@ -316,6 +307,139 @@ const lanTaskRows = computed(() => {
 
 const hasAnyTask = computed(() => lanTaskRows.value.length > 0 || displayTaskList.value.length > 0)
 
+const HISTORY_STATUSES = new Set([TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED])
+
+function normalizeRowTimestamp (value) {
+  const raw = Number(value)
+  if (!Number.isFinite(raw) || raw <= 0) return 0
+  return raw < 1000000000000 ? raw * 1000 : raw
+}
+
+function isHistoryRow (row) {
+  return !!row && HISTORY_STATUSES.has(row.status)
+}
+
+/** 普通任务用 savedAt（完成/错误时间），传输任务用 finishedAt；进行中回退创建时间。 */
+function historyTimestampOf (row, isLan) {
+  if (isLan) {
+    const raw = row && row.lanTask ? row.lanTask : {}
+    const finished = raw.status === 'done' || raw.status === 'error'
+    return normalizeRowTimestamp(finished ? (raw.finishedAt || raw.createdAt) : raw.createdAt)
+  }
+  return normalizeRowTimestamp(row.savedAt) ||
+    normalizeRowTimestamp(row.completedTime) ||
+    normalizeRowTimestamp(row.stopTime) ||
+    normalizeRowTimestamp(row.createdAt)
+}
+
+/** 与 store 的 sortTaskList 同口径，补上传输记录（否则排序时它们只能粘在顶部）。 */
+function sortValueOf (row, isLan, field) {
+  switch (field) {
+  case 'completedTime':
+    return isLan ? historyTimestampOf(row, true) : (parseInt(row.savedAt) || 0)
+  case 'remainingTime': {
+    const total = parseInt(row.totalLength) || 0
+    const done = parseInt(row.completedLength) || 0
+    if (total <= 0 || done >= total) return 0
+    const speed = parseInt(row.downloadSpeed) || 0
+    return speed <= 0 ? Infinity : (total - done) / speed
+  }
+  case 'speed':
+    return (parseInt(row.downloadSpeed) || 0) + (parseInt(row.uploadSpeed) || 0)
+  case 'size':
+    return parseInt(row.totalLength) || 0
+  case 'name': {
+    if (isLan) return `${row.name || ''}`.toLowerCase()
+    if (row.pairDisplayName && Number(row.pairCount) >= 2) {
+      return `${row.pairDisplayName}`.toLowerCase()
+    }
+    if (row.files && row.files.length > 0 && row.files[0].path) {
+      return `${row.files[0].path}`.split(/[\\/]/).pop().toLowerCase()
+    }
+    if (row.dir) return `${row.dir}`.split(/[\\/]/).pop().toLowerCase()
+    return row.gid || ''
+  }
+  default:
+    return 0
+  }
+}
+
+function compareRows (a, b, field, order) {
+  const valueA = sortValueOf(a.row, a.lan, field)
+  const valueB = sortValueOf(b.row, b.lan, field)
+  let cmp = 0
+  if (field === 'completedTime' && valueA === 0 && valueB === 0) {
+    cmp = `${a.row.gid || ''}`.localeCompare(`${b.row.gid || ''}`)
+  } else if (typeof valueA === 'string' || typeof valueB === 'string') {
+    cmp = `${valueA}`.localeCompare(`${valueB}`)
+  } else if (valueA < valueB) {
+    cmp = -1
+  } else if (valueA > valueB) {
+    cmp = 1
+  }
+  return order === 'asc' ? cmp : -cmp
+}
+
+const renderRows = computed(() => {
+  const engineRows = displayTaskList.value
+  const lanRows = lanTaskRows.value
+  const customSort = !!taskStore.sortField &&
+    !(taskStore.sortField === 'name' && taskStore.sortOrder === 'asc')
+
+  let ordered = []
+  if (customSort) {
+    ordered = [
+      ...lanRows.map(row => ({ row, lan: true })),
+      ...engineRows.map(row => ({ row, lan: false }))
+    ]
+    const field = taskStore.sortField
+    const order = taskStore.sortOrder
+    ordered.sort((a, b) => compareRows(a, b, field, order))
+  } else {
+    const lanHistory = []
+    const lanOther = []
+    lanRows.forEach(row => (isHistoryRow(row) ? lanHistory : lanOther).push(row))
+    const engineHistory = []
+    const engineOther = []
+    engineRows.forEach(row => (isHistoryRow(row) ? engineHistory : engineOther).push(row))
+    // 传输记录按完成时间并入普通历史记录（新的在上），不再永远置顶
+    const mergedHistory = [...engineHistory]
+    const sortedLanHistory = [...lanHistory]
+      .sort((a, b) => historyTimestampOf(b, true) - historyTimestampOf(a, true))
+    sortedLanHistory.forEach(row => {
+      const ts = historyTimestampOf(row, true)
+      const idx = mergedHistory.findIndex(item => historyTimestampOf(item, false) < ts)
+      if (idx < 0) mergedHistory.push(row)
+      else mergedHistory.splice(idx, 0, row)
+    })
+    ordered = [
+      ...lanOther.map(row => ({ row, lan: true })),
+      ...engineOther.map(row => ({ row, lan: false })),
+      ...mergedHistory.map(row => ({ row, lan: lanHistory.includes(row) }))
+    ]
+  }
+
+  return ordered.map(({ row, lan }) => {
+    const selectionId = lan ? `lan:${row.gid}` : `${row.gid}`
+    const selected = selectedList.value.includes(selectionId)
+    return {
+      key: selectionId,
+      attr: selectionId,
+      row,
+      lan,
+      classes: {
+        'task-item-wrapper': true,
+        [`task-item-wrapper--${viewMode.value}`]: true,
+        'task-item-wrapper--lan': lan,
+        selected
+      },
+      memo: lan
+        ? [row.status, row.completedLength, row.downloadSpeed, viewMode.value, resizeVersion.value, selected]
+        : [row.status, row.completedLength, row.downloadSpeed, row.uploadSpeed, row.uploadLength, row.connections, row.numSeeders, viewMode.value, resizeVersion.value, selected]
+    }
+  })
+})
+
 function applyLanPayload (payload) {
   if (payload && Array.isArray(payload.tasks)) {
     lanTasks.value = payload.tasks
@@ -375,6 +499,18 @@ onBeforeUnmount(() => {
 // Watchers
 watch(() => taskStore.selectedGidList, (newVal) => {
   selectedList.value = newVal
+})
+
+// 传输记录被移除/过滤后，清掉已经不存在于列表中的选择项
+watch(lanTaskRows, (rows) => {
+  const current = Array.isArray(selectedList.value) ? selectedList.value : []
+  if (!current.some(id => `${id}`.startsWith('lan:'))) return
+  const valid = new Set(rows.map(row => `lan:${row.gid}`))
+  const next = current.filter(id => !`${id}`.startsWith('lan:') || valid.has(id))
+  if (next.length !== current.length) {
+    selectedList.value = next
+    taskStore.selectTasks(cloneDeep(next))
+  }
 })
 
 // Methods
@@ -453,29 +589,80 @@ function handleDragSelectChange (selectedListIncoming) {
   taskStore.selectTasks(cloneDeep(next))
 }
 
-function handleItemClick (item, e) {
-  const gid = item && item.gid
-  if (!gid) return
+function handleRowClick (entry, e) {
+  const id = entry && entry.attr
+  if (!id) return
   const current = Array.isArray(selectedList.value) ? selectedList.value : []
   const useMulti = isMultiSelectEvent(e)
   let next = []
   if (useMulti) {
     const set = new Set(current)
-    if (set.has(gid)) set.delete(gid)
-    else set.add(gid)
+    if (set.has(id)) set.delete(id)
+    else set.add(id)
     next = Array.from(set)
   } else {
-    next = [gid]
+    next = [id]
   }
   selectedList.value = next
   taskStore.selectTasks(cloneDeep(next))
-  if (taskStore.taskDetailVisible && next.length > 0) {
-    const firstSelectedGid = next[0]
-    const task = taskStore.taskList.find(t => t.gid === firstSelectedGid)
+  if (!entry.lan && taskStore.taskDetailVisible && next.length > 0) {
+    const firstSelectedGid = next.find(g => !`${g}`.startsWith('lan:'))
+    const task = firstSelectedGid
+      ? taskStore.taskList.find(t => t.gid === firstSelectedGid)
+      : null
     if (task) {
       taskStore.showTaskDetail(task)
     }
   }
+}
+
+function handleRowContextMenu (entry, event) {
+  if (!entry) return
+  if (entry.lan) {
+    handleLanItemContextMenu(entry.row, event)
+    return
+  }
+  handleItemContextMenu(entry.row, event)
+}
+
+function popupMenuAt (template, event) {
+  const menu = Menu.buildFromTemplate(template)
+  menu.popup({
+    window: getCurrentWindow(),
+    x: event.x != null ? event.x : event.clientX,
+    y: event.y != null ? event.y : event.clientY
+  })
+}
+
+function handleLanItemContextMenu (item, event) {
+  const row = item || null
+  if (!row) return
+  const selectionId = `lan:${row.gid}`
+  const current = Array.isArray(selectedList.value) ? selectedList.value : []
+  if (!current.includes(selectionId)) {
+    selectedList.value = [selectionId]
+    taskStore.selectTasks([selectionId])
+  }
+  const selectedUnique = Array.from(new Set(
+    (selectedList.value || []).map(id => `${id || ''}`.trim()).filter(Boolean)
+  ))
+  if (selectedUnique.length > 1 && selectedUnique.includes(selectionId)) {
+    popupMenuAt(getMultiTaskContextMenuTemplate(selectedUnique), event)
+    return
+  }
+  const raw = row.lanTask || {}
+  const template = []
+  if (raw.direction === 'in' && raw.status === 'done' && raw.path) {
+    template.push({
+      label: t('task.transfer-open-folder'),
+      click: () => ipcRenderer.invoke('lan:open-folder', raw.path).catch(() => {})
+    })
+  }
+  template.push({
+    label: t('task.transfer-remove-record'),
+    click: () => commands.emit('remove-lan-task', { task: raw })
+  })
+  popupMenuAt(template, event)
 }
 
 function handleItemContextMenu (item, event) {
@@ -572,14 +759,6 @@ function handleListBlankClick (e) {
   taskStore.selectTasks([])
 }
 
-function getItemClass (item) {
-  const isSelected = selectedList.value.includes(item.gid)
-  return {
-    'task-item-wrapper': true,
-    [`task-item-wrapper--${viewMode.value}`]: true,
-    selected: isSelected
-  }
-}
 </script>
 
 <style lang="scss">
