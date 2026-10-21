@@ -88,6 +88,7 @@ import { TASK_STATUS, APP_THEME } from '@shared/constants'
 import { parsePieceStatuses, combinePieceStatuses } from '@shared/utils/piece-status'
 import themeTokens from '@/utils/themeTokens'
 import api from '@/api'
+import taskHistory from '@/api/TaskHistory'
 import { ipcRenderer } from 'electron'
 import path from 'node:path'
 import os from 'node:os'
@@ -475,6 +476,28 @@ onBeforeUnmount(() => {
         }
         return rows.find(item => item && Array.isArray(item.pairGids) && item.pairGids.some(g => `${g}` === key)) || null
       }
+      /**
+       * 引擎任务对象上没有配对信息（pairId / pairRole 只存在任务历史里）。
+       * 自动开窗发生在 addUri 刚返回、任务列表还没折叠的时刻，这里按 gid
+       * 从历史里补出配对身份，避免画面流/声音流各开一个窗口。
+       */
+      function getPairMetaFromHistory(gid) {
+        const key = `${gid || ''}`
+        if (!key) {
+          return null
+        }
+        try {
+          const entry = (taskHistory.getAllHistory() || []).find(item => item && `${item.gid || ''}` === key)
+          const pairId = entry && entry.pairId != null ? `${entry.pairId}` : ''
+          if (pairId) {
+            return {
+              pairId,
+              pairRole: entry.pairRole != null ? `${entry.pairRole}` : ''
+            }
+          }
+        } catch (e) {}
+        return null
+      }
       async function handleTaskProgressAutoOpen(payload) {
         const data = payload || {}
         const gid = data && data.gid ? `${data.gid}` : ''
@@ -498,6 +521,12 @@ onBeforeUnmount(() => {
           }
           if (!task || !task.gid) {
             return
+          }
+          // fetchTaskItem 返回的是引擎原始任务（不带 pairId）：等待期间列表
+          // 可能已经刷新并完成折叠，优先改用折叠记录，避免按单条流开窗。
+          const row = findTaskRowByGid(taskList.value || [], gid)
+          if (row) {
+            task = row
           }
         }
         autoOpened.add(`${task.gid}`)
@@ -1108,7 +1137,15 @@ onBeforeUnmount(() => {
         // 画声两条流各发一次）很可能在折叠成一条记录**之前**就已经按某一条流的
         // gid 开过窗，这时上面按 gid 匹配不上，会再开一个 —— 两个窗口叠在一起，
         // 看起来就是"信息在两个任务之间跳"。一条记录（一个 pairId）只留一个窗口。
-        const pairId = task && task.pairId ? `${task.pairId}` : ''
+        // 自动开窗拿到的引擎原始任务不带 pairId，按 gid 从任务历史补齐，
+        // 否则两条流会被当成两个普通任务、各开一个窗口。
+        let pairId = task && task.pairId ? `${task.pairId}` : ''
+        if (!pairId) {
+          const pairMeta = getPairMetaFromHistory(gid)
+          if (pairMeta) {
+            pairId = pairMeta.pairId
+          }
+        }
         if (!isAliveWindow(existingWindow) && pairId) {
           for (const [key, win] of progressWindows.value.entries()) {
             if (isAliveWindow(win) && `${win.__lerxuPairId || ''}` === pairId) {
@@ -1119,6 +1156,10 @@ onBeforeUnmount(() => {
           }
         }
         if (isAliveWindow(existingWindow)) {
+          // 窗口可能是在折叠前按单条流开的，补记配对身份，后续去重才能命中
+          if (pairId && !existingWindow.__lerxuPairId) {
+            existingWindow.__lerxuPairId = pairId
+          }
           // 确保窗口显示、激活并置于最前面
           try {
             if (existingWindow.isMinimized()) {
@@ -1280,6 +1321,12 @@ onBeforeUnmount(() => {
           progressTaskGids.value.delete(key)
           return
         }
+        // 窗口可能是在折叠成记录之前按单条流开的；拿到折叠记录后补记
+        // 配对身份，handleTaskListChange 才能把同一对的多余窗口收掉。
+        const pairId = task.pairId ? `${task.pairId}` : ''
+        if (pairId && !win.__lerxuPairId) {
+          win.__lerxuPairId = pairId
+        }
         const payload = buildProgressPayload(task)
         const taskSpeed = Number(task.downloadSpeed) || 0
 
@@ -1346,6 +1393,43 @@ onBeforeUnmount(() => {
           progressWindows.value.delete(gid)
         }
         progressTaskGids.value.delete(gid)
+      }
+      /**
+       * 一条「一对音视频」记录只允许一个进度窗口。
+       *
+       * 自动开窗可能在列表折叠前按两条流各开一次（窗口 key 是各自的 gid），
+       * 折叠完成后两个窗口都还在。这里在列表刷新时认一遍 pairId：同一对
+       * 只保留一个（优先保留记录主 gid 的窗口），其余关掉。
+       */
+      function closeDuplicatePairProgressWindows(list) {
+        const keptByPair = new Map()
+        const staleKeys = []
+        progressWindows.value.forEach((win, key) => {
+          if (!isAliveWindow(win)) {
+            return
+          }
+          const row = findTaskRowByGid(list, key)
+          const pairId = row && row.pairId
+            ? `${row.pairId}`
+            : `${win.__lerxuPairId || ''}`
+          if (!pairId) {
+            return
+          }
+          const keptKey = keptByPair.get(pairId)
+          if (keptKey === undefined) {
+            keptByPair.set(pairId, key)
+            return
+          }
+          const rowGid = row && row.gid ? `${row.gid}` : ''
+          if (rowGid && `${key}` === rowGid) {
+            // 当前窗口就是记录主 gid 的窗口：换它留下
+            staleKeys.push(keptKey)
+            keptByPair.set(pairId, key)
+            return
+          }
+          staleKeys.push(key)
+        })
+        staleKeys.forEach(closeProgressWindowByGid)
       }
 
       // Open a window to show task completion notification
@@ -1596,6 +1680,9 @@ function handleTaskListChange(list) {
       updateProgressWindow(current, gid)
     }
   })
+
+  // 折叠成一条记录后，同一对音视频只保留一个进度窗口
+  closeDuplicatePairProgressWindows(list)
 
   // Check for newly completed tasks and show completion window
   const showTaskCompletedWindow = prefConfig.showTaskCompletedWindow !== false
