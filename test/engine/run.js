@@ -383,32 +383,27 @@ function buildTorrentFile ({ name, data, pieceLength = 262144, trackerPort }) {
 }
 
 // ---------- 等待工具 ----------
-// tellStatus 轮询（对引擎偶发的 GID 相关 RPC 怪癖容错：报错时退化为文件级完成
-// 检测——目标文件达到期望大小且 .aria2 控制文件消失）
-async function waitTaskDone (engine, gid, { timeoutMs = 180000, expectFile = null, expectSize = 0 } = {}) {
+// tellStatus 轮询。**只以引擎状态/已完成字节为准**：BT 任务启动时会预分配
+// 文件到最终长度，按文件大小判完成会在预分配后立刻误判。
+async function waitTaskDone (engine, gid, { timeoutMs = 180000 } = {}) {
   const deadline = Date.now() + timeoutMs
   let lastProgress = ''
   let rpcWarned = false
   while (Date.now() < deadline) {
-    // 文件级完成检测：不受引擎 RPC 怪癖影响。
-    // 下载完成 = 目标文件达到期望大小且 .aria2 控制文件已消失
-    if (expectFile && expectSize > 0 && existsSync(expectFile) && !existsSync(expectFile + '.aria2')) {
-      const size = statSync(expectFile).size
-      if (size === expectSize) {
-        log(engine.name, `file-level completion detected: ${path.basename(expectFile)} (${size} bytes)`)
-        return null
-      }
-    }
     try {
       const st = await rpcOnce(engine.rpcPort, engine.secret, 'aria2.tellStatus', [gid])
-      if (st.totalLength && st.totalLength !== '0') {
-        const pct = Math.floor((Number(st.completedLength) / Number(st.totalLength)) * 100)
+      const completed = Number(st.completedLength)
+      const total = Number(st.totalLength)
+      if (total > 0) {
+        const pct = Math.floor((completed / total) * 100)
         const prog = `${pct}% dl=${st.downloadSpeed}B/s conns=${st.connections || 0}`
         if (prog !== lastProgress) {
           lastProgress = prog
           log(engine.name, `task ${gid} ${st.status} ${prog}`)
         }
       }
+      // 做种态 completed==total 但 status 不是 complete；下载完成前也先等字节到齐
+      if (total > 0 && completed >= total) return st
       if (st.status === 'complete') return st
       if (st.status === 'error') {
         throw new Error(`task ${gid} failed: errorCode=${st.errorCode} errorMessage=${st.errorMessage || ''}`)
@@ -518,11 +513,7 @@ async function main () {
   ])
   assertGid(httpGid, 'HTTP')
   log('engine-a', `HTTP task gid=${httpGid}`)
-  await waitTaskDone(engineA, httpGid, {
-    timeoutMs: 120000,
-    expectFile: path.join(tmpRoot, 'a', 'http-test.bin'),
-    expectSize: httpPayload.length
-  })
+  await waitTaskDone(engineA, httpGid, { timeoutMs: 120000 })
   assertFileEquals(path.join(tmpRoot, 'a', 'http-test.bin'), httpPayload, 'HTTP download')
 
   // ---- 3. BT 下载测试（A 做种 / B 下载，本地 tracker 闭环） ----
@@ -547,14 +538,10 @@ async function main () {
   await assertTaskDir(engineA, seedGid, seedDir, 'seed')
   log('engine-a', `seed task gid=${seedGid}`)
   // 做种端就位判定：已完成校验（completed==total）即开始提供 piece
-  await waitTaskDone(engineA, seedGid, {
-    timeoutMs: 60000,
-    expectFile: path.join(seedDir, 'bt-test.bin'),
-    expectSize: btPayload.length
-  })
+  await waitTaskDone(engineA, seedGid, { timeoutMs: 60000 })
   log('engine-a', `seed task status=${summarizeTask(await rpcOnce(engineA.rpcPort, engineA.secret, 'aria2.tellStatus', [seedGid]))}`)
 
-  // B：从 swarm 下载同一 torrent（完成后校验；文件级检测兜底 gid 冲突怪癖）
+  // B：从 swarm 下载同一 torrent（完成后逐字节校验）
   const dlGid = await rpcOnce(engineB.rpcPort, engineB.secret, 'aria2.addTorrent', [
     torrent.toString('base64'),
     { dir: path.join(tmpRoot, 'b') }
@@ -562,11 +549,7 @@ async function main () {
   assertGid(dlGid, 'BT download')
   await assertTaskDir(engineB, dlGid, path.join(tmpRoot, 'b'), 'BT download')
   log('engine-b', `download task gid=${dlGid}`)
-  await waitTaskDone(engineB, dlGid, {
-    timeoutMs: 90000,
-    expectFile: path.join(tmpRoot, 'b', 'bt-test.bin'),
-    expectSize: btPayload.length
-  })
+  await waitTaskDone(engineB, dlGid, { timeoutMs: 90000 })
   assertFileEquals(path.join(tmpRoot, 'b', 'bt-test.bin'), btPayload, 'BT download')
 
   // ---- 收尾 ----
