@@ -200,13 +200,21 @@ export class XferRust extends JSONRPCClient {
     switch (name) {
       // ---- 任务管理 ----
       case 'addUri': {
-        const [uris, options = {}] = positional
+        const [uris, options = {}, position] = positional
         Object.assign(params, { uris: Array.isArray(uris) ? uris : [uris] }, options)
+        if (typeof position === 'number') params.position = position
         return { method: 'task.add', params, transform: unwrapGid }
       }
       case 'addTorrent': {
-        const [torrent, options = {}] = positional
+        // Api.addTorrent 沿用 aria2 参数位：(torrent, uris[], options[, position])。
+        // 原生 task.add 没有单独的 uris 位，第二个参数是数组时必须把**第三个**
+        // 参数当选项——否则 dir / select-file / split 等整批选项被静默丢弃，
+        // 种子任务永远落到全局下载目录、勾选文件也不生效。
+        const [torrent, second, third, fourth] = positional
+        const options = Array.isArray(second) ? (third || {}) : (second || {})
+        const position = Array.isArray(second) ? fourth : third
         Object.assign(params, { torrent }, options)
+        if (typeof position === 'number') params.position = position
         return { method: 'task.add', params, transform: unwrapGid }
       }
       case 'tellStatus': {
@@ -381,6 +389,15 @@ export class XferRust extends JSONRPCClient {
         const [id] = positional
         params.id = id
         return { method: name, params }
+      }
+
+      // 添加任务前预览已有数据（torrent base64 / magnet + dir）。
+      // 引擎异步校验：首次返回 verifying，轮询同一参数取 done。
+      case 'previewBt':
+      case 'task.previewBt': {
+        const [options = {}] = positional
+        Object.assign(params, options)
+        return { method: 'task.previewBt', params }
       }
 
       // ---- 原生协议不支持，降级处理 ----

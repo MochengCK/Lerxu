@@ -473,6 +473,15 @@ export default class Api {
     return this.client.call('verifyFiles', gid, algorithm)
   }
 
+  /**
+   * 添加任务前预览 BT 已有数据（引擎异步校验，轮询同一参数取结果）。
+   * @param {{ torrent?: string, magnet?: string, dir?: string }} params
+   * @returns {Promise<{state:string, hasMetadata:boolean, hasExistingData?:boolean, totalLength?:number, verifiedLength?:number, files?:Array}>}
+   */
+  previewBt (params = {}) {
+    return this.client.call('previewBt', params)
+  }
+
   getGlobalStat () {
     return this.client.call('getGlobalStat')
   }

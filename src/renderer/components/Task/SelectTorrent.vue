@@ -44,9 +44,10 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 import { remote } from 'parse-torrent'
+import api from '@/api'
 // mo-task-files is globally registered in main.js
 import '@/components/Icons/inbox'
 import {
@@ -64,6 +65,14 @@ import { storeToRefs } from 'pinia'
 
 defineOptions({
   name: 'mo-select-torrent'
+})
+
+const props = defineProps({
+  // 下载目录：添加阶段预览"已验证大小"要按这个目录找已有数据
+  dir: {
+    type: String,
+    default: ''
+  }
 })
 
 const emit = defineEmits(['change'])
@@ -98,11 +107,86 @@ watch(torrents, (fileList) => {
       name.value = file.name
       currentTorrent.value = torrent
       emit('change', torrent, SELECTED_ALL_FILES, files.value)
+      loadExistingPreview(torrent)
     })
   })
 })
 
+// 目录变了，已有数据的判定对象也变了：重新预览（防抖，输入路径时别每键都读盘）
+let dirPreviewTimer = null
+watch(() => props.dir, () => {
+  if (!currentTorrent.value) return
+  if (dirPreviewTimer) clearTimeout(dirPreviewTimer)
+  dirPreviewTimer = setTimeout(() => {
+    dirPreviewTimer = null
+    loadExistingPreview()
+  }, 500)
+})
+
+// 预览代际：切换种子/目录/卸载后，旧请求的回包一律丢弃
+let previewToken = 0
+
+/**
+ * 预览磁盘上已有数据（引擎后台逐片 SHA-1）。
+ *
+ * 引擎首包对"没有已有数据"的种子立即返回 done；只有真有数据才进入
+ * verifying 并需要轮询。所以这里先不把列切成"校验中"——新种子不会
+ * 闪一下已验证列。
+ */
+async function loadExistingPreview (torrent = currentTorrent.value) {
+  if (!torrent) return
+  const token = ++previewToken
+  let polling = false
+  try {
+    for (let i = 0; i < 600; i++) {
+      const res = await api.previewBt({ torrent, dir: props.dir })
+      if (token !== previewToken) return
+      if (res && res.state === 'verifying') {
+        if (!polling) {
+          polling = true
+          files.value.forEach((row) => { row.previewState = 'verifying' })
+        }
+        await new Promise(resolve => setTimeout(resolve, 500))
+        if (token !== previewToken) return
+        continue
+      }
+      applyPreviewResult(res)
+      return
+    }
+  } catch (e) {
+    if (token === previewToken) {
+      files.value.forEach((row) => { row.previewState = 'done' })
+    }
+  }
+}
+
+function applyPreviewResult (res) {
+  const done = res && res.state === 'done'
+  const hasExisting = done && res.hasExistingData === true
+  const byIndex = new Map()
+  if (done && Array.isArray(res.files)) {
+    res.files.forEach((f) => {
+      byIndex.set(Number(f.index), Number(f.verifiedLength) || 0)
+    })
+  }
+  files.value.forEach((row, i) => {
+    row.hasExistingData = hasExisting
+    row.verifiedLength = done ? (byIndex.get(Number(row.idx)) ?? byIndex.get(i + 1) ?? 0) : 0
+    row.previewState = 'done'
+  })
+}
+
+onBeforeUnmount(() => {
+  previewToken++
+  if (dirPreviewTimer) clearTimeout(dirPreviewTimer)
+})
+
 function reset () {
+  previewToken++
+  if (dirPreviewTimer) {
+    clearTimeout(dirPreviewTimer)
+    dirPreviewTimer = null
+  }
   name.value = EMPTY_STRING
   currentTorrent.value = EMPTY_STRING
   files.value = []

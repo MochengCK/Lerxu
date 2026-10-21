@@ -41,7 +41,7 @@
             </el-input>
           </div>
           <div v-show="taskType === 'torrent'" class="add-task-content-pane">
-            <mo-select-torrent ref="selectTorrent" @change="handleTorrentChange" />
+            <mo-select-torrent ref="selectTorrent" :dir="form.dir" @change="handleTorrentChange" />
           </div>
           <!-- 端手互通：局域网文件传输。第一项是文件选择框（与种子任务同款），
                下面是接收设备选择；传输记录统一显示在主列表里 -->
@@ -124,6 +124,20 @@
               <el-table-column :label="t('task.file-size')" min-width="50" align="right">
                 <template #default="scope">
                   <span>{{ scope.row.sizeText }}</span>
+                </template>
+              </el-table-column>
+              <!-- 磁力链接在添加阶段先核对目标目录里的已有数据：只有真的存在
+                   可继承数据时才亮出这一列（普通新链接不出现，避免噪声） -->
+              <el-table-column
+                v-if="showBtVerifiedColumn"
+                :label="t('task.verified-size')"
+                min-width="76"
+                align="right"
+              >
+                <template #default="scope">
+                  <span v-if="scope.row.btPreviewState === 'checking'">{{ t('task.verified-checking') }}</span>
+                  <span v-else-if="isMagnetLink(scope.row.url) && scope.row.btPreviewState === 'done'">{{ bytesToSize(scope.row.verifiedLength || 0) }}</span>
+                  <span v-else class="mo-parsed-text mo-parsed-empty">—</span>
                 </template>
               </el-table-column>
               <!-- 逐链接的 HLS 选项：只对 M3U8 清单地址有意义，其余行留空
@@ -396,6 +410,7 @@ import {
   isHlsManifestUri
 } from '@/utils/task'
 import i18n from '@/plugins/i18n'
+import api from '@/api'
 import { createMsg } from '@/components/Msg'
 import { useAppStore } from '@/store/app'
 import { useTaskStore } from '@/store/task'
@@ -474,6 +489,18 @@ const hlsWriteModeOptions = computed(() => [
  * 只在有时才出现 —— 它们对普通地址毫无意义，常驻只是多两行无用项（用户点名）。
  */
 const hasHlsLinks = computed(() => parsedTasks.value.some(it => isHlsManifestUri(it && it.url)))
+
+function isMagnetLink (url) {
+  return typeof url === 'string' && url.toLowerCase().startsWith('magnet:')
+}
+
+// 添加阶段磁力的"已验证"列：只有检测到磁盘已有数据时才出现
+const showBtVerifiedColumn = computed(() => parsedTasks.value.some(it =>
+  isMagnetLink(it && it.url) && (
+    it.btPreviewState === 'checking' ||
+    (it.btPreviewState === 'done' && it.hasExistingData === true)
+  )
+))
 const savePresetDialogVisible = ref(false)
 const savePresetName = ref('')
 let clipboardTimer = null
@@ -590,6 +617,11 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   ipcRenderer.removeListener('lan:update', handleLanUpdate)
+  btPreviewTokens.clear()
+  if (_btPreviewDirTimer) {
+    clearTimeout(_btPreviewDirTimer)
+    _btPreviewDirTimer = null
+  }
   stopClipboardWatch()
   if (_closeTimer) {
     clearTimeout(_closeTimer)
@@ -974,6 +1006,11 @@ function handleNativeDirectorySelected (dir) {
 
 function reset () {
   showAdvanced.value = false
+  if (_btPreviewDirTimer) {
+    clearTimeout(_btPreviewDirTimer)
+    _btPreviewDirTimer = null
+  }
+  btPreviewTokens.clear()
   form.value = initTaskForm(buildStoreState())
   parsedTasks.value = []
   lanFiles.value = []
@@ -1156,8 +1193,20 @@ async function updateUriPreview (uris = '') {
   items.forEach((it) => {
     if (it.hlsVariant === undefined) it.hlsVariant = form.value.hlsVariant || ''
     if (it.hlsWriteMode === undefined) it.hlsWriteMode = form.value.hlsWriteMode || ''
+    // 磁力行：添加阶段核对已有数据（外部数据盘/旧任务留下的半成品），
+    // 结果只用于表格展示，未检测完前不显示"校验中"
+    if (isMagnetLink(it.url)) {
+      if (it.btPreviewState === undefined) it.btPreviewState = 'idle'
+      if (it.verifiedLength === undefined) it.verifiedLength = 0
+      if (it.hasExistingData === undefined) it.hasExistingData = false
+    }
   })
   parsedTasks.value = items
+  items.forEach((it) => {
+    if (isMagnetLink(it.url) && it.btPreviewState === 'idle') {
+      startMagnetPreview(it.url)
+    }
+  })
 
   const newLines = lines.filter(u => !existingMap.has(u))
   if (newLines.length > 0) {
@@ -1168,6 +1217,75 @@ async function updateUriPreview (uris = '') {
     ensureTrailingNewlineAndCaret()
   }
 }
+
+// 添加阶段磁力"已验证"预览：同一链接只跑一轮；换目录会作废旧一轮。
+const btPreviewTokens = new Map()
+const btPreviewInflight = new Set()
+let _btPreviewDirTimer = null
+
+async function startMagnetPreview (url, force = false) {
+  const key = `${form.value.dir || ''}\n${url}`
+  if (!force && btPreviewInflight.has(key)) return
+  const token = (btPreviewTokens.get(url) || 0) + 1
+  btPreviewTokens.set(url, token)
+  btPreviewInflight.add(key)
+  const isCurrent = () => btPreviewTokens.get(url) === token
+  const update = (state, res) => {
+    if (!isCurrent()) return
+    const row = parsedTasks.value.find(r => r && r.url === url)
+    if (!row) return
+    row.btPreviewState = state
+    if (res) {
+      row.hasExistingData = res.hasExistingData === true
+      row.verifiedLength = Number(res.verifiedLength) || 0
+      const total = Number(res.totalLength) || 0
+      if (total > 0 && (!row.sizeText || row.sizeText === '-')) {
+        row.sizeText = bytesToSize(total)
+      }
+    }
+  }
+  try {
+    // 引擎逐片哈希可能持续较久：轮询到出结果为止（关闭弹窗/换目录即停）
+    for (let i = 0; i < 1200; i++) {
+      if (!isCurrent() || !props.visible) return
+      const res = await api.previewBt({ magnet: url, dir: form.value.dir })
+      if (!isCurrent()) return
+      if (res && res.state === 'verifying') {
+        update('checking')
+        await new Promise(resolve => setTimeout(resolve, 500))
+        continue
+      }
+      if (res && res.state === 'done' && res.hasMetadata) {
+        update('done', res)
+      } else {
+        update('unknown', res)
+      }
+      return
+    }
+  } catch (e) {
+    update('unknown')
+  } finally {
+    btPreviewInflight.delete(key)
+  }
+}
+
+// 目录是"已有数据"的判定范围：改完（防抖）重新核对所有磁力行
+watch(() => form.value.dir, () => {
+  if (!props.visible) return
+  if (_btPreviewDirTimer) clearTimeout(_btPreviewDirTimer)
+  _btPreviewDirTimer = setTimeout(() => {
+    _btPreviewDirTimer = null
+    parsedTasks.value.forEach((row) => {
+      if (!isMagnetLink(row && row.url)) return
+      row.btPreviewState = 'idle'
+      row.verifiedLength = 0
+      row.hasExistingData = false
+    })
+    parsedTasks.value.forEach((row) => {
+      if (isMagnetLink(row && row.url)) startMagnetPreview(row.url, true)
+    })
+  }, 500)
+})
 
 async function fetchUriSizes (lines = []) {
   const buildHeaders = () => {
@@ -1198,7 +1316,12 @@ async function fetchUriSizes (lines = []) {
     return null
   }
   const updates = await Promise.all(lines.map(async (u, idx) => {
-    if (!/^https?:/i.test(u) || u.startsWith('magnet:')) {
+    // 磁力的大小由 BT 预览异步补上（拿到保存的元数据后才知道），
+    // 这里不能回写 '-'，否则会把预览结果覆盖掉
+    if (u.toLowerCase().startsWith('magnet:')) {
+      return { idx, sizeText: null, dispName: null }
+    }
+    if (!/^https?:/i.test(u)) {
       if (u.toLowerCase().startsWith('ed2k://|file|')) {
         const parts = u.split('|')
         if (parts.length >= 4) {
@@ -1226,7 +1349,9 @@ async function fetchUriSizes (lines = []) {
   }))
   updates.forEach(({ idx, sizeText, dispName }) => {
     if (parsedTasks.value[idx]) {
-      parsedTasks.value[idx].sizeText = sizeText
+      if (sizeText !== null) {
+        parsedTasks.value[idx].sizeText = sizeText
+      }
       if (dispName) {
         parsedTasks.value[idx].name = dispName
       }

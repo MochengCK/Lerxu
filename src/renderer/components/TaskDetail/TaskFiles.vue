@@ -32,6 +32,18 @@
           class-name="task-file-extension">
           <template #default="scope">{{ removeExtensionDot(scope.row.extension) }}</template>
         </el-table-column>
+        <!-- 添加任务阶段：磁盘上已有同名数据时，展示本次可继承的已校验字节。
+             没有已有数据（普通新任务）时整列不出现，避免每行都是 0 B 的噪声 -->
+        <el-table-column
+          v-if="mode === 'ADD' && showVerifiedColumn"
+          :label="t('task.verified-size')"
+          align="right"
+          width="100">
+          <template #default="scope">
+            <span v-if="scope.row.previewState === 'verifying'">{{ t('task.verified-checking') }}</span>
+            <span v-else>{{ bytesToSize(scope.row.verifiedLength || 0) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column
           v-if="mode === 'DETAIL'"
           :label="`%`"
@@ -378,6 +390,13 @@ const computedTableHeight = computed(() => {
   if (props.height !== undefined && props.height !== null) return props.height
   return props.mode === 'DETAIL' ? props.tableHeight : undefined
 })
+
+// 只有"添加任务且磁盘已有数据"才显示已验证列：普通新任务没有这一列。
+// 校验中先亮出来（列出现本身就是在告诉用户"检测到已有数据"）。
+const showVerifiedColumn = computed(() => props.mode === 'ADD' && props.files.some(row => {
+  if (!row) return false
+  return row.previewState === 'verifying' || row.hasExistingData === true
+}))
 
 // 行 key：优先用文件 idx（引擎 index）；缺失或 NaN 时退化为路径，
 // 避免所有行共用同一个 key 导致勾选串联
