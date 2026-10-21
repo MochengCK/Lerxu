@@ -529,10 +529,13 @@ const mutations = {
 
     // 一对音视频折叠成**一条记录**：进度/速度按成员求和、状态按成员聚合。
     // 必须在上面两步之后——那两步都是按"引擎任务"口径做的。
+    const preferenceStore = usePreferenceStore()
     const collapsed = collapseTaskPairs(newList, {
       mergingGids: this.mergingList,
       mergeSkippedGids: this.mergeSkippedList,
-      previousRows: pairRowsByPairId
+      previousRows: pairRowsByPairId,
+      // 产物容器：预览名要用「视频 → 合并格式」选定的扩展名
+      mergeFormat: (preferenceStore.config && preferenceStore.config.mergeFormat) || ''
     })
     pairMemberIndex = collapsed.index
     pairRowsByPairId = collapsed.rows
@@ -592,10 +595,12 @@ const mutations = {
     })
 
     // 侧边栏计数同样按"一条记录"数：一对音视频算一条（与列表显示一致）
+    const preferenceStore = usePreferenceStore()
     const collapsed = collapseTaskPairs(newList, {
       mergingGids: this.mergingList,
       mergeSkippedGids: this.mergeSkippedList,
-      previousRows: pairRowsByPairIdForAll
+      previousRows: pairRowsByPairIdForAll,
+      mergeFormat: (preferenceStore.config && preferenceStore.config.mergeFormat) || ''
     })
     pairRowsByPairIdForAll = collapsed.rows
     if (collapsed.changed) {

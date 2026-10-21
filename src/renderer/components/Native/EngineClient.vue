@@ -810,6 +810,11 @@ const dir = dirname(filePath)
             api.removeDownloadResult({ gid }).catch(() => {})
           }
         } catch (_) {}
+        // 扩展发来的一对音视频带同一个 pairId（存在任务历史里），
+        // 拿到它就等于**明确知道**这一条是"一对里的一半"，配对不再靠文件名猜。
+        // 必须在下面缓存显示名之前算好：配对成员不能把 `xxx_video.mp4` 这种
+        // 零件名写进 taskDisplayNames，否则合并阶段卡片会被缓存钉死在源文件扩展名上。
+        const pairInfo = getTaskPairInfo(task)
         try {
           const gid = task && task.gid ? `${task.gid}` : ''
           if (gid) {
@@ -825,16 +830,15 @@ const dir = dirname(filePath)
                 name = base
               }
             }
-            if (name) {
+            // 配对成员的"完成名"是合并产物名（容器由合并格式决定），
+            // 由折叠记录/合并流程负责，这里不能缓存零件名。
+            if (name && !pairInfo) {
               taskStore.setTaskDisplayName({ gid, name })
             }
           }
         } catch (_) {}
         // 如果需要合并（Bilibili DASH 分段视频 / 扩展发来的一对音视频），先设置 MERGING 状态
         const mergeGid = task && task.gid ? `${task.gid}` : ''
-        // 扩展发来的一对音视频带同一个 pairId（存在任务历史里），
-        // 拿到它就等于**明确知道**这一条是"一对里的一半"，配对不再靠文件名猜
-        const pairInfo = getTaskPairInfo(task)
         const mergeKey = getDashMergeKey(finalPath, cfg, pairInfo)
         // ── 一对音视频：另一半还在下载时，这条流**不算完成** ──
         // 判据只能看折叠记录身上的**成员状态**（`pairMembers`，唯一的权威）：

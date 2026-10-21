@@ -4,9 +4,17 @@ export function buildCompletedTaskWindowHtml (task, useCustomFrame, isMac, t, ge
  {
         // Get task name from files or bittorrent info
         let taskName = 'Unknown'
+        // 「一对音视频」折叠记录显示的是合并产物名（扩展名取用户选择的合并格式），
+        // 不能退回成员零件名 `xxx_video.mp4`，否则选了 MKV 也会显示成 MP4。
+        // 合并已确定不会发生（mergeSkipped）时磁盘上仍是成员文件，按真实名字显示。
+        const pairName = task && task.pairDisplayName && task.mergeSkipped !== true && Number(task.pairCount) >= 2
+          ? `${task.pairDisplayName}`.trim()
+          : ''
         const files = Array.isArray(task.files) ? task.files : []
         const { bittorrent } = task
-        if (bittorrent && bittorrent.info && bittorrent.info.name) {
+        if (pairName) {
+          taskName = pairName
+        } else if (bittorrent && bittorrent.info && bittorrent.info.name) {
           taskName = bittorrent.info.name
         } else if (files.length === 1) {
           const file = files[0]

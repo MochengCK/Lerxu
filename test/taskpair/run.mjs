@@ -250,9 +250,23 @@ check('成员对象换了（进度变了）→ 重新折叠', () => {
 
 console.log('taskPair：产物名预览')
 
-check('角色标记与重复序号被去掉，扩展名沿用画面流', () => {
+check('未配置合并格式时回退到画面流扩展名', () => {
   const { list } = collapseTaskPairs([video, audio], {})
   assertEqual(list[0].pairDisplayName, '短片.mp4')
+})
+
+check('合并格式为 mkv / ts 时预览名用配置的容器', () => {
+  assertEqual(collapseTaskPairs([video, audio], { mergeFormat: 'mkv' }).list[0].pairDisplayName, '短片.mkv')
+  assertEqual(collapseTaskPairs([video, audio], { mergeFormat: 'TS' }).list[0].pairDisplayName, '短片.ts')
+  assertEqual(collapseTaskPairs([video, audio], { mergeFormat: 'avi' }).list[0].pairDisplayName, '短片.mp4', '未知格式回退')
+})
+
+check('合并格式变了 → 重新折叠并更新预览名', () => {
+  const first = collapseTaskPairs([video, audio], { mergeFormat: 'mp4' })
+  const second = collapseTaskPairs([video, audio], { mergeFormat: 'mkv', previousRows: first.rows })
+  assert(second.list[0] !== first.list[0], '名称变更不应复用旧记录')
+  assertEqual(second.changed, true)
+  assertEqual(second.list[0].pairDisplayName, '短片.mkv')
 })
 
 check('带序号的流名（`<名>_2_video.mp4`）同样归到同一个词干', () => {

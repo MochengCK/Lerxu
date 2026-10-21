@@ -235,7 +235,9 @@ function getCompletedDisplayName (task) {
   // 「一对音视频」在列表里显示的是**合并产物**的名字（画面流名字去掉角色标记，
   // 与合并落盘的名字同一套规则），而不是 `xxx_video.mp4` 这种"零件名"。
   // 只剩一条成员时（合并已完成 / 伙伴被删）不再用它：那时磁盘上就是那一个文件。
-  if (isPairRow(task) && Number(task.pairCount) >= 2 && task.pairDisplayName) {
+  // mergeSkipped（重试耗尽 / 缺另一半 / 合并失败）同理：产物不存在，
+  // 卡片必须显示成员文件的实际名字，不能还挂着没落盘的 `.mkv` 预览名。
+  if (isPairRow(task) && task.mergeSkipped !== true && Number(task.pairCount) >= 2 && task.pairDisplayName) {
     return `${task.pairDisplayName}`
   }
   const config = preferenceConfig.value || {}
@@ -271,7 +273,10 @@ function getCachedDisplayName (task) {
 const isPendingPair = computed(() => {
   const task = props.task
   const merged = task && (task.dashMerged === true || task.pairMerged === true)
-  return !!(isPairRow(task) && !merged && task.pairDisplayName)
+  // mergeSkipped 的配对不会再产出合并文件，名字必须回到成员文件的真实名字，
+  // 不能算作"待合并"继续用产物预览名。
+  const skipped = task && task.mergeSkipped === true
+  return !!(isPairRow(task) && !merged && !skipped && task.pairDisplayName)
 })
 
 const pairGids = computed(() => {
@@ -311,9 +316,20 @@ const isMergeSkippedPair = computed(() => {
   return task.mergeSkipped === true
 })
 
+// 还没合并出产物的配对记录：预览名（含「视频 → 合并格式」选定的扩展名）
+// 必须压过 taskDisplayNames 里的成员零件名缓存 —— 合并阶段成员完成事件
+// 曾把 `xxx_video.mp4` 写进缓存，不压过它卡片就会一直显示源文件的 MP4。
+const pairPreviewName = computed(() => {
+  if (!isPendingPair.value) {
+    return ''
+  }
+  return `${props.task.pairDisplayName || ''}`
+})
+
 const taskFullName = computed(() => {
   const task = props.task
   const isStopped = !!task && (task.status === TASK_STATUS.COMPLETE || task.status === TASK_STATUS.MERGING)
+  if (pairPreviewName.value) return pairPreviewName.value
   const cached = isStopped ? getCachedDisplayName(task) : ''
   if (cached) return cached
   if (isPendingPair.value) return `${task.pairDisplayName}`
@@ -328,6 +344,7 @@ const taskFullName = computed(() => {
 const taskName = computed(() => {
   const task = props.task
   const isStopped = !!task && (task.status === TASK_STATUS.COMPLETE || task.status === TASK_STATUS.MERGING)
+  if (pairPreviewName.value) return ellipsis(pairPreviewName.value, 64)
   const cached = isStopped ? getCachedDisplayName(task) : ''
   if (cached) return ellipsis(cached, 64)
   if (isPendingPair.value) return ellipsis(`${task.pairDisplayName}`, 64)
@@ -356,6 +373,9 @@ function ensureFixedDisplayName () {
   const task = props.task
   const gid = task?.gid ? `${task.gid}` : ''
   if (!gid) return
+  // 还没合并出产物的配对记录不固定名字：显示名要跟着「合并格式」与合并结果走
+  //（成功 → 主流程写入产物名；失败/跳过 → 回落到成员文件的真实名字）。
+  if (isPendingPair.value) return
   // 配对记录：任一成员 gid 上已经有固定名就不用再写（合并完成后主流程会写
   // 在"最后下完的那条"的 gid 上）
   if (getCachedDisplayName(task)) return

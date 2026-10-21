@@ -96,10 +96,13 @@ export function getVideoMember (members) {
 /**
  * 一对音视频在列表里**预览**的产物名（与合并落盘的名字同一套规则）。
  *
- * 取画面流的文件名，去掉角色标记与重复序号，扩展名沿用画面流自己的
- * （视频容器决定产物容器）。画面流信息缺失时返回空串，调用方回退到原逻辑。
+ * 取画面流的文件名，去掉角色标记与重复序号。**扩展名不能用画面流自己的**：
+ * 扩展发来的画面流固定是 fMP4（`xxx_video.mp4`），而最终产物容器由
+ * 「视频 → 合并格式」决定（mp4 / mkv / ts），所以这里显式用当前配置的容器，
+ * 否则下载阶段和完成弹窗会一直显示 `.mp4`，直到合并产物落盘才"突然"变成 `.mkv`。
+ * 画面流信息缺失时返回空串，调用方回退到原逻辑。
  */
-export function pairDisplayName (task) {
+export function pairDisplayName (task, mergeFormat = '') {
   const members = task && Array.isArray(task.pairMembers) ? task.pairMembers : []
   const video = getVideoMember(members.length ? members : [task])
   if (!video) {
@@ -122,10 +125,20 @@ export function pairDisplayName (task) {
   if (!stem) {
     return ''
   }
+  const container = normalizeMergeContainer(mergeFormat)
+  if (container) {
+    return `${stem}.${container}`
+  }
   if (ext && VIDEO_EXTENSIONS.includes(ext.toLowerCase())) {
     return `${stem}${ext}`
   }
   return `${stem}.mp4`
+}
+
+/** 「视频 → 合并格式」允许的产物容器；空值/未知值返回空串，调用方回退旧逻辑。 */
+function normalizeMergeContainer (mergeFormat) {
+  const value = `${mergeFormat || ''}`.trim().toLowerCase()
+  return ['mp4', 'mkv', 'ts'].includes(value) ? value : ''
 }
 
 function sumOf (members, key) {
@@ -169,7 +182,7 @@ function aggregateStatus (members, mergingGids, alreadyMerged = false) {
   return statusOf(members[0])
 }
 
-function buildPairRow (pairId, members, mergingGids, mergeSkippedGids) {
+function buildPairRow (pairId, members, mergingGids, mergeSkippedGids, mergeFormat = '') {
   const videoIndex = members.findIndex(m => getPairRole(m) === PAIR_ROLE_VIDEO)
   const primaryIndex = videoIndex >= 0 ? videoIndex : 0
   const primary = members[primaryIndex]
@@ -226,7 +239,7 @@ function buildPairRow (pairId, members, mergingGids, mergeSkippedGids) {
     engineStatus: `${(lead && lead.engineStatus) || ''}`,
     statusRightText: `${(lead && lead.statusRightText) || ''}`
   }
-  row.pairDisplayName = pairDisplayName(row)
+  row.pairDisplayName = pairDisplayName(row, mergeFormat)
   return row
 }
 
@@ -293,6 +306,8 @@ export function collapseTaskPairs (taskList, options = {}) {
     (Array.isArray(options.mergeSkippedGids) ? options.mergeSkippedGids : []).map(g => `${g}`)
   )
   const previousRows = options.previousRows instanceof Map ? options.previousRows : null
+  // 「视频 → 合并格式」：预览名必须用最终容器，而不是画面流自己的 .mp4
+  const mergeFormat = `${options.mergeFormat || ''}`
 
   const out = []
   const index = new Map()
@@ -314,7 +329,7 @@ export function collapseTaskPairs (taskList, options = {}) {
     // 单成员也走折叠：伙伴已经合并掉/被删掉时，这条记录仍然是"配对记录"
     // （合并进度、双层进度条都挂在 isPair 上），只是没有求和可做。
     const members = list.filter(t => getPairId(t) === pairId)
-    const built = buildPairRow(pairId, members, mergingGids, mergeSkippedGids)
+    const built = buildPairRow(pairId, members, mergingGids, mergeSkippedGids, mergeFormat)
     const prev = previousRows ? previousRows.get(pairId) : null
     const row = prev && isSamePairRow(prev, built) ? prev : built
     if (row !== prev) {
