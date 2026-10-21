@@ -39,22 +39,12 @@
           </div>
           <el-input v-model="recvDir" readonly :disabled="loading || saving">
             <template #append>
-              <el-button :disabled="loading || saving" @click="chooseDirectory">
-                {{ t('preferences.lan-share-choose-dir') }}
-              </el-button>
+              <mo-select-directory
+                v-if="isRenderer"
+                @selected="onDirectorySelected"
+              />
             </template>
           </el-input>
-          <div class="lan-share-dir-actions">
-            <span class="lan-share-default">
-              {{ t('preferences.lan-share-default-hint', { path: defaultRecvDir }) }}
-            </span>
-            <el-button
-              link
-              type="primary"
-              :disabled="loading || saving"
-              @click="useDefaultDirectory"
-            >{{ t('preferences.lan-share-use-default') }}</el-button>
-          </div>
         </el-col>
       </el-form-item>
 
@@ -68,20 +58,21 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ipcRenderer } from 'electron'
-import { dialog, getCurrentWindow } from '@electron/remote'
+import is from 'electron-is'
 import { ElMessage } from 'element-plus'
 import i18n from '@/plugins/i18n'
 import { createMsg } from '@/components/Msg'
 
 const { t } = i18n.global
 const msg = createMsg(ElMessage, { showClose: true })
+// 与「默认下载路径」同一套控件：原生目录选择按钮只在渲染进程里可用
+const isRenderer = is.renderer()
 
 const loading = ref(true)
 const saving = ref(false)
 const enabled = ref(true)
 const deviceName = ref('')
 const recvDir = ref('')
-const defaultRecvDir = ref('')
 const config = ref(null)
 const errorText = ref('')
 
@@ -104,7 +95,6 @@ function applyConfig (next) {
   enabled.value = next.enabled !== false
   deviceName.value = `${next.deviceName || ''}`
   recvDir.value = `${next.recvDir || ''}`
-  defaultRecvDir.value = `${next.defaultRecvDir || ''}`
 }
 
 async function loadConfig () {
@@ -175,22 +165,9 @@ async function onDeviceNameChange () {
   }
 }
 
-async function chooseDirectory () {
-  const result = await dialog.showOpenDialog(getCurrentWindow(), {
-    properties: ['openDirectory', 'createDirectory'],
-    defaultPath: recvDir.value || defaultRecvDir.value
-  })
-  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-    return
-  }
-  const ok = await saveConfig({ recvDir: result.filePaths[0] }, { success: true })
-  if (!ok) {
-    recvDir.value = `${(config.value && config.value.recvDir) || ''}`
-  }
-}
-
-async function useDefaultDirectory () {
-  const ok = await saveConfig({ recvDir: '' }, { success: true })
+async function onDirectorySelected (dir) {
+  if (!dir || loading.value || saving.value) return
+  const ok = await saveConfig({ recvDir: dir }, { success: true })
   if (!ok) {
     recvDir.value = `${(config.value && config.value.recvDir) || ''}`
   }
@@ -200,24 +177,8 @@ onMounted(loadConfig)
 </script>
 
 <style lang="scss" scoped>
-.lan-share-dir-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 6px;
-}
-
-.lan-share-default {
-  min-width: 0;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--el-text-color-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* 目录输入框右侧直接用 mo-select-directory（与「默认下载路径」同一个控件），
+   槽位样式由主题统一处理，这里不再自定义。 */
 .lan-share-status {
   margin: 4px 16px 16px;
   font-size: 12px;
