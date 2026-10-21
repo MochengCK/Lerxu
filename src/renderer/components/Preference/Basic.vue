@@ -756,6 +756,7 @@
             >
               <template #prepend>
                 <mo-history-directory
+                  :current="form.dir"
                   @selected="handleHistoryDirectorySelected"
                 />
               </template>

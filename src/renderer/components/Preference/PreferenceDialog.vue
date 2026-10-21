@@ -171,6 +171,12 @@ function onDialogOpen () {
   nextTick(() => {
     if (contentRef.value) contentRef.value.scrollTop = 0
   })
+  // 引擎能力可能还没拉回来（启动早期那次 getVersion 超时只返回空 features）⇒
+  // 打开设置时补拉一次；拿到 lan-config 后「互传」分类会自己出现
+  const features = (engineInfo.value && engineInfo.value.features) || []
+  if (!lanShareSupported.value && features.length === 0) {
+    appStore.fetchEngineInfo().catch(() => {})
+  }
 }
 </script>
 

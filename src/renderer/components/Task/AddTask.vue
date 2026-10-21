@@ -220,6 +220,7 @@
           <template #prepend>
             <mo-history-directory
               placement="top-start"
+              :current="form.dir"
               @selected="handleHistoryDirectorySelected"
             />
           </template>

@@ -103,6 +103,9 @@ let lastSpeedUpdate = null
 let timer = null
 let _bootTimer = null
 let _visibilityHandler = null
+// 引擎能力（getVersion.features）的补拉定时器：启动早期引擎未就绪时那次请求
+// 会拿回"空能力"，必须过一会儿再问，见 refreshEngineInfo()
+let _engineInfoRetryTimer = null
 // 一条下载只弹一次完成通知（键取 pairId / gid，见 utils/completeNotify）
 const _completeNotifier = createCompleteNotifier()
 // 「开始下载」类通知同理：**一次下载只弹一次**，一对音视频（画面流 + 声音流，
@@ -3791,6 +3794,46 @@ const dir = dirname(filePath)
         api.client.removeListener('onDownloadError', onDownloadError)
         api.client.removeListener('onBtDownloadComplete', onBtDownloadComplete)
       }
+      /**
+       * 拉引擎版本信息（含 features 能力列表）。
+       *
+       * ⚠️ 启动早期引擎往往还没起来：主进程对 getVersion 有 3s 兜底，超时后
+       * 是**正常返回** `version: 'Unknown'` + 空 `features`（不是 error）。这份
+       * "空能力"一旦被缓存住就再也没有第二次机会 —— 「设置 → 下载 → 互传」分类
+       * 的判据正是 features 含 `lan-config`，于是刚进应用时它一直不显示，
+       * 除非用户恰好点进「高级设置」（那边 onMounted 会再拉一次）。
+       * 所以这里只在"引擎未就绪"时按秒重试，拿到真实版本就停。
+       */
+      function refreshEngineInfo (attempt = 0) {
+        if (_engineInfoRetryTimer) {
+          clearTimeout(_engineInfoRetryTimer)
+          _engineInfoRetryTimer = null
+        }
+        return appStore.fetchEngineInfo().then((info) => {
+          const version = `${(info && info.version) || ''}`
+          const features = (info && Array.isArray(info.features)) ? info.features : []
+          const notReady = (!version || version === 'Unknown') && features.length === 0
+          if (notReady) {
+            scheduleEngineInfoRetry(attempt + 1)
+          }
+          return info
+        }).catch((err) => {
+          console.warn('[Lerxu] fetch engine info failed:', err && err.message ? err.message : err)
+          scheduleEngineInfoRetry(attempt + 1)
+        })
+      }
+
+      function scheduleEngineInfoRetry (attempt) {
+        // 约 12s 仍拿不到就停手：引擎真起不来时反复问没有意义，
+        // 之后打开设置（PreferenceDialog）与「高级设置」都还会各补一次
+        if (attempt > 8) return
+        if (_engineInfoRetryTimer) clearTimeout(_engineInfoRetryTimer)
+        _engineInfoRetryTimer = setTimeout(() => {
+          _engineInfoRetryTimer = null
+          refreshEngineInfo(attempt)
+        }, 1500)
+      }
+
       function onEngineReconnect() {
         // WebSocket 重连成功后，旧 socket 上的事件监听器已失效，
         // 必须重新绑定引擎推送事件（onDownloadStart 等）。
@@ -3808,6 +3851,10 @@ const dir = dirname(filePath)
 
         // 重置连接状态标记
         engineConnectionStable.value = true
+
+        // 引擎刚连上：补拉一次能力列表（启动早期那次多半只拿到空 features，
+        // 互传分类、引擎信息卡片都靠它）
+        refreshEngineInfo()
       }
       function startPolling() {
         stopPolling()
@@ -4731,10 +4778,9 @@ onMounted(() => {
       _bootTimer = setTimeout(() => {
         _bootTimer = null
         // 引擎启动早期可能尚未就绪（主进程 RPC 走 HTTP 兜底），
-        // 获取失败不应产生未捕获的 Promise 异常，静默降级即可
-        appStore.fetchEngineInfo().catch((err) => {
-          console.warn('[Lerxu] fetch engine info failed:', err && err.message ? err.message : err)
-        })
+        // 获取失败不应产生未捕获的 Promise 异常，静默降级即可；
+        // 拿回空能力时会自动重试（见 refreshEngineInfo）
+        refreshEngineInfo()
         appStore.fetchEngineOptions()
 
         startPolling()
@@ -4782,6 +4828,10 @@ onUnmounted(() => {
       if (_bootTimer) {
         clearTimeout(_bootTimer)
         _bootTimer = null
+      }
+      if (_engineInfoRetryTimer) {
+        clearTimeout(_engineInfoRetryTimer)
+        _engineInfoRetryTimer = null
       }
       if (_btRetryTimers && _btRetryTimers.size > 0) {
         _btRetryTimers.forEach((timer) => {

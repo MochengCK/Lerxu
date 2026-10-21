@@ -741,6 +741,12 @@ onBeforeUnmount(() => {
      center 与 baseline 的差异只体现在这段偏移上（实测：改前右侧文字 top
      比左侧低 4px，改后完全一致）。 */
   align-items: center;
+  /* 右栏（速度 / 剩余时间 / 完成时间）必须贴住卡片右边。
+     列表视图靠左栏 `flex: 1 1 auto` 把空隙吃掉，看不出问题；但磁贴视图里
+     左栏被改成了 `flex: 0 0 auto`（见 .task-item--grid 覆盖），两栏都不
+     伸长了，整行就会靠左挤成一团、右侧空出一大片。space-between 让剩余
+     空间落在两栏之间，两种视图下右栏都在最右侧。 */
+  justify-content: space-between;
   font-size: 0.75rem;
   line-height: 0.875rem;
   min-height: 0.875rem;
