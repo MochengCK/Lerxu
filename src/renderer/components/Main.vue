@@ -638,6 +638,10 @@ onBeforeUnmount(() => {
         const list = taskList.value || []
         let task = findTaskRowByGid(list, gid)
         if (!task) {
+          // 当前列表可能被筛选/分类过滤掉，退回全量列表找折叠记录
+          task = findTaskRowByGid(taskStore.allTaskList || [], gid)
+        }
+        if (!task) {
           try {
             task = await api.fetchTaskItem({ gid })
           } catch (e) {
@@ -684,11 +688,16 @@ onBeforeUnmount(() => {
         }
       }
       async function deleteTaskFilesFromProgress(task) {
-        
         const config = preferenceConfig.value || {}
         const downloadingFileSuffix = config.downloadingFileSuffix || ''
+        // 「一对音视频」在列表里折叠成一条记录，但磁盘上是两个文件（画面流 + 声音流）：
+        // 带文件删除必须按成员逐个清掉，否则只会删掉一条流，另一条留在下载目录里。
+        const members = Array.isArray(task && task.pairMembers) ? task.pairMembers.filter(Boolean) : []
+        const targets = members.length > 1 ? members : [task]
         try {
-          await moveTaskFilesToTrash(task, downloadingFileSuffix, config)
+          for (const target of targets) {
+            await moveTaskFilesToTrash(target, downloadingFileSuffix, config)
+          }
         } catch (err) {
           console.warn('[Lerxu] deleteTaskFilesFromProgress error:', err)
           const taskName = (task && task.name) ? task.name : (task && task.gid ? task.gid : '')
