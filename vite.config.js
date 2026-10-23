@@ -38,8 +38,19 @@ const copyMainAssets = () => ({
       const outName = `${file}.gz`
       expected.add(outName)
       const target = resolve(dataOutDir, outName)
+      const source = resolve(dataSrcDir, file)
+      // 内容没变就别再压一遍：xdb 合计约 47MB，level 9 压缩一次要几十秒，
+      // 而每次 `npm run dev` 启动 / 每次构建都会走到这里 —— 之前每启动一次
+      // 都要白等近一分钟。只按 mtime 判断，源文件更新后会重新压缩。
+      try {
+        if (statSync(target).size > 0 && statSync(target).mtimeMs >= statSync(source).mtimeMs) {
+          continue
+        }
+      } catch {
+        // 目标不存在/不可读 → 继续压缩
+      }
       const tmp = `${target}.tmp`
-      writeFileSync(tmp, gzipSync(readFileSync(resolve(dataSrcDir, file)), { level: 9 }))
+      writeFileSync(tmp, gzipSync(readFileSync(source), { level: 9 }))
       renameSync(tmp, target)
     }
     // 写入完成后清理遗留（含历史版本的明文 .xdb 残留）

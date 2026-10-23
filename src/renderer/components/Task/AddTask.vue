@@ -461,7 +461,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import is from 'electron-is'
 import { ipcRenderer, webUtils } from 'electron'
-import { isEmpty } from 'lodash'
+import isEmpty from 'lodash/isEmpty'
 // mo-history-directory, mo-select-directory, mo-select-torrent,
 // mo-segmented-slider, mo-hover-tip, mo-extend-select are globally registered in main.js
 import {

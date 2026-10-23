@@ -36,7 +36,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ipcRenderer } from 'electron'
 import { Menu, getCurrentWindow } from '@electron/remote'
-import { cloneDeep } from 'lodash'
+import cloneDeep from 'lodash/cloneDeep'
 import {
   checkTaskIsSeeder,
   getFileExtension,

@@ -338,6 +338,9 @@ const state = () => ({
   mergeKeys: {},
   taskList: [],
   taskListRevision: 0, // taskList 以 splice 原地更新，引用不变；供外部 watch 检测列表实际变化
+  // 第一轮任务列表是否已落地：启动遮罩等它关（见 pages/index/main.js），
+  // 比固定延时更准 —— 快的时候立刻显示，慢的时候也不会露出一屏空态
+  listLoaded: false,
   allTaskList: [], // 全部任务（不受 currentList 影响，已按日期过滤），用于侧边栏计数
   selectedGidList: [],
   magnetStatuses: {},
@@ -1071,6 +1074,10 @@ const actions = {
         const filteredData = applyDateFilter(data, this.filterDate)
 
         this.UPDATE_TASK_LIST(filteredData)
+        // 首屏遮罩据此关闭（只置一次，避免每轮触发依赖）
+        if (!this.listLoaded) {
+          this.listLoaded = true
+        }
 
         const { selectedGidList } = this
         const gids = filteredData.map((task) => task.gid)

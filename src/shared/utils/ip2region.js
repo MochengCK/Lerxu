@@ -11,7 +11,8 @@ import { gunzipSync } from 'zlib'
 
 let v4Searcher = null
 let v6Searcher = null
-let initialized = false
+let v4Tried = false
+let v6Tried = false
 
 // --- Reusable Buffers (avoid per-search allocation / GC) ---
 // IPv4 index size = 14, IPv6 index size = 38; use the larger one.
@@ -71,25 +72,31 @@ function readXdbBuffer (filename) {
   return null
 }
 
-function ensureInitialized () {
-  if (initialized) return
-  initialized = true
-
+function ensureV4 () {
+  if (v4Searcher || v4Tried) return
+  v4Tried = true
   try {
-    const v4Buffer = readXdbBuffer('ip2region_v4.xdb')
-    if (v4Buffer) {
-      v4Searcher = newWithBuffer(IPv4, v4Buffer)
+    const buf = readXdbBuffer('ip2region_v4.xdb')
+    if (buf) {
+      v4Searcher = newWithBuffer(IPv4, buf)
     } else {
       console.warn('[ip2region] ip2region_v4.xdb not found')
     }
   } catch (e) {
     console.warn('[ip2region] Failed to initialize IPv4 searcher:', e.message)
   }
+}
 
+// IPv6 库解压后 36MB（v4 只有 11MB）：只在真的遇到 IPv6 地址时才加载。
+// 之前两者在第一次查 IP 时一起进内存并常驻 —— 只开过 Peers 页、里面全是
+// IPv4 的用户也会白背 36MB。
+function ensureV6 () {
+  if (v6Searcher || v6Tried) return
+  v6Tried = true
   try {
-    const v6Buffer = readXdbBuffer('ip2region_v6.xdb')
-    if (v6Buffer) {
-      v6Searcher = newWithBuffer(IPv6, v6Buffer)
+    const buf = readXdbBuffer('ip2region_v6.xdb')
+    if (buf) {
+      v6Searcher = newWithBuffer(IPv6, buf)
     } else {
       console.warn('[ip2region] ip2region_v6.xdb not found')
     }
@@ -175,7 +182,6 @@ const _emptyResult = { country: '', province: '', city: '', isp: '', countryCode
  * @returns {{country: string, province: string, city: string, isp: string, countryCode: string, region: string}}
  */
 export function searchInfoSync (ip) {
-  ensureInitialized()
   if (!ip) return _emptyResult
 
   try {
@@ -185,8 +191,10 @@ export function searchInfoSync (ip) {
 
     if (typeof ip === 'string') {
       if (isIPv4String(ip)) {
+        ensureV4()
         searcher = v4Searcher
       } else if (isIPv6String(ip)) {
+        ensureV6()
         searcher = v6Searcher
       } else {
         return _emptyResult
@@ -194,8 +202,10 @@ export function searchInfoSync (ip) {
       ipBytes = parseIP(ip)
     } else if (Buffer.isBuffer(ip)) {
       if (ip.length === 4) {
+        ensureV4()
         searcher = v4Searcher
       } else if (ip.length === 16) {
+        ensureV6()
         searcher = v6Searcher
       } else {
         return _emptyResult

@@ -2429,7 +2429,8 @@ import fs from 'node:fs'
 import crypto from 'node:crypto'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import 'element-plus/es/components/message-box/style/css'
-import { cloneDeep, isEmpty } from 'lodash'
+import cloneDeep from 'lodash/cloneDeep'
+import isEmpty from 'lodash/isEmpty'
 // mo-history-directory, mo-select-directory, mo-theme-switcher,
 // mo-segmented-slider are globally registered in main.js
 import { availableLanguages, getLanguage, getSystemLocaleName } from '@shared/locales'

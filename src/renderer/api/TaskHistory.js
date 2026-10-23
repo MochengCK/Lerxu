@@ -14,9 +14,50 @@ const taskHistoryStore = new Store({
 const MAX_HISTORY_ITEMS = 100// 最大历史记录数量
 const MAX_DELETED_GIDS = 2000// 删除黑名单最大数量（滚动裁剪）
 
-// 'tasks' 写盘防抖：高频调用（轮询 saveStoppedTasks / updateTask）时
-// 先更新内存中的待写数据，2 秒后落盘；退出前通过 beforeunload flush
-let pendingTasks = null
+// ── 内存缓存 ────────────────────────────────────────────────────────────
+// electron-store 每次 `get()` 都会**同步读盘 + JSON.parse**（Conf 的 store
+// getter 不缓存）。轮询里 `getHistory() / getAllHistory() / getDeletedGids()`
+// 每秒要调用好几次，实测单次 1~3ms，且全是主线程上的同步 IO；任务列表里
+// 每个任务取一次时更糟（几十毫秒的卡顿 + 磁盘被反复唤醒）。
+//
+// 因此这里把两份数据（tasks / deletedGids）**读一次常驻内存**，之后所有读
+// 都走内存，写走下面的合并落盘。
+let cachedTasks = null
+let cachedDeletedGids = null
+let lastWrittenTasksJSON = ''
+let lastWrittenDeletedJSON = ''
+
+const loadTasks = () => {
+  if (cachedTasks !== null) {
+    return cachedTasks
+  }
+  const raw = taskHistoryStore.get('tasks', [])
+  cachedTasks = Array.isArray(raw) ? raw : []
+  try {
+    lastWrittenTasksJSON = JSON.stringify(cachedTasks)
+  } catch (_) {
+    lastWrittenTasksJSON = ''
+  }
+  return cachedTasks
+}
+
+const loadDeletedGids = () => {
+  if (cachedDeletedGids !== null) {
+    return cachedDeletedGids
+  }
+  const raw = taskHistoryStore.get('deletedGids', [])
+  cachedDeletedGids = Array.isArray(raw) ? raw : []
+  try {
+    lastWrittenDeletedJSON = JSON.stringify(cachedDeletedGids)
+  } catch (_) {
+    lastWrittenDeletedJSON = ''
+  }
+  return cachedDeletedGids
+}
+
+// 'tasks' 写盘合并：2 秒内的多次改动只在**第一次**预定一次落盘（旧的
+// debounce 每次改动都重置计时器，而轮询每秒都会调用 saveStoppedTasks /
+// updateTask ⇒ 计时器永远被推后，历史记录实际上只在退出时才落盘）。
 let writeTimer = null
 
 const flushPendingWrites = () => {
@@ -24,21 +65,37 @@ const flushPendingWrites = () => {
     clearTimeout(writeTimer)
     writeTimer = null
   }
-  if (pendingTasks !== null) {
-    const tasks = pendingTasks
-    pendingTasks = null
-    try {
+  try {
+    const tasks = cachedTasks || []
+    const json = JSON.stringify(tasks)
+    if (json !== lastWrittenTasksJSON) {
       taskHistoryStore.set('tasks', tasks)
-    } catch (_) { }
-  }
+      lastWrittenTasksJSON = json
+    }
+  } catch (_) { }
+  try {
+    const deleted = cachedDeletedGids || []
+    const json = JSON.stringify(deleted)
+    if (json !== lastWrittenDeletedJSON) {
+      taskHistoryStore.set('deletedGids', deleted)
+      lastWrittenDeletedJSON = json
+    }
+  } catch (_) { }
 }
 
 const scheduleTasksWrite = (tasks) => {
-  pendingTasks = tasks
-  if (writeTimer) {
-    clearTimeout(writeTimer)
+  cachedTasks = Array.isArray(tasks) ? tasks : []
+  // 已有待落盘的计时器就不再重置：保证最多 2 秒一定写一次
+  if (!writeTimer) {
+    writeTimer = setTimeout(flushPendingWrites, 2000)
   }
-  writeTimer = setTimeout(flushPendingWrites, 2000)
+}
+
+const scheduleDeletedGidsWrite = (gids) => {
+  cachedDeletedGids = Array.isArray(gids) ? gids : []
+  if (!writeTimer) {
+    writeTimer = setTimeout(flushPendingWrites, 2000)
+  }
 }
 
 const cancelPendingWrites = () => {
@@ -46,7 +103,6 @@ const cancelPendingWrites = () => {
     clearTimeout(writeTimer)
     writeTimer = null
   }
-  pendingTasks = null
 }
 
 if (typeof window !== 'undefined' && window.addEventListener) {
@@ -59,16 +115,11 @@ class TaskHistory {
    * 删除任务时记入，防止 aria2 在下一次 tellStopped 上报时任务复活。
    */
   getDeletedGids () {
-    const raw = taskHistoryStore.get('deletedGids', [])
-    return Array.isArray(raw) ? raw : []
+    return loadDeletedGids()
   }
 
   _readTasks () {
-    if (pendingTasks !== null) {
-      return pendingTasks
-    }
-    const raw = taskHistoryStore.get('tasks', [])
-    return Array.isArray(raw) ? raw : []
+    return loadTasks()
   }
 
   _deletedGidSet () {
@@ -313,7 +364,8 @@ class TaskHistory {
     if (deletedList.length > MAX_DELETED_GIDS) {
       deletedList = deletedList.slice(deletedList.length - MAX_DELETED_GIDS)
     }
-    taskHistoryStore.set('deletedGids', deletedList)
+    // 同样合并落盘：批量删除（一次删几十条）时不再每条一次同步写
+    scheduleDeletedGidsWrite(deletedList)
   }
 
   /**
@@ -321,8 +373,12 @@ class TaskHistory {
    */
   clearHistory () {
     cancelPendingWrites()
+    cachedTasks = []
+    cachedDeletedGids = []
     taskHistoryStore.set('tasks', [])
     taskHistoryStore.set('deletedGids', [])
+    lastWrittenTasksJSON = '[]'
+    lastWrittenDeletedJSON = '[]'
   }
 }
 

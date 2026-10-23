@@ -1,4 +1,4 @@
-import { createApp, defineAsyncComponent } from 'vue'
+import { createApp, defineAsyncComponent, watch } from 'vue'
 import { createPinia } from 'pinia'
 import { ElLoading, ElMessage } from 'element-plus'
 // 说明：Element Plus 组件按需引入由 unplugin-vue-components 的
@@ -119,7 +119,7 @@ function init (config) {
   app.component('mo-task-trackers', TaskTrackers)
   app.component('mo-custom-date-picker', CustomDatePicker)
 
-  // Register all Element Plus icons globally
+  // Register the Element Plus icons used by templates (14, not all 293)
   setupIcons(app)
 
   // Loading overlay
@@ -139,14 +139,47 @@ function init (config) {
     } catch (e) {
       console.warn('[Lerxu] Failed to update current page:', e)
     }
+    dismissLoadingWhenReady(loading)
   })
 
   global.app.commands = commands
   import('./commands')
+}
 
-  setTimeout(() => {
-    loading.close()
-  }, 400)
+/**
+ * 关闭启动遮罩的时机：首屏结构画出来、并且**第一轮任务列表已经落地**。
+ *
+ * 原来是一个固定 400ms 的 setTimeout —— 无论界面多快就绪都要白等，慢的时候
+ * 又可能盖不住空列表的闪烁。现在改成等真实信号：
+ *   · 列表已加载（taskStore.listLoaded）→ 再等两帧（让 DOM/样式提交）后关闭；
+ *   · 兜底 900ms：引擎迟迟不返回也不至于一直转圈。
+ */
+function dismissLoadingWhenReady (loading) {
+  const taskStore = useTaskStore(pinia)
+  let done = false
+  let timer = null
+  let unwatch = null
+
+  const close = () => {
+    if (done) return
+    done = true
+    if (timer) clearTimeout(timer)
+    if (unwatch) unwatch()
+    // 两帧：第一帧提交 Vue 的 DOM 更新，第二帧等样式/绘制落地，避免闪一下空态
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => loading.close())
+    })
+  }
+
+  if (taskStore.listLoaded) {
+    close()
+    return
+  }
+
+  unwatch = watch(() => taskStore.listLoaded, (loaded) => {
+    if (loaded) close()
+  })
+  timer = setTimeout(close, 900)
 }
 
 // Bootstrap: fetch preference using the shared Pinia instance,

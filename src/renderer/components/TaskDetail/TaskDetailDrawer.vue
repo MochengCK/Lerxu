@@ -79,7 +79,7 @@
 
 <script setup>
 import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { debounce } from 'lodash'
+import debounce from 'lodash/debounce'
 import is from 'electron-is'
 import {
   checkTaskIsBT,

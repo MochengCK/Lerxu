@@ -1,13 +1,13 @@
-import {
-  compact,
-  difference,
-  isArray,
-  isEmpty,
-  isFunction,
-  isNaN,
-  isPlainObject,
-  parseInt
-} from 'lodash'
+// 按方法引入：整份 lodash 会进主 chunk（约 540KB 源码）。
+// 这些子模块各自独立，打包后只保留实际用到的几个函数。
+import compact from 'lodash/compact'
+import difference from 'lodash/difference'
+import isArray from 'lodash/isArray'
+import isEmpty from 'lodash/isEmpty'
+import isFunction from 'lodash/isFunction'
+import isNaN from 'lodash/isNaN'
+import isPlainObject from 'lodash/isPlainObject'
+import parseInt from 'lodash/parseInt'
 import bitTorrentPeerId from 'bittorrent-peerid'
 
 import { userKeys, systemKeys, needRestartKeys } from '@shared/configKeys'

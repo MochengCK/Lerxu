@@ -7,8 +7,19 @@
 @import 'normalize.css/normalize.css';
 
 /* Element Plus
--------------------------- */
-@import 'element-plus/dist/index.css';
+--------------------------
+   这里**不能**再 `@import 'element-plus/dist/index.css'`：那是全量样式
+   （约 350KB，含 tour / cascader / transfer / carousel 等本应用从未用到的组件），
+   而组件样式已由 unplugin-vue-components 的 ElementPlusResolver 按需注入
+   （`importStyle: 'css'`，每个组件入口会自带 base.css）。
+
+   全量包与按需包的规则大面积重复：同一份 CSS 既进主 chunk 又被组件重复引用，
+   构建后约 512KB、解析与 CSSOM 常驻内存都被放大。这里只保留 base（CSS 变量、
+   transition、重置），其余交给按需注入。
+
+   新增组件时无需改这里；只有当某段样式依赖 Element Plus 的**全局**规则
+   （如 `.el-overlay`、`.el-popper` 之类未被组件样式覆盖的部分）才需要补。 */
+@import 'element-plus/theme-chalk/base.css';
 
 /* Theme Light (default)
 -------------------------- */
