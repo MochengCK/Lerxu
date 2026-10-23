@@ -774,6 +774,25 @@ export default class Engine {
     if (noProxy) {
       args.push(`--no-proxy=${noProxy}`)
     }
+    // SFTP：私钥、信任库、并发与超时都属于"启动即生效"的全局选项。
+    // 密码不在这里：配置文件不存明文口令，只认逐任务选项或 URL 内嵌。
+    const sftpOptionKeys = [
+      'sftp-private-key',
+      'sftp-private-key-passphrase',
+      'sftp-known-hosts',
+      'sftp-strict-host-key',
+      'sftp-connections',
+      'sftp-timeout'
+    ]
+    for (const key of sftpOptionKeys) {
+      const value = this.systemConfig[key]
+      if (value === undefined || value === null || value === '') {
+        continue
+      }
+      const text = typeof value === 'boolean' ? (value ? 'true' : 'false') : value
+      args.push(`--${key}=${text}`)
+    }
+
     const continueEnabled = this.systemConfig['continue']
     if (continueEnabled !== undefined) {
       args.push(`--continue=${continueEnabled === true || continueEnabled === 'true' ? 'true' : 'false'}`)

@@ -732,6 +732,40 @@ export const decodeThunderLink = (url = '') => {
   return result
 }
 
+/**
+ * 是否 SFTP 地址（大小写不敏感）。
+ *
+ * 只做前缀判断：完整校验在引擎里（主机/路径/端口各有明确报错），前端只需要
+ * 认出"这类任务"来换输入表单、徽标与图标。
+ */
+export const isSftpUri = (uri = '') => `${uri}`.trim().toLowerCase().startsWith('sftp://')
+
+/**
+ * 任务用到的全部地址：引擎把地址放在 `files[].uris`，历史记录里也可能有 `uris`。
+ * 取不到时返回空数组（调用方按"普通 HTTP"兜底）。
+ */
+export const getTaskUris = (task = {}) => {
+  const out = []
+  // 引擎把 files[].uris 里的每一项包成 { status, uri }（与 aria2 的纯字符串不同），
+  // 历史记录里的 uris 也可能是对象，两种形状都要认。
+  const push = (item) => {
+    if (typeof item === 'string' && item) {
+      out.push(item)
+      return
+    }
+    if (item && typeof item === 'object' && typeof item.uri === 'string' && item.uri) {
+      out.push(item.uri)
+    }
+  }
+  if (Array.isArray(task.uris)) task.uris.forEach(push)
+  if (Array.isArray(task.files)) {
+    task.files.forEach((file) => {
+      if (file && Array.isArray(file.uris)) file.uris.forEach(push)
+    })
+  }
+  return out
+}
+
 export const splitTaskLinks = (links = '') => {
   const temp = compact(splitTextRows(links))
   const result = temp.map((item) => {

@@ -257,6 +257,13 @@ const systemKeys = [
   'seed-ratio',
   'seed-time',
   'select-file',
+  // SFTP：私钥 / 已知主机库 / 严格校验 / 并发 / 超时（密码不进配置文件）
+  'sftp-connections',
+  'sftp-known-hosts',
+  'sftp-private-key',
+  'sftp-private-key-passphrase',
+  'sftp-strict-host-key',
+  'sftp-timeout',
   'split',
   'ssh-host-key-md',
   'stream-piece-selector',

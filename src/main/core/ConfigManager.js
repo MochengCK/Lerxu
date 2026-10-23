@@ -136,6 +136,15 @@ export default class ConfigManager {
         'remote-time': true,
         'seed-ratio': 2,
         'seed-time': 2880,
+        // SFTP：认证与信任库。默认走"密码写在任务里 / 私钥未配置"，
+        // 首次连接未知主机按 TOFU 记到引擎自己的 known_hosts。
+        // 密码不落配置文件：只允许逐任务选项或 URL 内嵌。
+        'sftp-connections': 0, // 0 = 跟随 split（上限 8）
+        'sftp-known-hosts': EMPTY_STRING,
+        'sftp-private-key': EMPTY_STRING,
+        'sftp-private-key-passphrase': EMPTY_STRING,
+        'sftp-strict-host-key': false,
+        'sftp-timeout': 30,
         'split': defaultConn,
         'user-agent': CHROME_UA,
         'peer-id-prefix': LERXU_PEER_ID_PREFIX,

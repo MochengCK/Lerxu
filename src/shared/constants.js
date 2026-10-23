@@ -265,7 +265,7 @@ export const TRAY_CANVAS_CONFIG = {
   TEXT_FONT_SIZE: 8
 }
 
-export const COMMON_RESOURCE_TAGS = ['http://', 'https://', 'ftp://', 'magnet:', 'ed2k://']
+export const COMMON_RESOURCE_TAGS = ['http://', 'https://', 'ftp://', 'sftp://', 'magnet:', 'ed2k://']
 export const THUNDER_RESOURCE_TAGS = ['thunder://']
 
 export const RESOURCE_TAGS = [

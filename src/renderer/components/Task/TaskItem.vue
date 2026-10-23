@@ -62,7 +62,7 @@ import { ref, computed, watch, onMounted, nextTick, getCurrentInstance } from 'v
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
 import { ipcRenderer } from 'electron'
 import { basename } from 'node:path'
-import { checkTaskIsSeeder, getTaskName, ellipsis, isEd2kTask, isMagnetTask } from '@shared/utils'
+import { checkTaskIsSeeder, getTaskName, ellipsis, isEd2kTask, isMagnetTask, getTaskUris, isSftpUri } from '@shared/utils'
 import { TASK_STATUS } from '@shared/constants'
 import { openItem, getTaskActualPath } from '@/utils/native'
 import { getPairGidCandidates, isPairRow } from '@/utils/taskPair'
@@ -157,6 +157,8 @@ const taskType = computed(() => {
   const type = props.task?.taskType ? `${props.task.taskType}`.toLowerCase() : ''
   const hasInfoHash = !!(props.task?.infoHash)
   const hasBittorrent = !!(props.task?.bittorrent)
+  // SFTP 靠地址识别：引擎把它和 HTTP 一样当普通单文件任务，没有额外字段
+  if (getTaskUris(props.task).some(isSftpUri)) return 'sftp'
   if (type === 'ed2k' || isEd2kTask(props.task)) return 'ed2k'
   if (['bt', 'magnet', 'http', 'https', 'ftp'].includes(type)) {
     if (type === 'http' && (hasBittorrent || hasInfoHash)) {
@@ -179,13 +181,13 @@ const taskTypeLabel = computed(() => {
     http: 'HTTP',
     https: 'HTTPS',
     ftp: 'FTP',
+    sftp: 'SFTP',
     ed2k: 'ED2K'
   }
   return typeMap[taskType.value] || 'HTTP'
 })
 
 const isSeeder = computed(() => checkTaskIsSeeder(props.task))
-
 const taskStatus = computed(() => {
   if (isSeeder.value && props.task.status === TASK_STATUS.ACTIVE) {
     return TASK_STATUS.SEEDING
@@ -544,6 +546,10 @@ onMounted(() => {
   &.task-type-badge--ed2k {
     font-size: 96px;
   }
+
+  &.task-type-badge--sftp {
+    font-size: 84px;
+  }
 }
 
 .theme-dark .task-type-badge {
@@ -593,4 +599,6 @@ onMounted(() => {
     }
   }
 }
+
+/* SFTP 协议标识放在进度信息行（与「视频+音频」同一处），名称左侧不加标签 */
 </style>

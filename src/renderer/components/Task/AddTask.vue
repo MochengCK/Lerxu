@@ -97,6 +97,65 @@
               <div class="lan-disabled-sub">{{ t('task.transfer-disabled-sub') }}</div>
             </div>
           </div>
+          <!-- SFTP：主机 / 端口 / 用户名 / 密码 / 远程路径 / 文件名。
+               密码不进 URL，单独作为逐任务选项下发（任务列表与会话里不留明文） -->
+          <div v-show="taskType === 'sftp'" class="add-task-content-pane sftp-panel">
+            <div class="sftp-row">
+              <div class="sftp-field sftp-field--grow">
+                <span class="sftp-label">{{ t('task.sftp-host') }}</span>
+                <el-input
+                  v-model="form.sftpHost"
+                  :placeholder="t('task.sftp-host-placeholder')"
+                  @keyup.enter="submitForm"
+                />
+              </div>
+              <div class="sftp-field sftp-field--port">
+                <span class="sftp-label">{{ t('task.sftp-port') }}</span>
+                <el-input
+                  v-model="form.sftpPort"
+                  placeholder="22"
+                  @keyup.enter="submitForm"
+                />
+              </div>
+            </div>
+            <div class="sftp-row">
+              <div class="sftp-field sftp-field--grow">
+                <span class="sftp-label">{{ t('task.sftp-user') }}</span>
+                <el-input
+                  v-model="form.sftpUser"
+                  :placeholder="t('task.sftp-user-placeholder')"
+                  @keyup.enter="submitForm"
+                />
+              </div>
+              <div class="sftp-field sftp-field--grow">
+                <span class="sftp-label">{{ t('task.sftp-password') }}</span>
+                <el-input
+                  v-model="form.sftpPassword"
+                  type="password"
+                  show-password
+                  autocomplete="new-password"
+                  :placeholder="t('task.sftp-password-placeholder')"
+                  @keyup.enter="submitForm"
+                />
+              </div>
+            </div>
+            <div class="sftp-field">
+              <span class="sftp-label">{{ t('task.sftp-path') }}</span>
+              <el-input
+                v-model="form.sftpPath"
+                :placeholder="t('task.sftp-path-placeholder')"
+                @keyup.enter="submitForm"
+              />
+            </div>
+            <div class="sftp-field">
+              <span class="sftp-label">{{ t('task.sftp-out') }}</span>
+              <el-input
+                v-model="form.out"
+                :placeholder="t('task.sftp-out-placeholder')"
+                @keyup.enter="submitForm"
+              />
+            </div>
+          </div>
         </div>
       </el-form-item>
       <div class="parsed-preview" v-if="taskType === 'uri' && parsedTasks.length > 0">
@@ -197,10 +256,10 @@
           >
             <el-input-number
               class="task-split-input"
-              v-model="form.split"
+              v-model="splitModel"
               controls-position="right"
               :min="1"
-              :max="config.engineMaxConnectionPerServer"
+              :max="splitMax"
               :label="t('task.task-split')"
             >
             </el-input-number>
@@ -232,7 +291,7 @@
           </template>
         </el-input>
       </el-form-item>
-      <div class="task-advanced-options" v-if="showAdvanced && !isTransferMode">
+      <div class="task-advanced-options" v-if="showAdvanced && !isTransferMode && !isSftpMode">
         <el-row :gutter="8" style="margin-bottom: 8px; align-items:center;">
           <el-col :span="16" :xs="14">
             <el-form-item :label="`${t('task.advanced-presets')}: `" :label-width="formLabelWidth">
@@ -355,10 +414,11 @@
   </el-form>
 <template #footer>
 <div class="dialog-footer">
-<el-checkbox
-v-if="!isTransferMode"
+        <el-checkbox
+:model-value="showAdvanced && !isTransferMode && !isSftpMode"
+:disabled="isTransferMode || isSftpMode"
 class="chk"
-v-model="showAdvanced"
+@update:model-value="(val) => { showAdvanced = !!val }"
 >
 {{t('task.show-advanced-options')}}
 </el-checkbox>
@@ -408,6 +468,7 @@ import {
   initTaskForm,
   buildUriPayload,
   buildTorrentPayload,
+  buildSftpPayload,
   isHlsManifestUri
 } from '@/utils/task'
 import i18n from '@/plugins/i18n'
@@ -530,9 +591,20 @@ const hlsWriteModeDefault = computed(() => ((config.value && config.value.hlsWri
 const taskType = computed(() => props.type === 'video' ? ADD_TASK_TYPE.URI : props.type)
 const isTransferMode = computed(() => taskType.value === ADD_TASK_TYPE.TRANSFER)
 const canSendTransfer = computed(() => lanEnabled.value && !!lanSelectedPeerId.value && lanFiles.value.length > 0)
+// SFTP 是独立表单：目录/线程数仍然共用；HTTP 那套高级选项（Referer、Cookie、
+// 代理）对它没有意义，切到这一页时整块隐藏。
+const isSftpMode = computed(() => taskType.value === 'sftp')
+// SFTP 的并发上限是 8（引擎侧 sftp-connections 夹在 1..8，默认跟随 split）。
+// 这里把「分片数」显示成真正生效的值，避免填 128 却只开 8 条通道的错觉。
+const splitMax = computed(() => (isSftpMode.value ? 8 : config.value.engineMaxConnectionPerServer))
+const splitModel = computed({
+  get: () => (isSftpMode.value ? Math.min(Number(form.value.split) || 1, 8) : form.value.split),
+  set: (value) => { form.value.split = value }
+})
 const taskTypeOptions = computed(() => [
   { value: 'uri', label: t('task.uri-task') },
   { value: 'torrent', label: t('task.torrent-task') },
+  { value: 'sftp', label: t('task.sftp-task') },
   { value: 'transfer', label: t('task.transfer-task') }
 ])
 const parsedTableMaxHeight = computed(() => {
@@ -1554,6 +1626,22 @@ async function submitForm () {
     return
   }
 
+  // SFTP：地址由表单拼，密码走逐任务选项（不进 URL）。校验失败时把字段级
+  // 原因直接弹出来，不做静默忽略。
+  if (isSftpMode.value) {
+    let payload = null
+    try {
+      payload = buildSftpPayload(form.value)
+    } catch (err) {
+      msg.error(t(err.message))
+      return
+    }
+    taskStore.addUri(payload).catch(err => msg.error(err.message))
+    form.value.sftpPassword = ''
+    handleClose()
+    return
+  }
+
   const valid = await new Promise(resolve => {
     taskFormRef.value.validate(v => resolve(v))
   })
@@ -1653,6 +1741,54 @@ async function submitForm () {
 
 .add-task-dialog .el-form > .el-form-item:first-child {
   margin-bottom: 0 !important;
+}
+
+/* 「高级选项」在 SFTP / 文件传输下不可点：Element Plus 的禁用色在深色主题里
+   和正常态太接近，补一个透明度让它一眼看出是灰的 */
+.add-task-dialog .chk.is-disabled {
+  opacity: 0.45;
+}
+
+/* SFTP 表单：两列一行（主机 + 端口、用户名 + 密码），路径与文件名各占一行。
+   输入框上方的小标签只做字段说明，不与下面的「保存目录」抢视觉。 */
+.add-task-content-pane.sftp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  /* 与下方「分片数」那一行留出明显间距：表单最后一行是输入框，
+     紧贴数字选择器会显得挤在一起 */
+  padding: 2px 0 18px;
+}
+
+.sftp-panel .sftp-row {
+  display: flex;
+  gap: 10px;
+}
+
+.sftp-panel .sftp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sftp-panel .sftp-field--grow {
+  flex: 1 1 0;
+}
+
+.sftp-panel .sftp-field--port {
+  flex: 0 0 92px;
+}
+
+.sftp-panel .sftp-field--port .el-input__inner {
+  text-align: center;
+}
+
+.sftp-panel .sftp-label {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--lc-text-secondary, #5a6c7d);
 }
 
 .add-task-type-floating__bar {

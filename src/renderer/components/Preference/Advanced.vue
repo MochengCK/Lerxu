@@ -103,10 +103,97 @@
           </el-form-item>
         </div>
 
+        <!-- SFTP：认证与信任库。密码不在这里配置 —— 逐任务填写，避免明文落盘 -->
+        <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
+          <h3 class="card-title">{{ t('preferences.sftp') }}</h3>
+          <el-form-item size="small">
+            <el-col class="form-item-sub" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.sftp-private-key') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.sftp-private-key-desc') }}</div>
+              </div>
+              <el-input
+                v-model="form.sftpPrivateKey"
+                :placeholder="t('preferences.sftp-private-key-placeholder')"
+              >
+                <template #append>
+                  <mo-hover-tip
+                    effect="dark"
+                    :content="t('preferences.sftp-pick-key')"
+                    placement="bottom"
+                    :open-delay="300"
+                  >
+                    <i class="sftp-key-btn" @click.prevent="pickSftpPrivateKey">
+                      <mo-icon name="folder" width="12" height="12" />
+                    </i>
+                  </mo-hover-tip>
+                </template>
+              </el-input>
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.sftp-private-key-passphrase') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.sftp-private-key-passphrase-desc') }}</div>
+              </div>
+              <el-input
+                v-model="form.sftpPrivateKeyPassphrase"
+                type="password"
+                show-password
+                autocomplete="new-password"
+                :placeholder="t('preferences.sftp-private-key-passphrase-placeholder')"
+              />
+            </el-col>
+            <el-col class="form-item-sub" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.sftp-known-hosts') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.sftp-known-hosts-desc') }}</div>
+              </div>
+              <el-input
+                v-model="form.sftpKnownHosts"
+                :placeholder="t('preferences.sftp-known-hosts-placeholder')"
+              />
+            </el-col>
+            <el-col class="form-item-sub form-item-sub--inline" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.sftp-strict-host-key') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.sftp-strict-host-key-desc') }}</div>
+              </div>
+              <el-switch v-model="form.sftpStrictHostKey" />
+            </el-col>
+            <el-col class="form-item-sub form-item-sub--inline" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.sftp-connections') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.sftp-connections-desc') }}</div>
+              </div>
+              <el-input-number
+                class="sftp-num-input"
+                v-model="form.sftpConnections"
+                :min="0"
+                :max="8"
+                :step="1"
+                controls-position="right"
+              />
+            </el-col>
+            <el-col class="form-item-sub form-item-sub--inline" :span="24">
+              <div class="pref-row-text">
+                <span class="pref-row-label">{{ t('preferences.sftp-timeout') }}</span>
+                <div class="pref-row-desc">{{ t('preferences.sftp-timeout-desc') }}</div>
+              </div>
+              <el-input-number
+                class="sftp-num-input"
+                v-model="form.sftpTimeout"
+                :min="5"
+                :max="300"
+                :step="5"
+                controls-position="right"
+              />
+            </el-col>
+          </el-form-item>
+        </div>
+
         <!-- 代理设置卡片 -->
         <div v-if="activeCategory === 'advanced'" class="preference-card" data-category="advanced">
-          <h3 class="card-title">{{ t('preferences.proxy') }}</h3>
-          <el-form-item size="small">
+          <h3 class="card-title">{{ t('preferences.proxy') }}</h3>  <el-form-item size="small">
             <!-- 代理模式：左标题 + 副标题 / 右滑块按钮 -->
             <el-col class="form-item-sub form-item-sub--inline" :span="24">
               <div class="pref-row-text">
@@ -672,6 +759,12 @@ const initForm = (config) => {
       rpcSecret,
       mcpEnabled,
       mcpListenPort,
+      sftpPrivateKey,
+      sftpPrivateKeyPassphrase,
+      sftpStrictHostKey,
+      sftpKnownHosts,
+      sftpConnections,
+      sftpTimeout,
       scheduler,
       useProxy,
       userAgent,
@@ -736,6 +829,13 @@ const initForm = (config) => {
       rpcSecret,
       mcpEnabled: mcpEnabled === true,
       mcpListenPort: mcpListenPort || ENGINE_MCP_PORT,
+      // SFTP：认证与信任库（密码不在此处配置 —— 逐任务填写，避免明文落盘）
+      sftpPrivateKey: sftpPrivateKey || '',
+      sftpPrivateKeyPassphrase: sftpPrivateKeyPassphrase || '',
+      sftpStrictHostKey: sftpStrictHostKey === true,
+      sftpKnownHosts: sftpKnownHosts || '',
+      sftpConnections: Number(sftpConnections) || 0,
+      sftpTimeout: Number(sftpTimeout) || 30,
       scheduler: clonedScheduler,
       useProxy,
       userAgent,
@@ -944,6 +1044,20 @@ const mcpHintText = computed(() => {
   }
   return t('preferences.mcp-endpoint-hint', { endpoint: mcpEndpoint.value })
 })
+
+/**
+ * 选 SSH 私钥：`mo-select-directory` 只能选目录，这里直接用原生文件对话框。
+ * 只保存路径（不复制、不读内容），口令走单独的密码框。
+ */
+async function pickSftpPrivateKey () {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile', 'showHiddenFiles']
+  })
+  if (!result || result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return
+  }
+  form.value.sftpPrivateKey = result.filePaths[0]
+}
 const logLevels = computed(() => LOG_LEVELS)
 const logPath = computed(() => preferenceConfig.value.logPath)
 const sessionPath = computed(() => preferenceConfig.value.sessionPath)
@@ -2200,6 +2314,32 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
   svg {
     display: block;
   }
+}
+
+/* SFTP 私钥输入框右侧的"选择文件"图标：与 RPC 的骰子按钮同一套外观 */
+.sftp-key-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  cursor: pointer;
+
+  svg {
+    display: block;
+  }
+}
+
+.el-input-group__append:has(.sftp-key-btn) {
+  padding: 0 12px 0 16px;
+
+  &::before {
+    left: 6px !important;
+  }
+}
+
+/* 并发/超时：数字输入框固定宽度，右侧对齐 */
+.sftp-num-input {
+  width: 120px;
 }
 
 /* mo-hover-tip trigger 在 append 内撑满，使图标居中 */

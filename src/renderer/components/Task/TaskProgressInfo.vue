@@ -55,6 +55,9 @@
         <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
         <span v-if="downloadPercentText" class="task-progress-sep"></span>
         <span v-if="downloadPercentText" class="task-progress-percent">{{ downloadPercentText }}</span>
+        <!-- SFTP：与下面「一对音视频」同一处标注协议，名称行不放标签 -->
+        <span v-if="isSftpTask" class="task-progress-sep"></span>
+        <span v-if="isSftpTask" class="task-proto-hint">SFTP</span>
         <!-- 「一对音视频」：一条记录背后是两个文件（视频流 + 音频流），
              大小与百分比都是两者之和；合并完成后也继续显示（这条记录仍然
              是"一对流合出来的"） -->
@@ -168,6 +171,8 @@ import {
   timeRemaining,
   isMagnetTask,
   isEd2kTask,
+  getTaskUris,
+  isSftpUri,
   calcProgress,
   calcRatio
 } from '@shared/utils'
@@ -400,6 +405,9 @@ const showPairHint = computed(() => {
   const task = props.task || {}
   return task.isPair === true || !!task.pairId
 })
+
+// SFTP：在进度行尾标注协议（与「一对音视频」同一处），名称行不再挂标签
+const isSftpTask = computed(() => getTaskUris(props.task).some(isSftpUri))
 
 /**
  * 「两个文件都下完了、还没合并」阶段（进度条是满格黄条那一档）。
@@ -794,6 +802,9 @@ onBeforeUnmount(() => {
 }
 /* 「一对音视频」标记：与大小文字同色系但更淡，不抢进度数字的注意力 */
 .task-pair-hint {
+  opacity: 0.75;
+}
+.task-proto-hint {
   opacity: 0.75;
 }
 /* 直播录制信息行：录制图标（状态左侧）+ 当前状态 + 已录制时长 · 大小 */

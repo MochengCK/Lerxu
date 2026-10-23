@@ -313,6 +313,82 @@ export const buildUriPayload = async (form, autoCategorize = false, categories =
   return result
 }
 
+const SFTP_DEFAULT_PORT = 22
+
+/**
+ * 远程路径规范化：补前导 `/`、去掉结尾 `/`（引擎只支持单文件，目录会直接报错），
+ * 再逐段做百分号编码。已编码过的段（含 `%xx`）原样保留，避免把用户粘贴的
+ * `%20` 二次编码成 `%2520`；`~` 不编码（引擎按服务器 home 展开）。
+ */
+const normalizeSftpPath = (raw) => {
+  let path = `${raw || ''}`.trim()
+  if (!path) return ''
+  if (!path.startsWith('/')) path = `/${path}`
+  path = path.replace(/\/+$/, '')
+  return path
+    .split('/')
+    .map((segment) => {
+      if (segment === '~' || /%[0-9a-fA-F]{2}/.test(segment)) return segment
+      return encodeURIComponent(segment)
+    })
+    .join('/')
+}
+
+/**
+ * 由表单字段拼出 SFTP 地址：`sftp://[user@]host[:port]/path`。
+ *
+ * **密码绝不进 URL**：URL 会出现在任务详情、`session.json` 与历史记录里，
+ * 明文密码不该跟着一起落盘。密码走 [`buildSftpPayload`] 的逐任务选项。
+ */
+export const buildSftpUri = (form = {}) => {
+  const host = `${form.sftpHost || ''}`.trim().replace(/^\[|\]$/g, '')
+  const user = `${form.sftpUser || ''}`.trim()
+  const portText = `${form.sftpPort === undefined || form.sftpPort === null ? '' : form.sftpPort}`.trim()
+  const path = normalizeSftpPath(form.sftpPath)
+
+  if (!host) throw new Error('task.sftp-host-required')
+  if (portText) {
+    const port = Number(portText)
+    if (!/^\d+$/.test(portText) || port < 1 || port > 65535) {
+      throw new Error('task.sftp-port-invalid')
+    }
+  }
+  if (!path) throw new Error('task.sftp-path-required')
+
+  // 主机名里带冒号只可能是 IPv6，URL 里必须加方括号
+  const hostPart = host.includes(':') ? `[${host}]` : host
+  const auth = user ? `${encodeURIComponent(user)}@` : ''
+  const portPart = portText && Number(portText) !== SFTP_DEFAULT_PORT ? `:${Number(portText)}` : ''
+  return `sftp://${auth}${hostPart}${portPart}${path}`
+}
+
+/**
+ * SFTP 任务的提交载荷：地址 + 保存目录/并发/文件名 + 逐任务的 `sftp-password`。
+ *
+ * 密码只在这一处下发（`optionsList[0]`）：引擎把它当任务选项，界面与历史里
+ * 拿到的只有不含密码的地址。
+ */
+export const buildSftpPayload = (form = {}) => {
+  const uri = buildSftpUri(form)
+  const options = {}
+  if (!isEmpty(form.dir)) {
+    options.dir = form.dir
+  }
+  if (Number(form.split) > 0) {
+    options.split = form.split
+  }
+  const out = `${form.out || ''}`.trim()
+  if (out) {
+    options.out = out
+  }
+  const password = `${form.sftpPassword || ''}`
+  return {
+    uris: [uri],
+    options,
+    optionsList: [password ? { sftpPassword: password } : null]
+  }
+}
+
 export const buildTorrentPayload = (form) => {
   const { torrent } = form
   if (isEmpty(torrent)) {

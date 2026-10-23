@@ -2266,7 +2266,7 @@ export default class Application extends EventEmitter {
     const s = `${line}`.trim()
     if (!s) return false
     const lower = s.toLowerCase()
-    if (lower.startsWith('magnet:') || lower.startsWith('thunder://') || lower.startsWith('ftp://')) {
+    if (lower.startsWith('magnet:') || lower.startsWith('thunder://') || lower.startsWith('ftp://') || lower.startsWith('sftp://')) {
       return true
     }
     if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
