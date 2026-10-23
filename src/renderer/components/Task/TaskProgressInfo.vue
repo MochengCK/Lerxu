@@ -215,6 +215,7 @@ const statusText = ref(null)
 const isStatusTruncated = ref(false)
 
 let _handleResize = null
+let _resizeDebounceTimer = null
 
 const isActive = computed(() => {
   const task = props.task || {}
@@ -721,8 +722,16 @@ onMounted(() => {
   nextTick(() => recalcSpeedItems())
   if (typeof window !== 'undefined') {
     _handleResize = () => {
-      updateStatusTruncation()
-      recalcSpeedItems()
+      // 每个任务行都会挂一个 resize 监听：拖动窗口时每秒上百次回调 × 行数，
+      // 每次都要读 DOM 尺寸（强制重排）⇒ 明显掉帧。合并成 100ms 一次。
+      if (_resizeDebounceTimer) {
+        clearTimeout(_resizeDebounceTimer)
+      }
+      _resizeDebounceTimer = setTimeout(() => {
+        _resizeDebounceTimer = null
+        updateStatusTruncation()
+        recalcSpeedItems()
+      }, 100)
     }
     window.addEventListener('resize', _handleResize)
   }
@@ -732,6 +741,10 @@ onBeforeUnmount(() => {
   if (typeof window !== 'undefined' && _handleResize) {
     window.removeEventListener('resize', _handleResize)
     _handleResize = null
+  }
+  if (_resizeDebounceTimer) {
+    clearTimeout(_resizeDebounceTimer)
+    _resizeDebounceTimer = null
   }
 })
 </script>

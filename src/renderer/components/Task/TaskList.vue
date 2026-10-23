@@ -112,6 +112,7 @@ const lanTasks = ref([])
 
 let handleKeyEvent = null
 let handleResize = null
+let _resizeDebounceTimer = null
 
 const displayTaskList = computed(() => {
   const baseList = !props.category
@@ -476,8 +477,18 @@ onMounted(() => {
   }
   window.addEventListener('keydown', handleKeyEvent)
   window.addEventListener('keyup', handleKeyEvent)
+  // 窗口拖动缩放时 resize 事件可达每秒上百次：以前每次都 +1，而 resizeVersion
+  // 在每行的 v-memo 里 ⇒ 全部任务项（以及各自的文本截断测量）跟着每秒重算上百轮，
+  // 缩放会明显卡顿。改成停止拖动 120ms 后再更新一次 —— 文本截断本来就不需要
+  // 跟着每个像素走（真实溢出由 CSS ellipsis 兜底）。
   handleResize = () => {
-    resizeVersion.value += 1
+    if (_resizeDebounceTimer) {
+      clearTimeout(_resizeDebounceTimer)
+    }
+    _resizeDebounceTimer = setTimeout(() => {
+      _resizeDebounceTimer = null
+      resizeVersion.value += 1
+    }, 120)
   }
   window.addEventListener('resize', handleResize)
 
@@ -493,6 +504,10 @@ onBeforeUnmount(() => {
   }
   if (handleResize) {
     window.removeEventListener('resize', handleResize)
+  }
+  if (_resizeDebounceTimer) {
+    clearTimeout(_resizeDebounceTimer)
+    _resizeDebounceTimer = null
   }
 })
 
