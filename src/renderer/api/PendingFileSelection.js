@@ -1,8 +1,8 @@
-import Store from 'electron-store'
+import JsonStore from '@/utils/jsonStore'
 
 // 待选择文件状态的持久化存储
 // 用于在应用重启后恢复 BT 任务"待选择文件"状态
-const pendingFileSelectionStore = new Store({
+const pendingFileSelectionStore = new JsonStore({
   name: 'pendingFileSelection',
   cwd: process.env.NODE_ENV === 'development' ? './dev-config' : undefined,
   defaults: {

@@ -26,6 +26,15 @@ app.commandLine.appendSwitch('remote-debugging-port', process.env.LERXU_DEBUG_PO
 global.__static = app.isPackaged ? __dirname : join(__dirname, '../../static')
 
 /**
+ * 渲染进程的持久化目录：**在创建任何窗口之前**写进环境变量，渲染进程作为
+ * 子进程会继承。这样渲染层的 JsonStore（任务历史 / 待选文件）不必再通过
+ * @electron/remote 同步取一次路径（实测每次 ~3ms 的同步 IPC）。
+ */
+try {
+  process.env.LERXU_USER_DATA = app.getPath('userData')
+} catch (_) { }
+
+/**
  * Fix Windows notification func
  * appId 定义见 electron-builder.json（迁移到 vite 后 webpack 全局常量不再存在，
  * 此处以字面量对齐 "appId": "app.lerxu.native"）

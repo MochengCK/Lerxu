@@ -1,8 +1,8 @@
-import Store from 'electron-store'
+import JsonStore from '@/utils/jsonStore'
 import { TASK_STATUS } from '@shared/constants'
 
-// 定义任务历史记录存储
-const taskHistoryStore = new Store({
+// 定义任务历史记录存储（自研 JSON store：内存缓存 + 合并落盘，见 utils/jsonStore）
+const taskHistoryStore = new JsonStore({
   name: 'taskHistory',
   cwd: process.env.NODE_ENV === 'development' ? './dev-config' : undefined,
   defaults: {
