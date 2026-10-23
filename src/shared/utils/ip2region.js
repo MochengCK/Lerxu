@@ -38,11 +38,14 @@ function resolveXdbPath (filename) {
     candidates.push(path.join(__dirname, 'shared', 'data', filename))
   } catch (_) {}
 
+  // 应用根目录由主进程写进环境变量（免一次 @electron/remote 的同步 IPC）；
+  // 缺失时（单测/非标准启动）跳过这两条候选，其余候选已覆盖 dev / 打包形态
   try {
-    const { app } = require('@electron/remote')
-    const appPath = app.getAppPath()
-    candidates.push(path.join(appPath, 'dist', 'electron', 'shared', 'data', filename))
-    candidates.push(path.join(appPath, 'src', 'shared', 'data', filename))
+    const appPath = (typeof process !== 'undefined' && process.env && process.env.LERXU_APP_PATH) || ''
+    if (appPath) {
+      candidates.push(path.join(appPath, 'dist', 'electron', 'shared', 'data', filename))
+      candidates.push(path.join(appPath, 'src', 'shared', 'data', filename))
+    }
   } catch (_) {}
 
   try {

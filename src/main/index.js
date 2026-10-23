@@ -32,6 +32,8 @@ global.__static = app.isPackaged ? __dirname : join(__dirname, '../../static')
  */
 try {
   process.env.LERXU_USER_DATA = app.getPath('userData')
+  process.env.LERXU_EXE = app.getPath('exe')
+  process.env.LERXU_APP_PATH = app.getAppPath()
 } catch (_) { }
 
 /**

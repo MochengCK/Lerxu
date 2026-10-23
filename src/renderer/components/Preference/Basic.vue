@@ -2423,7 +2423,8 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import is from 'electron-is'
 import { nativeImage, ipcRenderer } from 'electron'
-import { app, dialog, shell } from '@electron/remote'
+import { dialog, shell } from '@electron/remote'
+import { getUserDataPath, getAppPath } from '@/utils/appPaths'
 import path from 'node:path'
 import fs from 'node:fs'
 import crypto from 'node:crypto'
@@ -3417,7 +3418,7 @@ watch(trackerSourceConfigVisible, (visible) => {
       }
       function getBackgroundImageCacheDir() {
         try {
-          const userData = app.getPath('userData')
+          const userData = getUserDataPath()
           return path.join(userData, 'background-images')
         } catch (e) {
           return ''
@@ -3728,7 +3729,7 @@ watch(trackerSourceConfigVisible, (visible) => {
           }
         }
         // 开发环境
-        const appPath = app.getAppPath()
+        const appPath = getAppPath()
         return path.join(appPath, 'extensions', 'lerxu-webextension')
       }
 

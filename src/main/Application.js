@@ -2071,6 +2071,12 @@ export default class Application extends EventEmitter {
       return
     }
 
+    // 系统语言（必须在 ready 之后取）写进环境变量，渲染进程继承后不必再为
+    // `app.getLocale()` 走一次 @electron/remote 的同步 IPC
+    try {
+      process.env.LERXU_LOCALE = app.getLocale()
+    } catch (_) { }
+
     const win = this.showPage(page, options)
     if (!win) {
       logger.error('[Lerxu] showPage returned null, cannot start')
@@ -2117,6 +2123,10 @@ export default class Application extends EventEmitter {
       logger.error('[Lerxu] windowManager still not initialized after retry')
       return
     }
+
+    try {
+      process.env.LERXU_LOCALE = app.getLocale()
+    } catch (_) { }
 
     const win = this.showPage(page)
     if (win && !this.isReady) {

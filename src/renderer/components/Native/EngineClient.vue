@@ -30,7 +30,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync, copyFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, basename, extname, resolve, isAbsolute, join } from 'node:path'
-import { app } from '@electron/remote'
+import { getUserDataPath, getExePath, getAppPath } from '@/utils/appPaths'
 import {
   autoCategorizeDownloadedFile as autoCategorizeFile,
   buildCategorizedPath,
@@ -1459,15 +1459,12 @@ const dir = dirname(filePath)
         const candidates = []
         const binName = mediaEngineBinName(process.platform)
         try {
-          const userDataPath = app.getPath('userData')
-          const exePath = app.getPath('exe')
+          // 路径都是常量：由主进程在建窗前写进环境变量，这里读取即可
+          //（以前走 @electron/remote 的同步 IPC，一次 3ms，连着三个就是近 10ms）
+          const userDataPath = getUserDataPath()
+          const exePath = getExePath()
           const appDir = dirname(exePath)
-          // 开发期的工作区根目录：渲染进程里拿不到 __dirname，用主进程的
-          // app.getAppPath()（开发期就是仓库根，打包后是 app.asar 路径）
-          let repoRoot = ''
-          try {
-            repoRoot = app.getAppPath()
-          } catch (_) {}
+          const repoRoot = getAppPath()
           candidates.push(...mediaEngineCandidates({
             platform: process.platform,
             arch: process.arch,
@@ -1498,7 +1495,7 @@ const dir = dirname(filePath)
         // 提示只弹一次（与以前 ffmpeg 的处理一致：合并会反复触发，不能每次都弹）
         let skipFlagPath = ''
         try {
-          const userDataPath = app.getPath('userData')
+          const userDataPath = getUserDataPath()
           skipFlagPath = resolve(userDataPath, '.zuvrust-skip')
           if (existsSync(skipFlagPath)) {
             return ''

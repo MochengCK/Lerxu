@@ -22,6 +22,12 @@ const checkLngIsAvailable = (locale) => {
 }
 
 const getSystemLocale = () => {
+  // 主进程在创建窗口前把系统语言写进环境变量：渲染进程直接读，不必为
+  // `app.getLocale()` 付一次同步 IPC（@electron/remote 每次约 3ms）。
+  const fromEnv = typeof process !== 'undefined' && process.env && process.env.LERXU_LOCALE
+  if (fromEnv) {
+    return fromEnv
+  }
   try {
     const { app } = require('@electron/remote')
     return app.getLocale() || 'en-US'
