@@ -269,37 +269,104 @@ const ensureEnginesUsable = (context) => {
   console.log(`[afterPackHook] 引擎就绪（${wantArch}）：${engineNamesFor(platform).join(', ')}`)
 }
 
+// ---------------------------------------------------------------------------
+// Chromium 语言包：只留应用真正提供的语言
+// ---------------------------------------------------------------------------
+
+/**
+ * 应用 UI 只有 en-US / zh-CN / zh-TW（`src/shared/locales/index.js`），
+ * Chromium 自带的 220 个语言包没理由全带上。
+ *
+ * **不要改用 electron-builder 的 `electronLanguages`**：它的 mac 实现删的是
+ * `.app/Contents/Resources/*.lproj`（Electron 44 里那 55 个是**空壳**，0 字节），
+ * 真正的 `locale.pak` 已经挪进 `Electron Framework.framework/Versions/A/Resources/<lang>.lproj`，
+ * 一个都剪不到 —— 2026-10-25 实测正是这 49 MB 一直随包发布。
+ *
+ * 判据按"语言前缀"而不是写死全名：mac 是 `zh_CN.lproj`、Windows/Linux 是
+ * `zh-CN.pak`，两套命名只差分隔符。
+ */
+const KEEP_LANGUAGE_PREFIXES = ['en', 'zh']
+
+const dirSizeSync = (dir) => {
+  let total = 0
+  let entries
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }) } catch (_) { return 0 }
+  for (const e of entries) {
+    const p = join(dir, e.name)
+    if (e.isDirectory()) total += dirSizeSync(p)
+    else {
+      try { total += fs.statSync(p).size } catch (_) { /* 忽略 */ }
+    }
+  }
+  return total
+}
+
+const shouldKeepLocale = (fileName, ext) => {
+  const name = fileName.slice(0, -ext.length)
+  const prefix = name.split(/[-_]/)[0].toLowerCase()
+  return KEEP_LANGUAGE_PREFIXES.includes(prefix)
+}
+
+const pruneChromiumLocales = (context) => {
+  let removed = 0
+  let saved = 0
+
+  if (context.electronPlatformName === 'darwin') {
+    const appName = context.packager.appInfo.productFilename
+    const versionsDir = join(
+      context.appOutDir, `${appName}.app`, 'Contents', 'Frameworks',
+      'Electron Framework.framework', 'Versions'
+    )
+    if (!fs.existsSync(versionsDir)) {
+      console.warn('[afterPackHook] 没找到 Electron Framework 的 Versions 目录，跳过语言包裁剪')
+      return
+    }
+    for (const v of fs.readdirSync(versionsDir)) {
+      // `Versions/Current` 是指向 A 的软链：只认真实目录，否则同一份会被剪两遍
+      let st
+      try { st = fs.lstatSync(join(versionsDir, v)) } catch (_) { continue }
+      if (!st.isDirectory()) continue
+      const resDir = join(versionsDir, v, 'Resources')
+      if (!fs.existsSync(resDir)) continue
+      for (const entry of fs.readdirSync(resDir)) {
+        if (!entry.endsWith('.lproj')) continue
+        if (shouldKeepLocale(entry, '.lproj')) continue
+        const target = join(resDir, entry)
+        saved += dirSizeSync(target)
+        fs.rmSync(target, { recursive: true, force: true })
+        removed++
+      }
+    }
+  } else {
+    // Windows / Linux：<appOutDir>/locales/<lang>.pak
+    const localesDir = join(context.appOutDir, 'locales')
+    if (!fs.existsSync(localesDir)) return
+    for (const entry of fs.readdirSync(localesDir)) {
+      if (!entry.endsWith('.pak')) continue
+      if (shouldKeepLocale(entry, '.pak')) continue
+      const target = join(localesDir, entry)
+      try {
+        saved += fs.statSync(target).size
+        fs.unlinkSync(target)
+        removed++
+      } catch (_) { /* 忽略 */ }
+    }
+  }
+
+  if (removed) {
+    console.log(
+      `[afterPackHook] 裁掉 ${removed} 个 Chromium 语言包，省 ${(saved / 1048576).toFixed(1)} MB`
+    )
+  }
+}
+
 module.exports = async function (context) {
   console.warn('after build; disable sandbox')
   const originalDir = process.cwd()
   const dirname = context.appOutDir
   chdir(dirname)
 
-  // 应用支持的语言列表
-  const supportedLocales = [
-    'de', 'en-US', 'es', 'fr', 'it', 'ja', 'ko', 'pt-BR', 'ru', 'zh-CN', 'zh-TW'
-  ]
-
-  // 删除不需要的 Electron 语言文件
-  const localesDir = join(dirname, 'locales')
-  if (fs.existsSync(localesDir)) {
-    const localeFiles = fs.readdirSync(localesDir)
-    let removedCount = 0
-    let savedSize = 0
-    localeFiles.forEach(file => {
-      const localeName = file.replace('.pak', '')
-      if (!supportedLocales.includes(localeName)) {
-        const filePath = join(localesDir, file)
-        try {
-          const stat = fs.statSync(filePath)
-          savedSize += stat.size
-          fs.unlinkSync(filePath)
-          removedCount++
-        } catch (e) {}
-      }
-    })
-    console.log(`[afterPackHook] Removed ${removedCount} unused locale files, saved ${(savedSize / 1024 / 1024).toFixed(2)} MB`)
-  }
+  pruneChromiumLocales(context)
 
   // ffmpeg 不再预先打包，改为运行时按需下载
 
