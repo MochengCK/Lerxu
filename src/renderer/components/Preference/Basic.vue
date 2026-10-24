@@ -2516,6 +2516,7 @@ async function refreshIpv6Availability () {
 const MERGE_FORMAT_OPTIONS = [
   { value: 'mp4', label: 'MP4（.mp4 / .m4a）' },
   { value: 'mkv', label: 'Matroska（.mkv / .mka）' },
+  { value: 'webm', label: 'WebM（.webm，仅 VP9 / AV1 + Opus）' },
   { value: 'ts', label: 'MPEG-TS（.ts）' }
 ]
 const MERGE_FRAGMENT_OPTIONS = [

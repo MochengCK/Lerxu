@@ -3,7 +3,7 @@ export default {
   'video': 'Video',
   'video-engine': 'Media engine',
   'merge-format': 'Merge output format',
-  'merge-format-desc': 'Container for merged files; MP4 is the most compatible (default)',
+  'merge-format-desc': 'Container for merged files; MP4 is the most compatible (default). WebM accepts only VP9 / AV1 video with Opus audio',
   'merge-fragment': 'Merge fragment duration',
   'merge-fragment-desc': 'Shorter fragments start faster, slightly more overhead',
   'merge-fragment-default': 'Default (2 s)',

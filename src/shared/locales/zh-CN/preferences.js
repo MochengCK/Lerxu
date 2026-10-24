@@ -3,7 +3,7 @@ export default {
   'video': '视频',
   'video-engine': '媒体引擎',
   'merge-format': '合并输出格式',
-  'merge-format-desc': '合并产物的容器；MP4 兼容性最好（默认）',
+  'merge-format-desc': '合并产物的容器；MP4 兼容性最好（默认），WebM 只接受 VP9 / AV1 画面与 Opus 声音',
   'merge-fragment': '合并分片时长',
   'merge-fragment-desc': '分片越短出画越快、开销略高',
   'merge-fragment-default': '默认（2 s）',

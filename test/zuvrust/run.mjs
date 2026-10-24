@@ -41,6 +41,8 @@ import {
   decodeModeOf,
   decodeModeEnv,
   engineEnvFromConfig,
+  mergeContainerOf,
+  mergeOutputExtension,
   ENGINE_EXIT
 } from '../../src/shared/zuvrust/index.js'
 
@@ -263,6 +265,15 @@ section('解码方式')
   ok(envAuto.ME_DECODE === undefined, '自适应时不写 ME_DECODE')
   eq(engineEnvFromConfig({ decodeMode: 'hardware' }).ME_DECODE, 'hardware', '合并路径也带上解码方式')
   eq(engineEnvFromConfig({ preferSoftwareDecode: true }).ME_DECODE, 'software', '合并路径同样迁移旧配置')
+
+  // 合并格式 → 容器 → 扩展名（产物扩展名由容器决定，容器由扩展名反推）
+  eq(mergeContainerOf('mp4'), 'mp4', 'mp4 → fmp4 容器')
+  eq(mergeContainerOf('mkv'), 'mkv', 'mkv → matroska 容器')
+  eq(mergeContainerOf('webm'), 'webm', 'webm → webm 容器')
+  eq(mergeContainerOf('ts'), 'ts', 'ts → mpeg-ts 容器')
+  eq(mergeContainerOf('nonsense'), 'mp4', '认不出的格式回落 mp4（与历史行为一致）')
+  eq(mergeOutputExtension('webm'), 'webm', 'WebM 的产物扩展名')
+  eq(mergeOutputExtension('mkv'), 'mkv', 'Matroska 的产物扩展名')
 }
 
 // ---------- 汇总 ----------
