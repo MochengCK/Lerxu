@@ -27,7 +27,7 @@
 
 ## Introduction
 
-Lerxu is a download manager for Windows, macOS, Linux and Android, powered by the in-house XferRust engine (native Rust). It handles **HTTP(S)**, **BitTorrent** (including magnet links) and **HLS (M3U8)** tasks. On desktop it pairs with a browser extension that detects web videos; the Android client ships its own browser with resource sniffing and a native player.
+Lerxu is a download manager for Windows, macOS, Linux and Android, powered by the in-house XferRust engine (native Rust). It handles **HTTP(S)**, **BitTorrent** (including magnet links), **HLS (M3U8)** and **SFTP** tasks. On desktop it pairs with a browser extension that detects web videos; the Android client ships its own browser with resource sniffing and a native player.
 
 ## Screenshots
 
@@ -56,9 +56,10 @@ Lerxu is a download manager for Windows, macOS, Linux and Android, powered by th
 
 ### Downloads
 
-- **Protocols**: HTTP/HTTPS, BitTorrent, magnet links and HLS (M3U8); FTP/SFTP and Metalink are not supported
+- **Protocols**: HTTP/HTTPS, BitTorrent, magnet links, HLS (M3U8) and SFTP; FTP and Metalink are not supported
 - **Concurrency**: up to 128 segments per task (32 connections per server by default) and 10 concurrent tasks by default, both adjustable in Preferences
 - **HLS**: the playlist and its segments are handled by the downloader and spliced into a single file; bitrate variants, AES-128 encrypted segments, segment concurrency, retries and resume are supported
+- **SFTP**: single-file downloads over `sftp://` with parallel connections and resume; log in with a password or an OpenSSH private key, first-seen host keys are recorded and a changed fingerprint is rejected; the private key, passphrase, known-hosts file, connection count and timeout are configurable in Preferences
 - **BitTorrent**: uTP/TCP dual stack (hot-switchable), DHT (IPv4/IPv6), LPD, PeX, UPnP/NAT-PMP port mapping and encryption; pre-configured trackers with scheduled subscription updates; ratio- and time-based seeding goals; 128 peer connections per torrent by default
 - **Task handling**: priority, batch operations, speed limits, scheduled start/pause with an action on completion (shut down, sleep, quit) and resume; the download process restarts automatically after an abnormal exit and restores task state
 - **File handling**: automatic categorization by type, user-defined rules, favorite and recent directories, a custom suffix for in-progress files, and an option to set file modification time to the completion time
