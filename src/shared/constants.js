@@ -110,31 +110,48 @@ export const AUTO_SYNC_ED2K_SERVER_INTERVAL = ONE_HOUR * 24
 export const MAX_BT_TRACKER_LENGTH = 6144
 
 /**
+ * ngosang/trackerslist：仓库已归档，列表不再新增，但内容仍然有效，且不少
+ * 客户端只认这一份。保留 raw；CDN 走 fastly 节点——默认的 cdn.jsdelivr.net
+ * 对这个仓库实测不可达（2026-10 校验）。
+ *
  * @see https://github.com/ngosang/trackerslist
  */
 export const NGOSANG_TRACKERS_BEST_URL = 'https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt'
 export const NGOSANG_TRACKERS_BEST_IP_URL = 'https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best_ip.txt'
-export const NGOSANG_TRACKERS_ALL_URL = 'https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt'
-export const NGOSANG_TRACKERS_ALL_IP_URL = 'https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_ip.txt'
 
-export const NGOSANG_TRACKERS_BEST_URL_CDN = 'https://cdn.jsdelivr.net/gh/ngosang/trackerslist/trackers_best.txt'
-export const NGOSANG_TRACKERS_BEST_IP_URL_CDN = 'https://cdn.jsdelivr.net/gh/ngosang/trackerslist/trackers_best_ip.txt'
-export const NGOSANG_TRACKERS_ALL_URL_CDN = 'https://cdn.jsdelivr.net/gh/ngosang/trackerslist/trackers_all.txt'
-export const NGOSANG_TRACKERS_ALL_IP_URL_CDN = 'https://cdn.jsdelivr.net/gh/ngosang/trackerslist/trackers_all_ip.txt'
+export const NGOSANG_TRACKERS_BEST_URL_CDN = 'https://fastly.jsdelivr.net/gh/ngosang/trackerslist/trackers_best.txt'
+export const NGOSANG_TRACKERS_BEST_IP_URL_CDN = 'https://fastly.jsdelivr.net/gh/ngosang/trackerslist/trackers_best_ip.txt'
 
 /**
+ * XIU2/TrackersListCollection：仍在每日更新，是默认订阅的主力。
+ * CDN 同样走 fastly 节点（cdn.jsdelivr.net 在部分网络下不稳定）。
+ *
  * @see https://github.com/XIU2/TrackersListCollection
  */
 export const XIU2_TRACKERS_BEST_URL = 'https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/best.txt'
 export const XIU2_TRACKERS_ALL_URL = 'https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/all.txt'
 export const XIU2_TRACKERS_HTTP_URL = 'https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/http.txt'
 
-export const XIU2_TRACKERS_BEST_URL_CDN = 'https://cdn.jsdelivr.net/gh/XIU2/TrackersListCollection/best.txt'
-export const XIU2_TRACKERS_ALL_URL_CDN = 'https://cdn.jsdelivr.net/gh/XIU2/TrackersListCollection/all.txt'
-export const XIU2_TRACKERS_HTTP_URL_CDN = 'https://cdn.jsdelivr.net/gh/XIU2/TrackersListCollection/http.txt'
+export const XIU2_TRACKERS_BEST_URL_CDN = 'https://fastly.jsdelivr.net/gh/XIU2/TrackersListCollection/best.txt'
+export const XIU2_TRACKERS_ALL_URL_CDN = 'https://fastly.jsdelivr.net/gh/XIU2/TrackersListCollection/all.txt'
+export const XIU2_TRACKERS_HTTP_URL_CDN = 'https://fastly.jsdelivr.net/gh/XIU2/TrackersListCollection/http.txt'
 
 // For bt-exclude-tracker
-export const XIU2_TRACKERS_BLACK_URL = 'https://cdn.jsdelivr.net/gh/XIU2/TrackersListCollection/blacklist.txt'
+export const XIU2_TRACKERS_BLACK_URL = 'https://fastly.jsdelivr.net/gh/XIU2/TrackersListCollection/blacklist.txt'
+
+/**
+ * 已下线的源：ngosang 仓库归档后 `all` / `all_ip` 不再更新，内容只是 best 的超集，
+ * 2026-10 从选项里移除。三种历史 URL 形式都列在这里，供配置迁移时剔除
+ * （含已弃用的 cdn.jsdelivr.net 写法）。
+ */
+export const RETIRED_TRACKER_SOURCES = [
+  'https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt',
+  'https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_ip.txt',
+  'https://fastly.jsdelivr.net/gh/ngosang/trackerslist/trackers_all.txt',
+  'https://fastly.jsdelivr.net/gh/ngosang/trackerslist/trackers_all_ip.txt',
+  'https://cdn.jsdelivr.net/gh/ngosang/trackerslist/trackers_all.txt',
+  'https://cdn.jsdelivr.net/gh/ngosang/trackerslist/trackers_all_ip.txt'
+]
 
 export const TRACKER_SOURCE_OPTIONS = [
   {
@@ -142,22 +159,14 @@ export const TRACKER_SOURCE_OPTIONS = [
     options: [
       {
         value: NGOSANG_TRACKERS_BEST_URL,
+        isDefault: true,
         label: 'trackers_best.txt',
         cdn: false
       },
       {
         value: NGOSANG_TRACKERS_BEST_IP_URL,
+        isDefault: true,
         label: 'trackers_best_ip.txt',
-        cdn: false
-      },
-      {
-        value: NGOSANG_TRACKERS_ALL_URL,
-        label: 'trackers_all.txt',
-        cdn: false
-      },
-      {
-        value: NGOSANG_TRACKERS_ALL_IP_URL,
-        label: 'trackers_all_ip.txt',
         cdn: false
       },
       {
@@ -170,16 +179,6 @@ export const TRACKER_SOURCE_OPTIONS = [
         label: 'trackers_best_ip.txt',
         cdn: true
       },
-      {
-        value: NGOSANG_TRACKERS_ALL_URL_CDN,
-        label: 'trackers_all.txt',
-        cdn: true
-      },
-      {
-        value: NGOSANG_TRACKERS_ALL_IP_URL_CDN,
-        label: 'trackers_all_ip.txt',
-        cdn: true
-      }
     ]
   },
   {
@@ -187,6 +186,7 @@ export const TRACKER_SOURCE_OPTIONS = [
     options: [
       {
         value: XIU2_TRACKERS_BEST_URL,
+        isDefault: true,
         label: 'best.txt',
         cdn: false
       },
@@ -197,6 +197,7 @@ export const TRACKER_SOURCE_OPTIONS = [
       },
       {
         value: XIU2_TRACKERS_HTTP_URL,
+        isDefault: true,
         label: 'http.txt',
         cdn: false
       },

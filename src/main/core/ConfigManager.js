@@ -20,17 +20,26 @@ import {
   PROXY_MODE,
   PROXY_SCOPES,
   PROXY_SCOPE_OPTIONS,
-  TRACKER_SOURCE_OPTIONS
+  TRACKER_SOURCE_OPTIONS,
+  RETIRED_TRACKER_SOURCES
 } from '@shared/constants'
 import { LERXU_BT_UA, LERXU_PEER_ID_PREFIX, CHROME_UA } from '@shared/ua'
 import { separateConfig, getEngineConnectionPolicy } from '@shared/utils'
 import { deduplicateTrackerString, reduceTrackerString } from '@shared/utils/tracker'
 
+/**
+ * 默认订阅的源：只取 best 级（`isDefault`）。
+ *
+ * `bt-trackers` 有总长上限（`MAX_BT_TRACKER_LENGTH` = 6144 字符，约 130 条），
+ * 而「all 级 + CDN 镜像」全量订阅超过 16 KB —— 按顺序合并时排在后面的源会
+ * 被整段截掉（XIU2 曾因此一条都没进过默认列表）。all 级与 CDN 镜像保留在
+ * 选项里，需要更多节点时由用户手动勾选。
+ */
 const getDefaultTrackerSources = () => {
   const sources = []
   ;(TRACKER_SOURCE_OPTIONS || []).forEach(group => {
     ;(group.options || []).forEach(opt => {
-      if (opt.value && !sources.includes(opt.value)) {
+      if (opt.isDefault && opt.value && !sources.includes(opt.value)) {
         sources.push(opt.value)
       }
     })
@@ -522,6 +531,47 @@ export default class ConfigManager {
     const trackerSource = this.getUserConfig('tracker-source')
     if (!Array.isArray(trackerSource) || trackerSource.length === 0) {
       this.setUserConfig('tracker-source', getDefaultTrackerSources())
+    } else {
+      // 1) 剔除已下线的源（ngosang 归档后 all / all_ip 不再更新，已从选项里移除）
+      let next = trackerSource.filter(source => !RETIRED_TRACKER_SOURCES.includes(source))
+
+      // 2) 旧版内置 CDN 源用的是 cdn.jsdelivr.net —— 这个域名对 ngosang 仓库
+      //    实测不可达（对 XIU2 也只是勉强可用），就地换成 fastly 节点。
+      const upgraded = next.map(source => (typeof source === 'string'
+        ? source.replace(/^https:\/\/cdn\.jsdelivr\.net\/gh\//i, 'https://fastly.jsdelivr.net/gh/')
+        : source))
+      if (upgraded.some((source, i) => source !== next[i])) {
+        next = upgraded
+      }
+      if (next.length === 0) {
+        next = getDefaultTrackerSources()
+      }
+
+      // 3) 旧版默认会把全部内置源都选上（含 all 级与 CDN 镜像），总量超过
+      //    bt-tracker 上限，按顺序合并时 XIU2 整段被截掉。只在「用户没动过、
+      //    仍是内置全选」时换成新的 best 级默认。
+      const builtinValues = new Set()
+      let builtinCount = 0
+      ;(TRACKER_SOURCE_OPTIONS || []).forEach(group => {
+        ;(group.options || []).forEach(opt => {
+          if (!opt.value) return
+          builtinCount += 1
+          builtinValues.add(opt.value)
+          builtinValues.add(opt.value.replace(
+            'https://fastly.jsdelivr.net/',
+            'https://cdn.jsdelivr.net/'
+          ))
+        })
+      })
+      const isLegacyBuiltinAll = next.length === builtinCount &&
+        next.every(source => builtinValues.has(source))
+      if (isLegacyBuiltinAll) {
+        next = getDefaultTrackerSources()
+      }
+
+      if (JSON.stringify(next) !== JSON.stringify(trackerSource)) {
+        this.setUserConfig('tracker-source', next)
+      }
     }
   }
 

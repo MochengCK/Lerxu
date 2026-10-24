@@ -4125,7 +4125,7 @@ watch(trackerSourceConfigVisible, (visible) => {
         const s = `${u}`
         const m1 = /^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\//i.exec(s)
         if (m1) return `${m1[1]}/${m1[2]}`
-        const m2 = /^https:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/]+)\//i.exec(s)
+        const m2 = /^https:\/\/(?:cdn|fastly|gcore|testingcf)\.jsdelivr\.net\/gh\/([^/]+)\/([^/]+)\//i.exec(s)
         if (m2) return `${m2[1]}/${m2[2]}`
         const m3 = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\//i.exec(s)
         if (m3) return `${m3[1]}/${m3[2]}`
@@ -4410,7 +4410,7 @@ watch(trackerSourceConfigVisible, (visible) => {
         if (m) return normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
         m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\//i.exec(s)
         if (m) return normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
-        m = /^https:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/]+)\//i.exec(s)
+        m = /^https:\/\/(?:cdn|fastly|gcore|testingcf)\.jsdelivr\.net\/gh\/([^/]+)\/([^/]+)\//i.exec(s)
         if (m) return normalizeOriginUrl(`https://github.com/${m[1]}/${m[2]}`)
         try {
           const u = new URL(s)
@@ -4548,7 +4548,7 @@ watch(trackerSourceConfigVisible, (visible) => {
         if (/^https:\/\/github\.com\//i.test(u)) {
           return u.replace('https://github.com/', 'https://raw.githubusercontent.com/').replace('/blob/', '/')
         }
-        const m = /^https:\/\/cdn\.jsdelivr\.net\/gh\/([^/]+)\/([^/@]+)(?:@([^/]+))?\/(.+)$/i.exec(u)
+        const m = /^https:\/\/(?:cdn|fastly|gcore|testingcf)\.jsdelivr\.net\/gh\/([^/]+)\/([^/@]+)(?:@([^/]+))?\/(.+)$/i.exec(u)
         if (m) {
           const owner = m[1]
           const repo = m[2]
@@ -4580,7 +4580,7 @@ watch(trackerSourceConfigVisible, (visible) => {
           let base = 100
           if (/raw\.githubusercontent\.com$/i.test(host)) base = 1
           else if (/github\.com$/i.test(host)) base = 2
-          else if (/cdn\.jsdelivr\.net$/i.test(host)) base = 3
+          else if (/(?:cdn|fastly|gcore|testingcf)\.jsdelivr\.net$/i.test(host)) base = 3
           else if (/down\.adysec\.com$/i.test(host)) base = 4
           // 优先 main 分支
           let branchRank = 0
