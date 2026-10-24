@@ -49,6 +49,8 @@ export default {
   'transfer-speed-upload-desc': '0 means unlimited',
   'transfer-speed-download': 'Download limit',
   'transfer-speed-download-desc': '0 means unlimited',
+  'speed-limit-normal-card': 'Normal limit',
+  'speed-limit-low-card': 'Low limit',
   'lan-share': 'File Transfer',
   'lan-share-title': 'Local File Transfer',
   'lan-share-enabled': 'Enable file transfer',

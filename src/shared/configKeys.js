@@ -59,6 +59,12 @@ const userKeys = [
   'tray-speedometer',
   'downloading-file-suffix',
   'update-channel',
+  // 侧边栏「正常 / 低速」滑块切换时套用的上下限预设（应用层键，不是引擎选项；
+  // 真正下发的是 max-overall-download-limit / max-overall-upload-limit）
+  'speed-limit-normal-download',
+  'speed-limit-normal-upload',
+  'speed-limit-low-download',
+  'speed-limit-low-upload',
   'auto-categorize-files',
   'file-categories',
   'set-file-mtime-on-complete',

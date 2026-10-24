@@ -49,6 +49,8 @@ export default {
   'transfer-speed-upload-desc': '0 表示不限速',
   'transfer-speed-download': '下载限速',
   'transfer-speed-download-desc': '0 表示不限速',
+  'speed-limit-normal-card': '正常限速',
+  'speed-limit-low-card': '低速限速',
   'lan-share': '互传',
   'lan-share-title': '文件互传',
   'lan-share-enabled': '启用互传',

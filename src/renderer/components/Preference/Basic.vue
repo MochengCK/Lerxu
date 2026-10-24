@@ -731,14 +731,14 @@
         </el-form-item>
       </div>
 
-      <!-- 下载：默认下载路径 + 速度限制（同一张卡片） -->
+      <!-- 默认下载路径 -->
       <div
         v-if="activeCategory === 'transfer'"
         class="preference-card"
         data-category="transfer"
       >
         <h3 class="card-title">
-          {{ t('preferences.download-and-speed-limit') }}
+          {{ t('preferences.default-dir') }}
         </h3>
         <el-form-item size="small">
           <el-col
@@ -746,7 +746,6 @@
             :span="24"
           >
             <div class="pref-row-text">
-              <span class="pref-row-label">{{ t('preferences.default-dir') }}</span>
               <div class="pref-row-desc">{{ t('preferences.default-dir-desc') }}</div>
             </div>
             <el-input
@@ -775,6 +774,19 @@
               {{ t('preferences.mas-default-dir-tips') }}
             </div>
           </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 正常限速：默认模式，侧边栏滑块拨到「正常」时套用的上下限 -->
+      <div
+        v-if="activeCategory === 'transfer'"
+        class="preference-card"
+        data-category="transfer"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.speed-limit-normal-card') }}
+        </h3>
+        <el-form-item size="small">
           <el-col
             class="form-item-sub speed-limit-row"
             :span="24"
@@ -784,17 +796,16 @@
               <div class="pref-row-desc">{{ t('preferences.transfer-speed-upload-desc') }}</div>
             </div>
             <el-input-number
-              v-model="maxOverallUploadLimitParsed"
+              v-model="normalUploadLimitParsed"
               controls-position="right"
               :min="0"
               :max="65535"
               :step="1"
-              :label="t('preferences.transfer-speed-download')"
             />
             <mo-extend-select
-              v-model="uploadUnit"
+              v-model="normalUploadUnit"
               :options="speedUnits"
-              @change="handleUploadChange"
+              @change="handleSpeedModeUnitChange('speedLimitNormalUpload', $event)"
             />
           </el-col>
           <el-col
@@ -806,17 +817,71 @@
               <div class="pref-row-desc">{{ t('preferences.transfer-speed-download-desc') }}</div>
             </div>
             <el-input-number
-              v-model="maxOverallDownloadLimitParsed"
+              v-model="normalDownloadLimitParsed"
               controls-position="right"
               :min="0"
               :max="65535"
               :step="1"
-              :label="t('preferences.transfer-speed-download')"
             />
             <mo-extend-select
-              v-model="downloadUnit"
+              v-model="normalDownloadUnit"
               :options="speedUnits"
-              @change="handleDownloadChange"
+              @change="handleSpeedModeUnitChange('speedLimitNormalDownload', $event)"
+            />
+          </el-col>
+        </el-form-item>
+      </div>
+
+      <!-- 低速限速：侧边栏滑块拨到「低速」时套用的上下限 -->
+      <div
+        v-if="activeCategory === 'transfer'"
+        class="preference-card"
+        data-category="transfer"
+      >
+        <h3 class="card-title">
+          {{ t('preferences.speed-limit-low-card') }}
+        </h3>
+        <el-form-item size="small">
+          <el-col
+            class="form-item-sub speed-limit-row"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.transfer-speed-upload') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.transfer-speed-upload-desc') }}</div>
+            </div>
+            <el-input-number
+              v-model="lowUploadLimitParsed"
+              controls-position="right"
+              :min="0"
+              :max="65535"
+              :step="1"
+            />
+            <mo-extend-select
+              v-model="lowUploadUnit"
+              :options="speedUnits"
+              @change="handleSpeedModeUnitChange('speedLimitLowUpload', $event)"
+            />
+          </el-col>
+          <el-col
+            class="form-item-sub speed-limit-row"
+            :span="24"
+          >
+            <div class="pref-row-text">
+              <span class="pref-row-label">{{ t('preferences.transfer-speed-download') }}</span>
+              <div class="pref-row-desc">{{ t('preferences.transfer-speed-download-desc') }}</div>
+            </div>
+            <el-input-number
+              v-model="lowDownloadLimitParsed"
+              controls-position="right"
+              :min="0"
+              :max="65535"
+              :step="1"
+            />
+            <mo-extend-select
+              v-model="lowDownloadUnit"
+              :options="speedUnits"
+              @change="handleSpeedModeUnitChange('speedLimitLowDownload', $event)"
             />
           </el-col>
         </el-form-item>
@@ -2208,6 +2273,10 @@ const normalizeTaskMultiSelectModifier = (value) => {
       maxConnectionPerServer,
       maxOverallDownloadLimit,
       maxOverallUploadLimit,
+      speedLimitNormalDownload,
+      speedLimitNormalUpload,
+      speedLimitLowDownload,
+      speedLimitLowUpload,
       newTaskShowDownloading,
       newTaskJumpTarget,
       noConfirmBeforeDeleteTask,
@@ -2318,6 +2387,10 @@ const normalizeTaskMultiSelectModifier = (value) => {
       maxConnectionPerServer: normalizedMaxPerServer,
       maxOverallDownloadLimit,
       maxOverallUploadLimit,
+      speedLimitNormalDownload: speedLimitNormalDownload === undefined ? 0 : speedLimitNormalDownload,
+      speedLimitNormalUpload: speedLimitNormalUpload === undefined ? 0 : speedLimitNormalUpload,
+      speedLimitLowDownload: speedLimitLowDownload === undefined ? '512K' : speedLimitLowDownload,
+      speedLimitLowUpload: speedLimitLowUpload === undefined ? '64K' : speedLimitLowUpload,
       newTaskShowDownloading,
       newTaskJumpTarget: newTaskJumpTarget || 'downloading',
       noConfirmBeforeDeleteTask,
@@ -2491,11 +2564,13 @@ const { searchKeyword } = storeToRefs(preferenceStore)
 
 // --- Data ---
 const form = ref(initForm(preferenceConfig.value))
-// BT 自动封禁策略折叠状态
 // 限速单位独立存储：不再从 form 值推导（'0' 表示不限速时单位会丢失，
-// 且 computed setter 无法写回状态导致下拉选择无效），由 v-model 直接写入
-const downloadUnit = ref(extractSpeedUnit(form.value.maxOverallDownloadLimit))
-const uploadUnit = ref(extractSpeedUnit(form.value.maxOverallUploadLimit))
+// 且 computed setter 无法写回状态导致下拉选择无效），由 v-model 直接写入。
+// 「正常 / 低速」两档各一组（侧边栏滑块切档时套用对应的一组）。
+const normalDownloadUnit = ref(extractSpeedUnit(form.value.speedLimitNormalDownload))
+const normalUploadUnit = ref(extractSpeedUnit(form.value.speedLimitNormalUpload))
+const lowDownloadUnit = ref(extractSpeedUnit(form.value.speedLimitLowDownload))
+const lowUploadUnit = ref(extractSpeedUnit(form.value.speedLimitLowUpload))
 const formLabelWidth = ref(calcFormLabelWidth(preferenceConfig.value.locale))
 const formOriginal = ref(initForm(preferenceConfig.value))
 // 没有全局 IPv6 时 DHT over IPv6 无法工作，开关置灰显示为关闭；
@@ -2670,24 +2745,21 @@ const formRefs = {}
           .map(domain => domain.trim())
           .filter(domain => domain.length > 0)
       })
-      const maxOverallDownloadLimitParsed = computed({
+      // 引擎实际生效的限速（max-overall-*）没有独立输入框了：它由侧边栏滑块
+      // 按当前档位从下面两组预设里写进来，见 applyActivePresetIfNeeded。
+      // 档位预设的四项：写法与上面两行一致（>0 时拼成 "1M" 这种引擎/应用都认的串）
+      const speedModeLimitParsed = (field, unitRef) => computed({
         get () {
-          return parseInt(form.value.maxOverallDownloadLimit)
+          return parseInt(form.value[field]) || 0
         },
         set (value) {
-          const limit = value > 0 ? `${value}${downloadUnit.value}` : 0
-          form.value.maxOverallDownloadLimit = limit
+          form.value[field] = value > 0 ? `${value}${unitRef.value}` : 0
         }
       })
-      const maxOverallUploadLimitParsed = computed({
-        get () {
-          return parseInt(form.value.maxOverallUploadLimit)
-        },
-        set (value) {
-          const limit = value > 0 ? `${value}${uploadUnit.value}` : 0
-          form.value.maxOverallUploadLimit = limit
-        }
-      })
+      const normalDownloadLimitParsed = speedModeLimitParsed('speedLimitNormalDownload', normalDownloadUnit)
+      const normalUploadLimitParsed = speedModeLimitParsed('speedLimitNormalUpload', normalUploadUnit)
+      const lowDownloadLimitParsed = speedModeLimitParsed('speedLimitLowDownload', lowDownloadUnit)
+      const lowUploadLimitParsed = speedModeLimitParsed('speedLimitLowUpload', lowUploadUnit)
       const btIpBanListText = computed({
         get () {
           const list = Array.isArray(form.value.btIpBanList) ? form.value.btIpBanList : []
@@ -3496,19 +3568,62 @@ watch(trackerSourceConfigVisible, (visible) => {
         autoSaveForm()
         deleteCachedBackgroundImageIfNeeded(oldPath)
       }
-      function handleDownloadChange(value) {
-        // v-model 已把新单位写入 downloadUnit ref，此处仅重算形如 "1024M" 的引擎配置值
-        const rawLimit = form.value.maxOverallDownloadLimit
-        const match = String(rawLimit).match(/^(\d+\.?\d*)/)
-        const num = match ? match[1] : '0'
-        form.value.maxOverallDownloadLimit = parseFloat(rawLimit) > 0 ? `${num}${value}` : 0
+      // 「正常 / 低速」两档：谁在生效就跟着谁改，改完立刻写进引擎限速
+      function speedLimitBps(raw) {
+        if (raw === undefined || raw === null || raw === '') {
+          return 0
+        }
+        const m = `${raw}`.trim().match(/^(\d+(?:\.\d+)?)\s*([KMG])?/i)
+        if (!m) {
+          return 0
+        }
+        const unit = (m[2] || '').toUpperCase()
+        const mul = unit === 'G' ? 1024 ** 3 : unit === 'M' ? 1024 ** 2 : unit === 'K' ? 1024 : 1
+        return Math.round(parseFloat(m[1]) * mul)
+      }
+      // 判据与侧边栏一致：引擎当前限速 == 低速预设 ⇒ 低速档；两档相同时永远算正常
+      const isLowLimitMode = computed(() => {
+        const c = preferenceConfig.value || {}
+        const samePreset =
+          speedLimitBps(c.speedLimitNormalDownload) === speedLimitBps(c.speedLimitLowDownload) &&
+          speedLimitBps(c.speedLimitNormalUpload) === speedLimitBps(c.speedLimitLowUpload)
+        if (samePreset) {
+          return false
+        }
+        return speedLimitBps(c.maxOverallDownloadLimit) === speedLimitBps(c.speedLimitLowDownload) &&
+          speedLimitBps(c.maxOverallUploadLimit) === speedLimitBps(c.speedLimitLowUpload)
+      })
+      function applyActivePreset(mode) {
+        const preset = mode === 'low'
+          ? { download: form.value.speedLimitLowDownload, upload: form.value.speedLimitLowUpload }
+          : { download: form.value.speedLimitNormalDownload, upload: form.value.speedLimitNormalUpload }
+        form.value.maxOverallDownloadLimit = preset.download
+        form.value.maxOverallUploadLimit = preset.upload
         autoSaveForm()
       }
-      function handleUploadChange(value) {
-        const rawLimit = form.value.maxOverallUploadLimit
+      watch(
+        () => [form.value.speedLimitNormalDownload, form.value.speedLimitNormalUpload],
+        () => {
+          if (!isLowLimitMode.value) {
+            applyActivePreset('normal')
+          }
+        }
+      )
+      watch(
+        () => [form.value.speedLimitLowDownload, form.value.speedLimitLowUpload],
+        () => {
+          if (isLowLimitMode.value) {
+            applyActivePreset('low')
+          }
+        }
+      )
+      // 档位预设（正常/低速 × 下载/上传）的单位切换：v-model 已把新单位写进
+      // 对应的 unit ref，这里只需要把 "1M" 这个串重新拼成 "1K"/"1G"
+      function handleSpeedModeUnitChange(field, value) {
+        const rawLimit = form.value[field]
         const match = String(rawLimit).match(/^(\d+\.?\d*)/)
         const num = match ? match[1] : '0'
-        form.value.maxOverallUploadLimit = parseFloat(rawLimit) > 0 ? `${num}${value}` : 0
+        form.value[field] = parseFloat(rawLimit) > 0 ? `${num}${value}` : 0
         autoSaveForm()
       }
       function onKeepSeedingChange(enable) {
@@ -3766,8 +3881,10 @@ watch(trackerSourceConfigVisible, (visible) => {
             console.log('[Basic] Fetched config:', config)
             form.value = initForm(config)
             formOriginal.value = cloneDeep(form.value)
-            downloadUnit.value = extractSpeedUnit(config.maxOverallDownloadLimit)
-            uploadUnit.value = extractSpeedUnit(config.maxOverallUploadLimit)
+            normalDownloadUnit.value = extractSpeedUnit(config.speedLimitNormalDownload)
+            normalUploadUnit.value = extractSpeedUnit(config.speedLimitNormalUpload)
+            lowDownloadUnit.value = extractSpeedUnit(config.speedLimitLowDownload)
+            lowUploadUnit.value = extractSpeedUnit(config.speedLimitLowUpload)
             console.log('[Basic] Form updated:', form.value)
           })
       }

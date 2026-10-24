@@ -230,6 +230,12 @@ export default class ConfigManager {
         'rpc-secret-generated': false,
         'run-mode': APP_RUN_MODE.STANDARD,
         'show-progress-bar': true,
+        // 侧边栏限速滑块的两档预设（应用层：切换时把值写进引擎的
+        // max-overall-download-limit / max-overall-upload-limit；0 = 不限速）
+        'speed-limit-normal-download': 0,
+        'speed-limit-normal-upload': 0,
+        'speed-limit-low-download': '512K',
+        'speed-limit-low-upload': '64K',
         'task-notification': true,
         'task-complete-notify-click-action': 'open-folder',
         'theme': APP_THEME.AUTO,
