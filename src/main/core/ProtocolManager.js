@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { app } from 'electron'
-import is from 'electron-is'
+import is from '@shared/platform'
 
 import logger from './LogManager'
 import protocolMap from '../configs/protocol'

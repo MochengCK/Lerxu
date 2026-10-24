@@ -1,5 +1,6 @@
-import isEmpty from 'lodash/isEmpty'
+
 import { existsSync, mkdirSync } from 'node:fs'
+import { isEmpty } from '@shared/utils/object'
 
 import {
   ADD_TASK_TYPE,

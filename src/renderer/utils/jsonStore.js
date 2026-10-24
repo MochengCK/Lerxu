@@ -29,8 +29,8 @@ let _userDataCache = ''
  * 渲染进程的数据目录。
  *
  * 主进程在创建窗口前把 `LERXU_USER_DATA` 写进自己的环境变量，渲染进程作为
- * 子进程会继承 —— 这样不需要任何同步 IPC。只有环境缺失（例如单独跑单测）时
- * 才回退到 remote 取一次；再不行用工作目录，保证不会抛异常。
+ * 子进程会继承 —— 这样不需要任何同步 IPC（remote 已移除）。环境缺失
+ * （例如单独跑单测）时退回工作目录，保证不会抛异常。
  */
 function resolveUserData () {
   if (_userDataCache) {
@@ -40,16 +40,6 @@ function resolveUserData () {
     _userDataCache = process.env.LERXU_USER_DATA
     return _userDataCache
   }
-  try {
-    const { app } = require('@electron/remote')
-    _userDataCache = app.getPath('userData')
-    return _userDataCache
-  } catch (_) { }
-  try {
-    const { app } = require('electron')
-    _userDataCache = app.getPath('userData')
-    return _userDataCache
-  } catch (_) { }
   _userDataCache = process.cwd()
   return _userDataCache
 }

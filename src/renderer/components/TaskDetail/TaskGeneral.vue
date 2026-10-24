@@ -132,7 +132,7 @@
 <script setup>
 import { computed, getCurrentInstance } from 'vue'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
-import is from 'electron-is'
+import is from '@shared/platform'
 import { ipcRenderer } from 'electron'
 import { basename } from 'node:path'
 import {

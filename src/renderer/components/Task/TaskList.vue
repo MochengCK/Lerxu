@@ -34,9 +34,10 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { cloneDeep } from '@shared/utils/object'
 import { ipcRenderer } from 'electron'
-import { Menu, getCurrentWindow } from '@electron/remote'
-import cloneDeep from 'lodash/cloneDeep'
+import { popupMenu } from '@/utils/nativeBridge'
+
 import {
   checkTaskIsSeeder,
   getFileExtension,
@@ -641,9 +642,7 @@ function handleRowContextMenu (entry, event) {
 }
 
 function popupMenuAt (template, event) {
-  const menu = Menu.buildFromTemplate(template)
-  menu.popup({
-    window: getCurrentWindow(),
+  popupMenu(template, {
     x: event.x != null ? event.x : event.clientX,
     y: event.y != null ? event.y : event.clientY
   })
@@ -694,9 +693,7 @@ function handleItemContextMenu (item, event) {
   const template = isMultiSelected
     ? getMultiTaskContextMenuTemplate(selectedUnique)
     : getTaskContextMenuTemplate(task, event)
-  const menu = Menu.buildFromTemplate(template)
-  menu.popup({
-    window: getCurrentWindow(),
+  popupMenu(template, {
     x: event.x != null ? event.x : event.clientX,
     y: event.y != null ? event.y : event.clientY
   })

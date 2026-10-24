@@ -103,6 +103,20 @@ module.exports = {
       rules: {
         indent: 'off'
       }
+    },
+    {
+      // 主进程源码经 vite/rollup 打包成 dist/electron/index.js：运行时 `require('相对路径')`
+      // 不会被内联，会按产物目录去解析 → "Cannot find module './utils/index'"
+      // （2026-10-23 完成窗「打开文件夹」实际踩到）。一律用静态 import。
+      // pages/ 下的脚本是 file:// 直接加载的普通脚本，不经打包，故排除。
+      files: ['src/main/**/*.js'],
+      excludedFiles: ['src/main/pages/**'],
+      rules: {
+        'no-restricted-syntax': ['error', {
+          selector: "CallExpression[callee.name='require'][arguments.0.type='Literal'][arguments.0.value=/^\\.\\.?\\//]",
+          message: '主进程会被打包：相对路径 require 在产物里解析不到，请改成顶层 import'
+        }]
+      }
     }
   ]
 }

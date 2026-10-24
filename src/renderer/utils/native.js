@@ -1,6 +1,10 @@
 import { access, constants, existsSync } from 'node:fs'
 import { resolve, basename, dirname, isAbsolute } from 'node:path'
-import { shell, nativeTheme } from '@electron/remote'
+import {
+  openPath as openPathNative,
+  showItemInFolder as showItemInFolderNative,
+  trashItem as trashItemNative
+} from '@/utils/nativeBridge'
 import { ElMessage as Message } from 'element-plus'
 import { Notification } from 'electron'
 import api from '@/api'
@@ -25,7 +29,7 @@ export const showItemInFolder = (fullPath, { errorMsg }) => {
       return
     }
 
-    shell.showItemInFolder(fullPath)
+    showItemInFolderNative(fullPath)
   })
 }
 
@@ -34,7 +38,7 @@ export const openItem = async (fullPath) => {
     return
   }
 
-  const result = await shell.openPath(fullPath)
+  const result = await openPathNative(fullPath)
   return result
 }
 
@@ -233,7 +237,7 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
       if (existsSync(p)) {
         const target = resolve(p)
         console.log(`[Lerxu] ${target} exists, deleting...`)
-        await shell.trashItem(target)
+        await trashItemNative(target)
         deletedCount++
       }
     } catch (e) {
@@ -246,7 +250,7 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
     try {
       if (existsSync(xferPath)) {
         console.log(`[Lerxu] ${xferPath} exists, deleting...`)
-        await shell.trashItem(xferPath)
+        await trashItemNative(xferPath)
         deletedCount++
       }
     } catch (e) {
@@ -265,7 +269,13 @@ export const moveTaskFilesToTrash = async (task, downloadingFileSuffix = '', pre
 }
 
 export const getSystemTheme = () => {
-  return nativeTheme.shouldUseDarkColors ? APP_THEME.DARK : APP_THEME.LIGHT
+  // 不再问主进程（remote 同步 IPC）：Chromium 的 prefers-color-scheme 与
+  // nativeTheme.shouldUseDarkColors 同源（也跟随 nativeTheme.themeSource）
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? APP_THEME.DARK : APP_THEME.LIGHT
+  } catch (_) {
+    return APP_THEME.LIGHT
+  }
 }
 
 /**

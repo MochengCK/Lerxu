@@ -25,7 +25,7 @@
  */
 
 import { join } from 'node:path'
-import is from 'electron-is'
+import is from '@shared/platform'
 import electronLog from 'electron-log'
 
 import { IS_PORTABLE, PORTABLE_EXECUTABLE_DIR } from '@shared/constants'

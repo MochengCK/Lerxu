@@ -81,18 +81,21 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
-import { dialog, BrowserWindow } from '@electron/remote'
+import { ref, shallowRef, computed, watch, onMounted, onBeforeUnmount, defineAsyncComponent, toRaw } from 'vue'
+import {
+  showMessageBox,
+  openTaskWindow,
+  sendToTaskWindow,
+  taskWindowAction,
+  onTaskWindowEvent
+} from '@/utils/nativeBridge'
 import { commands } from '@/components/CommandManager/instance'
 import { TASK_STATUS, APP_THEME } from '@shared/constants'
 import { parsePieceStatuses, combinePieceStatuses } from '@shared/utils/piece-status'
 import themeTokens from '@/utils/themeTokens'
 import api from '@/api'
 import taskHistory from '@/api/TaskHistory'
-import { ipcRenderer } from 'electron'
 import path from 'node:path'
-import os from 'node:os'
-import fs from 'node:fs'
 import {
   bytesToSize,
   timeRemaining,
@@ -141,9 +144,55 @@ const hasModalMaskVisible = ref(false)
 const hasModalDialogVisible = ref(false)
 const lastTaskStatuses = ref({})
 const autoOpenedProgressGids = ref(new Set())
-const progressWindows = ref(new Map())
+// 窗口句柄表用 shallowRef：模板不渲染它们，**不需要深响应式**；更重要的是
+// `ref(new Map())` 会把存进去的 handle 在读取/遍历时包成响应式代理，
+// 句柄里的 `w === handle` 身份比较会永远为 false（进度窗曾因此全空）。
+const progressWindows = shallowRef(new Map())
 const progressTaskGids = ref(new Set())
-const completedTaskWindows = ref(new Map())
+const completedTaskWindows = shallowRef(new Map())
+let _offTaskWindowReady = null
+let _offTaskWindowClosed = null
+
+/** 按 IPC key 找句柄（进度窗与完成窗共用一套浮窗通道） */
+function findTaskWindowHandle (key) {
+  const target = `${key || ''}`
+  if (!target) return null
+  for (const handle of progressWindows.value.values()) {
+    if (handle && handle.key === target) return handle
+  }
+  for (const handle of completedTaskWindows.value.values()) {
+    if (handle && handle.key === target) return handle
+  }
+  return null
+}
+
+/**
+ * 浮窗关闭：先把句柄从两张表里摘掉，再触发它自己的 closed 回调。
+ *
+ * 顺序不能反：`isDestroyed()` 是按"还在不在表里"判的，回调里若还要用
+ * `isAliveWindow(win)`（原 `win.on('closed')` 的语义就是"已删表"），
+ * 先 emit 会让它以为窗口还活着。
+ */
+function forgetTaskWindow (key) {
+  const target = `${key || ''}`
+  let handle = null
+  for (const [gid, value] of progressWindows.value.entries()) {
+    if (value && value.key === target) {
+      handle = handle || value
+      progressWindows.value.delete(gid)
+      progressTaskGids.value.delete(gid)
+    }
+  }
+  for (const [gid, value] of completedTaskWindows.value.entries()) {
+    if (value && value.key === target) {
+      handle = handle || value
+      completedTaskWindows.value.delete(gid)
+    }
+  }
+  if (handle) {
+    handle.emitClosed()
+  }
+}
 let _modalObserver = null
 let taskStatusesInitialized = false
 
@@ -296,6 +345,14 @@ onMounted(() => {
   commands.register('task-progress:set-complete-popup', handleTaskProgressSetCompletePopup)
   commands.on('task-progress:auto-open', handleTaskProgressAutoOpen)
   preloadHeavyOverlays()
+  // 浮窗由主进程创建：就绪/关闭事件回到这里，驱动首次数据与清理
+  _offTaskWindowReady = onTaskWindowEvent('task-window:ready', ({ key }) => {
+    const handle = findTaskWindowHandle(key)
+    if (handle) handle.emitReady()
+  })
+  _offTaskWindowClosed = onTaskWindowEvent('task-window:closed', ({ key }) => {
+    forgetTaskWindow(key)
+  })
 })
 
 // 预热重型弹层组件：mo-task-detail / mo-add-task 均为 defineAsyncComponent，
@@ -314,6 +371,14 @@ function preloadHeavyOverlays () {
   }
 }
 onBeforeUnmount(() => {
+  if (_offTaskWindowReady) {
+    _offTaskWindowReady()
+    _offTaskWindowReady = null
+  }
+  if (_offTaskWindowClosed) {
+    _offTaskWindowClosed()
+    _offTaskWindowClosed = null
+  }
   if (_modalObserver) {
     try {
       _modalObserver.disconnect()
@@ -327,6 +392,65 @@ onBeforeUnmount(() => {
 })
 
 // --- Methods ---
+
+      /**
+       * 任务浮窗句柄。
+       *
+       * 窗口本身现在归主进程所有（见 main/core/NativeBridge.js）；这里保留一个
+       * 与 BrowserWindow 同形状的薄句柄，让原有调用点（setTitle / close /
+       * webContents.send / isDestroyed…）不必整体重写。所有操作都是 IPC，
+       * 不再像 remote 那样同步阻塞渲染线程。
+       */
+      function createTaskWindowHandle (ipcKey) {
+        const handle = {
+          key: ipcKey,
+          __lerxuPairId: '',
+          _readyCbs: [],
+          _closedCbs: [],
+          once (event, cb) {
+            if (event === 'ready-to-show') handle._readyCbs.push(cb)
+            if (event === 'closed') handle._closedCbs.push(cb)
+            return handle
+          },
+          on (event, cb) {
+            if (event === 'closed') handle._closedCbs.push(cb)
+            return handle
+          },
+          emitReady () {
+            const list = handle._readyCbs.splice(0)
+            list.forEach((fn) => { try { fn() } catch (e) {} })
+          },
+          emitClosed () {
+            const list = handle._closedCbs.splice(0)
+            list.forEach((fn) => { try { fn() } catch (e) {} })
+          },
+          isDestroyed () {
+            // ⚠️ 这两张表用 shallowRef 存的是原始 Map，但**别指望调用方一定这么写**：
+            // 一旦换回 `ref(new Map())`，get/values() 返回的就是响应式代理，与闭包里
+            // 这个原始 handle 做 `===` 永远为 false —— 句柄会被判成"已销毁"，首帧
+            // 数据推不出去、条目被 updateProgressWindow 删掉，窗口一直是空的
+            // （2026-10-23 实际踩到）。所以这里统一 toRaw 回到原始 Map 再比身份。
+            for (const w of toRaw(progressWindows.value).values()) {
+              if (w === handle) return false
+            }
+            for (const w of toRaw(completedTaskWindows.value).values()) {
+              if (w === handle) return false
+            }
+            return true
+          },
+          show () { taskWindowAction(handle.key, 'present') },
+          focus () { taskWindowAction(handle.key, 'present') },
+          setTitle (title) { taskWindowAction(handle.key, 'set-title', title) },
+          setBackgroundColor (color) { taskWindowAction(handle.key, 'set-background', color) },
+          close () { taskWindowAction(handle.key, 'close') },
+          get webContents () {
+            return {
+              send: (channel, payload) => sendToTaskWindow(handle.key, channel, payload)
+            }
+          }
+        }
+        return handle
+      }
 
       function isAliveWindow(win) {
         if (!win) {
@@ -821,7 +945,7 @@ onBeforeUnmount(() => {
             })
           return
         }
-        dialog.showMessageBox({
+        showMessageBox({
           type: 'warning',
           title: t('task.delete-task'),
           message: t('task.delete-task-confirm', { taskName }),
@@ -1229,22 +1353,10 @@ onBeforeUnmount(() => {
           if (pairId && !existingWindow.__lerxuPairId) {
             existingWindow.__lerxuPairId = pairId
           }
-          // 确保窗口显示、激活并置于最前面
+          // 窗口显示/激活/置顶都在主进程（`present` = restore + show + focus），
+          // 页面这边只发一条指令
           try {
-            if (existingWindow.isMinimized()) {
-              existingWindow.restore()
-            }
-            existingWindow.show()
             existingWindow.focus()
-            // 短暂置顶以确保窗口在最前面，然后取消置顶
-            existingWindow.setAlwaysOnTop(true)
-            setTimeout(() => {
-              try {
-                if (isAliveWindow(existingWindow)) {
-                  existingWindow.setAlwaysOnTop(false)
-                }
-              } catch (e) {}
-            }, 100)
           } catch (e) {
             console.warn('[Lerxu] Failed to activate existing progress window:', e.message)
           }
@@ -1282,27 +1394,7 @@ onBeforeUnmount(() => {
         const defaultWidth = 360
         const defaultHeight = 230
 
-        const win = new BrowserWindow({
-          width: defaultWidth,
-          height: defaultHeight,
-          resizable: false,
-          minimizable: true,
-          maximizable: false,
-          useContentSize: true,
-          frame: !useCustomFrame,
-          titleBarStyle: isMac ? 'hiddenInset' : 'default',
-          backgroundColor: getThemeColors().bodyBg,
-          icon,
-          // 确保窗口独立于主窗口，不会继承主窗口的最小化状态
-          parent: null,
-          modal: false,
-          show: false, // 先不显示，等 ready-to-show 时再显示
-          webPreferences: {
-            enableRemoteModule: true,
-            contextIsolation: false,
-            nodeIntegration: true
-          }
-        })
+        const win = createTaskWindowHandle(`progress:${gid}`)
         progressWindows.value.set(gid, win)
         // 记下 pairId：同一条「一对音视频」记录只允许存在一个进度窗口
         if (pairId) {
@@ -1314,24 +1406,37 @@ onBeforeUnmount(() => {
           progressTaskGids.value.delete(gid)
         })
         const html = buildProgressWindowHtml(useCustomFrame, isMac, getThemeColors)
-        // Write HTML to a temp file and load it, because data: URLs have
-        // size limits in Chromium that this large HTML can exceed.
-        try {
-          const tmpDir = os.tmpdir()
-          const tmpFile = path.join(tmpDir, `lc-progress-${gid}.html`)
-          fs.writeFileSync(tmpFile, html, 'utf-8')
-          win.loadFile(tmpFile)
-          win.once('closed', () => {
-            try { fs.unlinkSync(tmpFile) } catch (e) {}
-          })
-        } catch (e) {
-          // Fallback to data URL if temp file approach fails
-          win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-        }
+        // 窗口创建 / 临时 HTML 落盘 / 显示时机（含置顶与取消置顶）都交给主进程，
+        // 页面这边只负责把首屏数据与标题补上
+        openTaskWindow({
+          key: win.key,
+          kind: 'progress',
+          html,
+          hideMenu: hideAppMenu,
+          backgroundColor: getThemeColors().bodyBg,
+          options: {
+            width: defaultWidth,
+            height: defaultHeight,
+            resizable: false,
+            minimizable: true,
+            maximizable: false,
+            useContentSize: true,
+            frame: !useCustomFrame,
+            titleBarStyle: isMac ? 'hiddenInset' : 'default',
+            icon,
+            parent: null,
+            modal: false
+          }
+        }).then((result) => {
+          if (!result || !result.ok) {
+            forgetTaskWindow(win.key)
+          }
+        }).catch((e) => {
+          console.error('[Lerxu] Failed to open progress window:', e)
+          forgetTaskWindow(win.key)
+        })
         win.once('ready-to-show', () => {
           if (!isAliveWindow(win)) {
-            progressWindows.value.delete(gid)
-            progressTaskGids.value.delete(gid)
             return
           }
           const payload = buildProgressPayload(task)
@@ -1341,36 +1446,8 @@ onBeforeUnmount(() => {
           try {
             win.setTitle(windowTitle)
           } catch (e) {
-            progressWindows.value.delete(gid)
-            progressTaskGids.value.delete(gid)
+            forgetTaskWindow(win.key)
             return
-          }
-          if (hideAppMenu) {
-            if (typeof win.setMenuBarVisibility === 'function') {
-              win.setMenuBarVisibility(false)
-            }
-            if (win.setMenu) {
-              win.setMenu(null)
-            }
-          }
-          // 确保窗口显示、激活并置于最前面
-          try {
-            if (win.isMinimized()) {
-              win.restore()
-            }
-            win.show()
-            win.focus()
-            // 短暂置顶以确保窗口在最前面，然后取消置顶
-            win.setAlwaysOnTop(true)
-            setTimeout(() => {
-              try {
-                if (isAliveWindow(win)) {
-                  win.setAlwaysOnTop(false)
-                }
-              } catch (e) {}
-            }, 100)
-          } catch (e) {
-            console.warn('[Lerxu] Failed to activate progress window:', e.message)
           }
           updateProgressWindow(task)
         })
@@ -1549,26 +1626,7 @@ onBeforeUnmount(() => {
           }
         } catch (e) {}
 
-        const win = new BrowserWindow({
-          width: 360,
-          height: 200,
-          resizable: false,
-          minimizable: true,
-          maximizable: false,
-          useContentSize: true,
-          frame: !useCustomFrame,
-          titleBarStyle: isMac ? 'hiddenInset' : 'default',
-          backgroundColor: getThemeColors().bodyBg,
-          icon,
-          parent: null,
-          modal: false,
-          show: false,
-          webPreferences: {
-            enableRemoteModule: true,
-            contextIsolation: false,
-            nodeIntegration: true
-          }
-        })
+        const win = createTaskWindowHandle(`completed:${gid}`)
         completedTaskWindows.value.set(gid, win)
 
         win.on('closed', () => {
@@ -1576,63 +1634,38 @@ onBeforeUnmount(() => {
         })
 
         const html = buildCompletedTaskWindowHtml(task, useCustomFrame, isMac, t, getThemeColors, formatBytes, escapeHtml, resolveCompletedDisplayName(task))
-        try {
-          const tmpDir = os.tmpdir()
-          const tmpFile = path.join(tmpDir, `lc-completed-${gid}.html`)
-          fs.writeFileSync(tmpFile, html, 'utf-8')
-          win.loadFile(tmpFile)
-          win.once('closed', () => {
-            try { fs.unlinkSync(tmpFile) } catch (e) {}
-          })
-        } catch (e) {
-          win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
-        }
-
-        win.once('ready-to-show', () => {
-          if (!isAliveWindow(win)) {
-            completedTaskWindows.value.delete(gid)
-            return
+        // 显示时机（macOS 用 showInactive + floating，避免把主窗口一并置前）
+        // 也在主进程里，页面这边只需要把 HTML 交过去
+        openTaskWindow({
+          key: win.key,
+          kind: 'completed',
+          html,
+          title: t('task.task-completed-title') || '下载完成',
+          hideMenu: hideAppMenu,
+          backgroundColor: getThemeColors().bodyBg,
+          options: {
+            width: 360,
+            height: 200,
+            resizable: false,
+            minimizable: true,
+            maximizable: false,
+            useContentSize: true,
+            frame: !useCustomFrame,
+            titleBarStyle: isMac ? 'hiddenInset' : 'default',
+            icon,
+            parent: null,
+            modal: false
           }
-
-          const windowTitle = t('task.task-completed-title') || '下载完成'
-          try {
-            win.setTitle(windowTitle)
-          } catch (e) {
-            completedTaskWindows.value.delete(gid)
-            return
+        }).then((result) => {
+          if (!result || !result.ok) {
+            forgetTaskWindow(win.key)
           }
-
-          if (hideAppMenu) {
-            if (typeof win.setMenuBarVisibility === 'function') {
-              win.setMenuBarVisibility(false)
-            }
-            if (win.setMenu) {
-              win.setMenu(null)
-            }
-          }
-
-          if (isMac) {
-            // macOS：下载完成弹窗是独立提示窗。show()/focus() 会把处于后台的
-            // 应用整体激活，macOS 随之把主窗口一并提到最前——这正是用户看到的
-            // “弹窗出现时主窗口也被置前”。改用 showInactive() 只显示弹窗、
-            // 不激活应用/不动主窗口层级，并用 floating 层级让弹窗浮于最前，
-            // 常驻直到用户点击关闭或处理（打开文件夹等）。
-            win.showInactive()
-            try {
-              win.setAlwaysOnTop(true, 'floating')
-            } catch (e) {
-              win.setAlwaysOnTop(true)
-            }
-          } else {
-            win.show()
-            win.focus()
-            try {
-              win.setAlwaysOnTop(true)
-            } catch (e) {
-              console.warn('[Lerxu] Failed to set always on top:', e.message)
-            }
-          }
+        }).catch((e) => {
+          console.error('[Lerxu] Failed to open completed task window:', e)
+          forgetTaskWindow(win.key)
         })
+        // 标题 / 菜单栏 / 显示时机（含 macOS 的 showInactive + floating）
+        // 都由主进程在 ready-to-show 里处理，这里不再重复一次
       } catch (e) {
         console.error('[Lerxu] Failed to open completed task window:', e)
       }

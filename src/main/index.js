@@ -1,14 +1,8 @@
 import { join } from 'node:path'
 import { app } from 'electron'
-import is from 'electron-is'
-import { initialize } from '@electron/remote/main'
+import is from '@shared/platform'
 
 import Launcher from './Launcher'
-
-/**
- * initialize the main-process side of the remote module
- */
-initialize()
 
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
 

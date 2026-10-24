@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
+import { isEmpty } from '@shared/utils/object'
 import { ref, computed, shallowRef } from 'vue'
-import isEmpty from 'lodash/isEmpty'
+
 import { ipcRenderer } from 'electron'
 
 import api from '@/api'

@@ -1,4 +1,4 @@
-import is from 'electron-is'
+import is from '@shared/platform'
 import path from 'path'
 
 /* 主进程经 vite 构建后，dev 与 prod 的 __dirname 恒为 dist/electron，

@@ -30,12 +30,12 @@
 // Options API 父组件通过 [SelectDirectory.name]: SelectDirectory 注册，必须有 name
 defineOptions({ name: 'mo-select-directory' })
 
-import { dialog } from '@electron/remote'
+import { openDialog } from '@/utils/nativeBridge'
 
 const emit = defineEmits(['selected'])
 
 const onFolderClick = () => {
-  dialog.showOpenDialog({
+  openDialog({
     properties: ['openDirectory', 'createDirectory']
   }).then(({ canceled, filePaths }) => {
     if (canceled || filePaths.length === 0) {

@@ -30,7 +30,7 @@
 </template>
 <script setup>
 import { ref, computed, watch, onBeforeMount, onMounted, onUnmounted } from 'vue'
-import is from 'electron-is'
+import is from '@shared/platform'
 import { pathToFileURL } from 'node:url'
 import { ipcRenderer } from 'electron'
 import { ElConfigProvider, ElMessage } from 'element-plus'

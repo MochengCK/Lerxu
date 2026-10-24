@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { join } from 'node:path'
 import { Tray, Menu, nativeImage } from 'electron'
-import is from 'electron-is'
+import is from '@shared/platform'
 
 import { APP_RUN_MODE, APP_THEME } from '@shared/constants'
 import { getInverseTheme } from '@shared/utils'

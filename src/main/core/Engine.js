@@ -1,7 +1,7 @@
 import { spawn, execFile } from 'node:child_process'
 import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import is from 'electron-is'
+import is from '@shared/platform'
 
 import logger from './LogManager'
 import {
@@ -753,6 +753,15 @@ export default class Engine {
         }
         args.push(`--${k}=${enabled ? 'true' : 'false'}`)
       }
+    }
+    // 端口映射开关：应用层键是 userConfig 的 enable-upnp，引擎只认
+    // bt-port-mapping（引擎默认 true）。这里启动即注入，保证用户关掉后
+    // 即使引擎会话文件丢失/首次安装也不会被默认值重新打开；运行中修改
+    // 仍由 savePreference 经 changeGlobalOption 热推送。
+    const upnpEnabled = this.userConfig && this.userConfig['enable-upnp']
+    if (upnpEnabled !== undefined) {
+      const enabled = upnpEnabled === true || upnpEnabled === 'true'
+      args.push(`--bt-port-mapping=${enabled ? 'true' : 'false'}`)
     }
     const diskCache = this.systemConfig['disk-cache']
     if (diskCache) {

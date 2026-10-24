@@ -6,8 +6,8 @@
  * 近 10ms）。它们在整个进程生命周期里都是常量，没必要反复问主进程。
  *
  * 主进程在创建窗口之前把它们写进自己的环境变量（`LERXU_*`），渲染进程作为
- * 子进程继承 —— 零 IPC、零等待。只有环境缺失（单测 / 非标准启动）时才回退到
- * remote 或 `process.execPath`，保证任何情况下都能拿到值。
+ * 子进程继承 —— 零 IPC、零等待。**这是唯一来源**：remote 已从项目里移除，
+ * 不要在这里再引入任何同步 IPC 回退。
  */
 
 const readEnv = (key) => {
@@ -18,20 +18,15 @@ const readEnv = (key) => {
   }
 }
 
-let _remoteApp
-let _remoteTried = false
+let warned = false
 
-function remoteApp () {
-  if (_remoteTried) {
-    return _remoteApp
+/** 环境缺失只可能出现在「不在 Electron 里跑」的场景（单测 / 浏览器直开 dev server） */
+function warnMissing (name, key) {
+  if (warned) {
+    return
   }
-  _remoteTried = true
-  try {
-    _remoteApp = require('@electron/remote').app
-  } catch (_) {
-    _remoteApp = undefined
-  }
-  return _remoteApp
+  warned = true
+  console.warn(`[Lerxu] 缺少 ${key} 环境变量，${name} 不可用（是否在 Electron 之外运行？）`)
 }
 
 /** 用户数据目录（配置、会话、历史记录都在这里） */
@@ -40,12 +35,7 @@ export function getUserDataPath () {
   if (fromEnv) {
     return fromEnv
   }
-  try {
-    return remoteApp().getPath('userData')
-  } catch (_) { }
-  try {
-    return require('electron').app.getPath('userData')
-  } catch (_) { }
+  warnMissing('用户数据目录', 'LERXU_USER_DATA')
   return ''
 }
 
@@ -55,13 +45,13 @@ export function getExePath () {
   if (fromEnv) {
     return fromEnv
   }
-  try {
-    return remoteApp().getPath('exe')
-  } catch (_) { }
+  // 渲染进程的 process.execPath 是 Electron 自己的可执行文件，与主进程
+  // `app.getPath('exe')` 在 dev 下同值、打包后同值 —— 作为兜底足够
   try {
     return process.execPath || ''
-  } catch (_) { }
-  return ''
+  } catch (_) {
+    return ''
+  }
 }
 
 /** 应用根目录（dev 下是仓库根，打包后是 app.asar 路径） */
@@ -70,8 +60,6 @@ export function getAppPath () {
   if (fromEnv) {
     return fromEnv
   }
-  try {
-    return remoteApp().getAppPath()
-  } catch (_) { }
+  warnMissing('应用根目录', 'LERXU_APP_PATH')
   return ''
 }

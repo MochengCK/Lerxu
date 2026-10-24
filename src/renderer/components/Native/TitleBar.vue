@@ -81,9 +81,9 @@ defineOptions({ name: 'mo-title-bar' })
 
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import i18n from '@/plugins/i18n' // vue-i18n legacy 模式下 useI18n() 会抛错，直接用共享实例
-import { getCurrentWindow } from '@electron/remote'
+import { windowAction, getWindowBounds, setWindowBounds } from '@/utils/nativeBridge'
 import { ipcRenderer } from 'electron'
-import is from 'electron-is'
+import is from '@shared/platform'
 import { commands } from '@/components/CommandManager/instance'
 import { TASK_STATUS } from '@shared/constants'
 import { useTaskStore } from '@/store/task'
@@ -103,7 +103,6 @@ const { t } = i18n.global
 const logoMenuVisible = ref(false)
 const activeMenu = ref('')
 
-const win = computed(() => getCurrentWindow())
 
 // 选中任务驱动菜单可用性：未选中任何任务时，暂停/继续/删除等
 // 针对选中项的操作一律禁用（灰色不可点）
@@ -258,7 +257,6 @@ const handleMenuAction = (item) => {
     }
     return
   }
-  const w = win.value
   switch (item.role) {
     case 'undo': document.execCommand('undo'); break
     case 'redo': document.execCommand('redo'); break
@@ -267,23 +265,19 @@ const handleMenuAction = (item) => {
     case 'paste': document.execCommand('paste'); break
     case 'delete': document.execCommand('delete'); break
     case 'selectall': document.execCommand('selectAll'); break
-    case 'reload': w.webContents.reload(); break
-    case 'close': w.close(); break
-    case 'minimize': w.minimize(); break
-    case 'zoom':
-      if (w.isMaximized()) { w.unmaximize() } else { w.maximize() }
-      break
-    case 'togglefullscreen': w.setFullScreen(!w.isFullScreen()); break
-    case 'front': w.moveTop(); break
-    case 'toggledevtools': w.webContents.toggleDevTools(); break
+    case 'reload': windowAction('reload'); break
+    case 'close': windowAction('close'); break
+    case 'minimize': windowAction('minimize'); break
+    case 'zoom': windowAction('toggle-maximize'); break
+    case 'togglefullscreen': windowAction('toggle-fullscreen'); break
+    case 'front': windowAction('front'); break
+    case 'toggledevtools': windowAction('toggle-devtools'); break
   }
 }
 
-const handleMinimize = () => win.value.minimize()
-const handleMaximize = () => {
-  if (win.value.isMaximized()) { win.value.unmaximize() } else { win.value.maximize() }
-}
-const handleClose = () => win.value.close()
+const handleMinimize = () => windowAction('minimize')
+const handleMaximize = () => windowAction('toggle-maximize')
+const handleClose = () => windowAction('close')
 
 // --- macOS 顶部拖拽带：按住控件拖动 ---
 // 顶部带的控件是 no-drag（保证可点击/输入），但 no-drag 会把拖拽整个吞掉；
@@ -319,17 +313,24 @@ function onDocumentPointerDown (e) {
   if (!_hitTitleBandControl(e.clientX, e.clientY)) {
     return
   }
-  const pos = getCurrentWindow().getPosition()
   _titleDrag = {
     pointerId: e.pointerId,
     startScreenX: e.screenX,
     startScreenY: e.screenY,
     lastScreenX: e.screenX,
     lastScreenY: e.screenY,
-    winX: pos[0],
-    winY: pos[1],
+    // 窗口位置是异步取的（IPC）；拿到之前不移动，避免从 (0,0) 起跳
+    winX: null,
+    winY: null,
     started: false
   }
+  const drag = _titleDrag
+  getWindowBounds().then((bounds) => {
+    if (_titleDrag === drag) {
+      drag.winX = bounds.x
+      drag.winY = bounds.y
+    }
+  }).catch(() => {})
   window.addEventListener('pointermove', onDocumentPointerMove, true)
   window.addEventListener('pointerup', onDocumentPointerEnd, true)
   window.addEventListener('pointercancel', onDocumentPointerEnd, true)
@@ -363,10 +364,13 @@ function onDocumentPointerMove (e) {
     if (!s || !s.started) {
       return
     }
-    getCurrentWindow().setPosition(
-      Math.round(s.winX + (s.lastScreenX - s.startScreenX)),
-      Math.round(s.winY + (s.lastScreenY - s.startScreenY))
-    )
+    if (s.winX == null || s.winY == null) {
+      return
+    }
+    setWindowBounds({
+      x: Math.round(s.winX + (s.lastScreenX - s.startScreenX)),
+      y: Math.round(s.winY + (s.lastScreenY - s.startScreenY))
+    })
   })
 }
 

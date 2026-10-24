@@ -58,7 +58,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { ipcRenderer } from 'electron'
-import is from 'electron-is'
+import is from '@shared/platform'
 import { ElMessage } from 'element-plus'
 import i18n from '@/plugins/i18n'
 import { createMsg } from '@/components/Msg'

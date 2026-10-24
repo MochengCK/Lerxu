@@ -1,13 +1,16 @@
 import { EventEmitter } from 'node:events'
+import { isEmpty, isEqual } from '@shared/utils/object'
 import { spawn } from 'node:child_process'
 import { readFile, unlink, unlinkSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { extname, basename, join, dirname } from 'node:path'
+import { extname, basename, join } from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
-import { app, clipboard, shell, dialog, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, clipboard, shell, dialog, ipcMain, screen } from 'electron'
 import { createServer } from 'node:http'
 import WS from 'ws'
-import is from 'electron-is'
-import { isEmpty, isEqual } from 'lodash'
+import is from '@shared/platform'
+
+import { registerNativeBridge } from './core/NativeBridge'
+import ConfigStore from './core/ConfigStore'
 
 import {
   APP_RUN_MODE,
@@ -53,7 +56,6 @@ import { readMediaMeta, mediaKindOf } from './utils/mediaMeta'
 import { setupLocaleManager } from './ui/Locale'
 import Engine from './core/Engine'
 import EngineClient from './core/EngineClient'
-import UPnPManager from './core/UPnPManager'
 import AutoLaunchManager from './core/AutoLaunchManager'
 import UpdateManager from './core/UpdateManager'
 import EnergyManager from './core/EnergyManager'
@@ -170,6 +172,12 @@ export default class Application extends EventEmitter {
     // get-app-config 会直接失败导致前端永远不挂载。
     // 各 handler 内部已对未就绪组件做守卫，提前注册是安全的。
     try {
+      // 系统语言必须在 initLocaleManager 之前写进 LERXU_LOCALE：
+      // `getLanguage('auto')` 读的就是它（渲染进程也继承同一个值）。
+      // 之前只在创建窗口前注入，主进程解析 'auto' 时读到空值 → 恒回退 en-US，
+      // 表现为「界面是中文、macOS 顶部菜单却是英文」（2026-10-24 实测）。
+      this.injectSystemLocale()
+
       this.initContext()
 
       this.initConfigManager()
@@ -183,8 +191,6 @@ export default class Application extends EventEmitter {
       this.initWindowManager()
 
       this.handleIpcInvokes()
-
-      this.initUPnPManager()
     } catch (err) {
       this._earlyInitReject(err)
       throw err
@@ -1104,6 +1110,21 @@ export default class Application extends EventEmitter {
     }
   }
 
+  /**
+   * 把系统语言写进 `LERXU_LOCALE`（主进程与所有渲染进程共用）。
+   *
+   * ⚠️ 必须在 `initLocaleManager()` 之前调用：`shared/locales` 的
+   * `getSystemLocale()` 只认这个环境变量（不再为 `app.getLocale()` 走 IPC），
+   * 而 `getLanguage('auto')` 正是用它解析「跟随系统」。
+   */
+  injectSystemLocale () {
+    try {
+      process.env.LERXU_LOCALE = app.getLocale()
+    } catch (e) {
+      logger.warn('[Lerxu] read system locale failed:', e && e.message ? e.message : e)
+    }
+  }
+
   initContext () {
     this.context = new Context()
   }
@@ -1351,11 +1372,10 @@ export default class Application extends EventEmitter {
   }
 
   // 缓存 taskHistory store 实例，避免每次添加任务 / 退出时重复创建
-  // electron-store 并全量解析历史 JSON（历史越大同步阻塞越明显）
+  // 并全量解析历史 JSON（历史越大同步阻塞越明显）
   getTaskHistoryStore () {
     if (!this._taskHistoryStore) {
-      const Store = require('electron-store')
-      this._taskHistoryStore = new Store({
+      this._taskHistoryStore = new ConfigStore({
         name: 'taskHistory',
         // 与 quit() 中历史记录 store 的 cwd 保持一致
         cwd: process.env.NODE_ENV === 'development' ? './dev-config' : undefined
@@ -1686,94 +1706,17 @@ export default class Application extends EventEmitter {
     })
   }
 
-  initUPnPManager () {
-    this.upnp = new UPnPManager()
-
-    this.watchUPnPEnabledChange()
-
-    this.watchUPnPPortsChange()
-
-    const enabled = this.configManager.getUserConfig('enable-upnp')
-    if (!enabled) {
-      return
-    }
-
-    this.startUPnPMapping()
-  }
-
-  async startUPnPMapping () {
-    // 分工：BT TCP 端口由引擎端 UPnPContext/NatPmpContext 映射（与 DHT
-    // 防火墙感知联动、UPnP 失败自动回退 NAT-PMP）；主进程只负责引擎不
-    // 映射的 DHT UDP 端口，避免同一端口被两端重复映射（部分路由器上
-    // 两次 AddPortMapping 会互相覆盖，导致映射失效）。
-    const dhtPort = this.configManager.getSystemConfig('dht-listen-port')
-
-    try {
-      await this.upnp.map(dhtPort)
-    } catch (e) {
-      logger.warn('[Lerxu] start UPnP mapping fail', e.message)
-    }
-  }
-
-  async stopUPnPMapping () {
-    const dhtPort = this.configManager.getSystemConfig('dht-listen-port')
-
-    try {
-      await this.upnp.unmap(dhtPort)
-    } catch (e) {
-      logger.warn('[Lerxu] stop UPnP mapping fail', e)
-    }
-  }
-
-  watchUPnPPortsChange () {
-    const { systemConfig } = this.configManager
-    // 只监听 DHT 端口：BT TCP 端口的映射/重映射由引擎侧负责，
-    // 主进程不参与，避免双端竞争同一映射。
-    const watchKeys = ['dht-listen-port']
-
-    watchKeys.forEach((key) => {
-      this.configListeners[key] = systemConfig.onDidChange(key, async (newValue, oldValue) => {
-        logger.info('[Lerxu] detected port change event:', key, newValue, oldValue)
-        const enable = this.configManager.getUserConfig('enable-upnp')
-        if (!enable) {
-          return
-        }
-
-        const promises = [
-          this.upnp.unmap(oldValue),
-          this.upnp.map(newValue)
-        ]
-        try {
-          await Promise.allSettled(promises)
-        } catch (e) {
-          logger.info('[Lerxu] change UPnP port mapping failed:', e)
-        }
-      })
-    })
-  }
-
-  watchUPnPEnabledChange () {
-    const { userConfig } = this.configManager
-    const key = 'enable-upnp'
-    this.configListeners[key] = userConfig.onDidChange(key, async (newValue, oldValue) => {
-      logger.info('[Lerxu] detected enable-upnp value change event:', newValue, oldValue)
-      if (newValue) {
-        this.startUPnPMapping()
-      } else {
-        await this.stopUPnPMapping()
-        this.upnp.closeClient()
-      }
-    })
-  }
-
-  async shutdownUPnPManager () {
-    const enable = this.configManager.getUserConfig('enable-upnp')
-    if (enable) {
-      await this.stopUPnPMapping()
-    }
-
-    this.upnp.closeClient()
-  }
+  // 端口映射全部交给引擎：XferRust 的 xfer-discovery/upnp.rs 同时实现
+  // UPnP IGD 与 NAT-PMP，并在绑定后按**实际** BT 监听端口做 TCP+UDP 双映射、
+  // 2 小时租约自动续期、停机撤销。应用侧原先用 @motrix/nat-api 只补映射
+  // DHT 的 UDP 端口，但：
+  //   1) DHT announce 用的是 BT 端口（implied_port=false），DHT 端口只影响
+  //      「别的节点能否向我们查询」，对自身的下载/做种没有收益；
+  //   2) 引擎的 DHT 节点是**每任务**一个，只有第一个任务能拿到配置的
+  //      dht-listen-port，其余回退随机端口，应用映射的那个端口大概率没人用；
+  //   3) nat-api 的 enablePMP 默认 false，应用从未真正走过 NAT-PMP，
+  //      却按「UPnP / NAT-PMP」两个协议做宣传，且一个 UDP 端口还多映射了 TCP。
+  // 因此删除该依赖，只保留引擎侧的映射（开关 enable-upnp 仍照旧生效）。
 
   syncTrackers (source, proxy) {
     if (isEmpty(source)) {
@@ -2071,12 +2014,6 @@ export default class Application extends EventEmitter {
       return
     }
 
-    // 系统语言（必须在 ready 之后取）写进环境变量，渲染进程继承后不必再为
-    // `app.getLocale()` 走一次 @electron/remote 的同步 IPC
-    try {
-      process.env.LERXU_LOCALE = app.getLocale()
-    } catch (_) { }
-
     const win = this.showPage(page, options)
     if (!win) {
       logger.error('[Lerxu] showPage returned null, cannot start')
@@ -2123,10 +2060,6 @@ export default class Application extends EventEmitter {
       logger.error('[Lerxu] windowManager still not initialized after retry')
       return
     }
-
-    try {
-      process.env.LERXU_LOCALE = app.getLocale()
-    } catch (_) { }
 
     const win = this.showPage(page)
     if (win && !this.isReady) {
@@ -2484,7 +2417,6 @@ export default class Application extends EventEmitter {
 
       const promises = [
         this.stopEngine(),
-        this.shutdownUPnPManager(),
         this.energyManager.stopPowerSaveBlocker(),
         this.trayManager.destroy()
       ]
@@ -2996,12 +2928,11 @@ export default class Application extends EventEmitter {
       }).catch((e) => {
         logger.warn('[Lerxu] changeGlobalOption (seeding) failed:', e && e.message)
       })
-      // NAT/传输类开关（enable-upnp / enable-utp / enable-nat-pmp）属于
-      // userKeys（Engine.js 从 userConfig 注入启动参数），引擎侧现已
-      // 注册 changeGlobalOption 支持——这里单独热更新推送，让开关无需
-      // 重启引擎即可生效（UPnP/NAT-PMP 的实际端口映射动作仍在引擎
-      // 启动期执行，热更新仅更新配置值）。
-      const natTransportKeys = ['enable-upnp', 'enable-utp', 'enable-nat-pmp', 'bt-connect-protocol']
+      // NAT/传输类开关（enable-upnp / enable-utp）属于 userKeys（Engine.js
+      // 从 userConfig 注入启动参数），引擎侧注册了 changeGlobalOption 支持
+      // ——这里单独热更新推送，让开关不必重启引擎（端口映射的建立/续期
+      // 由引擎按新开关在下一次任务启动时执行）。
+      const natTransportKeys = ['enable-upnp', 'enable-utp', 'bt-connect-protocol']
       const hotNat = {}
       for (const k of natTransportKeys) {
         if (user[k] !== undefined) {
@@ -4612,6 +4543,12 @@ export default class Application extends EventEmitter {
     }
     this._ipcMessagesRegistered = true
 
+    // 原生能力桥（dialog / Menu / shell / 窗口操作 / nativeImage）：
+    // 取代渲染进程里的 @electron/remote（同步 IPC，已废弃）
+    registerNativeBridge({
+      getWindowManager: () => this.windowManager
+    })
+
     ipcMain.on('command', (event, command, ...args) => {
       logger.log('[Lerxu] ipc receive command', command, ...args)
       this.emit(command, ...args)
@@ -4625,7 +4562,7 @@ export default class Application extends EventEmitter {
     // Handle minimize-progress-window
     ipcMain.on('minimize-progress-window', (event) => {
       try {
-        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        const win = BrowserWindow.fromWebContents(event.sender)
         if (win && typeof win.minimize === 'function') {
           win.minimize()
         }
@@ -4637,7 +4574,7 @@ export default class Application extends EventEmitter {
     // Handle close-progress-window
     ipcMain.on('close-progress-window', (event) => {
       try {
-        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        const win = BrowserWindow.fromWebContents(event.sender)
         if (win && typeof win.close === 'function') {
           win.close()
         }
@@ -4649,7 +4586,7 @@ export default class Application extends EventEmitter {
     // Handle close-completed-task-window
     ipcMain.on('close-completed-task-window', (event, gid) => {
       try {
-        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        const win = BrowserWindow.fromWebContents(event.sender)
         if (win && typeof win.close === 'function') {
           win.close()
         }
@@ -4661,12 +4598,14 @@ export default class Application extends EventEmitter {
     // Handle open-completed-task-folder
     ipcMain.on('open-completed-task-folder', (event, { gid, filePath }) => {
       try {
-        const { showItemInFolder } = require('./utils/index')
+        // showItemInFolder 已在文件顶部从 './utils' 静态导入：这里**不能**写
+        // require('./utils/index') —— rollup 不会把运行时 require 内联，
+        // 打包后按 dist/electron/ 去解析直接 "Cannot find module"（2026-10-23 实际报错）
         if (filePath) {
           showItemInFolder(filePath)
         }
         // Close the window after opening folder
-        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        const win = BrowserWindow.fromWebContents(event.sender)
         if (win && typeof win.close === 'function') {
           win.close()
         }
@@ -4678,12 +4617,11 @@ export default class Application extends EventEmitter {
     // Handle open-completed-task-file
     ipcMain.on('open-completed-task-file', (event, { gid, filePath }) => {
       try {
-        const { shell } = require('electron')
         if (filePath) {
           shell.openPath(filePath)
         }
         // Close the window after opening file
-        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        const win = BrowserWindow.fromWebContents(event.sender)
         if (win && typeof win.close === 'function') {
           win.close()
         }
@@ -4695,7 +4633,7 @@ export default class Application extends EventEmitter {
     // Handle minimize-completed-task-window
     ipcMain.on('minimize-completed-task-window', (event, gid) => {
       try {
-        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        const win = BrowserWindow.fromWebContents(event.sender)
         if (win && typeof win.minimize === 'function') {
           win.minimize()
         }
@@ -4961,7 +4899,9 @@ export default class Application extends EventEmitter {
     const systemConfig = this.configManager.getSystemConfig()
     const userConfig = this.configManager.getUserConfig()
     const context = this.context.get()
-    const appVersion = require('../../package.json').version
+    // 不用 require('../../package.json')：那要靠 dist/electron 的相对路径凑巧命中，
+    // 换成 Electron 自己的版本查询（值与 package.json 的 version 一致）
+    const appVersion = app.getVersion()
 
     // 注意：这里不能重建应用菜单（menuManager.setup）。该函数在每个窗口
     // 加载时都会被同步 IPC 调用，菜单重建只应发生在 keymap 变更监听里。
@@ -5141,7 +5081,7 @@ export default class Application extends EventEmitter {
     // Get progress window size
     ipcMain.handle('get-progress-window-size', async (event) => {
       try {
-        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        const win = BrowserWindow.fromWebContents(event.sender)
         if (win) {
           const size = win.getContentSize()
           return { width: size[0], height: size[1] }
@@ -5156,7 +5096,7 @@ export default class Application extends EventEmitter {
     ipcMain.handle('resize-progress-window', async (event, payload) => {
       try {
         const { isPanelOpen, panelHeight, initialWidth } = payload || {}
-        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        const win = BrowserWindow.fromWebContents(event.sender)
         if (win) {
           const size = win.getContentSize()
           const currentWidth = initialWidth > 0 ? initialWidth : size[0]
@@ -5173,7 +5113,7 @@ export default class Application extends EventEmitter {
     // Set progress window always on top
     ipcMain.handle('set-progress-window-always-on-top', async (event, isPinned) => {
       try {
-        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        const win = BrowserWindow.fromWebContents(event.sender)
         if (win && typeof win.setAlwaysOnTop === 'function') {
           win.setAlwaysOnTop(isPinned)
           return { success: true }
@@ -5205,7 +5145,8 @@ export default class Application extends EventEmitter {
     })
 
     // 在文件管理器中打开扩展目录本身（仅打开一次）
-    // 必须在主进程执行：@electron/remote 的 shell 在渲染进程中行为不一致。
+    // 必须在主进程执行：渲染层没有 shell 的直接访问（remote 已移除，
+    // 原生能力统一走 core/NativeBridge.js 与这里的专用通道）。
     // 注意：不要再通过 explorer/Finder/xdg-open 二次"激活"——它们带路径
     // 参数时会新开一个窗口而不是聚焦已有窗口，曾导致出现两个相同的
     // 扩展目录窗口；渲染层已改为先启动浏览器、延迟后再打开本目录，

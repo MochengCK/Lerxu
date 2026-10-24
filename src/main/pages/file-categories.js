@@ -60,6 +60,24 @@
     return Object.prototype.hasOwnProperty.call(translations, key) ? translations[key] : ''
   }
 
+  /**
+   * 关闭本窗口。
+   * 窗口归主进程所有，按调用者自身的 sender 关（不再走 remote 的 getCurrentWindow）；
+   * 桥不可用时退回浏览器原生的 window.close()。
+   */
+  function closeCurrentWindow () {
+    try {
+      if (window.lerxuNative) {
+        window.lerxuNative.closeWindow()
+      } else {
+        window.close()
+      }
+    } catch (e) {
+      console.error('[Lerxu:FileCategories] Failed to close window:', e)
+      try { window.close() } catch (_) { }
+    }
+  }
+
   function applyTheme (theme) {
     const isDark = theme === 'dark'
     log('Applying theme:', theme, 'isDark:', isDark)
@@ -413,15 +431,7 @@
         if (saveSettings()) {
           originalCategories = JSON.parse(JSON.stringify(categories))
           alert(t('file-categories-save-success') || '保存成功')
-          try {
-            if (window.require) {
-              const { getCurrentWindow } = window.require('@electron/remote')
-              const win = getCurrentWindow()
-              if (win) win.close()
-            }
-          } catch (e) {
-            window.close()
-          }
+          closeCurrentWindow()
         } else {
           alert(t('file-categories-save-failed') || '保存失败')
         }
@@ -437,27 +447,11 @@
             t('file-categories-close-title') || '关闭确认',
             t('file-categories-close-confirm') || '有未保存的更改，确定要关闭吗？',
             () => {
-              try {
-                if (window.require) {
-                  const { getCurrentWindow } = window.require('@electron/remote')
-                  const win = getCurrentWindow()
-                  if (win) win.close()
-                }
-              } catch (e) {
-                window.close()
-              }
+              closeCurrentWindow()
             }
           )
         } else {
-          try {
-            if (window.require) {
-              const { getCurrentWindow } = window.require('@electron/remote')
-              const win = getCurrentWindow()
-              if (win) win.close()
-            }
-          } catch (e) {
-            window.close()
-          }
+          closeCurrentWindow()
         }
       })
     }
@@ -467,10 +461,8 @@
     if (minimizeBtn) {
       minimizeBtn.addEventListener('click', () => {
         try {
-          if (window.require) {
-            const { getCurrentWindow } = window.require('@electron/remote')
-            const win = getCurrentWindow()
-            if (win) win.minimize()
+          if (window.lerxuNative) {
+            window.lerxuNative.minimizeWindow()
           }
         } catch (e) {
           console.error('[Lerxu:FileCategories] Failed to minimize window:', e)

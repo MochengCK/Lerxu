@@ -77,43 +77,11 @@
     }
   }
 
-  // 添加主题同步函数，从父窗口获取当前主题
-  function syncThemeFromParent () {
-    try {
-      if (window.require) {
-        const { getCurrentWindow } = window.require('@electron/remote')
-        const win = getCurrentWindow()
-        const parentWindow = win.getParentWindow()
-
-        if (parentWindow && parentWindow.webContents) {
-          // 请求父窗口发送当前主题
-          parentWindow.webContents.send('request-current-theme')
-          log('Requested current theme from parent window')
-        }
-      }
-    } catch (e) {
-      console.error('[Lerxu:VideoSnifferFormat] Failed to sync theme from parent:', e)
-    }
-  }
-
-  // 添加语言同步函数，从父窗口获取当前语言
-  function syncLocaleFromParent () {
-    try {
-      if (window.require) {
-        const { getCurrentWindow } = window.require('@electron/remote')
-        const win = getCurrentWindow()
-        const parentWindow = win.getParentWindow()
-
-        if (parentWindow && parentWindow.webContents) {
-          // 请求父窗口发送当前语言
-          parentWindow.webContents.send('request-current-locale')
-          log('Requested current locale from parent window')
-        }
-      }
-    } catch (e) {
-      console.error('[Lerxu:VideoSnifferFormat] Failed to sync locale from parent:', e)
-    }
-  }
+  // 主题与语言不需要再向父窗口"请求"：主进程创建本窗口时会在 dom-ready
+  // 推一次 sync-theme / sync-locale，之后主题或语言变化时父窗口用
+  // `native:broadcast` 广播过来（见 video-sniffer.js 的 notifyChildWindows）。
+  // 原来那条「子窗问、父窗答」的路径本来也不通 —— 父窗用 ipcRenderer.send
+  // 回复的是主进程，而不是这个子窗。
 
   // 处理语言变化
   async function handleLocaleChange (newLocale) {
@@ -175,10 +143,6 @@
     await init()
     getCurrentTheme()
 
-    // 同步父窗口主题和语言
-    syncThemeFromParent()
-    syncLocaleFromParent()
-
     applyTranslations()
 
     const formatInput = document.getElementById('formatInput')
@@ -186,70 +150,43 @@
     const cancelBtn = document.getElementById('cancelBtn')
     const closeBtn = document.getElementById('closeBtn')
 
-    if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
-        try {
-          if (window.require) {
-            const { getCurrentWindow } = window.require('@electron/remote')
-            const win = getCurrentWindow()
-            if (win) {
-              win.close()
-            }
-          }
-        } catch (e) {
-          console.error('[Lerxu:VideoSnifferFormat] Failed to close window:', e)
+    const closeWindow = () => {
+      try {
+        if (window.lerxuNative) {
+          window.lerxuNative.closeWindow()
+        } else {
           window.close()
         }
-      })
+      } catch (e) {
+        console.error('[Lerxu:VideoSnifferFormat] Failed to close window:', e)
+        window.close()
+      }
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', closeWindow)
     }
 
     const confirmHandler = () => {
       const format = formatInput.value.trim().toLowerCase()
       if (format) {
         try {
-          if (window.require) {
-            const { getCurrentWindow } = window.require('@electron/remote')
-            const win = getCurrentWindow()
-            const parentWindow = win.getParentWindow()
-
-            if (parentWindow) {
-              parentWindow.webContents.send('video-sniffer-format-added', format)
-              log('Format sent via IPC:', format)
-            } else {
-              console.error('[Lerxu:VideoSnifferFormat] No parent window found')
-            }
+          if (window.lerxuNative) {
+            // 结果回传给父窗口（主进程按 event.sender 的 parent 转发）
+            window.lerxuNative.sendToParent('video-sniffer-format-added', format)
+            log('Format sent to parent via IPC:', format)
+          } else {
+            console.error('[Lerxu:VideoSnifferFormat] Native bridge unavailable')
           }
         } catch (e) {
           console.error('[Lerxu:VideoSnifferFormat] Failed to send format via IPC:', e)
         }
       }
-      try {
-        if (window.require) {
-          const { getCurrentWindow } = window.require('@electron/remote')
-          const win = getCurrentWindow()
-          if (win) {
-            win.close()
-          }
-        }
-      } catch (e) {
-        console.error('[Lerxu:VideoSnifferFormat] Failed to close window:', e)
-        window.close()
-      }
+      closeWindow()
     }
 
     const cancelHandler = () => {
-      try {
-        if (window.require) {
-          const { getCurrentWindow } = window.require('@electron/remote')
-          const win = getCurrentWindow()
-          if (win) {
-            win.close()
-          }
-        }
-      } catch (e) {
-        console.error('[Lerxu:VideoSnifferFormat] Failed to close window:', e)
-        window.close()
-      }
+      closeWindow()
     }
 
     if (confirmBtn) {
@@ -334,30 +271,6 @@
         // 监听来自父窗口的语言同步消息
         ipcRenderer.on('sync-locale', (_, localeData) => {
           log('Locale sync received from parent:', localeData)
-          if (localeData && localeData.locale) {
-            handleLocaleChange(localeData.locale)
-          }
-        })
-
-        // 监听父窗口的主题请求响应
-        ipcRenderer.on('current-theme-response', (_, themeData) => {
-          log('Current theme response received:', themeData)
-          if (themeData && themeData.theme) {
-            const theme = themeData.theme
-            if (theme === 'dark') {
-              applyTheme('dark')
-            } else if (theme === 'light') {
-              applyTheme('light')
-            } else if (theme === 'auto') {
-              const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-              applyTheme(isDark ? 'dark' : 'light')
-            }
-          }
-        })
-
-        // 监听父窗口的语言请求响应
-        ipcRenderer.on('current-locale-response', (_, localeData) => {
-          log('Current locale response received:', localeData)
           if (localeData && localeData.locale) {
             handleLocaleChange(localeData.locale)
           }

@@ -5,7 +5,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import is from 'electron-is'
+import is from '@shared/platform'
 import { ipcRenderer } from 'electron'
 import { ElMessage } from 'element-plus'
 import api from '@/api'

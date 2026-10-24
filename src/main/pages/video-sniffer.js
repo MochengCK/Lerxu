@@ -192,30 +192,29 @@
     adjustWindowSize()
   }
 
-  function adjustWindowSize () {
+  async function adjustWindowSize () {
     try {
-      if (window.require) {
-        const { getCurrentWindow } = window.require('@electron/remote')
-        const win = getCurrentWindow()
-        if (!win) return
+      const bridge = window.lerxuNative
+      if (!bridge) {
+        return
+      }
 
-        const formatList = document.getElementById('formatList')
-        if (!formatList) return
+      const formatList = document.getElementById('formatList')
+      if (!formatList) return
 
-        const formatCount = config.formats.length
-        const baseHeight = 420
-        const heightPerRow = 32
-        const formatsPerRow = Math.floor(500 / 80)
-        const rows = Math.ceil(formatCount / formatsPerRow)
-        const additionalHeight = rows > 1 ? (rows - 1) * heightPerRow : 0
-        const newHeight = baseHeight + additionalHeight
+      const formatCount = config.formats.length
+      const baseHeight = 420
+      const heightPerRow = 32
+      const formatsPerRow = Math.floor(500 / 80)
+      const rows = Math.ceil(formatCount / formatsPerRow)
+      const additionalHeight = rows > 1 ? (rows - 1) * heightPerRow : 0
+      const newHeight = baseHeight + additionalHeight
 
-        const [currentWidth, currentHeight] = win.getSize()
-        if (currentHeight !== newHeight) {
-          win.setSize(currentWidth, newHeight)
-          win.setMinimumSize(500, newHeight)
-          log('Window size adjusted to:', currentWidth, newHeight)
-        }
+      const bounds = await bridge.getWindowBounds()
+      if (bounds && bounds.height !== newHeight) {
+        bridge.setWindowSize(bounds.width, newHeight)
+        bridge.setMinimumSize(500, newHeight)
+        log('Window size adjusted to:', bounds.width, newHeight)
       }
     } catch (e) {
       console.error('[Lerxu:VideoSniffer] Failed to adjust window size:', e)
@@ -277,67 +276,44 @@
 
   async function showAddFormatDialog () {
     try {
-      if (window.require) {
-        const { BrowserWindow } = window.require('@electron/remote')
-        const { ipcRenderer } = window.require('electron')
+      const bridge = window.lerxuNative
+      if (!bridge || !window.require) {
+        return
+      }
+      const { ipcRenderer } = window.require('electron')
 
-        const parentWindow = BrowserWindow.getFocusedWindow()
+      // 先摘掉上一次的监听：同一时刻只允许一个「添加格式」子窗把结果回传进来
+      ipcRenderer.removeAllListeners('video-sniffer-format-added')
 
-        ipcRenderer.removeAllListeners('video-sniffer-format-added')
-
-        let useCustomFrame = false
-        let currentTheme = 'light'
-        let currentLocale = 'en-US'
-        try {
-          const appConfig = await ipcRenderer.invoke('get-app-config')
-          if (appConfig && appConfig['hide-app-menu']) {
-            useCustomFrame = appConfig['hide-app-menu']
-          }
-          if (appConfig && appConfig.theme) {
-            currentTheme = appConfig.theme
-          }
-
-          const appLocale = await ipcRenderer.invoke('get-app-locale')
-          if (appLocale) {
-            currentLocale = appLocale
-          }
-        } catch (e) {
-          console.error('[Lerxu:VideoSniffer] Failed to get app config:', e)
+      let currentTheme = 'light'
+      let currentLocale = 'en-US'
+      try {
+        const appConfig = await ipcRenderer.invoke('get-app-config')
+        if (appConfig && appConfig.theme) {
+          currentTheme = appConfig.theme
         }
 
-        const win = new BrowserWindow({
-          width: 400,
-          height: 220,
-          resizable: false,
-          maximizable: false,
-          minimizable: false,
-          frame: !useCustomFrame,
-          parent: parentWindow,
-          modal: true,
-          webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
-          }
-        })
+        const appLocale = await ipcRenderer.invoke('get-app-locale')
+        if (appLocale) {
+          currentLocale = appLocale
+        }
+      } catch (e) {
+        console.error('[Lerxu:VideoSniffer] Failed to get app config:', e)
+      }
 
-        const url = `file://${__dirname.replace(/\\/g, '/')}/video-sniffer-add-format.html`
+      ipcRenderer.once('video-sniffer-format-added', (_, format) => {
+        addFormat(format)
+      })
 
-        win.loadURL(url)
-
-        // 窗口加载完成后立即同步主题和语言
-        win.webContents.once('dom-ready', () => {
-          log('Child window DOM ready, syncing theme and locale:', currentTheme, currentLocale)
-          win.webContents.send('sync-theme', { theme: currentTheme })
-          win.webContents.send('sync-locale', { locale: currentLocale })
-        })
-
-        ipcRenderer.once('video-sniffer-format-added', (_, format) => {
-          addFormat(format)
-        })
-
-        win.on('closed', () => {
-          ipcRenderer.removeAllListeners('video-sniffer-format-added')
-        })
+      // 窗口由主进程创建（parent/modal/尺寸/主题语言同步都在那边），
+      // 这里只发一次 IPC —— 不再用 remote 的 `new BrowserWindow(...)`
+      const opened = await bridge.openAddFormatWindow({
+        theme: currentTheme,
+        locale: currentLocale
+      })
+      if (!opened) {
+        ipcRenderer.removeAllListeners('video-sniffer-format-added')
+        console.error('[Lerxu:VideoSniffer] Failed to open add format window')
       }
     } catch (e) {
       console.error('[Lerxu:VideoSniffer] Failed to open add format window:', e)
@@ -349,9 +325,9 @@
     if (!format) return
     if (config.formats.includes(format)) {
       try {
-        if (window.require) {
-          const { dialog } = window.require('@electron/remote')
-          dialog.showMessageBox({
+        const bridge = window.lerxuNative
+        if (bridge) {
+          bridge.showMessageBox({
             type: 'warning',
             title: t('video-sniffer-add-format'),
             message: t('video-sniffer-format-exists'),
@@ -417,12 +393,8 @@
     if (minimizeBtn) {
       minimizeBtn.addEventListener('click', () => {
         try {
-          if (window.require) {
-            const { getCurrentWindow } = window.require('@electron/remote')
-            const win = getCurrentWindow()
-            if (win) {
-              win.minimize()
-            }
+          if (window.lerxuNative) {
+            window.lerxuNative.minimizeWindow()
           }
         } catch (e) {
           console.error('[Lerxu:VideoSniffer] Failed to minimize window:', e)
@@ -433,12 +405,10 @@
     if (closeBtn) {
       closeBtn.addEventListener('click', () => {
         try {
-          if (window.require) {
-            const { getCurrentWindow } = window.require('@electron/remote')
-            const win = getCurrentWindow()
-            if (win) {
-              win.close()
-            }
+          if (window.lerxuNative) {
+            window.lerxuNative.closeWindow()
+          } else {
+            window.close()
           }
         } catch (e) {
           console.error('[Lerxu:VideoSniffer] Failed to close window:', e)
@@ -530,34 +500,9 @@
         })
 
         // 监听子窗口的主题请求
-        ipcRenderer.on('request-current-theme', async () => {
-          log('Child window requested current theme')
-          try {
-            const appConfig = await ipcRenderer.invoke('get-app-config')
-            if (appConfig && appConfig.theme) {
-              // 发送当前主题给请求的子窗口
-              ipcRenderer.send('current-theme-response', { theme: appConfig.theme })
-              log('Sent current theme to child window:', appConfig.theme)
-            }
-          } catch (e) {
-            console.error('[Lerxu:VideoSniffer] Failed to get current theme for child window:', e)
-          }
-        })
-
-        // 监听子窗口的语言请求
-        ipcRenderer.on('request-current-locale', async () => {
-          log('Child window requested current locale')
-          try {
-            const appLocale = await ipcRenderer.invoke('get-app-locale')
-            if (appLocale) {
-              // 发送当前语言给请求的子窗口
-              ipcRenderer.send('current-locale-response', { locale: appLocale })
-              log('Sent current locale to child window:', appLocale)
-            }
-          } catch (e) {
-            console.error('[Lerxu:VideoSniffer] Failed to get current locale for child window:', e)
-          }
-        })
+        // （子窗的主题/语言由主进程在 dom-ready 时推一次，变化时由下面两个
+        //   notify* 广播，所以不再需要「子窗来问、父窗回答」这条往返：
+        //   那条路径原本也不通 —— 父窗 `ipcRenderer.send` 发去的是主进程）
       }
     } catch (e) {
       console.error('[Lerxu:VideoSniffer] Failed to listen for theme changes:', e)
@@ -580,23 +525,13 @@
     }
 
     // 通知子窗口主题变化的函数
+    // 主进程的 `native:broadcast` 会把消息发给"除自己以外的所有窗口"，
+    // 与原来 BrowserWindow.getAllWindows() 里排除当前窗口等价
     function notifyChildWindows (themeData) {
       try {
-        if (window.require) {
-          const { BrowserWindow } = window.require('@electron/remote')
-          const allWindows = BrowserWindow.getAllWindows()
-          const currentWindow = BrowserWindow.getFocusedWindow()
-
-          allWindows.forEach(win => {
-            if (win !== currentWindow && win.webContents) {
-              try {
-                win.webContents.send('sync-theme', themeData)
-                log('Sent theme sync to child window:', themeData)
-              } catch (e) {
-                // 忽略已关闭的窗口
-              }
-            }
-          })
+        if (window.lerxuNative) {
+          window.lerxuNative.broadcast('sync-theme', themeData)
+          log('Sent theme sync to child windows:', themeData)
         }
       } catch (e) {
         console.error('[Lerxu:VideoSniffer] Failed to notify child windows:', e)
@@ -606,21 +541,9 @@
     // 通知子窗口语言变化的函数
     function notifyChildWindowsLocale (localeData) {
       try {
-        if (window.require) {
-          const { BrowserWindow } = window.require('@electron/remote')
-          const allWindows = BrowserWindow.getAllWindows()
-          const currentWindow = BrowserWindow.getFocusedWindow()
-
-          allWindows.forEach(win => {
-            if (win !== currentWindow && win.webContents) {
-              try {
-                win.webContents.send('sync-locale', localeData)
-                log('Sent locale sync to child window:', localeData)
-              } catch (e) {
-                // 忽略已关闭的窗口
-              }
-            }
-          })
+        if (window.lerxuNative) {
+          window.lerxuNative.broadcast('sync-locale', localeData)
+          log('Sent locale sync to child windows:', localeData)
         }
       } catch (e) {
         console.error('[Lerxu:VideoSniffer] Failed to notify child windows locale:', e)

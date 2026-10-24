@@ -330,7 +330,7 @@
 
 <script setup>
 import { ref, computed, getCurrentInstance, onBeforeUnmount, nextTick } from 'vue'
-import is from 'electron-is'
+import is from '@shared/platform'
 import { existsSync } from 'node:fs'
 import { isAbsolute, resolve, basename } from 'node:path'
 import { ipcRenderer } from 'electron'

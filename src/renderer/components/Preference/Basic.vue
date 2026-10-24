@@ -2420,18 +2420,17 @@ const normalizeTaskMultiSelectModifier = (value) => {
   }
 
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { cloneDeep, isEmpty } from '@shared/utils/object'
 import { useRoute, useRouter } from 'vue-router'
-import is from 'electron-is'
-import { nativeImage, ipcRenderer } from 'electron'
-import { dialog, shell } from '@electron/remote'
+import is from '@shared/platform'
+import { ipcRenderer } from 'electron'
+import { openDialog, cacheBackgroundImage } from '@/utils/nativeBridge'
 import { getUserDataPath, getAppPath } from '@/utils/appPaths'
 import path from 'node:path'
 import fs from 'node:fs'
-import crypto from 'node:crypto'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import 'element-plus/es/components/message-box/style/css'
-import cloneDeep from 'lodash/cloneDeep'
-import isEmpty from 'lodash/isEmpty'
+
 // mo-history-directory, mo-select-directory, mo-theme-switcher,
 // mo-segmented-slider are globally registered in main.js
 import { availableLanguages, getLanguage, getSystemLocaleName } from '@shared/locales'
@@ -3353,8 +3352,8 @@ watch(trackerSourceConfigVisible, (visible) => {
       // - 连接协议（bt-connect-protocol）：由三态选择器处理，立即生效
       // 仅剩三类引擎真实支持的开关：
       // - bt-enable-lpd：保存后引擎热应用（新任务生效）
-      // - enable-upnp → 引擎 bt-port-mapping（BT TCP 端口映射）+ 主进程
-      //   DHT UDP 端口映射（配置监听即时重映射）
+      // - enable-upnp → 引擎 bt-port-mapping（BT 监听端口的 TCP+UDP 映射，
+      //   由引擎在绑定实际端口后建立并续期；应用侧不再做任何映射）
       function onNatToggleChange(key, value) {
         const data = {}
         data[key] = value
@@ -3444,52 +3443,15 @@ watch(trackerSourceConfigVisible, (visible) => {
         const cacheDir = getBackgroundImageCacheDir()
         if (!cacheDir) return ''
 
+        // 缩放/转码交给主进程（nativeImage 只在主进程可用）：一次 IPC 完成，
+        // 不再像 remote 那样 resize / toJPEG / toPNG 各走一次同步调用
         try {
-          fs.mkdirSync(cacheDir, { recursive: true })
-        } catch (e) {}
-
-        const ext = path.extname(src) || '.img'
-        const lowerExt = `${ext || ''}`.toLowerCase()
-        const rand = crypto.randomBytes(6).toString('hex')
-        const base = `bg-${Date.now()}-${rand}`
-
-        let output = null
-        let outputExt = ext
-
-        try {
-          if (lowerExt !== '.gif' && lowerExt !== '.svg') {
-            const img = nativeImage.createFromPath(src)
-            if (img && !img.isEmpty()) {
-              const size = img.getSize()
-              const maxSide = 2560
-              const w = Number(size && size.width)
-              const h = Number(size && size.height)
-              const longest = Math.max(Number.isFinite(w) ? w : 0, Number.isFinite(h) ? h : 0)
-              const scale = longest > maxSide ? (maxSide / longest) : 1
-              const targetW = Math.max(1, Math.round((Number.isFinite(w) ? w : 1) * scale))
-              const targetH = Math.max(1, Math.round((Number.isFinite(h) ? h : 1) * scale))
-              const processed = scale < 1 ? img.resize({ width: targetW, height: targetH, quality: 'good' }) : img
-
-              if (lowerExt === '.jpg' || lowerExt === '.jpeg' || lowerExt === '.webp') {
-                output = processed.toJPEG(80)
-                outputExt = '.jpg'
-              } else {
-                output = processed.toPNG()
-                outputExt = '.png'
-              }
-            }
-          }
-        } catch (e) {}
-
-        const filename = `${base}${outputExt}`
-        const dest = path.join(cacheDir, filename)
-        if (output && output.length) {
-          await fs.promises.writeFile(dest, output)
-        } else {
-          await fs.promises.copyFile(src, dest)
+          return await cacheBackgroundImage(src, cacheDir)
+        } catch (e) {
+          return ''
         }
-        return dest
       }
+
       async function deleteCachedBackgroundImageIfNeeded(p) {
         const target = `${p || ''}`.trim()
         if (!target) return
@@ -3500,7 +3462,7 @@ watch(trackerSourceConfigVisible, (visible) => {
       }
       async function selectBackgroundImage() {
         try {
-          const result = await dialog.showOpenDialog({
+          const result = await openDialog({
             title: t('preferences.background-image-select'),
             properties: ['openFile'],
             filters: [

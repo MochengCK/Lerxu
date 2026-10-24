@@ -1,5 +1,6 @@
-import isEmpty from 'lodash/isEmpty'
+
 import axios from 'axios'
+import { isEmpty } from '@shared/utils/object'
 import { ONE_SECOND, PROXY_SCOPES } from '@shared/constants'
 import { convertToAxiosProxy } from './tracker'
 

@@ -666,15 +666,15 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { cloneDeep, isEmpty } from '@shared/utils/object'
 import { useRoute, useRouter } from 'vue-router'
-import is from 'electron-is'
-import { dialog, shell } from '@electron/remote'
+import is from '@shared/platform'
+import { openDialog, showMessageBox, openPath, showItemInFolder } from '@/utils/nativeBridge'
 import { existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { ipcRenderer } from 'electron'
 import { ElMessage } from 'element-plus'
-import cloneDeep from 'lodash/cloneDeep'
-import isEmpty from 'lodash/isEmpty'
+
 import randomize from 'randomatic'
 // mo-show-in-folder, mo-segmented-slider are globally registered in main.js
 import userAgentMap from '@shared/ua'
@@ -734,8 +734,6 @@ const { config: preferenceConfig } = storeToRefs(preferenceStore)
 const { isCheckingUpdate } = storeToRefs(appStore)
 const { updateAvailable, newVersion, updateIsPrerelease, isDownloadingUpdate, updateDownloaded, downloadProgress, downloadTotal, downloadTransferred, releaseNotes, lastCheckUpdateTime, searchKeyword } = storeToRefs(preferenceStore)
 const { engineInfo: storeEngineInfo } = storeToRefs(appStore)
-
-
 
 // 已停服/已迁址的旧内置镜像（2026-09 实测确认）：
 // mirror.ghproxy.com、github.moeyy.xyz 域名已被 DNS 污染且无响应；
@@ -1051,7 +1049,7 @@ const mcpHintText = computed(() => {
  * 只保存路径（不复制、不读内容），口令走单独的密码框。
  */
 async function pickSftpPrivateKey () {
-  const result = await dialog.showOpenDialog({
+  const result = await openDialog({
     properties: ['openFile', 'showHiddenFiles']
   })
   if (!result || result.canceled || !result.filePaths || result.filePaths.length === 0) {
@@ -1622,7 +1620,7 @@ function openEngineLogFolder() {
 // 优先尝试打开日志文件
 if (engineLogPath.value && existsSync(engineLogPath.value)) {
           try {
-            shell.showItemInFolder(engineLogPath.value)
+            showItemInFolder(engineLogPath.value)
             return
           } catch (e) {
             console.warn('[Engine] Show log file failed:', e)
@@ -1632,7 +1630,7 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
         // 如果文件不存在，打开日志目录
         if (engineLogDir.value) {
           try {
-            shell.openPath(engineLogDir.value)
+            openPath(engineLogDir.value)
           } catch (e) {
             console.warn('[Engine] Open log directory failed:', e)
           }
@@ -1640,7 +1638,7 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
           // 降级：从日志路径提取目录
           try {
             const folderPath = dirname(engineLogPath.value)
-            shell.openPath(folderPath)
+            openPath(folderPath)
           } catch (e) {
             console.warn('[Engine] Open log folder failed:', e)
           }
@@ -1884,7 +1882,7 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
         msg.success(t('preferences.mcp-copied'))
       }
       function onSessionResetClick() {
-        dialog.showMessageBox({
+        showMessageBox({
           type: 'warning',
           title: t('preferences.session-reset'),
           message: t('preferences.session-reset-confirm'),
@@ -1901,7 +1899,7 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
         })
       }
       function onFactoryResetClick() {
-        dialog.showMessageBox({
+        showMessageBox({
           type: 'warning',
           title: t('preferences.factory-reset'),
           message: t('preferences.factory-reset-confirm'),
@@ -2017,7 +2015,6 @@ if (engineLogPath.value && existsSync(engineLogPath.value)) {
               const restartOnNextBootKeys = [
                 'enable-upnp',
                 'enable-utp',
-                'enable-nat-pmp',
                 'mcp-enabled',
                 'mcp-listen-port'
               ]

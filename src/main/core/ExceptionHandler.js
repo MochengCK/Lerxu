@@ -1,5 +1,5 @@
 import { app, dialog } from 'electron'
-import is from 'electron-is'
+import is from '@shared/platform'
 
 import logger from './LogManager'
 

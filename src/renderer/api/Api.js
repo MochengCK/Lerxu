@@ -1,7 +1,7 @@
 import { ipcRenderer } from 'electron'
-import is from 'electron-is'
-import isEmpty from 'lodash/isEmpty'
-import clone from 'lodash/clone'
+import { isEmpty, clone } from '@shared/utils/object'
+import is from '@shared/platform'
+
 import { existsSync } from 'fs'
 import { basename, dirname, resolve, isAbsolute, sep } from 'path'
 import IpcEngineClient from './IpcEngineClient'

@@ -79,8 +79,9 @@
 
 <script setup>
 import { ref, computed, reactive, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import debounce from 'lodash/debounce'
-import is from 'electron-is'
+import { debounce } from '@shared/utils/object'
+
+import is from '@shared/platform'
 import {
   checkTaskIsBT,
   isEd2kTask,
@@ -162,7 +163,6 @@ watch(() => props.visible, (val) => {
   drawerVisible.value = val
 })
 
-
 const taskDetailDefaultTransparentEnabled = computed(() => {
   const cfg = preferenceConfig.value || {}
   return cfg.taskDetailDefaultTransparent === undefined ? false : !!cfg.taskDetailDefaultTransparent
@@ -210,8 +210,6 @@ const navOptions = computed(() => {
   return navTabs.value.map(tab => ({ value: tab, label: labelMap[tab] || tab }))
 })
 
-
-
 const statusHintText = computed(() => {
   const task = props.task || {}
   if (!task) return ''
@@ -220,8 +218,6 @@ const statusHintText = computed(() => {
   if (raw.startsWith('task.')) return t(raw)
   return raw
 })
-
-
 
 const fileList = computed(() => {
   const task = props.task || {}
@@ -386,8 +382,6 @@ function updateStatusTruncation () {
     statusHintTruncated.value = el.scrollWidth > el.clientWidth
   })
 }
-
-
 
 function handleTabChange (tabName) {
   const prevTab = activeTab.value

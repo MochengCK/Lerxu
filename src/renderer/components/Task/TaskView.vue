@@ -61,7 +61,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount, onUnmounted, getCurrentInstance } from 'vue'
 // 偏好设置表单同步导入：避免 defineAsyncComponent 在 dev 模式下导致
 // 组件 JS 与 scoped CSS 分离加载，首次渲染时样式未就绪（FOUC）。
-import { dialog, Menu, getCurrentWindow } from '@electron/remote'
+import { popupMenu, showMessageBox } from '@/utils/nativeBridge'
 import { ipcRenderer } from 'electron'
 import { ElMessage } from 'element-plus'
 
@@ -212,7 +212,7 @@ function onTaskPageContextMenu (event) {
     event.preventDefault()
   }
 
-  const menu = Menu.buildFromTemplate([
+  popupMenu([
     {
       label: t('task.new-task'),
       click: () => commands.execute('application:new-task', { type: ADD_TASK_TYPE.URI })
@@ -240,10 +240,7 @@ function onTaskPageContextMenu (event) {
       label: t('task.select-all-task'),
       click: () => commands.execute('application:select-all-task')
     }
-  ])
-
-  menu.popup({
-    window: getCurrentWindow(),
+  ], {
     x: event.x != null ? event.x : event.clientX,
     y: event.y != null ? event.y : event.clientY
   })
@@ -838,7 +835,7 @@ function handleDeleteTask (payload) {
     removeTask(task, taskName, deleteWithFiles)
     return
   }
-  dialog.showMessageBox({
+  showMessageBox({
     type: 'warning',
     title: t('task.delete-task'),
     message: t('task.delete-task-confirm', { taskName }),
@@ -859,7 +856,7 @@ function handleDeleteTaskRecord (payload) {
     removeTaskRecord(task, taskName, deleteWithFiles)
     return
   }
-  dialog.showMessageBox({
+  showMessageBox({
     type: 'warning',
     title: t('task.remove-record'),
     message: t('task.remove-record-confirm', { taskName }),
@@ -900,7 +897,7 @@ function handleRemoveLanTask (payload) {
     confirmAndRemove(false)
     return
   }
-  dialog.showMessageBox({
+  showMessageBox({
     type: 'warning',
     title: t('task.transfer-remove-record'),
     message: t('task.transfer-remove-confirm', { taskName }),
@@ -988,7 +985,7 @@ async function handleBatchDeleteTask (payload) {
     runDelete(deleteWithFiles)
     return
   }
-  dialog.showMessageBox({
+  showMessageBox({
     type: 'warning',
     title: t('task.delete-selected-task'),
     message: t('task.batch-delete-task-confirm', { count: `${totalCount}` }),

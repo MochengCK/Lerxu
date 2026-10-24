@@ -2,7 +2,7 @@ import { resolve } from 'node:path'
 import { access, constants, existsSync, lstatSync } from 'node:fs'
 import os from 'node:os'
 import { app, nativeTheme, shell, session } from 'electron'
-import is from 'electron-is'
+import is from '@shared/platform'
 
 import {
   APP_THEME,

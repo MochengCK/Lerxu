@@ -1,8 +1,9 @@
 import { join } from 'node:path'
+import { debounce } from '@shared/utils/object'
 import { EventEmitter } from 'node:events'
-import { debounce } from 'lodash'
+
 import { app, shell, screen, BrowserWindow, nativeTheme } from 'electron'
-import is from 'electron-is'
+import is from '@shared/platform'
 
 import pageConfig from '../configs/page'
 import logger from '../core/LogManager'
@@ -163,6 +164,65 @@ export default class WindowManager extends EventEmitter {
     }
 
     return result
+  }
+
+  /**
+   * 打开一次性模态子窗（不登记到 windows 表里，关闭即释放）。
+   *
+   * 视频嗅探器的「添加格式」原来是在页面里用 `@electron/remote` 的
+   * `new BrowserWindow(...)` 自己造的；改成主进程建窗后，页面只发一次 IPC，
+   * 主题/语言仍由主进程在 dom-ready 时同步过去。
+   */
+  openModalPage (page, options = {}) {
+    const pageOptions = this.getPageOptions(page)
+    if (!pageOptions.url) {
+      return null
+    }
+    const parent = options.parent || null
+    // 注意：**不能**铺 `defaultBrowserOptions` —— 它带 `titleBarStyle: 'hiddenInset'`
+    // 与 macOS 的全透明背景，那是主窗口/播放器的形态。这类一次性子窗（添加格式）
+    // 默认要原生标题栏（页面只在 hide-app-menu 时画自定义标题条，
+    // getPageOptions 那时会把 frame 置 false）。
+    const win = new BrowserWindow({
+      show: false,
+      width: 480,
+      height: 320,
+      ...pageOptions.attrs,
+      ...(parent ? { parent, modal: true } : {}),
+      webPreferences: {
+        contextIsolation: false,
+        backgroundThrottling: false,
+        spellcheck: false,
+        nodeIntegration: true,
+        nodeIntegrationInWorker: true
+      }
+    })
+
+    win.loadURL(pageOptions.url)
+    win.once('ready-to-show', () => {
+      if (!win.isDestroyed()) {
+        win.show()
+      }
+    })
+    win.webContents.once('dom-ready', () => {
+      if (win.isDestroyed()) {
+        return
+      }
+      try {
+        win.webContents.send('sync-theme', { theme: options.theme || 'light' })
+        win.webContents.send('sync-locale', { locale: options.locale || 'en-US' })
+      } catch (_) { }
+    })
+    win.on('closed', () => {
+      if (!parent || parent.isDestroyed()) {
+        return
+      }
+      // 模态子窗关掉后把焦点还给父窗口，避免 macOS 上父窗口失焦
+      try {
+        parent.focus()
+      } catch (_) { }
+    })
+    return win
   }
 
   openWindow (page, options = {}) {

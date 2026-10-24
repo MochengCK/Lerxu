@@ -1,6 +1,6 @@
 import { app } from 'electron'
-import is from 'electron-is'
-import Store from 'electron-store'
+import is from '@shared/platform'
+import Store from './ConfigStore'
 
 import {
   getConfigBasePath,
@@ -189,9 +189,6 @@ export default class ConfigManager {
         // BT 连接协议策略：both = uTP 优先、失败回退 TCP；utp = 仅 uTP；
         // tcp = 仅 TCP。引擎支持热更新（出站/入站实时读取）。
         'bt-connect-protocol': 'both',
-        // NAT-PMP (RFC 6886) port mapping, tried by the engine when UPnP
-        // mapping fails on the BT listen port. Requires engine restart.
-        'enable-nat-pmp': true,
         'engine-binary': defaultEngineBinary,
         'engine-max-connection-per-server': Number(enginePolicy && enginePolicy.max) || getMaxConnectionPerServer(),
         'favorite-directories': [],

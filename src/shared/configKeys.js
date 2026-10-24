@@ -119,8 +119,7 @@ const userKeys = [
   'ed2k-auto-sync-server-time',
   'ed2k-last-sync-server-time',
   'enable-utp',
-  'bt-connect-protocol',
-  'enable-nat-pmp'
+  'bt-connect-protocol'
 ]
 
 const systemKeys = [
@@ -274,9 +273,9 @@ const systemKeys = [
 ]
 
 const needRestartKeys = [
-  // 注意：enable-upnp / enable-utp / enable-nat-pmp 不在此列——它们在
+  // 注意：enable-upnp / enable-utp 不在此列——它们在
   // 保存时触发 submitForm 的 application:relaunch 会让用户"点开关=重启
-  // 应用"，体验上等同于无法点击。这三个属于"下次引擎启动生效"的设置，
+  // 应用"，体验上等同于无法点击。这两个属于"下次引擎启动生效"的设置，
   // 由 savePreference 单独给出轻提示即可。
   'dht-listen-port',
   'ed2k-listen-port',

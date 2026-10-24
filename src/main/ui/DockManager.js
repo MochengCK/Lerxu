@@ -1,4 +1,4 @@
-import is from 'electron-is'
+import is from '@shared/platform'
 import { EventEmitter } from 'node:events'
 import { app, nativeImage } from 'electron'
 
