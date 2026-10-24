@@ -310,22 +310,33 @@ const chartPeak = computed(() => chartSamples.value.reduce(
 // 一条流量都没有 ⇒ 空状态（虚线 + 「空闲」，同时淡出柱子）
 const chartIdle = computed(() => chartPeak.value === 0)
 
-// 量程 = 峰值留 12% 余量（不取整到 1/2/5，否则柱子会被压成半高）。
-// 柱子高度本身有过渡，量程变化看起来也是平滑的重排，而不是跳。
-const chartScale = computed(() => Math.max(1024, chartPeak.value * 1.12))
+/**
+ * 上下各用**自己的**量程（各自峰值 + 12% 余量）。
+ *
+ * 共用一个量程时，上传通常只有下载的几十分之一，绿柱会被压成贴地的一条虚线、
+ * 和基线糊在一起（实测 2.4 MB/s ↓ + 20 KB/s ↑ 就是这样）。分成两个半区各看趋势
+ * 才读得出来；绝对值由下方数字与悬停提示兜底。
+ */
+const chartScaleOf = (pick) => {
+  const peak = chartSamples.value.reduce((max, sample) => Math.max(max, pick(sample)), 0)
+  return Math.max(1024, peak * 1.12)
+}
+const chartScaleDownload = computed(() => chartScaleOf(s => s.download))
+const chartScaleUpload = computed(() => chartScaleOf(s => s.upload))
 
 const chartBars = computed(() => {
-  const scale = chartScale.value
+  const scaleDown = chartScaleDownload.value
+  const scaleUp = chartScaleUpload.value
   // 非零给 0.6 的最小可见高度，否则小流量整条看不见
-  const toHeight = (value, max) => {
+  const toHeight = (value, scale, max) => {
     if (value <= 0) {
       return 0
     }
     return +Math.max(0.6, Math.min(max, (value / scale) * max)).toFixed(2)
   }
   return chartSamples.value.map((sample, index) => {
-    const hDownload = toHeight(sample.download, CHART_HALF_H)
-    const hUpload = toHeight(sample.upload, CHART_UPLOAD_H)
+    const hDownload = toHeight(sample.download, scaleDown, CHART_HALF_H)
+    const hUpload = toHeight(sample.upload, scaleUp, CHART_UPLOAD_H)
     return {
       // 列位置固定（第 i 列永远在同一个 x），跑的是**数据**不是柱子 ——
       // 这样每格只改 height/y，CSS 过渡才能把变化补成连续的波形
