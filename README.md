@@ -56,7 +56,7 @@ Lerxu is a download manager for Windows, macOS, Linux and Android, powered by th
 
 ### Downloads
 
-- **Protocols**: HTTP/HTTPS, BitTorrent, magnet links, HLS (M3U8) and SFTP; FTP and Metalink are not supported
+- **Protocols**: HTTP/HTTPS, BitTorrent, magnet links, HLS (M3U8) and SFTP
 - **Concurrency**: up to 128 segments per task (32 connections per server by default) and 10 concurrent tasks by default, both adjustable in Preferences
 - **HLS**: the playlist and its segments are handled by the downloader and spliced into a single file; bitrate variants, AES-128 encrypted segments, segment concurrency, retries and resume are supported
 - **SFTP**: single-file downloads over `sftp://` with parallel connections and resume; log in with a password or an OpenSSH private key, first-seen host keys are recorded and a changed fingerprint is rejected; the private key, passphrase, known-hosts file, connection count and timeout are configurable in Preferences
