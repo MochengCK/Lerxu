@@ -61,6 +61,8 @@ export default {
   'transfer-send-fail': 'Failed to send. Make sure the device is online and try again',
   'transfer-disabled-title': 'File transfer is off',
   'transfer-disabled-sub': 'Turn it on in Settings → File Transfer to send files to nearby devices',
+  'transfer-permission-hint': 'No devices? macOS requires Local Network access for Lerxu',
+  'transfer-permission-open': 'Open Settings',
   'uri-task-tips': 'One task url per line (supports magnet)',
   'thunder-link-tips': 'Tip: Thunder links may not be downloadable after decoding',
   'file-name': 'Name',

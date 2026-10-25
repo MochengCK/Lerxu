@@ -166,6 +166,7 @@
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
     "extendInfo": {
+      "NSLocalNetworkUsageDescription": "Lerxu 需要访问本地网络，才能发现附近设备互传文件，并连接局域网内的下载地址。",
       "NSDownloadsFolderUsageDescription": "Lerxu 需要访问下载文件夹以保存和管理下载的文件。",
       "NSDesktopFolderUsageDescription": "Lerxu 需要访问桌面文件夹以保存下载的文件。",
       "NSDocumentsFolderUsageDescription": "Lerxu 需要访问文稿文件夹以保存下载的文件。",

@@ -61,6 +61,8 @@ export default {
   'transfer-send-fail': '发送失败，请确认设备在线后重试',
   'transfer-disabled-title': '互传已关闭',
   'transfer-disabled-sub': '在 设置 → 互传 里打开后，即可选择附近设备发送文件',
+  'transfer-permission-hint': '找不到设备？macOS 需要在「本地网络」里允许 Lerxu',
+  'transfer-permission-open': '去开启',
   'uri-task-tips': '添加多个下载链接时，请确保每行只有一个链接（支持磁力链）',
   'thunder-link-tips': '友情提示：迅雷链接解码之后的资源不一定存在',
   'file-name': '文件名',

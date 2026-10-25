@@ -90,6 +90,16 @@
                   </span>
                 </el-option>
               </el-select>
+
+              <!-- macOS 15 起「本地网络」是单独授权项：没有它，广播发现和
+                   TCP 直连都会被内核静默拒掉（表现为"附近没有设备"或
+                   "不在同一网络"）。只在这一项最可能出问题时提示，不常驻。 -->
+              <div v-if="showLanPermissionHint" class="lan-permission-hint">
+                <span>{{ t('task.transfer-permission-hint') }}</span>
+                <button type="button" class="lan-permission-link" @click="openLanPrivacySettings">
+                  {{ t('task.transfer-permission-open') }}
+                </button>
+              </div>
             </template>
             <div v-else class="lan-panel-disabled">
               <i class="lan-disabled-icon"><mo-icon name="sync" width="26" height="26" /></i>
@@ -475,6 +485,7 @@ import {
 import i18n from '@/plugins/i18n'
 import api from '@/api'
 import { createMsg } from '@/components/Msg'
+import { openExternal } from '@/utils/nativeBridge'
 import { useAppStore } from '@/store/app'
 import { useTaskStore } from '@/store/task'
 import { usePreferenceStore } from '@/store/preference'
@@ -530,6 +541,13 @@ const lanSelectedPeerId = ref('')
 const lanFiles = ref([])
 const lanUploadRef = ref(null)
 const lanEnabled = ref(true)
+// 设备列表空着时，别在打开面板的头几秒就弹出权限提示（正常发现要 2s 左右）
+const lanHintReady = ref(false)
+const LAN_HINT_DELAY = 4000
+let lanHintTimer = null
+const showLanPermissionHint = computed(() => (
+  is.macOS() && lanHintReady.value && lanPeers.value.length === 0
+))
 
 // HLS（m3u8）清晰度：空值 = 引擎默认（主清单里码率最高的变体）。
 // 只对播放列表清单地址有效；普通地址选了也无效（引擎按普通文件下载）。
@@ -692,6 +710,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   ipcRenderer.removeListener('lan:update', handleLanUpdate)
   btPreviewTokens.clear()
+  if (lanHintTimer) {
+    clearTimeout(lanHintTimer)
+    lanHintTimer = null
+  }
   if (_btPreviewDirTimer) {
     clearTimeout(_btPreviewDirTimer)
     _btPreviewDirTimer = null
@@ -1470,6 +1492,7 @@ function applyLanPayload (payload) {
 
 /** 打开面板时兜底拉一次：lan:update 只推变化，错过一帧也不至于空白 */
 async function refreshLanState () {
+  scheduleLanHint()
   try {
     const [peers, configResult] = await Promise.all([
       ipcRenderer.invoke('lan:peers'),
@@ -1489,6 +1512,28 @@ function ensureLanPeerSelected () {
     return
   }
   lanSelectedPeerId.value = lanPeers.value.length > 0 ? lanPeers.value[0].id : ''
+}
+
+/**
+ * 「可能没权限」的计时：一轮发现（2s 一轮）过去还是空的才提示。
+ * 真没权限时列表永远空着，第 4 秒起给一条去系统设置的入口。
+ */
+function scheduleLanHint () {
+  clearTimeout(lanHintTimer)
+  lanHintReady.value = false
+  if (lanPeers.value.length > 0) {
+    return
+  }
+  lanHintTimer = setTimeout(() => {
+    lanHintReady.value = true
+  }, LAN_HINT_DELAY)
+}
+
+/** 深链直达 系统设置 › 隐私与安全性 › 本地网络（macOS 13+ 的 URL scheme）。 */
+function openLanPrivacySettings () {
+  openExternal(
+    'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocalNetwork'
+  )
 }
 
 function platformLabel (platform) {
@@ -2277,6 +2322,32 @@ async function submitForm () {
   /* 设备选择：与「选择存储路径」同类的输入框视觉 */
   .lan-peer-select {
     width: 100%;
+  }
+
+  /* 「本地网络」权限提示：只在 macOS 且列表长时间为空时出现 */
+  .lan-permission-hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: -4px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--lc-text-secondary);
+  }
+
+  .lan-permission-link {
+    flex: none;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--lc-color-primary);
+    font-size: 12px;
+    line-height: 18px;
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
   }
 }
 
