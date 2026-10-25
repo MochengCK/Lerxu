@@ -64,8 +64,9 @@ linkcore-site/
 # WorkBuddy project data (memory / skills / caches)
 .workbuddy/
 
-# CI release artifact extraction staging (xferrust-<platform>/)
+# CI release artifact extraction staging (<engine>-<platform>/)
 /xferrust-*/
+/zuvrust-*/
 
 # Electron singleton runtime files
 SingletonCookie
