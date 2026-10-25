@@ -38,13 +38,14 @@ import {
   engineExitRetryable,
   probeHasVideoAndAudio,
   progressFromEngineLine,
+  progressFromEngineEvent,
+  MEDIA_ENGINE_IPC,
   decodeModeOf,
-  decodeModeEnv,
-  engineEnvFromConfig,
   mergeContainerOf,
   mergeOutputExtension,
   ENGINE_EXIT
 } from '../../src/shared/zuvrust/index.js'
+import EngineApi from '../../src/main/engine/EngineApi.js'
 
 // ---------- 极简断言 ----------
 let passed = 0
@@ -132,6 +133,8 @@ eq(progressFromEngineLine('not json at all'), null, '非 JSON 行返回 null（�
 eq(progressFromEngineLine(''), null, '空行返回 null')
 eq(progressFromEngineLine('{"ok":true,"type":"progress","data":{"percent":999}}').percent, 100, 'percent 上限被夹住')
 eq(progressFromEngineLine('{"ok":true,"type":"progress","data":{"percent":-5}}').percent, 0, 'percent 下限被夹住')
+eq(progressFromEngineEvent('mux', { percent: 42.4, outputBytes: 1024 }).percent, 42.4, 'IPC 进度事件与 NDJSON 走同一套归一化')
+eq(MEDIA_ENGINE_IPC.MUX, 'media-engine:mux', '主/渲染进程共用同一份 IPC 频道常量')
 
 const parsed = parseEngineLine('{"ok":true,"result":{"a":1}}')
 ok(parsed && parsed.ok === true && parsed.result.a === 1, '结果行解析正确')
@@ -254,18 +257,6 @@ section('解码方式')
   eq(decodeModeOf({ 'prefer-software-decode': true }), 'software', 'kebab 旧键同样迁移')
   eq(decodeModeOf({ decodeMode: 'hardware', preferSoftwareDecode: true }), 'hardware', '新键优先于旧键')
 
-  // 环境变量：只写非默认（auto 什么都不写）
-  eq(JSON.stringify(decodeModeEnv('auto')), '{}', '自适应不写环境变量（引擎的默认就是它）')
-  eq(decodeModeEnv('hardware').ME_DECODE, 'hardware', '仅硬解 → ME_DECODE=hardware')
-  eq(decodeModeEnv('software').ME_DECODE, 'software', '仅软解 → ME_DECODE=software')
-
-  // 合并那条路的组合环境变量
-  const envAuto = engineEnvFromConfig({ decodeThreads: 4, decodeMode: 'auto' })
-  eq(envAuto.ME_THREADS, '4', '线程数照旧写')
-  ok(envAuto.ME_DECODE === undefined, '自适应时不写 ME_DECODE')
-  eq(engineEnvFromConfig({ decodeMode: 'hardware' }).ME_DECODE, 'hardware', '合并路径也带上解码方式')
-  eq(engineEnvFromConfig({ preferSoftwareDecode: true }).ME_DECODE, 'software', '合并路径同样迁移旧配置')
-
   // 合并格式 → 容器 → 扩展名（产物扩展名由容器决定，容器由扩展名反推）
   eq(mergeContainerOf('mp4'), 'mp4', 'mp4 → fmp4 容器')
   eq(mergeContainerOf('mkv'), 'mkv', 'mkv → matroska 容器')
@@ -274,6 +265,35 @@ section('解码方式')
   eq(mergeContainerOf('nonsense'), 'mp4', '认不出的格式回落 mp4（与历史行为一致）')
   eq(mergeOutputExtension('webm'), 'webm', 'WebM 的产物扩展名')
   eq(mergeOutputExtension('mkv'), 'mkv', 'Matroska 的产物扩展名')
+}
+
+// ---------- 8. EngineApi（JSON-RPC 客户端） ----------
+section('EngineApi（JSON-RPC）')
+if (!bin) {
+  process.stdout.write('  · 跳过（没有引擎二进制）\n')
+} else {
+  const api = await EngineApi.start({ bin })
+  try {
+    const v = await api.version()
+    eq(v.name, 'ZuvRust', 'initialize/version 走通 JSON-RPC')
+    ok(Array.isArray(api.engine.modules), '握手结果带 modules')
+    try {
+      await api.probe('/nonexistent/definitely-not-here.mp4')
+      ok(false, 'probe 缺文件应当失败')
+    } catch (e) {
+      eq(e.kind, 'io', 'probe 错误映射为 kind=io')
+      eq(e.retryable, false, '缺文件不可重试')
+    }
+    const stream = api.stream('/nonexistent/definitely-not-here.mp4', { mode: 'fmp4' })
+    try {
+      await stream.ready
+      ok(false, 'stream 缺文件应当在 ready 前失败')
+    } catch (e) {
+      eq(e.kind, 'io', 'stream 错误映射为 kind=io')
+    }
+  } finally {
+    await api.close()
+  }
 }
 
 // ---------- 汇总 ----------

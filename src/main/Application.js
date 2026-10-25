@@ -56,6 +56,8 @@ import { readMediaMeta, mediaKindOf } from './utils/mediaMeta'
 import { setupLocaleManager } from './ui/Locale'
 import Engine from './core/Engine'
 import EngineClient from './core/EngineClient'
+import { mediaEngineService } from './engine/MediaEngineService'
+import { registerMediaEngineIpc } from './engine/ipc'
 import AutoLaunchManager from './core/AutoLaunchManager'
 import UpdateManager from './core/UpdateManager'
 import EnergyManager from './core/EnergyManager'
@@ -2417,6 +2419,7 @@ export default class Application extends EventEmitter {
 
       const promises = [
         this.stopEngine(),
+        mediaEngineService.close(),
         this.energyManager.stopPowerSaveBlocker(),
         this.trayManager.destroy()
       ]
@@ -4044,7 +4047,7 @@ export default class Application extends EventEmitter {
       // 把裸文件交给 `<video>` 只在"文件完整、且容器与编码都在浏览器支持面内"时
       // 成立：TS、fMP4 分片、还没下完的文件全都播不了 —— 那正是"这个文件浏览器
       // 无法直接播放"的由来。现在连**解码**也在引擎里（视频出 NV12 帧、音频出
-      // PCM，见 `--video=frames --audio=pcm`），播放器页只负责上屏与发声 ——
+      // PCM，见 API `stream` 的 mode=frames + audioPcm），播放器页只负责上屏与发声 ——
       // 这样"引擎能脱离浏览器播放"这条路线才立得住（换成别的前端也照样能播）。
       //
       // 引擎解不了的（H.265/AV1/VP9、引擎还没接的音频编码、引擎不认的容器）
@@ -4063,6 +4066,7 @@ export default class Application extends EventEmitter {
       const engineDecode = this.configManager?.getUserConfig?.('video-frames') !== false &&
         process.env.LERXU_VIDEO_FRAMES !== '0'
       const enginePlayer = new EnginePlayer({
+        engine: mediaEngineService,
         enginePath,
         input: filePath,
         size: totalBytes,
@@ -4979,6 +4983,7 @@ export default class Application extends EventEmitter {
     }
     this._ipcInvokesRegistered = true
 
+    registerMediaEngineIpc()
     // 渲染进程引擎 RPC 统一转发（主进程持有与引擎的 WebSocket 长连接）。
     // 返回 { ok, result/error } 契约见 callEngineRpc；lan:* 的 IPC 复用
     // 同一条路径（见 lanRpc）。

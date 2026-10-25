@@ -1,16 +1,11 @@
 /**
  * 媒体引擎（ZuvRust）适配层。
  *
- * 引擎是**独立进程**，宿主与它之间只有一条通信层：命令行 + NDJSON。
- * 这个模块只做三件事，而且**都是纯函数**（不碰 electron / fs），
- * 这样它能被 `test/zuvrust/run.mjs` 直接跑：
+ * 引擎是**独立进程**，应用与它之间统一走 `zuvrust serve --stdio` 的 JSON-RPC
+ * （主进程 MediaEngineService；渲染进程经 `media-engine:*` IPC）。这里只保留
+ * **纯函数**：二进制定位、进度/错误归一化、解码偏好→API 参数，方便单测。
  *
- *   1. 决定引擎二进制叫什么、去哪找（与下载引擎同一套回填约定）；
- *   2. 解析引擎吐出来的每一行 NDJSON；
- *   3. 把引擎的错误行翻成一句人话。
- *
- * 为什么不把这些逻辑留在组件里：合并/播放都各自需要它，写两份必然漂移；
- * 而且留在 SFC 里的逻辑没法单测 —— 只能靠人肉点界面。
+ * 命令行 + NDJSON 仍保留给排障与脚本，但应用侧不再直接 spawn。
  */
 
 /** 引擎二进制名（按平台）。 */
@@ -163,12 +158,17 @@ export function progressFromEngineLine (line) {
   // 结果行没有 `type`。所以判据是"有 type 且有 data"，而不是写死某个字符串 ——
   // 写死过一次（只认 "progress"），结果是界面上的进度条永远不动。
   if (typeof parsed.type !== 'string' || !parsed.data) return null
-  const data = parsed.data
+  return progressFromEngineEvent(parsed.type, parsed.data)
+}
+
+/** 已解析的进度事件（IPC 的 `media-engine:progress` 直接给 type/data）。 */
+export function progressFromEngineEvent (type, data) {
+  if (typeof type !== 'string' || !data) return null
   const totalSize = Number(data.outputBytes || 0)
   // 合并进度按"已写字节 / 输入总字节"算，界面据此显示"已写 / 总量"
   const inputBytes = Number(data.inputBytes || 0)
   return {
-    kind: parsed.type,
+    kind: type,
     percent: Math.max(0, Math.min(100, Number(data.percent || 0))),
     totalSize: Number.isFinite(totalSize) ? totalSize : 0,
     inputBytes: Number.isFinite(inputBytes) ? inputBytes : 0,
@@ -176,6 +176,18 @@ export function progressFromEngineLine (line) {
     durationUs: Number(data.durationUs || 0)
   }
 }
+
+/** 主进程 ↔ 渲染进程的媒体引擎 IPC 频道（两端共用，避免字符串漂移）。 */
+export const MEDIA_ENGINE_IPC = Object.freeze({
+  STATUS: 'media-engine:status',
+  PROBE: 'media-engine:probe',
+  MUX: 'media-engine:mux',
+  REMUX: 'media-engine:remux',
+  DOWNLOAD: 'media-engine:download',
+  DECODE: 'media-engine:decode',
+  CANCEL: 'media-engine:cancel',
+  PROGRESS: 'media-engine:progress'
+})
 
 // ───────────────────────── 「视频」设置项 → 引擎调用 ─────────────────────────
 //
@@ -195,8 +207,8 @@ export function mergeContainerOf (format) {
 /**
  * 合并产物的扩展名。
  *
- * 容器由扩展名决定（引擎按扩展名选封装器）。**只留声音的那个设置项已删除**
- *（见下面 `buildMuxArgs` 的注释），所以扩展名只看容器。
+ * 容器由扩展名决定（引擎按扩展名选封装器）。**只留声音的那个设置项已删除**，
+ * 所以扩展名只看容器。
  */
 export function mergeOutputExtension (format) {
   const container = mergeContainerOf(format)
@@ -209,42 +221,7 @@ export function mergeOutputExtension (format) {
 /** 分片时长的可选值（毫秒）；0 表示"用引擎默认"（现在是 2 秒）。 */
 export const MERGE_FRAGMENT_MS_CHOICES = [0, 2000, 4000, 10000]
 
-/**
- * 把设置项拼成 `mux` 的参数（输出与输入之外的那些）。
- *
- * 合并**一律"画面 + 声音"**：「合并保留内容」（只留声音 / 只留画面）这个设置项
- * 2026-10-06 按用户要求删掉了。引擎侧的 `--audio-only` / `--video-only` 仍在
- * （CLI 直接调时用得上），宿主只是不再暴露这个选择。
- */
-export function buildMuxArgs ({ fragmentMs = 0, format = 'mp4' } = {}) {
-  const args = ['--json', '--progress']
-  const ms = Number(fragmentMs)
-  if (Number.isFinite(ms) && ms >= 20) args.push(`--fragment-ms=${Math.round(ms)}`)
-  // 容器由扩展名决定（engine 侧按 `.mp4/.mkv/.ts` 选封装器）——
-  // 这里只用它做一次自检：格式与扩展名不匹配时前端就该发现
-  void mergeContainerOf(format)
-  return args
-}
-
-/**
- * 引擎进程的环境变量（设置项 → env）。
- *
- * 只写**非默认**的键：不设 = 引擎按自己的默认走（线程数 = 机器并行度）。
- * 这样"设置项没动过"时，引擎行为与以前完全一致。
- */
-export function engineEnvFromConfig (config) {
-  const env = {}
-  const cfg = config || {}
-  const threads = Number(cfg.decodeThreads || 0)
-  if (Number.isFinite(threads) && threads > 0) env.ME_THREADS = `${Math.floor(threads)}`
-  Object.assign(env, decodeModeEnv(decodeModeOf(cfg)))
-  return env
-}
-
 // ───────────────────────── 解码方式（设置项 → 引擎） ─────────────────────────
-
-/** 解码方式的三档（与「设置 → 视频 → 解码方式」一一对应）。 */
-export const DECODE_MODES = ['auto', 'hardware', 'software']
 
 /**
  * 解码方式归一化：`auto` / `hardware` / `software`。
@@ -264,16 +241,4 @@ export function decodeModeOf (config) {
   if (raw === 'auto' || raw === '自适应') return 'auto'
   const legacy = cfg.preferSoftwareDecode === true || cfg['prefer-software-decode'] === true
   return legacy ? 'software' : 'auto'
-}
-
-/**
- * 解码方式 → 引擎环境变量（`auto` 什么都不写 = 引擎默认）。
- *
- * 合并（`engineEnvFromConfig`）与播放（`EnginePlayer`）两条路共用这一份，
- * 免得两边各写一套判断、以后只改了一处。
- */
-export function decodeModeEnv (mode) {
-  if (mode === 'hardware') return { ME_DECODE: 'hardware' }
-  if (mode === 'software') return { ME_DECODE: 'software' }
-  return {}
 }

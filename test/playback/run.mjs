@@ -8,8 +8,8 @@
  * 不会抛异常、不会写日志。所以这里把整段钉住：
  *
  * ```
- * zuvrust stream ──stdout: 一行元信息 + 引擎解码的包流（NV12 帧 / PCM）──▶
- *   EnginePlayer（响应头塞元信息、字节直通、背压、seek 重启、不留僵尸进程）
+ * MediaEngineService API stream（meta + NV12/PCM 原始块）──▶
+ *   EnginePlayer（响应头塞元信息、字节直通、背压、seek 取消旧流）
  *   ──▶ MediaStreamServer /engine/<token>
  *   ──▶ 播放器页 fetch + 帧渲染器/音频输出（页面侧，这里用真实 HTTP 请求验证到字节为止）
  * ```
@@ -32,6 +32,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import EnginePlayer from '../../src/main/playback/EnginePlayer.js'
+import EngineApi from '../../src/main/engine/EngineApi.js'
 import { hintDue, createPlayheadHint } from '../../src/main/playback/PlayheadHint.js'
 import { hasFileHead, STREAM_MAX_ATTEMPTS } from '../../src/main/playback/StreamWait.js'
 import { buildAvailability, writeAvailabilityFile } from '../../src/main/playback/AvailabilityMap.js'
@@ -173,24 +174,26 @@ async function waitFor (fn, timeoutMs = 8000, stepMs = 30) {
 }
 
 // ---------- 1. 参数构造（纯逻辑） ----------
-section('EnginePlayer 命令行')
+section('EnginePlayer API 参数')
 {
-  const p = new EnginePlayer({ enginePath: '/x/zuvrust', input: '/a/b.mp4' })
-  const args = p.args()
-  ok(args[0] === 'stream', 'stream 子命令')
-  eq(args[1], '/a/b.mp4', '输入是第二个参数')
-  ok(!args.some((a) => a.startsWith('--seek=')), 'seek 为 0 时**不传** --seek（没必要多一次跳转）')
-  ok(!args.some((a) => a.startsWith('--size=')), '大小未知时不传 --size')
-  ok(!args.includes('--no-grow'), '默认按"可能还在下载"的方式读（边下边播是常态）')
+  const fakeEngine = { openStream: async () => { throw new Error('not used') } }
+  const p = new EnginePlayer({ engine: fakeEngine, input: '/a/b.mp4' })
+  const params = p.streamParams()
+  eq(params.mode, 'frames', '默认引擎解码（mode=frames）')
+  eq(params.input, '/a/b.mp4', '输入原样传给 stream')
+  eq(params.audioPcm, true, '默认同时要音频 PCM')
+  ok(params.seek === undefined, 'seek 为 0 时**不传** seek（没必要多一次跳转）')
+  ok(params.size === undefined, '大小未知时不传 size')
+  eq(params.grow, true, '默认按"可能还在下载"的方式读（边下边播是常态）')
 
   const p2 = new EnginePlayer({
-    enginePath: '/x/zuvrust', input: '/a/b.ts', size: 1024, seekSec: 12.5, grow: false, fragmentMs: 250
+    engine: fakeEngine, input: '/a/b.ts', size: 1024, seekSec: 12.5, grow: false, fragmentMs: 250
   })
-  const a2 = p2.args()
-  ok(a2.includes('--seek=12.5'), 'seek 透传（秒，可带小数）')
-  ok(a2.includes('--size=1024'), '最终大小透传给引擎（moov 在末尾的文件靠它）')
-  ok(a2.includes('--no-grow'), 'grow=false 时明确关掉')
-  ok(a2.includes('--fragment-ms=250'), '分片时长可调（越小出画越快）')
+  const a2 = p2.streamParams()
+  eq(a2.seek, 12.5, 'seek 透传（秒，可带小数）')
+  eq(a2.size, 1024, '最终大小透传给引擎（moov 在末尾的文件靠它）')
+  eq(a2.grow, false, 'grow=false 时明确关掉')
+  eq(a2.fragmentMs, 250, '分片时长可调（越小出画越快）')
 }
 
 // ---------- 2. 会话契约 ----------
@@ -254,7 +257,8 @@ section('会话与频道契约')
 
   // registerEngine 返回的地址形态
   const server = new MediaStreamServer({ logger: { info () {}, warn () {} } })
-  const url = await server.registerEngine(new EnginePlayer({ enginePath: '/x/e', input: '/a/b.mp4' }))
+  const fakeEngine = { openStream: async () => { throw new Error('not used') } }
+  const url = await server.registerEngine(new EnginePlayer({ engine: fakeEngine, input: '/a/b.mp4' }))
   ok(/^http:\/\/127\.0\.0\.1:\d+\/engine\/[0-9a-f]{32}$/.test(url), `引擎流地址形态正确（${url}）`)
   eq(server.tokenOf(url), url.split('/').pop(), 'tokenOf 能从引擎地址里取回 token（关闭时要按它释放）')
   // `/stream/`（按 Range 读裸文件）这条路由本身还留着，但**播放器不再用它**：
@@ -402,7 +406,7 @@ section('优先下载（播放头提示）')
     ok(pageSrc.includes('frames-renderer.js'), '播放器页引入帧渲染器（与验证页共用同一份）')
     ok(playerSrc.includes('ctx.frames'), '播放器按会话里的 frames 标记选出帧路径')
     ok(playerSrc.includes('pickFrameIndex'), '按帧自己的 pts 选帧（时钟不依赖 <video>）')
-    // 元信息在**响应头**里（EnginePlayer 把引擎第一行 NDJSON 摘走了），body 从头就是包流：
+    // 元信息在**响应头**里（EnginePlayer 把 API meta 塞进去了），body 从头就是包流：
     // 帧路径曾经去 body 第一行找它 → 拿包流魔数当 JSON 解，必然失败（真踩过）
     ok(!playerSrc.includes('第一行是元信息'), '帧流不从 body 里找"元信息行"（它已被摘到响应头）')
     ok(/startFrames[\s\S]{0,2500}metaFromResponse\(res\)/.test(playerSrc), '帧路径与 MSE 一样从 X-Lerxu-Meta 读元信息')
@@ -433,14 +437,15 @@ section('优先下载（播放头提示）')
     ok(!/case 'ArrowLeft':[\s\S]{0,120}media\.currentTime/.test(playerSrc), '方向键 seek 走 T.currentTime')
 
     const engineSrc = readFileSync(path.join(PROJECT_ROOT, 'src/main/playback/EnginePlayer.js'), 'utf8')
-    const framesArgs = new EnginePlayer({
-      enginePath: '/x/zuvrust',
+    const fakeEngine = { openStream: async () => { throw new Error('not used') } }
+    const framesParams = new EnginePlayer({
+      engine: fakeEngine,
       input: '/a/b.mp4',
       engineDecode: true
-    }).args()
-    ok(framesArgs.includes('--video=frames'), '引擎解码作为 --video=frames 传给引擎')
-    ok(framesArgs.includes('--audio=pcm'), '同时要引擎把音频解成 PCM（音视频都由引擎解码）')
-    ok(!new EnginePlayer({ enginePath: '/x/e', input: '/a/b.mp4', engineDecode: false }).args().some((a) => a.startsWith('--video=')), '关掉引擎解码时退回 fMP4 + MSE（诊断开关）')
+    }).streamParams()
+    eq(framesParams.mode, 'frames', '引擎解码走 frames 流')
+    eq(framesParams.audioPcm, true, '同时要引擎把音频解成 PCM（音视频都由引擎解码）')
+    eq(new EnginePlayer({ engine: fakeEngine, input: '/a/b.mp4', engineDecode: false }).streamParams().mode, 'fmp4', '关掉引擎解码时退回 fMP4 + MSE（诊断开关）')
     ok(engineSrc.includes('engineDecode'), 'EnginePlayer 认识引擎解码开关')
     ok(!engineSrc.includes('videoFrames'), '旧名（只提视频）不再出现：它是引擎解码，音频同样走这条')
     ok(appSrc.includes('video-frames'), '诊断开关：video-frames 配置项 / LERXU_VIDEO_FRAMES=0 才关掉引擎解码')
@@ -471,13 +476,14 @@ section('优先下载（播放头提示）')
     ok(!existsSync(`${file}.tmp`), '临时文件不留下')
     rmSync(dir, { recursive: true, force: true })
 
-    const argsWithAvail = new EnginePlayer({
-      enginePath: '/x/zuvrust',
+    const fakeEngine = { openStream: async () => { throw new Error('not used') } }
+    const paramsWithAvail = new EnginePlayer({
+      engine: fakeEngine,
       input: '/a/b.mp4',
       availPath: '/tmp/map.json'
-    }).args()
-    ok(argsWithAvail.includes('--avail=/tmp/map.json'), '可用性图作为 --avail 传给引擎')
-    ok(!new EnginePlayer({ enginePath: '/x/e', input: '/a/b.mp4' }).args().some((a) => a.startsWith('--avail=')), '没有图时不传 --avail（本地文件照老样子读）')
+    }).streamParams()
+    eq(paramsWithAvail.avail, '/tmp/map.json', '可用性图作为 avail 传给引擎')
+    ok(new EnginePlayer({ engine: fakeEngine, input: '/a/b.mp4' }).streamParams().avail === undefined, '没有图时不传 avail（本地文件照老样子读）')
     ok(appSrc.includes('task.tell'), '宿主每秒向下载引擎要片位图（bitfield/pieceLength）来刷新这张图')
   }
 
@@ -506,10 +512,11 @@ if (!bin || !sample) {
   process.stdout.write('\n引擎数据通路：跳过（' + (!bin ? '没找到 zuvrust 二进制' : '没找到可用的样本文件') + '）\n')
 } else {
   section(`引擎数据通路（${path.basename(bin)} + ${path.basename(sample)}）`)
+  const api = await EngineApi.start({ bin })
 
   // 3.1 默认内核：**引擎解码**（视频 NV12 帧 + 音频 PCM，播放器页只上屏/发声）
   const res = new FakeResponse()
-  const player = new EnginePlayer({ enginePath: bin, input: sample })
+  const player = new EnginePlayer({ engine: api, enginePath: bin, input: sample })
   const meta = await player.openStream(res)
   ok(!!meta && typeof meta.mime === 'string', '元信息里带 mime（播放器靠它选渲染器）')
   eq(meta.decodeMode, 'frames', `默认就是引擎解码（${meta.decodeMode}）`)
@@ -533,11 +540,11 @@ if (!bin || !sample) {
     eq(parsed.rest.length, 0, '整条流切完不留残余')
   }
   ok(!!player.lastPlayhead && player.lastPlayhead.sourceOffset > 0, '播放头有上报（宿主据此优先下载这一带）')
-  eq(player.running, false, '读完之后子进程已退出（不留僵尸）')
+  eq(player.running, false, '读完之后流已释放（不留活流）')
 
   // 3.1b 诊断开关（engineDecode: false）：引擎只转封装，出**分片 fMP4** 给浏览器解码
   const resMse = new FakeResponse()
-  const playerMse = new EnginePlayer({ enginePath: bin, input: sample, engineDecode: false })
+  const playerMse = new EnginePlayer({ engine: api, enginePath: bin, input: sample, engineDecode: false })
   const metaMse = await playerMse.openStream(resMse)
   ok(metaMse.mime.includes('codecs='), `诊断模式的 mime 带 codecs 参数（${metaMse.mime}）`)
   eq(resMse.headers['content-type'], 'video/mp4', '诊断模式响应头声明 video/mp4')
@@ -567,7 +574,7 @@ if (!bin || !sample) {
 
   // 3.4 客户端断开 → 引擎立刻被杀（否则关窗后它还在读文件）
   const res3 = new FakeResponse()
-  const player3 = new EnginePlayer({ enginePath: bin, input: sample })
+  const player3 = new EnginePlayer({ engine: api, enginePath: bin, input: sample })
   await player3.openStream(res3)
   eq(player3.running, true, '流在跑')
   res3.emit('close')
@@ -576,7 +583,7 @@ if (!bin || !sample) {
 
   // 3.5 背压：写不进去时暂停源，drain 之后继续，最终字节数不丢
   const res4 = new FakeResponse({ pauseFirstWrites: 1 })
-  const player4 = new EnginePlayer({ enginePath: bin, input: sample })
+  const player4 = new EnginePlayer({ engine: api, enginePath: bin, input: sample })
   await player4.openStream(res4)
   // 必须**等到真的发生了一次"写不进去"**再 drain：写是异步发生的，
   // 立刻 emit('drain') 会打在 listener 注册之前（那就测不到恢复路径了）
@@ -596,14 +603,14 @@ if (!bin || !sample) {
 
   // 3.6 stop 会杀进程
   const res5 = new FakeResponse()
-  const player5 = new EnginePlayer({ enginePath: bin, input: sample })
+  const player5 = new EnginePlayer({ engine: api, enginePath: bin, input: sample })
   await player5.openStream(res5)
   player5.stop()
   const stopped = await waitFor(() => !player5.running, 3000)
   ok(stopped, 'stop() 之后没有活着的流')
 
   // 3.7 引擎不存在 / 输入不可读：要**报错**，不能假装在播
-  const bad = new EnginePlayer({ enginePath: '/nonexistent/zuvrust-xyz', input: sample })
+  const bad = new EnginePlayer({ engine: { openStream: async () => { throw new Error('spawn ENOENT') } }, input: sample })
   let badErr = null
   try {
     await bad.openStream(new FakeResponse())
@@ -612,7 +619,7 @@ if (!bin || !sample) {
   }
   ok(!!badErr, '引擎缺失时 openStream 抛错（宿主据此明确报错 —— 没有别的内核可退）')
 
-  const badInput = new EnginePlayer({ enginePath: bin, input: '/nonexistent/video-xyz.mp4' })
+  const badInput = new EnginePlayer({ engine: api, enginePath: bin, input: '/nonexistent/video-xyz.mp4' })
   let inputErr = null
   try {
     await badInput.openStream(new FakeResponse())
@@ -634,7 +641,7 @@ if (!bin || !sample) {
     process.stdout.write('  · 纯音频样片拿不到（没有 afconvert / 系统音效）：跳过\n')
   } else {
     const resA = new FakeResponse()
-    const playerA = new EnginePlayer({ enginePath: bin, input: audioSample })
+    const playerA = new EnginePlayer({ engine: api, enginePath: bin, input: audioSample })
     const metaA = await playerA.openStream(resA)
     eq(metaA.decodeMode, 'frames', '纯音频也走引擎解码（同一个内核）')
     ok(!!metaA.audio && metaA.audio.kind === KIND_AUDIO, '元信息里带音频参数（采样率/声道数）')
@@ -645,6 +652,7 @@ if (!bin || !sample) {
     ok(parsedA.packets.every((p) => p.kind === KIND_AUDIO), '全是声音包（没有画面）')
     eq(parsedA.rest.length, 0, '整条流切完不留残余')
   }
+  await api.close()
 }
 
 rmSync(tmp, { recursive: true, force: true })

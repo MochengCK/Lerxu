@@ -25,11 +25,11 @@ import { storeToRefs } from 'pinia'
 import { checkTaskIsBT, getTaskName, getTaskUri, isMagnetTask } from '@shared/utils'
 import { isTaskPendingSelectionCandidate, isTaskPendingSelectionTarget, isTaskFileSelectionConfirmed, getTaskInfoHash } from '@/utils/task'
 import { TASK_STATUS } from '@shared/constants'
-import { spawn, spawnSync, execSync } from 'node:child_process'
+import { execSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, renameSync, mkdirSync, utimesSync, statSync, readdirSync, unlinkSync, copyFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, basename, extname, resolve, isAbsolute, join } from 'node:path'
+import { dirname, basename, extname, resolve, isAbsolute, join, delimiter } from 'node:path'
 import { getUserDataPath, getExePath, getAppPath } from '@/utils/appPaths'
 import {
   autoCategorizeDownloadedFile as autoCategorizeFile,
@@ -47,13 +47,10 @@ import { createCompleteNotifier } from '@/utils/completeNotify'
 import {
   mediaEngineBinName,
   mediaEngineCandidates,
-  parseEngineLine,
-  progressFromEngineLine,
   probeHasVideoAndAudio,
-  engineErrorText,
-  buildMuxArgs,
-  engineEnvFromConfig,
-  mergeOutputExtension
+  progressFromEngineEvent,
+  mergeOutputExtension,
+  MEDIA_ENGINE_IPC
 } from '@shared/zuvrust'
 
 defineOptions({ name: 'mo-engine-client' })
@@ -115,9 +112,40 @@ const _completeNotifier = createCompleteNotifier()
 // （隔得久）时 10 秒窗口也过期。身份口径与完成通知一致 ⇒ 窗口给足 10 分钟。
 const _downloadStartNotifier = createCompleteNotifier({ ttlMs: 10 * 60 * 1000 })
 let _dashMergeJobs = new Map()
-// 正在跑的 `zuvrust mux` 子进程：合并是长任务，宿主退出 / 组件卸载时要能一把
-// 收掉，否则引擎进程会被留下继续吃 CPU 与磁盘（正常结束它会自己退出）。
-const _activeMuxChildren = new Set()
+// 正在跑的媒体引擎任务（jobId）：合并/转封装是长任务，组件卸载或超时时
+// 要通过 IPC 取消；引擎进程本身由主进程单例管理，组件不持有子进程。
+const _activeMuxJobs = new Set()
+const _mediaEngineProgressHandlers = new Map()
+
+/** 主进程 IPC → 统一的 `{ok,result|error}` 契约；失败抛带 kind/retryable 的 Error。 */
+async function invokeMediaEngine (channel, params = {}) {
+  const response = await ipcRenderer.invoke(channel, params)
+  if (!response || response.ok !== true) {
+    const error = new Error(response?.error?.message || '媒体引擎调用失败')
+    Object.assign(error, response?.error || {})
+    throw error
+  }
+  return response.result
+}
+
+function onMediaEngineProgress (_event, payload = {}) {
+  const handler = _mediaEngineProgressHandlers.get(payload.jobId)
+  if (handler) handler(payload)
+}
+
+function newMediaEngineJobId (prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function withTimeout (promise, ms, label) {
+  let timer = null
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} 超时（${ms}ms）`)), ms)
+    })
+  ]).finally(() => clearTimeout(timer))
+}
 // 合并卡死的两道兜底：无进度输出的空闲时限，以及硬性总时限。
 // 都只是为了"别把卡死的进程一直留在后台"，正常合并远够用。
 const MUX_IDLE_TIMEOUT_MS = 180 * 1000
@@ -1476,23 +1504,45 @@ const dir = dirname(filePath)
         } catch (_) {
           candidates.push(binName)
         }
-        return candidates.find(p => (p === binName ? checkSystemMediaEngine() : existsSync(p))) || ''
+        return findMediaEnginePath(candidates, binName)
       }
-      function checkSystemMediaEngine() {
+      /** 只查 PATH 里的文件是否存在；不再启动 `zuvrust version` 做探测。 */
+      function findExecutableOnPath(bin) {
         try {
-          const result = spawnSync('zuvrust', ['version', '--json'], { windowsHide: true, timeout: 5000 })
-          return result.status === 0
-        } catch (_) {
-          return false
+          const dirs = `${process.env.PATH || ''}`.split(delimiter)
+          for (const dir of dirs) {
+            if (!dir) continue
+            const path = resolve(dir, bin)
+            if (existsSync(path)) return path
+          }
+        } catch (_) {}
+        return ''
+      }
+      function findMediaEnginePath(candidates, binName) {
+        for (const candidate of candidates) {
+          if (candidate === binName) {
+            const hit = findExecutableOnPath(binName)
+            if (hit) return hit
+            continue
+          }
+          if (existsSync(candidate)) return candidate
         }
+        return ''
       }
       async function ensureMediaEngine() {
         const existingPath = resolveMediaEnginePath()
         if (existingPath) {
-          return existingPath
+          // 二进制存在不代表它带 `serve`（旧版本没有 API）。握手一次；
+          // 失败按"引擎不可用"处理，给出与缺引擎相同的提示。
+          try {
+            await invokeMediaEngine(MEDIA_ENGINE_IPC.STATUS)
+            return existingPath
+          } catch (e) {
+            console.warn(`[Lerxu] 媒体引擎不可用：${e && e.message ? e.message : e}`)
+          }
         }
 
-        // 提示只弹一次（与以前 ffmpeg 的处理一致：合并会反复触发，不能每次都弹）
+        // 提示只弹一次（合并会反复触发，不能每次都弹）
         let skipFlagPath = ''
         try {
           const userDataPath = getUserDataPath()
@@ -1980,158 +2030,133 @@ const dir = dirname(filePath)
         return job
       }
       /**
-       * 调媒体引擎合并音视频：`zuvrust mux <输出> <输入>...`。
+       * 调媒体引擎合并音视频（JSON-RPC `mux`）。
        *
-       * 谁是画面、谁是声音由**引擎自己探测**（它读容器就知道），同角色的多个输入
-       * 由引擎按传入顺序接起来。所以这里既不需要像以前调 ffmpeg 那样先猜
-       * `-map 0:v:0 -map 1:a:0`、失败再交换参数重试，也不需要判断哪个文件是画面 ——
-       * 输入就是"一串待合并的文件"。
-       *
-       * 输出是 NDJSON：进度行按 `type` 分发，错误行带 `kind`/`retryable`
-       * —— 宿主不用去正则匹配引擎的文案（文案一改就失灵）。
-       *
-       * `--progress` **总是带上**：合并是长任务，进度必须实时往上走；没有宿主
-       * 承载进度（progressGid 为空）时那几行只是被读掉，代价可以忽略。
+       * 谁是画面、谁是声音由**引擎自己探测**，同角色的多个输入按传入顺序接起来。
+       * 进度通过主进程的 `media-engine:progress` 推送；超时/组件卸载通过
+       * `media-engine:cancel` 取消 —— 渲染进程不再持有任何引擎子进程。
        */
-      function runEngineMux(enginePath, inputPaths, outputPath, progressGid = '') {
+      function runEngineMux (inputPaths, outputPath, progressGid = '') {
         return new Promise((resolve, reject) => {
           const inputs = (Array.isArray(inputPaths) ? inputPaths : [inputPaths]).filter(Boolean)
           if (!inputs.length) {
             reject(new Error('mux 没有任何输入文件'))
             return
           }
-          // 「视频」设置项 → 引擎参数（分片时长）与环境变量（线程数 / 强制软解）。
-          // 容器由输出扩展名决定，见 `getDashMergeOutputPath`。
           const muxCfg = preferenceConfig.value || {}
-          const args = [
-            'mux',
-            outputPath,
-            ...inputs,
-            ...buildMuxArgs({
-              fragmentMs: Number(muxCfg.mergeFragmentMs || 0),
-              format: muxCfg.mergeFormat
-            })
-          ]
-          const child = spawn(enginePath, args, {
-            windowsHide: true,
-            env: { ...process.env, ...engineEnvFromConfig(muxCfg) }
-          })
-          _activeMuxChildren.add(child)
-          let stderr = ''
-          let stdoutBuf = ''
+          const jobId = newMediaEngineJobId('mux')
           let lastBytes = 0
           let lastAt = Date.now()
           let settled = false
           let idleTimer = null
-          // `mux` 是**同步的一次性命令**：正常结束引擎自己就退出（宿主没有把它
-          // 做成常驻服务），所以正常路径不会在后台留下进程。下面两个定时器只为
-          // "引擎卡死"兜底 —— 少了它们，一个卡住的合并进程会永久留在后台吃
-          // CPU / 磁盘，而宿主早已不再看它（用户点名的"别一直占着资源"）。
-          const finish = (fn) => {
+          let hardTimer = null
+          _activeMuxJobs.add(jobId)
+
+          const cancel = () => {
+            ipcRenderer.invoke(MEDIA_ENGINE_IPC.CANCEL, { jobId }).catch(() => {})
+          }
+          const finish = (fn, value) => {
             if (settled) return
             settled = true
             clearTimeout(idleTimer)
             clearTimeout(hardTimer)
-            _activeMuxChildren.delete(child)
-            fn()
+            _activeMuxJobs.delete(jobId)
+            _mediaEngineProgressHandlers.delete(jobId)
+            fn(value)
           }
           const armIdle = () => {
             clearTimeout(idleTimer)
             idleTimer = setTimeout(() => {
-              try { child.kill('SIGKILL') } catch (_) {}
-              finish(() => reject(new Error(
+              cancel()
+              finish(reject, new Error(
                 `mux 超过 ${Math.round(MUX_IDLE_TIMEOUT_MS / 1000)} 秒没有任何进度输出，已终止`
-              )))
+              ))
             }, MUX_IDLE_TIMEOUT_MS)
           }
-          const hardTimer = setTimeout(() => {
-            try { child.kill('SIGKILL') } catch (_) {}
-            finish(() => reject(new Error(
+          const onProgress = (payload) => {
+            armIdle()
+            const parsed = progressFromEngineEvent(payload.type, payload.data)
+            if (!parsed || !progressGid) return
+            const now = Date.now()
+            const elapsed = Math.max(1, now - lastAt)
+            // 引擎的进度按"已写字节 / 输入总字节"算，所以这里的差值就是**写入速率**
+            const speed = Math.max(0, (parsed.totalSize - lastBytes) * 1000 / elapsed)
+            lastBytes = parsed.totalSize
+            lastAt = now
+            taskStore.setMergeProgress({
+              gid: progressGid,
+              progress: { percent: parsed.percent, totalSize: parsed.totalSize, speed }
+            })
+          }
+          _mediaEngineProgressHandlers.set(jobId, onProgress)
+
+          hardTimer = setTimeout(() => {
+            cancel()
+            finish(reject, new Error(
               `mux 超过 ${Math.round(MUX_HARD_TIMEOUT_MS / 60000)} 分钟仍未结束，已终止`
-            )))
+            ))
           }, MUX_HARD_TIMEOUT_MS)
           armIdle()
-          child.stdout.on('data', (d) => {
-            armIdle()
-            stdoutBuf += d.toString('utf8')
-            const lines = stdoutBuf.split('\n')
-            stdoutBuf = lines.pop() || ''
-            for (const line of lines) {
-              const parsed = progressFromEngineLine(line)
-              if (!parsed || !progressGid) continue
-              const now = Date.now()
-              const elapsed = Math.max(1, now - lastAt)
-              // 引擎的进度按"已写字节 / 输入总字节"算，所以这里的差值就是**写入速率**
-              const speed = Math.max(0, (parsed.totalSize - lastBytes) * 1000 / elapsed)
-              lastBytes = parsed.totalSize
-              lastAt = now
-              taskStore.setMergeProgress({
-                gid: progressGid,
-                progress: { percent: parsed.percent, totalSize: parsed.totalSize, speed }
-              })
-            }
-          })
-          child.stderr.on('data', (d) => {
-            armIdle()
-            stderr += d.toString('utf8')
-          })
-          child.on('error', (err) => finish(() => reject(err)))
-          child.on('close', (code) => {
-            finish(() => {
-              if (code === 0) {
-                resolve(true)
-                return
-              }
-              reject(new Error(engineErrorText(stderr, code)))
-            })
-          })
+
+          invokeMediaEngine(MEDIA_ENGINE_IPC.MUX, {
+            jobId,
+            output: outputPath,
+            inputs,
+            fragmentMs: Number(muxCfg.mergeFragmentMs || 0)
+          }).then(() => finish(resolve, true))
+            .catch((error) => finish(reject, error))
         })
+      }
+
+      /** 换容器（API `remux`）；超时通过 IPC 取消，失败返回 false。 */
+      async function remuxToFile (inputPath, outputPath) {
+        const jobId = newMediaEngineJobId('remux')
+        _activeMuxJobs.add(jobId)
+        const timer = setTimeout(() => {
+          ipcRenderer.invoke(MEDIA_ENGINE_IPC.CANCEL, { jobId }).catch(() => {})
+        }, 60000)
+        try {
+          await invokeMediaEngine(MEDIA_ENGINE_IPC.REMUX, {
+            jobId,
+            input: inputPath,
+            output: outputPath
+          })
+          return true
+        } catch (_) {
+          return false
+        } finally {
+          clearTimeout(timer)
+          _activeMuxJobs.delete(jobId)
+        }
       }
 
       /**
        * 校验合并产物**确实同时含视频与音频**。
        *
-       * 为什么要校验：合并最坏的形态不是报错，而是"产出了一个只有画面的文件"却被
-       * 判成完成 —— 用户点名的"视频不完整"。以前靠 `ffmpeg -f null` 探一遍，
-       * 现在用引擎自己的 `probe`：少一个外部依赖，判据也与引擎完全一致
-       * （`kind` 0=视频 / 1=音频 是引擎的对外契约）。
+       * 合并最坏的形态不是报错，而是"产出了一个只有画面的文件"却被判成完成。
+       * 用引擎自己的 `probe`，判据与引擎完全一致（`kind` 0=视频 / 1=音频）。
        */
-      async function validateMergeOutput(enginePath, outputPath) {
+      async function validateMergeOutput (outputPath) {
         if (!outputPath || !existsSync(outputPath)) {
           return false
         }
-        return new Promise((resolve) => {
-          let settled = false
-          const child = spawn(enginePath, ['probe', outputPath, '--json'], { windowsHide: true })
-          let out = ''
-          const done = (result) => {
-            if (settled) return
-            settled = true
-            clearTimeout(timer)
-            resolve(result)
-          }
-          const timer = setTimeout(() => {
-            try { child.kill('SIGKILL') } catch (_) {}
-            done(false)
-          }, 30000)
-          child.stdout.on('data', (d) => { out += d.toString('utf8') })
-          child.on('error', () => done(false))
-          child.on('close', (code) => {
-            if (code !== 0) {
-              done(false)
-              return
-            }
-            const first = `${out}`.split('\n').map(s => s.trim()).find(Boolean) || ''
-            done(probeHasVideoAndAudio(parseEngineLine(first)))
-          })
-        })
+        try {
+          const result = await withTimeout(
+            invokeMediaEngine(MEDIA_ENGINE_IPC.PROBE, { input: outputPath }),
+            30000,
+            'probe'
+          )
+          return probeHasVideoAndAudio({ ok: true, result })
+        } catch (_) {
+          return false
+        }
       }
 
-      async function mergeDashToOutput(enginePath, inputPaths, outputPath, progressGid = '') {
+      async function mergeDashToOutput (inputPaths, outputPath, progressGid = '') {
         const tempPath = resolve(dirname(outputPath), `.${basename(outputPath)}.lerxu-merging-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`)
         try {
-          await runEngineMux(enginePath, inputPaths, tempPath, progressGid)
-          if (!await validateMergeOutput(enginePath, tempPath)) {
+          await runEngineMux(inputPaths, tempPath, progressGid)
+          if (!await validateMergeOutput(tempPath)) {
             throw new Error('Merged output does not contain both video and audio streams')
           }
           if (existsSync(outputPath)) {
@@ -2209,8 +2234,7 @@ const dir = dirname(filePath)
             // 配对文件尚未出现 / 还在下载：返回 waitingForPair 让重试机制继续等
             return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
-          const enginePath = await ensureMediaEngine()
-          if (!enginePath) {
+          if (!await ensureMediaEngine()) {
             const notifyKey = `${dir || ''}|${base || ''}`
             const fallbackNotifyPath = finalPath || ''
             return { isBilibiliPart: true, mergedPath: '', noMediaEngine: true, notifyKey, fallbackNotifyPath }
@@ -2221,7 +2245,7 @@ const dir = dirname(filePath)
             return { isBilibiliPart: true, mergedPath: '' }
           }
           try {
-            await mergeDashToOutput(enginePath, frag.inputs, outputPath, task && task.gid ? `${task.gid}` : '')
+            await mergeDashToOutput(frag.inputs, outputPath, task && task.gid ? `${task.gid}` : '')
             const finalOutputPath = await afterBilibiliMerge(task, info, frag.inputs[0], frag.inputs[1], outputPath, frag.inputs)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
           } catch (e) {
@@ -2264,15 +2288,14 @@ const dir = dirname(filePath)
           return { isBilibiliPart: true, mergedPath: '' }
         }
 
-        const enginePath = await ensureMediaEngine()
-        if (!enginePath) {
+        if (!await ensureMediaEngine()) {
           const notifyKey = `${outputDir || ''}|${base || ''}`
           const fallbackNotifyPath = finalPath || ''
           return { isBilibiliPart: true, mergedPath: '', noMediaEngine: true, notifyKey, fallbackNotifyPath }
         }
 
         try {
-          await mergeDashToOutput(enginePath, mergeInputs, outputPath, task && task.gid ? `${task.gid}` : '')
+          await mergeDashToOutput(mergeInputs, outputPath, task && task.gid ? `${task.gid}` : '')
           const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath, mergeInputs)
           return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
         } catch (e) {
@@ -2373,8 +2396,7 @@ const dir = dirname(filePath)
             return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
 
-          const enginePath = await ensureMediaEngine()
-          if (!enginePath) {
+          if (!await ensureMediaEngine()) {
             return {
               isBilibiliPart: true,
               mergedPath: '',
@@ -2385,7 +2407,7 @@ const dir = dirname(filePath)
           }
 
           try {
-            await mergeDashToOutput(enginePath, pairInputs, outputPath, gid)
+            await mergeDashToOutput(pairInputs, outputPath, gid)
             const info = { dir: outputDir, base: outputBase, type: 'named' }
             const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
@@ -2557,15 +2579,14 @@ const dir = dirname(filePath)
             return { isBilibiliPart: true, mergedPath: '' }
           }
 
-          const enginePath = await ensureMediaEngine()
-          if (!enginePath) {
+          if (!await ensureMediaEngine()) {
             const notifyKey = `${pairParts.dir || ''}|${pairParts.stem || ''}`
             const fallbackNotifyPath = finalPath || ''
             return { isBilibiliPart: true, mergedPath: '', noMediaEngine: true, notifyKey, fallbackNotifyPath }
           }
 
           try {
-            await mergeDashToOutput(enginePath, mergeInputs, outputPath, task && task.gid ? `${task.gid}` : '')
+            await mergeDashToOutput(mergeInputs, outputPath, task && task.gid ? `${task.gid}` : '')
             const info = { dir: pairParts.dir, base: pairParts.stem, type: 'named' }
             const finalOutputPath = await afterBilibiliMerge(task, info, videoPath, audioPath, outputPath, mergeInputs)
             return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
@@ -2940,24 +2961,10 @@ const dir = dirname(filePath)
                   finalOutputPath = finalTarget
                 } else {
                   try {
-                    // 换容器重新封装也交给引擎（`zuvrust remux`）：它按容器规则
+                    // 换容器重新封装也交给引擎（API `remux`）：它按容器规则
                     // 处理 extradata 与音频帧形态，比再引入一个 ffmpeg 依赖可靠
-                    const enginePath = resolveMediaEnginePath()
-                    if (enginePath) {
-                      const remuxOk = await new Promise((resolve) => {
-                        const child = spawn(enginePath, ['remux', finalTarget, outputPath, '--json'], { windowsHide: true })
-                        let settled = false
-                        const done = (r) => { if (!settled) { settled = true; resolve(r) } }
-                        const timer = setTimeout(() => {
-                          try { child.kill('SIGKILL') } catch (_) {}
-                          done(false)
-                        }, 60000)
-                        child.on('error', () => { clearTimeout(timer); done(false) })
-                        child.on('close', (code) => { clearTimeout(timer); done(code === 0) })
-                      })
-                      if (remuxOk && existsSync(finalTarget)) {
-                        finalOutputPath = finalTarget
-                      }
+                    if (await remuxToFile(outputPath, finalTarget) && existsSync(finalTarget)) {
+                      finalOutputPath = finalTarget
                     }
                   } catch (_) {}
                 }
@@ -4774,6 +4781,7 @@ onMounted(() => {
       // 必须在轮询启动前完成，否则任务开始/完成等事件无法驱动即时刷新
       bindEngineEvents()
       api.client.on('reconnect', onEngineReconnect)
+      ipcRenderer.on(MEDIA_ENGINE_IPC.PROGRESS, onMediaEngineProgress)
 
       // 保存定时器句柄，防止组件在 100ms 内被销毁后轮询"复活"
       _bootTimer = setTimeout(() => {
@@ -4841,12 +4849,13 @@ onUnmounted(() => {
         _btRetryTimers.clear()
       }
       clearAllMergeRetryTimers()
-      // 还在跑的合并进程一并收掉：`zuvrust mux` 正常会自己退出，但组件卸载
-      // （切换页面 / 退出应用）时仍有在跑的必须主动终止，不能让引擎进程留下。
-      for (const child of _activeMuxChildren) {
-        try { child.kill('SIGKILL') } catch (_) {}
+      // 还在跑的引擎任务一并取消；引擎进程由主进程单例管理，组件不持有子进程。
+      ipcRenderer.removeListener(MEDIA_ENGINE_IPC.PROGRESS, onMediaEngineProgress)
+      for (const jobId of _activeMuxJobs) {
+        ipcRenderer.invoke(MEDIA_ENGINE_IPC.CANCEL, { jobId }).catch(() => {})
       }
-      _activeMuxChildren.clear()
+      _activeMuxJobs.clear()
+      _mediaEngineProgressHandlers.clear()
       taskStore.saveSession()
 
       unbindEngineEvents()

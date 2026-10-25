@@ -1,7 +1,7 @@
 /**
  * Lerxu 独立播放器窗口。
  *
- * 它只做"呈现与控制"：数据由主进程的媒体引擎（`zuvrust stream`）经本地
+ * 它只做"呈现与控制"：数据由主进程的媒体引擎（`MediaEngineService` 的 API 流）经本地
  * 流服务（MediaStreamServer 的 `/engine/<token>`）送来 —— 容器解析、边等边读、
  * 寻址、**解码**都在引擎里，这一页只负责
  *
@@ -1077,7 +1077,7 @@
       return
     }
 
-    // 元信息在**响应头**里（`EnginePlayer` 把引擎的第一行 NDJSON 摘到了
+    // 元信息在**响应头**里（`EnginePlayer` 把 API 返回的 meta 放进了
     // `X-Lerxu-Meta`），body 从第一个字节起就是包流 —— 和 MSE 那条路同一个读法。
     // 别去 body 里找"元信息行"：它不在那儿（踩过：那样第一行会拿包流的魔数当 JSON 解）。
     const meta = metaFromResponse(res)

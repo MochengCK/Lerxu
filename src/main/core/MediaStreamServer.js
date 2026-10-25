@@ -106,7 +106,7 @@ export default class MediaStreamServer {
     const entry = this.tokens.get(token)
     this.tokens.delete(token)
     try {
-      // 引擎路径要**杀掉子进程**，否则关闭窗口后引擎会一直读文件（瘦客户端也会残留）
+      // 引擎流要**取消掉**，否则关闭窗口后引擎会一直读文件（瘦客户端也会残留）
       entry?.player?.stop?.()
     } catch (_) {}
     try {
