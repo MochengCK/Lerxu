@@ -405,7 +405,7 @@ export default class Application extends EventEmitter {
 
   // 添加下载任务(与 /lerxu/add POST 一致),返回 { ok, dialog } 或 { ok: false, error }
   async _handleExtensionAdd (payload) {
-    const { url, referer, headers, suggestedFilename, pairId, pairRole } = payload
+    const { url, referer, headers, suggestedFilename, pairId, pairRole, mergeFormat } = payload
     const downloadUrl = `${url || ''}`.trim()
     if (!downloadUrl || !/^https?:/i.test(downloadUrl)) {
       return { ok: false, error: 'invalid url' }
@@ -586,6 +586,20 @@ export default class Application extends EventEmitter {
     if (pairId) {
       taskPayload.pairId = `${pairId}`
       taskPayload.pairRole = pairRole ? `${pairRole}` : ''
+    }
+    // 浏览器扩展里逐条选的「合并产出格式」。只有应用真支持的容器才往下传：
+    // 这个值最终会决定合并/换封装的扩展名，不能让任意字符串进到文件名里。
+    const requestedMergeFormat = `${mergeFormat || ''}`.trim().toLowerCase()
+    if (['mp4', 'mkv', 'webm', 'ts'].includes(requestedMergeFormat)) {
+      taskPayload.mergeFormat = requestedMergeFormat
+    }
+    // 片段下载（秒）：扩展里拖出来的时间区间，原样带到任务选项
+    // （引擎选项 clip-start / clip-end，只对 HLS 清单有效）
+    const clipStart = Number(payload.clipStart)
+    const clipEnd = Number(payload.clipEnd)
+    if (Number.isFinite(clipStart) && Number.isFinite(clipEnd) && clipStart >= 0 && clipEnd > clipStart) {
+      taskPayload.clipStart = Math.round(clipStart * 1000) / 1000
+      taskPayload.clipEnd = Math.round(clipEnd * 1000) / 1000
     }
 
     if (!silentDownload) {

@@ -958,12 +958,17 @@ const dir = dirname(filePath)
         }
 
         if (mergeResult && mergeResult.mergedPath) {
-          setFileMtimeOnComplete(task, mergeResult.mergedPath)
-          autoCategorizeDownloadedFile(task, mergeResult.mergedPath)
+          // 合并产物也要能裁片段（扩展里在「完整视频」那条上拖的区间）：
+          // 单文件合并有 1 条输入的限制，所以裁剪放在**合并之后**做 —— 产物是
+          // 普通 mp4/mkv，时间轴从 0 开始，帧级切点照样成立
+          const mergedClipPath = await clipSingleFile(mergeResult.mergedPath, task)
+          const mergedFinal = mergedClipPath || mergeResult.mergedPath
+          setFileMtimeOnComplete(task, mergedFinal)
+          autoCategorizeDownloadedFile(task, mergedFinal)
           try {
             const gid = task && task.gid ? `${task.gid}` : ''
             if (gid) {
-              const base = basename(mergeResult.mergedPath || '')
+              const base = basename(mergedFinal || '')
               const suffix = cfg.downloadingFileSuffix || ''
               const name = suffix && base.endsWith(suffix) ? base.slice(0, -suffix.length) : base
               if (name) {
@@ -974,14 +979,30 @@ const dir = dirname(filePath)
           // 通知的唯一出口（内部按 pairId/gid 去重）：合并成功的这一支与
           // "另一半重试定时器也合成了同一产物"那一支会先后走到这里，
           // 以前各弹一次 → 一个视频两条完成通知
-          notifyTaskCompleteOnce(task, isBT, mergeResult.mergedPath, pairInfo && pairInfo.id)
+          notifyTaskCompleteOnce(task, isBT, mergedFinal, pairInfo && pairInfo.id)
         } else if (mergeResult && mergeResult.isBilibiliPart && mergeResult.noMediaEngine) {
           try {
             const notifyPath = mergeResult.fallbackNotifyPath || finalPath || path
             notifyTaskCompleteOnce(task, isBT, notifyPath, pairInfo && pairInfo.id)
           } catch (_) {}
         } else if (!(mergeResult && mergeResult.isBilibiliPart)) {
-          autoCategorizeDownloadedFile(task, finalPath)
+          // 单条任务（普通视频 / HLS 清单 / 直播录制）：
+          //   ① 先按扩展里拖的片段区间裁一次（清单任务在这里被跳过：下载引擎
+          //      已经按分片裁过，再裁会把起点又推后一截）；
+          //   ② 再按扩展里选的「输出格式」换封装。
+          // 两步都是"失败就保留原文件"，绝不影响下载结果。
+          const clipped = await clipSingleFile(finalPath, task)
+          const basePath = clipped || finalPath
+          const retargeted = await retargetSingleFile(basePath, task)
+          if (retargeted) {
+            try {
+              const retargetGid = task && task.gid ? `${task.gid}` : ''
+              if (retargetGid) {
+                taskStore.setTaskDisplayName({ gid: retargetGid, name: basename(retargeted) })
+              }
+            } catch (_) {}
+          }
+          autoCategorizeDownloadedFile(task, retargeted || basePath)
         }
       }
       function looksLikeBilibiliSource(referer, headers) {
@@ -2108,18 +2129,26 @@ const dir = dirname(filePath)
         })
       }
 
-      /** 换容器（API `remux`）；超时通过 IPC 取消，失败返回 false。 */
-      async function remuxToFile (inputPath, outputPath) {
+      /**
+       * 换容器（API `remux`）；超时通过 IPC 取消，失败返回 false。
+       *
+       * `extra` 目前只用于片段裁剪（`clipStart` / `clipEnd`，秒）。裁剪比换容器
+       * 慢得多（要解复用整段），所以超时按有没有裁剪分开算。
+       */
+      async function remuxToFile (inputPath, outputPath, extra = {}) {
         const jobId = newMediaEngineJobId('remux')
         _activeMuxJobs.add(jobId)
+        const clip = extra && (Number.isFinite(Number(extra.clipStart)) || Number.isFinite(Number(extra.clipEnd)))
+        const timeoutMs = clip ? 30 * 60 * 1000 : 60000
         const timer = setTimeout(() => {
           ipcRenderer.invoke(MEDIA_ENGINE_IPC.CANCEL, { jobId }).catch(() => {})
-        }, 60000)
+        }, timeoutMs)
         try {
           await invokeMediaEngine(MEDIA_ENGINE_IPC.REMUX, {
             jobId,
             input: inputPath,
-            output: outputPath
+            output: outputPath,
+            ...extra
           })
           return true
         } catch (_) {
@@ -2170,12 +2199,169 @@ const dir = dirname(filePath)
           } catch (_) {}
         }
       }
-      function getDashMergeOutputPath(dir, stem, inputPaths = []) {
+      /**
+       * 这条任务自己选的合并产出格式（浏览器扩展里逐条设置，见扩展的齿轮）。
+       * 没有 / 不认识 → 返回空串，调用方回落到应用的「视频 → 合并输出格式」。
+       */
+      function taskMergeFormat (task) {
+        try {
+          const gid = task && task.gid ? `${task.gid}` : ''
+          if (!gid) return ''
+          const history = taskHistory.getAllHistory() || []
+          const matched = history.find(t => t && `${t.gid}` === gid)
+          const value = matched && matched.mergeFormat ? `${matched.mergeFormat}`.trim().toLowerCase() : ''
+          return ['mp4', 'mkv', 'webm', 'ts'].includes(value) ? value : ''
+        } catch (_) {
+          return ''
+        }
+      }
+
+      /**
+       * 这条任务在扩展里拖出来的片段区间（秒）。
+       *
+       * HLS 清单由**下载引擎**按分片裁（清单只有分片时间轴）；普通单文件没有
+       * 那种时间轴，只能在下载完成后由媒体引擎按帧裁 —— 区间从任务历史里取，
+       * 因为完成事件到来时任务本身可能已被引擎清掉。
+       */
+      function taskClipRange (task) {
+        try {
+          const gid = task && task.gid ? `${task.gid}` : ''
+          if (!gid) return null
+          const history = taskHistory.getAllHistory() || []
+          const matched = history.find(t => t && `${t.gid}` === gid)
+          if (!matched) return null
+          const start = Number(matched.clipStart)
+          const end = Number(matched.clipEnd)
+          if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null
+          return { start: Math.max(0, start), end }
+        } catch (_) {
+          return null
+        }
+      }
+
+      /** 这条任务是清单下载（HLS/DASH）：下载引擎已经裁过，宿主不能再裁一次。 */
+      function taskIsManifestDownload (task) {
+        try {
+          const raw = `${getTaskUri(task) || ''}`.trim()
+          if (!raw) return false
+          const path = raw.split('?')[0].split('#')[0].toLowerCase()
+          return path.endsWith('.m3u8') || path.endsWith('.m3u') || path.endsWith('.mpd')
+        } catch (_) {
+          return false
+        }
+      }
+
+      /**
+       * 单文件任务的「片段裁剪」：下载完成后按任务历史里的区间重新封装一次。
+       *
+       * 引擎侧是**帧级**的：切点落在两个关键帧之间时，视频从切点之前的关键帧
+       * 解码（否则首帧没有参考帧），但 mp4 产物会写 `edts/elst` 把呈现起点挪到
+       * 切点 —— 播放器从 0 秒看到的就是切点那一帧。
+       *
+       * 任何一个环节失败都**保留原文件**：一次裁剪绝不能把下载结果弄丢。
+       * 返回最终路径（裁成功就是原路径，文件名不变）。
+       */
+      async function clipSingleFile (finalPath, task) {
+        const src = `${finalPath || ''}`
+        if (!src) return ''
+        try {
+          const clip = taskClipRange(task)
+          if (!clip) return ''
+          // 已经裁过就不再裁（同一条任务的完成事件可能被重放/重试触发多次，
+          // 二次裁剪会把区间再往后推一截）
+          try {
+            const gid = task && task.gid ? `${task.gid}` : ''
+            const entry = (taskHistory.getAllHistory() || []).find(t => t && `${t.gid}` === gid)
+            if (entry && entry.clipDone) return ''
+          } catch (_) {}
+          // 清单任务在下载引擎里已按分片裁过；再裁一次会把起点又往后推一截
+          if (taskIsManifestDownload(task)) return ''
+          const extMatch = src.match(/\.[^.\\/]+$/)
+          const ext = extMatch ? extMatch[0].toLowerCase() : ''
+          if (!['.mp4', '.mkv', '.ts', '.webm', '.m4a', '.flv'].includes(ext)) return ''
+          if (!await ensureMediaEngine()) return ''
+          const dir = dirname(src)
+          const tmp = resolve(dir, `.lerxu-clip-${Date.now().toString(36)}${ext}`)
+          try { if (existsSync(tmp)) unlinkSync(tmp) } catch (_) {}
+          const ok = await remuxToFile(src, tmp, { clipStart: clip.start, clipEnd: clip.end })
+          if (!ok || !existsSync(tmp)) {
+            try { if (existsSync(tmp)) unlinkSync(tmp) } catch (_) {}
+            return ''
+          }
+          // 就地替换：名字不变（历史、分类、完成通知都按原名说话）
+          const bak = `${src}.lerxu-clip.bak`
+          try {
+            if (existsSync(bak)) unlinkSync(bak)
+            renameSync(src, bak)
+          } catch (_) {
+            try { unlinkSync(tmp) } catch (_) {}
+            return ''
+          }
+          try {
+            renameSync(tmp, src)
+          } catch (_) {
+            // 换不回来时把原文件放回原位，绝不留一个被裁掉的空名
+            try { renameSync(bak, src) } catch (_) {}
+            try { unlinkSync(tmp) } catch (_) {}
+            return ''
+          }
+          try { unlinkSync(bak) } catch (_) {}
+          try { const xf = `${src}.xfer`; if (existsSync(xf)) unlinkSync(xf) } catch (_) {}
+          try {
+            const gid = task && task.gid ? `${task.gid}` : ''
+            if (gid) taskHistory.updateTask(gid, { clipDone: true }, null)
+          } catch (_) {}
+          return src
+        } catch (_) {
+          return ''
+        }
+      }
+
+      /**
+       * 单条任务的「换封装」：普通视频 / HLS 清单 / 直播录制在扩展上设过
+       * 输出格式时，下载完成后按目标容器重新封装一次。
+       *
+       * 只处理容器类文件（.ts/.mp4/.mkv/.webm/.m4a/.flv）；分片、种子、清单
+       * 一律不碰。**换封装失败就保留原文件** —— 一次换容器绝不能把下载结果弄丢。
+       */
+      async function retargetSingleFile (finalPath, task) {
+        const src = `${finalPath || ''}`
+        if (!src) return ''
+        try {
+          const wantFormat = taskMergeFormat(task)
+          if (!wantFormat) return ''
+          const srcExtMatch = src.match(/\.[^.\\/]+$/)
+          const srcExt = srcExtMatch ? srcExtMatch[0].toLowerCase() : ''
+          const targetExt = `.${mergeOutputExtension(wantFormat)}`
+          if (!srcExt || srcExt === targetExt) return ''
+          if (!['.ts', '.mp4', '.mkv', '.webm', '.m4a', '.flv'].includes(srcExt)) return ''
+          if (!await ensureMediaEngine()) return ''
+          const dir = dirname(src)
+          const stem = basename(src).replace(/\.[^.]+$/, '')
+          const target = generateUniqueFilePath(dir, stem, targetExt, [src])
+          if (!target) return ''
+          if (existsSync(target)) return ''
+          if (!await remuxToFile(src, target) || !existsSync(target)) {
+            return ''
+          }
+          try { unlinkSync(src) } catch (_) {}
+          try {
+            const xfer = `${src}.xfer`
+            if (existsSync(xfer)) unlinkSync(xfer)
+          } catch (_) {}
+          return target
+        } catch (_) {
+          return ''
+        }
+      }
+
+      function getDashMergeOutputPath(dir, stem, inputPaths = [], formatOverride = '') {
         const inputs = new Set((inputPaths || []).filter(Boolean).map(path => resolve(path)))
         // ⚠️ 这个临时文件的**扩展名就是引擎的容器选择**（引擎按扩展名选封装器），
         // 所以它必须与「视频 → 合并格式」一致；末了改名成正式名时用的是同一个扩展名。
+        // `formatOverride` 是这条任务自己选的容器（扩展里逐条设置），优先于全局设置。
         const cfg = preferenceConfig.value || {}
-        const ext = mergeOutputExtension(cfg.mergeFormat)
+        const ext = mergeOutputExtension(formatOverride || cfg.mergeFormat)
         for (let i = 0; i < 1000; i++) {
           const rand = Math.random().toString(36).slice(2, 10)
           const candidate = resolve(dir, `.lerxu-merging-${rand}.${ext}`)
@@ -2240,7 +2426,7 @@ const dir = dirname(filePath)
             return { isBilibiliPart: true, mergedPath: '', noMediaEngine: true, notifyKey, fallbackNotifyPath }
           }
           const outputBase = stripDashSequenceSuffix(base)
-          const outputPath = getDashMergeOutputPath(frag.dir || dir, outputBase, frag.inputs)
+          const outputPath = getDashMergeOutputPath(frag.dir || dir, outputBase, frag.inputs, taskMergeFormat(task))
           if (!outputPath) {
             return { isBilibiliPart: true, mergedPath: '' }
           }
@@ -2283,7 +2469,7 @@ const dir = dirname(filePath)
         const mergeInputs = buildMergeInputs(videoPath || finalPath, cfg, [videoPath, audioPath])
         const outputDir = dirname(videoPath || finalPath || rootDir || dir)
         const outputBase = stripDashSequenceSuffix(base)
-        const outputPath = getDashMergeOutputPath(outputDir, outputBase, mergeInputs)
+        const outputPath = getDashMergeOutputPath(outputDir, outputBase, mergeInputs, taskMergeFormat(task))
         if (!outputPath) {
           return { isBilibiliPart: true, mergedPath: '' }
         }
@@ -2391,7 +2577,7 @@ const dir = dirname(filePath)
           const pairInputs = [videoPath, audioPath]
           const outputDir = dirname(videoPath)
           const outputBase = stripDashSequenceSuffix(normalizeDashStemFromFilename(basename(videoPath)))
-          const outputPath = getDashMergeOutputPath(outputDir, outputBase, pairInputs)
+          const outputPath = getDashMergeOutputPath(outputDir, outputBase, pairInputs, taskMergeFormat(task))
           if (!outputPath) {
             return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
           }
@@ -2574,7 +2760,7 @@ const dir = dirname(filePath)
           // 凑不齐就只用这一对
           const mergeInputs = buildMergeInputs(videoPath, cfg, [videoPath, audioPath])
           const outputBase = stripDashSequenceSuffix(pairParts.stem)
-          const outputPath = getDashMergeOutputPath(pairParts.dir, outputBase, mergeInputs)
+          const outputPath = getDashMergeOutputPath(pairParts.dir, outputBase, mergeInputs, taskMergeFormat(task))
           if (!outputPath) {
             return { isBilibiliPart: true, mergedPath: '' }
           }
@@ -2809,7 +2995,9 @@ const dir = dirname(filePath)
           // 所以这里以设置项为准；站点元数据（bilibiliFormat）只在设置项保持默认
           // （mp4）时兜底 —— 反过来会让 .mkv 的内容被改名成 .mp4。
           const mergeCfg = preferenceConfig.value || {}
-          const settingExt = mergeOutputExtension(mergeCfg.mergeFormat)
+          // 这条任务在浏览器扩展里选过输出格式就听它的；没选过才看应用设置
+          const perTaskFormat = taskMergeFormat(task)
+          const settingExt = mergeOutputExtension(perTaskFormat || mergeCfg.mergeFormat)
           let targetExt = `.${settingExt}`
           try {
             const gid = task && task.gid ? `${task.gid}` : ''
@@ -2822,7 +3010,9 @@ const dir = dirname(filePath)
               }
               const fmt = matched && matched.bilibiliFormat ? `${matched.bilibiliFormat}`.trim().toLowerCase() : ''
               const allowed = ['mp4', 'mkv', 'mov', 'm4v', 'flv', 'ts']
-              if (settingExt === 'mp4' && fmt && allowed.includes(fmt)) {
+              // 站点元数据只在「没逐条指定、且应用设置仍是默认 mp4」时兜底：
+              // 用户明确选了容器就不该被站点的 flv/mov 顶掉
+              if (!perTaskFormat && settingExt === 'mp4' && fmt && allowed.includes(fmt)) {
                 targetExt = `.${fmt}`
               }
             }

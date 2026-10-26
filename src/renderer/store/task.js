@@ -1497,6 +1497,16 @@ const actions = {
           // 已经被引擎清理、只剩历史可查（用户点名要合并可靠）
           const pairId = data && data.pairId ? `${data.pairId}` : ''
           const pairRole = data && data.pairRole ? `${data.pairRole}` : ''
+          // 这条任务自己选的合并产出格式（浏览器扩展里逐条设置）。合并/换封装
+          // 发生在下载完成之后，那时任务可能已从引擎清掉，只能靠历史把选择找回来。
+          const mergeFormat = data && data.mergeFormat ? `${data.mergeFormat}`.trim().toLowerCase() : ''
+          // 片段区间（秒）：单文件任务的裁剪发生在下载完成之后，任务那时可能
+          // 已被引擎清掉 —— 只能靠历史把「要裁哪一段」找回来
+          const rawClipStart = Number(data && data.clipStart)
+          const rawClipEnd = Number(data && data.clipEnd)
+          const clipRange = (Number.isFinite(rawClipStart) && Number.isFinite(rawClipEnd) && rawClipEnd > rawClipStart)
+            ? { start: rawClipStart, end: rawClipEnd }
+            : null
           try {
             const now = Date.now()
             gids.forEach(gid => {
@@ -1505,6 +1515,11 @@ const actions = {
               if (pairId) {
                 patch.pairId = pairId
                 patch.pairRole = pairRole
+              }
+              if (mergeFormat) patch.mergeFormat = mergeFormat
+              if (clipRange) {
+                patch.clipStart = clipRange.start
+                patch.clipEnd = clipRange.end
               }
               taskHistory.updateTask(`${gid}`, patch, null)
             })

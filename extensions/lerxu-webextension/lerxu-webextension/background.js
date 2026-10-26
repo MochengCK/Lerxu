@@ -1236,7 +1236,7 @@ const mergeHeaderLines = (baseLines, extraLines) => {
 // 顺序重发由 recentTakeoverUrls 的窗口放行兜底。
 const inflightAdds = new Map()
 
-const addUri = async (url, referer, suggestedFilename, extraHeaders, pair) => {
+const addUri = async (url, referer, suggestedFilename, extraHeaders, pair, mergeFormat, clip) => {
   try {
     // 快速失败:程序不在线(无 WS 且最近 health 探测失败)时不走 HTTP 认证
     // 兜底(ensureSessionToken→performAuthentication→2 host×1.5s 超时,可达 5~6s),
@@ -1262,6 +1262,15 @@ const addUri = async (url, referer, suggestedFilename, extraHeaders, pair) => {
       // 如果有建议的文件名，添加到请求中
       if (suggestedFilename) {
         payload.suggestedFilename = suggestedFilename
+      }
+      // 这条资源自己选的合并产出格式（应用按任务落地，缺省走应用设置）
+      if (mergeFormat) {
+        payload.mergeFormat = `${mergeFormat}`
+      }
+      // 片段区间（秒）：应用转成引擎选项 clip-start / clip-end
+      if (clip && Number.isFinite(clip.start) && Number.isFinite(clip.end) && clip.end > clip.start) {
+        payload.clipStart = clip.start
+        payload.clipEnd = clip.end
       }
       // WS 主通道认证在连接层完成,无需 token 校验;HTTP 兜底由 tryChannel 内部处理
       const result = await channelRequest('add', payload)
@@ -1623,9 +1632,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const suggestedFilename = msg.suggestedFilename || ''
       const extraHeaders = Array.isArray(msg.headers) ? msg.headers : []
       const pair = msg.pairId ? { id: msg.pairId, role: msg.pairRole || '' } : null
+      const mergeFormat = msg.mergeFormat ? `${msg.mergeFormat}` : ''
+      const clipStart = Number(msg.clipStart)
+      const clipEnd = Number(msg.clipEnd)
+      const clip = (Number.isFinite(clipStart) && Number.isFinite(clipEnd) && clipEnd > clipStart)
+        ? { start: clipStart, end: clipEnd }
+        : null
       // addUri 内部已有程序在线预检查(快路径,零网络开销),离线时立即返回
       // false 走浏览器下载,不会卡在 HTTP 认证兜底上
-      const ok = await addUri(url, referer, suggestedFilename, extraHeaders, pair)
+      const ok = await addUri(url, referer, suggestedFilename, extraHeaders, pair, mergeFormat, clip)
       if (ok) {
         sendResponse({ ok: true, via: 'client' })
       } else {

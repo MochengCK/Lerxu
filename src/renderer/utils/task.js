@@ -206,6 +206,18 @@ export const buildOption = (type, form, uris = [], includeHeader = true) => {
     result.hlsWriteMode = hlsWriteMode
   }
 
+  // 片段下载（秒）：两端都有效、且 end > start 才下发。
+  // 引擎按清单 #EXTINF 的累计时间裁分片（粒度是整个分片，见 xfer-http playlist）。
+  const clipStart = Number(form.clipStart)
+  const clipEnd = Number(form.clipEnd)
+  if (
+    Number.isFinite(clipStart) && Number.isFinite(clipEnd) &&
+    clipStart >= 0 && clipEnd > clipStart
+  ) {
+    result.clipStart = Math.round(clipStart * 1000) / 1000
+    result.clipEnd = Math.round(clipEnd * 1000) / 1000
+  }
+
   if (type === ADD_TASK_TYPE.TORRENT) {
     if (
       selectFile !== SELECTED_ALL_FILES &&
@@ -310,6 +322,20 @@ export const buildUriPayload = async (form, autoCategorize = false, categories =
   if (!isEmpty(form.pairId)) {
     result.pairId = form.pairId
     result.pairRole = form.pairRole || ''
+  }
+  // 浏览器扩展里逐条选的「合并产出格式」也是**任务元数据**（不是引擎选项），
+  // 与 pairId 同理必须原样带到建任务处 —— 少了这一步，用户在扩展里选了 MKV，
+  // 应用仍按全局设置合出 MP4（用户点名）
+  if (!isEmpty(form.mergeFormat)) {
+    result.mergeFormat = `${form.mergeFormat}`.trim().toLowerCase()
+  }
+  // 片段区间（秒）同样要带到建任务处：HLS 由下载引擎按分片裁，**单文件**则要等
+  // 下载完成后由宿主用媒体引擎按帧裁一次 —— 后者只能从任务历史里拿到区间
+  const clipStart = Number(form.clipStart)
+  const clipEnd = Number(form.clipEnd)
+  if (Number.isFinite(clipStart) && Number.isFinite(clipEnd) && clipStart >= 0 && clipEnd > clipStart) {
+    result.clipStart = Math.round(clipStart * 1000) / 1000
+    result.clipEnd = Math.round(clipEnd * 1000) / 1000
   }
   return result
 }

@@ -415,14 +415,20 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const strip = (list) => list.filter(item =>
       !(item && (isLiveEntry(item) || isHlsManifestEntry(item) || (hasManifest && isTsSegmentEntry(item)))))
 
+    // 「完整视频」在手时（DASH 合并条目 / HLS 清单），**不再列出**视频流与音频流：
+    // 那两条本来就是被完整视频吃掉的两半，列出来只会让人在"该点哪一条"上犹豫
+    // （用户点名）。判定必须放在上面切分之后 —— manifest 自己就是从
+    // video/audio 池子里挑出来的，先清空会把清单也一起清掉。
+    const hasCompleteVideo = combined.length > 0 || manifest.length > 0
+
     return {
       live,
       manifest,
       segments,
       combined,
       m4s: strip(m4sKept),
-      video: strip(video),
-      audio: strip(audio)
+      video: hasCompleteVideo ? [] : strip(video),
+      audio: hasCompleteVideo ? [] : strip(audio)
     }
   }
 
@@ -637,9 +643,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     
     // 关闭下拉框
     const dropdown = document.getElementById('lerxu-resource-dropdown')
-    if (dropdown) {
-      dropdown.style.display = 'none'
-    }
+    hideResourceDropdownAnimated(dropdown)
     
     // 资源被清除后强制隐藏按钮（无视拖拽/固定状态）
     try {
@@ -768,6 +772,27 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   }
 
   /**
+   * 每条资源的「合并产出格式」（url → mp4 / mkv / ts）。
+   *
+   * 只活在内存里：刷新页面就回到「跟随应用」。这是一个**单次任务**的偏好，
+   * 跨会话留着只会让人下次想改时找不到是哪来的；真正要持久化的默认值
+   * 在应用设置「视频 → 合并输出格式」里。
+   */
+  const mergeFormatByUrl = new Map()
+  /**
+   * 每条资源的片段区间（url → { start, end }，秒）。
+   *
+   * 引擎按清单 `#EXTINF` 的累计时间裁分片（粒度是整个分片），所以只有
+   * **HLS 清单**能真正按片段下；普通 mp4 没有帧级裁切能力，不摆这个控件
+   * （摆了就是"能拖但不生效"）。同样只活在本页内存里。
+   */
+  const clipByUrl = new Map()
+  const clipOf = (url) => clipByUrl.get(`${url || ''}`) || null
+  /** 可选的合并容器；'' 这一项表示跟随应用。webm 不列（H.264+AAC 装不进 WebM） */
+  const MERGE_FORMAT_VALUES = ['', 'mp4', 'mkv', 'ts']
+  const mergeFormatOf = (url) => mergeFormatByUrl.get(`${url || ''}`) || ''
+
+  /**
    * 把一对音视频发给下载器。
    *
    * 两条消息带**同一个 pairId** 与各自的角色，应用端因此不需要靠"文件名像不像"
@@ -859,6 +884,17 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       // 如果有建议的文件名，添加到消息中
       if (suggestedFilename) {
         message.suggestedFilename = suggestedFilename
+      }
+      // 这条资源自己选的合并产出格式（应用按任务落地，缺省走应用设置）
+      const mergeFormat = mergeFormatOf(url)
+      if (mergeFormat) {
+        message.mergeFormat = mergeFormat
+      }
+      // 片段区间（秒）：只发有效窗口，引擎按清单累计时间挑分片
+      const clip = clipOf(url)
+      if (clip && Number.isFinite(clip.start) && Number.isFinite(clip.end) && clip.end > clip.start + 0.5) {
+        message.clipStart = Math.round(clip.start * 10) / 10
+        message.clipEnd = Math.round(clip.end * 10) / 10
       }
       chrome.runtime.sendMessage(message, () => { })
       return true
@@ -1860,6 +1896,28 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         'zh_CN': '直播',
         'zh_TW': '直播'
       },
+      // 每条资源右侧的「输出格式」：这条任务传到应用、下载完成之后合并/换封装
+      // 用的容器。空值 = 跟随应用「视频 → 合并输出格式」那一项。
+      'outputFormat': {
+        'en': 'Output format',
+        'zh_CN': '输出格式',
+        'zh_TW': '輸出格式'
+      },
+      'formatFollowApp': {
+        'en': 'App default',
+        'zh_CN': '跟随应用',
+        'zh_TW': '跟隨應用'
+      },
+      'clipRange': {
+        'en': 'Clip',
+        'zh_CN': '片段',
+        'zh_TW': '片段'
+      },
+      'downloadOne': {
+        'en': 'Download',
+        'zh_CN': '下载',
+        'zh_TW': '下載'
+      },
       // 空态：弹窗打开时还没嗅探到任何资源
       'noResources': {
         'en': 'No media found yet',
@@ -1944,23 +2002,43 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   color: var(--lx-text-1);
   background: var(--lx-bg-panel);
   border: 1px solid var(--lx-border-strong);
-  border-radius: 12px;
+  /* 圆角与应用的小控件统一到 6px（原来是 12，跟里面 6px 的按钮不搭） */
+  border-radius: 6px;
   box-shadow: var(--lx-shadow);
   overflow: hidden;
+  /* 出入场动画由 JS 写内联 transition（见 playPopupEnter/Leave）：
+     这里只兜底 transform-origin，避免过渡结束后残留偏移 */
+  transform-origin: top center;
+}
+@keyframes lx-drop-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
 }
 
 /* 顶部工具栏 */
 #lerxu-dropdown-header {
-  background: var(--lx-bg-head);
-  border-bottom: 1px solid var(--lx-border);
+  /* 与下方列表同底：工具栏不是另一块面板，只是列表上方的一行操作 */
+  background: var(--lx-bg-panel);
 }
 #lerxu-dropdown-controls {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: 8px;
+  padding: 8px;
   box-sizing: border-box;
+}
+/* 两个按钮各占左右一半 */
+#lerxu-dropdown-controls .lx-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* 分隔线：不再通到卡片两边，左右各留 12px */
+#lerxu-dropdown-header::after {
+  content: "";
+  display: block;
+  height: 1px;
+  margin: 0 12px;
+  background: var(--lx-border-strong);
 }
 .lx-btn {
   display: inline-flex;
@@ -1969,7 +2047,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   gap: 4px;
   height: 26px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
@@ -1999,6 +2077,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  /* 新资源进来时列表会长高：给 height 一个过渡，JS 侧负责量前后高度（见 animateListHeight） */
+  transition: height 0.2s ease;
 }
 #lerxu-resource-list::-webkit-scrollbar { width: 6px; }
 #lerxu-resource-list::-webkit-scrollbar-track { background: transparent; }
@@ -2030,13 +2110,31 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 /* 条目 */
 .lx-item {
   padding: 8px 12px;
-  cursor: pointer;
+  cursor: default;
   border-bottom: 1px solid var(--lx-border);
   transition: background-color 0.15s ease;
 }
 .lx-item:last-child { border-bottom: none; }
-.lx-item:hover { background: var(--lx-bg-hover); }
+/* 条目本身不再是按钮（下载靠右侧按钮），悬停也就不再整行高亮 */
 .lx-item-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* 第二行：徽章 + 大小。名字独占第一行，不再被三四个标签挤成省略号 */
+.lx-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  min-width: 0;
+  max-height: 24px;
+  overflow: hidden;
+  /* 设置展开时第二行要收起来：走高度塌陷而不是直接消失，否则条目会先矮一行、
+     面板再展开，两段变化叠在一起看着就是"跳一下" */
+  transition: max-height 0.18s ease, margin-top 0.18s ease, opacity 0.18s ease;
+}
+.lx-item-meta.is-collapsed {
+  max-height: 0;
+  margin-top: 0;
+  opacity: 0;
+}
 .lx-name {
   flex: 1 1 auto;
   min-width: 0;
@@ -2061,15 +2159,250 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 .lx-badge-quality { color: var(--lx-primary); background: var(--lx-primary-weak); }
 .lx-badge-success { color: var(--lx-success); background: var(--lx-success-weak); }
 .lx-badge-muted { font-weight: 500; color: var(--lx-text-3); background: var(--lx-bg-hover); }
-.lx-url {
-  margin-top: 3px;
-  font-size: 11px;
-  color: var(--lx-text-3);
+
+/* 条目的「输出格式」：齿轮贴在条目最右侧，展开后是一个选择框 */
+.lx-format {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+/* 图标按钮（齿轮 / 下载）：图标默认就是正常文字色、100% 不透明；
+   hover 只浮出背景，图标本身不变色 —— "图标高亮"看着像换了个图标 */
+.lx-gear,
+.lx-item-download {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lx-text-1);
+  opacity: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.lx-gear:hover,
+.lx-item-download:hover { background: var(--lx-bg-hover); }
+.lx-format-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* 收起态：高度 0 + 透明。max-height 可过渡，height:auto 不行 */
+  max-height: 0;
+  margin-top: 0;
+  /* 左右对称留 2px：右边这 2px 是给滑块把手的阴影，缺了就会贴着裁切边 */
+  padding: 0 2px;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.18s ease, opacity 0.18s ease, margin-top 0.18s ease;
+}
+.lx-format-panel.is-open {
+  max-height: 150px;
+  margin-top: 6px;
+  opacity: 1;
+}
+/* 选项区与设置内容区之间的分隔线：左右各留一点空，不顶到条目边 */
+.lx-format-divider {
+  display: block;
+  flex: 0 0 auto;
+  height: 1px;
+  margin: 0 4px 0 2px;
+  background: var(--lx-border-strong);
+}
+/* 一行设置：左标题 + 右控件（对齐应用设置页的行） */
+.lx-format-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lx-format-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--lx-text-2);
+}
+.lx-format-field {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+/* 自绘选择框：与应用的小尺寸下拉同款（描边、6px 圆角、面板底） */
+.lx-format-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 24px;
+  min-width: 104px;
+  padding: 0 22px 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--lx-border-strong);
+  background: var(--lx-bg-panel);
+  color: var(--lx-text-1);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.lx-format-trigger:hover { border-color: var(--lx-text-3); }
+.lx-format-trigger.is-open { border-color: var(--lx-primary); }
+.lx-format-value {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.lx-url + .lx-url { margin-top: 2px; }
+/* 自绘箭头（SVG 描边）：translateY(-50%) 正好是 11px 盒子的一半，几何居中 */
+.lx-format-caret {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  display: block;
+  color: var(--lx-text-3);
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition: transform 0.15s ease;
+}
+.lx-format-trigger.is-open .lx-format-caret {
+  transform: translateY(-50%) rotate(180deg);
+}
+/* 片段区间：双滑块（左=起点，右=终点）
+   ⚠️ 设置面板为了做高度动画带 overflow:hidden，而把手（12px 宽）是骑在轨道
+   两端上的：滑动区左右各留的空白必须 ≥ 半个把手 + 阴影，否则 100% 处的那个
+   把手会被切掉右侧（用户报的形态）。这里留 10px，面板再补 2px。 */
+.lx-clip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* 给把手留出上下呼吸位：把手是绝对定位、骑在轨道上，面板为高度动画带
+     overflow:hidden —— 内容盒刚好到滑动区底边时，把手下沿会被切掉 */
+  padding-bottom: 3px;
+}
+.lx-clip[hidden] { display: none; }
+/* 读数行：两个时间横向上跟着各自的把手走（定位在 JS 里按百分比算）。
+   容器高度写死 16px，读数移动时整块不会跟着跳。*/
+.lx-clip-head {
+  position: relative;
+  height: 16px;
+  margin: 0 10px;
+}
+.lx-clip-time {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--lx-text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.lx-clip-slider {
+  position: relative;
+  height: 20px;
+  margin: 0 10px;
+  touch-action: none;
+  cursor: pointer;
+}
+.lx-clip-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 999px;
+  background: var(--lx-border-strong);
+}
+.lx-clip-fill {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 999px;
+  background: var(--lx-primary);
+}
+/* 把手：竖着的圆角夹子（比圆点更像"可拖"），中间一道浅色竖线当抓手 */
+.lx-clip-thumb {
+  position: absolute;
+  top: 50%;
+  /* border-box：18px 是**含描边**的总高。默认 content-box 会让 1.5px 描边把
+     实际高度撑到 21px，margin-top:-9px 就不再是垂直居中，下沿溢出 2px 被裁 */
+  box-sizing: border-box;
+  width: 12px;
+  height: 18px;
+  margin: -9px 0 0 -6px;
+  border-radius: 5px;
+  background: var(--lx-bg-panel);
+  border: 1.5px solid var(--lx-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  cursor: grab;
+  transition: box-shadow 0.12s ease, transform 0.12s ease;
+}
+.lx-clip-thumb::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 8px;
+  margin: -4px 0 0 -1px;
+  border-radius: 1px;
+  background: var(--lx-primary);
+  opacity: 0.55;
+}
+.lx-clip-thumb:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22); }
+.lx-clip-thumb:active,
+.lx-clip-thumb.is-dragging {
+  cursor: grabbing;
+  transform: scale(1.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.26);
+}
+
+/* 展开的选项列表：挂 body 上，fixed 定位（列表是滚动容器，放里面会被裁） */
+.lx-format-menu {
+  position: fixed;
+  z-index: 2147483000;
+  min-width: 104px;
+  padding: 4px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--lx-bg-panel);
+  border: 1px solid var(--lx-border-strong);
+  border-radius: 6px;
+  box-shadow: var(--lx-shadow);
+  font-family: var(--lx-font);
+  /* 出入场由 JS 内联过渡驱动（与资源弹窗共用一套） */
+  transform-origin: top center;
+.lx-format-option {
+  display: block;
+  width: 100%;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lx-text-1);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 26px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.lx-format-option:hover { background: var(--lx-bg-hover); }
+.lx-format-option.is-active { color: var(--lx-primary); background: var(--lx-primary-weak); }
 
 /* 分片组（默认收起） */
 .lx-group-head {
@@ -2253,7 +2586,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       window.dispatchEvent(new Event('lerxu-clear-resources'))
       broadcastClearResourcesToFrames()
       const dropdown = document.getElementById('lerxu-resource-dropdown')
-      if (dropdown) dropdown.style.display = 'none'
+      hideResourceDropdownAnimated(dropdown)
     })
 
     const clearText = document.createElement('span')
@@ -2314,7 +2647,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       }
 
       const dropdown = document.getElementById('lerxu-resource-dropdown')
-      if (dropdown) dropdown.style.display = 'none'
+      hideResourceDropdownAnimated(dropdown)
     })
 
     const downloadIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
@@ -2368,6 +2701,39 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
     section.appendChild(title)
     return section
+  }
+
+  /**
+   * 列表高度变化做成过渡，而不是"跳一下"。
+   *
+   * 嗅探结果是一条条进来的，列表每隔一会儿就长高/变矮；让浏览器直接重排，
+   * 视觉上就是弹窗在抽搐（用户点名要"丝滑"）。做法：记住上一轮的高度，
+   * 重画后量出新高度，从旧高度过渡到新高度，结束后清掉内联高度回到 auto。
+   */
+  const animateListHeight = (el) => {
+    try {
+      if (!el) return
+      const prev = Number(el.getAttribute('data-lx-height') || 0)
+      el.style.height = 'auto'
+      const next = Math.min(el.scrollHeight || 0, 420)
+      if (!next) {
+        el.style.height = ''
+        return
+      }
+      el.setAttribute('data-lx-height', `${next}`)
+      if (!prev || Math.abs(next - prev) < 2) {
+        el.style.height = ''
+        return
+      }
+      el.style.height = `${prev}px`
+      void el.offsetHeight // 强制重排，保证过渡从旧高度开始
+      el.style.height = `${next}px`
+      const done = () => {
+        el.style.height = ''
+        el.removeEventListener('transitionend', done)
+      }
+      el.addEventListener('transitionend', done)
+    } catch (_) {}
   }
 
   // 更新资源列表
@@ -2497,6 +2863,443 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       noData.appendChild(tip2)
       content.appendChild(noData)
     }
+
+    // 列表长高/变矮走过渡（弹窗跟着平滑延展，而不是跳一下）
+    animateListHeight(content)
+  }
+
+  /**
+   * 条目右侧的下载按钮。
+   *
+   * 整行不再是"点了就下载"——列表里还要点齿轮、选格式、点选项，整行可点会
+   * 频繁误发任务（用户点名要显式的下载入口）。图标与悬浮下载按钮同一套描边。
+   */
+  const createItemDownloadButton = (label, onClick) => {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'lx-item-download'
+    btn.title = label
+    btn.setAttribute('aria-label', label)
+
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    icon.setAttribute('viewBox', '0 0 24 24')
+    icon.setAttribute('width', '13')
+    icon.setAttribute('height', '13')
+    icon.style.fill = 'none'
+    icon.style.stroke = 'currentColor'
+    icon.style.strokeWidth = '1.9'
+    icon.style.strokeLinecap = 'round'
+    icon.style.strokeLinejoin = 'round'
+    icon.style.display = 'block'
+    const shaft = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    shaft.setAttribute('d', 'M12 4.5v9.5')
+    const head = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    head.setAttribute('d', 'M7.8 10.5 12 14.7l4.2-4.2')
+    const tray = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    tray.setAttribute('d', 'M5 19.5h14')
+    icon.appendChild(shaft)
+    icon.appendChild(head)
+    icon.appendChild(tray)
+    btn.appendChild(icon)
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      onClick()
+    })
+    return btn
+  }
+
+  /**
+   * 一条资源右侧的「输出格式」设置（齿轮 + 展开后的容器选项）。
+   *
+   * **为什么挂在条目上而不是全局**：同一个页面里 HLS 清单、直播录制、DASH
+   * 分离流想要的容器经常不一样（直播录下来留 .ts 最稳，普通视频要 .mp4），
+   * 全局只有一个值就必然要为其中一类将就。
+   *
+   * 选择结果进 `mergeFormatByUrl`，随 add 消息一起发给应用（`mergeFormat`），
+   * 应用把它记在这条任务的历史里，合并/换封装时优先用它。
+   *
+   * @param {string[]} urls 这条条目对应的地址（一对音视频要两个都记，谁先下完都认）
+   */
+  /**
+   * @param {string[]} urls 这条条目对应的地址（一对音视频要两个都记）
+   * @param {() => HTMLElement|null} [metaProvider] 第二行的徽章/大小容器：
+   *   设置展开时把它藏起来（一行只留名字和设置），收起后再显示
+   */
+  /** 秒 → 0:00 / 1:02:03。 */
+  const formatClipTime = (sec) => {
+    const total = Math.max(0, Math.round(Number(sec) || 0))
+    const h = Math.floor(total / 3600)
+    const m = Math.floor((total % 3600) / 60)
+    const s = total % 60
+    const mm = h > 0 ? `${m}`.padStart(2, '0') : `${m}`
+    return `${h > 0 ? `${h}:` : ''}${mm}:${`${s}`.padStart(2, '0')}`
+  }
+
+  /** 页面里各 <video> 中最长的时长（拿不到就是 0）。 */
+  const pageVideoDuration = () => {
+    try {
+      let best = 0
+      document.querySelectorAll('video').forEach((v) => {
+        const d = Number(v && v.duration)
+        if (Number.isFinite(d) && d > best) best = d
+      })
+      return best
+    } catch (_) {
+      return 0
+    }
+  }
+
+  /**
+   * 「片段」设置：双滑块选 [start, end]（秒）。
+   *
+   * 只在**拿得到时间轴**时出现（页面里的 `<video>` 有 duration）。两条路都能裁：
+   * - HLS 清单：下载引擎按 `#EXTINF` 累计时间挑分片（分段级），再把区间传给应用；
+   * - 普通单文件（mp4 / flv …）：应用在下载完成后用媒体引擎按帧裁一次
+   *   （mp4 产物带编辑列表，看到的第一帧就是切点那一帧）。
+   * 直播没有稳定时间轴，调用方不会把 `canClip` 传进来。
+   */
+  const createClipRow = (keys, canClip) => {
+    const wrap = document.createElement('div')
+    wrap.className = 'lx-clip'
+
+    const duration = pageVideoDuration()
+    if (!canClip || !(duration > 0)) {
+      wrap.hidden = true
+      return wrap
+    }
+
+    // 读数行：两个时间**横向跟着各自那个把手走**（左边=起点把手，右边=终点把手），
+    // 默认就显示时间，不再出现"全片"这种字。定位在 paint 里按百分比算。
+    const head = document.createElement('div')
+    head.className = 'lx-clip-head'
+    const startTime = document.createElement('span')
+    startTime.className = 'lx-clip-time'
+    const endTime = document.createElement('span')
+    endTime.className = 'lx-clip-time'
+    head.appendChild(startTime)
+    head.appendChild(endTime)
+    // 两个读数只有时间，整行挂个提示说明它是「片段」（也给读屏软件一个名字）
+    head.title = getLocalizedText('clipRange')
+    // 两个读数只有时间，整行挂个提示说明它是「片段」（也给读屏软件一个名字）
+    head.title = getLocalizedText('clipRange')
+
+    const slider = document.createElement('div')
+    slider.className = 'lx-clip-slider'
+    const track = document.createElement('div')
+    track.className = 'lx-clip-track'
+    const fill = document.createElement('div')
+    fill.className = 'lx-clip-fill'
+    const thumbStart = document.createElement('div')
+    thumbStart.className = 'lx-clip-thumb'
+    const thumbEnd = document.createElement('div')
+    thumbEnd.className = 'lx-clip-thumb'
+    slider.appendChild(track)
+    slider.appendChild(fill)
+    slider.appendChild(thumbStart)
+    slider.appendChild(thumbEnd)
+
+    // 两个滑块之间至少留一点点，避免 start === end 的零长度窗口
+    const minGap = Math.min(1, duration / 10)
+    const current = () => {
+      const saved = clipOf(keys[0])
+      if (saved && Number.isFinite(saved.start) && Number.isFinite(saved.end)) return saved
+      return { start: 0, end: duration }
+    }
+    const paint = () => {
+      const { start, end } = current()
+      const a = (start / duration) * 100
+      const b = (end / duration) * 100
+      thumbStart.style.left = `${a}%`
+      thumbEnd.style.left = `${b}%`
+      fill.style.left = `${a}%`
+      fill.style.width = `${Math.max(0, b - a)}%`
+      // 两个读数分别跟自己的把手：拖左边只动左边那个，拖右边只动右边
+      startTime.textContent = formatClipTime(start)
+      endTime.textContent = formatClipTime(end)
+      placeTimes(start, end)
+    }
+
+    /**
+     * 把两个读数摆到各自把手的正上方。
+     *
+     * 用 px 不用百分比：读数本身有宽度，`left: 50%` 加 `translateX(-50%)` 在两端
+     * 会溢出容器（又被 overflow:hidden 裁）；这里按容器宽度夹住，贴边时读数停在
+     * 边上。两个把手挨得很近时读数会撞在一起，这时一左一右各让一半，保持可读。
+     */
+    const placeTimes = (startSec, endSec) => {
+      const width = head.clientWidth
+      if (!width) return
+      const sw = startTime.offsetWidth || 0
+      const ew = endTime.offsetWidth || 0
+      const ratio = (sec) => (duration > 0 ? Math.min(1, Math.max(0, sec / duration)) : 0)
+      // 贴边时不再居中，整块留在容器里
+      const clamp = (x, labelWidth) => {
+        const half = labelWidth / 2
+        return Math.min(Math.max(x, half), Math.max(half, width - half))
+      }
+      let sx = clamp(ratio(startSec) * width, sw)
+      let ex = clamp(ratio(endSec) * width, ew)
+      const overlap = (sx + sw / 2 + 6) - (ex - ew / 2)
+      if (overlap > 0) {
+        sx = Math.max(sw / 2, sx - overlap / 2)
+        ex = Math.min(width - ew / 2, ex + overlap / 2)
+      }
+      startTime.style.left = `${Math.round(sx)}px`
+      endTime.style.left = `${Math.round(ex)}px`
+    }
+    const apply = (next) => {
+      const start = Math.max(0, Math.min(next.start, duration - minGap))
+      const end = Math.min(duration, Math.max(next.end, start + minGap))
+      keys.forEach((key) => clipByUrl.set(key, { start, end }))
+      paint()
+    }
+
+    // 指针位置 → 0~1（每次重新量：弹窗出现/滚动都可能改变位置）
+    const ratioAt = (event) => {
+      const rect = slider.getBoundingClientRect()
+      if (!rect.width) return null
+      return Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
+    }
+
+    const drag = (which) => (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      const move = (ev) => {
+        const ratio = ratioAt(ev)
+        if (ratio === null) return
+        const sec = ratio * duration
+        const cur = current()
+        apply(which === 'start' ? { start: sec, end: cur.end } : { start: cur.start, end: sec })
+      }
+      const el = which === 'start' ? thumbStart : thumbEnd
+      const up = () => {
+        window.removeEventListener('pointermove', move, true)
+        window.removeEventListener('pointerup', up, true)
+        el.classList.remove('is-dragging')
+      }
+      window.addEventListener('pointermove', move, true)
+      window.addEventListener('pointerup', up, true)
+      // 拖动期间用类保持"按下"的视觉：指针一离开把手，:active 就没了，
+      // 而这时用户明明还在拖
+      el.classList.add('is-dragging')
+      move(event)
+    }
+    thumbStart.addEventListener('pointerdown', drag('start'))
+    thumbEnd.addEventListener('pointerdown', drag('end'))
+    // 点轨道任意位置：把**离得近**的那个把手挪过去，并继续跟着拖。
+    // 把手只有 12px 宽，必须先把指针对准它才能拖；点哪儿都能定位之后，
+    // 选片段就是"点一下、拖一下"两件事，而不是先找把手。
+    slider.addEventListener('pointerdown', (event) => {
+      const ratio = ratioAt(event)
+      if (ratio === null) return
+      const sec = ratio * duration
+      const cur = current()
+      const which = Math.abs(sec - cur.start) <= Math.abs(sec - cur.end) ? 'start' : 'end'
+      drag(which)(event)
+    })
+
+    wrap.appendChild(head)
+    wrap.appendChild(slider)
+    // 读数要按**真实宽度**定位（贴边夹住），所以先入 DOM 再画一次
+    paint()
+    return wrap
+  }
+
+  const createFormatControl = (urls, metaProvider, extras = {}) => {
+    const keys = (Array.isArray(urls) ? urls : [urls]).map(u => `${u || ''}`).filter(Boolean)
+
+    const control = document.createElement('span')
+    control.className = 'lx-format'
+
+    const gear = document.createElement('button')
+    gear.type = 'button'
+    gear.className = 'lx-gear'
+    const gearLabel = getLocalizedText('outputFormat')
+    gear.title = gearLabel
+    gear.setAttribute('aria-label', gearLabel)
+    const gearIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    gearIcon.setAttribute('viewBox', '0 0 24 24')
+    gearIcon.setAttribute('width', '13')
+    gearIcon.setAttribute('height', '13')
+    gearIcon.style.fill = 'currentColor'
+    gearIcon.style.display = 'block'
+    const gearPath = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    gearPath.setAttribute('d', 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z')
+    gearIcon.appendChild(gearPath)
+    gear.appendChild(gearIcon)
+
+    const panel = document.createElement('div')
+    panel.className = 'lx-format-panel'
+    panel.setAttribute('aria-hidden', 'true')
+    // 面板里的点击不能冒泡到条目上（条目整行 = 立即下载）
+    panel.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+    })
+
+    // 一行设置：**左边标题、右边选择框**（与应用设置页的行同构）。
+    // 选择框是**自绘**的：原生 <select> 的框线和弹出列表由浏览器画，各平台
+    // 长得都不一样（macOS 上还是系统菜单），跟应用的描边小方框放一起很跳。
+    const row = document.createElement('div')
+    row.className = 'lx-format-row'
+
+    const label = document.createElement('span')
+    label.className = 'lx-format-label'
+    label.textContent = getLocalizedText('outputFormat')
+
+    const field = document.createElement('span')
+    field.className = 'lx-format-field'
+
+    const valueLabel = (value) => (value ? `${value}`.toUpperCase() : getLocalizedText('formatFollowApp'))
+
+    const trigger = document.createElement('button')
+    trigger.type = 'button'
+    trigger.className = 'lx-format-trigger'
+    const triggerText = document.createElement('span')
+    triggerText.className = 'lx-format-value'
+    triggerText.textContent = valueLabel(mergeFormatOf(keys[0]))
+    // 箭头用 SVG 描边，而不是"两条边框转 45°"：那种做法旋转后视觉重心会偏离
+    // 盒子中心（顶点比两条臂更远），怎么调 margin 都偏低 1~2px（用户两次点名）
+    const caret = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    caret.setAttribute('class', 'lx-format-caret')
+    caret.setAttribute('viewBox', '0 0 24 24')
+    caret.setAttribute('width', '11')
+    caret.setAttribute('height', '11')
+    caret.setAttribute('fill', 'none')
+    caret.setAttribute('stroke', 'currentColor')
+    caret.setAttribute('stroke-width', '2')
+    caret.setAttribute('stroke-linecap', 'round')
+    caret.setAttribute('stroke-linejoin', 'round')
+    const caretPath = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    caretPath.setAttribute('d', 'M6 9.5l6 6 6-6')
+    caret.appendChild(caretPath)
+    trigger.appendChild(triggerText)
+    trigger.appendChild(caret)
+
+    // 菜单挂到 body 上：列表是滚动容器（overflow-y:auto），放在条目里会被裁掉
+    let menu = null
+    let closeMenu = () => {}
+
+    const openMenu = () => {
+      closeMenu()
+      menu = document.createElement('div')
+      menu.className = 'lx-scope lx-format-menu'
+      if (lxTheme === 'dark') menu.classList.add('lx-dark')
+      MERGE_FORMAT_VALUES.forEach((value) => {
+        const option = document.createElement('button')
+        option.type = 'button'
+        option.className = 'lx-format-option'
+        if (value === mergeFormatOf(keys[0])) option.classList.add('is-active')
+        option.textContent = valueLabel(value)
+        option.addEventListener('click', (ev) => {
+          ev.preventDefault()
+          ev.stopPropagation()
+          keys.forEach((key) => {
+            if (value) mergeFormatByUrl.set(key, value)
+            else mergeFormatByUrl.delete(key)
+          })
+          triggerText.textContent = valueLabel(value)
+          closeMenu()
+        })
+        menu.appendChild(option)
+      })
+      menu.addEventListener('click', (ev) => {
+        ev.preventDefault()
+        ev.stopPropagation()
+      })
+      document.body.appendChild(menu)
+      trigger.classList.add('is-open')
+
+      const rect = trigger.getBoundingClientRect()
+      // 用 offsetWidth/Height 量：此时菜单可能正处在 scale(0.94) 的起始态，
+      // getBoundingClientRect 会把缩放算进去，定位就差几个像素
+      const menuWidth = menu.offsetWidth
+      const menuHeight = menu.offsetHeight
+      const vw = viewportWidthForLayout()
+      const vh = window.innerHeight || 0
+      const below = rect.bottom + 4
+      const top = (below + menuHeight > vh)
+        ? Math.max(4, rect.top - menuHeight - 4)
+        : below
+      const left = Math.max(4, Math.min(rect.left, vw - menuWidth - 4))
+      menu.style.top = `${Math.round(top)}px`
+      menu.style.left = `${Math.round(left)}px`
+
+      // 与资源弹窗同一套：从上往下落 8px 并放大
+      playPopupEnter(menu, POPUP_ENTER_OFFSET, POPUP_ENTER_ORIGIN)
+
+      const onDocDown = (ev) => {
+        if (menu && !menu.contains(ev.target) && ev.target !== trigger && !trigger.contains(ev.target)) {
+          closeMenu()
+        }
+      }
+      const onScroll = () => closeMenu()
+      closeMenu = () => {
+        document.removeEventListener('mousedown', onDocDown, true)
+        window.removeEventListener('scroll', onScroll, true)
+        trigger.classList.remove('is-open')
+        const node = menu
+        menu = null
+        if (!node) return
+        // 收起 = 反着播一遍（朝触发按钮收 + 缩小），播完再摘节点；期间不接收点击
+        node.style.pointerEvents = 'none'
+        playPopupLeave(node, POPUP_ENTER_OFFSET, POPUP_ENTER_ORIGIN, () => {
+          if (node.parentNode) node.parentNode.removeChild(node)
+        })
+      }
+      document.addEventListener('mousedown', onDocDown, true)
+      window.addEventListener('scroll', onScroll, true)
+    }
+
+    trigger.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (menu) {
+        closeMenu()
+        return
+      }
+      openMenu()
+    })
+
+    field.appendChild(trigger)
+    row.appendChild(label)
+    row.appendChild(field)
+
+    // 内容区与上方选项区之间的分隔线：左右都留一点空，不顶到条目边上
+    const divider = document.createElement('span')
+    divider.className = 'lx-format-divider'
+
+    panel.appendChild(divider)
+    panel.appendChild(row)
+    // 片段区间：拿得到时间轴、且这条资源确实是个能裁的媒体时才显示
+    panel.appendChild(createClipRow(keys, extras.canClip === true))
+
+    gear.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const willOpen = !panel.classList.contains('is-open')
+      // 同时只开一个：列表里挂着一排齿轮，开着好几个就分不清在给谁设
+      document.querySelectorAll('.lx-format-panel.is-open').forEach((el) => { el.classList.remove('is-open') })
+      // 先把被上一次展开藏起来的第二行全部复原，再按本次是否展开决定藏不藏
+      document.querySelectorAll('.lx-item-meta.is-collapsed').forEach((el) => { el.classList.remove('is-collapsed') })
+      if (!willOpen) closeMenu()
+      if (!willOpen) closeMenu()
+      panel.classList.toggle('is-open', willOpen)
+      // 设置展开时第二行的标签不显示，收起后再显示（用户点名）
+      const metaEl = typeof metaProvider === 'function' ? metaProvider() : null
+      // 用类做「高度塌陷」动画，而不是 hidden 直接消失：直接消失会让条目瞬间
+      // 矮一行，正好和面板展开叠在一起 —— 用户看到的就是"跳一下"
+      if (metaEl) metaEl.classList.toggle('is-collapsed', willOpen)
+      if (willOpen) {
+        // 每次打开都回读一次：一对音视频的两个地址可能被另一个条目改过
+        triggerText.textContent = valueLabel(mergeFormatOf(keys[0]))
+      }
+    })
+
+    control.appendChild(gear)
+    return { control, panel }
   }
 
   // 创建组合资源项（视频+音频）
@@ -2566,37 +3369,41 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     badges.appendChild(completeTag)
 
     info.appendChild(name)
-    info.appendChild(badges)
 
-    // 文件大小：纯文本
-    if (resource.size && resource.size > 0) {
-      const size = document.createElement('span')
-      size.textContent = formatFileSize(resource.size)
-      size.className = 'lx-size'
-      info.appendChild(size)
+    // 右侧：输出格式齿轮 + 下载按钮（下载在最右）
+    // 一对音视频记**两个**地址 —— 谁先下完，应用都能从历史里查到同一个选择
+    const format = createFormatControl([resource.videoUrl, resource.audioUrl], () => item.querySelector('.lx-item-meta'), { canClip: true })
+    info.appendChild(format.control)
+    info.appendChild(createItemDownloadButton(getLocalizedText('downloadOne'), () => sendPair()))
+
+    // 徽章与大小下沉到第二行（与普通条目同版式）
+    const meta = document.createElement('div')
+    meta.className = 'lx-item-meta'
+    if (badges.children.length > 0) {
+      meta.appendChild(badges)
     }
-
-    // 显示两个资源的URL
-    const videoUrl = document.createElement('div')
-    videoUrl.textContent = `${getLocalizedText('videoStream')}: ${resource.videoUrl}`
-    videoUrl.className = 'lx-url'
-    videoUrl.title = resource.videoUrl
-
-    const audioUrl = document.createElement('div')
-    audioUrl.textContent = `${getLocalizedText('audioStream')}: ${resource.audioUrl}`
-    audioUrl.className = 'lx-url'
-    audioUrl.title = resource.audioUrl
+    // 「完整视频」的大小 = 两条流之和；size 还没算出来时自己加一遍（快照可能滞后）
+    const combinedSize = (resource.size && resource.size > 0)
+      ? resource.size
+      : ((resource.videoSize || 0) + (resource.audioSize || 0))
+    const size = document.createElement('span')
+    size.textContent = formatFileSize(combinedSize)
+    size.className = 'lx-size'
+    meta.appendChild(size)
 
     item.appendChild(info)
-    item.appendChild(videoUrl)
-    item.appendChild(audioUrl)
+    if (meta.children.length > 0) {
+      item.appendChild(meta)
+    }
+    item.appendChild(format.panel)
 
-    item.addEventListener('click', () => {
-      // 一对音视频交给同一个函数发送：命名规则与配对 ID 都只有一处定义
+    // 一对音视频交给同一个函数发送：命名规则与配对 ID 都只有一处定义。
+    // 只有右侧下载按钮会调它，整行不可点。
+    const sendPair = () => {
       sendStreamPair(resource.videoUrl, resource.audioUrl, referer, getVideoTitle())
       const dropdown = document.getElementById('lerxu-resource-dropdown')
-      if (dropdown) dropdown.style.display = 'none'
-    })
+      hideResourceDropdownAnimated(dropdown)
+    }
 
     return item
   }
@@ -2694,25 +3501,32 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     info.appendChild(name)
+
+    // 右侧：输出格式齿轮 + 下载按钮。**下载在最右**——它是这行的主动作
+    // 直播没有稳定时间轴：不摆片段滑块（摆了也不知道该按哪条时间轴裁）
+    const format = createFormatControl([resource.url], () => item.querySelector('.lx-item-meta'), { canClip: resource.live !== true })
+    info.appendChild(format.control)
+    info.appendChild(createItemDownloadButton(getLocalizedText('downloadOne'), () => sendThis()))
+
+    // 徽章与大小挪到**第二行**：一行里挤着名字 + 直播/画质/分片 + 大小，
+    // 名字只剩十来个字就被省略号吃掉（用户点名：右侧标签要下沉一行）
+    const meta = document.createElement('div')
+    meta.className = 'lx-item-meta'
     if (badges.children.length > 0) {
-      info.appendChild(badges)
+      meta.appendChild(badges)
     }
-
-    // 文件大小：纯文本（做成徽章只是噪音，大小本来就该往后退）
-    if (resource.size && resource.size > 0) {
-      const size = document.createElement('span')
-      size.textContent = formatFileSize(resource.size)
-      size.className = 'lx-size'
-      info.appendChild(size)
-    }
-
-    const url = document.createElement('div')
-    url.className = 'lx-url'
-    url.textContent = resource.url
-    url.title = resource.url
+    // 大小永远给一个：探不到就写「未知大小」。以前是「没有就不渲染」，
+    // 同一屏里几条缺这一块，看着像界面坏了（用户点名）
+    const size = document.createElement('span')
+    size.textContent = formatFileSize(resource.size)
+    size.className = 'lx-size'
+    meta.appendChild(size)
 
     item.appendChild(info)
-    item.appendChild(url)
+    if (meta.children.length > 0) {
+      item.appendChild(meta)
+    }
+    item.appendChild(format.panel)
 
     // 加入下载队列（行、以及行里的下载按钮共用这一段）
     const sendThis = () => {
@@ -2747,11 +3561,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       sendResourceToClient(resource.url, referer, filename)
       const dropdown = document.getElementById('lerxu-resource-dropdown')
-      if (dropdown) dropdown.style.display = 'none'
+      hideResourceDropdownAnimated(dropdown)
     }
 
-    item.addEventListener('click', sendThis)
-
+    // 整行不再可点：只有右侧的下载按钮会发任务（避免点齿轮/选格式时误发）
     return item
   }
 
@@ -2832,13 +3645,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     sendResourceToClient(resource.url, referer, filename)
     const dropdown = document.getElementById('lerxu-resource-dropdown')
-    if (dropdown) dropdown.style.display = 'none'
+    hideResourceDropdownAnimated(dropdown)
   }
 
   const downloadCombinedResource = (resource, referer) => {
     sendStreamPair(resource.videoUrl, resource.audioUrl, referer, getVideoTitle())
     const dropdown = document.getElementById('lerxu-resource-dropdown')
-    if (dropdown) dropdown.style.display = 'none'
+    hideResourceDropdownAnimated(dropdown)
   }
 
   const getAutoDownloadCandidates = (resources) => {
@@ -2880,25 +3693,99 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return true
   }
 
+  /**
+   * 弹层的出入场动画（资源弹窗与格式菜单共用）。
+   *
+   * 为什么用内联 transition + `void offsetHeight` 强制重排，而不是"加个 class、
+   * 下一帧再删"：`display:none → flex` 的那一帧浏览器常常还没算出起始态，
+   * 双 rAF 撤类时过渡就被合并掉了 —— 表现就是"根本没有动画"（用户点名）。
+   * 这里先把起始态写死、强制提交一帧，再写目标态，过渡一定会跑。
+   *
+   * 方向按弹层与锚点的相对位置定：在锚点下方 → 从上方落下（负位移）；
+   * 被翻到锚点上方 → 从下方升起（正位移），也就是"从按钮那儿长出来"。
+   */
+  const DROPDOWN_ANIM_MS = 160
+
+  /**
+   * 出入场方向：**永远是"从上往下落"**，不按弹层与按钮的相对位置翻转。
+   *
+   * 踩过两次：按几何判断"在按钮上方就往上飘"，结果弹窗被翻到按钮上方时
+   * 整块往上滑，看着既不是从按钮出来、也不是落下来（用户点名两次）。
+   * 固定成"起始位置在最终位置上方 8px、origin 在顶边"，视觉上就是干净地
+   * 往下落一截并放大 —— 与"从选项向下移动"的诉求一致。
+   */
+  const POPUP_ENTER_OFFSET = -8
+  const POPUP_ENTER_ORIGIN = 'top center'
+
+  function playPopupEnter (el, offsetY, origin) {
+    if (!el) return
+    el.style.transition = 'none'
+    el.style.transformOrigin = origin
+    el.style.opacity = '0'
+    el.style.transform = `translateY(${offsetY}px) scale(0.96)`
+    void el.offsetHeight // 强制重排：让起始态成为真正的起点
+    el.style.transition = `opacity ${DROPDOWN_ANIM_MS}ms ease, transform ${DROPDOWN_ANIM_MS}ms ease`
+    el.style.opacity = '1'
+    el.style.transform = 'none'
+    if (el.__lxAnimTimer) clearTimeout(el.__lxAnimTimer)
+    el.__lxAnimTimer = setTimeout(() => {
+      el.__lxAnimTimer = null
+      el.style.transition = ''
+      el.style.transformOrigin = ''
+      el.style.transform = ''
+      el.style.opacity = ''
+    }, DROPDOWN_ANIM_MS + 60)
+  }
+
+  function playPopupLeave (el, offsetY, origin, onDone) {
+    if (!el) return
+    el.style.transition = `opacity ${DROPDOWN_ANIM_MS}ms ease, transform ${DROPDOWN_ANIM_MS}ms ease`
+    el.style.transformOrigin = origin
+    el.style.opacity = '0'
+    el.style.transform = `translateY(${offsetY}px) scale(0.96)`
+    if (el.__lxAnimTimer) clearTimeout(el.__lxAnimTimer)
+    el.__lxAnimTimer = setTimeout(() => {
+      el.__lxAnimTimer = null
+      el.style.transition = ''
+      el.style.transformOrigin = ''
+      el.style.transform = ''
+      el.style.opacity = ''
+      if (typeof onDone === 'function') onDone()
+    }, DROPDOWN_ANIM_MS + 10)
+  }
+
+  function showResourceDropdownAnimated (dropdown) {
+    if (!dropdown) return
+    dropdown.__lxClosing = false
+    dropdown.style.display = 'flex'
+    // 位置必须在显示之后算（依赖尺寸），算完再按"它相对按钮在哪一侧"定动画方向
+    adjustDropdownPosition(dropdown)
+    playPopupEnter(dropdown, POPUP_ENTER_OFFSET, POPUP_ENTER_ORIGIN)
+  }
+
+  function hideResourceDropdownAnimated (dropdown) {
+    if (!dropdown || dropdown.style.display === 'none') return
+    if (dropdown.__lxClosing) return
+    dropdown.__lxClosing = true
+    playPopupLeave(dropdown, POPUP_ENTER_OFFSET, POPUP_ENTER_ORIGIN, () => {
+      dropdown.style.display = 'none'
+      dropdown.__lxClosing = false
+    })
+  }
+
   // 显示资源选择下拉框
   const showResourceDropdown = () => {
     const dropdown = document.getElementById('lerxu-resource-dropdown')
-    if (dropdown) {
-      if (dropdown.style.display === 'flex') {
-        dropdown.style.display = 'none'
-      } else {
-        // 在显示下拉框前检查是否需要恢复资源
-        if (!checkAndRestoreResources()) {
-          // 如果没有恢复，正常更新资源列表
-          updateResourceList()
-        } else {
-          // 如果恢复了资源，重新更新资源列表
-          updateResourceList()
-        }
-        dropdown.style.display = 'flex'
-        adjustDropdownPosition(dropdown)
-      }
+    if (!dropdown) return
+    const isOpen = dropdown.style.display === 'flex' && !dropdown.__lxClosing
+    if (isOpen) {
+      hideResourceDropdownAnimated(dropdown)
+      return
     }
+    // 在显示下拉框前检查是否需要恢复资源
+    checkAndRestoreResources()
+    updateResourceList()
+    showResourceDropdownAnimated(dropdown)
   }
 
   // 调整下拉框位置，确保在屏幕内
@@ -2908,7 +3795,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
     const btnRect = btn.getBoundingClientRect()
     const dropdownRect = dropdown.getBoundingClientRect()
-    const viewportWidth = window.innerWidth
+    const viewportWidth = viewportWidthForLayout()
     const viewportHeight = window.innerHeight
 
     let top = btnRect.bottom + 5
@@ -2944,16 +3831,65 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   }
 
   // 点击其他地方关闭下拉框
+  //
+  // ⚠️ 这是 **capture** 阶段的监听：它在目标元素的处理器之前跑，所以点格式齿轮
+  // 时也会先走到这里。判据必须把「弹窗自身的内容」也算作"里面" —— 只看 wrapper
+  // 会把弹窗里的一切点击都当成外面，点一下齿轮整个资源弹窗就没了（用户点名）。
   document.addEventListener('click', (e) => {
     const dropdown = document.getElementById('lerxu-resource-dropdown')
-    const btn = document.getElementById('lerxu-bilibili-download-btn')
-    if (dropdown && dropdown.style.display === 'flex') {
-      const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
-      if (wrapper && !wrapper.contains(e.target)) {
-        dropdown.style.display = 'none'
-      }
-    }
+    if (!dropdown || dropdown.style.display !== 'flex') return
+    const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
+    const target = e.target
+    if (wrapper && wrapper.contains(target)) return
+    if (dropdown.contains(target)) return
+    const menu = document.querySelector('.lx-format-menu')
+    if (menu && menu.contains(target)) return
+    hideResourceDropdownAnimated(dropdown)
   }, true)
+
+  /**
+   * 布局视口宽度（**不含**经典滚动条）。
+   *
+   * `position: fixed; right: N` 是相对布局视口算的，而 `window.innerWidth`
+   * 把经典滚动条也算在内（Windows 上恒 17px，macOS 打开"始终显示滚动条"
+   * 时约 15px）。用 innerWidth 去减 rect.right，按钮就会比右边缘往里缩
+   * 一个滚动条的宽度 —— 用户看到的"总是差一段距离"就是它。
+   */
+  const viewportWidthForLayout = () => {
+    try {
+      const el = document.documentElement
+      const w = el && el.clientWidth ? el.clientWidth : 0
+      if (w > 0) return w
+    } catch (e) {}
+    return window.innerWidth || 0
+  }
+
+  /**
+   * 按钮右边缘要对齐到的 x 坐标。
+   *
+   * 容器经常比画面本身宽（视频卡片、带内边距的外壳、信息流里的 feed-item），
+   * 直接对齐容器的右边缘就会离画面差出一截。所以容器里若有基本铺满它的
+   * `<video>`，就以画面为准；没有才退回容器本身。
+   */
+  const alignRightOfContainer = (container) => {
+    const rect = container.getBoundingClientRect()
+    try {
+      let video = null
+      if (container.tagName === 'VIDEO') {
+        video = container
+      } else if (container.querySelector) {
+        video = container.querySelector('video')
+      }
+      if (video) {
+        const vr = video.getBoundingClientRect()
+        // 缩略图/浮层里的小预览不算：宽度得占容器六成以上才是"这一个画面"
+        if (vr.width > 0 && vr.height > 0 && vr.width >= rect.width * 0.6) {
+          return vr.right
+        }
+      }
+    } catch (e) {}
+    return rect.right
+  }
 
   // 检查按钮是否被用户关闭
   const isButtonClosedByUser = () => {
@@ -3027,7 +3963,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
             // 播放器容器且未被拖拽过，更新位置
             const container = currentContainer
             const rect = container.getBoundingClientRect()
-            const viewportWidth = window.innerWidth
+            const viewportWidth = viewportWidthForLayout()
             const viewportHeight = window.innerHeight
             const buttonWidth = 150
             const buttonHeight = 36
@@ -3048,7 +3984,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
               newTop = rect.top + 8
             }
 
-            let newRight = viewportWidth - rect.right
+            let newRight = viewportWidth - alignRightOfContainer(container)
 
             // 确保按钮在视口内
             if (newTop < 0) newTop = 0
@@ -3279,13 +4215,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       // 对于小窗口（预览播放器），使用fixed定位，紧贴小窗口上方
       if (containerWidth < 400 || containerHeight < 200) {
         const rect = container.getBoundingClientRect()
-        const viewportWidth = window.innerWidth
+        const viewportWidth = viewportWidthForLayout()
         const viewportHeight = window.innerHeight
         const buttonWidth = 150
         const buttonHeight = 30
 
         let newTop = rect.top - 28
-        let newRight = viewportWidth - rect.right
+        let newRight = viewportWidth - alignRightOfContainer(container)
 
         // 确保按钮在视口内
         if (newTop < 0) newTop = 0
@@ -3301,13 +4237,13 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       } else {
         // 正常播放器，按钮在容器外部上方，紧贴容器
         const rect = container.getBoundingClientRect()
-        const viewportWidth = window.innerWidth
+        const viewportWidth = viewportWidthForLayout()
         const viewportHeight = window.innerHeight
         const buttonWidth = 150
         const buttonHeight = 30
 
         let newTop = rect.top - 34
-        let newRight = viewportWidth - rect.right
+        let newRight = viewportWidth - alignRightOfContainer(container)
 
         // 确保按钮在视口内
         if (newTop < 0) newTop = 0
@@ -3366,7 +4302,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     style.background = 'var(--lx-bg-panel)'
     style.color = 'var(--lx-text-1)'
     style.border = '1px solid var(--lx-border-strong)'
-    style.borderRadius = '8px'
+    style.borderRadius = '6px'
     style.cursor = 'pointer'
     style.fontSize = '12px'
     style.fontWeight = '500'
@@ -3421,18 +4357,34 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     closeIcon.appendChild(closePath)
     closeBtn.appendChild(closeIcon)
 
+    // 左侧图标：一根竖线 + 一个下箭头 + 一条底线（比原来那坨实心箭头干净），
+    // 用 **描边** 而不是填充 —— 12px 上下的小尺寸里描边更锐利。
+    // 颜色继承文字色（currentColor）：按钮里只该有一个强调色，
+    // 图标单独染色会让人以为它是可点的第二个东西（用户点名）。
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
     icon.setAttribute('viewBox', '0 0 24 24')
-    icon.setAttribute('width', '15')
-    icon.setAttribute('height', '15')
-    icon.style.fill = 'currentColor'
-    icon.style.color = 'var(--lx-primary)' // 唯一的强调色：落在下载图标上
-    icon.style.marginRight = '6px'
+    icon.setAttribute('width', '14')
+    icon.setAttribute('height', '14')
+    icon.style.fill = 'none'
+    icon.style.stroke = 'currentColor'
+    icon.style.strokeWidth = '1.8'
+    icon.style.strokeLinecap = 'round'
+    icon.style.strokeLinejoin = 'round'
+    icon.style.marginRight = '5px'
     icon.style.flexShrink = '0'
-    
-    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-    path.setAttribute('d', 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z')
-    icon.appendChild(path)
+    icon.style.display = 'block'
+
+    const iconShaft = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    iconShaft.setAttribute('d', 'M12 4v10')
+    icon.appendChild(iconShaft)
+
+    const iconHead = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    iconHead.setAttribute('d', 'M7.5 10.5 12 15l4.5-4.5')
+    icon.appendChild(iconHead)
+
+    const iconTray = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    iconTray.setAttribute('d', 'M4.5 19.5h15')
+    icon.appendChild(iconTray)
 
     const countSpan = document.createElement('span')
     countSpan.className = 'lerxu-resource-count'
@@ -3450,7 +4402,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const buttonContainer = document.createElement('div')
     buttonContainer.style.display = 'inline-flex'
     buttonContainer.style.alignItems = 'stretch'
-    buttonContainer.style.borderRadius = '16px'
+    buttonContainer.style.borderRadius = '6px'
 
     // 关闭按钮点击事件
     closeBtn.addEventListener('click', (e) => {
@@ -3546,7 +4498,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }
 
         // 限制在视口内（fixed定位不需要考虑滚动）
-        const viewportWidth = window.innerWidth
+        const viewportWidth = viewportWidthForLayout()
         const viewportHeight = window.innerHeight
 
         // 获取B站导航栏高度，防止拖拽到导航栏
@@ -3685,14 +4637,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const containerHeight = container.offsetHeight
 
       const rect = container.getBoundingClientRect()
-      const viewportWidth = window.innerWidth
+      const viewportWidth = viewportWidthForLayout()
       const viewportHeight = window.innerHeight
       const buttonWidth = 150
       const buttonHeight = 36
 
       // 按钮在容器上方
       let newTop = rect.top - 34
-      let newRight = viewportWidth - rect.right
+      let newRight = viewportWidth - alignRightOfContainer(container)
 
       // 确保按钮在视口内
       if (newTop < 0) newTop = 0
@@ -3824,14 +4776,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     const rect = container.getBoundingClientRect()
-    const viewportWidth = window.innerWidth
+    const viewportWidth = viewportWidthForLayout()
     const viewportHeight = window.innerHeight
     const buttonWidth = 150
     const buttonHeight = 36
 
     // 按钮定位在容器上方，紧贴容器顶部
     let newTop = rect.top - 34
-    let newRight = viewportWidth - rect.right
+    let newRight = viewportWidth - alignRightOfContainer(container)
 
     // 如果上方没有空间，则显示在容器内部
     if (newTop < 0) {

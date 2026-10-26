@@ -528,7 +528,7 @@ const main = async () => {
     return new vm.Script(code, { filename: 'hls-grouping.js' }).runInContext(sandbox)
   }
 
-  check('清单独立成一栏、分片折进分片组，两者都不再混在视频栏', () => {
+  check('有完整视频（清单）时不再列视频流/音频流，分片仍折进分片组', () => {
     const { collectDisplayItems, countDisplayItems } = loadGrouping()
     const manifest = { url: 'https://cdn.example.com/show/index.m3u8?token=a', ext: 'm3u8', size: 0 }
     const segments = Array.from({ length: 40 }, (_, i) => ({
@@ -541,12 +541,14 @@ const main = async () => {
 
     assert(items.manifest.length === 1, `清单应有 1 条，实际 ${items.manifest.length}`)
     assert(items.segments.length === 40, `分片应全部归组，实际 ${items.segments.length}`)
+    // 「完整视频」在手时，视频流/音频流两栏整栏不显示（用户点名）：
+    // 同一条资源既在清单里又在视频栏里，只会让人犹豫该点哪一条
     assert(
-      items.video.length === 1 && items.video[0].url === plain.url,
-      '视频栏应只剩真正独立的视频文件'
+      items.video.length === 0 && items.audio.length === 0,
+      '有清单时不该再列视频流/音频流'
     )
-    // 条数 = 清单 1 + 视频 1 + 分片组 1（折叠组是一行，按钮数字必须与列表一致）
-    assert(countDisplayItems(items) === 3, `可见条目数应为 3，实际 ${countDisplayItems(items)}`)
+    // 条数 = 清单 1 + 分片组 1（折叠组是一行，按钮数字必须与列表一致）
+    assert(countDisplayItems(items) === 2, `可见条目数应为 2，实际 ${countDisplayItems(items)}`)
   })
 
   check('直播条目单独成栏：不混在视频资源，也不混进 HLS 完整视频', () => {
@@ -560,16 +562,15 @@ const main = async () => {
     })
 
     assert(items.live.length === 2, `两条直播都该进直播栏，实际 ${items.live.length}`)
-    assert(
-      items.video.length === 1 && items.video[0].url === vodFlv.url,
-      '点播条目仍留在视频栏，直播条目不得混入'
-    )
+    // 页面里有 HLS 清单（= 完整视频）时视频栏整栏不显示（用户点名），
+    // 但直播条目必须仍然单独成栏、不得混进去
+    assert(items.video.length === 0, '有清单时视频栏不再单列')
     assert(
       items.manifest.length === 1 && items.manifest[0].url === vodM3u8.url,
       '非直播清单仍在 HLS 完整视频栏（直播清单归直播栏）'
     )
-    // 直播 2 + 清单 1 + 视频 1：按钮数字必须与列表逐条对得上
-    assert(countDisplayItems(items) === 4, `可见条目数应为 4，实际 ${countDisplayItems(items)}`)
+    // 直播 2 + 清单 1：按钮数字必须与列表逐条对得上
+    assert(countDisplayItems(items) === 3, `可见条目数应为 3，实际 ${countDisplayItems(items)}`)
 
     // 直播条目也不该同时出现在音频栏（音频型直播流同理）
     const liveAudio = { url: 'https://live.example.com/live/radio.flv', ext: 'flv', live: true }
@@ -615,6 +616,67 @@ const main = async () => {
     assert(countDisplayItems(paired) === 1, '合并条目应计为 1')
   })
 
+  check('片段滑块不再只对 HLS 清单开放（单文件任务也能按帧裁）', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    assert(
+      /const createClipRow = \(keys, canClip\)/.test(src),
+      '片段行要由调用方决定是否可用（不再自己判清单）'
+    )
+    assert(
+      !/createClipRow = \(keys\) =>/.test(src),
+      '旧的「只对清单显示」门禁应当已经去掉'
+    )
+    assert(
+      /createClipRow\(keys, extras\.canClip === true\)/.test(src),
+      '设置面板要按 canClip 决定显不显示片段行'
+    )
+    assert(
+      /canClip: resource\.live !== true/.test(src),
+      '普通条目要按「不是直播」开放片段（直播没有稳定时间轴）'
+    )
+    assert(
+      /canClip: true \}\)/.test(src),
+      '合并条目（完整视频）也该能裁片段'
+    )
+  })
+
+  check('片段滑块的把手不会被面板裁掉（左右各留够空白）', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    const slider = src.match(/\.lx-clip-slider \{[\s\S]*?\n\}/)
+    assert(slider, '缺少滑动区样式 .lx-clip-slider')
+    const margin = slider[0].match(/margin:\s*0\s+(\d+)px/)
+    assert(margin, '滑动区必须显式写左右留白')
+    assert(
+      Number(margin[1]) >= 10,
+      `滑动区左右留白必须 ≥10px（把手 12px 宽、骑在轨道两端；现在 ${margin[1]}px）—— ` +
+      '设置面板为了高度动画带 overflow:hidden，留少了右侧把手会被切掉'
+    )
+    assert(
+      /\.lx-format-panel \{[\s\S]*?padding: 0 2px;/.test(src),
+      '设置面板要左右对称留白（右边那 2px 是给把手阴影的）'
+    )
+    // 竖向同样会被裁：把手是绝对定位的，只要它的下沿越过面板内容盒就会被切。
+    // 18px 必须是**含描边**的总高（content-box 会被 1.5px 描边撑到 21px），
+    // 且滑动区下方要留一点余量。
+    const thumb = src.match(/\.lx-clip-thumb \{[\s\S]*?\n\}/)
+    assert(thumb, '缺少把手样式 .lx-clip-thumb')
+    assert(
+      /box-sizing:\s*border-box/.test(thumb[0]),
+      '把手必须用 border-box：否则 1.5px 描边把 18px 撑成 21px，下沿溢出被裁'
+    )
+    const clip = src.match(/\.lx-clip \{[\s\S]*?\n\}/)
+    assert(clip && /padding-bottom:\s*[1-9]/.test(clip[0]), '片段行下方要留出把手的呼吸位')
+
+    // 起点/终点读数：左右各一个、默认就显示时间（不再有"全片"这种字）
+    assert(
+      (src.match(/className = 'lx-clip-time'/g) || []).length === 2,
+      '片段行要有左右两个时间读数（起点 / 终点）'
+    )
+    assert(/startTime\.textContent = formatClipTime\(start\)/.test(src), '左读数要跟随起点把手')
+    assert(/endTime\.textContent = formatClipTime\(end\)/.test(src), '右读数要跟随终点把手')
+    assert(!/clipAll/.test(src), '不要再用"全片"代替时间')
+  })
+
   check('条目上不放下载按钮，且「下载全部」不会逐条发送分片', () => {
     const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
     assert(/isHlsManifestEntry/.test(src) && /isTsSegmentEntry/.test(src), '缺少清单/分片判定')
@@ -626,13 +688,17 @@ const main = async () => {
       !/segments\.forEach\(sendSingle\)/.test(src),
       '「下载全部」不应逐条发送分片（会建出几十个垃圾任务）'
     )
-    // 条目本身就是"加入下载队列"，不再挂按钮/图标（用户点名：那是噪音）
+    // 条目本身就是"加入下载队列"，行内**不放下载按钮/图标**（用户点名：那是噪音）。
+    // 「输出格式」齿轮是设置入口、不是第二个下载入口，它必须 stopPropagation
+    // （否则点齿轮会把这条任务发出去），所以这里只禁下载图标本身。
     assert(
-      !/createItemDownloadIcon|stopPropagation/.test(
+      !/createItemDownloadIcon/.test(
         src.slice(src.indexOf('const createResourceItem'), src.indexOf('const downloadSingleResource'))
       ),
       '条目渲染里不应再出现下载按钮/图标'
     )
+    assert(/createFormatControl\(/.test(src), '条目缺少「输出格式」设置入口')
+    assert(/lx-format-trigger/.test(src), '输出格式应使用自绘选择框（不是原生 select / 一排 chip）')
     for (const key of ['hlsCompleteVideo', 'hlsSegments', 'segment']) {
       assert(
         new RegExp(`'${key}':\\s*\\{[^}]*'zh_CN'`).test(src),
@@ -851,11 +917,11 @@ const main = async () => {
     assert(/prefers-color-scheme: dark/.test(src), '拿不到应用主题时应跟随系统')
     // 弹窗是一整张卡片：圆角/阴影/描边都在样式表里
     assert(
-      /#lerxu-resource-dropdown \{[\s\S]{0,400}border-radius: 12px/.test(src),
+      /#lerxu-resource-dropdown \{[\s\S]{0,400}border-radius: 6px/.test(src),
       '弹窗容器缺圆角（外观应在样式表里，不在内联）'
     )
     // 条目标记：直播徽章 / 名称 / 大小 / URL 全走 class
-    for (const cls of ['lx-item', 'lx-name', 'lx-badge-live', 'lx-size', 'lx-url']) {
+    for (const cls of ['lx-item', 'lx-name', 'lx-badge-live', 'lx-size', 'lx-item-meta', 'lx-format-trigger', 'lx-format-menu']) {
       assert(src.includes(cls), `条目缺少 ${cls} 样式类`)
     }
     assert(/lx-section-title/.test(src) && /lx-section-count/.test(src), '区块标题/计数未走统一样式')
@@ -959,6 +1025,27 @@ const main = async () => {
       sendResourceToClient: (url, referer, filename) => sent.push({ url, referer, filename }),
       sendStreamPair: (v, a) => sent.push({ pair: [v, a] }),
       markSent: () => true,
+      // 条目里的「输出格式」设置：这个用例只关心整行点击，控件本身另有用例
+      mergeFormatByUrl: new Map(),
+      MERGE_FORMAT_VALUES: ['', 'mp4', 'mkv', 'ts'],
+      mergeFormatOf: () => '',
+      createFormatControl: () => ({ control: dom.createEl('span'), panel: dom.createEl('div') }),
+      // 条目右侧的下载按钮：桩里做成真的可点节点，用例靠它验证"点按钮才发任务"
+      // 发完任务要关弹窗：桩里不需要真的动画
+      hideResourceDropdownAnimated: () => {},
+      // 发完任务要关弹窗：桩里不需要真的动画
+      hideResourceDropdownAnimated: () => {},
+      createItemDownloadButton: (label, onClick) => {
+        const btn = dom.createEl('button')
+        btn.className = 'lx-item-download'
+        btn.title = label
+        btn.addEventListener('click', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          onClick()
+        })
+        return btn
+      },
       adjustDropdownPosition: () => {},
       segmentsExpanded: false
     }
@@ -970,7 +1057,7 @@ const main = async () => {
     return { ...api, dom, sent }
   }
 
-  check('清单条目：点整行即下载一次，且行内没有多余的按钮', () => {
+  check('清单条目：只有下载按钮会发任务（整行不再可点）', () => {
     const { createResourceItem, dom, sent } = loadItemRenderers()
     const item = createResourceItem(
       { url: 'https://cdn.example.com/show/index.m3u8', ext: 'm3u8' },
@@ -979,13 +1066,15 @@ const main = async () => {
       { primary: true }
     )
     const nodes = dom.walk(item)
-    assert(
-      !nodes.some((n) => n.textContent === 'download' || n.title === 'download'),
-      '条目上不应再挂下载按钮/图标（用户点名：点条目本身就是下载）'
-    )
+    const downloadBtn = nodes.find((n) => `${n.className || ''}` === 'lx-item-download')
+    assert(downloadBtn, '条目右侧应有下载按钮')
 
+    // 整行点击不再发任务（列表里还要点齿轮 / 选格式，误触代价太大）
     dom.fireClick(item)
-    assert(sent.length === 1, `点条目应发一次，实际 ${sent.length} 次`)
+    assert(sent.length === 0, `整行点击不应发任务，实际 ${sent.length} 次`)
+
+    dom.fireClick(downloadBtn)
+    assert(sent.length === 1, `点下载按钮应发一次，实际 ${sent.length} 次`)
     assert(
       sent[0].url === 'https://cdn.example.com/show/index.m3u8',
       '发出去的应是清单地址（引擎自己拉分片）'
@@ -996,20 +1085,21 @@ const main = async () => {
     )
   })
 
-  check('普通条目 / 分片条目同样只有整行可点（没有额外按钮）', () => {
+  check('普通条目 / 分片条目同样只有下载按钮会发任务', () => {
     const { createResourceItem, dom, sent } = loadItemRenderers()
     for (const resource of [
       { url: 'https://cdn.example.com/clip.mp4', ext: 'mp4' },
       { url: 'https://cdn.example.com/show/seg0.ts', ext: 'ts' }
     ]) {
       const item = createResourceItem(resource, 'https://page.example.com/watch', 0)
-      assert(
-        !dom.walk(item).some((n) => n.textContent === 'download' || n.title === 'download'),
-        `${resource.ext} 条目上不应有下载按钮/图标`
-      )
+      const downloadBtn = dom.walk(item)
+        .find((n) => `${n.className || ''}` === 'lx-item-download')
+      assert(downloadBtn, `${resource.ext} 条目缺少下载按钮`)
       sent.length = 0
       dom.fireClick(item)
-      assert(sent.length === 1, `点 ${resource.ext} 条目应只发一次，实际 ${sent.length} 次`)
+      assert(sent.length === 0, `${resource.ext} 整行不应发任务，实际 ${sent.length} 次`)
+      dom.fireClick(downloadBtn)
+      assert(sent.length === 1, `点 ${resource.ext} 的下载按钮应只发一次，实际 ${sent.length} 次`)
     }
   })
 

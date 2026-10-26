@@ -2285,7 +2285,37 @@
   }
 
   // 更新UI显示
+  /**
+   * 让合并条目（「完整视频」）的大小跟上它那一对流。
+   *
+   * 合并条目是在某条流刚被嗅到时算 totalSize 的，那时另一条可能还没有
+   * Content-Length；之后 `addResource` 探到更准的大小时只更新了 video/audio
+   * 数组里的条目，合并条目一直挂着老的 0 —— 界面上就是"完整视频那一条永远
+   * 不显示大小"（用户点名）。每次刷新 UI 前重算一遍最省事，也不会算错。
+   */
+  function syncCombinedSizes () {
+    try {
+      const list = Array.isArray(sniffedResources.combined) ? sniffedResources.combined : []
+      if (!list.length) return
+      const byUrl = new Map()
+      ;(sniffedResources.video || []).forEach((r) => { if (r && r.url) byUrl.set(r.url, r.size || 0) })
+      ;(sniffedResources.audio || []).forEach((r) => { if (r && r.url) byUrl.set(r.url, r.size || 0) })
+      list.forEach((item) => {
+        if (!item) return
+        const v = byUrl.get(item.videoUrl) || item.videoSize || 0
+        const a = byUrl.get(item.audioUrl) || item.audioSize || 0
+        const total = (v > 0 && a > 0) ? v + a : (v > 0 ? v : a)
+        if (total > 0 && total !== item.size) {
+          item.size = total
+          item.videoSize = v
+          item.audioSize = a
+        }
+      })
+    } catch (_) {}
+  }
+
   function updateUI() {
+    syncCombinedSizes()
     let m4sResources = []
     const videoM4S = sniffedResources.video.filter(r => r.ext === 'm4s')
     const audioM4S = sniffedResources.audio.filter(r => r.ext === 'm4s')

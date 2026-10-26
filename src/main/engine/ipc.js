@@ -88,6 +88,9 @@ export function registerMediaEngineIpc () {
       return mediaEngineService.remux(payload.output, payload.input, {
         fragmentMs: payload.fragmentMs,
         tracks: payload.tracks,
+        // 片段裁剪（秒）：帧级切点，由引擎写编辑列表/按显示时间丢采样
+        clipStart: payload.clipStart,
+        clipEnd: payload.clipEnd,
         signal,
         onProgress
       })
