@@ -1,6 +1,6 @@
 {
   "name": "lerxu",
-  "version": "v3.2.1",
+  "version": "v3.2.2",
   "description": "Cross-platform download manager for Windows, macOS, Linux and Android — HTTP(S), BitTorrent, HLS, SFTP and LAN transfer on an in-house Rust engine.",
   "homepage": "https://github.com/MochengCK/Lerxu",
   "author": {
