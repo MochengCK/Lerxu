@@ -2982,8 +2982,6 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     head.appendChild(endTime)
     // 两个读数只有时间，整行挂个提示说明它是「片段」（也给读屏软件一个名字）
     head.title = getLocalizedText('clipRange')
-    // 两个读数只有时间，整行挂个提示说明它是「片段」（也给读屏软件一个名字）
-    head.title = getLocalizedText('clipRange')
 
     const slider = document.createElement('div')
     slider.className = 'lx-clip-slider'
@@ -3104,6 +3102,33 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     wrap.appendChild(slider)
     // 读数要按**真实宽度**定位（贴边夹住），所以先入 DOM 再画一次
     paint()
+    // ⚠️ 上面这次 paint 其实摆不动读数：createClipRow 返回的是一棵**还没挂上去**
+    // 的子树（调用方 append 进条目 → 条目进弹窗 → 弹窗最后才进 body），此刻
+    // `head.clientWidth` 是 0，placeTimes 里 `if (!width) return` 直接返回 ——
+    // 两个 span 的 left 从头到尾没被写过，只剩样式表里的 `left: 0`，于是
+    // 起点和终点两个读数一起挤在左边（用户报的形态）。拖动之所以"正常"，是因为
+    // 那时节点早就进文档了。
+    // 宽度只有在入文档之后才量得到：交给 ResizeObserver 盯到第一次非 0 再摆一次
+    // （弹窗从 display:none 切到可见也走这条）。摆好就断开，不留监听。
+    if (typeof ResizeObserver === 'function') {
+      const observer = new ResizeObserver(() => {
+        if (!head.clientWidth) return
+        paint()
+        observer.disconnect()
+      })
+      observer.observe(head)
+    } else {
+      // 老浏览器没有 ResizeObserver：按帧重试，最多约 2 秒
+      let tries = 0
+      const retry = () => {
+        if (head.clientWidth) {
+          paint()
+          return
+        }
+        if (++tries < 120) requestAnimationFrame(retry)
+      }
+      requestAnimationFrame(retry)
+    }
     return wrap
   }
 
