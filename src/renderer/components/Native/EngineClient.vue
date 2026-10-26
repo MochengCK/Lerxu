@@ -2182,7 +2182,16 @@ const dir = dirname(filePath)
       }
 
       async function mergeDashToOutput (inputPaths, outputPath, progressGid = '') {
-        const tempPath = resolve(dirname(outputPath), `.${basename(outputPath)}.lerxu-merging-${Date.now()}-${Math.random().toString(16).slice(2)}.mp4`)
+        // ⚠️ 临时文件的扩展名**必须与目标一致**：引擎就是按输出扩展名选封装器的。
+        // 这里以前写死 `.mp4`，于是「选了 MKV」的任务其实是封装成 mp4、再被改名成
+        // `.mkv`（mkv 后缀的 mp4）；之后想换成真正的 mkv 又会因为解封装/时间戳
+        // 交织不满足而失败，最终留下隐藏的 `.lerxu-merging-xxx.mkv`（用户报的形态）。
+        const outExtMatch = `${outputPath}`.match(/\.[^.\\/]+$/)
+        const outExt = outExtMatch ? outExtMatch[0].toLowerCase() : '.mp4'
+        const tempPath = resolve(
+          dirname(outputPath),
+          `.lerxu-merging-${Date.now()}-${Math.random().toString(16).slice(2)}${outExt}`
+        )
         try {
           await runEngineMux(inputPaths, tempPath, progressGid)
           if (!await validateMergeOutput(tempPath)) {
@@ -3129,8 +3138,14 @@ const dir = dirname(filePath)
             await waitMs(100)
 
             const finalTarget = generateUniqueFilePath(dirOut, titleBase, targetExt)
+            // 产物现在的容器就是**临时文件的扩展名**（见 mergeDashToOutput）。
+            // 同容器只需要改名 —— 不要再 remux 一次：多绕一圈不但慢，还会因为
+            // 源文件的音视频交织不完美而被封装器拒掉（时间戳倒流），最终把隐藏
+            // 的临时名留在下载目录里（用户报的 `.lerxu-merging-xxx.mkv`）。
+            const outExt = extname(`${outputPath}`).toLowerCase()
+            const sameContainer = !!outExt && outExt === targetExt
             if (finalTarget && resolve(finalTarget) !== resolve(outputPath)) {
-              if (targetExt === '.mp4') {
+              if (sameContainer || targetExt === '.mp4') {
                 if (existsSync(finalTarget) && isKnownSourcePath(finalTarget)) {
                   await aggressiveDelete(finalTarget)
                   await waitMs(100)
@@ -3160,6 +3175,26 @@ const dir = dirname(filePath)
                 }
               }
             }
+            // 兜底：改名与换封装全都失败时，**绝不能**把隐藏的临时名当成交付物。
+            // 只要产物还叫 `.lerxu-merging-*`，就再按可读标题兜一次改名 —— 隐藏
+            // 文件在访达里根本看不见，用户只会以为"下载失败了"（用户点名）
+            try {
+              if (finalOutputPath && basename(`${finalOutputPath}`).startsWith('.')) {
+                const strayExt = extname(`${finalOutputPath}`) || '.mp4'
+                const strayStem = titleBase
+                  || basename(`${finalOutputPath}`).replace(/^\.+/, '').replace(/\.lerxu-merging-.*$/i, '')
+                  || 'merged'
+                const visible = generateUniqueFilePath(dirname(`${finalOutputPath}`), strayStem, strayExt)
+                if (
+                  visible &&
+                  resolve(visible) !== resolve(finalOutputPath) &&
+                  renamePreserveTimes(finalOutputPath, visible)
+                ) {
+                  finalOutputPath = visible
+                }
+              }
+            } catch (_) {}
+
             if (outputPath && finalOutputPath && resolve(outputPath) !== resolve(finalOutputPath)) {
               const orig = resolve(outputPath)
               try { if (existsSync(orig)) unlinkSync(orig) } catch (_) {}
