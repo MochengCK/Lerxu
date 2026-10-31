@@ -46,24 +46,11 @@
       <div v-else-if="isVerifying">
         <span class="task-progress-percent">{{ verifyPercentText }}</span>
       </div>
-      <!-- 有进度可显示就**优先显示进度**：已下载 / 已知总大小 / 百分比。
-           HLS 的总大小是逐步收敛的（先来自清单码率、再被实测外推修正），
-           所以这里只要 `totalLength > 0` 就带上它，不再等"精确总长"。
-           提示文字退到后面去，否则「正在获取数据…」会把大小和百分比盖住。 -->
-      <div v-else-if="task.completedLength > 0 || task.totalLength > 0">
-        <span>{{ bytesToSize(task.completedLength, 2) }}</span>
-        <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
-        <span v-if="downloadPercentText" class="task-progress-sep"></span>
-        <span v-if="downloadPercentText" class="task-progress-percent">{{ downloadPercentText }}</span>
-        <!-- SFTP：与下面「一对音视频」同一处标注协议，名称行不放标签 -->
-        <span v-if="isSftpTask" class="task-progress-sep"></span>
-        <span v-if="isSftpTask" class="task-proto-hint">SFTP</span>
-        <!-- 「一对音视频」：一条记录背后是两个文件（视频流 + 音频流），
-             大小与百分比都是两者之和；合并完成后也继续显示（这条记录仍然
-             是"一对流合出来的"） -->
-        <span v-if="showPairHint" class="task-progress-sep"></span>
-        <span v-if="showPairHint" class="task-pair-hint">{{ t('task.pair-streams-hint') }}</span>
-      </div>
+      <!-- 已经开工、但一个字节都还没落盘：先说明"正在取数据"，**不能**显示
+           `0 KB / 总大小`。这条必须排在下面那条之前 —— 见
+           `connectingStatusText` 里的注释（BT 按片落盘，首片校验完成之前
+           completedLength 恒为 0，而 totalLength 早已有值；进度条那边靠速度
+           外推在动，左下角却钉死在 0 KB，用户报的就是这个形态）。 -->
       <mo-hover-tip
         v-else-if="connectingStatusText"
         effect="dark"
@@ -78,6 +65,23 @@
           {{ connectingStatusText }}
         </div>
       </mo-hover-tip>
+      <!-- 有进度可显示就显示进度：已下载 / 已知总大小 / 百分比。
+           HLS 的总大小是逐步收敛的（先来自清单码率、再被实测外推修正），
+           所以这里只要 `totalLength > 0` 就带上它，不再等"精确总长"。 -->
+      <div v-else-if="task.completedLength > 0 || task.totalLength > 0">
+        <span>{{ bytesToSize(task.completedLength, 2) }}</span>
+        <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
+        <span v-if="downloadPercentText" class="task-progress-sep"></span>
+        <span v-if="downloadPercentText" class="task-progress-percent">{{ downloadPercentText }}</span>
+        <!-- SFTP：与下面「一对音视频」同一处标注协议，名称行不放标签 -->
+        <span v-if="isSftpTask" class="task-progress-sep"></span>
+        <span v-if="isSftpTask" class="task-proto-hint">SFTP</span>
+        <!-- 「一对音视频」：一条记录背后是两个文件（视频流 + 音频流），
+             大小与百分比都是两者之和；合并完成后也继续显示（这条记录仍然
+             是"一对流合出来的"） -->
+        <span v-if="showPairHint" class="task-progress-sep"></span>
+        <span v-if="showPairHint" class="task-pair-hint">{{ t('task.pair-streams-hint') }}</span>
+      </div>
     </div>
     <div class="task-progress-info-right">
       <div class="task-completion-time" v-if="statusRightText">
@@ -499,15 +503,19 @@ const connectingStatusText = computed(() => {
     return t('task.ed2k-searching-sources')
   }
 
-  // 已经开始、但一个字节都还没到：HLS 要先取播放列表（还可能要读变体清单），
-  // 普通 HTTP 也要先握手。**必须在 `total > 0` 那条之前判断** —— HLS 的总长
-  // 是随分片落地实时估算出来的，早期可能已经有 total 但 completed 仍是 0。
+  // 已经开始、但一个字节都还没落盘：HLS 要先取播放列表（还可能要读变体清单），
+  // 普通 HTTP 也要先握手；**BT/磁力按片落盘**，首片校验完成前 completedLength
+  // 恒为 0。这三种情形**都可能在 totalLength 已有值之后才结束**（HLS 的总长随
+  // 分片落地估算、BT 的总长来自元信息），所以这条判断必须发生在下面
+  // `total > 0` 那条之前 —— 否则界面会一直显示 `0 KB / 总大小`。
   // 这里只出文字；"在动"的感知交给进度条上的扫光动效（TaskItem 的
   // isFetchingMetadata → TaskProgress 的 .is-fetching-metadata），
   // 左下角不放独立动画（用户点名不要）。
-  if (`${task.status || ''}` === TASK_STATUS.ACTIVE
-    && completed === 0
-    && Number(task.downloadSpeed || 0) === 0) {
+  // 不再要求 `downloadSpeed === 0`：磁力/BT 首片还在传的时候速度已经有了，
+  // 那正是"进度条在走（按速度外推）而左下角始终 0 KB"的形态（用户报的）。
+  if (`${task.status || ''}` === TASK_STATUS.ACTIVE && completed === 0) {
+    // 磁力取元数据阶段：说"正在获取元数据"比"正在获取数据"更准确
+    if (isMagnetTask(task)) return t('task.magnet-fetching-metadata')
     return t('task.fetching-data')
   }
 

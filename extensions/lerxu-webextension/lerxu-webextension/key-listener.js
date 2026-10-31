@@ -2404,21 +2404,23 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 .lx-format-option:hover { background: var(--lx-bg-hover); }
 .lx-format-option.is-active { color: var(--lx-primary); background: var(--lx-primary-weak); }
 
-/* 分片组（默认收起） */
+/* 分片组（默认收起）：标题**复用 `.lx-section-title`**（与上面的「HLS 完整视频」
+   等区块同一套排版：字号 / 字重 / 计数右对齐 / 吸顶）。这里只补折叠需要的
+   交互，以及"箭头 + 标题"这一组的排布 —— 不再自造一套字号与计数样式，
+   否则这一栏看起来就像"标签没套上样式"（用户报的）。 */
 .lx-group-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
+  justify-content: space-between;
   cursor: pointer;
   user-select: none;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--lx-text-2);
   border-bottom: 1px solid var(--lx-border);
 }
 .lx-group-head:hover { background: var(--lx-bg-hover); }
-.lx-group-head .lx-count { font-weight: 400; color: var(--lx-text-3); }
+.lx-group-head__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .lx-chevron { font-size: 10px; color: var(--lx-text-3); transition: transform 0.15s ease; }
 .lx-chevron-open { transform: rotate(90deg); }
 
@@ -3603,7 +3605,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const section = document.createElement('div')
 
     const header = document.createElement('div')
-    header.className = 'lx-group-head'
+    // 与其它区块标题（`.lx-section-title`）**同一套排版**：原先这里自己一套
+    // `.lx-group-head`，字号/字重/颜色/计数的位置都跟上面的「HLS 完整视频」
+    // 不一样（标题更黑、计数 "· 12" 紧贴文字而不是右对齐），看起来就是
+    // "这一栏的标签没套上样式"（用户报的）。折叠还需要手型与箭头，单独保留。
+    header.className = 'lx-section-title lx-group-head'
 
     const arrow = document.createElement('span')
     arrow.textContent = '▶'
@@ -3612,12 +3618,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const label = document.createElement('span')
     label.textContent = getLocalizedText('hlsSegments')
 
-    const count = document.createElement('span')
-    count.className = 'lx-count'
-    count.textContent = `· ${segments.length}`
+    // 箭头 + 标题包一层：`.lx-section-title` 是 space-between，不包起来
+    // 三块会被摊成「左 / 中 / 右」，标题就跑到计数那边去了。
+    const titleWrap = document.createElement('span')
+    titleWrap.className = 'lx-group-head__title'
+    titleWrap.appendChild(arrow)
+    titleWrap.appendChild(label)
 
-    header.appendChild(arrow)
-    header.appendChild(label)
+    const count = document.createElement('span')
+    count.className = 'lx-section-count'
+    count.textContent = `${segments.length}`
+
+    header.appendChild(titleWrap)
     header.appendChild(count)
     section.appendChild(header)
 
