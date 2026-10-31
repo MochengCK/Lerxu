@@ -219,7 +219,10 @@ const isFetchingMetadata = computed(() => {
   if (isMagnetTask(task)) return true
   // 待选择文件有自己的一档（橙色底槽），不叠加扫光
   if (isPendingFileSelection.value) return false
-  return Number(task.completedLength || 0) === 0 && Number(task.downloadSpeed || 0) === 0
+  // 首片还没校验落盘：**不管有没有速度**都交给扫光。BT/磁力按片落盘，
+  // 这段窗口里没有"确定进度"可画 —— 若按速度外推，就会出现"条在往前挪、
+  // 左下角一直是 0"的割裂（用户报的正是这个）。
+  return Number(task.completedLength || 0) === 0
 })
 
 /**

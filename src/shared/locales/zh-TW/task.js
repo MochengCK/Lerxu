@@ -394,6 +394,7 @@ export default {
   'download-fail-with-reason': '下載失敗：{{reason}}',
   'waiting-download-data': '無法存取下載資料，正在等待可用連線...',
   'fetching-data': '正在取得資料…',
+  'downloading-first-piece': '正在下載首個分片…',
   'ed2k-searching-sources': '正在搜索ED2K來源...',
   'error-reason-dns': 'DNS 解析失敗（無法解析網域名稱）',
   'error-reason-fake-ip': 'DNS 被代理軟體劫持（請在設定中配置代理）',

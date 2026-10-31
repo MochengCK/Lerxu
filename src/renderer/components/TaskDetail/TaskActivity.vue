@@ -57,8 +57,16 @@
     </el-form-item>
     <el-form-item>
       <div class="form-static-value">
-        <span>{{ bytesToSize(task.completedLength, 2) }}</span>
-        <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
+        <!-- 首片还没落盘时不显示死板的 "0 KB"：BT/磁力按片落盘，这段窗口
+             速度早就有了，写 0 KB 会让人以为任务卡住了（与任务卡片同一口径） -->
+        <template v-if="firstPieceHintText">
+          <span>{{ firstPieceHintText }}</span>
+          <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
+        </template>
+        <template v-else>
+          <span>{{ bytesToSize(task.completedLength, 2) }}</span>
+          <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
+        </template>
         <span class="task-time-remaining" v-if="isActive && remaining > 0">
           {{
             timeFormat(remaining, {
@@ -196,10 +204,28 @@ const isPendingFileSelection = computed(() => {
   const map = taskStore.pendingFileSelection || {}
   return !!map[gid]
 })
-// 正在获取元数据：磁力任务元数据就绪前且处于活动态 → 进度条走扫光动效
+// 进度条扫光态：磁力取元数据阶段，以及"已经开始收数据但首片还没落盘"
+// —— 后者没有确定进度可画（BT 按片落盘），与任务卡片同一口径。
 const isFetchingMetadata = computed(() => {
   const task = props.task || {}
-  return `${task.status || ''}` === TASK_STATUS.ACTIVE && isMagnetTask(task)
+  if (`${task.status || ''}` !== TASK_STATUS.ACTIVE) return false
+  if (isMagnetTask(task)) return true
+  return Number(task.completedLength || 0) === 0
+})
+
+/**
+ * 首片未落盘时的说明文案（空串 = 正常显示 已下载/总量）。
+ *
+ * 与 `TaskProgressInfo` 的分支同源：有速度 ⇒ 在下载首片；磁力还没拿到元数据
+ * ⇒ 在取元数据；其余 ⇒ 在等数据。三者都不能显示成 `0 KB`。
+ */
+const firstPieceHintText = computed(() => {
+  const task = props.task || {}
+  if (`${task.status || ''}` !== TASK_STATUS.ACTIVE) return ''
+  if (Number(task.completedLength || 0) > 0) return ''
+  if (Number(task.downloadSpeed || 0) > 0) return t('task.downloading-first-piece')
+  if (isMagnetTask(task)) return t('task.magnet-fetching-metadata')
+  return t('task.fetching-data')
 })
 // 直播任务（引擎 isLive 置位后恒真）→ 进度条走录制专属三态视觉
 // （录制中流动光带 / 暂停减速变灰 / 完成绿色铺满，见 TaskProgress.vue 的 .is-live）

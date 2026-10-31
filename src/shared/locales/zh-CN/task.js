@@ -387,6 +387,9 @@ export default {
   'download-fail-with-reason': '下载失败：{{reason}}',
   'waiting-download-data': '无法访问下载数据，正在等待可用连接...',
   'fetching-data': '正在获取数据…',
+  // 已经开始收数据、但第一个分片还没校验落盘。BT/磁力按片落盘，这段窗口里
+  // completedLength 恒为 0，而速度早就有了 —— 说"正在获取数据"自相矛盾。
+  'downloading-first-piece': '正在下载首个分片…',
   'ed2k-searching-sources': '正在搜索ED2K源...',
   'error-reason-dns': 'DNS 解析失败（无法解析域名）',
   'error-reason-fake-ip': 'DNS 被代理软件劫持（请在设置中配置代理）',
