@@ -2385,6 +2385,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   font-family: var(--lx-font);
   /* 出入场由 JS 内联过渡驱动（与资源弹窗共用一套） */
   transform-origin: top center;
+}
 .lx-format-option {
   display: block;
   width: 100%;
@@ -2404,15 +2405,19 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 .lx-format-option:hover { background: var(--lx-bg-hover); }
 .lx-format-option.is-active { color: var(--lx-primary); background: var(--lx-primary-weak); }
 
-/* 分片组（默认收起）：标题**复用 `.lx-section-title`**（与上面的「HLS 完整视频」
-   等区块同一套排版：字号 / 字重 / 计数右对齐 / 吸顶）。这里只补折叠需要的
-   交互，以及"箭头 + 标题"这一组的排布 —— 不再自造一套字号与计数样式，
-   否则这一栏看起来就像"标签没套上样式"（用户报的）。 */
+/* 分片组（默认收起）：标题复用区块标题那套排版（.lx-section-title，与上面的
+   「HLS 完整视频」一致：字号 / 字重 / 计数右对齐 / 吸顶）。这里只补折叠需要的
+   交互，以及「箭头 + 标题」这一组的排布 —— 不再自造一套字号与计数样式，
+   否则这一栏看起来就像「标签没套上样式」（用户报的）。
+   ⚠️ 本段整块是 JS 模板字符串：注释里**绝对不能出现反引号**，否则字符串会被
+   提前截断、整张样式表在运行时抛错而不注入（踩过：按钮"变成透明"就是这么来的）。 */
 .lx-group-head {
+  /* 排版全部来自区块标题（.lx-section-title）：display / padding / 字号 /
+     颜色 / 吸顶。这里只留「它能点」这一层信号。**不加 border-bottom**：
+     其它区块标题都没有下边框，加了又是这一栏跟别人长得不一样。 */
   justify-content: space-between;
   cursor: pointer;
   user-select: none;
-  border-bottom: 1px solid var(--lx-border);
 }
 .lx-group-head:hover { background: var(--lx-bg-hover); }
 .lx-group-head__title {
@@ -4336,15 +4341,31 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const style = btn.style
     style.position = 'relative'
     style.padding = '3px 32px 3px 10px' // 右侧留出关闭按钮的热区
-    style.background = 'var(--lx-bg-panel)'
-    style.color = 'var(--lx-text-1)'
-    style.border = '1px solid var(--lx-border-strong)'
+    // ⚠️ 视觉三件套（底色 / 描边 / 字色）必须**带回退值 + !important**：
+    //   1) 令牌来自 `.lx-scope`，一旦注入的样式表被页面 CSP 挡掉（或页面里
+    //      有个同名空壳 style 让我们提前 return），`var()` 解析失败 ⇒ 背景与
+    //      描边整条声明作废，按钮就"只剩文字"，看起来是透明的；
+    //   2) 站点自己的 `button { background: none !important; border: 0 !important }`
+    //      这类重置优先级高于普通内联样式，只有 !important 才压得住。
+    // 回退值取浅色主题的同值，深色主题下变量在就不受影响。
+    const setVisual = (prop, value) => {
+      try {
+        style.setProperty(prop, value, 'important')
+        return
+      } catch (_) {}
+      // 兜底（DOM 桩没有 setProperty）：kebab → camel
+      const camel = prop.replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+      style[camel] = value
+    }
+    setVisual('background', 'var(--lx-bg-panel, #fff)')
+    setVisual('color', 'var(--lx-text-1, #2c3e50)')
+    setVisual('border', '1px solid var(--lx-border-strong, #d8dfe8)')
+    setVisual('box-shadow', 'var(--lx-shadow-sm, 0 2px 8px rgba(26, 35, 50, 0.16))')
     style.borderRadius = '6px'
     style.cursor = 'pointer'
     style.fontSize = '12px'
     style.fontWeight = '500'
     style.fontFamily = 'var(--lx-font)'
-    style.boxShadow = 'var(--lx-shadow-sm)'
     style.opacity = '0.9'
     style.transition = 'opacity 0.2s ease, background-color 0.15s ease, border-color 0.15s ease'
     style.pointerEvents = 'auto'

@@ -936,6 +936,40 @@ const main = async () => {
     }
   })
 
+  check('样式表模板字符串完整（CSS 里不能出现反引号 / 花括号必须配平）', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    const marker = 'style.textContent = `'
+    const start = src.indexOf(marker)
+    assert(start >= 0, '未找到样式表模板字符串（注入方式变了？请同步更新本用例的定位点）')
+    const from = start + marker.length
+    const end = src.indexOf('appendChild(style)', from)
+    assert(end > from, '未找到样式表注入点（appendChild(style)）')
+    const raw = src.slice(from, end)
+    // 去掉结尾那个**合法**的模板字符串结束反引号
+    const css = raw.slice(0, raw.lastIndexOf('`'))
+    // ① 反引号：整段 CSS 是 JS 模板字符串，注释里再写一个反引号会把字符串
+    //    提前截断 —— 编译出来是 `"...".lx - section - title` 这类表达式，
+    //    运行时抛 ReferenceError、被 ensureLxStyles 的 try/catch 吞掉，
+    //    于是**整张样式表从不注入**（现象：面板没样式、悬浮下载按钮只剩文字、
+    //    底色描边全消失）。2026-11-01 踩过，eslint 抓不到，只能靠这条兜住。
+    assert(
+      !css.includes('`'),
+      'CSS 里出现了反引号：会截断模板字符串，导致整张样式表不注入'
+    )
+    // ② 插值：样式表应当是纯文本，不该出现 ${...}
+    assert(!css.includes('${'), 'CSS 里出现了 ${ 插值（样式表应当是纯文本）')
+    // ③ 括号配平：少一个 } 会把后面所有规则吞进上一条规则里 —— 曾经
+    //    .lx-format-menu 少一个 }，导致分片组标题 / 箭头 / 空态等 11 条
+    //    规则全部失效（面板里只有那几处"没套上样式"）。
+    const noComment = css.replace(/\/\*[\s\S]*?\*\//g, '')
+    let depth = 0
+    for (const ch of noComment) {
+      if (ch === '{') depth++
+      else if (ch === '}') depth--
+    }
+    assert(depth === 0, `CSS 花括号不配平（差 ${depth} 个）：缺失的 } 会让后面的规则整段失效`)
+  })
+
   // ------------------------------------------------------- 行内下载入口 DOM
   console.log('\n[5] 行内下载入口（DOM 桩）')
 
