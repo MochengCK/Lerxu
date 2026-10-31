@@ -101,7 +101,8 @@ import {
   timeRemaining,
   timeFormat,
   getTaskName,
-  checkTaskIsSeeder
+  checkTaskIsSeeder,
+  isMagnetTask
 } from '@shared/utils'
 import {
   moveTaskFilesToTrash
@@ -1070,7 +1071,17 @@ onBeforeUnmount(() => {
         })
         const completedText = bytesToSize(completed, 2)
         const totalText = total > 0 ? bytesToSize(total, 2) : ''
-        const sizeText = totalText ? `${completedText} / ${totalText}` : completedText
+        // 首片还没落盘时不下发死板的 "0 KB"：BT/磁力按片落盘，这段窗口里
+        // 速度早就有了，写 0 KB 等于告诉用户"卡住了"（与任务卡片 / 详情
+        // 同一口径，见 TaskProgressInfo 的 connectingStatusText）。
+        const firstPieceHint = (completed === 0 && `${taskData.status || ''}` === TASK_STATUS.ACTIVE)
+          ? (speed > 0
+            ? t('task.downloading-first-piece')
+            : (isMagnetTask(taskData) ? t('task.magnet-fetching-metadata') : t('task.fetching-data')))
+          : ''
+        const sizeText = firstPieceHint
+          ? `${firstPieceHint}${totalText ? ` / ${totalText}` : ''}`
+          : (totalText ? `${completedText} / ${totalText}` : completedText)
         const speedValue = speed > 0 ? `${bytesToSize(speed, 2)}/s` : `${bytesToSize(0, 2)}/s`
 
         // 计算平均速度：引擎直供 averageSpeed（active 阶段实时累计、
