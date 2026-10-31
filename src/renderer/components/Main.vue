@@ -1075,9 +1075,16 @@ onBeforeUnmount(() => {
         // 速度早就有了，写 0 KB 等于告诉用户"卡住了"（与任务卡片 / 详情
         // 同一口径，见 TaskProgressInfo 的 connectingStatusText）。
         const firstPieceHint = (completed === 0 && `${taskData.status || ''}` === TASK_STATUS.ACTIVE)
-          ? (speed > 0
-            ? t('task.downloading-first-piece')
-            : (isMagnetTask(taskData) ? t('task.magnet-fetching-metadata') : t('task.fetching-data')))
+          ? (() => {
+            // 引擎的字节级已接收量：有它就能显示"已接收 X"，数字连续在涨
+            const received = Number(taskData.receivedLength || 0)
+            if (received > 0) {
+              return t('task.received-hint', { size: bytesToSize(received, 2) })
+            }
+            return speed > 0
+              ? t('task.downloading-first-piece')
+              : (isMagnetTask(taskData) ? t('task.magnet-fetching-metadata') : t('task.fetching-data'))
+          })()
           : ''
         const sizeText = firstPieceHint
           ? `${firstPieceHint}${totalText ? ` / ${totalText}` : ''}`

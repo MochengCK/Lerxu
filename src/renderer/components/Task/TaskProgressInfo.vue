@@ -514,9 +514,14 @@ const connectingStatusText = computed(() => {
   // 不再要求 `downloadSpeed === 0`：磁力/BT 首片还在传的时候速度已经有了，
   // 那正是"进度条在走（按速度外推）而左下角始终 0 KB"的形态（用户报的）。
   if (`${task.status || ''}` === TASK_STATUS.ACTIVE && completed === 0) {
-    // 已经在收数据、只是第一个分片还没校验落盘（BT/磁力按片落盘，片可能
-    // 有好几 MB）：这时候说"正在获取数据"会和右栏的速度自相矛盾，用户直接
-    // 反馈"明明有几百 KB 却显示正在获取数据"。
+    // 已经收到数据、只是第一片还没校验落盘（BT/磁力按片落盘，片可能好几 MB）：
+    // 引擎上报的 receivedLength 是**字节级**的本轮已接收量，用它把"在动"
+    // 显示出来 —— 否则左下角会一直是同一个数，像卡死。
+    const received = Number(task.receivedLength || 0)
+    if (received > 0) {
+      return t('task.received-hint', { size: bytesToSize(received, 2) })
+    }
+    // 没有字节级数据时退到状态文案
     if (Number(task.downloadSpeed || 0) > 0) {
       return t('task.downloading-first-piece')
     }

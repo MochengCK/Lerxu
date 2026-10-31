@@ -216,13 +216,18 @@ const isFetchingMetadata = computed(() => {
 /**
  * 首片未落盘时的说明文案（空串 = 正常显示 已下载/总量）。
  *
- * 与 `TaskProgressInfo` 的分支同源：有速度 ⇒ 在下载首片；磁力还没拿到元数据
- * ⇒ 在取元数据；其余 ⇒ 在等数据。三者都不能显示成 `0 KB`。
+ * 与 `TaskProgressInfo` 的分支同源：有字节级的 `receivedLength` 就显示
+ * "已接收 X"（这个数连续在涨，不会像 completedLength 停在 0）；否则退到
+ * 状态文案（磁力取元数据 / 下载首片 / 等数据）。
  */
 const firstPieceHintText = computed(() => {
   const task = props.task || {}
   if (`${task.status || ''}` !== TASK_STATUS.ACTIVE) return ''
   if (Number(task.completedLength || 0) > 0) return ''
+  const received = Number(task.receivedLength || 0)
+  if (received > 0) {
+    return t('task.received-hint', { size: bytesToSize(received, 2) })
+  }
   if (Number(task.downloadSpeed || 0) > 0) return t('task.downloading-first-piece')
   if (isMagnetTask(task)) return t('task.magnet-fetching-metadata')
   return t('task.fetching-data')
