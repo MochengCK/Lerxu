@@ -436,8 +436,8 @@ const renderRows = computed(() => {
         selected
       },
       memo: lan
-        ? [row.status, row.completedLength, row.downloadSpeed, viewMode.value, resizeVersion.value, selected]
-        : [row.status, row.completedLength, row.downloadSpeed, row.uploadSpeed, row.uploadLength, row.connections, row.numSeeders, viewMode.value, resizeVersion.value, selected]
+        ? [row.status, row.completedLength, row.liveCompletedLength, row.downloadSpeed, viewMode.value, resizeVersion.value, selected]
+        : [row.status, row.completedLength, row.liveCompletedLength, row.downloadSpeed, row.uploadSpeed, row.uploadLength, row.connections, row.numSeeders, viewMode.value, resizeVersion.value, selected]
     }
   })
 })

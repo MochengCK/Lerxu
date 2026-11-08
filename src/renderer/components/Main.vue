@@ -1047,7 +1047,10 @@ onBeforeUnmount(() => {
 
       function buildProgressPayload(task) {
         const taskData = task || {}
-        const completed = Number(taskData.completedLength || 0)
+        const liveCompleted = Number(taskData.liveCompletedLength)
+        const completed = Number.isFinite(liveCompleted) && liveCompleted > 0
+          ? liveCompleted
+          : Number(taskData.completedLength || 0)
         const total = Number(taskData.totalLength || 0)
         const speed = Number(taskData.downloadSpeed || 0)
         const connections = Number(taskData.connections || 0)

@@ -69,7 +69,7 @@
            HLS 的总大小是逐步收敛的（先来自清单码率、再被实测外推修正），
            所以这里只要 `totalLength > 0` 就带上它，不再等"精确总长"。 -->
       <div v-else-if="task.completedLength > 0 || task.totalLength > 0">
-        <span>{{ bytesToSize(task.completedLength, 2) }}</span>
+        <span>{{ bytesToSize(displayCompletedLength, 2) }}</span>
         <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
         <span v-if="downloadPercentText" class="task-progress-sep"></span>
         <span v-if="downloadPercentText" class="task-progress-percent">{{ downloadPercentText }}</span>
@@ -548,17 +548,30 @@ const statusRightText = computed(() => {
   return raw
 })
 
+/**
+ * 界面显示用的「已下载」字节数。
+ *
+ * 引擎的 `completedLength` 是分片级精确值：一整片（这个种子 8 MB）校验
+ * 落盘才变一次，低速率下几十秒才跳；`liveCompletedLength` 是叠加了在途片
+ * 已收字节的连续值，每秒都在涨。旧引擎没有后者时回退到精确值。
+ */
+const displayCompletedLength = computed(() => {
+  const task = props.task || {}
+  const live = Number(task.liveCompletedLength)
+  if (Number.isFinite(live) && live > 0) return live
+  return Number(task.completedLength) || 0
+})
+
 const remaining = computed(() => {
-  const { totalLength, completedLength, downloadSpeed } = props.task
-  return timeRemaining(totalLength, completedLength, downloadSpeed)
+  const { totalLength, downloadSpeed } = props.task
+  return timeRemaining(totalLength, displayCompletedLength.value, downloadSpeed)
 })
 
 const downloadPercentText = computed(() => {
-  const { totalLength, completedLength } = props.task || {}
+  const { totalLength } = props.task || {}
   const total = Number(totalLength)
-  const completed = Number(completedLength)
-  if (!(total > 0) || !(completed >= 0)) return ''
-  const percent = calcProgress(totalLength, completedLength)
+  if (!(total > 0)) return ''
+  const percent = calcProgress(total, displayCompletedLength.value)
   if (!Number.isFinite(percent)) return ''
   return `${percent}%`
 })

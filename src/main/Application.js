@@ -5455,7 +5455,15 @@ export default class Application extends EventEmitter {
 
       // 进度/速度/连接数：一对音视频按成员求和（与任务卡片同口径）
       const sumOf = (key) => members.reduce((acc, m) => acc + (Number(m && m[key]) || 0), 0)
-      const completed = isPairRecord ? sumOf('completedLength') : Number(task.completedLength || 0)
+      // 已下载量优先用引擎的字节级连续值（分片级 completedLength 在大片长
+      // 种子上几十秒才跳一次），旧引擎回退到精确值；一对音视频按成员求和。
+      const liveCompleted = Number(task.liveCompletedLength)
+      const liveSum = sumOf('liveCompletedLength')
+      const completed = isPairRecord
+        ? (liveSum > 0 ? liveSum : sumOf('completedLength'))
+        : (Number.isFinite(liveCompleted) && liveCompleted > 0
+          ? liveCompleted
+          : Number(task.completedLength || 0))
       const total = isPairRecord ? sumOf('totalLength') : Number(task.totalLength || 0)
       const speed = isPairRecord ? sumOf('downloadSpeed') : Number(task.downloadSpeed || 0)
       const connections = isPairRecord ? sumOf('connections') : Number(task.connections || 0)

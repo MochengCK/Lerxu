@@ -64,7 +64,7 @@
           <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
         </template>
         <template v-else>
-          <span>{{ bytesToSize(task.completedLength, 2) }}</span>
+          <span>{{ bytesToSize(displayCompletedLength, 2) }}</span>
           <span v-if="task.totalLength > 0"> / {{ bytesToSize(task.totalLength, 2) }}</span>
         </template>
         <span class="task-time-remaining" v-if="isActive && remaining > 0">
@@ -211,6 +211,18 @@ const isFetchingMetadata = computed(() => {
   if (`${task.status || ''}` !== TASK_STATUS.ACTIVE) return false
   if (isMagnetTask(task)) return true
   return Number(task.completedLength || 0) === 0
+})
+
+/**
+ * 界面显示用的「已下载」字节数：优先引擎的字节级连续值
+ * liveCompletedLength，旧引擎回退到分片级精确值 completedLength。
+ * 与任务卡片 / 独立进度窗口同一口径。
+ */
+const displayCompletedLength = computed(() => {
+  const task = props.task || {}
+  const live = Number(task.liveCompletedLength)
+  if (Number.isFinite(live) && live > 0) return live
+  return Number(task.completedLength) || 0
 })
 
 /**
