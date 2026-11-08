@@ -216,21 +216,17 @@ const isFetchingMetadata = computed(() => {
 /**
  * 首片未落盘时的说明文案（空串 = 正常显示 已下载/总量）。
  *
- * 与 `TaskProgressInfo` 的分支同源：有字节级的 `receivedLength` 就显示
- * "已接收 X"（这个数连续在涨，不会像 completedLength 停在 0）；否则退到
- * 状态文案（磁力取元数据 / 下载首片 / 等数据）。
+ * 只有**磁力还没拿到元信息**（总量未知）才给一句说明；首片落盘之前
+ * completedLength 本来就是 0，界面照常显示 `0 KB / 总大小` ——
+ * 不再输出「正在下载首个分片 / 已接收 X」（与任务卡片同一口径）。
  */
 const firstPieceHintText = computed(() => {
   const task = props.task || {}
   if (`${task.status || ''}` !== TASK_STATUS.ACTIVE) return ''
   if (Number(task.completedLength || 0) > 0) return ''
-  const received = Number(task.receivedLength || 0)
-  if (received > 0) {
-    return t('task.received-hint', { size: bytesToSize(received, 2) })
-  }
-  if (Number(task.downloadSpeed || 0) > 0) return t('task.downloading-first-piece')
+  if (Number(task.totalLength || 0) > 0) return ''
   if (isMagnetTask(task)) return t('task.magnet-fetching-metadata')
-  return t('task.fetching-data')
+  return ''
 })
 // 直播任务（引擎 isLive 置位后恒真）→ 进度条走录制专属三态视觉
 // （录制中流动光带 / 暂停减速变灰 / 完成绿色铺满，见 TaskProgress.vue 的 .is-live）

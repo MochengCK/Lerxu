@@ -503,31 +503,20 @@ const connectingStatusText = computed(() => {
     return t('task.ed2k-searching-sources')
   }
 
-  // 已经开始、但一个字节都还没落盘：HLS 要先取播放列表（还可能要读变体清单），
-  // 普通 HTTP 也要先握手；**BT/磁力按片落盘**，首片校验完成前 completedLength
-  // 恒为 0。这三种情形**都可能在 totalLength 已有值之后才结束**（HLS 的总长随
-  // 分片落地估算、BT 的总长来自元信息），所以这条判断必须发生在下面
-  // `total > 0` 那条之前 —— 否则界面会一直显示 `0 KB / 总大小`。
-  // 这里只出文字；"在动"的感知交给进度条上的扫光动效（TaskItem 的
-  // isFetchingMetadata → TaskProgress 的 .is-fetching-metadata），
-  // 左下角不放独立动画（用户点名不要）。
-  // 不再要求 `downloadSpeed === 0`：磁力/BT 首片还在传的时候速度已经有了，
-  // 那正是"进度条在走（按速度外推）而左下角始终 0 KB"的形态（用户报的）。
-  if (`${task.status || ''}` === TASK_STATUS.ACTIVE && completed === 0) {
-    // 已经收到数据、只是第一片还没校验落盘（BT/磁力按片落盘，片可能好几 MB）：
-    // 引擎上报的 receivedLength 是**字节级**的本轮已接收量，用它把"在动"
-    // 显示出来 —— 否则左下角会一直是同一个数，像卡死。
-    const received = Number(task.receivedLength || 0)
-    if (received > 0) {
-      return t('task.received-hint', { size: bytesToSize(received, 2) })
-    }
-    // 没有字节级数据时退到状态文案
-    if (Number(task.downloadSpeed || 0) > 0) {
-      return t('task.downloading-first-piece')
-    }
-    // 磁力取元数据阶段：说"正在获取元数据"比"正在获取数据"更准确
-    if (isMagnetTask(task)) return t('task.magnet-fetching-metadata')
-    return t('task.fetching-data')
+  // 首片窗口不单独出文案：BT/磁力按片落盘，首片校验完成前 completedLength
+  // 本来就是 0，界面照常显示 `0 KB / 总大小 / 百分比` 即可（与 qB 一致）。
+  // 根因（引擎暂停、分母口径）修好后这段窗口很短，再多一套「正在下载首个
+  // 分片 / 已接收 X」的文案反而像在掩盖问题。
+  // 唯一保留的说明是**磁力还没拿到元信息**（total 未知，界面确实没有任何
+  // 可显示的数字）；这一档优先用 `magnetHintText` 的「已连 N 个节点 /
+  // 等待了多久」，比一句固定文案更有信息量。
+  if (
+    `${task.status || ''}` === TASK_STATUS.ACTIVE &&
+    completed === 0 &&
+    total <= 0 &&
+    isMagnetTask(task)
+  ) {
+    return magnetHintText.value || t('task.magnet-fetching-metadata')
   }
 
   if (total > 0 || completed > 0) return ''

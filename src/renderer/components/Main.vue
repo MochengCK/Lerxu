@@ -1071,20 +1071,16 @@ onBeforeUnmount(() => {
         })
         const completedText = bytesToSize(completed, 2)
         const totalText = total > 0 ? bytesToSize(total, 2) : ''
-        // 首片还没落盘时不下发死板的 "0 KB"：BT/磁力按片落盘，这段窗口里
-        // 速度早就有了，写 0 KB 等于告诉用户"卡住了"（与任务卡片 / 详情
-        // 同一口径，见 TaskProgressInfo 的 connectingStatusText）。
-        const firstPieceHint = (completed === 0 && `${taskData.status || ''}` === TASK_STATUS.ACTIVE)
-          ? (() => {
-            // 引擎的字节级已接收量：有它就能显示"已接收 X"，数字连续在涨
-            const received = Number(taskData.receivedLength || 0)
-            if (received > 0) {
-              return t('task.received-hint', { size: bytesToSize(received, 2) })
-            }
-            return speed > 0
-              ? t('task.downloading-first-piece')
-              : (isMagnetTask(taskData) ? t('task.magnet-fetching-metadata') : t('task.fetching-data'))
-          })()
+        // 首片未落盘时按正常进度显示 `0 KB / 总大小`（与任务卡片 / 详情
+        // 同一口径）。只在磁力还没拿到元信息、总量未知时给一句说明 ——
+        // 那时界面上确实没有任何数字可显示。
+        const firstPieceHint = (
+          completed === 0 &&
+          total <= 0 &&
+          `${taskData.status || ''}` === TASK_STATUS.ACTIVE &&
+          isMagnetTask(taskData)
+        )
+          ? t('task.magnet-fetching-metadata')
           : ''
         const sizeText = firstPieceHint
           ? `${firstPieceHint}${totalText ? ` / ${totalText}` : ''}`

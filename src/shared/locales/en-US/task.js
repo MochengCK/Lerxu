@@ -387,8 +387,6 @@ export default {
   'download-fail-with-reason': 'Download failed: {{reason}}',
   'waiting-download-data': 'Unable to access download data, waiting for available connection...',
   'fetching-data': 'Fetching data…',
-  'downloading-first-piece': 'Downloading first piece…',
-  'received-hint': 'Received {{size}}',
   'ed2k-searching-sources': 'Searching for ED2K sources...',
   'error-reason-dns': 'DNS resolution failed (unable to resolve hostname)',
   'error-reason-fake-ip': 'DNS hijacked by proxy software (please configure proxy in settings)',

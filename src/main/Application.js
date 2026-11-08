@@ -5471,16 +5471,16 @@ export default class Application extends EventEmitter {
       })
       const completedText = bytesToSize(completed, 2)
       const totalText = total > 0 ? bytesToSize(total, 2) : ''
-      // 首片还没落盘时不下发死板的 "0 KB"：BT/磁力按片落盘，这段窗口里
-      // 速度早就有了，写 0 KB 等于告诉用户"卡住了"。与渲染层推送路径
-      // （Main.vue 的 buildProgressPayload）同口径，否则窗口每秒在
-      // "正在下载首个分片" 与 "0 KB" 之间来回跳。
-      const firstPieceHint = (completed === 0 && status === TASK_STATUS.ACTIVE)
-        ? (speed > 0
-          ? this.i18n.t('task.downloading-first-piece')
-          : (task && task.bittorrent && !task.bittorrent.info
-            ? this.i18n.t('task.magnet-fetching-metadata')
-            : this.i18n.t('task.fetching-data')))
+      // 首片未落盘时按正常进度显示 `0 KB / 总大小`（与渲染层推送路径
+      // 同口径，否则窗口每秒会跳）。只在磁力还没有元信息、总量未知时
+      // 给一句说明 —— 那时界面上确实没有数字可显示。
+      const firstPieceHint = (
+        completed === 0 &&
+        total <= 0 &&
+        status === TASK_STATUS.ACTIVE &&
+        task && task.bittorrent && !task.bittorrent.info
+      )
+        ? this.i18n.t('task.magnet-fetching-metadata')
         : ''
       const sizeBody = firstPieceHint
         ? `${firstPieceHint}${totalText ? ` / ${totalText}` : ''}`
