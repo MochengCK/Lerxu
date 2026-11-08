@@ -118,6 +118,7 @@ import {
 } from '@shared/utils'
 import i18n from '@/plugins/i18n'
 import api from '@/api'
+import { nextAnnounceSeconds, formatRemaining } from '@/utils/announceTime'
 
 const { t } = i18n.global
 
@@ -416,14 +417,12 @@ function _enqueueFaviconLoaded (url) {
 }
 
 function formatNextAnnounceTime (timestamp) {
-  if (!timestamp || timestamp <= 0) return '-'
-  const now = Math.floor(Date.now() / 1000)
-  const diff = timestamp - now
-  if (diff <= 0) return i18n.global.t('task.tracker-next-immediately')
-  const minutes = Math.floor(diff / 60)
-  const seconds = diff % 60
-  if (minutes > 0) return `${minutes}m ${seconds}s`
-  return `${seconds}s`
+  // 引擎上报的是 epoch **毫秒**（见 @/utils/announceTime 的说明）；
+  // 以前按毫秒减秒，显示成几千万分钟。
+  const seconds = nextAnnounceSeconds(timestamp)
+  if (seconds === null) return '-'
+  if (seconds <= 0) return i18n.global.t('task.tracker-next-immediately')
+  return formatRemaining(seconds)
 }
 </script>
 
