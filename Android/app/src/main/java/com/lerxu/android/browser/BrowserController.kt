@@ -3305,6 +3305,20 @@ class BrowserController(
         "(function(){try{window.__lerxuShowVideos&&window.__lerxuShowVideos();}catch(e){}})();" +
             AUDIO_UNMUTE_JS
 
+    /**
+     * 把页面那一路上次被脚本按停的视频**放回去**（电脑模式用，见 [onPageVideoPlayed]）。
+     *
+     * 只认脚本自己记住的那个元素（`__lerxuVid`），退一步认页面上最大的那个 `<video>`；
+     * `play()` 被浏览器拦下（没有用户手势）就算了 —— 用户自己再按一次就行，
+     * 反正闸门已经关了，不会再被接管。
+     */
+    private val RESUME_PAGE_VIDEO_JS =
+        "(function(){try{" +
+            "var v=window.__lerxuVid;" +
+            "if(!v||!v.isConnected){v=document.querySelector('video');}" +
+            "if(v&&v.paused){var p=v.play();if(p&&p.catch)p.catch(function(){});}" +
+            "}catch(e){}})();"
+
     /** 起播那一刻开始跟位置（见 PageVideoDetector 的位置回传）。 */
     private val START_PAGE_RECT_JS =
         "(function(){try{window.__lerxuStartRect&&window.__lerxuStartRect();}catch(e){}})();"
@@ -3579,6 +3593,24 @@ class BrowserController(
     private fun onPageVideoPlayed(tab: Tab, paused: Boolean) {
         if (nativePlayRequest != null) return
         if (tab.id != activeId) return
+        // **电脑模式：网页自己的播放器说了算**（用户 2026-11-09 点名："桌面版还是改为
+        // 使用网页自己的播放器吧，不使用我们原生播放器"）。
+        //
+        // 理由不是"做不了"，而是**收益不如它自己**：桌面版站点那套播放器本来就是为宽屏
+        // 设计的（自带宽屏/网页全屏/清晰度切换/弹幕/连播），而我们这层覆盖层是照
+        // "贴在手机版那块 `<video>` 上"做的 —— 在 1280 版面里既要跟着缩放换算坐标，
+        // 又要处理分离音轨（DASH），每多一步就多一处和站点打架的地方。
+        //
+        // 页面侧那套脚本是"先 pause 再上报"（见 PageVideoDetector），所以这里**要把它放
+        // 回去**：否则用户按了播放，画面却停住不动。放回去之后什么都不做 —— 脚本那边
+        // 报完一次就关了闸门（`armed=false`），这一页后面也不会再打扰它。
+        // 「本页资源」里手动点播仍然走原生播放器（那是用户自己选的，见 AppScreen）。
+        if (desktopMode) {
+            // 只放回"用户自己按了播放"的那一路：`paused=true` 是进页面时那层"还停着的
+            // 播放器"的扫描结果，替它按播放等于凭空开始放片子
+            if (!paused) tab.webView?.evaluateJavascript(RESUME_PAGE_VIDEO_JS, null)
+            return
+        }
         // 先记下"这一路要不要自动播"**再**发请求：界面那边是 `LaunchedEffect(nativePlayRequest)`
         // 里读它的，顺序反了就会读到上一条的值
         nativePlayPaused = paused
