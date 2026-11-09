@@ -34,6 +34,7 @@ import com.lerxu.android.browser.FixedHlsPlaylistParserFactory
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.hls.DefaultHlsDataSourceFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.lerxu.android.R
@@ -49,7 +50,14 @@ import kotlin.math.roundToInt
 data class PlayerDownload(
     val url: String,
     val fileName: String,
-    val headers: Map<String, String>
+    val headers: Map<String, String>,
+    /**
+     * 这一路**分离出来的音轨**（DASH 站点，见 `DashPair`）；空 = 音视频本来就在一起。
+     *
+     * 下载走这里：两个地址各自下一份、下完由 `DashMerge` 合成一个 MP4 ——
+     * 只下画面那一份的话，用户拿到的是个没声音的文件。
+     */
+    val audioUrl: String = ""
 )
 
 /**
@@ -214,7 +222,7 @@ class NativePlayerOverlay(
                         onConfirm = { name ->
                             closeDownload()
                             onDownload(
-                                PlayerDownload(streamUrl, name, streamHeaders)
+                                PlayerDownload(streamUrl, name, streamHeaders, streamAudioUrl)
                             )
                         }
                     )
@@ -446,6 +454,16 @@ class NativePlayerOverlay(
             if (firstError == null) firstError = error
             // 记下"这一路"自己的错误：失败画面那行明细按 kind 逐条列（见 attemptErrors）
             if (attemptIndex in attemptErrors.indices) attemptErrors[attemptIndex] = error
+            // 拼了音轨的那一遍失败：先**去掉音轨**再试同一档 —— 音轨单独 403 时不该
+            // 连画面一起没了（宁可只有画面，也不要一片黑）
+            val attemptKind = attemptKinds.getOrNull(attemptIndex)
+            if (streamAudioUrl.isNotBlank() && !audioDropped &&
+                attemptKind != MediaProbe.Kind.HLS && attemptKind != MediaProbe.Kind.DASH
+            ) {
+                audioDropped = true
+                playAttempt()
+                return
+            }
             // 还有没试过的"解释"（清单 ⇄ 普通文件）就先自己再试一次 —— 用户点名要"更强壮"：
             // 失败一次就把一长串提取器名字摔出来，不该是这台播放器的行为
             if (attemptIndex < attemptKinds.size - 1) {
@@ -630,7 +648,15 @@ class NativePlayerOverlay(
          * 等用户点我们那枚播放键。**不能自己播起来** —— 用户根本没按过播放，
          * 替他播等于凭空开始放片子。首播之后的重试（换容器再试一次）沿用同一个选择。
          */
-        startPaused: Boolean = false
+        startPaused: Boolean = false,
+        /**
+         * **分离出来的音轨**（DASH 站点：画面与声音是两条地址，见 `DashPair`）。
+         *
+         * 给了它，起播时用 `MergingMediaSource` 把两条绑在**同一个播放器**上 ——
+         * 起播、暂停、拖动、倍速全在一拍里，不会出现"音频和视频不是一个频道"。
+         */
+        audioUrl: String = "",
+        audioHeaders: Map<String, String> = emptyMap()
     ) {
         if (ui.open) close(notify = false)
         ui.reset()
@@ -638,6 +664,9 @@ class NativePlayerOverlay(
         startPausedForAttempt = startPaused
         firstError = null
         attemptErrors.fill(null)
+        streamAudioUrl = audioUrl
+        streamAudioHeaders = audioHeaders
+        audioDropped = false
         ui.title = title
         ui.downloadSource = guessDownloadSource(url, isHls, mime)
         streamUrl = url
@@ -676,6 +705,9 @@ class NativePlayerOverlay(
         ui.title = title
         streamUrl = uri.toString()
         streamHeaders = emptyMap()
+        streamAudioUrl = ""
+        streamAudioHeaders = emptyMap()
+        audioDropped = false
         streamMime = ""
         startPausedForAttempt = false
         firstError = null
@@ -719,6 +751,26 @@ class NativePlayerOverlay(
 
     /** 这一路**第一次**播失败的那个错误（见 [Player.Listener.onPlayerError]）。 */
     private var firstError: PlaybackException? = null
+
+    /**
+     * 这一路视频**配套的音轨地址**（DASH 分离播放，见 `DashPair`）。空 = 音视频本来就在
+     * 同一个文件 / 同一份清单里，不需要另拼。
+     *
+     * 与画面**同一条时间轴起播、同一个播放器**（`MergingMediaSource`）—— 两路各起一个
+     * 播放器的话，起播时差与解码抖动会让声音和画面越走越远，那就是"不是一个频道"。
+     */
+    private var streamAudioUrl: String = ""
+
+    /** 音轨的请求头（防盗链一般与画面同源；空则沿用 [streamHeaders]）。 */
+    private var streamAudioHeaders: Map<String, String> = emptyMap()
+
+    /**
+     * 这一次尝试已经**放弃音轨**了（合并播放的第一遍失败过）。
+     *
+     * 用途：某些 CDN 的音轨单独取会 403，合并会让整路直接失败 —— 与其什么都看不了，
+     * 不如退回"只有画面"再试一次（用户至少还能看），并在界面那边说清楚。
+     */
+    private var audioDropped = false
 
     /**
      * 每一路尝试各自的那个错误（下标与 [attemptKinds] 对齐）。
@@ -824,6 +876,19 @@ class NativePlayerOverlay(
         }
     }
 
+    /**
+     * 带请求头的数据源工厂（画面与音轨各建一份 —— 两条地址的防盗链参数不一定相同）。
+     *
+     * `DefaultDataSource` 会按 scheme 分派（data / file / content / asset / http…），
+     * http(s) 那一支走这里这个**带着 Referer / UA / Cookie** 的工厂（防盗链必需）。
+     */
+    private fun httpFactory(headers: Map<String, String>) =
+        DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(headers)
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(15_000)
+
     /** 按 [attemptIndex] 那一档建/换播放器。 */
     private fun playAttempt() {
         val kind = attemptKinds.getOrNull(attemptIndex) ?: return
@@ -835,11 +900,7 @@ class NativePlayerOverlay(
         ui.durationMs = 0L
         ui.bufferedMs = 0L
 
-        val http = DefaultHttpDataSource.Factory()
-            .setDefaultRequestProperties(streamHeaders)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(15_000)
+        val http = httpFactory(streamHeaders)
         // **按协议分派的数据源**，不是裸的 HTTP 那一层（用户点名："无法处理加密的 m3u8 流"）。
         //
         // 加密 HLS 要在播分片之前先取 `#EXT-X-KEY` 里那个 URI 的**密钥**，而那个 URI 不一定
@@ -886,12 +947,26 @@ class NativePlayerOverlay(
                 .build()
             else -> MediaItem.fromUri(streamUrl)
         }
+        val primary = if (kind == MediaProbe.Kind.HLS) {
+            hlsFactory.createMediaSource(item)
+        } else {
+            msFactory.createMediaSource(item)
+        }
+        // **分离音轨**：清单（HLS / DASH）里本来就带音轨，只有"普通文件"这一档才需要另拼。
+        // 拼在**同一个播放器**上（`MergingMediaSource`）：起播、暂停、拖动、倍速都在一拍里，
+        // 声画不会各走各的。第一遍失败过（[audioDropped]）就不再拼，退回只有画面。
+        val mergeAudio = streamAudioUrl.isNotBlank() && !audioDropped &&
+            kind != MediaProbe.Kind.HLS && kind != MediaProbe.Kind.DASH
+        val audioSource = if (mergeAudio) {
+            val headers = streamAudioHeaders.ifEmpty { streamHeaders }
+            val factory = if (headers == streamHeaders) msFactory else
+                DefaultMediaSourceFactory(DefaultDataSource.Factory(activity, httpFactory(headers)))
+            factory.createMediaSource(MediaItem.fromUri(streamAudioUrl))
+        } else {
+            null
+        }
         exo.setMediaSource(
-            if (kind == MediaProbe.Kind.HLS) {
-                hlsFactory.createMediaSource(item)
-            } else {
-                msFactory.createMediaSource(item)
-            }
+            if (audioSource != null) MergingMediaSource(primary, audioSource) else primary
         )
         exo.prepare()
         exo.playWhenReady = !startPausedForAttempt
@@ -958,7 +1033,10 @@ class NativePlayerOverlay(
     private fun startSizeProbe() {
         val source = ui.downloadSource
         if (source == DownloadSource.None) return
-        val auto = autoDownloadName(ui.title, source)
+        var auto = autoDownloadName(ui.title, source)
+        // **分离流**：下下来不是这一路的原文件，而是合成后的 MP4（见 `DashMerge`）——
+        // 名字先按 `.mp4` 给，否则会得到一个叫 `xxx.m4s` 的 MP4，用户看着莫名其妙
+        if (streamAudioUrl.isNotBlank()) auto = withExtension(auto, "mp4")
         ui.downloadAutoName = auto
         ui.downloadName = auto
         ui.downloadSize = 0L
@@ -978,7 +1056,10 @@ class NativePlayerOverlay(
                 ui.downloadSize = info.bytes
                 if (info.extension.isEmpty()) return@post
                 if (ui.downloadName != ui.downloadAutoName) return@post
-                val renamed = withExtension(ui.downloadName, info.extension)
+                val renamed = withExtension(
+                    ui.downloadName,
+                    if (streamAudioUrl.isNotBlank()) "mp4" else info.extension
+                )
                 ui.downloadName = renamed
                 ui.downloadAutoName = renamed
             }

@@ -336,7 +336,9 @@ fun AppScreen(
                 uri = handoff.url,
                 dir = EngineManager.getDownloadDirSafe(),
                 out = handoff.fileName,
-                headers = handoff.headers
+                headers = handoff.headers,
+                // 分离流：画面下完由 DashMerge 取回音轨并合成（见 DownloadHandoff.audioUrl）
+                audioUrl = handoff.audioUrl
             )
             val ok = !gid.isNullOrBlank()
             snackbarOk = ok
@@ -367,7 +369,10 @@ fun AppScreen(
                 uri = req.url,
                 dir = EngineManager.getDownloadDirSafe(),
                 out = req.fileName,
-                headers = req.headers.map { (k, v) -> "$k: $v" }
+                headers = req.headers.map { (k, v) -> "$k: $v" },
+                // 分离流（DASH）：音轨由 DashMerge 在画面下完后取回并合成，
+                // 用户拿到的就是**一个有声的 MP4**，不是一个没声音的画面文件
+                audioUrl = req.audioUrl
             )
             val ok = !gid.isNullOrBlank()
             snackbarOk = ok
@@ -1510,10 +1515,16 @@ fun AppScreen(
         if (item == null) {
             overlay.close(notify = false)
         } else {
+            // DASH 分离流（B 站那种）：画面与声音是两条地址，把配套的那条音轨找出来
+            // 一起交给播放器 —— 只给它画面，用户听到的就是"另一路"的声音甚至没声音
+            val audio = browserController.audioPartner(item)
             overlay.open(
                 url = item.url,
                 title = item.title.ifBlank { item.pageUrl },
                 headers = browserController.playbackHeaders(item.url),
+                audioUrl = audio?.url.orEmpty(),
+                audioHeaders = audio?.let { browserController.playbackHeaders(it.url) }
+                    ?: emptyMap(),
                 // M3U8 才给下载入口（用户口径：播放 m3u8 内容时右上角显示下载）
                 isHls = VideoSniffer.isHlsManifest(item.url, item.mime),
                 // 嗅探到的 MIME 一并带上：播前探测拿它当"这是什么容器"的第一手线索

@@ -280,6 +280,10 @@
     <string name="browser_dock_more_add_bookmark">加入书签</string>
     <string name="browser_dock_more_bookmarked">已加入书签</string>
     <string name="bookmark_added">已加入书签</string>
+    <string name="dash_merged">已合并音轨</string>
+    <string name="dash_merge_failed">音轨合并失败，视频可能没有声音</string>
+    <string name="dash_audio_failed">音轨下载失败，视频可能没有声音</string>
+    <string name="dash_merge_missing">下载完成了，但找不到文件，无法合并音轨</string>
     <string name="bookmark_removed">已取消书签</string>
     <string name="bookmark_unavailable">当前页面不能加入书签</string>
     <string name="bookmarks_empty">还没有书签</string>

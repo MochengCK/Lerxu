@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.lerxu.android.data.DashMerge
 import com.lerxu.android.data.EngineRepository
 import com.lerxu.android.model.*
 import kotlinx.coroutines.flow.*
@@ -68,8 +69,19 @@ class TaskViewModel(app: Application) : AndroidViewModel(app) {
         uri: String,
         dir: String,
         out: String = "",
-        headers: List<String> = emptyList()
-    ): String? = repository.addUriTask(uri, dir, out, headers)
+        headers: List<String> = emptyList(),
+        /**
+         * 这一路**分离出来的音轨**（DASH，见 `DashPair`）。给了它就已经登记好收尾：
+         * 画面下完那一刻由 `DashMerge` 取音轨、合成一个 MP4（原地替换）。
+         */
+        audioUrl: String = ""
+    ): String? {
+        val gid = repository.addUriTask(uri, dir, out, headers)
+        if (gid != null) {
+            DashMerge.attach(getApplication(), repository, gid, audioUrl, headers)
+        }
+        return gid
+    }
 
     /** 磁力添加（可带文件勾选流程：元数据就绪后自动暂停等待选择） */
     fun addMagnetTask(magnet: String, dir: String, awaitSelection: Boolean = false) {

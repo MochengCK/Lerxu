@@ -280,6 +280,10 @@
     <string name="browser_dock_more_add_bookmark">Add bookmark</string>
     <string name="browser_dock_more_bookmarked">Bookmarked</string>
     <string name="bookmark_added">Bookmark added</string>
+    <string name="dash_merged">Audio track merged</string>
+    <string name="dash_merge_failed">Could not merge the audio track; the video may be silent</string>
+    <string name="dash_audio_failed">Could not download the audio track; the video may be silent</string>
+    <string name="dash_merge_missing">Download finished but the file is missing, so the audio could not be merged</string>
     <string name="bookmark_removed">Removed from bookmarks</string>
     <string name="bookmark_unavailable">This page cannot be bookmarked</string>
     <string name="bookmarks_empty">No bookmarks yet</string>

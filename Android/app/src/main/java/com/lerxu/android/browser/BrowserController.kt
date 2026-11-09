@@ -78,7 +78,14 @@ data class DownloadHandoff(
     val url: String,
     val fileName: String = "",
     val headers: List<String> = emptyList(),
-    val fromPage: String = ""
+    val fromPage: String = "",
+    /**
+     * 这一路**分离出来的音轨**（DASH，见 [DashPair]）；空 = 音视频本来就在一个文件里。
+     *
+     * 下载器一次只认一个地址，所以音轨由 App 侧取回、下完再合成一个 MP4
+     * （见 `DashMerge`）—— 不然用户拿到的是个没声音的画面文件。
+     */
+    val audioUrl: String = ""
 )
 
 /**
@@ -3252,12 +3259,43 @@ class BrowserController(
      * 的门槛 —— WebView 自己的位移只有重报才拿得到）。站点会重试 `play()`、有的还会把
      * `visibility` 改回来，所以不能只按一次。
      */
-    private val HIDE_PAGE_VIDEO_JS =
-        "(function(){try{window.__lerxuHideVideos&&window.__lerxuHideVideos();}catch(e){}})();"
+    /**
+     * 页面里所有 `<audio>` 静音（记下原来的状态，退出时还原）。
+     *
+     * 单独写在 [HIDE_PAGE_VIDEO_JS] 后面、而不是塞进 `PageVideoDetector` 那一大段注入
+     * 脚本里：那边是"机械生成 + 逐字对拍"的，改一个字都要重跑整套对拍；这里只是心跳里
+     * 追加的一小段，跟着同一拍执行。
+     */
+    private val AUDIO_MUTE_JS =
+        "(function(){try{" +
+            "var as=document.querySelectorAll('audio');" +
+            "window.__lerxuAudio=window.__lerxuAudio||[];" +
+            "for(var i=0;i<as.length;i++){var a=as[i];" +
+            "if(a.__lerxuMuted===undefined){a.__lerxuMuted=a.muted;window.__lerxuAudio.push(a);}" +
+            "a.muted=true;}" +
+            "}catch(e){}})();"
 
-    /** 退出原生播放器：把上面隐掉的那些元素原样还回去。 */
+    private val AUDIO_UNMUTE_JS =
+        "(function(){try{" +
+            "var l=window.__lerxuAudio||[];" +
+            "for(var i=0;i<l.length;i++){try{l[i].muted=l[i].__lerxuMuted;}catch(e){}" +
+            "try{delete l[i].__lerxuMuted;}catch(e){}}" +
+            "window.__lerxuAudio=[];" +
+            "}catch(e){}})();"
+
+
+    private val HIDE_PAGE_VIDEO_JS =
+        "(function(){try{window.__lerxuHideVideos&&window.__lerxuHideVideos();}catch(e){}})();" +
+            // **另一路声音**也按掉：DASH 站点（B 站那种）的画面与声音是两条独立的流，
+            // 站点可能用一枚独立的 `<audio>` 放出声音 —— 只按住 `<video>` 的话，
+            // 用户听到的是"页面那一路的声音 + 我们这一路的画面"，就是"不是一个频道"。
+            // 只静音不暂停：暂停会让站点以为播完了（很多站点随即重试 `play()`）。
+            AUDIO_MUTE_JS
+
+    /** 退出原生播放器：把上面隐掉 / 静音的那些元素原样还回去。 */
     private val SHOW_PAGE_VIDEO_JS =
-        "(function(){try{window.__lerxuShowVideos&&window.__lerxuShowVideos();}catch(e){}})();"
+        "(function(){try{window.__lerxuShowVideos&&window.__lerxuShowVideos();}catch(e){}})();" +
+            AUDIO_UNMUTE_JS
 
     /** 起播那一刻开始跟位置（见 PageVideoDetector 的位置回传）。 */
     private val START_PAGE_RECT_JS =
@@ -3798,7 +3836,12 @@ class BrowserController(
      * 名字下到本地没人认得出是什么（用户点名）。地址里的文件名只作兜底。
      */
     fun handoff(item: SniffedResource) {
-        handoffUrl(active, item.url, sniffFileName(item), item.pageUrl)
+        // 分离流：连音轨一起交出去（下完由 DashMerge 合成一个有声的 MP4）
+        val audio = audioPartner(item)
+        val name = sniffFileName(item).let { raw ->
+            if (audio == null) raw else raw.substringBeforeLast('.') + ".mp4"
+        }
+        handoffUrl(active, item.url, name, item.pageUrl, audio?.url.orEmpty())
     }
 
     /** 下载文件名：视频名 + 扩展名；名字不可用时退回地址里的文件名。 */
@@ -3821,13 +3864,20 @@ class BrowserController(
             .trim()
             .take(80)
 
-    private fun handoffUrl(tab: Tab, url: String, fileName: String, page: String = tab.referer) {
+    private fun handoffUrl(
+        tab: Tab,
+        url: String,
+        fileName: String,
+        page: String = tab.referer,
+        audioUrl: String = ""
+    ) {
         onDownloadRequest(
             DownloadHandoff(
                 url = url,
                 fileName = fileName,
                 headers = buildHeaders(tab, url, null),
-                fromPage = page
+                fromPage = page,
+                audioUrl = audioUrl
             )
         )
     }
@@ -3878,6 +3928,15 @@ class BrowserController(
             .filter { it.first.lowercase() != "x-lerxu-source" }
             .toMap()
     }
+
+    /**
+     * 这一路视频**配套的那条音轨**（DASH 分离播放，见 [DashPair]）；没有就返回 null。
+     *
+     * 名单来自当前标签页的嗅探结果 —— 分离流的音频与视频是先后两三次请求，
+     * 播放器起播那一刻两条都已经在列表里了（[DashPair.pair] 还要求同页）。
+     */
+    fun audioPartner(item: SniffedResource): SniffedResource? =
+        DashPair.pair(item, active.sniffed)
 
     /** `Content-Disposition: attachment; filename="x.zip"` → `x.zip`. */
     private fun fileNameFromDisposition(contentDisposition: String?): String {

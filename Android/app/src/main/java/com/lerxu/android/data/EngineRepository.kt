@@ -298,6 +298,20 @@ class EngineRepository private constructor(
 
     // ─── 事件处理 ───
 
+    /**
+     * 任务**完成**时的回调（gid + 最终文件路径）。
+     *
+     * 只给 `DashMerge` 一个人用：分离流（画面与声音两条地址）下完要合成一个文件，
+     * 那一步只能在"引擎真正写完盘"之后做。用回调而不是轮询 UI 状态，是因为这里
+     * 恰好是**唯一**知道"刚刚写完"的那一刻。
+     */
+    private val completeHooks =
+        java.util.concurrent.CopyOnWriteArrayList<(String, String) -> Unit>()
+
+    fun addCompleteHook(hook: (String, String) -> Unit) {
+        if (hook !in completeHooks) completeHooks.add(hook)
+    }
+
     private fun handleEvent(event: EngineEvent) {
         val gid = event.gid ?: return
         when (event.method) {
@@ -330,6 +344,9 @@ class EngineRepository private constructor(
                 taskMap[gid]?.let { taskMap[gid] = it.copy(status = "complete", completedLength = it.totalLength, downloadSpeed = 0) }
                 publishTasks()
                 scope.launch { refreshGlobalStat() }
+                // 落盘已完：分离流的音轨合成在这里接上（见 completeHooks 的说明）
+                val path = taskMap[gid]?.filePath.orEmpty()
+                completeHooks.forEach { hook -> runCatching { hook(gid, path) } }
             }
             "task.error" -> {
                 taskMap[gid]?.let { taskMap[gid] = it.copy(

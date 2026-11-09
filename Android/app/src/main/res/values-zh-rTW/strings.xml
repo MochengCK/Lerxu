@@ -280,6 +280,10 @@
     <string name="browser_dock_more_add_bookmark">加入書籤</string>
     <string name="browser_dock_more_bookmarked">已加入書籤</string>
     <string name="bookmark_added">已加入書籤</string>
+    <string name="dash_merged">已合併音軌</string>
+    <string name="dash_merge_failed">音軌合併失敗，影片可能沒有聲音</string>
+    <string name="dash_audio_failed">音軌下載失敗，影片可能沒有聲音</string>
+    <string name="dash_merge_missing">下載完成了，但找不到檔案，無法合併音軌</string>
     <string name="bookmark_removed">已取消書籤</string>
     <string name="bookmark_unavailable">目前頁面無法加入書籤</string>
     <string name="bookmarks_empty">還沒有書籤</string>
