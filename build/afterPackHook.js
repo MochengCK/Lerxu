@@ -30,7 +30,7 @@
 // `electron-builder`
 
 const fs = require('node:fs')
-const { spawn } = require('node:child_process')
+const { spawn, spawnSync } = require('node:child_process')
 const { join } = require('node:path')
 const { chdir } = require('node:process')
 
@@ -360,6 +360,75 @@ const pruneChromiumLocales = (context) => {
   }
 }
 
+// ---------------------------------------------------------------------------
+// macOS：包里必须有一个「代码身份」
+// ---------------------------------------------------------------------------
+
+/**
+ * 给 macOS 包做 ad-hoc 签名（`codesign --sign -`）；已经有签名就原样放过。
+ *
+ * **为什么非签不可**：macOS 15 起「本地网络」是一项独立隐私权限，而系统是靠
+ * **代码签名**追踪一个程序的身份（Apple TN3179）。此前我们发出去的包**完全没签名**，
+ * 于是出现用户报的那个现象：
+ *  - 系统设置里那条「本地网络」看着是开的 —— 但那是**上一个构建**记下的身份，
+ *    跟手上这份二进制对不上，系统按"没授权"处理，出站连局域网地址当场被内核
+ *    打回 `EHOSTUNREACH`（SYN 根本没出网卡）；
+ *  - 所以「手机能发给电脑（入站连接不受限），电脑发不出去（出站被拦）」；
+ *  - 而开发者模式一直是通的：从终端启动的程序**连同它派生的子进程**被 macOS
+ *    自动放行（同为 TN3179 的明文规定），dev 压根没走那条授权。
+ *
+ * ad-hoc 不是终点：Apple 明说"要**可靠**追踪身份，请用 Apple 签发的证书签名"。
+ * ad-hoc 的 designated requirement 是 `cdhash H"…"`，**每次构建都会变**，所以每次
+ * 更新后用户还得重新授权一次（macOS 15.x 没有重置单个程序本地网络权限的入口，
+ * 那条 +/- 按钮是 27.2 才有的）。真实分发要配 Developer ID：CI 里给
+ * `CSC_LINK` / `CSC_KEY_PASSWORD`，electron-builder 自己会签，这里就会跳过。
+ *
+ * 同时这也是**修掉"完全没签名"**这一档的最低要求：没有签名，系统连"这是哪个程序"
+ * 都记不住，用户想把开关打开也没有可打开的对象。
+ */
+const signMacAppAdHoc = (context) => {
+  if (context.electronPlatformName !== 'darwin') return
+  const appPath = join(
+    context.appOutDir,
+    `${context.packager.appInfo.productFilename}.app`
+  )
+  if (!fs.existsSync(appPath)) return
+
+  const signed = spawnSync('codesign', ['-dv', appPath], { encoding: 'utf8' })
+  if (signed.status === 0) {
+    console.warn('[afterPackHook] macOS 包已有签名，跳过 ad-hoc 签名')
+    return
+  }
+
+  // 带扩展属性的包直接签名会报 "resource fork, Finder information, or similar
+  // detritus not allowed"：先把 xattr 清干净（构建产物常带 com.apple.* 属性）
+  spawnSync('xattr', ['-cr', appPath])
+
+  const res = spawnSync(
+    'codesign',
+    ['--force', '--deep', '--sign', '-', '--timestamp=none', appPath],
+    { encoding: 'utf8' }
+  )
+  if (res.status !== 0) {
+    throw new Error(
+      `[afterPackHook] macOS ad-hoc 签名失败（rc=${res.status}）：` +
+      `${res.stderr || res.stdout || ''}`.trim()
+    )
+  }
+  const verify = spawnSync(
+    'codesign',
+    ['--verify', '--deep', '--strict', appPath],
+    { encoding: 'utf8' }
+  )
+  if (verify.status !== 0) {
+    throw new Error(
+      `[afterPackHook] macOS 签名校验没通过（rc=${verify.status}）：` +
+      `${verify.stderr || verify.stdout || ''}`.trim()
+    )
+  }
+  console.warn('[afterPackHook] macOS 包已 ad-hoc 签名（本地网络权限需要一个代码身份）')
+}
+
 module.exports = async function (context) {
   console.warn('after build; disable sandbox')
   const originalDir = process.cwd()
@@ -367,7 +436,6 @@ module.exports = async function (context) {
   chdir(dirname)
 
   pruneChromiumLocales(context)
-
   // ffmpeg 不再预先打包，改为运行时按需下载
 
   if (context.electronPlatformName === 'linux') {
@@ -399,6 +467,10 @@ export LD_LIBRARY_PATH="$DIR/resources/engine/lib:$DIR/resources/lib:\${LD_LIBRA
   // "引擎在不在"都没人看）。
   ensureEnginesUsable(context)
 
+  // 签名必须是**最后一步**：上面 chmod 引擎、裁语言包都会改动包内容，
+  // 签完再动就把封条弄坏了（codesign --verify 立刻报 resource envelope 变了）
+  signMacAppAdHoc(context)
+
   chdir(originalDir)
 }
 
@@ -409,6 +481,7 @@ module.exports._test = {
   engineNamesFor,
   resourceDirOf,
   ensureEnginesUsable,
+  signMacAppAdHoc,
   ARCH_NAME,
   MIN_ENGINE_BYTES
 }
