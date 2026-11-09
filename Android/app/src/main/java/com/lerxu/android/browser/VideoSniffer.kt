@@ -86,7 +86,9 @@ object VideoSniffer {
      * 一条都没有（或只有认不出的东西）时返回 null —— 交给调用方继续轮询等清单出现。
      */
     fun pickForPlayback(list: List<SniffedResource>): SniffedResource? =
-        list.minByOrNull { playbackRank(it) }
+        // **音轨永远不当"这一路"**：分离流里音频与画面同档（都是分片），列表又是最新在前，
+        // 谁后请求谁就被选中 —— 那正是"有时只出声、有时只出画面"的来源（见 DashPair）
+        list.filterNot { DashPair.isAudioOnly(it) }.minByOrNull { playbackRank(it) }
 
     /** [playbackRank] 里"分片"那一档的档位值（调用方据此筛掉分片，见 `pickPlayable`）。 */
     const val RANK_SEGMENT = 3

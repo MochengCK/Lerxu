@@ -250,6 +250,14 @@ class BrowserController(
         /** 每页自建访问栈的深度上限：够回退到"上一层"，又不至于无限长。 */
         private const val MAX_VISITED = 40
 
+    /**
+     * 起播时**为分离流的音轨多等几次**（× 200ms）。
+     *
+     * 只对 B 站那种"画面与声音是两条地址"的流成立：音轨往往比画面晚一两只请求进列表，
+     * 不等就只剩画面（用户 2026-11-09 报的"下载下来是 M4S、播放只有视频"）。
+     */
+    private const val PLAY_WAIT_PAIR_TRIES = 6
+
         /** 首页搜索页最多列几行（列表本身可滚动，超出的一行行滚出来，不再被裁半行）：
          *  键盘弹起后可用高度只有几百 px，所以这里给的是"一次渲染多少"，
          *  不是"最多能看到多少" —— 空输入时只有"最近访问"，可以多给几行。 */
@@ -3589,9 +3597,14 @@ class BrowserController(
         )
         hideFullscreen()
 
-        pickPlayable(tab, avoidSegments = true)?.let {
-            nativePlayRequest = it
-            return
+        pickPlayable(tab, avoidSegments = true)?.let { pick ->
+            // **分离流要多等一小会儿**：B 站这类站点的音轨常常比画面晚一两只请求，
+            // 这一拍就交出去的话，播放器只有画面（下载下来也没有声音）——
+            // 见 [awaitingSeparatedAudio]
+            if (!awaitingSeparatedAudio(pick, tab, tries = 0)) {
+                nativePlayRequest = pick
+                return
+            }
         }
 
         playPoll?.let { main.removeCallbacks(it) }
@@ -3602,7 +3615,7 @@ class BrowserController(
                 // 前 [PLAY_WAIT_MANIFEST_TRIES] 次（约 1.2s）**只接受非分片的挑源**：
                 // 清单只会比第一只分片早、不会晚，这一段时间足够它进列表
                 val pick = pickPlayable(tab, avoidSegments = tries < PLAY_WAIT_MANIFEST_TRIES)
-                if (pick != null) {
+                if (pick != null && !awaitingSeparatedAudio(pick, tab, tries)) {
                     nativePlayRequest = pick
                 } else if (++tries < 15) {
                     main.postDelayed(this, 200)
@@ -3611,6 +3624,19 @@ class BrowserController(
         }
         playPoll = task
         main.postDelayed(task, 200)
+    }
+
+    /**
+     * 这一路**是分离流、但它的音轨还没进列表**：值得再等一会儿（最多
+     * [PLAY_WAIT_PAIR_TRIES] × 200ms）。
+     *
+     * 只对"看起来就是分离流"的地址（B 站 DASH 形状，见 [DashPair.looksSeparated]）成立 ——
+     * 普通 HLS / 单文件本来就没有第二条地址，等它等于白等 1 秒多。
+     */
+    private fun awaitingSeparatedAudio(pick: SniffedResource, tab: Tab, tries: Int): Boolean {
+        if (tries >= PLAY_WAIT_PAIR_TRIES) return false
+        if (!DashPair.looksSeparated(pick.url)) return false
+        return DashPair.pair(pick, tab.sniffed) == null
     }
 
     /** JS 桥：网页视频的通知（见 [PageVideoDetector]）。 */

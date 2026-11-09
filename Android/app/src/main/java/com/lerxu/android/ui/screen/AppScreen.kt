@@ -1503,7 +1503,22 @@ fun AppScreen(
             )
         }
     }
-    SideEffect { playerDownloadRef.value = { submitPlayerDownload(it) } }
+    SideEffect {
+        playerDownloadRef.value = { req ->
+            // 提交那一刻**再配一次音轨**：播放器打开时音轨可能还没进列表（B 站的音轨
+            // 常晚一两只请求），只认打开那一拍的话，下下来就是个没声音的 `.m4s`
+            val audio = req.audioUrl.ifBlank {
+                playing?.let { browserController.audioPartner(it)?.url }.orEmpty()
+            }
+            val name = if (audio.isNotBlank()) {
+                // 有了音轨，产物就是合成后的 MP4 —— 名字跟着改，别给用户一个 `.m4s`
+                req.fileName.replace(Regex("\\.m4s$", RegexOption.IGNORE_CASE), ".mp4")
+            } else {
+                req.fileName
+            }
+            submitPlayerDownload(req.copy(audioUrl = audio, fileName = name))
+        }
+    }
     LaunchedEffect(playerOverlay, playing, localPlaying) {
         val overlay = playerOverlay ?: return@LaunchedEffect
         val local = localPlaying

@@ -68,6 +68,32 @@ object DashPair {
         return candidates.filter { it.kind == SniffKind.AUDIO }.singleOrNull()
     }
 
+    /**
+     * 这条资源**只是声音**（不是"这一路视频"）。
+     *
+     * 为什么必须判它：DASH 站点的音轨与画面**同档**（都是一只 `.m4s` 分片），而嗅探列表
+     * 是"最新在前"——谁后请求谁被 `pickForPlayback` 选中。于是同一页面两次进入，可能一次
+     * 只出画面、一次只出声（用户 2026-11-09 报的"有时候只有声音没有视频"就是这个）。
+     */
+    fun isAudioOnly(item: SniffedResource): Boolean {
+        if (item.kind == SniffKind.AUDIO) return true
+        if (item.extension.lowercase() in VideoSniffer.audioFormats) return true
+        // B 站：音频那条的清晰度码是 302xx（MIME 往往也报 video/mp4，只能靠码认）
+        val parts = biliParts(item.url) ?: return false
+        return parts.second in BILI_AUDIO_IDS
+    }
+
+    /**
+     * 这个地址看起来是**分离流的一路画面**（B 站 DASH 形状）。
+     *
+     * 起播时用它决定"要不要为音轨多等一会儿"：这类地址的音轨常常比画面晚一两只请求，
+     * 不等的话这一路就只有画面（下载下来也没有声音）。
+     */
+    fun looksSeparated(url: String): Boolean {
+        val parts = biliParts(url) ?: return false
+        return parts.second !in BILI_AUDIO_IDS
+    }
+
     /** 两边的 pageUrl 都非空时必须相等；一边缺了就当成同一页（同一次嗅探本来就来自一页）。 */
     private fun samePage(a: String, b: String): Boolean =
         a.isBlank() || b.isBlank() || a.trim() == b.trim()
@@ -80,7 +106,7 @@ object DashPair {
      *
      * 不符合这个形状（没有那两段数字、或码不是五位数）时返回 null，交下一条规则。
      */
-    private fun biliParts(url: String): Pair<String, String>? {
+    internal fun biliParts(url: String): Pair<String, String>? {
         val path = url.substringBefore('#').substringBefore('?')
         val base = path.substringAfterLast('/')
         val dot = base.lastIndexOf('.')

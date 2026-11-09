@@ -3,6 +3,7 @@ package com.lerxu.android
 import com.lerxu.android.browser.DashPair
 import com.lerxu.android.browser.SniffKind
 import com.lerxu.android.browser.SniffedResource
+import com.lerxu.android.browser.VideoSniffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -110,5 +111,32 @@ class DashPairTest {
         assertEquals("/a/b/clip", DashPair.genericStem("https://h/a/b/clip.mp4"))
         // 只切一段：中段数字是身份的一部分
         assertEquals("/a/b/clip-1", DashPair.genericStem("https://h/a/b/clip-1-2.mp4"))
+    }
+
+    /**
+     * **音轨不进挑源**：分离流里音频与画面同档，列表又是"最新在前" ——
+     * 音频后请求就会顶在前面。不排除它的话，同一页面可能一次只出声、一次只出画面
+     *（用户 2026-11-09 报的"有时候只有声音没有视频"）。
+     */
+    @Test
+    fun pickForPlaybackNeverReturnsAudio() {
+        val a = audio("https://cdn.bilivideo.cn/upgcxcode/11/22/333/333-2-30280.m4s")
+        val v = video(videoUrl)
+        // 音频在最前（最新），也不能被选中
+        assertEquals(v.url, VideoSniffer.pickForPlayback(listOf(a, v))?.url)
+        // 只有音频时**什么都不返回**（继续等画面），不是拿音频顶上去
+        assertNull(VideoSniffer.pickForPlayback(listOf(a)))
+    }
+
+    /** B 站音频那条的 MIME 往往也是 `video/mp4`，只能靠 302xx 这个码认出来。 */
+    @Test
+    fun biliAudioIsRecognisedByQualityCode() {
+        val asVideoKind = audio("https://cdn.bilivideo.cn/upgcxcode/11/22/333/333-2-30232.m4s")
+            .copy(kind = SniffKind.VIDEO)
+        org.junit.Assert.assertTrue(DashPair.isAudioOnly(asVideoKind))
+        org.junit.Assert.assertFalse(DashPair.isAudioOnly(video(videoUrl)))
+        // 只看形状：B 站画面 = 分离流的一路；音频不算
+        org.junit.Assert.assertTrue(DashPair.looksSeparated(videoUrl))
+        org.junit.Assert.assertFalse(DashPair.looksSeparated("https://cdn.x.com/plain.mp4"))
     }
 }
