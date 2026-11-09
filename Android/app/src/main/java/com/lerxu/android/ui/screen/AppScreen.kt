@@ -2560,7 +2560,7 @@ private fun DockMoreSheet(
                 .fillMaxWidth()
                 // 没有标题了（用户点名删掉左上角那行"更多功能"）。顶端这一档留白是**唯一的**
                 // 呼吸位：用户点名"顶部间距应该增加，让顶部留白多一点"，10 → 18
-                .padding(start = 12.dp, end = 12.dp, top = 18.dp, bottom = 20.dp)
+                .padding(start = 8.dp, end = 8.dp, top = 18.dp, bottom = 20.dp)
         ) {
             // 右上角那组快捷开关：右对齐，并**往里收一点**，好让最右那枚（主题）落到
             // 下方宫格第三列的中心上（用户点名"只对齐最右一枚"）。
@@ -2637,19 +2637,19 @@ private val QUICK_CORNER = 10.dp
 private val QUICK_CELL_CORNER = 7.dp
 
 /**
- * 模式两段的**格子**是正方形（用户点名："应该保留正方形"），32×32。
+ * 模式两段的格宽（高 = [QUICK_INNER_HEIGHT] = 32）。
  *
- * 外面那层底色（轨道）**保留** —— 上一版把它去掉了，用户直接问"背景为什么没了"：
- * 一枚图标浮在弹窗上确实不像能点的东西。现在 = 轨道 + 里面一枚 32×32 的主色方块，
- * 方块本身仍是正方形，只是整体比原来（40）矮一档。
+ * 用户两轮口径叠起来：**高度要矮**（外框 36）、**但不能把内容挤在里面**（"它们长度
+ * 应该增加呀"）。所以方块从 32×32 放宽到 40×32 —— 26dp 的图标左右各有 7dp 呼吸位、
+ * 上下各 3dp；滑块跟着变成 40×32，仍是圆角小方块，不会变成长条。
  */
-private val QUICK_MODE_CELL = 32.dp
+private val QUICK_MODE_CELL_WIDTH = 40.dp
 
 /** 模式两枚方块之间的缝（也让滑块有地方滑）。 */
 private val QUICK_MODE_GAP = 2.dp
 
 /** 容器里每一格的内宽（与模式那两段等宽，一排看过去是同一个节奏）。 */
-private val QUICK_ICON_CELL_WIDTH = 34.dp
+private val QUICK_ICON_CELL_WIDTH = 40.dp
 
 /** 左右两块控件之间的间隙（用户点名"顶部两个按钮的左右间距增加一点"：8 → 14）。 */
 private val QUICK_GAP = 14.dp
@@ -2706,7 +2706,7 @@ private fun DockModeSwitch(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val thumbOffset by animateDpAsState(
-        targetValue = if (desktopMode) QUICK_MODE_CELL + QUICK_MODE_GAP else 0.dp,
+        targetValue = if (desktopMode) QUICK_MODE_CELL_WIDTH + QUICK_MODE_GAP else 0.dp,
         animationSpec = spring(dampingRatio = 0.55f, stiffness = 520f),
         label = "dockModeThumb"
     )
@@ -2717,7 +2717,8 @@ private fun DockModeSwitch(
             Box(
                 modifier = Modifier
                     .offset(x = thumbOffset)
-                    .size(QUICK_MODE_CELL)
+                    .width(QUICK_MODE_CELL_WIDTH)
+                    .height(QUICK_INNER_HEIGHT)
                     .clip(RoundedCornerShape(QUICK_CELL_CORNER))
                     .background(colorScheme.primary)
             )
@@ -2755,7 +2756,8 @@ private fun DockModeSegment(
     )
     Box(
         modifier = Modifier
-            .size(QUICK_MODE_CELL)
+            .width(QUICK_MODE_CELL_WIDTH)
+            .height(QUICK_INNER_HEIGHT)
             .clip(RoundedCornerShape(QUICK_CELL_CORNER))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
