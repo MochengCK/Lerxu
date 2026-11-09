@@ -2481,9 +2481,10 @@ private fun LerxuSnackbar(data: SnackbarData, ok: Boolean) {
  * （标签页 / 新建标签 / 主页……）已经把每一格是什么说清了，标题只是白占一档高度。
  *
  * **右上角是三条快捷开关**（用户点名，2026-11-09）：手机版 ⇄ 电脑版、设置、浅色 ⇄ 深色。
- * 三枚装在**同一枚胶囊**里（"在统一背景下"），各自一档浅底；顺序就是用户点的那一档 ——
- * 模式切换在最左，设置紧挨着它的右侧，主题切换收在最右。
- * 为此「设置」**从宫格里搬了出来**：同一个动作不该在一张弹窗里出现两次。
+ * 摆法是**左右两块控件**（见 [DockMoreQuickBar]）：左边一枚**只有图标的两段滑块**（模式），
+ * 右边一枚**容器**（设置 + 主题，图标自己没有底色）；顺序按用户点的那样 —— 模式在最左、
+ * 设置紧挨在它右侧、主题收最右。为此「设置」**从宫格里搬了出来**：同一个动作不该在一张
+ * 弹窗里出现两次。
  *
  * 宫格剩五个动作（标签页／新建标签／主页／历史／下载页），仍是 **3 列**：最后一行只有
  * 两枚，各占 `weight(1f)` ⇒ 它们落在 1/4 与 3/4 上，是**左右对称的一对**。
@@ -2576,19 +2577,25 @@ private fun DockMoreSheet(
     }
 }
 
+/** 快捷条里每一格的内高（外框 34dp = 内高 28 + 上下各 3 的裱边，与坞里的键同一档高度）。 */
+private val QUICK_INNER_HEIGHT = 28.dp
+
+/** 快捷条里每一格的内宽：模式开关的两段、设置/主题两枚都用它，左右两块的总宽才对得上。 */
+private val QUICK_CELL_WIDTH = 36.dp
+
+/** 左右两块控件之间的间隙。 */
+private val QUICK_GAP = 8.dp
+
 /**
- * 「更多功能」右上角那组快捷开关：**模式切换 · 设置 · 浅色/深色**。
+ * 「更多功能」右上角那组快捷开关：**左边一枚模式滑块，右边一枚设置+主题的容器**（用户点名，2026-11-09）。
  *
- * 三枚装在**同一枚胶囊**里（用户点名："在统一背景下"）：胶囊是这块控件的"底"
- * （`surfaceContainerHighest`，比弹窗面板高一档），每枚自己再压一层浅底（`surface` 60%），
- * 于是读起来是"一个开关条上的三枚键"，而不是三枚飘在面板上的图标 —— 宫格那几枚仍然
- * **没有容器**（用户当初点名的"不应该出现一个背景"只针对宫格）。
+ * 两块是**两种控件**，不再挤在同一枚胶囊里：
+ * - 左边 [DockModeSwitch]：手机版 / 电脑版 的**滑块切换**（只有图标），照桌面端右上角那枚
+ *   `SegmentedSlider`（列表视图 / 磁铁视图）搬过来 —— 细描边外框 + 主色滑块 + 回弹过渡；
+ * - 右边 [DockQuickCluster]：设置与浅色/深色**同处一个底色容器**，图标自己**没有底色**
+ *   （用户原话："图标本身没有背景，是在一个容器内"）。
  *
- * 顺序就是用户点的顺序：**模式在左、设置紧挨它右侧、主题最右**。
- *
- * 三枚尺寸一致（高 34dp）；模式那枚带文字（"手机版/电脑版"），另外两枚只有图标 ——
- * 文字是模式开关唯一说得清的形态（一枚手机图标摆在"当前是手机版"上，谁也读不出点它会
- * 变成电脑版）。
+ * 两块同高（34dp）、同宽（78dp），中间隔 [QUICK_GAP]：一眼看过去是一条左右均衡的开关带。
  */
 @Composable
 private fun DockMoreQuickBar(
@@ -2598,33 +2605,139 @@ private fun DockMoreQuickBar(
     onToggleTheme: () -> Unit,
     onSettings: () -> Unit
 ) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(QUICK_GAP),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        DockModeSwitch(desktopMode = desktopMode, onDesktopMode = onDesktopMode)
+        DockQuickCluster(
+            darkTheme = darkTheme,
+            onToggleTheme = onToggleTheme,
+            onSettings = onSettings
+        )
+    }
+}
+
+/**
+ * 手机版 ⇄ 电脑版：**两段式滑块**（用户点名："就是一个滑块切换按钮，就跟电脑端右上角的
+ * 列表视图、磁铁视图切换差不多"）。
+ *
+ * 形状与手感照桌面端的 `components/SegmentedSlider/SegmentedSlider.vue`：
+ * - 外框**透明底 + 1dp 描边**（不是填充块），圆角 10dp，内边距 3dp；
+ * - 选中态是一枚**主色滑块**在框里滑过去（高 28、宽与一格相同、圆角 8dp），
+ *   过渡用一条**带过冲的 spring** 近似桌面那条 `cubic-bezier(0.34, 1.56, 0.64, 1)`；
+ * - 选中段的图标是 `onPrimary`（主色块上读得清），未选中是 `onSurfaceVariant`，
+ *   颜色跟着滑块一起补间 —— 否则滑块滑过去了、图标还是一下子硬切。
+ *
+ * 两段**只有图标**（手机 / 显示器），没有文字：这块要的就是"一枚开关"的体积。
+ */
+@Composable
+private fun DockModeSwitch(
+    desktopMode: Boolean,
+    onDesktopMode: (Boolean) -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val thumbOffset by animateDpAsState(
+        targetValue = if (desktopMode) QUICK_CELL_WIDTH else 0.dp,
+        // 低阻尼 = 冲过头一点再回位（对应桌面那条 1.56 的回弹）
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 520f),
+        label = "dockModeThumb"
+    )
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = Color.Transparent,
+        border = BorderStroke(1.dp, colorScheme.outline)
+    ) {
+        Box(modifier = Modifier.padding(3.dp)) {
+            // 滑块先画（在图标下面）：它只在两格之间横移，不参与点击
+            Box(
+                modifier = Modifier
+                    .offset(x = thumbOffset)
+                    .width(QUICK_CELL_WIDTH)
+                    .height(QUICK_INNER_HEIGHT)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(colorScheme.primary)
+            )
+            Row {
+                DockModeSegment(
+                    icon = Icons.Outlined.Smartphone,
+                    contentDescription = stringResource(R.string.browser_mode_mobile),
+                    selected = !desktopMode,
+                    onClick = { onDesktopMode(false) }
+                )
+                DockModeSegment(
+                    icon = Icons.Outlined.DesktopWindows,
+                    contentDescription = stringResource(R.string.browser_mode_desktop),
+                    selected = desktopMode,
+                    onClick = { onDesktopMode(true) }
+                )
+            }
+        }
+    }
+}
+
+/** 模式滑块里的一段：只有图标，点一下把滑块挪到自己这格。 */
+@Composable
+private fun DockModeSegment(
+    icon: ImageVector,
+    contentDescription: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val tint by animateColorAsState(
+        targetValue = if (selected) colorScheme.onPrimary else colorScheme.onSurfaceVariant,
+        animationSpec = tween(180),
+        label = "dockModeTint"
+    )
+    Box(
+        modifier = Modifier
+            .width(QUICK_CELL_WIDTH)
+            .height(QUICK_INNER_HEIGHT)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(17.dp)
+        )
+    }
+}
+
+/**
+ * 设置 + 浅色/深色：**同一块底色容器里的两枚图标**（用户原话："设置和深色浅色切换按钮是在
+ * 同一背景下，图标本身没有背景，是在一个容器内"）。
+ *
+ * 容器就是这里唯一的"面"（`surfaceContainerHighest`，比弹窗面板高一档）；两枚键本身
+ * **不裁底、不描边**，按下去只有自己那一格缩一下。格子之间不留缝（两格相邻），
+ * 于是读起来是"一个容器里的两枚图标"，而不是两块并排的按钮。
+ */
+@Composable
+private fun DockQuickCluster(
+    darkTheme: Boolean,
+    onToggleTheme: () -> Unit,
+    onSettings: () -> Unit
+) {
     val colorScheme = MaterialTheme.colorScheme
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(10.dp),
         color = colorScheme.surfaceContainerHighest
     ) {
-        Row(
-            modifier = Modifier.padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(3.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // ① 模块切换：网页的手机版 ⇄ 电脑版
-            DockQuickButton(
-                icon = if (desktopMode) Icons.Outlined.DesktopWindows else Icons.Outlined.Smartphone,
-                label = stringResource(
-                    if (desktopMode) R.string.browser_mode_desktop else R.string.browser_mode_mobile
-                ),
-                highlighted = desktopMode,
-                onClick = { onDesktopMode(!desktopMode) }
-            )
-            // ② 设置（从宫格搬过来的，紧挨在模式开关右侧）
-            DockQuickButton(
+        Row(modifier = Modifier.padding(3.dp)) {
+            DockQuickIcon(
                 icon = Icons.Outlined.Settings,
                 contentDescription = stringResource(R.string.browser_dock_more_settings),
                 onClick = onSettings
             )
-            // ③ 浅色 ⇄ 深色：图标画的是**当前**那一档（深色时是月亮），点一下换另一档
-            DockQuickButton(
+            DockQuickIcon(
+                // 画的是**当前**那一档：深色时是月亮，点一下换另一档
                 icon = if (darkTheme) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
                 contentDescription = stringResource(
                     if (darkTheme) R.string.browser_theme_to_light else R.string.browser_theme_to_dark
@@ -2636,67 +2749,42 @@ private fun DockMoreQuickBar(
 }
 
 /**
- * 快捷开关条上的一枚键：图标 +（可选）文字，**有底色**（宫格那几枚没有）。
+ * 容器里的一枚图标键：**没有自己的底色**（容器已经给了），只有按下的缩放反馈。
  *
- * 反馈与宫格 / 播放器同一套手感：`indication = null`，按下去只有自己缩到 0.9 再弹回。
- * [highlighted] 是"这一档正在生效"（目前只有电脑模式用）：图标与文字换主色、底色也换成
- * 一层主色薄面 —— 否则一枚写着"电脑版"的键在打开电脑模式后毫无变化，读不出点没点上。
+ * 反馈与宫格 / 播放器同一套手感：`indication = null`，按下去缩到 0.88 再弹回。
  */
 @Composable
-private fun DockQuickButton(
+private fun DockQuickIcon(
     icon: ImageVector,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    contentDescription: String? = null,
-    label: String? = null,
-    highlighted: Boolean = false
+    contentDescription: String,
+    onClick: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.9f else 1f,
+        targetValue = if (pressed) 0.88f else 1f,
         animationSpec = spring(dampingRatio = 0.45f, stiffness = 900f),
         label = "dockQuickPress"
     )
-    val tint = if (highlighted) colorScheme.primary else colorScheme.onSurfaceVariant
-    val plate = if (highlighted) {
-        colorScheme.primary.copy(alpha = 0.14f)
-    } else {
-        // 半透明的 surface：浅色下比胶囊亮一档、深色下比胶囊深一档，两边都读得出"这儿有一枚键"
-        colorScheme.surface.copy(alpha = 0.6f)
-    }
-    Row(
-        modifier = modifier
-            .height(34.dp)
-            .then(if (label == null) Modifier.width(34.dp) else Modifier)
-            .clip(RoundedCornerShape(11.dp))
-            .background(plate)
+    Box(
+        modifier = Modifier
+            .width(QUICK_CELL_WIDTH)
+            .height(QUICK_INNER_HEIGHT)
+            .clip(RoundedCornerShape(8.dp))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .padding(horizontal = if (label == null) 0.dp else 9.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
+            },
+        contentAlignment = Alignment.Center
     ) {
         Icon(
             icon,
             contentDescription = contentDescription,
-            tint = tint,
+            tint = colorScheme.onSurfaceVariant,
             modifier = Modifier.size(17.dp)
         )
-        if (label != null) {
-            Spacer(Modifier.width(5.dp))
-            Text(
-                label,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                color = tint
-            )
-        }
     }
 }
 
@@ -2717,8 +2805,8 @@ private data class DockMoreAction(
  * 同一个语系）：五个动作各占一色，扫一眼就能靠颜色定位，而不是五块一样的蓝。
  *
  * 都是中调色（明度接近 50%），浅色底与深色底上都读得清，所以不跟随主题明暗各配一套。
- * 顺序与 [DockMoreSheet] 里的动作一一对应。（原先第六格"设置"已挪到右上角快捷条，
- * 那枚用的是主题的 `onSurfaceVariant` —— 快捷条上三枚要读成一套控件，不该各自带色。）
+ * 顺序与 [DockMoreSheet] 里的动作一一对应。（原先第六格"设置"已挪到右上角那枚容器里，
+ * 那两枚用的是主题的 `onSurfaceVariant` —— 它们要读成"一个容器里的图标"，不该各自带色。）
  */
 private val dockMoreColors = listOf(
     Color(0xFF4A90E2), // 标签页：蓝
