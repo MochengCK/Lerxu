@@ -225,6 +225,14 @@ class BrowserController(
         /** 浏览历史（全局，与标签页无关）：首页面板的"历史记录"就来自它。 */
         private const val PREF_BROWSE_HISTORY = "browse_history"
 
+        /**
+         * 网页「电脑模式」开关（全局，不是按标签页/按站点）：默认关 = 手机版。
+         *
+         * 见 [DesktopMode]：UA 换桌面 Chrome + viewport 钉成 1280。落盘是因为它是**用户的
+         * 偏好**（"这个 App 的浏览器用桌面版看"），重启后不该又缩回手机版。
+         */
+        private const val PREF_DESKTOP = "desktop_mode"
+
         /** 每页自建访问栈的深度上限：够回退到"上一层"，又不至于无限长。 */
         private const val MAX_VISITED = 40
 
@@ -1025,6 +1033,54 @@ class BrowserController(
     var onAllTabsClosed: () -> Unit = {}
 
     /**
+     * 网页「电脑模式」：见 [DesktopMode]。默认关（手机版），偏好落盘（[PREF_DESKTOP]）。
+     *
+     * 它是 **Compose 状态**：右上角那枚开关的图标 / 文字 / 高亮直接读它，点一下当场换样。
+     *
+     * 切档必须**重新加载**：UA 与 viewport 都只在**文档开始**那一刻生效（站点按 UA 决定
+     * 发哪一版、视口按 meta 决定版面宽度），已经在跑的文档改不回来 —— 所以这里把所有
+     * 已经建出来的标签页（含寄存在后台的另一套窗口）的 UA / 起始脚本都换掉，再统一重载。
+     *
+     * 不重建 WebView（与 [homeDark] 那条不同）：那一条非重建不可 —— 站点的
+     * `prefers-color-scheme` 取自**创建时**的壳主题。UA 与起始脚本都能就地换。
+     */
+    var desktopMode by mutableStateOf(false)
+        private set
+
+    /**
+     * 切「电脑模式」。
+     *
+     * 名字**不能叫 `setDesktopMode`**：`var desktopMode` 自己生成的 setter 就是那个 JVM
+     * 签名（`setDesktopMode(Z)V`），两者撞名会编译失败（`Platform declaration clash`）。
+     * 与本类其它开关一档的命名（`setHomePanels` / `setDockInputFocused`）取 [setDesktop]。
+     */
+    fun setDesktop(on: Boolean) {
+        if (desktopMode == on) return
+        desktopMode = on
+        prefs.edit().putBoolean(PREF_DESKTOP, on).apply()
+        val ua = if (on) DesktopMode.desktopUserAgent(defaultUserAgent()) else null
+        // 两套窗口的标签页都要换（无痕那套可能正寄存在后台，用户切回去就会看到）
+        (tabs + parkedNormalTabs + parkedIncognitoTabs).forEach { tab ->
+            val view = tab.webView ?: return@forEach
+            runCatching { view.settings.userAgentString = ua }
+            // 起始脚本里带着视口覆盖，先撤再挂
+            installThemeDocStart(tab, view)
+            if (tab.url.isNotBlank()) runCatching { view.reload() }
+        }
+    }
+
+    /**
+     * 系统默认 UA（不带头部覆盖时的那个）：电脑模式的版本号从它里面取。
+     *
+     * 惰性取一次就够（同一台设备上不会变），取不到时给 null，[DesktopMode] 走兜底。
+     */
+    private val cachedDefaultUa: String? by lazy {
+        runCatching { WebSettings.getDefaultUserAgent(context) }.getOrNull()
+    }
+
+    private fun defaultUserAgent(): String? = cachedDefaultUa
+
+    /**
      * 搜索/地址解析用的引擎。
      *
      * 选择入口在底部坞的引擎选择框（界面持久化后同步到这里），
@@ -1181,6 +1237,8 @@ class BrowserController(
 
     init {
         viewHost.setBackgroundColor(themeBackground)
+        // 电脑模式读回上次的选择（WebView 建的时候按它决定 UA 与起始脚本）
+        desktopMode = prefs.getBoolean(PREF_DESKTOP, false)
         val first = Tab(nextTabId++)
         tabs += first
         activeId = first.id
@@ -2222,6 +2280,10 @@ class BrowserController(
             useWideViewPort = true
             builtInZoomControls = true
             displayZoomControls = false
+            // 电脑模式：UA 换桌面 Chrome，站点才肯发桌面版 HTML（版面宽度那一半在
+            // installThemeDocStart 的视口脚本里）。关掉/从没开过时**不设**它 ——
+            // 留给系统默认值，别把设备的默认 UA 换成一份猜的
+            if (desktopMode) userAgentString = DesktopMode.desktopUserAgent(defaultUserAgent())
             mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             // 无痕期间**不走磁盘缓存**：这样停留期间不会往磁盘上写新痕迹
@@ -2282,7 +2344,9 @@ class BrowserController(
             tab.themeDocStart?.remove()
             tab.themeDocStart = WebViewCompat.addDocumentStartJavaScript(
                 view,
-                WebThemeEngine.docStartJs(homeDark),
+                // 主题（prefers-color-scheme 对齐）+ 电脑模式的视口覆盖：两件都要在
+                // 文档开始那一刻就位，同一个句柄一起换（DesktopMode 关着时是空串）
+                WebThemeEngine.docStartJs(homeDark) + DesktopMode.docStartJs(desktopMode),
                 setOf("*")
             )
         }

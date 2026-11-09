@@ -278,6 +278,11 @@
     <string name="browser_dock_more_history">History</string>
     <string name="browser_dock_more_downloads">Downloads</string>
     <string name="browser_dock_more_settings">Settings</string>
+    <!-- 「更多功能」右上角的快捷开关：网页模式（手机版 ⇄ 电脑版）与主题切换 -->
+    <string name="browser_mode_mobile">Mobile</string>
+    <string name="browser_mode_desktop">Desktop</string>
+    <string name="browser_theme_to_light">Switch to light</string>
+    <string name="browser_theme_to_dark">Switch to dark</string>
     <string name="history_filter_all">All</string>
     <string name="history_filter_visits">Recent visits</string>
     <string name="history_filter_searches">Search history</string>

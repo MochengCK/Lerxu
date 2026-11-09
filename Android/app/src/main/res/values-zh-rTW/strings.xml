@@ -278,6 +278,11 @@
     <string name="browser_dock_more_history">歷史記錄</string>
     <string name="browser_dock_more_downloads">下載頁</string>
     <string name="browser_dock_more_settings">設定</string>
+    <!-- 「更多功能」右上角的快捷開關：網頁模式（手機版 ⇄ 電腦版）與主題切換 -->
+    <string name="browser_mode_mobile">手機版</string>
+    <string name="browser_mode_desktop">電腦版</string>
+    <string name="browser_theme_to_light">切換到淺色</string>
+    <string name="browser_theme_to_dark">切換到深色</string>
     <string name="history_filter_all">全部</string>
     <string name="history_filter_visits">最近瀏覽</string>
     <string name="history_filter_searches">搜尋記錄</string>

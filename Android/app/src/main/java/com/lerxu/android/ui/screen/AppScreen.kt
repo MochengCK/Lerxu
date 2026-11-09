@@ -106,18 +106,22 @@ import androidx.compose.material.icons.outlined.AddBox
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -1227,6 +1231,8 @@ fun AppScreen(
                         addressFocused = addressFocused,
                         modern = dockModern,
                         onModernChange = ::setDockModern,
+                        darkTheme = isDarkTheme,
+                        onThemeChange = onThemeChange,
                         onBounds = {
                             // 坞悬浮在网页之上：抓标签页缩略图时这一段要排掉
                             //（不排，卡片上会烙一条控制栏），见 captureThumbnail
@@ -1658,6 +1664,10 @@ private fun BrowserDock(
     addressFocused: Boolean,
     modern: Boolean,
     onModernChange: (Boolean) -> Unit,
+    /** 当前是不是深色主题（「更多功能」右上角那枚快捷开关读它）。 */
+    darkTheme: Boolean,
+    /** 换主题偏好（`light` / `dark`）：与设置里那一档是同一个出口。 */
+    onThemeChange: (String) -> Unit,
     onBounds: (Rect) -> Unit,
     onAddressCopied: () -> Unit,
     controller: BrowserController,
@@ -2178,6 +2188,10 @@ private fun BrowserDock(
     if (moreOpen) {
         DockMoreSheet(
             tabCount = controller.tabCount,
+            desktopMode = controller.desktopMode,
+            onDesktopMode = { controller.setDesktop(it) },
+            darkTheme = darkTheme,
+            onToggleTheme = { onThemeChange(if (darkTheme) "light" else "dark") },
             onDismiss = { moreOpen = false },
             onTabs = { moreOpen = false; onTabs() },
             onNewTab = { moreOpen = false; controller.newTab() },
@@ -2463,24 +2477,32 @@ private fun LerxuSnackbar(data: SnackbarData, ok: Boolean) {
  *
  * **独立弹窗，样式照播放器设置弹窗来**（用户点名）：同一个 [ModalBottomSheet]，同一套
  * 内边距；不再从坞里向上长出来 —— 那块"长高"的地方只留给坞自己的设置面板（见
- * BrowserDock）。用户后来点名**删掉左上角那行"更多功能"标题**：六枚图标各自的文字
+ * BrowserDock）。用户后来点名**删掉左上角那行"更多功能"标题**：五枚图标各自的文字
  * （标签页 / 新建标签 / 主页……）已经把每一格是什么说清了，标题只是白占一档高度。
  *
- * 只放动作，不放开关：标签页／新建标签／主页／历史／下载页／设置。标签页入口从坞上挪到
- * 这里之后，进标签页还剩两条路：这个弹窗，以及**按住链接输入框往上拖**。
+ * **右上角是三条快捷开关**（用户点名，2026-11-09）：手机版 ⇄ 电脑版、设置、浅色 ⇄ 深色。
+ * 三枚装在**同一枚胶囊**里（"在统一背景下"），各自一档浅底；顺序就是用户点的那一档 ——
+ * 模式切换在最左，设置紧挨着它的右侧，主题切换收在最右。
+ * 为此「设置」**从宫格里搬了出来**：同一个动作不该在一张弹窗里出现两次。
  *
- * 六个动作排成 **3 × 2 宫格**（用户点名重做）：早先是一行五个等距小项，每项只有
- * 孤零零一枚图标，既窄又挤不出层次。现在每项是一块**等宽的整块**、图标自己带色
- *（见 [dockMoreColors]），宫格本身有了可扫的"面"，一次点到的面积也大得多。
- * 图标**直接用 Material Icons Extended 里现成的那几枚**（用户点名："直接接入现成的成熟
- * 图标库"）：标签页 / 新建标签 / 主页 / 历史 / 下载页 / 设置，各自都是 Material 的标准
- * 形状，一笔都不用自己画。用普通 [Row] 而不是 LazyVerticalGrid —— 弹窗里再嵌一层可滚动
- * 网格会和底部弹窗自己的下拉收起抢手势，六个固定项也不值得为它引入懒加载。
+ * 宫格剩五个动作（标签页／新建标签／主页／历史／下载页），仍是 **3 列**：最后一行只有
+ * 两枚，各占 `weight(1f)` ⇒ 它们落在 1/4 与 3/4 上，是**左右对称的一对**。
+ * （不补一枚空气格把它们挤到左边：右下角空出一块会读成"少了一个按钮"。）
+ *
+ * 每项是一块**等宽的整块**、图标自己带色（见 [dockMoreColors]），宫格本身有了可扫的
+ * "面"，一次点到的面积也大得多。图标**直接用 Material Icons Extended 里现成的那几枚**
+ * （用户点名："直接接入现成的成熟图标库"）。用普通 [Row] 而不是 LazyVerticalGrid ——
+ * 弹窗里再嵌一层可滚动网格会和底部弹窗自己的下拉收起抢手势，固定几项也不值得为它引入懒加载。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DockMoreSheet(
     tabCount: Int,
+    /** 网页当前是不是「电脑模式」（那枚开关的图标 / 文案 / 高亮都读它）。 */
+    desktopMode: Boolean,
+    onDesktopMode: (Boolean) -> Unit,
+    darkTheme: Boolean,
+    onToggleTheme: () -> Unit,
     onTabs: () -> Unit,
     onNewTab: () -> Unit,
     onHome: () -> Unit,
@@ -2496,8 +2518,7 @@ private fun DockMoreSheet(
         DockMoreAction(Icons.Outlined.AddBox, dockMoreColors[1], stringResource(R.string.browser_dock_more_new_tab), null, onNewTab),
         DockMoreAction(Icons.Outlined.Home, dockMoreColors[2], stringResource(R.string.browser_dock_more_home), null, onHome),
         DockMoreAction(Icons.Outlined.History, dockMoreColors[3], stringResource(R.string.browser_dock_more_history), null, onHistory),
-        DockMoreAction(Icons.Outlined.Download, dockMoreColors[4], stringResource(R.string.browser_dock_more_downloads), null, onDownloads),
-        DockMoreAction(Icons.Outlined.Settings, dockMoreColors[5], stringResource(R.string.browser_dock_more_settings), null, onSettings)
+        DockMoreAction(Icons.Outlined.Download, dockMoreColors[4], stringResource(R.string.browser_dock_more_downloads), null, onDownloads)
     )
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2519,6 +2540,21 @@ private fun DockMoreSheet(
                 // 没有标题了（用户点名删掉左上角那行"更多功能"），顶端只留一档呼吸位
                 .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 20.dp)
         ) {
+            // 右上角那组快捷开关：整行只有一个右对齐的胶囊
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                DockMoreQuickBar(
+                    desktopMode = desktopMode,
+                    onDesktopMode = onDesktopMode,
+                    darkTheme = darkTheme,
+                    onToggleTheme = onToggleTheme,
+                    onSettings = onSettings
+                )
+            }
+            Spacer(Modifier.height(2.dp))
             actions.chunked(3).forEach { row ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -2540,6 +2576,130 @@ private fun DockMoreSheet(
     }
 }
 
+/**
+ * 「更多功能」右上角那组快捷开关：**模式切换 · 设置 · 浅色/深色**。
+ *
+ * 三枚装在**同一枚胶囊**里（用户点名："在统一背景下"）：胶囊是这块控件的"底"
+ * （`surfaceContainerHighest`，比弹窗面板高一档），每枚自己再压一层浅底（`surface` 60%），
+ * 于是读起来是"一个开关条上的三枚键"，而不是三枚飘在面板上的图标 —— 宫格那几枚仍然
+ * **没有容器**（用户当初点名的"不应该出现一个背景"只针对宫格）。
+ *
+ * 顺序就是用户点的顺序：**模式在左、设置紧挨它右侧、主题最右**。
+ *
+ * 三枚尺寸一致（高 34dp）；模式那枚带文字（"手机版/电脑版"），另外两枚只有图标 ——
+ * 文字是模式开关唯一说得清的形态（一枚手机图标摆在"当前是手机版"上，谁也读不出点它会
+ * 变成电脑版）。
+ */
+@Composable
+private fun DockMoreQuickBar(
+    desktopMode: Boolean,
+    onDesktopMode: (Boolean) -> Unit,
+    darkTheme: Boolean,
+    onToggleTheme: () -> Unit,
+    onSettings: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = colorScheme.surfaceContainerHighest
+    ) {
+        Row(
+            modifier = Modifier.padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // ① 模块切换：网页的手机版 ⇄ 电脑版
+            DockQuickButton(
+                icon = if (desktopMode) Icons.Outlined.DesktopWindows else Icons.Outlined.Smartphone,
+                label = stringResource(
+                    if (desktopMode) R.string.browser_mode_desktop else R.string.browser_mode_mobile
+                ),
+                highlighted = desktopMode,
+                onClick = { onDesktopMode(!desktopMode) }
+            )
+            // ② 设置（从宫格搬过来的，紧挨在模式开关右侧）
+            DockQuickButton(
+                icon = Icons.Outlined.Settings,
+                contentDescription = stringResource(R.string.browser_dock_more_settings),
+                onClick = onSettings
+            )
+            // ③ 浅色 ⇄ 深色：图标画的是**当前**那一档（深色时是月亮），点一下换另一档
+            DockQuickButton(
+                icon = if (darkTheme) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
+                contentDescription = stringResource(
+                    if (darkTheme) R.string.browser_theme_to_light else R.string.browser_theme_to_dark
+                ),
+                onClick = onToggleTheme
+            )
+        }
+    }
+}
+
+/**
+ * 快捷开关条上的一枚键：图标 +（可选）文字，**有底色**（宫格那几枚没有）。
+ *
+ * 反馈与宫格 / 播放器同一套手感：`indication = null`，按下去只有自己缩到 0.9 再弹回。
+ * [highlighted] 是"这一档正在生效"（目前只有电脑模式用）：图标与文字换主色、底色也换成
+ * 一层主色薄面 —— 否则一枚写着"电脑版"的键在打开电脑模式后毫无变化，读不出点没点上。
+ */
+@Composable
+private fun DockQuickButton(
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+    label: String? = null,
+    highlighted: Boolean = false
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.9f else 1f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 900f),
+        label = "dockQuickPress"
+    )
+    val tint = if (highlighted) colorScheme.primary else colorScheme.onSurfaceVariant
+    val plate = if (highlighted) {
+        colorScheme.primary.copy(alpha = 0.14f)
+    } else {
+        // 半透明的 surface：浅色下比胶囊亮一档、深色下比胶囊深一档，两边都读得出"这儿有一枚键"
+        colorScheme.surface.copy(alpha = 0.6f)
+    }
+    Row(
+        modifier = modifier
+            .height(34.dp)
+            .then(if (label == null) Modifier.width(34.dp) else Modifier)
+            .clip(RoundedCornerShape(11.dp))
+            .background(plate)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .padding(horizontal = if (label == null) 0.dp else 9.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(17.dp)
+        )
+        if (label != null) {
+            Spacer(Modifier.width(5.dp))
+            Text(
+                label,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                color = tint
+            )
+        }
+    }
+}
+
 /** 宫格里的一个动作。排好清单再切行，见 [DockMoreSheet]。 */
 private data class DockMoreAction(
     val icon: ImageVector,
@@ -2551,21 +2711,21 @@ private data class DockMoreAction(
 )
 
 /**
- * 宫格六枚图标各自的颜色（用户点名："不应该全是蓝色"）。
+ * 宫格五枚图标各自的颜色（用户点名："不应该全是蓝色"）。
  *
  * 取的是本应用色板同一族的**扁平中调色**（与主题里那几枚 #1A7FE0 / #67C23A / #F56C6C
- * 同一个语系）：六个动作各占一色，扫一眼就能靠颜色定位，而不是六块一样的蓝。
+ * 同一个语系）：五个动作各占一色，扫一眼就能靠颜色定位，而不是五块一样的蓝。
  *
  * 都是中调色（明度接近 50%），浅色底与深色底上都读得清，所以不跟随主题明暗各配一套。
- * 顺序与 [DockMoreSheet] 里的动作一一对应。
+ * 顺序与 [DockMoreSheet] 里的动作一一对应。（原先第六格"设置"已挪到右上角快捷条，
+ * 那枚用的是主题的 `onSurfaceVariant` —— 快捷条上三枚要读成一套控件，不该各自带色。）
  */
 private val dockMoreColors = listOf(
     Color(0xFF4A90E2), // 标签页：蓝
     Color(0xFF52C41A), // 新建标签：绿
     Color(0xFFFA8C16), // 主页：橙
     Color(0xFF9254DE), // 历史：紫
-    Color(0xFF13C2C2), // 下载页：青
-    Color(0xFF8C9BAB) // 设置：灰
+    Color(0xFF13C2C2) // 下载页：青
 )
 
 /**
