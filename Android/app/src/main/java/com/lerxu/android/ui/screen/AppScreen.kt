@@ -309,6 +309,12 @@ fun AppScreen(
      * 那条路会把用户正在看的网页**换成自家首页**，只是为了让历史有地方显示。
      */
     var historyOpen by remember { mutableStateOf(false) }
+
+    /**
+     * 书签弹窗（「更多功能」宫格里的第一枚书签键）。与历史那张同一个理由：底部弹窗盖在
+     * 当前页面之上，关掉就回到原处 —— 不切页、不把用户正在看的网页换成别的东西。
+     */
+    var bookmarksOpen by remember { mutableStateOf(false) }
     // 搜索引擎：首次进入按当前网络自动挑一次，之后一律以用户选择为准
     var searchEngineKey by remember { mutableStateOf(SearchEngineDetector.currentKey(context)) }
     val searchEngine = remember(searchEngineKey) { SearchEngines.byKey(searchEngineKey) }
@@ -1293,6 +1299,28 @@ fun AppScreen(
                             sniffOpen = false
                             historyOpen = true
                         },
+                        onBookmarks = {
+                            // 书签列表：与历史同一张壳（底部弹窗，不切页）
+                            sniffOpen = false
+                            bookmarksOpen = true
+                        },
+                        onAddBookmark = {
+                            // 「加入书签」：**一个键两档** —— 已经收过就取消收藏。
+                            // 三种结局各给一句提示（收下 / 取消 / 这页收不了），
+                            // 否则点完没有任何回执，用户不知道到底进没进去
+                            val messageRes = when {
+                                browserController.isCurrentBookmarked -> {
+                                    browserController.removeCurrentBookmark()
+                                    R.string.bookmark_removed
+                                }
+                                browserController.addCurrentBookmark() -> R.string.bookmark_added
+                                else -> R.string.bookmark_unavailable
+                            }
+                            snackbarOk = messageRes != R.string.bookmark_unavailable
+                            dockUiScope.launch {
+                                snackbarHostState.showSnackbar(context.getString(messageRes))
+                            }
+                        },
                         onTabs = {
                             sniffOpen = false
                             browserController.openTabs()
@@ -1352,6 +1380,21 @@ fun AppScreen(
             // 删完这份 entries 自己就变了，弹窗里的列表跟着更新
             onDelete = { urls -> browserController.removeHistory(urls) },
             onDismiss = { historyOpen = false }
+        )
+    }
+
+    // 书签：与历史同一套壳（底部弹窗）。点某一行同样**先关弹窗再导航** ——
+    // 否则收起动画会和页面加载抢同一拍
+    if (bookmarksOpen) {
+        BrowserBookmarksSheet(
+            bookmarks = browserController.bookmarks,
+            onOpen = { url ->
+                bookmarksOpen = false
+                page = AppPage.Browser
+                browserController.openFromUi(url)
+            },
+            onDelete = { urls -> browserController.removeBookmarks(urls) },
+            onDismiss = { bookmarksOpen = false }
         )
     }
 
@@ -1685,8 +1728,12 @@ private fun BrowserDock(
     onLaunch: () -> Unit,
     /** 长按左侧返回键：直接回下载器（退出浏览器）。 */
     onExitBrowser: () -> Unit,
-    /** 「更多功能」弹窗里的"历史"：切回浏览器页并直接落到历史记录界面。 */
+    /** 「更多功能」弹窗里的"历史"：开一张底部弹窗（不切页）。 */
     onHistory: () -> Unit,
+    /** 「更多功能」弹窗里的"书签"：开书签弹窗（不切页）。 */
+    onBookmarks: () -> Unit,
+    /** 「更多功能」弹窗里的"加入书签"：把当前页收进 / 移出书签（由 AppScreen 给提示条）。 */
+    onAddBookmark: () -> Unit,
     onTabs: () -> Unit,
     /** 「更多功能」弹窗里的"设置"：切到设置页（这个状态在 AppScreen 手里）。 */
     onOpenSettings: () -> Unit,
@@ -2205,6 +2252,10 @@ private fun BrowserDock(
             onNewTab = { moreOpen = false; controller.newTab() },
             onHome = { moreOpen = false; controller.loadHome() },
             onHistory = { moreOpen = false; onHistory() },
+            bookmarked = controller.isCurrentBookmarked,
+            canBookmark = controller.canBookmarkCurrent,
+            onBookmarks = { moreOpen = false; onBookmarks() },
+            onAddBookmark = { moreOpen = false; onAddBookmark() },
             onDownloads = { moreOpen = false; onExitBrowser() },
             onSettings = { moreOpen = false; onOpenSettings() }
         )
@@ -2492,9 +2543,15 @@ private fun LerxuSnackbar(data: SnackbarData, ok: Boolean) {
  * （手机版 ⇄ 电脑版），右边一枚**容器**（设置 + 浅色⇄深色，图标自己没有底色）。
  * 为此「设置」**从宫格里搬了出来**：同一个动作不该在一张弹窗里出现两次。
  *
- * 宫格是 **3 × 2 六枚**：标签页／新建标签／主页／历史／下载页／**广告拦截**。最后那一格
- * 是**开关**（用户点名："拦截的开和关应该是在下面的那一行"）：开着是盾牌 + 对勾 + 蓝，
- * 关掉是盾牌 + 斜杠 + 灰，点一下就地切换，状态与设置页那一项共用。
+ * 宫格是 **4 × 2 八枚**：标签页／新建标签／主页／历史 · 书签／加入书签／下载页／广告拦截。
+ * 两枚是**开关**，颜色即状态：
+ * - **加入书签**（用户点名新加）—— 收下了变绿、文字改成"已加入书签"，再点一下取消；
+ *   这页收不了（首页 / about:）时退回灰，点它给一句提示条；
+ * - **广告拦截**（用户点名："拦截的开和关应该是在下面的那一行"）—— 开着是盾牌 + 对勾 + 蓝，
+ *   关掉是盾牌 + 斜杠 + 灰，点一下就地切换，状态与设置页那一项共用。
+ *
+ * 列数从 3 改到 4 是为了整除：8 枚排 3 列的话最后一行只剩两枚、被 `weight(1f)` 拉成半宽，
+ * 与上面几行**列对不齐**，看着像"少了一个按钮"（见 [DOCK_MORE_COLUMNS]）。
  *
  * 每项是一块**等宽的整块**、图标自己带色（见 [dockMoreColors]），宫格本身有了可扫的
  * "面"，一次点到的面积也大得多。用普通 [Row] 而不是 LazyVerticalGrid ——
@@ -2516,6 +2573,12 @@ private fun DockMoreSheet(
     onNewTab: () -> Unit,
     onHome: () -> Unit,
     onHistory: () -> Unit,
+    /** 当前这一页**已经在书签里**（「加入书签」那枚读它：图标换成"已收藏"的样式）。 */
+    bookmarked: Boolean,
+    /** 当前这一页能不能收藏（内部页 / 空白页不能）。 */
+    canBookmark: Boolean,
+    onBookmarks: () -> Unit,
+    onAddBookmark: () -> Unit,
     onDownloads: () -> Unit,
     onSettings: () -> Unit,
     onDismiss: () -> Unit
@@ -2527,13 +2590,39 @@ private fun DockMoreSheet(
         DockMoreAction(Icons.Outlined.AddBox, dockMoreColors[1], stringResource(R.string.browser_dock_more_new_tab), null, onNewTab),
         DockMoreAction(Icons.Outlined.Home, dockMoreColors[2], stringResource(R.string.browser_dock_more_home), null, onHome),
         DockMoreAction(Icons.Outlined.History, dockMoreColors[3], stringResource(R.string.browser_dock_more_history), null, onHistory),
-        DockMoreAction(Icons.Outlined.Download, dockMoreColors[4], stringResource(R.string.browser_dock_more_downloads), null, onDownloads),
-        // 第六格 = 广告拦截（用户点名："拦截开和关应该是在下面的那一行"）。
+        // 书签列表：与历史同一类（"去看看我攒了什么"），所以紧挨着历史
+        DockMoreAction(
+            icon = null,
+            tint = dockMoreColors[4],
+            label = stringResource(R.string.browser_dock_more_bookmarks),
+            count = null,
+            onClick = onBookmarks,
+            glyph = QuickGlyph.Bookmark
+        ),
+        // 加入书签：**一个键两档** —— 收下了就变绿、文字改成"已加入书签"，再点一下取消。
+        // 这页收不了（首页 / about:）时退回灰，点它会给一句"这页收不了"的提示条
+        DockMoreAction(
+            icon = null,
+            tint = when {
+                !canBookmark -> adBlockOffColor
+                bookmarked -> bookmarkDoneColor
+                else -> dockMoreColors[5]
+            },
+            label = stringResource(
+                if (bookmarked) R.string.browser_dock_more_bookmarked
+                else R.string.browser_dock_more_add_bookmark
+            ),
+            count = null,
+            onClick = onAddBookmark,
+            glyph = QuickGlyph.BookmarkAdd
+        ),
+        DockMoreAction(Icons.Outlined.Download, dockMoreColors[6], stringResource(R.string.browser_dock_more_downloads), null, onDownloads),
+        // 第八格 = 广告拦截（用户点名："拦截开和关应该是在下面的那一行"）。
         // 它与右上角那几枚不同：**自己就是开关**，所以用自绘盾牌 —— 开着是对勾 + 蓝，
         // 关掉是一道斜杠 + 灰，点一下就地切换（与设置页那一项同一个状态）
         DockMoreAction(
             icon = null,
-            tint = if (adBlock) dockMoreColors[5] else adBlockOffColor,
+            tint = if (adBlock) dockMoreColors[7] else adBlockOffColor,
             label = stringResource(R.string.browser_ad_block),
             count = null,
             onClick = onToggleAdBlock,
@@ -2568,13 +2657,14 @@ private fun DockMoreSheet(
                 .padding(start = 0.dp, end = 0.dp, top = 18.dp, bottom = 20.dp)
         ) {
             // 右上角那组快捷开关：右对齐，并**往里收一点**，好让最右那枚（主题）落到
-            // 下方宫格第三列的中心上（用户点名"只对齐最右一枚"）。
+            // 下方宫格**最后一列**的中心上（用户点名"只对齐最右一枚"）。
             //
-            // 算式：第三列中心 = 内容宽 − 格宽/2；而容器右沿到它最后一枚图标中心是
-            // 3（内边距）+ 17（半格）= 20 —— 所以要收 (格宽/2 − 20)。
-            // 用 BoxWithConstraints 现算，换屏幕宽度/换语言都不用改常量。
+            // 算式：最后一列中心 = 格宽/2（离右沿）；而容器右沿到它最后一枚图标的中心是
+            // 内边距 + 半格 —— 所以要收 (格宽/2 − 那个值)。
+            // 用 BoxWithConstraints 现算，换屏幕宽度 / 换列数 / 换语言都不用改常量。
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val columnWidth = (maxWidth - DOCK_MORE_GRID_GAP * 2) / 3
+                val columnWidth =
+                    (maxWidth - DOCK_MORE_GRID_GAP * (DOCK_MORE_COLUMNS - 1)) / DOCK_MORE_COLUMNS
                 // 容器右沿 → 它最后一枚图标的中心 = 内边距 + 半格
                 val lastIconInset = QUICK_BAR_INSET + QUICK_ICON_CELL_WIDTH / 2
                 val endInset = (columnWidth / 2 - lastIconInset).coerceAtLeast(0.dp)
@@ -2595,7 +2685,7 @@ private fun DockMoreSheet(
                 }
             }
             Spacer(Modifier.height(2.dp))
-            actions.chunked(3).forEach { row ->
+            actions.chunked(DOCK_MORE_COLUMNS).forEach { row ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(DOCK_MORE_GRID_GAP)
@@ -2661,6 +2751,17 @@ private val QUICK_GAP = 14.dp
 
 /** 宫格列间距（用户点名"下方按钮的左右间距减少一点"：8 → 4）。 */
 private val DOCK_MORE_GRID_GAP = 4.dp
+
+/**
+ * 宫格一行放几枚。
+ *
+ * 3 → 4（2026-11-09 加了两枚书签键，凑成 8 枚 = 4 × 2）：3 列的话最后一行只剩两枚，
+ * 它们各占 `weight(1f)` 会被拉成半宽、与上面两行**列对不齐**，看起来像"少了一个按钮"。
+ * 4 × 2 是整除，每行都满，顺带把用户嫌宽的左右留白也吃掉了。
+ *
+ * 顶部快捷条"最右一枚对齐最后一列"的算式也读它 —— 列数只有这一个真相。
+ */
+private const val DOCK_MORE_COLUMNS = 4
 
 /**
  * 「更多功能」右上角那组快捷开关（用户点名，2026-11-09 第三轮）。
@@ -2879,6 +2980,12 @@ private enum class QuickGlyph {
     /** 盾牌（广告拦截）：里面再加对勾 / 斜杠 */
     Shield,
 
+    /** 书签（书签列表）：**实心**书签带，底部一个 V 形缺口 */
+    Bookmark,
+
+    /** 加入书签：线描书签带 + 右上角一枚加号 */
+    BookmarkAdd,
+
     /** 太阳（当前是浅色） */
     Sun,
 
@@ -3003,6 +3110,35 @@ private fun QuickGlyphIcon(
                     )
                 }
             }
+            QuickGlyph.Bookmark -> {
+                // 实心书签带：两条直边 + 底部 V 形缺口。
+                // 不用线描 —— 与"加入书签"那枚（线描 + 加号）摆在一起时，实心/线描
+                // 是两种一眼分得开的"墨量"，不必靠颜色才认得出
+                val ribbon = Path().apply {
+                    moveTo(6.6f * u, 3.2f * u)
+                    lineTo(17.4f * u, 3.2f * u)
+                    lineTo(17.4f * u, 20.8f * u)
+                    lineTo(12f * u, 16.6f * u)
+                    lineTo(6.6f * u, 20.8f * u)
+                    close()
+                }
+                drawPath(ribbon, tint)
+            }
+            QuickGlyph.BookmarkAdd -> {
+                // 书签带**收窄并左移**，给右上角那枚加号腾位置（两者之间留 2.6 的呼吸位）
+                val ribbon = Path().apply {
+                    moveTo(4.4f * u, 3.3f * u)
+                    lineTo(14.0f * u, 3.3f * u)
+                    lineTo(14.0f * u, 20.7f * u)
+                    lineTo(9.2f * u, 16.8f * u)
+                    lineTo(4.4f * u, 20.7f * u)
+                    close()
+                }
+                drawPath(ribbon, tint, style = stroke)
+                // 加号：两笔一样长，横竖都过同一点
+                drawLine(tint, o(18.6f, 6.4f), o(18.6f, 11.6f), sw, StrokeCap.Round)
+                drawLine(tint, o(16.0f, 9.0f), o(21.2f, 9.0f), sw, StrokeCap.Round)
+            }
             QuickGlyph.Moon -> {
                 // 用"大圆减掉偏移的小圆"做月牙：比手写两段弧稳，任何尺寸下都干净
                 val outer = Path().apply { addOval(Rect(center = center, radius = 8.1f * u)) }
@@ -3030,26 +3166,37 @@ private data class DockMoreAction(
 )
 
 /**
- * 宫格六枚图标各自的颜色（用户点名："不应该全是蓝色"）。
+ * 宫格八枚图标各自的颜色（用户点名："不应该全是蓝色"）。
  *
  * 取的是本应用色板同一族的**扁平中调色**（与主题里那几枚 #1A7FE0 / #67C23A / #F56C6C
  * 同一个语系）：六个动作各占一色，扫一眼就能靠颜色定位，而不是六块一样的蓝。
  *
  * 都是中调色（明度接近 50%），浅色底与深色底上都读得清，所以不跟随主题明暗各配一套。
- * 顺序与 [DockMoreSheet] 里的动作一一对应。最后一格（广告拦截）是个开关，颜色跟着状态走：
- * 开着用这里的蓝，关掉退回 [adBlockOffColor] 那档灰 —— 于是它是**唯一**一枚会变色的。
+ * 顺序与 [DockMoreSheet] 里的动作一一对应。两枚开关的颜色跟着状态走：
+ * 加入书签 —— 未收是这里的金，收下了换成 [bookmarkDoneColor] 的绿，这页收不了退回灰；
+ * 广告拦截 —— 开着是这里的蓝，关掉退回 [adBlockOffColor] 那档灰。
  */
 private val dockMoreColors = listOf(
     Color(0xFF4A90E2), // 标签页：蓝
     Color(0xFF52C41A), // 新建标签：绿
     Color(0xFFFA8C16), // 主页：橙
     Color(0xFF9254DE), // 历史：紫
+    Color(0xFFEB2F96), // 书签（列表）：玫红
+    Color(0xFFE6A23C), // 加入书签（还没收）：金
     Color(0xFF13C2C2), // 下载页：青
     Color(0xFF4A90E2) // 广告拦截（开着）：蓝
 )
 
 /** 广告拦截**关掉**时盾牌的颜色：退回中性灰，跟"开着"的蓝一眼分得开。 */
 private val adBlockOffColor = Color(0xFF8C9BAB)
+
+/**
+ * 「加入书签」**已经收下**那一档的颜色（绿）。
+ *
+ * 它不是"另一枚图标"，而是同一枚的**状态**：收下了变绿、文字改成"已加入书签"，
+ * 再点一下取消 —— 与广告拦截那枚盾牌同一套"颜色即状态"的做法。
+ */
+private val bookmarkDoneColor = Color(0xFF52C41A)
 
 /**
  * 宫格里的一项：图标在上、名称在下，整块**等宽**（由调用方给 weight）。

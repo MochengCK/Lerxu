@@ -741,7 +741,7 @@ private fun HistoryEntryContent(row: HistoryRow, onClick: () -> Unit, onLongClic
  * "同一站点的几行一半有图标一半是通用图标"。
  */
 @Composable
-private fun SiteIcon(url: String) {
+internal fun SiteIcon(url: String) {
     val host = remember(url) { BrowseHistory.hostOf(url) }
     val version = FaviconStore.revision.intValue
     val icon = remember(host, version) { FaviconStore.cached(host) }

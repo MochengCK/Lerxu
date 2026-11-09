@@ -276,6 +276,14 @@
     <string name="browser_dock_more_new_tab">新增分頁</string>
     <string name="browser_dock_more_home">首頁</string>
     <string name="browser_dock_more_history">歷史記錄</string>
+    <string name="browser_dock_more_bookmarks">書籤</string>
+    <string name="browser_dock_more_add_bookmark">加入書籤</string>
+    <string name="browser_dock_more_bookmarked">已加入書籤</string>
+    <string name="bookmark_added">已加入書籤</string>
+    <string name="bookmark_removed">已取消書籤</string>
+    <string name="bookmark_unavailable">目前頁面無法加入書籤</string>
+    <string name="bookmarks_empty">還沒有書籤</string>
+    <string name="delete_bookmark">刪除書籤</string>
     <string name="browser_dock_more_downloads">下載頁</string>
     <string name="browser_dock_more_settings">設定</string>
     <!-- 「更多功能」右上角的快捷開關：網頁模式（手機版 ⇄ 電腦版）與主題切換 -->

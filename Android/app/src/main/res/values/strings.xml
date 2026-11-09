@@ -276,6 +276,14 @@
     <string name="browser_dock_more_new_tab">New tab</string>
     <string name="browser_dock_more_home">Home page</string>
     <string name="browser_dock_more_history">History</string>
+    <string name="browser_dock_more_bookmarks">Bookmarks</string>
+    <string name="browser_dock_more_add_bookmark">Add bookmark</string>
+    <string name="browser_dock_more_bookmarked">Bookmarked</string>
+    <string name="bookmark_added">Bookmark added</string>
+    <string name="bookmark_removed">Removed from bookmarks</string>
+    <string name="bookmark_unavailable">This page cannot be bookmarked</string>
+    <string name="bookmarks_empty">No bookmarks yet</string>
+    <string name="delete_bookmark">Delete bookmark</string>
     <string name="browser_dock_more_downloads">Downloads</string>
     <string name="browser_dock_more_settings">Settings</string>
     <!-- 「更多功能」右上角的快捷开关：网页模式（手机版 ⇄ 电脑版）与主题切换 -->

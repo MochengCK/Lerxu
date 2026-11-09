@@ -226,6 +226,13 @@ class BrowserController(
         private const val PREF_BROWSE_HISTORY = "browse_history"
 
         /**
+         * 书签（全局，与标签页无关）：用户手动收的那一份。
+         *
+         * 与 [PREF_BROWSE_HISTORY] **分开存**：历史会被"清空历史"抹掉，书签不该跟着没。
+         */
+        private const val PREF_BOOKMARKS = "bookmarks"
+
+        /**
          * 网页「电脑模式」开关（全局，不是按标签页/按站点）：默认关 = 手机版。
          *
          * 见 [DesktopMode]：UA 换桌面 Chrome + viewport 钉成 1280。落盘是因为它是**用户的
@@ -623,6 +630,29 @@ class BrowserController(
 
     /** 全量浏览记录（界面只读；写入一律走 [recordVisit] / 那几个清除入口）。 */
     val history: List<HistoryEntry> get() = historyState
+
+    /**
+     * 书签：全局一份、最后加入的在前。落盘见 [persistBookmarks]。
+     *
+     * 与 [historyState] 同一套做法（Compose 状态 + 只读出口）：书签弹窗开着的时候用户
+     * 可能刚在另一处收了一条，列表要跟着变。
+     */
+    private var bookmarkState by mutableStateOf(emptyList<Bookmark>())
+
+    /** 全量书签（界面只读；写入一律走 [addCurrentBookmark] / [removeBookmarks]）。 */
+    val bookmarks: List<Bookmark> get() = bookmarkState
+
+    /**
+     * 当前这一页**是不是已经收进书签**（「加入书签」那枚的样式读它）。
+     *
+     * 内部页（首页）永远 false —— 它根本收不了。
+     */
+    val isCurrentBookmarked: Boolean
+        get() = Bookmarks.contains(bookmarkState, currentUrl)
+
+    /** 当前页能不能收（内部页 / 空白页不能）。 */
+    val canBookmarkCurrent: Boolean
+        get() = Bookmarks.isBookmarkable(currentUrl)
 
     /** 这一次拿到的联想词（引擎给的）；空 = 还没发请求或这次没结果。 */
     private var homeSuggestions: List<String> = emptyList()
@@ -1247,6 +1277,8 @@ class BrowserController(
         restoreTabs()
         // 浏览历史同样跨启动保留：首页面板的"历史记录"要有东西可显示
         historyState = BrowseHistory.decode(prefs.getString(PREF_BROWSE_HISTORY, null))
+        // 书签同理：它是用户自己收的，**不跟着"清空历史"消失**
+        bookmarkState = Bookmarks.decode(prefs.getString(PREF_BOOKMARKS, null))
         // 启动时对齐一次必应的深浅色 cookie（homeDark 的 setter 只在**变化**时跑，
         // 应用本来就是浅色时它不会触发 —— 那种情况下也要把偏好摆正）
         syncBingSchemeCookie()
@@ -4324,6 +4356,52 @@ class BrowserController(
         //（否则留在一屏空白上，还得用户自己按返回）
         homeHistoryView = false
         pushHomePanels()
+    }
+
+    // ─────────────────────────── 书签 ───────────────────────────
+
+    /**
+     * 把**当前这一页**收进书签：返回 true = 收下了，false = 这一页收不了（内部页 / 空白页）。
+     *
+     * 已经收过的同一地址再收一次只是**置顶 + 刷新标题**（见 [Bookmarks.add]），不会出现两条。
+     * 标题优先取页面标题；搜索结果页取用户当时搜的那串词（与地址栏显示同一口径，
+     * 否则一行会变成"关键词 - 引擎名"）。
+     */
+    fun addCurrentBookmark(): Boolean {
+        val url = currentUrl
+        if (!Bookmarks.isBookmarkable(url)) return false
+        val title = currentSearchQuery ?: pageTitle.trim().ifEmpty { addressEditText }
+        val next = Bookmarks.add(bookmarkState, url, title, System.currentTimeMillis())
+        if (next == bookmarkState) return true
+        bookmarkState = next
+        persistBookmarks()
+        return true
+    }
+
+    /**
+     * 删掉这几条书签（书签弹窗里的「删除」，以及"取消收藏"）。
+     *
+     * 传的是**地址**而不是下标：界面那份列表与存储同序，但地址才是身份 ——
+     * 弹窗开着的时候外面可能又收了一条，下标会整体挪位。
+     */
+    fun removeBookmarks(urls: Collection<String>) {
+        if (urls.isEmpty()) return
+        val next = Bookmarks.remove(bookmarkState, urls)
+        if (next.size == bookmarkState.size) return
+        bookmarkState = next
+        persistBookmarks()
+    }
+
+    /** 当前这一页在书签里 → 删掉它（「加入书签」那枚再点一下的落点）。 */
+    fun removeCurrentBookmark(): Boolean {
+        val url = currentUrl
+        if (!Bookmarks.contains(bookmarkState, url)) return false
+        removeBookmarks(listOf(url))
+        return true
+    }
+
+    private fun persistBookmarks() {
+        prefs.edit().putString(PREF_BOOKMARKS, Bookmarks.encode(bookmarkState)).apply()
     }
 
     /** 地址栏提交：按当前引擎把输入解析成 URL 并加载。 */
