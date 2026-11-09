@@ -2560,7 +2560,7 @@ private fun DockMoreSheet(
                 .fillMaxWidth()
                 // 没有标题了（用户点名删掉左上角那行"更多功能"）。顶端这一档留白是**唯一的**
                 // 呼吸位：用户点名"顶部间距应该增加，让顶部留白多一点"，10 → 18
-                .padding(start = 8.dp, end = 8.dp, top = 18.dp, bottom = 20.dp)
+                .padding(start = 4.dp, end = 4.dp, top = 18.dp, bottom = 20.dp)
         ) {
             // 右上角那组快捷开关：右对齐，并**往里收一点**，好让最右那枚（主题）落到
             // 下方宫格第三列的中心上（用户点名"只对齐最右一枚"）。
