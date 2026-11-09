@@ -2558,8 +2558,9 @@ private fun DockMoreSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // 没有标题了（用户点名删掉左上角那行"更多功能"），顶端只留一档呼吸位
-                .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 20.dp)
+                // 没有标题了（用户点名删掉左上角那行"更多功能"）。顶端这一档留白是**唯一的**
+                // 呼吸位：用户点名"顶部间距应该增加，让顶部留白多一点"，10 → 18
+                .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 20.dp)
         ) {
             // 右上角那组快捷开关：整行只有一个右对齐的胶囊
             Row(
@@ -2599,8 +2600,8 @@ private fun DockMoreSheet(
     }
 }
 
-/** 快捷条外框高度：左右两块控件同高（手指好按的一档）。 */
-private val QUICK_BAR_HEIGHT = 36.dp
+/** 快捷条外框高度：左右两块控件同高（图标与宫格对齐后，外框也高一档）。 */
+private val QUICK_BAR_HEIGHT = 40.dp
 
 /** 外框内边距：滑块与图标都在里面，留 3dp 让主色滑块不顶着边。 */
 private val QUICK_BAR_INSET = 3.dp
@@ -2608,11 +2609,13 @@ private val QUICK_BAR_INSET = 3.dp
 /** 内格高度（= 36 − 3×2）。 */
 private val QUICK_INNER_HEIGHT = QUICK_BAR_HEIGHT - QUICK_BAR_INSET * 2
 
-/** 模式滑块里的图标尺寸（那两格只有图标，16 在这档上正好是 1.2dp 的线宽）。 */
-private val QUICK_ICON_SIZE = 16.dp
-
-/** 容器里那几枚的图标尺寸：用户点名"设置 / 浅色深色那两枚要再大一点"，16 → 18。 */
-private val QUICK_CLUSTER_ICON_SIZE = 18.dp
+/**
+ * 快捷条的图标尺寸：**与宫格那几枚一致**（用户点名："图标大小改为跟下方的按钮图标一致"）。
+ *
+ * 宫格是 26dp，这里也 26dp —— 一排看下来是同一种"墨量"，上面那排不会显得轻。
+ * 模式滑块的两格、右边容器里两枚都用它（同一尺寸才谈得上"对齐"）。
+ */
+private val QUICK_ICON_SIZE = 26.dp
 
 /** 外框圆角（用户点名"圆角应该减少"：原来是整条胶囊 18，现在收到 10）。 */
 private val QUICK_CORNER = 10.dp
@@ -2815,7 +2818,7 @@ private fun DockQuickIcon(
         QuickGlyphIcon(
             glyph = glyph,
             tint = tint ?: colorScheme.onSurfaceVariant,
-            iconSize = QUICK_CLUSTER_ICON_SIZE,
+            iconSize = QUICK_ICON_SIZE,
             slashed = slashed,
             description = contentDescription
         )
