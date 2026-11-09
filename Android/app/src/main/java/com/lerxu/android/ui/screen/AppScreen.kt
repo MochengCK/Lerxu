@@ -2562,25 +2562,36 @@ private fun DockMoreSheet(
                 // 呼吸位：用户点名"顶部间距应该增加，让顶部留白多一点"，10 → 18
                 .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 20.dp)
         ) {
-            // 右上角那组快捷开关：整行只有一个右对齐的胶囊
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                DockMoreQuickBar(
-                    desktopMode = desktopMode,
-                    onDesktopMode = onDesktopMode,
-                    darkTheme = darkTheme,
-                    onToggleTheme = onToggleTheme,
-                    onSettings = onSettings
-                )
+            // 右上角那组快捷开关：右对齐，并**往里收一点**，好让最右那枚（主题）落到
+            // 下方宫格第三列的中心上（用户点名"只对齐最右一枚"）。
+            //
+            // 算式：第三列中心 = 内容宽 − 格宽/2；而容器右沿到它最后一枚图标中心是
+            // 3（内边距）+ 17（半格）= 20 —— 所以要收 (格宽/2 − 20)。
+            // 用 BoxWithConstraints 现算，换屏幕宽度/换语言都不用改常量。
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val columnWidth = (maxWidth - DOCK_MORE_GRID_GAP * 2) / 3
+                val endInset = (columnWidth / 2 - 20.dp).coerceAtLeast(0.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = endInset),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DockMoreQuickBar(
+                        desktopMode = desktopMode,
+                        onDesktopMode = onDesktopMode,
+                        darkTheme = darkTheme,
+                        onToggleTheme = onToggleTheme,
+                        onSettings = onSettings
+                    )
+                }
             }
             Spacer(Modifier.height(2.dp))
             actions.chunked(3).forEach { row ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(DOCK_MORE_GRID_GAP)
                 ) {
                     row.forEach { action ->
                         DockMoreItem(
@@ -2623,14 +2634,25 @@ private val QUICK_CORNER = 10.dp
 /** 里面那格 / 滑块的圆角：比外框小一圈内边距（10 − 3 = 7），看着才是"嵌在里面"。 */
 private val QUICK_CELL_CORNER = 7.dp
 
-/** 模式滑块每一段的宽度（只有图标，两段等宽）。 */
-private val QUICK_SEG_WIDTH = 34.dp
+/**
+ * 模式两段各自是**正方形**按钮（用户点名："这按钮直接成长方形了，应该保留正方形"）。
+ *
+ * 40 与右边那枚容器同高，两枚方块之间留 [QUICK_MODE_GAP] —— **没有外框、没有轨道**：
+ * 看见的就是"一枚方形主色按钮 + 一枚裸图标"，而不是一根长条。
+ */
+private val QUICK_MODE_CELL = 40.dp
+
+/** 模式两枚方块之间的缝（也让滑块有地方滑）。 */
+private val QUICK_MODE_GAP = 6.dp
 
 /** 容器里每一格的内宽（与模式那两段等宽，一排看过去是同一个节奏）。 */
 private val QUICK_ICON_CELL_WIDTH = 34.dp
 
-/** 左右两块控件之间的间隙。 */
-private val QUICK_GAP = 8.dp
+/** 左右两块控件之间的间隙（用户点名"顶部两个按钮的左右间距增加一点"：8 → 14）。 */
+private val QUICK_GAP = 14.dp
+
+/** 宫格列间距（用户点名"下方按钮的左右间距减少一点"：8 → 4）。 */
+private val DOCK_MORE_GRID_GAP = 4.dp
 
 /**
  * 「更多功能」右上角那组快捷开关（用户点名，2026-11-09 第三轮）。
@@ -2665,12 +2687,14 @@ private fun DockMoreQuickBar(
 }
 
 /**
- * 手机版 ⇄ 电脑版：**两段式滑块**，两段**只有图标**（用户点名："改为不显示名称，
- * 只显示图标"）、等宽 34dp。
+ * 手机版 ⇄ 电脑版：**两枚正方形按钮**，只有图标。
  *
- * 造型仍是手机端的：与右边那枚容器**同底色**（不是描边），主色滑块在框里滑过去，
- * 圆角收到 [QUICK_CORNER] / [QUICK_CELL_CORNER]；滑动用一条**带过冲的 spring**，
- * 落到哪一格就是哪一档（图标颜色同时补间，不做硬切）。
+ * 用户改过三次口径，这一版按最后一条定：
+ * - **不要外框 / 轨道**：之前那版是一枚 74×40 的灰底长条，读起来就是"一根长方形"；
+ *   现在两枚各自 40×40 的方块，只有选中那枚有主色底，另一枚是裸图标 ——
+ *   **一枚按钮 = 一个正方形**，整条不再有"长条"这个形状；
+ * - 滑动仍保留：主色方块在两位之间平移（带过冲的 spring），图标颜色同时补间；
+ * - 只有图标（用户："改为不显示名称，只显示图标"）。
  */
 @Composable
 private fun DockModeSwitch(
@@ -2679,35 +2703,32 @@ private fun DockModeSwitch(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val thumbOffset by animateDpAsState(
-        targetValue = if (desktopMode) QUICK_SEG_WIDTH else 0.dp,
+        targetValue = if (desktopMode) QUICK_MODE_CELL + QUICK_MODE_GAP else 0.dp,
         animationSpec = spring(dampingRatio = 0.55f, stiffness = 520f),
         label = "dockModeThumb"
     )
-    Surface(shape = RoundedCornerShape(QUICK_CORNER), color = colorScheme.surfaceContainerHighest) {
-        Box(modifier = Modifier.padding(QUICK_BAR_INSET)) {
-            // 滑块先画（在图标下面）：它只在两格之间横移，不参与点击
-            Box(
-                modifier = Modifier
-                    .offset(x = thumbOffset)
-                    .width(QUICK_SEG_WIDTH)
-                    .height(QUICK_INNER_HEIGHT)
-                    .clip(RoundedCornerShape(QUICK_CELL_CORNER))
-                    .background(colorScheme.primary)
+    Box {
+        // 选中方块先画（在图标下面）：它只在两位之间横移，不参与点击
+        Box(
+            modifier = Modifier
+                .offset(x = thumbOffset)
+                .size(QUICK_MODE_CELL)
+                .clip(RoundedCornerShape(QUICK_CELL_CORNER))
+                .background(colorScheme.primary)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(QUICK_MODE_GAP)) {
+            DockModeSegment(
+                glyph = QuickGlyph.Phone,
+                contentDescription = stringResource(R.string.browser_mode_mobile),
+                selected = !desktopMode,
+                onClick = { onDesktopMode(false) }
             )
-            Row {
-                DockModeSegment(
-                    glyph = QuickGlyph.Phone,
-                    contentDescription = stringResource(R.string.browser_mode_mobile),
-                    selected = !desktopMode,
-                    onClick = { onDesktopMode(false) }
-                )
-                DockModeSegment(
-                    glyph = QuickGlyph.Desktop,
-                    contentDescription = stringResource(R.string.browser_mode_desktop),
-                    selected = desktopMode,
-                    onClick = { onDesktopMode(true) }
-                )
-            }
+            DockModeSegment(
+                glyph = QuickGlyph.Desktop,
+                contentDescription = stringResource(R.string.browser_mode_desktop),
+                selected = desktopMode,
+                onClick = { onDesktopMode(true) }
+            )
         }
     }
 }
@@ -2728,8 +2749,7 @@ private fun DockModeSegment(
     )
     Box(
         modifier = Modifier
-            .width(QUICK_SEG_WIDTH)
-            .height(QUICK_INNER_HEIGHT)
+            .size(QUICK_MODE_CELL)
             .clip(RoundedCornerShape(QUICK_CELL_CORNER))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
