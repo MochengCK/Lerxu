@@ -51,7 +51,9 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import androidx.compose.ui.graphics.SolidColor
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -106,22 +108,18 @@ import androidx.compose.material.icons.outlined.AddBox
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Tab
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -179,6 +177,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.ime
@@ -1233,6 +1232,8 @@ fun AppScreen(
                         onModernChange = ::setDockModern,
                         darkTheme = isDarkTheme,
                         onThemeChange = onThemeChange,
+                        adBlock = adBlock,
+                        onAdBlockChange = { setAdBlock(it) },
                         onBounds = {
                             // 坞悬浮在网页之上：抓标签页缩略图时这一段要排掉
                             //（不排，卡片上会烙一条控制栏），见 captureThumbnail
@@ -1668,6 +1669,9 @@ private fun BrowserDock(
     darkTheme: Boolean,
     /** 换主题偏好（`light` / `dark`）：与设置里那一档是同一个出口。 */
     onThemeChange: (String) -> Unit,
+    /** 广告拦截开关（与设置页那一项共用同一个状态）：快捷条上那枚盾牌读它。 */
+    adBlock: Boolean,
+    onAdBlockChange: (Boolean) -> Unit,
     onBounds: (Rect) -> Unit,
     onAddressCopied: () -> Unit,
     controller: BrowserController,
@@ -2192,6 +2196,8 @@ private fun BrowserDock(
             onDesktopMode = { controller.setDesktop(it) },
             darkTheme = darkTheme,
             onToggleTheme = { onThemeChange(if (darkTheme) "light" else "dark") },
+            adBlock = adBlock,
+            onToggleAdBlock = { onAdBlockChange(!adBlock) },
             onDismiss = { moreOpen = false },
             onTabs = { moreOpen = false; onTabs() },
             onNewTab = { moreOpen = false; controller.newTab() },
@@ -2499,11 +2505,14 @@ private fun LerxuSnackbar(data: SnackbarData, ok: Boolean) {
 @Composable
 private fun DockMoreSheet(
     tabCount: Int,
-    /** 网页当前是不是「电脑模式」（那枚开关的图标 / 文案 / 高亮都读它）。 */
+    /** 网页当前是不是「电脑模式」（那枚滑块的滑块位置读它）。 */
     desktopMode: Boolean,
     onDesktopMode: (Boolean) -> Unit,
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
+    /** 广告拦截当前开没开（快捷容器里那枚盾牌读它：开着 = 对勾 + 主色）。 */
+    adBlock: Boolean,
+    onToggleAdBlock: () -> Unit,
     onTabs: () -> Unit,
     onNewTab: () -> Unit,
     onHome: () -> Unit,
@@ -2552,6 +2561,8 @@ private fun DockMoreSheet(
                     onDesktopMode = onDesktopMode,
                     darkTheme = darkTheme,
                     onToggleTheme = onToggleTheme,
+                    adBlock = adBlock,
+                    onToggleAdBlock = onToggleAdBlock,
                     onSettings = onSettings
                 )
             }
@@ -2577,7 +2588,7 @@ private fun DockMoreSheet(
     }
 }
 
-/** 快捷条外框高度：左右两块控件同高（手机端比桌面那枚 28 高的切换器大一档，手指好按）。 */
+/** 快捷条外框高度：左右两块控件同高（手指好按的一档）。 */
 private val QUICK_BAR_HEIGHT = 36.dp
 
 /** 外框内边距：滑块与图标都在里面，留 3dp 让主色滑块不顶着边。 */
@@ -2586,31 +2597,34 @@ private val QUICK_BAR_INSET = 3.dp
 /** 内格高度（= 36 − 3×2）。 */
 private val QUICK_INNER_HEIGHT = QUICK_BAR_HEIGHT - QUICK_BAR_INSET * 2
 
-/** 图标尺寸（用户点名比原来那版小一档：17 → 15）。 */
-private val QUICK_ICON_SIZE = 15.dp
+/** 图标尺寸（用户点名要收小一档；自绘图在这档上正好是 1.2dp 的线宽）。 */
+private val QUICK_ICON_SIZE = 16.dp
 
-/** 图标与名称之间的距离。 */
-private val QUICK_ICON_GAP = 5.dp
+/** 外框圆角（用户点名"圆角应该减少"：原来是整条胶囊 18，现在收到 10）。 */
+private val QUICK_CORNER = 10.dp
 
-/** 模式滑块每段的左右内边距。 */
-private val QUICK_SEG_PADDING = 9.dp
+/** 里面那格 / 滑块的圆角：比外框小一圈内边距（10 − 3 = 7），看着才是"嵌在里面"。 */
+private val QUICK_CELL_CORNER = 7.dp
 
-/** 设置 / 主题那两格的内宽（只有图标，所以比带名称的格子窄）。 */
+/** 模式滑块每一段的宽度（只有图标，两段等宽）。 */
+private val QUICK_SEG_WIDTH = 34.dp
+
+/** 容器里每一格的内宽（与模式那两段等宽，一排看过去是同一个节奏）。 */
 private val QUICK_ICON_CELL_WIDTH = 34.dp
 
 /** 左右两块控件之间的间隙。 */
 private val QUICK_GAP = 8.dp
 
 /**
- * 「更多功能」右上角那组快捷开关：**左边一枚模式滑块，右边一枚设置+主题的容器**（用户点名，2026-11-09）。
+ * 「更多功能」右上角那组快捷开关（用户点名，2026-11-09 第三轮）。
  *
- * 两块是**两种控件**，但共用同一套手机端语言：都是**胶囊形**、同高（36dp）、
- * 底色都是 `surfaceContainerHighest` —— 读起来是"一条开关带上的两枚控件"。
- * - 左边 [DockModeSwitch]：手机版 / 电脑版，**图标 + 名称**，主色滑块在框里滑过去；
- * - 右边 [DockQuickCluster]：设置与浅色/深色**同处一个底色容器**，图标自己**没有底色**
- *   （用户原话："图标本身没有背景，是在一个容器内"）。
+ * 两块控件、同一套语言：同高 36dp、同底色 `surfaceContainerHighest`、**圆角收到 10**
+ * （原来是整条胶囊，用户嫌太圆）：
+ * - 左边 [DockModeSwitch]：手机版 / 电脑版，**只有图标**的滑块；
+ * - 右边 [DockQuickCluster]：设置 / 广告拦截 / 浅色深色**同处一个底色容器**，
+ *   图标自己**没有底色**（用户原话："图标本身没有背景，是在一个容器内"）。
  *
- * 两块的宽度不相等（模式那枚带名称，自然更长），右对齐排布。
+ * 右对齐，宽度按内容走。
  */
 @Composable
 private fun DockMoreQuickBar(
@@ -2618,6 +2632,8 @@ private fun DockMoreQuickBar(
     onDesktopMode: (Boolean) -> Unit,
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
+    adBlock: Boolean,
+    onToggleAdBlock: () -> Unit,
     onSettings: () -> Unit
 ) {
     Row(
@@ -2628,23 +2644,20 @@ private fun DockMoreQuickBar(
         DockQuickCluster(
             darkTheme = darkTheme,
             onToggleTheme = onToggleTheme,
+            adBlock = adBlock,
+            onToggleAdBlock = onToggleAdBlock,
             onSettings = onSettings
         )
     }
 }
 
 /**
- * 手机版 ⇄ 电脑版：**两段式滑块**，每段"图标 + 名称"（图标在左、名称在右）。
+ * 手机版 ⇄ 电脑版：**两段式滑块**，两段**只有图标**（用户点名："改为不显示名称，
+ * 只显示图标"）、等宽 34dp。
  *
- * 用户点过两次，这一版的取舍：
- * - **名称要显示**（没有名称谁也不知道哪一格是电脑版），且放在**图标右侧**；
- * - **不要复刻桌面端**（那枚是 28 高、1dp 细描边、透明底的桌面控件）：手机上改成
- *   **36 高的胶囊**、与右边那枚容器**同底色**（不是描边），主色滑块是**胶囊形**。
- *   桌面那套"细描边 + 方形圆角"在手指尺寸的界面上又细又硬，不像能按的东西；
- * - **图标缩小**到 15dp，并与名称**几何中心对齐**（不用基线对齐 —— 基线会把图标顶高，
- *   看起来像浮在文字上面；用户上一版反馈的"图标向下偏移"就是这种视觉落差）；
- * - 两段**等宽**（取较长那个名称的宽度，中英文都装得下）：滑块只横移、不改宽，
- *   动画才干净；滑动用一条**带过冲的 spring**，落到哪一格就是哪一档。
+ * 造型仍是手机端的：与右边那枚容器**同底色**（不是描边），主色滑块在框里滑过去，
+ * 圆角收到 [QUICK_CORNER] / [QUICK_CELL_CORNER]；滑动用一条**带过冲的 spring**，
+ * 落到哪一格就是哪一档（图标颜色同时补间，不做硬切）。
  */
 @Composable
 private fun DockModeSwitch(
@@ -2652,55 +2665,33 @@ private fun DockModeSwitch(
     onDesktopMode: (Boolean) -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
-    val labelMobile = stringResource(R.string.browser_mode_mobile)
-    val labelDesktop = stringResource(R.string.browser_mode_desktop)
-    val labelStyle = MaterialTheme.typography.labelMedium.copy(
-        fontSize = 12.sp,
-        fontWeight = FontWeight.Medium
-    )
-    // 名称宽度先量出来再定格子宽：这样滑块宽度是**编译期之外但首帧就确定**的常量，
-    // 不需要"先量一遍再补间"，打开弹窗时滑块不会从 0 长出来
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-    val segmentWidth = remember(labelMobile, labelDesktop, labelStyle, density) {
-        val textWidth = maxOf(
-            measurer.measure(labelMobile, labelStyle).size.width,
-            measurer.measure(labelDesktop, labelStyle).size.width
-        )
-        with(density) { textWidth.toDp() } +
-            QUICK_ICON_SIZE + QUICK_ICON_GAP + QUICK_SEG_PADDING * 2
-    }
     val thumbOffset by animateDpAsState(
-        targetValue = if (desktopMode) segmentWidth else 0.dp,
+        targetValue = if (desktopMode) QUICK_SEG_WIDTH else 0.dp,
         animationSpec = spring(dampingRatio = 0.55f, stiffness = 520f),
         label = "dockModeThumb"
     )
-    Surface(shape = CircleShape, color = colorScheme.surfaceContainerHighest) {
+    Surface(shape = RoundedCornerShape(QUICK_CORNER), color = colorScheme.surfaceContainerHighest) {
         Box(modifier = Modifier.padding(QUICK_BAR_INSET)) {
-            // 滑块先画（在文字/图标下面）：它只在两格之间横移，不参与点击
+            // 滑块先画（在图标下面）：它只在两格之间横移，不参与点击
             Box(
                 modifier = Modifier
                     .offset(x = thumbOffset)
-                    .width(segmentWidth)
+                    .width(QUICK_SEG_WIDTH)
                     .height(QUICK_INNER_HEIGHT)
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(QUICK_CELL_CORNER))
                     .background(colorScheme.primary)
             )
             Row {
                 DockModeSegment(
-                    icon = Icons.Outlined.Smartphone,
-                    label = labelMobile,
-                    style = labelStyle,
+                    glyph = QuickGlyph.Phone,
+                    contentDescription = stringResource(R.string.browser_mode_mobile),
                     selected = !desktopMode,
-                    width = segmentWidth,
                     onClick = { onDesktopMode(false) }
                 )
                 DockModeSegment(
-                    icon = Icons.Outlined.DesktopWindows,
-                    label = labelDesktop,
-                    style = labelStyle,
+                    glyph = QuickGlyph.Desktop,
+                    contentDescription = stringResource(R.string.browser_mode_desktop),
                     selected = desktopMode,
-                    width = segmentWidth,
                     onClick = { onDesktopMode(true) }
                 )
             }
@@ -2708,15 +2699,12 @@ private fun DockModeSwitch(
     }
 }
 
-/** 模式滑块里的一段：图标 + 名称，点一下把滑块挪到自己这格。 */
+/** 模式滑块里的一段：只有图标，点一下把滑块挪到自己这格。 */
 @Composable
 private fun DockModeSegment(
-    icon: ImageVector,
-    label: String,
-    /** 与量宽度时**同一个** TextStyle：量出来的宽度才与渲染的一致。 */
-    style: TextStyle,
+    glyph: QuickGlyph,
+    contentDescription: String,
     selected: Boolean,
-    width: Dp,
     onClick: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -2725,67 +2713,64 @@ private fun DockModeSegment(
         animationSpec = tween(180),
         label = "dockModeTint"
     )
-    Row(
+    Box(
         modifier = Modifier
-            .width(width)
+            .width(QUICK_SEG_WIDTH)
             .height(QUICK_INNER_HEIGHT)
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(QUICK_CELL_CORNER))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick
             ),
-        horizontalArrangement = Arrangement.Center,
-        // 图标与名称按**几何中心**对齐。名称必须走 [style]（行高 16 而不是继承来的
-        // bodyLarge 24），行高一旦比字号大得多，字的墨迹中心就会偏到盒子中心上方，
-        // 读起来正相反 —— 是**图标显得偏低**（用户上一版反馈的"图标向下偏移"）。
-        verticalAlignment = Alignment.CenterVertically
+        contentAlignment = Alignment.Center
     ) {
-        Icon(
-            icon,
-            // 名称就在旁边，屏幕阅读器不必再念一遍图标
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(QUICK_ICON_SIZE)
-        )
-        Spacer(Modifier.width(QUICK_ICON_GAP))
-        Text(
-            label,
-            style = style,
-            maxLines = 1,
-            color = tint
-        )
+        QuickGlyphIcon(glyph = glyph, tint = tint, description = contentDescription)
     }
 }
 
 /**
- * 设置 + 浅色/深色：**同一块底色容器里的两枚图标**（用户原话："设置和深色浅色切换按钮是在
- * 同一背景下，图标本身没有背景，是在一个容器内"）。
+ * 设置 + 广告拦截 + 浅色/深色：**同一块底色容器里的三枚图标**（用户原话："设置和深色浅色
+ * 切换按钮是在同一背景下，图标本身没有背景，是在一个容器内"）。
  *
- * 容器就是这里唯一的"面"（`surfaceContainerHighest` 胶囊，与左边那枚模式滑块同高同色）；
- * 两枚键本身**不裁底、不描边**，按下去只有自己那一格缩一下。格子之间不留缝（两格相邻），
- * 于是读起来是"一个容器里的两枚图标"，而不是两块并排的按钮。
+ * 容器就是这里唯一的"面"（与左边那枚模式滑块同底色、同圆角）；三枚键本身**不裁底、
+ * 不描边**，按下去只有自己那一格缩一下。格子之间不留缝（相邻），于是读起来是
+ * "一个容器里的三枚图标"，而不是三块并排的按钮。
+ *
+ * 广告拦截是**开关**：开着时盾牌里是对勾、用主色（像一枚点亮的指示），关掉时盾牌上
+ * 划一道斜杠、退回灰 —— 一眼能看出现在是拦不拦。
  */
 @Composable
 private fun DockQuickCluster(
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
+    adBlock: Boolean,
+    onToggleAdBlock: () -> Unit,
     onSettings: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
     Surface(
-        shape = CircleShape,
+        shape = RoundedCornerShape(QUICK_CORNER),
         color = colorScheme.surfaceContainerHighest
     ) {
         Row(modifier = Modifier.padding(QUICK_BAR_INSET)) {
             DockQuickIcon(
-                icon = Icons.Outlined.Settings,
+                glyph = QuickGlyph.Gear,
                 contentDescription = stringResource(R.string.browser_dock_more_settings),
                 onClick = onSettings
             )
             DockQuickIcon(
+                glyph = QuickGlyph.Shield,
+                slashed = !adBlock,
+                tint = if (adBlock) colorScheme.primary else colorScheme.onSurfaceVariant,
+                contentDescription = stringResource(
+                    if (adBlock) R.string.browser_ad_block_disable else R.string.browser_ad_block_enable
+                ),
+                onClick = onToggleAdBlock
+            )
+            DockQuickIcon(
                 // 画的是**当前**那一档：深色时是月亮，点一下换另一档
-                icon = if (darkTheme) Icons.Outlined.DarkMode else Icons.Outlined.LightMode,
+                glyph = if (darkTheme) QuickGlyph.Moon else QuickGlyph.Sun,
                 contentDescription = stringResource(
                     if (darkTheme) R.string.browser_theme_to_light else R.string.browser_theme_to_dark
                 ),
@@ -2802,9 +2787,11 @@ private fun DockQuickCluster(
  */
 @Composable
 private fun DockQuickIcon(
-    icon: ImageVector,
+    glyph: QuickGlyph,
     contentDescription: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    tint: Color? = null,
+    slashed: Boolean = false
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
@@ -2818,7 +2805,7 @@ private fun DockQuickIcon(
         modifier = Modifier
             .width(QUICK_ICON_CELL_WIDTH)
             .height(QUICK_INNER_HEIGHT)
-            .clip(CircleShape)
+            .clip(RoundedCornerShape(QUICK_CELL_CORNER))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .graphicsLayer {
                 scaleX = scale
@@ -2826,12 +2813,160 @@ private fun DockQuickIcon(
             },
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            icon,
-            contentDescription = contentDescription,
-            tint = colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(QUICK_ICON_SIZE)
+        QuickGlyphIcon(
+            glyph = glyph,
+            tint = tint ?: colorScheme.onSurfaceVariant,
+            slashed = slashed,
+            description = contentDescription
         )
+    }
+}
+
+/**
+ * 快捷条上那几枚**自绘图标**。
+ *
+ * 为什么不用 Material 那几枚：它们在 16dp 这一档**线条偏粗、重心偏低**，摆在一排小键里
+ * 显脏（用户点名"图标全都重新设计一下，让它们更美观、更精致"）。这里按同一套规矩重画：
+ * 24×24 的网格、线宽 1.9（圆头）、四周留 2.6 的呼吸位，所有形状都摆在自己的**几何中心**
+ * 上 —— 同一排里看着是"一套"，而不是"从不同图库里各摘一枚"。
+ */
+private enum class QuickGlyph {
+    /** 手机（当前是手机版） */
+    Phone,
+
+    /** 桌面显示器（当前是电脑版） */
+    Desktop,
+
+    /** 齿轮（设置）：外圈 + 六枚短齿，中间是空的 */
+    Gear,
+
+    /** 盾牌（广告拦截）：里面再加对勾 / 斜杠 */
+    Shield,
+
+    /** 太阳（当前是浅色） */
+    Sun,
+
+    /** 月亮（当前是深色） */
+    Moon
+}
+
+/**
+ * 画一枚 [QuickGlyph]。
+ *
+ * 坐标系是 24×24 的虚拟网格，按实际尺寸等比缩放（[Canvas] 里那个 `u`）；
+ * 线宽也一起缩，所以 16dp 与 20dp 上看起来是同一支笔画的。
+ *
+ * [slashed] 只对 [QuickGlyph.Shield] 有意义：true = 划一道斜杠（拦截已关闭）。
+ */
+@Composable
+private fun QuickGlyphIcon(
+    glyph: QuickGlyph,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    slashed: Boolean = false,
+    description: String? = null
+) {
+    Canvas(
+        modifier = modifier
+            .size(QUICK_ICON_SIZE)
+            .then(
+                if (description == null) {
+                    Modifier
+                } else {
+                    Modifier.semantics { contentDescription = description }
+                }
+            )
+    ) {
+        val u = size.minDimension / 24f
+        val sw = 1.9f * u
+        val stroke = Stroke(width = sw, cap = StrokeCap.Round)
+        fun o(x: Float, y: Float) = Offset(x * u, y * u)
+        val center = o(12f, 12f)
+        when (glyph) {
+            QuickGlyph.Phone -> {
+                drawRoundRect(
+                    color = tint,
+                    topLeft = o(7f, 2.4f),
+                    size = Size(10f * u, 19.2f * u),
+                    cornerRadius = CornerRadius(3f * u),
+                    style = stroke
+                )
+                // 底部那条短横（Home 指示）：收短一点，别把机身塞满
+                drawLine(tint, o(10.4f, 18.1f), o(13.6f, 18.1f), sw * 0.95f, StrokeCap.Round)
+            }
+            QuickGlyph.Desktop -> {
+                drawRoundRect(
+                    color = tint,
+                    topLeft = o(2.8f, 4.4f),
+                    size = Size(18.4f * u, 12.2f * u),
+                    cornerRadius = CornerRadius(2.6f * u),
+                    style = stroke
+                )
+                drawLine(tint, o(12f, 16.6f), o(12f, 19.1f), sw, StrokeCap.Round)
+                drawLine(tint, o(8.6f, 20.1f), o(15.4f, 20.1f), sw, StrokeCap.Round)
+            }
+            QuickGlyph.Gear -> {
+                drawCircle(tint, 4.5f * u, center, style = Stroke(width = 1.9f * u, cap = StrokeCap.Round))
+                // 六枚短齿：比太阳的射线更短更粗，远看是"齿轮"而不是"太阳"
+                repeat(6) { i ->
+                    val a = Math.toRadians((i * 60).toDouble())
+                    val dx = cos(a).toFloat()
+                    val dy = sin(a).toFloat()
+                    drawLine(
+                        tint,
+                        Offset(center.x + dx * 6.0f * u, center.y + dy * 6.0f * u),
+                        Offset(center.x + dx * 7.6f * u, center.y + dy * 7.6f * u),
+                        2.1f * u,
+                        StrokeCap.Round
+                    )
+                }
+            }
+            QuickGlyph.Shield -> {
+                val shield = Path().apply {
+                    moveTo(12f * u, 2.6f * u)
+                    lineTo(19.2f * u, 5.6f * u)
+                    lineTo(19.2f * u, 11.4f * u)
+                    cubicTo(19.2f * u, 16.2f * u, 16.2f * u, 19.7f * u, 12f * u, 21.4f * u)
+                    cubicTo(7.8f * u, 19.7f * u, 4.8f * u, 16.2f * u, 4.8f * u, 11.4f * u)
+                    lineTo(4.8f * u, 5.6f * u)
+                    close()
+                }
+                drawPath(shield, tint, style = stroke)
+                if (slashed) {
+                    drawLine(tint, o(4.9f, 4.2f), o(18.6f, 20.2f), sw, StrokeCap.Round)
+                } else {
+                    val check = Path().apply {
+                        moveTo(8.7f * u, 12.1f * u)
+                        lineTo(11.0f * u, 14.4f * u)
+                        lineTo(15.3f * u, 9.9f * u)
+                    }
+                    drawPath(check, tint, style = Stroke(width = 1.9f * u, cap = StrokeCap.Round))
+                }
+            }
+            QuickGlyph.Sun -> {
+                drawCircle(tint, 3.3f * u, center, style = Stroke(width = 1.8f * u, cap = StrokeCap.Round))
+                // 八道**细长**的射线（与齿轮的短粗齿正好区分开）
+                repeat(8) { i ->
+                    val a = Math.toRadians((i * 45).toDouble())
+                    val dx = cos(a).toFloat()
+                    val dy = sin(a).toFloat()
+                    drawLine(
+                        tint,
+                        Offset(center.x + dx * 5.7f * u, center.y + dy * 5.7f * u),
+                        Offset(center.x + dx * 7.9f * u, center.y + dy * 7.9f * u),
+                        1.7f * u,
+                        StrokeCap.Round
+                    )
+                }
+            }
+            QuickGlyph.Moon -> {
+                // 用"大圆减掉偏移的小圆"做月牙：比手写两段弧稳，任何尺寸下都干净
+                val outer = Path().apply { addOval(Rect(center = center, radius = 8.1f * u)) }
+                val bite = Path().apply { addOval(Rect(center = o(17.4f, 6.6f), radius = 7.3f * u)) }
+                val crescent = Path().apply { op(outer, bite, PathOperation.Difference) }
+                drawPath(crescent, tint)
+            }
+        }
     }
 }
 
