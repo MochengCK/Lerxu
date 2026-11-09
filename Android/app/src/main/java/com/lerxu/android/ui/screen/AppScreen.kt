@@ -2577,11 +2577,26 @@ private fun DockMoreSheet(
     }
 }
 
-/** 快捷条里每一格的内高（外框 34dp = 内高 28 + 上下各 3 的裱边，与坞里的键同一档高度）。 */
-private val QUICK_INNER_HEIGHT = 28.dp
+/** 快捷条外框高度：左右两块控件同高（手机端比桌面那枚 28 高的切换器大一档，手指好按）。 */
+private val QUICK_BAR_HEIGHT = 36.dp
 
-/** 快捷条里每一格的内宽：模式开关的两段、设置/主题两枚都用它，左右两块的总宽才对得上。 */
-private val QUICK_CELL_WIDTH = 36.dp
+/** 外框内边距：滑块与图标都在里面，留 3dp 让主色滑块不顶着边。 */
+private val QUICK_BAR_INSET = 3.dp
+
+/** 内格高度（= 36 − 3×2）。 */
+private val QUICK_INNER_HEIGHT = QUICK_BAR_HEIGHT - QUICK_BAR_INSET * 2
+
+/** 图标尺寸（用户点名比原来那版小一档：17 → 15）。 */
+private val QUICK_ICON_SIZE = 15.dp
+
+/** 图标与名称之间的距离。 */
+private val QUICK_ICON_GAP = 5.dp
+
+/** 模式滑块每段的左右内边距。 */
+private val QUICK_SEG_PADDING = 9.dp
+
+/** 设置 / 主题那两格的内宽（只有图标，所以比带名称的格子窄）。 */
+private val QUICK_ICON_CELL_WIDTH = 34.dp
 
 /** 左右两块控件之间的间隙。 */
 private val QUICK_GAP = 8.dp
@@ -2589,13 +2604,13 @@ private val QUICK_GAP = 8.dp
 /**
  * 「更多功能」右上角那组快捷开关：**左边一枚模式滑块，右边一枚设置+主题的容器**（用户点名，2026-11-09）。
  *
- * 两块是**两种控件**，不再挤在同一枚胶囊里：
- * - 左边 [DockModeSwitch]：手机版 / 电脑版 的**滑块切换**（只有图标），照桌面端右上角那枚
- *   `SegmentedSlider`（列表视图 / 磁铁视图）搬过来 —— 细描边外框 + 主色滑块 + 回弹过渡；
+ * 两块是**两种控件**，但共用同一套手机端语言：都是**胶囊形**、同高（36dp）、
+ * 底色都是 `surfaceContainerHighest` —— 读起来是"一条开关带上的两枚控件"。
+ * - 左边 [DockModeSwitch]：手机版 / 电脑版，**图标 + 名称**，主色滑块在框里滑过去；
  * - 右边 [DockQuickCluster]：设置与浅色/深色**同处一个底色容器**，图标自己**没有底色**
  *   （用户原话："图标本身没有背景，是在一个容器内"）。
  *
- * 两块同高（34dp）、同宽（78dp），中间隔 [QUICK_GAP]：一眼看过去是一条左右均衡的开关带。
+ * 两块的宽度不相等（模式那枚带名称，自然更长），右对齐排布。
  */
 @Composable
 private fun DockMoreQuickBar(
@@ -2619,17 +2634,17 @@ private fun DockMoreQuickBar(
 }
 
 /**
- * 手机版 ⇄ 电脑版：**两段式滑块**（用户点名："就是一个滑块切换按钮，就跟电脑端右上角的
- * 列表视图、磁铁视图切换差不多"）。
+ * 手机版 ⇄ 电脑版：**两段式滑块**，每段"图标 + 名称"（图标在左、名称在右）。
  *
- * 形状与手感照桌面端的 `components/SegmentedSlider/SegmentedSlider.vue`：
- * - 外框**透明底 + 1dp 描边**（不是填充块），圆角 10dp，内边距 3dp；
- * - 选中态是一枚**主色滑块**在框里滑过去（高 28、宽与一格相同、圆角 8dp），
- *   过渡用一条**带过冲的 spring** 近似桌面那条 `cubic-bezier(0.34, 1.56, 0.64, 1)`；
- * - 选中段的图标是 `onPrimary`（主色块上读得清），未选中是 `onSurfaceVariant`，
- *   颜色跟着滑块一起补间 —— 否则滑块滑过去了、图标还是一下子硬切。
- *
- * 两段**只有图标**（手机 / 显示器），没有文字：这块要的就是"一枚开关"的体积。
+ * 用户点过两次，这一版的取舍：
+ * - **名称要显示**（没有名称谁也不知道哪一格是电脑版），且放在**图标右侧**；
+ * - **不要复刻桌面端**（那枚是 28 高、1dp 细描边、透明底的桌面控件）：手机上改成
+ *   **36 高的胶囊**、与右边那枚容器**同底色**（不是描边），主色滑块是**胶囊形**。
+ *   桌面那套"细描边 + 方形圆角"在手指尺寸的界面上又细又硬，不像能按的东西；
+ * - **图标缩小**到 15dp，并与名称**几何中心对齐**（不用基线对齐 —— 基线会把图标顶高，
+ *   看起来像浮在文字上面；用户上一版反馈的"图标向下偏移"就是这种视觉落差）；
+ * - 两段**等宽**（取较长那个名称的宽度，中英文都装得下）：滑块只横移、不改宽，
+ *   动画才干净；滑动用一条**带过冲的 spring**，落到哪一格就是哪一档。
  */
 @Composable
 private fun DockModeSwitch(
@@ -2637,38 +2652,55 @@ private fun DockModeSwitch(
     onDesktopMode: (Boolean) -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
+    val labelMobile = stringResource(R.string.browser_mode_mobile)
+    val labelDesktop = stringResource(R.string.browser_mode_desktop)
+    val labelStyle = MaterialTheme.typography.labelMedium.copy(
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Medium
+    )
+    // 名称宽度先量出来再定格子宽：这样滑块宽度是**编译期之外但首帧就确定**的常量，
+    // 不需要"先量一遍再补间"，打开弹窗时滑块不会从 0 长出来
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val segmentWidth = remember(labelMobile, labelDesktop, labelStyle, density) {
+        val textWidth = maxOf(
+            measurer.measure(labelMobile, labelStyle).size.width,
+            measurer.measure(labelDesktop, labelStyle).size.width
+        )
+        with(density) { textWidth.toDp() } +
+            QUICK_ICON_SIZE + QUICK_ICON_GAP + QUICK_SEG_PADDING * 2
+    }
     val thumbOffset by animateDpAsState(
-        targetValue = if (desktopMode) QUICK_CELL_WIDTH else 0.dp,
-        // 低阻尼 = 冲过头一点再回位（对应桌面那条 1.56 的回弹）
+        targetValue = if (desktopMode) segmentWidth else 0.dp,
         animationSpec = spring(dampingRatio = 0.55f, stiffness = 520f),
         label = "dockModeThumb"
     )
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = Color.Transparent,
-        border = BorderStroke(1.dp, colorScheme.outline)
-    ) {
-        Box(modifier = Modifier.padding(3.dp)) {
-            // 滑块先画（在图标下面）：它只在两格之间横移，不参与点击
+    Surface(shape = CircleShape, color = colorScheme.surfaceContainerHighest) {
+        Box(modifier = Modifier.padding(QUICK_BAR_INSET)) {
+            // 滑块先画（在文字/图标下面）：它只在两格之间横移，不参与点击
             Box(
                 modifier = Modifier
                     .offset(x = thumbOffset)
-                    .width(QUICK_CELL_WIDTH)
+                    .width(segmentWidth)
                     .height(QUICK_INNER_HEIGHT)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(CircleShape)
                     .background(colorScheme.primary)
             )
             Row {
                 DockModeSegment(
                     icon = Icons.Outlined.Smartphone,
-                    contentDescription = stringResource(R.string.browser_mode_mobile),
+                    label = labelMobile,
+                    style = labelStyle,
                     selected = !desktopMode,
+                    width = segmentWidth,
                     onClick = { onDesktopMode(false) }
                 )
                 DockModeSegment(
                     icon = Icons.Outlined.DesktopWindows,
-                    contentDescription = stringResource(R.string.browser_mode_desktop),
+                    label = labelDesktop,
+                    style = labelStyle,
                     selected = desktopMode,
+                    width = segmentWidth,
                     onClick = { onDesktopMode(true) }
                 )
             }
@@ -2676,12 +2708,15 @@ private fun DockModeSwitch(
     }
 }
 
-/** 模式滑块里的一段：只有图标，点一下把滑块挪到自己这格。 */
+/** 模式滑块里的一段：图标 + 名称，点一下把滑块挪到自己这格。 */
 @Composable
 private fun DockModeSegment(
     icon: ImageVector,
-    contentDescription: String,
+    label: String,
+    /** 与量宽度时**同一个** TextStyle：量出来的宽度才与渲染的一致。 */
+    style: TextStyle,
     selected: Boolean,
+    width: Dp,
     onClick: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -2690,23 +2725,35 @@ private fun DockModeSegment(
         animationSpec = tween(180),
         label = "dockModeTint"
     )
-    Box(
+    Row(
         modifier = Modifier
-            .width(QUICK_CELL_WIDTH)
+            .width(width)
             .height(QUICK_INNER_HEIGHT)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(CircleShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick
             ),
-        contentAlignment = Alignment.Center
+        horizontalArrangement = Arrangement.Center,
+        // 图标与名称按**几何中心**对齐。名称必须走 [style]（行高 16 而不是继承来的
+        // bodyLarge 24），行高一旦比字号大得多，字的墨迹中心就会偏到盒子中心上方，
+        // 读起来正相反 —— 是**图标显得偏低**（用户上一版反馈的"图标向下偏移"）。
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
             icon,
-            contentDescription = contentDescription,
+            // 名称就在旁边，屏幕阅读器不必再念一遍图标
+            contentDescription = null,
             tint = tint,
-            modifier = Modifier.size(17.dp)
+            modifier = Modifier.size(QUICK_ICON_SIZE)
+        )
+        Spacer(Modifier.width(QUICK_ICON_GAP))
+        Text(
+            label,
+            style = style,
+            maxLines = 1,
+            color = tint
         )
     }
 }
@@ -2715,8 +2762,8 @@ private fun DockModeSegment(
  * 设置 + 浅色/深色：**同一块底色容器里的两枚图标**（用户原话："设置和深色浅色切换按钮是在
  * 同一背景下，图标本身没有背景，是在一个容器内"）。
  *
- * 容器就是这里唯一的"面"（`surfaceContainerHighest`，比弹窗面板高一档）；两枚键本身
- * **不裁底、不描边**，按下去只有自己那一格缩一下。格子之间不留缝（两格相邻），
+ * 容器就是这里唯一的"面"（`surfaceContainerHighest` 胶囊，与左边那枚模式滑块同高同色）；
+ * 两枚键本身**不裁底、不描边**，按下去只有自己那一格缩一下。格子之间不留缝（两格相邻），
  * 于是读起来是"一个容器里的两枚图标"，而不是两块并排的按钮。
  */
 @Composable
@@ -2727,10 +2774,10 @@ private fun DockQuickCluster(
 ) {
     val colorScheme = MaterialTheme.colorScheme
     Surface(
-        shape = RoundedCornerShape(10.dp),
+        shape = CircleShape,
         color = colorScheme.surfaceContainerHighest
     ) {
-        Row(modifier = Modifier.padding(3.dp)) {
+        Row(modifier = Modifier.padding(QUICK_BAR_INSET)) {
             DockQuickIcon(
                 icon = Icons.Outlined.Settings,
                 contentDescription = stringResource(R.string.browser_dock_more_settings),
@@ -2769,9 +2816,9 @@ private fun DockQuickIcon(
     )
     Box(
         modifier = Modifier
-            .width(QUICK_CELL_WIDTH)
+            .width(QUICK_ICON_CELL_WIDTH)
             .height(QUICK_INNER_HEIGHT)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(CircleShape)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .graphicsLayer {
                 scaleX = scale
@@ -2783,7 +2830,7 @@ private fun DockQuickIcon(
             icon,
             contentDescription = contentDescription,
             tint = colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(17.dp)
+            modifier = Modifier.size(QUICK_ICON_SIZE)
         )
     }
 }
