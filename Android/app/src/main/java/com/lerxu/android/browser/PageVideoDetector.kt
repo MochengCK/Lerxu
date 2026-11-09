@@ -474,6 +474,10 @@ object PageVideoDetector {
         "     用 composedPath() 拿到真正的那个节点，不然它既找不到、也按不住。 */\n" +
         "  try{if(e.composedPath){var cp=e.composedPath();if(cp&&cp[0])v=cp[0];}}catch(x){}\n" +
         "  if(!v||v.tagName!=='VIDEO')return;\n" +
+        "  /* 电脑模式：**一个字都不碰**（用户点名：桌面版用网页自己的播放器）。\n" +
+        "     必须挡在 pause 之前 —— 先暂停再交给站点，对 MSE 型播放器（B 站那种）\n" +
+        "     就是页面以为在播、元素其实停着：界面没有播放键、画面一片黑。 */\n" +
+        "  if(window.__lerxuNoTakeover)return;\n" +
         "  if(v.loop&&v.muted)return;\n" +
         "  try{if(getComputedStyle(v).display==='none')return;}catch(e){}\n" +
         "  var r=rectOf(v);\n" +
@@ -533,6 +537,7 @@ object PageVideoDetector {
         "   把整路交给我们的播放器，**开着但先不自动播** —— 用户根本没按过播放，替他播\n" +
         "   等于凭空开始放片子。 */\n" +
         "function scanPaused(){\n" +
+        "  if(window.__lerxuNoTakeover)return;\n" +
         "  if(!armed)return;\n" +
         "  if(window.__lerxuVid)return;\n" +
         "  var best=null;\n" +

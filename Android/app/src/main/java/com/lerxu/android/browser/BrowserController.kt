@@ -2392,8 +2392,14 @@ class BrowserController(
             tab.themeDocStart = WebViewCompat.addDocumentStartJavaScript(
                 view,
                 // 主题（prefers-color-scheme 对齐）+ 电脑模式的视口覆盖：两件都要在
-                // 文档开始那一刻就位，同一个句柄一起换（DesktopMode 关着时是空串）
-                WebThemeEngine.docStartJs(homeDark) + DesktopMode.docStartJs(desktopMode),
+                // 文档开始那一刻就位，同一个句柄一起换（DesktopMode 关着时是空串）。
+                //
+                // 最后那一句是**电脑模式的接管开关**：置位之后页面里的视频探测脚本
+                // 一个字都不碰（连 `pause()` 都不做，见 PageVideoDetector 的 `onPlay`）——
+                // 桌面版站点用它自己的播放器（用户 2026-11-09 点名）。必须挂在**文档起始**
+                // 这一档：页面自己的脚本、播放器初始化都在它之后。
+                WebThemeEngine.docStartJs(homeDark) + DesktopMode.docStartJs(desktopMode) +
+                    if (desktopMode) NO_PAGE_TAKEOVER_JS else "",
                 setOf("*")
             )
         }
@@ -3304,6 +3310,19 @@ class BrowserController(
     private val SHOW_PAGE_VIDEO_JS =
         "(function(){try{window.__lerxuShowVideos&&window.__lerxuShowVideos();}catch(e){}})();" +
             AUDIO_UNMUTE_JS
+
+    /**
+     * 电脑模式下给页面种的旗子：**视频探测脚本一律不接管**。
+     *
+     * 置位后 [PageVideoDetector] 的两条入口（起播 `onPlay` / 静默扫描 `scanPaused`）
+     * 进来就 return —— **连 `pause()` 都不做**。
+     *
+     * 为什么必须是"不做 pause"而不是"先 pause 再放回去"：桌面版站点（B 站）用的是 MSE
+     * 播放器，页面自己的逻辑在 `play()` 之后接着喂数据；我们从外面按一下暂停，它的
+     * 状态机就停在"正在播"上 —— 界面没有播放键、画面却是黑的（用户 2026-11-09 报的
+     * "网页自己的播放器也一直黑屏不播放"）。放回去那一下救不回来它的内部状态。
+     */
+    private val NO_PAGE_TAKEOVER_JS = "window.__lerxuNoTakeover=1;"
 
     /**
      * 把页面那一路上次被脚本按停的视频**放回去**（电脑模式用，见 [onPageVideoPlayed]）。
