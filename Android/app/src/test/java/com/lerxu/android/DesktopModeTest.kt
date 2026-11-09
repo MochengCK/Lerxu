@@ -52,4 +52,32 @@ class DesktopModeTest {
         // 脚本自带观察者，`<meta>` 是解析到 head 才出现的，不能只改一次
         assertTrue(js, js.contains("MutationObserver"))
     }
+
+    /**
+     * 页面报的是 CSS px，原生那边要的是 dp —— 电脑模式下这两者差三倍多。
+     *
+     * 这是"网页处于桌面版时原生播放器出问题"的根因：播放器把页面报的 CSS px 当成 dp 用，
+     * 位置与尺寸都被放大 `1280 / 屏宽dp` 倍（360dp 的屏上是 3.55 倍）。
+     */
+    @Test
+    fun cssToDpShrinksOnDesktopLayout() {
+        assertEquals(360f / DesktopMode.VIEWPORT_WIDTH, DesktopMode.cssToDpFactor(360f), 1e-5f)
+        assertEquals(720f / DesktopMode.VIEWPORT_WIDTH, DesktopMode.cssToDpFactor(720f), 1e-5f)
+        // 1280dp 宽的屏（平板横置）：整版正好铺满，1px 就是 1dp
+        assertEquals(1f, DesktopMode.cssToDpFactor(1280f), 1e-5f)
+    }
+
+    /** 还没量到宽度（0）时不许除出 0 —— 返回 1 让上层退回"CSS px 当 dp"的老口径。 */
+    @Test
+    fun cssToDpIsOneWhenWidthUnknown() {
+        assertEquals(1f, DesktopMode.cssToDpFactor(0f), 1e-5f)
+        assertEquals(1f, DesktopMode.cssToDpFactor(-10f), 1e-5f)
+    }
+
+    /** 窄到离谱/宽到离谱的窗口不许把系数带出 (0,1]：那是"播放器缩成一条 / 撑出屏"的来源。 */
+    @Test
+    fun cssToDpIsClamped() {
+        assertTrue(DesktopMode.cssToDpFactor(4000f) <= 1f)
+        assertTrue(DesktopMode.cssToDpFactor(1f) > 0f)
+    }
 }

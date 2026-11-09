@@ -118,4 +118,24 @@ object DesktopMode {
             "}catch(e){}" +
             "})();"
     }
+
+    /**
+     * 页面里的 **1 CSS px 等于多少 dp**（1 = 手机版那种"1px 就是 1dp"）。
+     *
+     * 手机版把视口钉成 `width=device-width`：1 CSS px 就是一个 dp。电脑模式把视口钉成
+     * [VIEWPORT_WIDTH]，WebView 再用 `loadWithOverviewMode` 把整页缩到屏宽 —— 于是
+     * 1 CSS px 只有 `屏宽dp / 1280` 个 dp（360dp 的屏上约 0.28）。
+     *
+     * 为什么**只按版面宽度算**、不去读 `WebView.getScale()`：那个值在不同实现里语义
+     * 不一致（有的含屏幕密度、有的只给双指缩放），差一档就是 2~3 倍，读它等于把播放器的
+     * 位置交给一个不确定量。而 1280 是我们自己钉的、`loadWithOverviewMode` 必然把它铺满
+     * 屏宽，所以这条除法是**精确解**。
+     *
+     * 代价：双指放大期间不跟（页面报的 CSS px 不变、屏幕上那块变大了）。手机版那条路
+     * 本来也是这个口径 —— 两处一致，要跟放大再一起改。
+     */
+    fun cssToDpFactor(viewWidthDp: Float): Float {
+        if (viewWidthDp <= 0f) return 1f
+        return (viewWidthDp / VIEWPORT_WIDTH).coerceIn(0.02f, 1f)
+    }
 }

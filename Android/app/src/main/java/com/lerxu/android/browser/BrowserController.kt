@@ -3424,6 +3424,24 @@ class BrowserController(
     }
 
     /**
+     * 页面里的 **1 CSS px 等于多少 dp**（1 = 手机版那种"1px 就是 1dp"）。
+     *
+     * 两个坐标系的差别只在**电脑模式**：手机版把视口钉成 `width=device-width`，
+     * WebView 的初始缩放正好等于屏幕密度，于是 1 CSS px = 1dp（这条从第一天就是这么写的，
+     * 现在仍然原样返回 1 —— 不碰它在用的行为）。
+     *
+     * 电脑模式把视口钉成 [DesktopMode.VIEWPORT_WIDTH]，整页被缩到屏宽，1 CSS px 只有
+     * 零点几 dp。换算规则在 [DesktopMode.cssToDpFactor]（纯函数，单测钉住），这里只负责
+     * 把 WebView 的宽度按密度折成 dp 交过去。
+     */
+    private fun cssToDpFactor(view: WebView): Float {
+        if (!desktopMode) return 1f
+        val density = view.resources.displayMetrics.density
+        if (density <= 0f) return 1f
+        return DesktopMode.cssToDpFactor(view.width / density)
+    }
+
+    /**
      * JS 桥：页面里那个 `<video>` 的位置（见 PageVideoDetector 的位置回传）。
      *
      * 页面侧做了"值没变就不发"的去重，所以这里不必再判重。
@@ -3453,14 +3471,20 @@ class BrowserController(
                 val w = (parsed["w"] as? JsonPrimitive)?.doubleOrNull ?: return@post
                 val h = (parsed["h"] as? JsonPrimitive)?.doubleOrNull ?: return@post
                 val view = tab.webView ?: return@post
-                // 页面里的 1px 就是 1dp（WebView 初始缩放 1、devicePixelRatio = 屏幕
-                // 密度）；WebView 自己在窗口里的那点位移是设备像素，按密度折成 dp 加上去
+                // 页面报的是 **CSS px**，不是 dp：手机版（width=device-width）下 WebView 的
+                // 初始缩放正好等于屏幕密度 ⇒ 1px = 1dp；但**电脑模式**把视口钉成 1280，
+                // 整页被 WebView 缩到屏宽，1 CSS px 只有零点几 dp。不换算的话，播放器
+                // 会按"1280 宽的坐标系"摆在一个 360dp 的屏幕上 —— 位置偏出去、尺寸大三四倍
+                //（用户 2026-11-09 报的"网页处于桌面版时原生播放器出问题"就是它）。
+                //
+                // WebView 自己在窗口里的那点位移是设备像素，按密度折成 dp 加上去
                 val loc = IntArray(2)
                 view.getLocationInWindow(loc)
                 val density = view.resources.displayMetrics.density
-                val left = (loc[0] / density + x).toFloat()
-                val top = (loc[1] / density + y).toFloat()
-                val rect = RectF(left, top, left + w.toFloat(), top + h.toFloat())
+                val k = cssToDpFactor(view)
+                val left = (loc[0] / density + x * k).toFloat()
+                val top = (loc[1] / density + y * k).toFloat()
+                val rect = RectF(left, top, left + (w * k).toFloat(), top + (h * k).toFloat())
                 // 每个标签页都记一份：不在台前的那一页也要记 —— 切回来时**第一帧**
                 // 就得摆在正确的位置上（见 [freshFrame]），不能等它重报
                 lastFrames[tab.id] = rect
