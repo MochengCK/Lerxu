@@ -283,8 +283,7 @@
     <string name="browser_mode_desktop">Desktop</string>
     <string name="browser_theme_to_light">Switch to light</string>
     <string name="browser_theme_to_dark">Switch to dark</string>
-    <string name="browser_ad_block_enable">Turn on ad blocking</string>
-    <string name="browser_ad_block_disable">Turn off ad blocking</string>
+    <string name="browser_ad_block">Ad blocking</string>
     <string name="history_filter_all">All</string>
     <string name="history_filter_visits">Recent visits</string>
     <string name="history_filter_searches">Search history</string>

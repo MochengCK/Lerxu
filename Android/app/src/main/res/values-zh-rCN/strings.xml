@@ -283,8 +283,7 @@
     <string name="browser_mode_desktop">电脑版</string>
     <string name="browser_theme_to_light">切换到浅色</string>
     <string name="browser_theme_to_dark">切换到深色</string>
-    <string name="browser_ad_block_enable">开启广告拦截</string>
-    <string name="browser_ad_block_disable">关闭广告拦截</string>
+    <string name="browser_ad_block">广告拦截</string>
     <string name="history_filter_all">全部</string>
     <string name="history_filter_visits">最近访问</string>
     <string name="history_filter_searches">搜索历史</string>

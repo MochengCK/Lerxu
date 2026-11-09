@@ -177,9 +177,11 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.focus.onFocusChanged
@@ -2483,22 +2485,19 @@ private fun LerxuSnackbar(data: SnackbarData, ok: Boolean) {
  *
  * **独立弹窗，样式照播放器设置弹窗来**（用户点名）：同一个 [ModalBottomSheet]，同一套
  * 内边距；不再从坞里向上长出来 —— 那块"长高"的地方只留给坞自己的设置面板（见
- * BrowserDock）。用户后来点名**删掉左上角那行"更多功能"标题**：五枚图标各自的文字
+ * BrowserDock）。用户后来点名**删掉左上角那行"更多功能"标题**：六枚图标各自的文字
  * （标签页 / 新建标签 / 主页……）已经把每一格是什么说清了，标题只是白占一档高度。
  *
- * **右上角是三条快捷开关**（用户点名，2026-11-09）：手机版 ⇄ 电脑版、设置、浅色 ⇄ 深色。
- * 摆法是**左右两块控件**（见 [DockMoreQuickBar]）：左边一枚**只有图标的两段滑块**（模式），
- * 右边一枚**容器**（设置 + 主题，图标自己没有底色）；顺序按用户点的那样 —— 模式在最左、
- * 设置紧挨在它右侧、主题收最右。为此「设置」**从宫格里搬了出来**：同一个动作不该在一张
- * 弹窗里出现两次。
+ * **右上角是两块控件**（用户点名，2026-11-09 多轮）：左边一枚**只有图标的两段滑块**
+ * （手机版 ⇄ 电脑版），右边一枚**容器**（设置 + 浅色⇄深色，图标自己没有底色）。
+ * 为此「设置」**从宫格里搬了出来**：同一个动作不该在一张弹窗里出现两次。
  *
- * 宫格剩五个动作（标签页／新建标签／主页／历史／下载页），仍是 **3 列**：最后一行只有
- * 两枚，各占 `weight(1f)` ⇒ 它们落在 1/4 与 3/4 上，是**左右对称的一对**。
- * （不补一枚空气格把它们挤到左边：右下角空出一块会读成"少了一个按钮"。）
+ * 宫格是 **3 × 2 六枚**：标签页／新建标签／主页／历史／下载页／**广告拦截**。最后那一格
+ * 是**开关**（用户点名："拦截的开和关应该是在下面的那一行"）：开着是盾牌 + 对勾 + 蓝，
+ * 关掉是盾牌 + 斜杠 + 灰，点一下就地切换，状态与设置页那一项共用。
  *
  * 每项是一块**等宽的整块**、图标自己带色（见 [dockMoreColors]），宫格本身有了可扫的
- * "面"，一次点到的面积也大得多。图标**直接用 Material Icons Extended 里现成的那几枚**
- * （用户点名："直接接入现成的成熟图标库"）。用普通 [Row] 而不是 LazyVerticalGrid ——
+ * "面"，一次点到的面积也大得多。用普通 [Row] 而不是 LazyVerticalGrid ——
  * 弹窗里再嵌一层可滚动网格会和底部弹窗自己的下拉收起抢手势，固定几项也不值得为它引入懒加载。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -2528,7 +2527,19 @@ private fun DockMoreSheet(
         DockMoreAction(Icons.Outlined.AddBox, dockMoreColors[1], stringResource(R.string.browser_dock_more_new_tab), null, onNewTab),
         DockMoreAction(Icons.Outlined.Home, dockMoreColors[2], stringResource(R.string.browser_dock_more_home), null, onHome),
         DockMoreAction(Icons.Outlined.History, dockMoreColors[3], stringResource(R.string.browser_dock_more_history), null, onHistory),
-        DockMoreAction(Icons.Outlined.Download, dockMoreColors[4], stringResource(R.string.browser_dock_more_downloads), null, onDownloads)
+        DockMoreAction(Icons.Outlined.Download, dockMoreColors[4], stringResource(R.string.browser_dock_more_downloads), null, onDownloads),
+        // 第六格 = 广告拦截（用户点名："拦截开和关应该是在下面的那一行"）。
+        // 它与右上角那几枚不同：**自己就是开关**，所以用自绘盾牌 —— 开着是对勾 + 蓝，
+        // 关掉是一道斜杠 + 灰，点一下就地切换（与设置页那一项同一个状态）
+        DockMoreAction(
+            icon = null,
+            tint = if (adBlock) dockMoreColors[5] else adBlockOffColor,
+            label = stringResource(R.string.browser_ad_block),
+            count = null,
+            onClick = onToggleAdBlock,
+            glyph = QuickGlyph.Shield,
+            slashed = !adBlock
+        )
     )
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -2561,8 +2572,6 @@ private fun DockMoreSheet(
                     onDesktopMode = onDesktopMode,
                     darkTheme = darkTheme,
                     onToggleTheme = onToggleTheme,
-                    adBlock = adBlock,
-                    onToggleAdBlock = onToggleAdBlock,
                     onSettings = onSettings
                 )
             }
@@ -2579,7 +2588,9 @@ private fun DockMoreSheet(
                             label = action.label,
                             count = action.count,
                             onClick = action.onClick,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            glyph = action.glyph,
+                            slashed = action.slashed
                         )
                     }
                 }
@@ -2597,8 +2608,11 @@ private val QUICK_BAR_INSET = 3.dp
 /** 内格高度（= 36 − 3×2）。 */
 private val QUICK_INNER_HEIGHT = QUICK_BAR_HEIGHT - QUICK_BAR_INSET * 2
 
-/** 图标尺寸（用户点名要收小一档；自绘图在这档上正好是 1.2dp 的线宽）。 */
+/** 模式滑块里的图标尺寸（那两格只有图标，16 在这档上正好是 1.2dp 的线宽）。 */
 private val QUICK_ICON_SIZE = 16.dp
+
+/** 容器里那几枚的图标尺寸：用户点名"设置 / 浅色深色那两枚要再大一点"，16 → 18。 */
+private val QUICK_CLUSTER_ICON_SIZE = 18.dp
 
 /** 外框圆角（用户点名"圆角应该减少"：原来是整条胶囊 18，现在收到 10）。 */
 private val QUICK_CORNER = 10.dp
@@ -2632,8 +2646,6 @@ private fun DockMoreQuickBar(
     onDesktopMode: (Boolean) -> Unit,
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
-    adBlock: Boolean,
-    onToggleAdBlock: () -> Unit,
     onSettings: () -> Unit
 ) {
     Row(
@@ -2644,8 +2656,6 @@ private fun DockMoreQuickBar(
         DockQuickCluster(
             darkTheme = darkTheme,
             onToggleTheme = onToggleTheme,
-            adBlock = adBlock,
-            onToggleAdBlock = onToggleAdBlock,
             onSettings = onSettings
         )
     }
@@ -2744,8 +2754,6 @@ private fun DockModeSegment(
 private fun DockQuickCluster(
     darkTheme: Boolean,
     onToggleTheme: () -> Unit,
-    adBlock: Boolean,
-    onToggleAdBlock: () -> Unit,
     onSettings: () -> Unit
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -2758,15 +2766,6 @@ private fun DockQuickCluster(
                 glyph = QuickGlyph.Gear,
                 contentDescription = stringResource(R.string.browser_dock_more_settings),
                 onClick = onSettings
-            )
-            DockQuickIcon(
-                glyph = QuickGlyph.Shield,
-                slashed = !adBlock,
-                tint = if (adBlock) colorScheme.primary else colorScheme.onSurfaceVariant,
-                contentDescription = stringResource(
-                    if (adBlock) R.string.browser_ad_block_disable else R.string.browser_ad_block_enable
-                ),
-                onClick = onToggleAdBlock
             )
             DockQuickIcon(
                 // 画的是**当前**那一档：深色时是月亮，点一下换另一档
@@ -2816,6 +2815,7 @@ private fun DockQuickIcon(
         QuickGlyphIcon(
             glyph = glyph,
             tint = tint ?: colorScheme.onSurfaceVariant,
+            iconSize = QUICK_CLUSTER_ICON_SIZE,
             slashed = slashed,
             description = contentDescription
         )
@@ -2863,12 +2863,14 @@ private fun QuickGlyphIcon(
     glyph: QuickGlyph,
     tint: Color,
     modifier: Modifier = Modifier,
+    /** 图标边长。**不能叫 `size`**：Canvas 的 DrawScope 里也有个 `size`，重名会把里面的遮住。 */
+    iconSize: Dp = QUICK_ICON_SIZE,
     slashed: Boolean = false,
     description: String? = null
 ) {
     Canvas(
         modifier = modifier
-            .size(QUICK_ICON_SIZE)
+            .size(iconSize)
             .then(
                 if (description == null) {
                     Modifier
@@ -2906,19 +2908,25 @@ private fun QuickGlyphIcon(
                 drawLine(tint, o(8.6f, 20.1f), o(15.4f, 20.1f), sw, StrokeCap.Round)
             }
             QuickGlyph.Gear -> {
-                drawCircle(tint, 4.5f * u, center, style = Stroke(width = 1.9f * u, cap = StrokeCap.Round))
-                // 六枚短齿：比太阳的射线更短更粗，远看是"齿轮"而不是"太阳"
-                repeat(6) { i ->
-                    val a = Math.toRadians((i * 60).toDouble())
-                    val dx = cos(a).toFloat()
-                    val dy = sin(a).toFloat()
-                    drawLine(
-                        tint,
-                        Offset(center.x + dx * 6.0f * u, center.y + dy * 6.0f * u),
-                        Offset(center.x + dx * 7.6f * u, center.y + dy * 7.6f * u),
-                        2.1f * u,
-                        StrokeCap.Round
-                    )
+                // **实心**齿轮：线描那版（一个圈 + 几根齿）在小尺寸上只会读成"太阳"，
+                // 用户原话"一点都不像设置"。实心轮辐 + 中间挖个孔，才是一眼认得出的齿轮。
+                // 孔用 EvenOdd 真挖掉（不是拿底色盖一层，那样换主题就露馅）
+                val body = Path().apply {
+                    fillType = PathFillType.EvenOdd
+                    addOval(Rect(center = center, radius = 5.5f * u))
+                    addOval(Rect(center = center, radius = 2.2f * u))
+                }
+                drawPath(body, tint)
+                // 八枚齿：绕中心转着画，齿根压进轮体里一点，接缝看不出来
+                repeat(8) { i ->
+                    rotate(degrees = i * 45f, pivot = center) {
+                        drawRoundRect(
+                            color = tint,
+                            topLeft = Offset(center.x - 1.5f * u, center.y - 8.0f * u),
+                            size = Size(3.0f * u, 3.2f * u),
+                            cornerRadius = CornerRadius(1.0f * u)
+                        )
+                    }
                 }
             }
             QuickGlyph.Shield -> {
@@ -2972,31 +2980,40 @@ private fun QuickGlyphIcon(
 
 /** 宫格里的一个动作。排好清单再切行，见 [DockMoreSheet]。 */
 private data class DockMoreAction(
-    val icon: ImageVector,
+    /** Material 图标；给了 [glyph] 时可以留空。 */
+    val icon: ImageVector?,
     val tint: Color,
     val label: String,
     /** 要写进图标里的数字（目前只有"标签页"用），null = 这枚图标不带数字。 */
     val count: Int?,
-    val onClick: () -> Unit
+    val onClick: () -> Unit,
+    /** 自绘图标（与右上角快捷条同一套笔画），null = 用 [icon]。 */
+    val glyph: QuickGlyph? = null,
+    /** 只对盾牌有意义：true = 划一道斜杠（拦截已关闭）。 */
+    val slashed: Boolean = false
 )
 
 /**
- * 宫格五枚图标各自的颜色（用户点名："不应该全是蓝色"）。
+ * 宫格六枚图标各自的颜色（用户点名："不应该全是蓝色"）。
  *
  * 取的是本应用色板同一族的**扁平中调色**（与主题里那几枚 #1A7FE0 / #67C23A / #F56C6C
- * 同一个语系）：五个动作各占一色，扫一眼就能靠颜色定位，而不是五块一样的蓝。
+ * 同一个语系）：六个动作各占一色，扫一眼就能靠颜色定位，而不是六块一样的蓝。
  *
  * 都是中调色（明度接近 50%），浅色底与深色底上都读得清，所以不跟随主题明暗各配一套。
- * 顺序与 [DockMoreSheet] 里的动作一一对应。（原先第六格"设置"已挪到右上角那枚容器里，
- * 那两枚用的是主题的 `onSurfaceVariant` —— 它们要读成"一个容器里的图标"，不该各自带色。）
+ * 顺序与 [DockMoreSheet] 里的动作一一对应。最后一格（广告拦截）是个开关，颜色跟着状态走：
+ * 开着用这里的蓝，关掉退回 [adBlockOffColor] 那档灰 —— 于是它是**唯一**一枚会变色的。
  */
 private val dockMoreColors = listOf(
     Color(0xFF4A90E2), // 标签页：蓝
     Color(0xFF52C41A), // 新建标签：绿
     Color(0xFFFA8C16), // 主页：橙
     Color(0xFF9254DE), // 历史：紫
-    Color(0xFF13C2C2) // 下载页：青
+    Color(0xFF13C2C2), // 下载页：青
+    Color(0xFF4A90E2) // 广告拦截（开着）：蓝
 )
+
+/** 广告拦截**关掉**时盾牌的颜色：退回中性灰，跟"开着"的蓝一眼分得开。 */
+private val adBlockOffColor = Color(0xFF8C9BAB)
 
 /**
  * 宫格里的一项：图标在上、名称在下，整块**等宽**（由调用方给 weight）。
@@ -3016,12 +3033,14 @@ private val dockMoreColors = listOf(
  */
 @Composable
 private fun DockMoreItem(
-    icon: ImageVector,
+    icon: ImageVector?,
     tint: Color,
     label: String,
     count: Int?,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    glyph: QuickGlyph? = null,
+    slashed: Boolean = false
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val interaction = remember { MutableInteractionSource() }
@@ -3046,12 +3065,20 @@ private fun DockMoreItem(
                 },
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(26.dp),
-                tint = tint
-            )
+            when {
+                glyph != null -> QuickGlyphIcon(
+                    glyph = glyph,
+                    tint = tint,
+                    iconSize = 26.dp,
+                    slashed = slashed
+                )
+                icon != null -> Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(26.dp),
+                    tint = tint
+                )
+            }
             if (count != null) {
                 Text(
                     text = if (count > 9) "9+" else count.toString(),
