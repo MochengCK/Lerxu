@@ -94,7 +94,6 @@ Lerxu is a download manager for Windows, macOS, Linux and Android, powered by th
 
 - **Update channels**: stable, preview or all releases, with automatic installation once the package is downloaded
 - **Local RPC service**: an optional JSON-RPC endpoint so external tools can drive the same download process
-- **Engine info**: the current engine, its version, architecture and the capability list it reports
 
 ## Supported Platforms
 
