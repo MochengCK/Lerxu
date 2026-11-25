@@ -92,12 +92,6 @@ const PLAYER_SHOW_FALLBACK_MS = 1800
 const PLAYER_MIN_WIDTH = Number(pageConfig?.player?.attrs?.minWidth) || 460
 const PLAYER_MIN_HEIGHT = Number(pageConfig?.player?.attrs?.minHeight) || 320
 
-/**
- * 端手互通：引擎任务表没有推送通道，主进程每秒拉一次 lan.peers/lan.tasks，
- * 内容变化才转成 `lan:update`（含传输进度）。
- */
-const LAN_POLL_INTERVAL_MS = 1000
-
 export default class Application extends EventEmitter {
   constructor () {
     super()
@@ -1353,7 +1347,7 @@ export default class Application extends EventEmitter {
   /**
    * 渲染进程引擎 RPC 的统一转发路径（主进程持有与引擎的 WebSocket 长连接）。
    *
-   * `engine:rpc` 与 lan:*（端手互通）IPC 都走这里，返回统一的
+   * `engine:rpc` IPC 走这里，返回统一的
    * `{ ok, result }` / `{ ok: false, error: { code, message } }` 合同：
    * Electron 的 IPC 结构化克隆不会传输 Error 的自定义属性（code），
    * 直接 throw 会导致渲染进程拿不到错误码，因此错误以普通对象返回。
@@ -2044,9 +2038,6 @@ export default class Application extends EventEmitter {
     if (is.macOS() && this.touchBarManager) {
       this.touchBarManager.setup(page, win)
     }
-
-    // 端手互通：lan.* 由引擎提供，这里只负责把状态轮询给渲染进程
-    this.startLanPolling()
   }
 
   /**
@@ -2423,9 +2414,6 @@ export default class Application extends EventEmitter {
 
   stop () {
     try {
-      // 端手互通：停掉 lan 状态轮询
-      this.stopLanPolling()
-
       // 主动关闭引擎 WebSocket 客户端，停止自动重连定时器
       if (this.engineClient) {
         this.engineClient.close()
@@ -2678,81 +2666,6 @@ export default class Application extends EventEmitter {
     this.windowManager.getWindowList().forEach(window => {
       this.windowManager.sendMessageTo(window, channel, ...args)
     })
-  }
-
-  /**
-   * 端手互通 · 局域网传输。
-   *
-   * 发现/收发/任务表全部由引擎（`lan.*` RPC）负责；主进程只做两件事：
-   * · 把 `lan:peers` / `lan:tasks` / `lan:send` / `lan:remove` / `lan:cancel`
-   *   转给引擎；
-   * · 轮询一次 `lan.peers` + `lan.tasks`，有变化就推 `lan:update` 给渲染进程
-   *   （沿用原来的事件名，渲染端不用改监听）。
-   */
-  startLanPolling () {
-    if (this._lanPollTimer) {
-      return
-    }
-    this._lanLastPayload = ''
-    this._lanPollTimer = setInterval(() => {
-      this.pollLanState()
-    }, LAN_POLL_INTERVAL_MS)
-    this._lanPollTimer.unref?.()
-    // 启动时先拉一次，别等第一个 tick
-    this.pollLanState()
-  }
-
-  stopLanPolling () {
-    if (this._lanPollTimer) {
-      clearInterval(this._lanPollTimer)
-      this._lanPollTimer = null
-    }
-    this._lanLastPayload = ''
-  }
-
-  async pollLanState () {
-    if (this._lanPolling || !this.engineClient) {
-      return
-    }
-    this._lanPolling = true
-    try {
-      // 旧引擎没有 lan.config：静默降级（按开启处理），不要每轮打一条告警
-      const configPromise = this.engineClient
-        .callForRenderer('lan.config')
-        .catch(() => null)
-      const [peers, tasks, config] = await Promise.all([
-        this.engineClient.call('lan.peers'),
-        this.engineClient.call('lan.tasks'),
-        configPromise
-      ])
-      if (!peers && !tasks) {
-        return
-      }
-      const payload = {
-        peers: Array.isArray(peers && peers.peers) ? peers.peers : [],
-        tasks: Array.isArray(tasks && tasks.tasks) ? tasks.tasks : [],
-        // 旧引擎没有 lan.config：缺省按开启处理，别把互传入口误关掉
-        enabled: config && config.enabled === false ? false : true
-      }
-      const signature = JSON.stringify(payload)
-      if (signature === this._lanLastPayload) {
-        return
-      }
-      this._lanLastPayload = signature
-      this.sendMessageToAll('lan:update', payload)
-    } catch (err) {
-      logger.warn('[Lerxu] lan state poll failed:', err && err.message ? err.message : err)
-    } finally {
-      this._lanPolling = false
-    }
-  }
-
-  /**
-   * 供 lan:* IPC 使用：与 `engine:rpc` 同一条转发路径（统一等引擎、
-   * 统一 { ok, result/error } 合同），不另起一套调用逻辑。
-   */
-  async lanRpc (method, ...args) {
-    return this.callEngineRpc(method, args)
   }
 
   initThemeManager () {
@@ -4998,9 +4911,8 @@ export default class Application extends EventEmitter {
     this._ipcInvokesRegistered = true
 
     registerMediaEngineIpc()
-    // 渲染进程引擎 RPC 统一转发（主进程持有与引擎的 WebSocket 长连接）。
-    // 返回 { ok, result/error } 契约见 callEngineRpc；lan:* 的 IPC 复用
-    // 同一条路径（见 lanRpc）。
+    // 渲染进程引擎 RPC 统一转发（主进程持有与引擎的 WebSocket 长连接），
+    // 返回 { ok, result/error } 契约见 callEngineRpc。
     ipcMain.handle('engine:rpc', async (event, payload) => {
       const { method, args } = payload || {}
       return this.callEngineRpc(method, args)
@@ -5961,109 +5873,6 @@ export default class Application extends EventEmitter {
       }
     })
 
-    // ── 端手互通 · 局域网传输 ─────────────────────────────────────
-    // 全部转发到引擎的 lan.* 原生方法（xfer-lan）。
-    ipcMain.handle('lan:config', async () => {
-      try {
-        return await this.lanRpc('lan.config')
-      } catch (err) {
-        logger.warn('[Lerxu] lan:config failed:', err && err.message ? err.message : err)
-        return { ok: false, error: err && err.message ? err.message : 'config failed' }
-      }
-    })
-
-    ipcMain.handle('lan:set-config', async (_event, patch = {}) => {
-      try {
-        return await this.lanRpc('lan.setConfig', patch && typeof patch === 'object' ? patch : {})
-      } catch (err) {
-        logger.warn('[Lerxu] lan:set-config failed:', err && err.message ? err.message : err)
-        return { ok: false, error: err && err.message ? err.message : 'set config failed' }
-      }
-    })
-
-    ipcMain.handle('lan:peers', async () => {
-      try {
-        const res = await this.lanRpc('lan.peers')
-        if (!res.ok) return []
-        return Array.isArray(res.result && res.result.peers) ? res.result.peers : []
-      } catch (err) {
-        logger.warn('[Lerxu] lan:peers failed:', err && err.message ? err.message : err)
-        return []
-      }
-    })
-
-    ipcMain.handle('lan:tasks', async () => {
-      try {
-        const res = await this.lanRpc('lan.tasks')
-        if (!res.ok) return []
-        return Array.isArray(res.result && res.result.tasks) ? res.result.tasks : []
-      } catch (err) {
-        logger.warn('[Lerxu] lan:tasks failed:', err && err.message ? err.message : err)
-        return []
-      }
-    })
-
-    ipcMain.handle('lan:send', async (_event, payload = {}) => {
-      try {
-        const { peerId, paths } = payload || {}
-        const list = Array.isArray(paths) ? paths : []
-        if (!peerId || list.length === 0) {
-          return { ok: false, error: 'invalid payload' }
-        }
-        const res = await this.lanRpc('lan.send', peerId, list)
-        if (!res.ok) return res
-        const tasks = Array.isArray(res.result && res.result.tasks) ? res.result.tasks : []
-        return { ok: true, tasks }
-      } catch (err) {
-        logger.warn('[Lerxu] lan:send failed:', err && err.message ? err.message : err)
-        return { ok: false, error: err && err.message ? err.message : 'send failed' }
-      }
-    })
-
-    ipcMain.handle('lan:remove', async (_event, taskId, options = {}) => {
-      try {
-        if (!taskId) return { ok: false, error: 'invalid id' }
-        const res = await this.lanRpc('lan.remove', taskId)
-        if (!res.ok) return res
-        // 只用于「接收完成」的落盘文件；发送任务的源文件由渲染端保证不会传进来
-        const deletePath = options && typeof options.deletePath === 'string' ? options.deletePath : ''
-        if (deletePath) {
-          try {
-            await shell.trashItem(deletePath)
-          } catch (err) {
-            logger.warn('[Lerxu] lan:remove trash file failed:', err && err.message ? err.message : err)
-          }
-        }
-        return { ok: true }
-      } catch (err) {
-        logger.warn('[Lerxu] lan:remove failed:', err && err.message ? err.message : err)
-        return { ok: false, error: err && err.message ? err.message : 'remove failed' }
-      }
-    })
-
-    ipcMain.handle('lan:cancel', async (_event, taskId) => {
-      try {
-        if (!taskId) return { ok: false, error: 'invalid id' }
-        const res = await this.lanRpc('lan.cancel', taskId)
-        return res.ok ? { ok: true } : res
-      } catch (err) {
-        logger.warn('[Lerxu] lan:cancel failed:', err && err.message ? err.message : err)
-        return { ok: false, error: err && err.message ? err.message : 'cancel failed' }
-      }
-    })
-
-    ipcMain.handle('lan:open-folder', async (_event, filePath) => {
-      try {
-        if (!filePath || typeof filePath !== 'string') {
-          return { ok: false, error: 'invalid path' }
-        }
-        shell.showItemInFolder(filePath)
-        return { ok: true }
-      } catch (err) {
-        logger.warn('[Lerxu] lan:open-folder failed:', err && err.message ? err.message : err)
-        return { ok: false, error: err && err.message ? err.message : 'open failed' }
-      }
-    })
   }
 
   /**

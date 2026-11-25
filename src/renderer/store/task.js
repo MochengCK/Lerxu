@@ -1081,14 +1081,7 @@ const actions = {
 
         const { selectedGidList } = this
         const gids = filteredData.map((task) => task.gid)
-        // 传输任务的选中项以 `lan:` 前缀标记，不在引擎 gid 集合里，
-        // 不能被每轮 fetchList 的求交集顺手清掉。
-        const lanSelected = selectedGidList.filter(gid => `${gid}`.startsWith('lan:'))
-        const list = [
-          ...intersection(selectedGidList.filter(gid => !`${gid}`.startsWith('lan:')), gids),
-          ...lanSelected
-        ]
-        this.UPDATE_SELECTED_GID_LIST(list)
+        this.UPDATE_SELECTED_GID_LIST(intersection(selectedGidList, gids))
 
         try {
           const saved = (usePreferenceStore() && usePreferenceStore().config && usePreferenceStore().config.taskPriorities) || {}
@@ -2264,9 +2257,7 @@ const actions = {
   },
   batchResumeSelectedTasks () {
     // 选中一条配对记录要展开成它背后的两条引擎任务，否则只恢复了其中一条流；
-    // `lan:` 前缀是传输记录，不能传给引擎
-    const engineGids = this.selectedGidList.filter(gid => !`${gid}`.startsWith('lan:'))
-    const gids = expandPairGids(pairMemberIndex, engineGids)
+    const gids = expandPairGids(pairMemberIndex, this.selectedGidList)
     if (gids.length === 0) {
       return
     }
@@ -2274,8 +2265,7 @@ const actions = {
     return api.batchResumeTask({ gids })
   },
   batchPauseSelectedTasks () {
-    const engineGids = this.selectedGidList.filter(gid => !`${gid}`.startsWith('lan:'))
-    const gids = expandPairGids(pairMemberIndex, engineGids)
+    const gids = expandPairGids(pairMemberIndex, this.selectedGidList)
     if (gids.length === 0) {
       return
     }

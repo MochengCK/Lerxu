@@ -4032,9 +4032,8 @@ const dir = dirname(filePath)
        *
        * ⚠️ 启动早期引擎往往还没起来：主进程对 getVersion 有 3s 兜底，超时后
        * 是**正常返回** `version: 'Unknown'` + 空 `features`（不是 error）。这份
-       * "空能力"一旦被缓存住就再也没有第二次机会 —— 「设置 → 下载 → 互传」分类
-       * 的判据正是 features 含 `lan-config`，于是刚进应用时它一直不显示，
-       * 除非用户恰好点进「高级设置」（那边 onMounted 会再拉一次）。
+       * "空能力"一旦被缓存住就再也没有第二次机会 —— 依赖 features 的设置项
+       * 会一直不显示，除非用户恰好点进「高级设置」（那边 onMounted 会再拉一次）。
        * 所以这里只在"引擎未就绪"时按秒重试，拿到真实版本就停。
        */
       function refreshEngineInfo (attempt = 0) {
@@ -4086,7 +4085,7 @@ const dir = dirname(filePath)
         engineConnectionStable.value = true
 
         // 引擎刚连上：补拉一次能力列表（启动早期那次多半只拿到空 features，
-        // 互传分类、引擎信息卡片都靠它）
+        // 依赖 features 的设置项与引擎信息卡片都靠它）
         refreshEngineInfo()
       }
       function startPolling() {

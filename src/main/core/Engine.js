@@ -1,5 +1,5 @@
 import { spawn, execFile } from 'node:child_process'
-import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile, writeFileSync } from 'node:fs'
+import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import is from '@shared/platform'
 
@@ -66,10 +66,6 @@ export default class Engine {
     // 强制结束主进程），PID 文件会残留且对应进程仍存活，此时若直接
     // spawn 新进程会导致两个引擎并存，旧进程继续下载、占用端口。
     await this.killStaleProcess(pidPath)
-
-    // 首次启动给互传落一份"默认关闭"的配置：旧引擎二进制的默认值是开启，
-    // 这里在拉起前补文件，保证新安装默认不暴露设备。已有配置不覆盖。
-    this.ensureLanConfigDefault()
 
     // 启动前截断旧日志，防止日志文件无限增长占用磁盘
     this.truncateEngineLog()
@@ -149,25 +145,6 @@ export default class Engine {
     // 同步发信号杀掉引擎，否则任何异步路径（will-quit/setImmediate/
     // setTimeout）都可能在主进程退出前没机会执行。
     this.registerExitHandlers()
-  }
-
-  /** 互传首次启动默认关闭（lan-config.json 与引擎会话同目录，即 userData 根）。 */
-  ensureLanConfigDefault () {
-    try {
-      const dir = getUserDataPath()
-      const lanConfigPath = resolve(dir, 'lan-config.json')
-      if (existsSync(lanConfigPath)) {
-        return
-      }
-      mkdirSync(dir, { recursive: true })
-      writeFileSync(
-        lanConfigPath,
-        JSON.stringify({ enabled: false, deviceName: '', recvDir: '' }, null, 2),
-        'utf8'
-      )
-    } catch (e) {
-      logger.warn('[Lerxu] seed lan config failed:', e && e.message ? e.message : e)
-    }
   }
 
   /**

@@ -367,13 +367,6 @@ function onDateFilterClick ({ event, rect }) {
   toggleDatePicker(rect)
 }
 
-function lanMatchesCurrentList (task, list) {
-  if (!list || list === 'all') return true
-  if (list === 'active') return task.status === 'active'
-  if (list === 'waiting') return task.status === 'waiting'
-  return task.status === 'done' || task.status === 'error'
-}
-
 async function loadTaskDateCounts () {
   const counts = {}
   const normalizeTimestamp = (value) => {
@@ -404,23 +397,6 @@ async function loadTaskDateCounts () {
     if (timestamp <= 0) {
       return
     }
-    const date = new Date(timestamp)
-    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-    counts[dateStr] = (counts[dateStr] || 0) + 1
-  })
-
-  // 传输记录与普通历史同一口径：终态按完成时间归档
-  let lanTasks = []
-  try {
-    lanTasks = await ipcRenderer.invoke('lan:tasks')
-  } catch (_) {
-    lanTasks = []
-  }
-  ;(Array.isArray(lanTasks) ? lanTasks : []).forEach(task => {
-    if (!task || !lanMatchesCurrentList(task, currentList.value)) return
-    const finished = task.status === 'done' || task.status === 'error'
-    const timestamp = normalizeTimestamp(finished ? (task.finishedAt || task.createdAt) : task.createdAt)
-    if (timestamp <= 0) return
     const date = new Date(timestamp)
     const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
     counts[dateStr] = (counts[dateStr] || 0) + 1
@@ -871,115 +847,21 @@ function handleDeleteTaskRecord (payload) {
   })
 }
 
-/**
- * 端手互通：移除一条传输记录。
- * 与普通任务同一条确认口径；只有「接收完成」的记录才有可删的落盘文件，
- * 发送任务的源文件不能由这里删除。
- */
-function handleRemoveLanTask (payload) {
-  const task = payload && payload.task
-  if (!task || !task.id) {
-    return
-  }
-  const taskName = `${task.name || ''}`.trim() || `${task.id}`
-  const canDeleteFile = task.direction === 'in' && task.status === 'done' && !!task.path
-  const confirmAndRemove = (deleteFile) => {
-    const deletePath = deleteFile && canDeleteFile ? task.path : ''
-    ipcRenderer.invoke('lan:remove', task.id, { deletePath }).then((result) => {
-      if (result && result.ok === false) {
-        msg.error(t('task.transfer-action-fail'))
-      }
-    }).catch(() => {
-      msg.error(t('task.transfer-action-fail'))
-    })
-  }
-  if (noConfirmBeforeDelete.value) {
-    confirmAndRemove(false)
-    return
-  }
-  showMessageBox({
-    type: 'warning',
-    title: t('task.transfer-remove-record'),
-    message: t('task.transfer-remove-confirm', { taskName }),
-    buttons: [t('app.yes'), t('app.no')],
-    cancelId: 1,
-    checkboxLabel: canDeleteFile ? t('task.transfer-remove-file-label') : undefined,
-    checkboxChecked: false
-  }).then(({ response, checkboxChecked }) => {
-    if (response === 0) {
-      confirmAndRemove(!!checkboxChecked)
-    }
-  })
-}
-
-const LAN_SELECTION_PREFIX = 'lan:'
-
-async function fetchSelectedLanTasks () {
-  const ids = (selectedGidList.value || [])
-    .filter(id => `${id}`.startsWith(LAN_SELECTION_PREFIX))
-    .map(id => `${id}`.slice(LAN_SELECTION_PREFIX.length))
-  if (ids.length === 0) return []
-  try {
-    const tasks = await ipcRenderer.invoke('lan:tasks')
-    const wanted = new Set(ids)
-    return (Array.isArray(tasks) ? tasks : []).filter(task => task && wanted.has(task.id))
-  } catch (_) {
-    return []
-  }
-}
-
-function removeLanTaskRecords (lanTasks, deleteWithFiles, silentSuccess) {
-  const tasks = Array.isArray(lanTasks) ? lanTasks : []
-  if (tasks.length === 0) return
-  const ids = new Set(tasks.map(task => `${task.id}`))
-  const jobs = tasks.map(task => {
-    // 与单条移除同一口径：只有接收完成的记录才有可删的落盘文件
-    const canDeleteFile = task.direction === 'in' && task.status === 'done' && !!task.path
-    const deletePath = deleteWithFiles && canDeleteFile ? task.path : ''
-    return ipcRenderer.invoke('lan:remove', task.id, { deletePath })
-      .then(result => !(result && result.ok === false))
-      .catch(() => false)
-  })
-  Promise.all(jobs).then(results => {
-    const rest = (selectedGidList.value || []).filter(id => {
-      const text = `${id}`
-      return !text.startsWith(LAN_SELECTION_PREFIX) ||
-        !ids.has(text.slice(LAN_SELECTION_PREFIX.length))
-    })
-    taskStore.selectTasks(rest)
-    if (results.every(Boolean)) {
-      if (!silentSuccess) msg.success(t('task.batch-delete-task-success'))
-    } else {
-      msg.error(t('task.transfer-action-fail'))
-    }
-  })
-}
-
 async function handleBatchDeleteTask (payload) {
   const { deleteWithFiles } = payload
   const selectedIds = selectedGidList.value || []
   if (selectedIds.length === 0) {
     return
   }
-  const engineGids = new Set(
-    selectedIds
-      .filter(id => !`${id}`.startsWith(LAN_SELECTION_PREFIX))
-      .map(id => `${id}`)
-  )
+  const engineGids = new Set(selectedIds.map(id => `${id}`))
   const selectedTaskList = taskList.value.filter(task => engineGids.has(`${task.gid}`))
-  const lanTasks = await fetchSelectedLanTasks()
-  const totalCount = selectedTaskList.length + lanTasks.length
+  const totalCount = selectedTaskList.length
   if (totalCount === 0) {
     taskStore.selectTasks([])
     return
   }
   const runDelete = (withFiles) => {
-    if (selectedTaskList.length > 0) {
-      removeTasks(selectedTaskList, withFiles)
-    }
-    if (lanTasks.length > 0) {
-      removeLanTaskRecords(lanTasks, withFiles, selectedTaskList.length > 0)
-    }
+    removeTasks(selectedTaskList, withFiles)
   }
   if (noConfirmBeforeDelete.value) {
     runDelete(deleteWithFiles)
@@ -1087,7 +969,6 @@ onMounted(() => {
   commands.on('reveal-in-folder', handleRevealInFolder)
   commands.on('delete-task', handleDeleteTask)
   commands.on('delete-task-record', handleDeleteTaskRecord)
-  commands.on('remove-lan-task', handleRemoveLanTask)
   commands.on('batch-delete-task', handleBatchDeleteTask)
   commands.on('copy-task-link', handleCopyTaskLink)
   commands.on('show-task-info', handleShowTaskInfo)
@@ -1119,7 +1000,6 @@ onUnmounted(() => {
   commands.off('reveal-in-folder', handleRevealInFolder)
   commands.off('delete-task', handleDeleteTask)
   commands.off('delete-task-record', handleDeleteTaskRecord)
-  commands.off('remove-lan-task', handleRemoveLanTask)
   commands.off('batch-delete-task', handleBatchDeleteTask)
   commands.off('copy-task-link', handleCopyTaskLink)
   commands.off('show-task-info', handleShowTaskInfo)

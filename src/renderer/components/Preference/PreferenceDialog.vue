@@ -70,13 +70,11 @@ import { useAppStore } from '@/store'
 import { storeToRefs } from 'pinia'
 import PreferenceBasic from '@/components/Preference/Basic.vue'
 import PreferenceAdvanced from '@/components/Preference/Advanced.vue'
-import PreferenceLanShare from '@/components/Preference/LanShare.vue'
 
 // 导入侧边栏导航图标
 import '@/components/Icons/preference-basic'
 import '@/components/Icons/preference-appearance'
 import '@/components/Icons/preference-transfer'
-import '@/components/Icons/sync'
 import '@/components/Icons/preference-bt'
 import '@/components/Icons/preference-extension'
 import '@/components/Icons/preference-task'
@@ -96,12 +94,6 @@ const dialogVisible = computed({
 
 const currentCategory = computed(() => preferenceCategory.value || 'basic')
 
-// 互传设置依赖引擎的 lan.config / lan.setConfig；旧引擎不显示这个分类
-const lanShareSupported = computed(() => {
-  const features = engineInfo.value && engineInfo.value.features
-  return Array.isArray(features) && features.includes('lan-config')
-})
-
 const contentRef = ref(null)
 
 // 侧边栏分类：与主窗口侧边栏同构，按「设置 → 下载 → 扩展」三组排列。
@@ -120,9 +112,6 @@ const preferenceNavSections = computed(() => [
     label: t('preferences.section-download'),
     items: [
       { value: 'transfer', label: t('preferences.transfer-settings'), icon: 'preference-transfer' },
-      ...(lanShareSupported.value
-        ? [{ value: 'share', label: t('preferences.lan-share'), icon: 'sync' }]
-        : []),
       { value: 'bt', label: t('preferences.bt-settings'), icon: 'preference-bt' },
       { value: 'task', label: t('preferences.task-manage'), icon: 'preference-task' },
       { value: 'file', label: t('preferences.file-manage'), icon: 'preference-file' }
@@ -149,8 +138,6 @@ const preferenceFormComponent = computed(() => {
   switch (currentCategory.value) {
     case 'advanced':
       return PreferenceAdvanced
-    case 'share':
-      return PreferenceLanShare
     default:
       return PreferenceBasic
   }
@@ -172,9 +159,9 @@ function onDialogOpen () {
     if (contentRef.value) contentRef.value.scrollTop = 0
   })
   // 引擎能力可能还没拉回来（启动早期那次 getVersion 超时只返回空 features）⇒
-  // 打开设置时补拉一次；拿到 lan-config 后「互传」分类会自己出现
+  // 打开设置时补拉一次（「高级」里的引擎信息卡片读的是它）
   const features = (engineInfo.value && engineInfo.value.features) || []
-  if (!lanShareSupported.value && features.length === 0) {
+  if (features.length === 0) {
     appStore.fetchEngineInfo().catch(() => {})
   }
 }

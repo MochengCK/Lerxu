@@ -243,19 +243,6 @@ object EngineManager {
         return file.canExecute()
     }
 
-    /** 首次启动写入互传默认配置（关闭）；已有配置不覆盖。 */
-    private fun ensureLanConfigDefault() {
-        try {
-            val dir = File(appContext.filesDir, ".xfer")
-            val file = File(dir, "lan-config.json")
-            if (file.exists()) return
-            dir.mkdirs()
-            file.writeText("""{"enabled":false,"deviceName":"","recvDir":""}""")
-        } catch (e: Exception) {
-            Log.w(TAG, "seed lan config failed: ${e.message}")
-        }
-    }
-
     /**
      * 启动 xferrust 守护进程。
      * 等待 RPC 端口就绪后返回。
@@ -294,10 +281,6 @@ object EngineManager {
                 return false
             }
             Log.i(TAG, "Engine binary: $binPath (exists=${binFile.exists()}, exec=${binFile.canExecute()}, len=${binFile.length()})")
-
-            // 互传首次启动默认关闭：旧引擎二进制默认开启，这里在拉起前补配置；
-            // 已存在的配置（用户改过设备名/开关）不覆盖。
-            ensureLanConfigDefault()
 
             // 连接/节点默认值：用户在设置页改过则用持久化偏好，
             // 否则用移动端新默认（split/单服务器 32、BT 节点 100）。

@@ -43,70 +43,6 @@
           <div v-show="taskType === 'torrent'" class="add-task-content-pane">
             <mo-select-torrent ref="selectTorrent" :dir="form.dir" @change="handleTorrentChange" />
           </div>
-          <!-- 端手互通：局域网文件传输。第一项是文件选择框（与种子任务同款），
-               下面是接收设备选择；传输记录统一显示在主列表里 -->
-          <div v-show="taskType === 'transfer'" class="add-task-content-pane lan-panel">
-            <template v-if="lanEnabled">
-              <el-upload
-                ref="lanUploadRef"
-                class="lan-upload"
-                drag
-                action="/"
-                multiple
-                :auto-upload="false"
-                :show-file-list="false"
-                :on-change="handleLanUploadChange"
-              >
-                <i class="lan-upload__icon"><mo-icon name="inbox" width="24" height="24" /></i>
-                <div class="el-upload__text">
-                  {{ t('task.transfer-drop-hint') }}
-                  <div class="lan-upload__sub">{{ t('task.transfer-drop-sub') }}</div>
-                </div>
-              </el-upload>
-
-              <div v-if="lanFiles.length > 0" class="lan-files">
-                <div class="lan-file" v-for="(file, index) in lanFiles" :key="file.path">
-                  <span class="lan-file__name" :title="file.path">{{ file.name }}</span>
-                  <button type="button" class="lan-file__remove" :aria-label="t('task.transfer-remove')" @click.stop="removeLanFile(index)">×</button>
-                </div>
-              </div>
-
-              <el-select
-                v-model="lanSelectedPeerId"
-                class="lan-peer-select"
-                :placeholder="lanPeers.length > 0 ? t('task.transfer-select-device') : t('task.transfer-no-devices')"
-                :no-data-text="t('task.transfer-no-devices')"
-              >
-                <el-option
-                  v-for="peer in lanPeers"
-                  :key="peer.id"
-                  :label="peerLabel(peer)"
-                  :value="peer.id"
-                >
-                  <span class="lan-peer-option">
-                    <span class="lan-peer-dot" :class="{ 'is-online': peer.online }"></span>
-                    <span class="lan-peer-name">{{ peer.name }}</span>
-                    <span class="lan-peer-meta">{{ platformLabel(peer.platform) }} · {{ peer.address }}</span>
-                  </span>
-                </el-option>
-              </el-select>
-
-              <!-- macOS 15 起「本地网络」是单独授权项：没有它，广播发现和
-                   TCP 直连都会被内核静默拒掉（表现为"附近没有设备"或
-                   "不在同一网络"）。只在这一项最可能出问题时提示，不常驻。 -->
-              <div v-if="showLanPermissionHint" class="lan-permission-hint">
-                <span>{{ t('task.transfer-permission-hint') }}</span>
-                <button type="button" class="lan-permission-link" @click="openLanPrivacySettings">
-                  {{ t('task.transfer-permission-open') }}
-                </button>
-              </div>
-            </template>
-            <div v-else class="lan-panel-disabled">
-              <i class="lan-disabled-icon"><mo-icon name="sync" width="26" height="26" /></i>
-              <div class="lan-disabled-title">{{ t('task.transfer-disabled-title') }}</div>
-              <div class="lan-disabled-sub">{{ t('task.transfer-disabled-sub') }}</div>
-            </div>
-          </div>
           <!-- SFTP：主机 / 端口 / 用户名 / 密码 / 远程路径 / 文件名。
                密码不进 URL，单独作为逐任务选项下发（任务列表与会话里不留明文） -->
           <div v-show="taskType === 'sftp'" class="add-task-content-pane sftp-panel">
@@ -257,7 +193,7 @@
             </el-table>
           </div>
         </div>
-      <el-row :gutter="12" v-if="!isTransferMode">
+      <el-row :gutter="12">
 
         <el-col :span="24" :xs="24">
           <el-form-item
@@ -277,7 +213,6 @@
         </el-col>
       </el-row>
       <el-form-item
-        v-if="!isTransferMode"
         :label="`${t('task.task-dir')}: `"
         :label-width="formLabelWidth"
       >
@@ -301,7 +236,7 @@
           </template>
         </el-input>
       </el-form-item>
-      <div class="task-advanced-options" v-if="showAdvanced && !isTransferMode && !isSftpMode">
+      <div class="task-advanced-options" v-if="showAdvanced && !isSftpMode">
         <el-row :gutter="8" style="margin-bottom: 8px; align-items:center;">
           <el-col :span="16" :xs="14">
             <el-form-item :label="`${t('task.advanced-presets')}: `" :label-width="formLabelWidth">
@@ -425,8 +360,8 @@
 <template #footer>
 <div class="dialog-footer">
         <el-checkbox
-:model-value="showAdvanced && !isTransferMode && !isSftpMode"
-:disabled="isTransferMode || isSftpMode"
+:model-value="showAdvanced && !isSftpMode"
+:disabled="isSftpMode"
 class="chk"
 @update:model-value="(val) => { showAdvanced = !!val }"
 >
@@ -435,10 +370,9 @@ class="chk"
         <el-button
           type="primary"
           class="dialog-submit-btn"
-          :disabled="isTransferMode && !canSendTransfer"
           @click="submitForm()"
         >
-          {{isTransferMode ? t('task.transfer-send') : t('app.submit')}}
+          {{t('app.submit')}}
         </el-button>
       </div>
 </template>
@@ -471,7 +405,7 @@ import { isEmpty } from '@shared/utils/object'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import is from '@shared/platform'
-import { ipcRenderer, webUtils } from 'electron'
+import { ipcRenderer } from 'electron'
 
 // mo-history-directory, mo-select-directory, mo-select-torrent,
 // mo-segmented-slider, mo-hover-tip, mo-extend-select are globally registered in main.js
@@ -485,15 +419,12 @@ import {
 import i18n from '@/plugins/i18n'
 import api from '@/api'
 import { createMsg } from '@/components/Msg'
-import { openExternal } from '@/utils/nativeBridge'
 import { useAppStore } from '@/store/app'
 import { useTaskStore } from '@/store/task'
 import { usePreferenceStore } from '@/store/preference'
 import { storeToRefs } from 'pinia'
 import { ADD_TASK_TYPE } from '@shared/constants'
 import { detectResource, splitTaskLinks, normalizeCookie, generateUniqueTaskName } from '@shared/utils'
-import '@/components/Icons/inbox'
-import '@/components/Icons/sync'
 import '@/components/Icons/folder'
 import '@/components/Icons/link'
 import { Close } from '@element-plus/icons-vue'
@@ -532,22 +463,6 @@ const lastDuplicateHistoryKey = ref('')
 const keepTrailingNewline = ref(false)
 const advancedPresets = ref([])
 const selectedAdvancedPresetId = ref('')
-
-// --- 端手互通 · 局域网文件传输 ---
-// 主进程负责发现 / 传输；这里只做"选文件 + 选设备 + 发送"。
-// 传输记录不在弹窗里重复展示 —— 它们已经并进主界面的任务列表。
-const lanPeers = ref([])
-const lanSelectedPeerId = ref('')
-const lanFiles = ref([])
-const lanUploadRef = ref(null)
-const lanEnabled = ref(true)
-// 设备列表空着时，别在打开面板的头几秒就弹出权限提示（正常发现要 2s 左右）
-const lanHintReady = ref(false)
-const LAN_HINT_DELAY = 4000
-let lanHintTimer = null
-const showLanPermissionHint = computed(() => (
-  is.macOS() && lanHintReady.value && lanPeers.value.length === 0
-))
 
 // HLS（m3u8）清晰度：空值 = 引擎默认（主清单里码率最高的变体）。
 // 只对播放列表清单地址有效；普通地址选了也无效（引擎按普通文件下载）。
@@ -608,8 +523,6 @@ const isPriorityEngineEnabled = computed(() => !!(config.value && config.value.e
 const hlsVariantDefault = computed(() => ((config.value && config.value.hlsVariant) === 'worst' ? 'worst' : ''))
 const hlsWriteModeDefault = computed(() => ((config.value && config.value.hlsWriteMode) === 'ordered' ? 'ordered' : ''))
 const taskType = computed(() => props.type === 'video' ? ADD_TASK_TYPE.URI : props.type)
-const isTransferMode = computed(() => taskType.value === ADD_TASK_TYPE.TRANSFER)
-const canSendTransfer = computed(() => lanEnabled.value && !!lanSelectedPeerId.value && lanFiles.value.length > 0)
 // SFTP 是独立表单：目录/线程数仍然共用；HTTP 那套高级选项（Referer、Cookie、
 // 代理）对它没有意义，切到这一页时整块隐藏。
 const isSftpMode = computed(() => taskType.value === 'sftp')
@@ -623,8 +536,7 @@ const splitModel = computed({
 const taskTypeOptions = computed(() => [
   { value: 'uri', label: t('task.uri-task') },
   { value: 'torrent', label: t('task.torrent-task') },
-  { value: 'sftp', label: t('task.sftp-task') },
-  { value: 'transfer', label: t('task.transfer-task') }
+  { value: 'sftp', label: t('task.sftp-task') }
 ])
 const parsedTableMaxHeight = computed(() => {
   const count = parsedTasks.value.length
@@ -641,10 +553,6 @@ watch(taskType, (current, previous) => {
   // 切换任务类型时清除解析预览，防止种子文件列表显示在链接任务的解析框中
   if (current !== previous) {
     parsedTasks.value = []
-  }
-
-  if (current === ADD_TASK_TYPE.TRANSFER) {
-    refreshLanState()
   }
 
   if (props.visible && isUriLikeType(previous)) {
@@ -698,7 +606,6 @@ watch(() => form.value.hlsWriteMode, (cur, prev) => syncRowHlsOption('hlsWriteMo
 // --- Lifecycle ---
 onMounted(() => {
   dialogVisible.value = props.visible
-  ipcRenderer.on('lan:update', handleLanUpdate)
   if (props.visible && !dialogOpenInitialized.value) {
     handleOpen()
     nextTick(() => {
@@ -708,12 +615,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  ipcRenderer.removeListener('lan:update', handleLanUpdate)
   btPreviewTokens.clear()
-  if (lanHintTimer) {
-    clearTimeout(lanHintTimer)
-    lanHintTimer = null
-  }
   if (_btPreviewDirTimer) {
     clearTimeout(_btPreviewDirTimer)
     _btPreviewDirTimer = null
@@ -979,9 +881,6 @@ function handleOpen () {
   selectedAdvancedPresetId.value = ''
   onAdvancedPresetChange('')
   loadAdvancedPresets()
-  if (isTransferMode.value) {
-    refreshLanState()
-  }
   if (isUriLikeType(taskType.value)) {
     if (addTaskUrlFromStore.value) {
       applyUrlFromStore(addTaskUrlFromStore.value, '')
@@ -1109,7 +1008,6 @@ function reset () {
   btPreviewTokens.clear()
   form.value = initTaskForm(buildStoreState())
   parsedTasks.value = []
-  lanFiles.value = []
   lastDuplicateHistoryKey.value = ''
   _historyUrlSet = null
   selectedAdvancedPresetId.value = ''
@@ -1470,162 +1368,6 @@ function updateTorrentPreview () {
   parsedTasks.value = items
 }
 
-// --- 端手互通 · 局域网文件传输 ---
-// 弹窗里只做"选文件 + 选接收设备 + 发送"，传输记录统一显示在主任务列表。
-
-function handleLanUpdate (_event, payload) {
-  applyLanPayload(payload)
-}
-
-function applyLanPayload (payload) {
-  if (!payload || typeof payload !== 'object') {
-    return
-  }
-  if (Array.isArray(payload.peers)) {
-    lanPeers.value = payload.peers
-  }
-  if (typeof payload.enabled === 'boolean') {
-    lanEnabled.value = payload.enabled
-  }
-  ensureLanPeerSelected()
-}
-
-/** 打开面板时兜底拉一次：lan:update 只推变化，错过一帧也不至于空白 */
-async function refreshLanState () {
-  scheduleLanHint()
-  try {
-    const [peers, configResult] = await Promise.all([
-      ipcRenderer.invoke('lan:peers'),
-      ipcRenderer.invoke('lan:config')
-    ])
-    const config = configResult && configResult.ok ? configResult.result : null
-    applyLanPayload({
-      peers,
-      enabled: config ? config.enabled !== false : true
-    })
-  } catch (_) {}
-}
-
-function ensureLanPeerSelected () {
-  const alive = lanPeers.value.some(peer => peer.id === lanSelectedPeerId.value)
-  if (alive) {
-    return
-  }
-  lanSelectedPeerId.value = lanPeers.value.length > 0 ? lanPeers.value[0].id : ''
-}
-
-/**
- * 「可能没权限」的计时：一轮发现（2s 一轮）过去还是空的才提示。
- * 真没权限时列表永远空着，第 4 秒起给一条去系统设置的入口。
- */
-function scheduleLanHint () {
-  clearTimeout(lanHintTimer)
-  lanHintReady.value = false
-  if (lanPeers.value.length > 0) {
-    return
-  }
-  lanHintTimer = setTimeout(() => {
-    lanHintReady.value = true
-  }, LAN_HINT_DELAY)
-}
-
-/** 深链直达 系统设置 › 隐私与安全性 › 本地网络（macOS 13+ 的 URL scheme）。 */
-function openLanPrivacySettings () {
-  openExternal(
-    'x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocalNetwork'
-  )
-}
-
-function platformLabel (platform) {
-  const labels = {
-    macos: 'macOS',
-    windows: 'Windows',
-    linux: 'Linux',
-    android: 'Android'
-  }
-  return labels[`${platform || ''}`.toLowerCase()] || (platform || '-')
-}
-
-/** 下拉里的一项：名称 · 平台 · IP（与协议发现报文字段一致） */
-function peerLabel (peer) {
-  return `${peer.name} · ${platformLabel(peer.platform)} · ${peer.address}`
-}
-
-/** el-upload 的拖拽与点选都走 on-change（一次多选会逐个触发，交给去重） */
-function handleLanUploadChange (uploadFile) {
-  const filePath = resolveDroppedPath(uploadFile && uploadFile.raw)
-  if (filePath) {
-    addLanPaths([filePath])
-  }
-  // 清掉 upload 内部列表，避免同一文件二次选择时不触发 change
-  nextTick(() => {
-    try { lanUploadRef.value?.clearFiles() } catch (_) {}
-  })
-}
-
-function addLanPaths (paths) {
-  const added = []
-  for (const filePath of paths) {
-    if (typeof filePath !== 'string' || !filePath) continue
-    if (lanFiles.value.some(item => item.path === filePath)) continue
-    if (added.some(item => item.path === filePath)) continue
-    added.push({ path: filePath, name: fileNameOf(filePath) })
-  }
-  if (added.length > 0) {
-    lanFiles.value = [...lanFiles.value, ...added]
-  }
-}
-
-function removeLanFile (index) {
-  lanFiles.value = lanFiles.value.filter((_, i) => i !== index)
-}
-
-/** Electron 32+ 已移除 File.path，必须走 webUtils 才能拿到绝对路径 */
-function resolveDroppedPath (file) {
-  if (!file) {
-    return ''
-  }
-  try {
-    if (webUtils && typeof webUtils.getPathForFile === 'function') {
-      const filePath = webUtils.getPathForFile(file)
-      if (filePath) {
-        return filePath
-      }
-    }
-  } catch (_) {}
-  return typeof file.path === 'string' ? file.path : ''
-}
-
-function fileNameOf (filePath) {
-  const name = `${filePath || ''}`.split(/[\\/]/).pop()
-  return name || filePath
-}
-
-/**
- * 发送：每个文件在主进程建一条 out 任务、串行发送。
- * 入队成功就收起弹窗（进度回主任务列表里看）；失败则留在弹窗里让用户重试。
- */
-async function sendLanFiles () {
-  if (!canSendTransfer.value) {
-    return false
-  }
-  try {
-    const result = await ipcRenderer.invoke('lan:send', {
-      peerId: lanSelectedPeerId.value,
-      paths: lanFiles.value.map(item => item.path)
-    })
-    if (!result || !result.ok) {
-      msg.error(t('task.transfer-send-fail'))
-      return false
-    }
-    lanFiles.value = []
-    return true
-  } catch (_) {
-    msg.error(t('task.transfer-send-fail'))
-    return false
-  }
-}
-
 function bytesToSize (n) {
   if (!n || n <= 0) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -1665,13 +1407,6 @@ async function addTask (type, formData) {
 }
 
 async function submitForm () {
-  if (isTransferMode.value) {
-    if (await sendLanFiles()) {
-      handleClose()
-    }
-    return
-  }
-
   // SFTP：地址由表单拼，密码走逐任务选项（不进 URL）。校验失败时把字段级
   // 原因直接弹出来，不做静默忽略。
   if (isSftpMode.value) {
@@ -2200,186 +1935,6 @@ async function submitForm () {
   .el-table th.gutter {
     display: none !important;
     border-bottom: none !important;
-  }
-}
-
-/* ── 端手互通 · 局域网文件传输 ─────────────────────────────────── */
-.lan-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 2px 0 4px;
-
-  /* 文件选择框：与种子任务（SelectTorrent.vue）同款 el-upload drag 外观 */
-  .lan-upload {
-    width: 100%;
-    margin: 0;
-    display: block;
-
-    .el-upload,
-    .el-upload-dragger {
-      width: 100%;
-      margin: 0;
-    }
-
-    .el-upload {
-      display: block;
-    }
-
-    .el-upload-dragger {
-      padding: 16px 24px;
-      height: auto;
-      border-radius: 8px;
-      min-height: 0;
-    }
-
-    &__icon {
-      display: inline-block;
-      margin-bottom: 12px;
-    }
-
-    &__sub {
-      margin-top: 4px;
-      font-size: var(--el-font-size-small);
-      color: var(--el-text-color-secondary);
-      line-height: 16px;
-    }
-  }
-
-  .lan-panel-disabled {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 170px;
-    padding: 24px 16px;
-    text-align: center;
-    color: var(--el-text-color-secondary);
-
-    .lan-disabled-icon {
-      display: inline-flex;
-      opacity: 0.55;
-      margin-bottom: 10px;
-    }
-
-    .lan-disabled-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--el-text-color-primary);
-      line-height: 20px;
-    }
-
-    .lan-disabled-sub {
-      margin-top: 4px;
-      max-width: 340px;
-      font-size: 12px;
-      line-height: 18px;
-      color: var(--el-text-color-secondary);
-    }
-  }
-
-  .lan-files {
-    max-height: 116px;
-    overflow-y: auto;
-  }
-
-  .lan-file {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    height: 26px;
-    font-size: 12px;
-
-    &__name {
-      flex: 1 1 auto;
-      min-width: 0;
-      color: var(--lc-text-regular);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    &__remove {
-      flex: none;
-      width: 18px;
-      height: 18px;
-      padding: 0;
-      border: none;
-      border-radius: 4px;
-      background: transparent;
-      color: var(--lc-text-secondary);
-      font-size: 14px;
-      line-height: 1;
-      cursor: pointer;
-
-      &:hover {
-        color: var(--lc-text-primary);
-        background-color: var(--lc-bg-hover);
-      }
-    }
-  }
-
-  /* 设备选择：与「选择存储路径」同类的输入框视觉 */
-  .lan-peer-select {
-    width: 100%;
-  }
-
-  /* 「本地网络」权限提示：只在 macOS 且列表长时间为空时出现 */
-  .lan-permission-hint {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: -4px;
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--lc-text-secondary);
-  }
-
-  .lan-permission-link {
-    flex: none;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--lc-color-primary);
-    font-size: 12px;
-    line-height: 18px;
-    cursor: pointer;
-
-    &:hover {
-      text-decoration: underline;
-    }
-  }
-}
-
-.lan-peer-option {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-
-  .lan-peer-dot {
-    flex: none;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background-color: var(--lc-text-disabled);
-
-    &.is-online {
-      background-color: var(--lc-color-success);
-    }
-  }
-
-  .lan-peer-name {
-    color: var(--lc-text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .lan-peer-meta {
-    flex: none;
-    color: var(--lc-text-secondary);
-    font-size: 12px;
   }
 }
 </style>

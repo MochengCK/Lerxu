@@ -88,22 +88,15 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.lerxu.android.R
 import com.lerxu.android.engine.EngineManager
-import com.lerxu.android.model.LanPeer
 import com.lerxu.android.model.TaskFile
 import com.lerxu.android.ui.LerxuAdd
 import com.lerxu.android.ui.LerxuCheckCircle
-import com.lerxu.android.ui.LerxuChevronRight
 import com.lerxu.android.ui.LerxuCircle
 import com.lerxu.android.ui.LerxuClose
-import com.lerxu.android.ui.LerxuComputer
-import com.lerxu.android.ui.LerxuDevices
 import com.lerxu.android.ui.LerxuDownload
 import com.lerxu.android.ui.LerxuFolder
 import com.lerxu.android.ui.LerxuPaste
-import com.lerxu.android.ui.LerxuPhone
 import com.lerxu.android.ui.LerxuPlay
-import com.lerxu.android.ui.LerxuSend
-import com.lerxu.android.ui.LerxuUpload
 import com.lerxu.android.ui.TaskViewModel
 import com.lerxu.android.ui.formatBytes
 import com.lerxu.android.ui.theme.lerxuExtraColors
@@ -114,11 +107,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** 输入区的三种模式（滑块那三档）。 */
-private enum class AddMode { Link, Local, Transfer }
-
-/** 文件传输面板里已选中的本地文件（保留显示名，免得发送时再查一遍）。 */
-private data class PickedFile(val uri: Uri, val name: String)
+/** 输入区的两种模式（滑块那两档）。 */
+private enum class AddMode { Link, Local }
 
 /**
  * 添加任务 —— 底部**悬浮卡片**。
@@ -189,24 +179,10 @@ fun AddTaskDialog(
     var torrentName by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var clipboardSuggestion by remember { mutableStateOf<String?>(null) }
-    // 链接 / 本地播放 / 文件传输
+    // 链接 / 本地播放
     var mode by remember { mutableStateOf(AddMode.Link) }
     // 自动聚焦只发生在**刚打开这一下**：从目录 / 种子 / 本地播放选择器回来时不再抢焦点
     var autoFocusPending by remember { mutableStateOf(true) }
-
-    // ── 文件传输（设备与任务都来自引擎 lan.*，安卓端不再自己跑发现） ──
-    val peers by viewModel.lanPeers.collectAsState()
-    var selectedPeerId by remember { mutableStateOf<String?>(null) }
-    var pickedFiles by remember { mutableStateOf<List<PickedFile>>(emptyList()) }
-    // 总开关关闭时，传输面板只显示提示，不拉起设备/文件选择
-    var lanEnabled by remember { mutableStateOf(true) }
-    val selectedPeer = peers.firstOrNull { it.id == selectedPeerId }
-
-    // 选中的设备离线后清掉选择，避免"发给一台已经看不见的机器"
-    LaunchedEffect(peers) {
-        val current = selectedPeerId
-        if (current != null && peers.none { it.id == current }) selectedPeerId = null
-    }
 
     var pendingGid by remember { mutableStateOf<String?>(null) }
     var pendingName by remember { mutableStateOf("") }
@@ -449,68 +425,13 @@ fun AddTaskDialog(
         }
     }
 
-    // ── 文件传输：系统选择器（多选） ──
-    val transferPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris: List<Uri> ->
-        if (uris.isNotEmpty()) {
-            scope.launch {
-                val added = withContext(Dispatchers.IO) {
-                    uris.map { uri ->
-                        val fallback = uri.lastPathSegment.orEmpty().substringAfterLast('/')
-                        PickedFile(uri, queryFileName(context, uri) ?: fallback.ifEmpty { "file" })
-                    }
-                }
-                // 同一个文件重复选不叠加
-                pickedFiles = (pickedFiles + added).distinctBy { it.uri }
-            }
-        }
-    }
-
-    val pickTransferFiles: () -> Unit = {
-        closeInputFocus()
-        val failure = tryLaunch { transferPicker.launch(arrayOf("*/*")) }
-        if (failure != null) {
-            error = context.getString(
-                R.string.file_picker_failed,
-                failure.message ?: failure.javaClass.simpleName
-            )
-        }
-    }
-
-    // 入队成功就收起弹窗：进度回主页任务列表里看；失败留在弹窗里让用户重试
-    val sendTransfer: () -> Unit = {
-        val peer = selectedPeer
-        val files = pickedFiles
-        if (peer != null && files.isNotEmpty()) {
-            error = null
-            scope.launch {
-                // content:// → cacheDir 拷贝 + lan.send 都在 Repository 里做
-                val failure = viewModel.sendLanFiles(peer.id, files.map { it.uri })
-                if (failure == null) {
-                    pickedFiles = emptyList()
-                    dismissAnimated()
-                } else {
-                    error = failure
-                }
-            }
-        }
-    }
-
     val selectMode: (AddMode) -> Unit = { next ->
         if (next != mode) {
-            // 切回「链接」要**自动聚焦并拉起键盘**（用户点名）；切到本地/传输则清焦点
+            // 切回「链接」要**自动聚焦并拉起键盘**（用户点名）；切到本地则清焦点
             autoFocusPending = next == AddMode.Link
             focusManager.clearFocus()
             keyboard?.hide()
             mode = next
-            if (next == AddMode.Transfer) {
-                // 不用等 2.5s 的轮询，进面板先拉一次设备与互传开关
-                viewModel.refreshLan()
-                scope.launch {
-                    viewModel.getLanConfig()?.let { lanEnabled = it.enabled }
-                }
-            }
         }
     }
 
@@ -824,19 +745,6 @@ fun AddTaskDialog(
                                         ) { m ->
                                             if (m == AddMode.Local) {
                                                 LocalPlayPane(onPick = pickLocalMedia)
-                                            } else if (m == AddMode.Transfer) {
-                                                TransferPane(
-                                                    enabled = lanEnabled,
-                                                    peers = peers,
-                                                    selectedPeer = selectedPeer,
-                                                    onSelectPeer = { selectedPeerId = it },
-                                                    files = pickedFiles,
-                                                    onRemoveFile = { pickedFiles = pickedFiles - it },
-                                                    error = error,
-                                                    onPickFiles = pickTransferFiles,
-                                                    onSend = sendTransfer,
-                                                    sendEnabled = selectedPeer != null && pickedFiles.isNotEmpty()
-                                                )
                                             } else {
                                                 Column(Modifier.fillMaxWidth()) {
                                                     // 输入框里只有文字本身：**不显示链接类型、也没有左侧图标**
@@ -977,308 +885,13 @@ fun AddTaskDialog(
     }
 }
 
-// ─── 文件传输面板 ───
-
-/**
- * 「文件传输」面板。
- *
- * 自上而下只有三块，没有任何小标题：
- * 1. 大块可点的**文件选择框**（图标 + 文案，点击拉起系统多选）；
- * 2. 「附近设备」选择行（左侧当前设备名称 / 平台，右侧在线点 + 箭头，点开选择面板）；
- * 3. 发送。
- * 传输进度不在这里重复展示 —— 主任务列表已经把它们并进去了。
- */
-@Composable
-private fun TransferPane(
-    enabled: Boolean,
-    peers: List<LanPeer>,
-    selectedPeer: LanPeer?,
-    onSelectPeer: (String) -> Unit,
-    files: List<PickedFile>,
-    onRemoveFile: (PickedFile) -> Unit,
-    error: String?,
-    onPickFiles: () -> Unit,
-    onSend: () -> Unit,
-    sendEnabled: Boolean
-) {
-    val colorScheme = MaterialTheme.colorScheme
-    var devicePickerOpen by remember { mutableStateOf(false) }
-
-    if (!enabled) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 30.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                LerxuDevices,
-                contentDescription = null,
-                modifier = Modifier.size(30.dp),
-                tint = colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                stringResource(R.string.transfer_disabled_title),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(Modifier.height(5.dp))
-            Text(
-                stringResource(R.string.transfer_disabled_sub),
-                style = MaterialTheme.typography.bodySmall,
-                color = colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-        }
-        return
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        // ── 文件选择框（大块可点区域，左上角不放任何标题）──
-        // 已选文件挂在同一个框的下半部分，保证第一项就是"选文件"。
-        PickFileCard(
-            icon = LerxuUpload,
-            title = stringResource(R.string.transfer_pick_files),
-            hint = if (files.isEmpty()) {
-                stringResource(R.string.transfer_pick_hint)
-            } else {
-                stringResource(R.string.transfer_selected_count, files.size)
-            },
-            onClick = onPickFiles
-        ) {
-            if (files.isNotEmpty()) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 88.dp)
-                        .padding(horizontal = 12.dp)
-                ) {
-                    items(files.size) { index ->
-                        val file = files[index]
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                file.name,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .clip(CircleShape)
-                                    .clickable { onRemoveFile(file) },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    LerxuClose,
-                                    contentDescription = stringResource(R.string.close),
-                                    modifier = Modifier.size(13.dp),
-                                    tint = colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-        }
-
-        error?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.bodySmall,
-                color = colorScheme.error,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
-        }
-
-        // ── 底部一行：附近设备选择框（占剩余宽度）+ 发送（最右）──
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable { devicePickerOpen = true }
-                    .padding(start = 10.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    LerxuDevices,
-                    contentDescription = null,
-                    modifier = Modifier.size(17.dp),
-                    tint = colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.width(8.dp))
-                // 未选设备时只留「附近设备」一个主标题；设备名选中后再占位
-                Text(
-                    text = selectedPeer?.name ?: stringResource(R.string.transfer_nearby_devices),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = if (selectedPeer != null) FontWeight.SemiBold else FontWeight.Normal,
-                    color = colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    LerxuChevronRight,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(Modifier.width(4.dp))
-
-            // 发送 —— 主色文字，位置与「添加」一致（最右）
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable(enabled = sendEnabled, onClick = onSend)
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val tint = if (sendEnabled) colorScheme.primary
-                else colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                Icon(
-                    LerxuSend,
-                    contentDescription = null,
-                    modifier = Modifier.size(17.dp),
-                    tint = tint
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    stringResource(R.string.transfer_send),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = tint
-                )
-            }
-        }
-    }
-
-    // 设备选择面板：一行一台（名称 + 平台/IP + 在线点）
-    if (devicePickerOpen) {
-        Dialog(onDismissRequest = { devicePickerOpen = false }) {
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = colorScheme.surface
-            ) {
-                Column(modifier = Modifier.padding(vertical = 12.dp)) {
-                    Text(
-                        stringResource(R.string.transfer_nearby_devices),
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                    )
-                    if (peers.isEmpty()) {
-                        Text(
-                            stringResource(R.string.transfer_no_devices),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 320.dp)
-                                .padding(horizontal = 6.dp)
-                        ) {
-                            items(peers.size) { index ->
-                                val peer = peers[index]
-                                PeerRow(
-                                    peer = peer,
-                                    selected = peer.id == selectedPeer?.id,
-                                    onClick = {
-                                        onSelectPeer(peer.id)
-                                        devicePickerOpen = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** 一行一台设备：名称 + 平台/IP + 在线点；选中时只有一层浅色高亮。 */
-@Composable
-private fun PeerRow(
-    peer: LanPeer,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    val colorScheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (selected) colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            if (peer.platform.equals("android", ignoreCase = true)) LerxuPhone else LerxuComputer,
-            contentDescription = null,
-            modifier = Modifier.size(17.dp),
-            tint = if (selected) colorScheme.primary else colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                peer.name,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = if (selected) colorScheme.primary else colorScheme.onSurface
-            )
-            Text(
-                "${platformLabel(peer.platform)} · ${peer.address}",
-                style = MaterialTheme.typography.labelSmall,
-                color = colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-/** 平台名只是设备类型的展示，不随语言翻译。 */
-private fun platformLabel(platform: String): String = when (platform.lowercase()) {
-    "macos" -> "macOS"
-    "windows" -> "Windows"
-    "linux" -> "Linux"
-    "android" -> "Android"
-    else -> platform.ifBlank { "unknown" }
-}
-
 // ─── 本地播放入口 ───
 
 /**
  * 文件选择的通用大卡片：图标 + 主标题 + 一句提示。
  *
- * 「文件传输」和「本地播放」共用同一块，保证两个入口的尺寸、圆角、
- * 图标笔法与点击热区完全一致；下方内容由调用方追加（如已选文件列表）。
+ * 「本地播放」入口用它，保证尺寸、圆角、图标笔法与点击热区统一；
+ * 下方内容由调用方追加。
  */
 @Composable
 private fun PickFileCard(
@@ -1428,10 +1041,9 @@ private fun AddUrlField(
 }
 
 /**
- * 「链接 / 本地播放 / 文件传输」滑块：一枚**独立**的圆角胶囊，悬浮在输入卡片上方。
+ * 「链接 / 本地播放」滑块：一枚**独立**的圆角胶囊，悬浮在输入卡片上方。
  *
  * 不裹进输入卡片里、也不带投影；只有文字（没有图标），高亮块 240ms 滑动。
- * 三档时胶囊整体加宽到 0.88（每档宽度与两档时基本一致），位移按档位序号算。
  * 选中文字用 onPrimary，在弹窗的白底/深色底上都是同一套读法。
  */
 @Composable
@@ -1458,7 +1070,7 @@ private fun AddModeSwitch(
         BoxWithConstraints(
             modifier = Modifier
                 .height(34.dp)
-                .fillMaxWidth(0.88f)
+                .fillMaxWidth(0.52f)
         ) {
             val segment = (maxWidth - inset * 2) / modes.size
             Box(
@@ -1481,7 +1093,6 @@ private fun AddModeSwitch(
                             when (entry) {
                                 AddMode.Link -> R.string.link_mode
                                 AddMode.Local -> R.string.local_playback
-                                AddMode.Transfer -> R.string.transfer_mode
                             }
                         ),
                         selected = entry == mode,

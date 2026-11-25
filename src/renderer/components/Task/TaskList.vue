@@ -6,8 +6,6 @@
     @change="handleDragSelectChange"
     @mousedown="handleListBlankClick"
   >
-    <!-- 端手互通：传输任务与普通任务共用同一个卡片组件。传输记录也参与
-         框选/多选，选中 ID 加 `lan:` 前缀与引擎 gid 区分（批量操作按前缀分流）。 -->
     <div
       v-for="entry in renderRows"
       :key="entry.key"
@@ -21,7 +19,6 @@
         :task="entry.row"
         :view-mode="viewMode"
         :resize-version="resizeVersion"
-        :lan="entry.lan"
       />
     </div>
   </mo-drag-select>
@@ -35,7 +32,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { cloneDeep } from '@shared/utils/object'
-import { ipcRenderer } from 'electron'
 import { popupMenu } from '@/utils/nativeBridge'
 
 import {
@@ -101,15 +97,11 @@ defineOptions({ name: 'mo-task-list' })
 const taskStore = useTaskStore()
 const preferenceStore = usePreferenceStore()
 const { config: preferenceConfig } = storeToRefs(preferenceStore)
-const { currentList, filterDate } = storeToRefs(taskStore)
 
 const selectedList = ref(cloneDeep(taskStore.selectedGidList) || [])
 const isMultiSelectModifierPressed = ref(false)
 const isMultiSelectMode = ref(false)
 const resizeVersion = ref(0)
-
-// 端手互通：主进程通过 lan:update 推送全量（最多 50 条）传输任务
-const lanTasks = ref([])
 
 let handleKeyEvent = null
 let handleResize = null
@@ -171,174 +163,19 @@ const isMultiSelectToggleShortcut = computed(() => {
 
 const viewMode = computed(() => taskStore.viewMode)
 
-/**
- * 传输任务归组：和引擎的 全部 / 下载中 / 等待中 / 已停止 对齐
- * （done、error 都是"已结束"，归到 stopped；行内再显示 已完成 / 失败）
- */
-function lanStatusGroup (status) {
-  if (status === 'active') return 'active'
-  if (status === 'waiting') return 'waiting'
-  return 'stopped'
-}
-
-function parseTaskDate (timestamp) {
-  const raw = Number(timestamp)
-  if (!Number.isFinite(raw) || raw <= 0) return null
-  return new Date(raw < 1000000000000 ? raw * 1000 : raw)
-}
-
-function lanMatchesDate (task, date) {
-  if (!date) return true
-  // 与普通任务一致：终态记录按完成时间归档，进行中的才按创建时间
-  const finished = task && (task.status === 'done' || task.status === 'error')
-  const stamp = finished ? (task.finishedAt || task.createdAt) : (task && task.createdAt)
-  const at = parseTaskDate(stamp)
-  if (!at) return false
-  const [year, month, day] = `${date}`.split('-').map(Number)
-  return at.getFullYear() === year &&
-    (at.getMonth() + 1) === month &&
-    at.getDate() === day
-}
-
-function lanMatchesCategory (task, category) {
-  const suffixes = getCategorySuffixes(category)
-  if (suffixes.size === 0) return false
-  const name = `${task && task.name ? task.name : ''}`
-  const ext = `${getFileExtension(name)}`.toLowerCase()
-  return !!ext && suffixes.has(ext)
-}
-
-/** 传输状态 → 引擎任务状态（卡片/进度条认的是这一套） */
-const LAN_TASK_STATUS = {
-  waiting: TASK_STATUS.WAITING,
-  active: TASK_STATUS.ACTIVE,
-  done: TASK_STATUS.COMPLETE,
-  error: TASK_STATUS.ERROR
-}
-
-// 引擎 lan 任务里没有速度字段：按两次轮询的字节差自己算
-const lanSpeedSamples = new Map()
-
-function lanSpeedOf (task) {
-  const now = Date.now()
-  const bytes = Math.max(0, Number(task && task.transferred) || 0)
-  const sample = lanSpeedSamples.get(task.id)
-  let bps = 0
-  if (task && task.status === 'active' && sample) {
-    const delta = bytes - sample.bytes
-    const elapsed = now - sample.at
-    if (delta > 0 && elapsed >= 100) {
-      const instant = delta * 1000 / elapsed
-      bps = sample.bps > 0 ? sample.bps * 0.6 + instant * 0.4 : instant
-    } else {
-      bps = sample.bps || 0
-    }
-  }
-  lanSpeedSamples.set(task.id, { bytes, at: now, bps })
-  return bps
-}
-
-function lanErrorText (error) {
-  const code = `${error || ''}`
-  if (code === 'cancelled') return t('task.transfer-cancelled')
-  if (code === 'interrupted') return t('task.transfer-interrupted')
-  if (code === 'disposed') return ''
-  return code
-}
-
-/**
- * 把引擎 lan 任务映射成普通任务的字段，交给 mo-task-item 渲染。
- * `lanTask` 保留原始对象（卡片上的取消/移除/打开文件夹要用）。
- */
-function toLanTaskRow (task) {
-  const size = Number(task.size) > 0 ? Number(task.size) : 0
-  const transferred = Math.max(0, Number(task.transferred) || 0)
-  const fullPath = (task.direction === 'in' ? task.path : task.sourcePath) || task.name || ''
-  const finishedAt = Number(task.finishedAt) || 0
-  const status = LAN_TASK_STATUS[task.status] || TASK_STATUS.WAITING
-
-  const row = {
-    gid: task.id,
-    name: task.name,
-    filename: task.name,
-    status,
-    totalLength: size,
-    completedLength: size > 0 ? Math.min(transferred, size) : transferred,
-    downloadSpeed: lanSpeedOf(task),
-    uploadSpeed: 0,
-    // 普通卡片在下载中会显示"连接数"：局域网传输固定一条连接
-    connections: task.status === 'active' ? 1 : 0,
-    // getTaskFullPath 认 files[0].path；没有绝对路径时用文件名兜底（只为显示名字）
-    dir: '',
-    files: fullPath
-      ? [{ path: fullPath, length: String(size), completedLength: String(transferred), selected: 'true' }]
-      : [],
-    // 普通卡片用 savedAt 显示"完成于/错误于 …"（lan 任务的 finishedAt 就是本地完成时间）
-    savedAt: finishedAt,
-    lanTask: task
-  }
-
-  const reason = lanErrorText(task.error)
-  if (status === TASK_STATUS.ERROR && reason) {
-    const time = new Date(finishedAt || Date.now()).toLocaleString()
-    row.statusRightText = `${t('task.error-at')} ${time} · ${reason}`
-  }
-  return row
-}
-
-const lanTaskRows = computed(() => {
-  const list = currentList.value || 'all'
-  const category = `${props.category || ''}`
-  const date = filterDate.value || ''
-  const keyword = `${props.keyword || ''}`.trim().toLowerCase()
-
-  return (lanTasks.value || [])
-    .filter((task) => {
-      if (!task || !task.id) return false
-      if (list !== 'all' && lanStatusGroup(task.status) !== list) return false
-      if (category && !lanMatchesCategory(task, category)) return false
-      if (!lanMatchesDate(task, date)) return false
-      if (keyword) {
-        const haystack = `${task.name || ''} ${task.peerName || ''} ${task.peerAddress || ''}`.toLowerCase()
-        if (!haystack.includes(keyword)) return false
-      }
-      return true
-    })
-    .map(toLanTaskRow)
-})
-
-const hasAnyTask = computed(() => lanTaskRows.value.length > 0 || displayTaskList.value.length > 0)
+const hasAnyTask = computed(() => displayTaskList.value.length > 0)
 
 const HISTORY_STATUSES = new Set([TASK_STATUS.COMPLETE, TASK_STATUS.ERROR, TASK_STATUS.REMOVED])
-
-function normalizeRowTimestamp (value) {
-  const raw = Number(value)
-  if (!Number.isFinite(raw) || raw <= 0) return 0
-  return raw < 1000000000000 ? raw * 1000 : raw
-}
 
 function isHistoryRow (row) {
   return !!row && HISTORY_STATUSES.has(row.status)
 }
 
-/** 普通任务用 savedAt（完成/错误时间），传输任务用 finishedAt；进行中回退创建时间。 */
-function historyTimestampOf (row, isLan) {
-  if (isLan) {
-    const raw = row && row.lanTask ? row.lanTask : {}
-    const finished = raw.status === 'done' || raw.status === 'error'
-    return normalizeRowTimestamp(finished ? (raw.finishedAt || raw.createdAt) : raw.createdAt)
-  }
-  return normalizeRowTimestamp(row.savedAt) ||
-    normalizeRowTimestamp(row.completedTime) ||
-    normalizeRowTimestamp(row.stopTime) ||
-    normalizeRowTimestamp(row.createdAt)
-}
-
-/** 与 store 的 sortTaskList 同口径，补上传输记录（否则排序时它们只能粘在顶部）。 */
-function sortValueOf (row, isLan, field) {
+/** 与 store 的 sortTaskList 同口径。 */
+function sortValueOf (row, field) {
   switch (field) {
   case 'completedTime':
-    return isLan ? historyTimestampOf(row, true) : (parseInt(row.savedAt) || 0)
+    return parseInt(row.savedAt) || 0
   case 'remainingTime': {
     const total = parseInt(row.totalLength) || 0
     const done = parseInt(row.completedLength) || 0
@@ -351,7 +188,6 @@ function sortValueOf (row, isLan, field) {
   case 'size':
     return parseInt(row.totalLength) || 0
   case 'name': {
-    if (isLan) return `${row.name || ''}`.toLowerCase()
     if (row.pairDisplayName && Number(row.pairCount) >= 2) {
       return `${row.pairDisplayName}`.toLowerCase()
     }
@@ -367,8 +203,8 @@ function sortValueOf (row, isLan, field) {
 }
 
 function compareRows (a, b, field, order) {
-  const valueA = sortValueOf(a.row, a.lan, field)
-  const valueB = sortValueOf(b.row, b.lan, field)
+  const valueA = sortValueOf(a.row, field)
+  const valueB = sortValueOf(b.row, field)
   let cmp = 0
   if (field === 'completedTime' && valueA === 0 && valueB === 0) {
     cmp = `${a.row.gid || ''}`.localeCompare(`${b.row.gid || ''}`)
@@ -384,82 +220,37 @@ function compareRows (a, b, field, order) {
 
 const renderRows = computed(() => {
   const engineRows = displayTaskList.value
-  const lanRows = lanTaskRows.value
   const customSort = !!taskStore.sortField &&
     !(taskStore.sortField === 'name' && taskStore.sortOrder === 'asc')
 
-  let ordered = []
+  let ordered = engineRows
   if (customSort) {
-    ordered = [
-      ...lanRows.map(row => ({ row, lan: true })),
-      ...engineRows.map(row => ({ row, lan: false }))
-    ]
     const field = taskStore.sortField
     const order = taskStore.sortOrder
-    ordered.sort((a, b) => compareRows(a, b, field, order))
+    ordered = [...engineRows].sort((a, b) => compareRows(a, b, field, order))
   } else {
-    const lanHistory = []
-    const lanOther = []
-    lanRows.forEach(row => (isHistoryRow(row) ? lanHistory : lanOther).push(row))
-    const engineHistory = []
-    const engineOther = []
-    engineRows.forEach(row => (isHistoryRow(row) ? engineHistory : engineOther).push(row))
-    // 传输记录按完成时间并入普通历史记录（新的在上），不再永远置顶
-    const mergedHistory = [...engineHistory]
-    const sortedLanHistory = [...lanHistory]
-      .sort((a, b) => historyTimestampOf(b, true) - historyTimestampOf(a, true))
-    sortedLanHistory.forEach(row => {
-      const ts = historyTimestampOf(row, true)
-      const idx = mergedHistory.findIndex(item => historyTimestampOf(item, false) < ts)
-      if (idx < 0) mergedHistory.push(row)
-      else mergedHistory.splice(idx, 0, row)
-    })
-    ordered = [
-      ...lanOther.map(row => ({ row, lan: true })),
-      ...engineOther.map(row => ({ row, lan: false })),
-      ...mergedHistory.map(row => ({ row, lan: lanHistory.includes(row) }))
-    ]
+    const history = []
+    const other = []
+    engineRows.forEach(row => (isHistoryRow(row) ? history : other).push(row))
+    ordered = [...other, ...history]
   }
 
-  return ordered.map(({ row, lan }) => {
-    const selectionId = lan ? `lan:${row.gid}` : `${row.gid}`
+  return ordered.map((row) => {
+    const selectionId = `${row.gid}`
     const selected = selectedList.value.includes(selectionId)
     return {
       key: selectionId,
       attr: selectionId,
       row,
-      lan,
       classes: {
         'task-item-wrapper': true,
         [`task-item-wrapper--${viewMode.value}`]: true,
-        'task-item-wrapper--lan': lan,
         selected
       },
-      memo: lan
-        ? [row.status, row.completedLength, row.liveCompletedLength, row.downloadSpeed, viewMode.value, resizeVersion.value, selected]
-        : [row.status, row.completedLength, row.liveCompletedLength, row.downloadSpeed, row.uploadSpeed, row.uploadLength, row.connections, row.numSeeders, viewMode.value, resizeVersion.value, selected]
+      memo: [row.status, row.completedLength, row.liveCompletedLength, row.downloadSpeed, row.uploadSpeed, row.uploadLength, row.connections, row.numSeeders, viewMode.value, resizeVersion.value, selected]
     }
   })
 })
-
-function applyLanPayload (payload) {
-  if (payload && Array.isArray(payload.tasks)) {
-    lanTasks.value = payload.tasks
-  }
-}
-
-function handleLanUpdate (_event, payload) {
-  applyLanPayload(payload)
-}
-
-async function refreshLanTasks () {
-  try {
-    const tasks = await ipcRenderer.invoke('lan:tasks')
-    if (Array.isArray(tasks)) {
-      lanTasks.value = tasks
-    }
-  } catch (_) {}
-}
 
 // Lifecycle
 onMounted(() => {
@@ -492,13 +283,9 @@ onMounted(() => {
     }, 120)
   }
   window.addEventListener('resize', handleResize)
-
-  ipcRenderer.on('lan:update', handleLanUpdate)
-  refreshLanTasks()
 })
 
 onBeforeUnmount(() => {
-  ipcRenderer.removeListener('lan:update', handleLanUpdate)
   if (handleKeyEvent) {
     window.removeEventListener('keydown', handleKeyEvent)
     window.removeEventListener('keyup', handleKeyEvent)
@@ -515,18 +302,6 @@ onBeforeUnmount(() => {
 // Watchers
 watch(() => taskStore.selectedGidList, (newVal) => {
   selectedList.value = newVal
-})
-
-// 传输记录被移除/过滤后，清掉已经不存在于列表中的选择项
-watch(lanTaskRows, (rows) => {
-  const current = Array.isArray(selectedList.value) ? selectedList.value : []
-  if (!current.some(id => `${id}`.startsWith('lan:'))) return
-  const valid = new Set(rows.map(row => `lan:${row.gid}`))
-  const next = current.filter(id => !`${id}`.startsWith('lan:') || valid.has(id))
-  if (next.length !== current.length) {
-    selectedList.value = next
-    taskStore.selectTasks(cloneDeep(next))
-  }
 })
 
 // Methods
@@ -621,8 +396,8 @@ function handleRowClick (entry, e) {
   }
   selectedList.value = next
   taskStore.selectTasks(cloneDeep(next))
-  if (!entry.lan && taskStore.taskDetailVisible && next.length > 0) {
-    const firstSelectedGid = next.find(g => !`${g}`.startsWith('lan:'))
+  if (taskStore.taskDetailVisible && next.length > 0) {
+    const firstSelectedGid = next[0]
     const task = firstSelectedGid
       ? taskStore.taskList.find(t => t.gid === firstSelectedGid)
       : null
@@ -634,49 +409,7 @@ function handleRowClick (entry, e) {
 
 function handleRowContextMenu (entry, event) {
   if (!entry) return
-  if (entry.lan) {
-    handleLanItemContextMenu(entry.row, event)
-    return
-  }
   handleItemContextMenu(entry.row, event)
-}
-
-function popupMenuAt (template, event) {
-  popupMenu(template, {
-    x: event.x != null ? event.x : event.clientX,
-    y: event.y != null ? event.y : event.clientY
-  })
-}
-
-function handleLanItemContextMenu (item, event) {
-  const row = item || null
-  if (!row) return
-  const selectionId = `lan:${row.gid}`
-  const current = Array.isArray(selectedList.value) ? selectedList.value : []
-  if (!current.includes(selectionId)) {
-    selectedList.value = [selectionId]
-    taskStore.selectTasks([selectionId])
-  }
-  const selectedUnique = Array.from(new Set(
-    (selectedList.value || []).map(id => `${id || ''}`.trim()).filter(Boolean)
-  ))
-  if (selectedUnique.length > 1 && selectedUnique.includes(selectionId)) {
-    popupMenuAt(getMultiTaskContextMenuTemplate(selectedUnique), event)
-    return
-  }
-  const raw = row.lanTask || {}
-  const template = []
-  if (raw.direction === 'in' && raw.status === 'done' && raw.path) {
-    template.push({
-      label: t('task.transfer-open-folder'),
-      click: () => ipcRenderer.invoke('lan:open-folder', raw.path).catch(() => {})
-    })
-  }
-  template.push({
-    label: t('task.transfer-remove-record'),
-    click: () => commands.emit('remove-lan-task', { task: raw })
-  })
-  popupMenuAt(template, event)
 }
 
 function handleItemContextMenu (item, event) {
