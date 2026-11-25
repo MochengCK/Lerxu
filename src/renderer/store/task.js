@@ -1123,6 +1123,11 @@ const actions = {
             .catch(() => {})
         }
       })
+      .catch(() => {
+        // 引擎启动 / 断线重连窗口内的失败由下一轮轮询自动重试。
+        // 这里兜住 changeCurrentList / 分类切换等 fire-and-forget 调用方，
+        // 避免 "fetch failed" 变成未捕获的 Promise rejection（控制台红字）。
+      })
   },
   updateDataAccessStatus (payload) {
     this.UPDATE_DATA_ACCESS_STATUS(payload)

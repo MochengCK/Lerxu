@@ -1,5 +1,6 @@
 import { spawn, execFile } from 'node:child_process'
-import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFile, unlink, unlinkSync, writeFile, chmodSync, constants, copyFileSync, cpSync, accessSync } from 'node:fs'
+import { connect as connectTcp } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
 import is from '@shared/platform'
 
@@ -145,6 +146,43 @@ export default class Engine {
     // 同步发信号杀掉引擎，否则任何异步路径（will-quit/setImmediate/
     // setTimeout）都可能在主进程退出前没机会执行。
     this.registerExitHandlers()
+
+    // 等 RPC 端口真正开始监听再返回：Application.initEngineClient 紧接着会
+    // 创建 WebSocket 客户端，而渲染进程的启动轮询在此之前会落在这个空窗里，
+    // 只能走 HTTP 兜底 —— 对尚未监听的端口就是 "fetch failed"（未捕获的
+    // Promise rejection）。超时只告警不失败，慢启动仍由 EngineClient 自动重连兜底。
+    const rpcPort = Number(this.systemConfig['rpc-listen-port']) || ENGINE_RPC_PORT
+    await this.waitForRpcReady(rpcPort)
+  }
+
+  /**
+   * 探测引擎 RPC 端口是否已开始监听（TCP connect），最多等 timeout 毫秒。
+   * 进程提前退出时立即返回，避免空等。
+   */
+  async waitForRpcReady (port, timeout = 10000) {
+    const deadline = Date.now() + timeout
+    while (Date.now() < deadline) {
+      const ok = await new Promise((resolve) => {
+        const socket = connectTcp({ host: '127.0.0.1', port })
+        const finish = (value) => {
+          socket.removeAllListeners()
+          socket.destroy()
+          resolve(value)
+        }
+        socket.once('connect', () => finish(true))
+        socket.once('error', () => finish(false))
+        socket.setTimeout(500, () => finish(false))
+      })
+      if (ok) {
+        return true
+      }
+      if (!this.instance) {
+        return false
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    logger.warn(`[Lerxu] engine RPC port ${port} not listening after ${timeout}ms`)
+    return false
   }
 
   /**
