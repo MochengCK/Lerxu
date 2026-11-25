@@ -418,8 +418,10 @@ const dir = dirname(filePath)
               : t('task.download-error-message', { taskName })
             const link = `${errorCode}`
 
-            const msg = `${errorMessage || ''}`
-            const segmentPath = extractSegmentFilePath(msg)
+            // 注意：这里不能叫 msg —— 会遮蔽模块级的提示框实例（msg.warning / msg(...)），
+            // 下载报错时直接抛 "msg is not a function"，错误提示与后续处理全部失效。
+            const errorText = `${errorMessage || ''}`
+            const segmentPath = extractSegmentFilePath(errorText)
             const isBt = checkTaskIsBT(task)
 
             if (segmentPath && isBt) {
@@ -442,11 +444,11 @@ const dir = dirname(filePath)
               const m = `${text || ''}`.match(/\b(\d{3})\b/)
               return m ? Number(m[1]) || 0 : 0
             }
-            const httpStatus = parseHttpStatus(msg)
+            const httpStatus = parseHttpStatus(errorText)
 
-            const isTimeout = /timeout|timed\s*out|ETIMEDOUT/i.test(msg)
-            const isHashMismatch = /hash\s*mismatch|checksum|digest/i.test(msg)
-            const isDiskIssue = Number(errorCode) === 16 || /No space left|disk full|Permission denied|permission/i.test(msg)
+            const isTimeout = /timeout|timed\s*out|ETIMEDOUT/i.test(errorText)
+            const isHashMismatch = /hash\s*mismatch|checksum|digest/i.test(errorText)
+            const isDiskIssue = Number(errorCode) === 16 || /No space left|disk full|Permission denied|permission/i.test(errorText)
             const isServerError = httpStatus >= 500 && httpStatus < 600
 
             const linkUpdateRule = (code) => {
@@ -4688,7 +4690,8 @@ const dir = dirname(filePath)
       // BT任务错误恢复机制
       async function handleBtErrorRecovery(task, errorCode, errorMessage) {
         const code = Number(errorCode)
-        const msg = `${errorMessage || ''}`
+        // 同上：局部变量不能叫 msg，否则下面的 msg.warning 全部失效
+        const errorText = `${errorMessage || ''}`
         const gid = task && task.gid ? `${task.gid}` : ''
 
         if (!gid) {
@@ -4715,11 +4718,11 @@ const dir = dirname(filePath)
         // 针对特定错误类型的恢复策略
         switch (code) {
         case 1: // 网络错误
-          if (/timeout|timed out/i.test(msg)) {
+          if (/timeout|timed out/i.test(errorText)) {
             // 连接超时，等待后重试
             console.log(`[Lerxu] BT task ${gid} timeout, will retry in 10 seconds`)
             scheduleRetry(10000)
-          } else if (/connection refused|refused/i.test(msg)) {
+          } else if (/connection refused|refused/i.test(errorText)) {
             // 连接被拒绝，可能是tracker问题，稍后重试
             console.log(`[Lerxu] BT task ${gid} connection refused, will retry in 30 seconds`)
             scheduleRetry(30000)
@@ -4728,7 +4731,7 @@ const dir = dirname(filePath)
 
         case 14: // 重命名文件失败
         case 15: // 打开已存在文件失败
-          if (/operation not permitted|permission denied|not permitted/i.test(msg)) {
+          if (/operation not permitted|permission denied|not permitted/i.test(errorText)) {
             // macOS TCC 授权在应用更新（签名变化）后失效，打开下载目录文件
             // 返回 EPERM。盲目 60s 重试无效，改为低频重试（用户授权后自动恢复），
             // 并按 gid 去重提示一次授权指引。
@@ -4737,7 +4740,7 @@ const dir = dirname(filePath)
               // 先尝试自动修复：清除旧实例文件上的 com.apple.provenance 等
               // 来源属性（必要时复制重建文件），修复成功后立即重试任务，
               // 无需用户手动处理。
-              const failedPath = extractOpenFailedFilePath(msg)
+              const failedPath = extractOpenFailedFilePath(errorText)
               let repaired = false
               if (failedPath) {
                 repaired = await tryRepairDownloadFilePermission(gid, failedPath)
@@ -4759,15 +4762,15 @@ const dir = dirname(filePath)
             }
             console.log(`[Lerxu] BT task ${gid} permission denied, will retry in 120 seconds`)
             scheduleRetry(120000)
-          } else if (/No space left|disk full/i.test(msg)) {
+          } else if (/No space left|disk full/i.test(errorText)) {
             msg.warning('磁盘空间不足，请清理磁盘空间后重新开始下载')
           }
           break
 
         case 16: // 文件系统错误
-          if (/No space left|disk full/i.test(msg)) {
+          if (/No space left|disk full/i.test(errorText)) {
             msg.warning('磁盘空间不足，请清理磁盘空间后重新开始下载')
-          } else if (/Permission denied|permission/i.test(msg)) {
+          } else if (/Permission denied|permission/i.test(errorText)) {
             msg.warning('文件权限错误，请检查下载目录权限')
           }
           break

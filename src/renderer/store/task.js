@@ -393,11 +393,14 @@ const getters = {
       stopped
     }
   },
-  // 各文件类型分类的任务数量
+  // 各文件类型分类的任务数量（按**当前状态页签**统计，与列表口径一致）
   categoryCounts () {
     const preferenceStore = usePreferenceStore()
     const downloadingFileSuffix = (preferenceStore.config && preferenceStore.config.downloadingFileSuffix) || ''
-    const list = this.allTaskList
+    // 必须用 taskList（当前页签 + 日期过滤后的列表），不能用 allTaskList：
+    // allTaskList 是全状态集合，在「正在下载」等页签下会出现"分类徽标有数字、
+    // 点进去列表却是空的"。徽标必须能预告当前页签里实际有多少条。
+    const list = this.taskList
     const categories = ['', 'archives', 'programs', 'videos', 'music', 'images', 'documents']
     const counts = {}
     categories.forEach(cat => {

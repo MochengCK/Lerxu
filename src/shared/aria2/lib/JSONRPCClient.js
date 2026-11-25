@@ -96,41 +96,63 @@ export class JSONRPCClient extends EventEmitter {
     return message
   }
 
-  async batch (calls) {
-    const message = calls.map(([method, params]) => {
-      return this._buildMessage(method, params)
-    })
-
-    await this._send(message)
-
-    return message.map(({ id }) => {
-      const deferred = new Deferred()
-      deferred._message = { method: id, params: undefined, id }
-      deferred._batchMessage = message
-      this.deferreds[id] = deferred
-      return deferred.promise
-    })
-  }
-
-  async call (method, parameters) {
-    const message = this._buildMessage(method, parameters)
-    await this._send(message)
-
-    const deferred = new Deferred()
-    deferred._message = message
-    this.deferreds[message.id] = deferred
-
-    // WebSocket 路径没有 HTTP 超时保护，引擎挂起不回包时 deferred 会永久
-    // 驻留。加一个超时兜底，超时后 reject 并移除，防止内存泄漏。
+  /**
+   * 给 deferred 挂超时兜底：WebSocket 路径没有 HTTP 超时保护，
+   * 引擎挂起不回包时 deferred 会永久驻留，调用方永远等不到结果。
+   */
+  _watchDeferred (deferred, id, method) {
     deferred._timeoutTimer = setTimeout(() => {
-      if (this.deferreds[message.id] === deferred) {
-        delete this.deferreds[message.id]
+      if (this.deferreds[id] === deferred) {
+        delete this.deferreds[id]
         deferred.reject(new Error(`JSONRPC call timeout: ${method}`))
       }
     }, this.timeout)
     // 不阻止进程退出
     if (typeof deferred._timeoutTimer.unref === 'function') {
       deferred._timeoutTimer.unref()
+    }
+  }
+
+  async batch (calls) {
+    const message = calls.map(([method, params]) => {
+      return this._buildMessage(method, params)
+    })
+
+    // 必须先登记 deferred 再发送：socket 未就绪（启动期 / 断线重连窗口）时
+    // _send 走 HTTP，而 http() 在 await 返回前就把响应交给 _onmessage。
+    // 先发后登记会让响应因为"查不到 deferred"被静默丢弃 —— batch 又没有
+    // 超时兜底，调用方 promise 会永久挂起（渲染进程表现为列表一直为空，
+    // IPC 侧则报 engine:rpc "reply was never sent"）。
+    const deferreds = message.map(({ id, method }) => {
+      const deferred = new Deferred()
+      deferred._message = { method: id, params: undefined, id }
+      deferred._batchMessage = message
+      this.deferreds[id] = deferred
+      this._watchDeferred(deferred, id, `batch(${method || ''})`)
+      return deferred
+    })
+
+    try {
+      await this._send(message)
+    } catch (err) {
+      this._failMessage(message, err)
+    }
+
+    return deferreds.map(deferred => deferred.promise)
+  }
+
+  async call (method, parameters) {
+    const message = this._buildMessage(method, parameters)
+    const deferred = new Deferred()
+    deferred._message = message
+    // 先登记再发送，原因同 batch()
+    this.deferreds[message.id] = deferred
+    this._watchDeferred(deferred, message.id, method)
+
+    try {
+      await this._send(message)
+    } catch (err) {
+      this._failMessage(message, err)
     }
 
     return deferred.promise
