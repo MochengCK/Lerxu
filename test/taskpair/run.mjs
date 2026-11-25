@@ -163,6 +163,25 @@ check('两条都下完 → complete；在 mergingList 里 → merging', () => {
   assertEqual(merging.status, TASK_STATUS.MERGING, '后下完的那条在合并 → 记录也是 merging')
 })
 
+check('合并产物落库后，"已下载"不再取合并前的 live 值（左下角百分比要走满）', () => {
+  // 用户报的形态：合并完成、下载也完了，左下角却停在 80% 左右。
+  // 真实数据：产物 total/completed = 204666099，而历史里残留的
+  // liveCompletedLength 还是画面流的 174391483（≈85%），
+  // TaskProgressInfo 优先读 live ⇒ 百分比永远走不满。
+  const merged = task(pair({
+    gid: 'v1',
+    pairRole: PAIR_ROLE_VIDEO,
+    status: TASK_STATUS.COMPLETE,
+    totalLength: '204666099',
+    completedLength: '204666099',
+    liveCompletedLength: '174391483',
+    dashMerged: true
+  }))
+  const row = collapseTaskPairs([merged], {}).list[0]
+  assertEqual(row.liveCompletedLength, '204666099', '落定成员只认精确的 completedLength')
+  assertEqual(row.completedLength, '204666099')
+})
+
 check('已有合并产物 → 状态绝不回到 merging（哪怕合并簿记还挂着成员）', () => {
   // 用户报的形态：合并完成、下载完成之后，卡片又冒出"正在合并音视频…"。
   // 成因是合并收尾是异步的 —— 另一半的重试定时器醒来后会把成员推回 MERGING。

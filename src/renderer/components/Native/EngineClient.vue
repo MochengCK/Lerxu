@@ -834,7 +834,9 @@ const dir = dirname(filePath)
                 ...(finalPath ? { dir: dirname(finalPath) } : {}),
                 ...(Array.isArray(nextFiles) && nextFiles.length > 0 ? { files: nextFiles } : {}),
                 ...(total ? { totalLength: total } : {}),
-                ...(completed ? { completedLength: completed } : {})
+                ...(completed ? { completedLength: completed } : {}),
+                // 完成后的精确字节数同样要覆盖在途值（见 afterBilibiliMerge）
+                ...(completed ? { liveCompletedLength: completed } : {})
               }
               taskHistory.updateTask(gid, patch, task)
             }
@@ -3482,6 +3484,10 @@ const dir = dirname(filePath)
             files,
             totalLength: `${length}`,
             completedLength: `${length}`,
+            // 产物大小必须同时覆盖"在途连续值"：左下角百分比优先读
+            // liveCompletedLength，只改 completedLength 会永远停在合并前
+            // 画面流的占比（≈80%，用户报的形态）。
+            liveCompletedLength: `${length}`,
             downloadSpeed: '0',
             uploadSpeed: '0',
             statusHint: '',

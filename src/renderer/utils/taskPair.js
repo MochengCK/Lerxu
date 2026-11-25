@@ -214,6 +214,32 @@ function buildPairRow (pairId, members, mergingGids, mergeSkippedGids, mergeForm
 
   const totalLength = sumOf(ordered, 'totalLength')
   const completedLength = sumOf(ordered, 'completedLength')
+  // 「已下载」的显示值：TaskProgressInfo 优先用 liveCompletedLength（在途字节的
+  // 连续值）。折叠记录必须把**每个成员**的 live 相加，不能只继承主记录 ——
+  // 否则左下角百分比是「主记录已下载 / 两个文件的总长」，永远走不满
+  // （用户报的"任务下完了百分比没走满"就是这个口径不一致）。没有 live 的
+  // 成员回退到它自己的 completedLength，避免只加到一半。
+  // 已经落定（完成/合并出产物）的成员**只用 completedLength**：合并收尾会把
+  // totalLength/completedLength 换成产物大小，而历史里残留的 live 还是合并前
+  // 画面流的字节数 —— 分子用旧 live、分母用产物总长，就是"下完了却显示 80%"
+  // （用户报的形态；旧版本写下的历史记录也靠这一条纠正）。
+  const liveCompletedLength = ordered.reduce((acc, m) => {
+    const done = Number(m && m.completedLength)
+    const doneValue = Number.isFinite(done) && done > 0 ? done : 0
+    const settled = m && (
+      m.dashMerged === true ||
+      statusOf(m) === TASK_STATUS.COMPLETE ||
+      statusOf(m) === TASK_STATUS.SEEDING
+    )
+    if (settled) {
+      return acc + doneValue
+    }
+    const live = Number(m && m.liveCompletedLength)
+    if (Number.isFinite(live) && live > 0) {
+      return acc + live
+    }
+    return acc + doneValue
+  }, 0)
   const downloadSpeed = sumOf(ordered, 'downloadSpeed')
   const uploadSpeed = sumOf(ordered, 'uploadSpeed')
   const uploadLength = sumOf(ordered, 'uploadLength')
@@ -231,6 +257,7 @@ function buildPairRow (pairId, members, mergingGids, mergeSkippedGids, mergeForm
     pairDisplayName: '',
     totalLength: `${totalLength}`,
     completedLength: `${completedLength}`,
+    liveCompletedLength: `${liveCompletedLength}`,
     downloadSpeed: `${downloadSpeed}`,
     uploadSpeed: `${uploadSpeed}`,
     uploadLength: `${uploadLength}`,
@@ -245,9 +272,9 @@ function buildPairRow (pairId, members, mergingGids, mergeSkippedGids, mergeForm
 
 // 记录内容的比对字段：全部是标量，成员另有身份比对
 const ROW_SCALAR_FIELDS = [
-  'gid', 'status', 'name', 'totalLength', 'completedLength', 'downloadSpeed',
-  'uploadSpeed', 'uploadLength', 'statusHint', 'engineStatus', 'statusRightText',
-  'pairDisplayName', 'pairCount', 'pairMerged', 'mergeSkipped', 'dir'
+  'gid', 'status', 'name', 'totalLength', 'completedLength', 'liveCompletedLength',
+  'downloadSpeed', 'uploadSpeed', 'uploadLength', 'statusHint', 'engineStatus',
+  'statusRightText', 'pairDisplayName', 'pairCount', 'pairMerged', 'mergeSkipped', 'dir'
 ]
 
 function isSamePairRow (prev, next) {
