@@ -222,20 +222,19 @@ const renderRows = computed(() => {
   const engineRows = displayTaskList.value
   const customSort = !!taskStore.sortField &&
     !(taskStore.sortField === 'name' && taskStore.sortOrder === 'asc')
+  const sortField = taskStore.sortField
+  const sortOrder = taskStore.sortOrder
 
+  // 不按自定义字段排序时，历史记录统一沉底
   let ordered = engineRows
-  if (customSort) {
-    const field = taskStore.sortField
-    const order = taskStore.sortOrder
-    ordered = [...engineRows].sort((a, b) => compareRows(a, b, field, order))
-  } else {
+  if (!customSort) {
     const history = []
     const other = []
     engineRows.forEach(row => (isHistoryRow(row) ? history : other).push(row))
     ordered = [...other, ...history]
   }
 
-  return ordered.map((row) => {
+  const rows = ordered.map((row) => {
     const selectionId = `${row.gid}`
     const selected = selectedList.value.includes(selectionId)
     return {
@@ -250,6 +249,14 @@ const renderRows = computed(() => {
       memo: [row.status, row.completedLength, row.liveCompletedLength, row.downloadSpeed, row.uploadSpeed, row.uploadLength, row.connections, row.numSeeders, viewMode.value, resizeVersion.value, selected]
     }
   })
+
+  // 自定义排序必须对**条目**（{ row }）排：compareRows 读的是 entry.row，
+  // 直接对任务数组排序会拿到 undefined.row → 渲染整个列表抛 TypeError，
+  // 列表区域只剩一个注释节点（既不显示任务、也不显示空状态）。
+  if (customSort) {
+    rows.sort((a, b) => compareRows(a, b, sortField, sortOrder))
+  }
+  return rows
 })
 
 // Lifecycle
