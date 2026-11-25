@@ -24,6 +24,15 @@ const MAX_TASK_LINK_UPDATE_HINT_GIDS = 300
 const ALL_LIST_REFRESH_INTERVAL = 3000
 let _lastAllListFetchAt = 0
 
+/** B 站资源窗送来的标题 → 安全文件名（去掉路径分隔符等非法字符）。 */
+function sanitizeBiliFilename (raw) {
+  return `${raw || ''}`
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120)
+}
+
 let saveSessionDebounceTimer = null
 
 /* ── 「一对音视频」折叠的簿记 ───────────────────────────────────────────────
@@ -1226,6 +1235,65 @@ const actions = {
   },
   resetTaskSpeedSamples (gid) {
     this.CLEAR_TASK_SPEED_SAMPLES(gid)
+  },
+  /**
+   * B 站独立资源窗确认后的建任务入口。
+   *
+   * 画面流与声音流分成两条 addUri（与扩展原有协议一致）：两条带同一个
+   * pairId、各自的 pairRole，下载完成时宿主据此配对合并；mergeFormat /
+   * clipStart / clipEnd 一并记进任务历史，合并格式与裁片都靠它。
+   */
+  addBiliResourceTasks (selection) {
+    const data = selection || {}
+    const video = data.video || null
+    if (!video || !video.url) {
+      return Promise.reject(new Error('缺少视频流地址'))
+    }
+    const audio = data.audio && data.audio.url ? data.audio : null
+    const name = `${sanitizeBiliFilename(data.title) || 'bilibili'}${Number(data.page) > 1
+      ? `_P${data.page}${data.partTitle ? `_${sanitizeBiliFilename(data.partTitle)}` : ''}`
+      : ''}`
+    const headers = Array.isArray(data.headers) ? data.headers.slice() : []
+    const options = { header: headers, referer: `${data.referer || ''}` }
+    const pairId = audio ? `bili-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : ''
+    const mergeFormat = ['mp4', 'mkv', 'ts'].includes(`${data.mergeFormat || ''}`.trim().toLowerCase())
+      ? `${data.mergeFormat}`.trim().toLowerCase()
+      : ''
+    const clipStart = Number(data.clipStart)
+    const clipEnd = Number(data.clipEnd)
+    const extra = {}
+    if (mergeFormat) {
+      extra.mergeFormat = mergeFormat
+    }
+    if (Number.isFinite(clipStart) && Number.isFinite(clipEnd) && clipStart >= 0 && clipEnd > clipStart) {
+      extra.clipStart = Math.round(clipStart * 1000) / 1000
+      extra.clipEnd = Math.round(clipEnd * 1000) / 1000
+    }
+
+    const videoTask = this.addUri({
+      uris: [video.url],
+      outs: [`${name}_video.mp4`],
+      options,
+      pairId,
+      pairRole: audio ? 'video' : '',
+      ...extra
+    })
+    if (!audio) {
+      return videoTask
+    }
+
+    // 音频流按实际编码落扩展名：FLAC / E-AC-3 写成 .m4a 会让合并工具
+    // 与播放器按 AAC 去解，探测不到真实编码
+    const audioCodecs = `${audio.codecs || ''}`.toLowerCase()
+    const audioExt = audioCodecs.includes('flac') ? 'flac' : audioCodecs.includes('ec-3') ? 'eac3' : 'm4a'
+    return Promise.resolve(videoTask).then(() => this.addUri({
+      uris: [audio.url],
+      outs: [`${name}_audio.${audioExt}`],
+      options,
+      pairId,
+      pairRole: 'audio',
+      ...extra
+    }))
   },
   addUri (data) {
     const { uris, outs, options, optionsList, dirs, priorities } = data

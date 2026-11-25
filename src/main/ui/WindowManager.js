@@ -225,6 +225,101 @@ export default class WindowManager extends EventEmitter {
     return win
   }
 
+  /**
+   * B 站资源弹窗：**独立窗口**（不挂父窗口、不阻塞主界面）。
+   *
+   * 与任务进度窗同一形态：页面加载完主动露面并短暂置顶，随后取消置顶；
+   * 主题/语言在 dom-ready 时同步过去。数据由主进程按 token 暂存，
+   * 页面通过 `bili-resource:get` 取，避免把整份流清单塞进 URL。
+   */
+  openBiliResourceWindow (options = {}) {
+    const pageOptions = this.getPageOptions('bili-resource')
+    if (!pageOptions.url) {
+      return null
+    }
+    const token = `${options.token || ''}`
+    const effectiveTheme = resolveEffectiveTheme(this.userConfig || {})
+    const bgColor = effectiveTheme === APP_THEME.DARK ? '#1e2228' : '#f0f4f8'
+    // 主题直接带进 URL：页面在 <head> 里就能先落主题类，不必等 dom-ready
+    // 的 sync-theme —— 否则暗色主题下会先闪一帧浅色。
+    const params = new URLSearchParams()
+    if (token) {
+      params.set('token', token)
+    }
+    params.set('theme', effectiveTheme)
+    const url = `${pageOptions.url}?${params.toString()}`
+    const hideAppMenu = !!this.userConfig['hide-app-menu']
+    const win = new BrowserWindow({
+      show: false,
+      center: true,
+      resizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      useContentSize: true,
+      // 窗口表面颜色必须在创建时就给：show:false 期间先露出来的是它，
+      // 晚一步 setBackgroundColor 仍可能看到一帧默认白色
+      backgroundColor: bgColor,
+      ...pageOptions.attrs,
+      // 与独立任务进度窗一致：macOS 用 hiddenInset（保留红绿灯、内容顶到标题栏），
+      // 隐藏应用菜单时改成 frameless；页面据此决定要不要画自己的 26px 标题栏
+      frame: !hideAppMenu,
+      titleBarStyle: is.macOS() ? 'hiddenInset' : 'default',
+      webPreferences: {
+        contextIsolation: false,
+        backgroundThrottling: false,
+        spellcheck: false,
+        nodeIntegration: true,
+        nodeIntegrationInWorker: true,
+        // 隐藏期间也先完成首帧绘制，ready-to-show 拿到的是已上色的画面
+        paintWhenInitiallyHidden: true
+      }
+    })
+    try {
+      win.setBackgroundColor(bgColor)
+    } catch (_) { }
+
+    win.loadURL(url)
+
+    win.once('ready-to-show', () => {
+      if (win.isDestroyed()) {
+        return
+      }
+      // 从浏览器切回来时应用可能在后台：先激活应用，再把窗口带到最前
+      try { app.focus({ steal: true }) } catch (_) { }
+      // 先置顶，保证刚从浏览器点过来时不被立刻盖住；一旦窗口真正拿到焦点，
+      // 或用户切到别的窗口（blur），就取消置顶 —— 之后它可以像普通窗口一样
+      // 被手动聚焦的其它窗口盖住。
+      try {
+        win.setAlwaysOnTop(true, 'floating')
+      } catch (_) {
+        try { win.setAlwaysOnTop(true) } catch (_) { }
+      }
+      const releaseTopmost = () => {
+        try {
+          if (!win.isDestroyed()) {
+            win.setAlwaysOnTop(false)
+          }
+        } catch (_) { }
+      }
+      win.once('focus', releaseTopmost)
+      win.once('blur', releaseTopmost)
+      win.show()
+      win.focus()
+    })
+
+    win.webContents.once('dom-ready', () => {
+      if (win.isDestroyed()) {
+        return
+      }
+      try {
+        win.webContents.send('sync-theme', { theme: effectiveTheme })
+        win.webContents.send('sync-locale', { locale: options.locale || 'en-US' })
+      } catch (_) { }
+    })
+
+    return win
+  }
+
   openWindow (page, options = {}) {
     const pageOptions = this.getPageOptions(page)
     const { hidden } = options

@@ -1,5 +1,6 @@
 import { createApp, defineAsyncComponent, watch } from 'vue'
 import { createPinia } from 'pinia'
+import { ipcRenderer } from 'electron'
 import { ElLoading, ElMessage } from 'element-plus'
 // 说明：Element Plus 组件按需引入由 unplugin-vue-components 的
 // ElementPlusResolver 自动完成（含组件样式）；JS 中直接调用的 API
@@ -62,11 +63,29 @@ import '@/components/Theme/Index.scss'
 // Create a single Pinia instance shared across the app lifecycle
 const pinia = createPinia()
 
+// B 站独立资源窗口确认后，主进程通过这个通道把选择送回主窗口。
+// 只允许绑定一次：init() 在主题/语言切换等场景可能被再次调用。
+let biliResourceApplyBound = false
+
 function init (config) {
   const app = createApp(App)
 
   // Pinia state management (reuse the instance created at module load)
   app.use(pinia)
+
+  if (!biliResourceApplyBound) {
+    biliResourceApplyBound = true
+    ipcRenderer.on('bili-resource:apply', (_event, selection) => {
+      try {
+        const taskStore = useTaskStore(pinia)
+        Promise.resolve(taskStore.addBiliResourceTasks(selection)).catch((err) => {
+          ElMessage.error(err && err.message ? err.message : '加入下载任务失败')
+        })
+      } catch (err) {
+        ElMessage.error(err && err.message ? err.message : '加入下载任务失败')
+      }
+    })
+  }
 
   // Router
   app.use(router)

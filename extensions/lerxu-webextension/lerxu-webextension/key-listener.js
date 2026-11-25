@@ -127,6 +127,42 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   }
 
+  // B 站视频页判定必须**最先定义**：按钮的可见性/计数在脚本初始化阶段就会
+  // 用到它，放到文件后面的 B 站接口区会在初始化时命中 TDZ。
+  const isBilibiliHost = () => {
+    try {
+      const host = `${window.location.hostname || ''}`.toLowerCase()
+      return host === 'bilibili.com' || host.endsWith('.bilibili.com')
+    } catch (e) {
+      return false
+    }
+  }
+
+  /** 当前页对应的 B 站视频 id（BV 优先，仅 av 的老页面退回 aid）与分P 序号。 */
+  const getBiliVideoIdFromUrl = () => {
+    try {
+      if (!isBilibiliHost()) return null
+      const href = window.location.href || ''
+      const bv = (href.match(/\/video\/(BV[0-9A-Za-z]+)/) || [])[1] ||
+        (href.match(/[?&]bvid=(BV[0-9A-Za-z]+)/) || [])[1] || ''
+      const aid = (href.match(/\/video\/av(\d+)/i) || [])[1] || ''
+      if (!/^BV/i.test(bv) && !/^\d+$/.test(aid)) return null
+      let page = 1
+      try {
+        page = Number(new URL(href).searchParams.get('p')) || 1
+      } catch (e) {}
+      return {
+        bvid: /^BV/i.test(bv) ? bv : '',
+        aid: /^BV/i.test(bv) ? '' : aid,
+        page
+      }
+    } catch (e) {
+      return null
+    }
+  }
+
+  const isBilibiliVideoPage = () => !!getBiliVideoIdFromUrl()
+
   // 存储嗅探到的视频资源
   let sniffedResources = {
     video: [],
@@ -494,7 +530,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       // 与下拉框同源同算法：这个数就是列表里能看到几条
       const total = countDisplayItems(collectDisplayItems(resolveDisplayResources()))
-      countSpan.textContent = `${total} 个资源`
+      // B 站改成接口直连后没有嗅探结果，按钮直接写明动作而不是"0 个资源"
+      countSpan.textContent = (total === 0 && isBilibiliVideoPage()) ? '下载视频' : `${total} 个资源`
     } catch (e) {}
   }
 
@@ -3972,7 +4009,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     const { resources: viewResources } = getUniversalScopedResources()
-    const hasResources = hasAnySniffedResources(viewResources)
+    // B 站视频页不再依赖嗅探：按钮由 playurl 接口兜底显示（嗅探已在该站关闭）
+    const biliApiPage = isBilibiliVideoPage()
+    const hasResources = biliApiPage || hasAnySniffedResources(viewResources)
     const snifferEnabled = videoSnifferConfig.enabled
     const configLoaded = videoSnifferConfig.loaded
     log('Update button visibility, total:', viewResources.total, 'sniffer enabled:', snifferEnabled, 'config loaded:', configLoaded)
@@ -4104,8 +4143,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const wrapper = document.getElementById('lerxu-bilibili-download-btn-wrapper')
       const isButtonClosed = isButtonClosedByUser()
       
-      // 无资源或嗅探器禁用时强制隐藏（无视拖拽/固定状态，但尊重悬停和用户关闭状态）
-      if (wrapper && !isButtonHovered && !isButtonClosed && (!sniffedResources || sniffedResources.total === 0 || !videoSnifferConfig.enabled)) {
+      // 无资源或嗅探器禁用时强制隐藏（无视拖拽/固定状态，但尊重悬停和用户关闭状态）。
+      // B 站视频页的按钮由接口直连支撑，没有嗅探资源也必须留着。
+      if (wrapper && !isButtonHovered && !isButtonClosed &&
+          !isBilibiliVideoPage() &&
+          (!sniffedResources || sniffedResources.total === 0 || !videoSnifferConfig.enabled)) {
         wrapper.style.display = 'none'
         positionLocked = false
         hoveredVideoContainer = null
@@ -4513,6 +4555,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     btn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
+      // B 站视频页：直接调 playurl 接口，让应用弹出独立资源弹窗；
+      // 浏览器里不再弹资源下拉框。其他站点保持原有嗅探列表。
+      if (isBilibiliVideoPage()) {
+        openBiliResourceDialog()
+        return
+      }
       showResourceDropdown()
     })
 
@@ -5489,7 +5537,14 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   /** 从 view 响应里取出分P 列表。 */
   const parseBiliPages = (data) => {
     const pages = data && data.data && Array.isArray(data.data.pages) ? data.data.pages : []
-    return pages.map(p => ({ cid: p.cid, page: p.page || 0, part: p.part || '' }))
+    return pages.map(p => ({
+      cid: p.cid,
+      page: p.page || 0,
+      part: p.part || '',
+      // 分P 各自的时长（秒）：资源弹窗里片段选择的上限要用它，
+      // 用整部视频的总时长会让多P 的区间越过当前 P
+      duration: Number(p.duration) || 0
+    }))
   }
 
   /** 从 playurl 响应里挑出画面流与声音流（DASH 优先 H.264，兼容旧版 durl）。 */
@@ -5588,6 +5643,248 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     } catch (e) {
       return []
     }
+  }
+
+  // ─── B 站：接口直连 + 应用内资源弹窗 ───
+  //
+  // B 站的资源列表不再来自嗅探：同一画质编号（如 30080）下可能同时存在
+  // AVC / HEVC / AV1 三种编码，嗅探只看得到地址里的画质编号，猜出来的
+  // 编码标签必然是错的（用户看到的"H.264"实际是 AV1）。这里直接打
+  // playurl 接口，把 dash.video / dash.audio 连同 codecid 一起交给应用，
+  // 由应用弹窗让用户选视频、音频、合并格式与片段。
+
+  const BILI_VIDEO_CODEC_NAMES = { 7: 'AVC (H.264)', 12: 'HEVC (H.265)', 13: 'AV1' }
+  const BILI_AUDIO_QUALITY_NAMES = {
+    30216: '64K',
+    30232: '132K',
+    30280: '192K',
+    30250: '杜比全景声',
+    30251: 'Hi-Res 无损'
+  }
+
+  /** 编码名：优先接口的 codecid，缺失时从 codecs 串里认。 */
+  const biliCodecName = (stream) => {
+    const codecid = Number(stream && stream.codecid)
+    if (BILI_VIDEO_CODEC_NAMES[codecid]) return BILI_VIDEO_CODEC_NAMES[codecid]
+    const codecs = `${(stream && stream.codecs) || ''}`.toLowerCase()
+    if (codecs.includes('av01')) return 'AV1'
+    if (codecs.includes('hev1') || codecs.includes('hvc1')) return 'HEVC (H.265)'
+    if (codecs.includes('avc') || codecs.includes('h264')) return 'AVC (H.264)'
+    if (codecs.includes('ec-3')) return 'E-AC-3'
+    if (codecs.includes('flac')) return 'FLAC'
+    if (codecs.includes('mp4a')) return 'AAC'
+    return codecs || '未知编码'
+  }
+
+  /** 画质名取自接口的 support_formats（1080P 高码率 / 4K 等），没有就退回编号。 */
+  const biliQualityName = (quality, supportFormats) => {
+    try {
+      const list = Array.isArray(supportFormats) ? supportFormats : []
+      const matched = list.find(f => Number(f && f.quality) === Number(quality))
+      if (matched) {
+        return matched.new_description || matched.display_desc || `${quality}`
+      }
+    } catch (e) {}
+    return `${quality || ''}`
+  }
+
+  const biliAudioName = (stream) => {
+    const id = Number(stream && stream.id)
+    return BILI_AUDIO_QUALITY_NAMES[id] || `${Math.round(Number(stream && stream.bandwidth || 0) / 1000)} kbps`
+  }
+
+  /** DASH 流地址：baseUrl 优先，缺失时取第一条 backupUrl。 */
+  const biliStreamUrl = (stream) => {
+    try {
+      if (!stream) return ''
+      return stream.baseUrl || stream.base_url ||
+        (Array.isArray(stream.backupUrl) && stream.backupUrl[0]) ||
+        (Array.isArray(stream.backup_url) && stream.backup_url[0]) || ''
+    } catch (e) {
+      return ''
+    }
+  }
+
+  let biliResourceRequesting = false
+
+  /**
+   * 打 view + playurl，把流清单交给应用弹窗。
+   *
+   * 应用不可达时退回原来的直发流程（画面流 + 声音流配对发送），
+   * 不让用户点了按钮没有任何反应。
+   */
+  const openBiliResourceDialog = async () => {
+    if (biliResourceRequesting) return
+    const id = getBiliVideoIdFromUrl()
+    if (!id) {
+      showResourceDropdown()
+      return
+    }
+
+    biliResourceRequesting = true
+    const btn = document.getElementById('lerxu-bilibili-download-btn')
+    const countSpan = btn ? btn.querySelector('.lerxu-resource-count') : null
+    const oldCount = countSpan ? countSpan.textContent : ''
+    if (countSpan) countSpan.textContent = '获取中…'
+
+    try {
+      const query = id.bvid ? `bvid=${encodeURIComponent(id.bvid)}` : `aid=${encodeURIComponent(id.aid)}`
+      const viewData = await biliApiJson(`https://api.bilibili.com/x/web-interface/view?${query}`)
+      if (!viewData || viewData.code !== 0 || !viewData.data) {
+        throw new Error(`view ${viewData && viewData.code}`)
+      }
+      const view = viewData.data
+      const pages = parseBiliPages(viewData)
+      const pageInfo = pages.find(p => Number(p.page) === Number(id.page)) || null
+      const cid = (pageInfo && pageInfo.cid) || view.cid || ''
+      if (!cid) throw new Error('no cid')
+
+      // fnval=4048：DASH + HDR + 4K + 杜比音频 + 杜比视界 + 8K + AV1，
+      // 少一个 flag 就可能拿不到 AV1 / Hi-Res，弹窗里就少了可选项。
+      const playData = await biliApiJson(
+        `https://api.bilibili.com/x/player/playurl?${query}&cid=${cid}&qn=127&fnval=4048&fnver=0&fourk=1`
+      )
+      if (!playData || playData.code !== 0 || !playData.data) {
+        throw new Error(`playurl ${playData && playData.code}`)
+      }
+      const play = playData.data
+      const dash = play.dash || {}
+      const supportFormats = Array.isArray(play.support_formats) ? play.support_formats : []
+
+      const videos = (Array.isArray(dash.video) ? dash.video : []).map(v => ({
+        id: Number(v.id) || 0,
+        codecid: Number(v.codecid) || 0,
+        codecs: `${v.codecs || ''}`,
+        bandwidth: Number(v.bandwidth) || 0,
+        width: Number(v.width) || 0,
+        height: Number(v.height) || 0,
+        frameRate: `${v.frameRate || v.frame_rate || ''}`,
+        qualityName: biliQualityName(v.id, supportFormats),
+        codecName: biliCodecName(v),
+        url: biliStreamUrl(v)
+      })).filter(v => v.url)
+
+      const audios = (Array.isArray(dash.audio) ? dash.audio : []).map(a => ({
+        id: Number(a.id) || 0,
+        codecid: Number(a.codecid) || 0,
+        codecs: `${a.codecs || ''}`,
+        bandwidth: Number(a.bandwidth) || 0,
+        qualityName: biliAudioName(a),
+        codecName: biliCodecName(a),
+        url: biliStreamUrl(a)
+      })).filter(a => a.url)
+
+      // 少量老视频只有 durl（音视频合在一起的普通 MP4），没有 DASH。
+      // 这条流本身就是完整视频，弹窗里不选音频即可。
+      if (!videos.length && Array.isArray(play.durl) && play.durl.length > 0) {
+        const durl = play.durl[0] || {}
+        const durlUrl = durl.url || (Array.isArray(durl.backup_url) && durl.backup_url[0]) || ''
+        if (durlUrl) {
+          videos.push({
+            id: Number(play.quality) || 0,
+            codecid: 0,
+            codecs: '',
+            bandwidth: Number(play.bandwidth) || 0,
+            width: 0,
+            height: 0,
+            frameRate: '',
+            qualityName: '默认清晰度（音视频已合并）',
+            codecName: 'MP4',
+            url: durlUrl
+          })
+        }
+      }
+
+      if (!videos.length) throw new Error('no video stream')
+
+      const referer = window.location.href || `https://www.bilibili.com/video/${id.bvid || 'av' + id.aid}`
+      const headers = []
+      try {
+        if (navigator.userAgent) headers.push(`User-Agent: ${navigator.userAgent}`)
+      } catch (e) {}
+      headers.push(`Referer: ${referer}`)
+      headers.push('Accept: */*')
+      headers.push('X-Lerxu-Source: BrowserExtension')
+
+      const payload = {
+        title: view.title || '',
+        partTitle: (pageInfo && pageInfo.part) || '',
+        page: Number(id.page) || 1,
+        pageCount: pages.length || 1,
+        duration: Number((pageInfo && pageInfo.duration) || view.duration) || 0,
+        // 封面与 UP 主：独立资源窗顶部展示（封面可能是 //i0.hdslb.com 协议相对地址）
+        cover: `${view.pic || ''}`.replace(/^\/\//, 'https://'),
+        owner: view.owner && view.owner.name ? `${view.owner.name}` : '',
+        referer,
+        headers,
+        videos,
+        audios
+      }
+
+      chrome.runtime.sendMessage({ type: 'openBiliResourceDialog', payload }, (resp) => {
+        try {
+          if (chrome.runtime.lastError || !resp || !resp.ok) {
+            log('openBiliResourceDialog failed, falling back to direct add', chrome.runtime.lastError)
+            sendBiliPairDirect(payload, videos[0], audios[0])
+          }
+        } catch (e) {}
+      })
+    } catch (e) {
+      log('openBiliResourceDialog error', e)
+      if (countSpan) {
+        countSpan.textContent = '获取失败'
+        setTimeout(() => {
+          if (countSpan && countSpan.textContent === '获取失败') countSpan.textContent = oldCount
+        }, 3000)
+      }
+    } finally {
+      biliResourceRequesting = false
+      if (countSpan && countSpan.textContent === '获取中…') countSpan.textContent = oldCount
+    }
+  }
+
+  /** 应用不在线时的兜底：按原有配对协议直接发画面流与声音流。 */
+  const sendBiliPairDirect = (payload, videoStream, audioStream) => {
+    try {
+      if (!videoStream || !videoStream.url) return
+      const titleBase = `${payload.title || ''}${payload.page > 1 ? `_P${payload.page}${payload.partTitle ? '_' + safeFilenamePart(payload.partTitle) : ''}` : ''}`
+      const referer = payload.referer || ''
+      const headers = payload.headers || []
+      if (!audioStream || !audioStream.url) {
+        if (markSent(videoStream.url)) {
+          chrome.runtime.sendMessage({
+            type: 'addUriFromContent',
+            url: videoStream.url,
+            referer,
+            headers,
+            suggestedFilename: `${titleBase}.mp4`
+          }, () => {})
+        }
+        return
+      }
+      if (!markSent(`${videoStream.url}|${audioStream.url}`)) return
+      const pairId = makePairId()
+      chrome.runtime.sendMessage({
+        type: 'addUriFromContent',
+        url: videoStream.url,
+        referer,
+        headers,
+        pairId,
+        pairRole: PAIR_ROLE_VIDEO,
+        suggestedFilename: `${titleBase}_video.mp4`
+      }, () => {})
+      setTimeout(() => {
+        chrome.runtime.sendMessage({
+          type: 'addUriFromContent',
+          url: audioStream.url,
+          referer,
+          headers,
+          pairId,
+          pairRole: PAIR_ROLE_AUDIO,
+          suggestedFilename: `${titleBase}_audio.m4a`
+        }, () => {})
+      }, 100)
+    } catch (e) {}
   }
 
   // 检测合集中当前正在播放的视频BV号

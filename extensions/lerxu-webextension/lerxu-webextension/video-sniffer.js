@@ -2,6 +2,21 @@
 (function () {
   'use strict'
 
+  // B 站视频页不再做资源嗅探：同一画质编号下可能同时存在 AVC / HEVC / AV1，
+  // 而嗅探只能看到地址里的画质编号，猜不出编码，标签会错（显示 H.264、
+  // 实际是 AV1）。这些页面的下载入口改为直接调 playurl 接口，由接口返回的
+  // codecid 决定格式；其他站点与 B 站其它页面（番剧等）照旧嗅探。
+  try {
+    const host = `${window.location.hostname || ''}`.toLowerCase()
+    const path = `${window.location.pathname || ''}`.toLowerCase()
+    const search = `${window.location.search || ''}`.toLowerCase()
+    const isBiliVideoDetail = (host === 'bilibili.com' || host.endsWith('.bilibili.com')) &&
+      (/^\/video\/(bv[0-9a-z]+|av\d+)/i.test(path) || /[?&]bvid=bv/i.test(search))
+    if (isBiliVideoDetail) {
+      return
+    }
+  } catch (e) {}
+
   const isPureMediaDocument = () => {
     try {
       const type = `${document.contentType || ''}`.toLowerCase()

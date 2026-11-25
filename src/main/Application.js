@@ -120,6 +120,9 @@ export default class Application extends EventEmitter {
     this.startupNonce = randomBytes(8).toString('hex')
     this.challenges = new Map()
     this.sessionTokens = new Map()
+    // B 站资源弹窗的流清单（token -> { payload, mergeFormat, createdAt }）。
+    // 数据留在主进程内存里，独立窗口按 token 取，不把整份清单塞进 URL。
+    this._biliResourceSessions = new Map()
     this.tokenVersion = Date.now()
     this.sessionTokenTTL = 24 * 60 * 60 * 1000 // session token 24小时过期
 
@@ -315,6 +318,13 @@ export default class Application extends EventEmitter {
     }
 
     return { ok: true }
+  }
+
+  /** 当前生效主题（auto 时取系统主题），独立资源窗轮询它保持实时一致。 */
+  _getEffectiveTheme () {
+    const configured = this.configManager.getUserConfig('theme', APP_THEME.AUTO)
+    const systemTheme = this.themeManager ? this.themeManager.getSystemTheme() : null
+    return configured === APP_THEME.AUTO ? (systemTheme || APP_THEME.LIGHT) : configured
   }
 
   // 读取扩展配置(与 /lerxu/ext-config GET 一致)
@@ -1062,6 +1072,51 @@ export default class Application extends EventEmitter {
       return { version: app.getVersion() }
     case 'tasks':
       return this._getExtensionTasks()
+    case 'bili-resource': {
+      // B 站播放页的流清单（playurl 的 dash.video / dash.audio，含 codecid）。
+      // 浏览器内不再弹资源列表：这里直接开一个**独立的资源窗口**，
+      // 不唤醒/置顶主窗口，也不依赖主窗口渲染层的命令注册。
+      const payload = params || {}
+      if (!Array.isArray(payload.videos) || payload.videos.length === 0) {
+        return { ok: false, error: 'invalid payload' }
+      }
+
+      const token = randomBytes(16).toString('hex')
+      const now = Date.now()
+      const ttl = 10 * 60 * 1000
+      for (const [key, value] of this._biliResourceSessions) {
+        if (!value || now - value.createdAt > ttl) {
+          this._biliResourceSessions.delete(key)
+        }
+      }
+
+      const theme = this._getEffectiveTheme()
+      const preferredFormat = `${this.configManager.getUserConfig('merge-format', 'mp4') || 'mp4'}`.trim().toLowerCase()
+      this._biliResourceSessions.set(token, {
+        payload,
+        mergeFormat: ['mp4', 'mkv', 'ts'].includes(preferredFormat) ? preferredFormat : 'mp4',
+        createdAt: now
+      })
+
+      try {
+        const win = this.windowManager.openBiliResourceWindow({
+          token,
+          theme,
+          locale: this.configManager.getLocale()
+        })
+        if (!win) {
+          throw new Error('cannot open window')
+        }
+        win.on('closed', () => {
+          this._biliResourceSessions.delete(token)
+        })
+        return { ok: true }
+      } catch (err) {
+        this._biliResourceSessions.delete(token)
+        logger.warn('[Lerxu] Failed to open bili resource window:', err && err.message ? err.message : err)
+        return { ok: false, error: err && err.message ? err.message : 'open failed' }
+      }
+    }
     case 'health':
       return { ok: true }
     case 'ping':
@@ -4512,6 +4567,96 @@ export default class Application extends EventEmitter {
       } catch (e) {
         logger.warn('[Lerxu] Failed to close progress window:', e.message)
       }
+    })
+
+    // ── B 站独立资源窗口 ──────────────────────────────────────────
+    // 窗口创建时把流清单按 token 存在主进程；页面加载后用这个 token 取。
+    ipcMain.handle('bili-resource:get', (event, token) => {
+      const session = this._biliResourceSessions.get(`${token || ''}`)
+      if (!session) {
+        return null
+      }
+      return {
+        payload: session.payload,
+        mergeFormat: session.mergeFormat,
+        // 页面据此决定是否绘制 26px 自定义标题栏：
+        // macOS（hiddenInset）始终要；其它平台只在隐藏应用菜单（frameless）时要
+        isMac: process.platform === 'darwin',
+        customFrame: !!this.configManager.getUserConfig('hide-app-menu')
+      }
+    })
+
+    ipcMain.handle('bili-resource:theme', () => ({ theme: this._getEffectiveTheme() }))
+
+    // 用户在资源窗里确认后：校验选择，转交主窗口的渲染层建任务
+    // （配对/合并格式/片段都记进任务历史，合并流程才找得到它们）。
+    ipcMain.handle('bili-resource:submit', (event, raw = {}) => {
+      const token = `${raw.token || ''}`
+      const session = this._biliResourceSessions.get(token)
+      if (!session) {
+        return { ok: false, error: '资源已失效，请在网页上重新点击下载' }
+      }
+
+      const selection = raw.selection && typeof raw.selection === 'object' ? raw.selection : {}
+      const video = selection.video && typeof selection.video === 'object' ? selection.video : {}
+      const audio = selection.audio && typeof selection.audio === 'object' ? selection.audio : null
+      const isHttpUrl = (value) => /^https?:\/\//i.test(`${value || ''}`)
+      if (!isHttpUrl(video.url)) {
+        return { ok: false, error: '视频流地址无效' }
+      }
+      if (audio && !isHttpUrl(audio.url)) {
+        return { ok: false, error: '音频流地址无效' }
+      }
+
+      const mainWindow = this.windowManager.getWindow('index')
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return { ok: false, error: '主窗口不可用，请重新打开应用后再试' }
+      }
+
+      const selectionPayload = {
+        title: `${session.payload.title || ''}`,
+        partTitle: `${session.payload.partTitle || ''}`,
+        page: Number(session.payload.page) || 1,
+        referer: `${session.payload.referer || ''}`,
+        headers: Array.isArray(session.payload.headers) ? session.payload.headers : [],
+        video: {
+          url: `${video.url}`,
+          codecs: `${video.codecs || ''}`,
+          codecid: Number(video.codecid) || 0
+        },
+        audio: audio
+          ? {
+            url: `${audio.url}`,
+            codecs: `${audio.codecs || ''}`,
+            codecid: Number(audio.codecid) || 0
+          }
+          : null,
+        mergeFormat: ['mp4', 'mkv', 'ts'].includes(`${selection.mergeFormat || ''}`)
+          ? selection.mergeFormat
+          : session.mergeFormat
+      }
+
+      const clipStart = Number(selection.clipStart)
+      const clipEnd = Number(selection.clipEnd)
+      if (Number.isFinite(clipStart) && Number.isFinite(clipEnd) && clipStart >= 0 && clipEnd > clipStart) {
+        selectionPayload.clipStart = Math.round(clipStart * 1000) / 1000
+        selectionPayload.clipEnd = Math.round(clipEnd * 1000) / 1000
+      }
+
+      this._biliResourceSessions.delete(token)
+      try {
+        this.windowManager.sendMessageTo(mainWindow, 'bili-resource:apply', selectionPayload)
+      } catch (err) {
+        return { ok: false, error: err && err.message ? err.message : '发送下载任务失败' }
+      }
+
+      try {
+        const win = BrowserWindow.fromWebContents(event.sender)
+        if (win && !win.isDestroyed()) {
+          win.close()
+        }
+      } catch (_) { }
+      return { ok: true }
     })
 
     // Handle close-completed-task-window

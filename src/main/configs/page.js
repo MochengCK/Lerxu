@@ -15,6 +15,8 @@ const getVideoSnifferAddFormatUrl = () => getPageUrl('video-sniffer-add-format.h
 
 const getFileCategoriesUrl = () => getPageUrl('file-categories.html')
 
+const getBiliResourceUrl = () => getPageUrl('bili-resource.html')
+
 const getPlayerUrl = () => getPageUrl('player.html')
 
 /* 偏好设置已内嵌在主窗口 SPA 中（/preference 路由），
@@ -75,6 +77,21 @@ export default {
     bindCloseToHide: false,
     openDevTools: is.dev(),
     url: getFileCategoriesUrl()
+  },
+  /* B 站资源弹窗：独立窗口，固定尺寸（与任务进度窗一样不可缩放）。 */
+  'bili-resource': {
+    attrs: {
+      title: '下载视频',
+      width: 480,
+      height: 440,
+      resizable: false,
+      maximizable: false,
+      minimizable: true,
+      useContentSize: true
+    },
+    bindCloseToHide: false,
+    openDevTools: is.dev(),
+    url: getBiliResourceUrl()
   },
   /* 独立播放器窗口：视频与音频共用一套界面（按媒体类型切布局）。
      数据不走 file://，而是由主进程的本地媒体流服务以支持 Range 的 HTTP 流提供，

@@ -778,8 +778,9 @@ const channelRequest = async (type, params, httpTimeout = 1500) => {
   if (wsSocket && wsSocket.readyState === WebSocket.OPEN && wsAuthenticated) {
     try {
       const data = await wsRequest(type, params)
-      // add 的业务结果在 data.ok 中(invalid url 等失败场景),提取为统一 ok
-      if (type === 'add') {
+      // add / bili-resource 的业务结果在 data.ok 中(invalid url / 载荷不合法
+      // 等失败场景),提取为统一 ok —— 失败时内容脚本要回退到直发流程
+      if (type === 'add' || type === 'bili-resource') {
         return { ok: !!(data && data.ok), data }
       }
       return { ok: true, data }
@@ -1652,6 +1653,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
     }
     handleAddFromContent()
+    return true
+  }
+
+  // B 站资源清单：内容脚本直接调 playurl 接口后把 dash.video / dash.audio
+  // （含 codecid）发过来，由应用弹出独立的资源弹窗选择视频/音频/合并格式/片段。
+  if (msg && msg.type === 'openBiliResourceDialog' && msg.payload) {
+    const handleOpenBiliResource = async () => {
+      const result = await channelRequest('bili-resource', msg.payload, 5000)
+      sendResponse({ ok: !!(result && result.ok) })
+    }
+    handleOpenBiliResource()
     return true
   }
 

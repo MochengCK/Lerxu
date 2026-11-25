@@ -20,6 +20,20 @@
 (function () {
   'use strict'
 
+  // B 站视频页不再做资源嗅探（改由内容脚本直接调 playurl 接口）：这个观察者
+  // 会挂钩页面的 XHR / fetch / WebSocket，跳过它连开销一起省掉。
+  // 番剧等其它 B 站页面仍保留嗅探，避免没有替代接口时功能直接消失。
+  try {
+    const host = `${window.location.hostname || ''}`.toLowerCase()
+    const path = `${window.location.pathname || ''}`.toLowerCase()
+    const search = `${window.location.search || ''}`.toLowerCase()
+    const isBiliVideoDetail = (host === 'bilibili.com' || host.endsWith('.bilibili.com')) &&
+      (/^\/video\/(bv[0-9a-z]+|av\d+)/i.test(path) || /[?&]bvid=bv/i.test(search))
+    if (isBiliVideoDetail) {
+      return
+    }
+  } catch (e) {}
+
   const MSG_KEY = '__lerxuStreamUrls'
   /// 单条载荷的扫描上限（超过就跳过：接口响应与长连接帧不该这么大）。
   const SCAN_MAX_BYTES = 2 * 1024 * 1024

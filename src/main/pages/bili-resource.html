@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>下载视频</title>
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:">
+  <script src="./bili-resource-theme.js"></script>
+  <style>
+    :root {
+      --bg: #f0f4f8;
+      --panel: #ffffff;
+      --text: #1f2329;
+      --text-2: #646a73;
+      --text-3: #8f959e;
+      --border: #dfe4ea;
+      --hover: #f2f3f5;
+      --primary: #1a7fe0;
+      --primary-hover: #166fce;
+      --danger: #f54a45;
+      --radius: 8px;
+    }
+
+    html.dark {
+      --bg: #1e2228;
+      --panel: #262a31;
+      --text: #e8eaed;
+      --text-2: #a8b0bb;
+      --text-3: #7d848f;
+      --border: #363b44;
+      --hover: #2d323a;
+      --primary: #4a9eff;
+      --primary-hover: #6cb0ff;
+      --danger: #ff6b66;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    html {
+      /* 根元素也要上色：首帧由 html 铺底，避免窗口表面露出白色 */
+      background: var(--bg);
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 12px;
+      line-height: 1.4;
+      overflow: hidden;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    /* ── 标题栏：与独立任务进度窗口同一套形态（26px、可拖动） ── */
+    .title-bar {
+      display: none;
+      flex-shrink: 0;
+      height: 26px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      padding-left: 78px;
+      -webkit-app-region: drag;
+      background: var(--bg);
+      user-select: none;
+    }
+
+    body.show-title-bar .title-bar {
+      display: flex;
+    }
+
+    .title-text {
+      font-size: 12px;
+      opacity: 0.85;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-right: 8px;
+    }
+
+    .title-actions {
+      display: flex;
+      gap: 4px;
+      -webkit-app-region: no-drag;
+    }
+
+    .title-btn {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: none;
+      border-radius: 3px;
+      background: transparent;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 18px;
+      cursor: pointer;
+    }
+
+    .title-btn:hover {
+      background: var(--hover);
+    }
+
+    body.mac .title-bar {
+      /* 与进度窗一致：26px 内容 + 6px 上留白 = 32px，文字与左侧红绿灯垂直居中 */
+      height: 32px;
+      justify-content: flex-end;
+      padding-top: 6px;
+      padding-right: 8px;
+      padding-left: 78px;
+    }
+
+    body.mac .title-actions {
+      display: none;
+    }
+
+    /* ── 内容 ── */
+    .content {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 4px 16px 8px;
+    }
+
+    .content::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .content::-webkit-scrollbar-thumb {
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.16);
+    }
+
+    html.dark .content::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 8px 0;
+    }
+
+    .setting-info {
+      min-width: 0;
+    }
+
+    .setting-title {
+      font-size: 13px;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .setting-subtitle {
+      margin-top: 1px;
+      font-size: 11px;
+      color: var(--text-3);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* ── 自绘下拉（不用系统自带的 select） ── */
+    .lx-select {
+      position: relative;
+      flex-shrink: 0;
+      width: 148px;
+    }
+
+    .lx-select-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      width: 100%;
+      height: 28px;
+      padding: 0 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      transition: border-color 0.12s ease;
+    }
+
+    .lx-select-trigger:hover {
+      border-color: var(--text-3);
+    }
+
+    .lx-select.open .lx-select-trigger {
+      border-color: var(--primary);
+    }
+
+    .lx-select.disabled .lx-select-trigger {
+      opacity: 0.55;
+      cursor: default;
+    }
+
+    .lx-select-value {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .lx-select-arrow {
+      flex-shrink: 0;
+      width: 12px;
+      height: 12px;
+      color: var(--text-3);
+      transition: transform 0.15s ease;
+      /* SVG 默认以左上角为旋转中心，会让展开态的箭头转出可视区 */
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    .lx-select-arrow path {
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .lx-select.open .lx-select-arrow {
+      transform: rotate(180deg);
+    }
+
+    .lx-select-menu {
+      position: fixed;
+      z-index: 1000;
+      max-height: 220px;
+      overflow-y: auto;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+      transform-origin: top center;
+      transition: opacity 140ms ease, transform 140ms ease;
+      pointer-events: none;
+    }
+
+    .lx-select-menu[hidden] {
+      display: none;
+    }
+
+    .lx-select-menu.drop-up {
+      transform: translateY(4px) scale(0.98);
+      transform-origin: bottom center;
+    }
+
+    .lx-select-menu.open {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .lx-select-menu::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .lx-select-menu::-webkit-scrollbar-thumb {
+      border-radius: 3px;
+      background: var(--border);
+    }
+
+    .lx-select-option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      height: 30px;
+      padding: 0 8px;
+      border-radius: 5px;
+      font-size: 12px;
+      color: var(--text);
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .lx-select-option:hover {
+      background: var(--hover);
+    }
+
+    .lx-select-option.selected {
+      color: var(--primary);
+    }
+
+    .lx-select-check {
+      flex-shrink: 0;
+      font-size: 12px;
+    }
+
+    /* ── 视频信息（封面 + 标题） ── */
+    .video-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 4px 0 6px;
+    }
+
+    .video-thumb {
+      position: relative;
+      flex-shrink: 0;
+      width: 128px;
+      aspect-ratio: 16 / 9;
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--hover);
+    }
+
+    .video-thumb img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .video-thumb.empty::after {
+      content: '暂无封面';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    .video-info {
+      flex: 1;
+      min-width: 0;
+      padding-top: 1px;
+    }
+
+    .video-title {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.4;
+      color: var(--text);
+    }
+
+    .video-meta {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--text-3);
+      min-width: 0;
+    }
+
+    .video-meta-text {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .video-size {
+      flex-shrink: 0;
+      color: var(--text-2);
+      white-space: nowrap;
+    }
+
+    /* ── 底部 ── */
+    .footer {
+      flex-shrink: 0;
+      padding: 8px 12px 10px;
+      background: var(--bg);
+    }
+
+    .btn {
+      height: 34px;
+      padding: 0 18px;
+      border: none;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .btn-primary {
+      width: 100%;
+      height: 34px;
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+
+    /* ── 状态 ── */
+    .state {
+      padding: 40px 0;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-2);
+    }
+
+    .state.error {
+      color: var(--danger);
+    }
+
+    .tip {
+      margin-top: 6px;
+      font-size: 11px;
+      line-height: 1.6;
+      color: var(--text-3);
+    }
+
+    .error-text {
+      color: var(--danger);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="title-bar" id="titleBar">
+    <div class="title-text" id="windowTitle">下载视频</div>
+    <div class="title-actions">
+      <button class="title-btn" id="minBtn" type="button" title="最小化">–</button>
+      <button class="title-btn" id="closeBtn" type="button" title="关闭">×</button>
+    </div>
+  </div>
+
+  <main class="content">
+    <div class="state" id="loading">正在读取资源…</div>
+    <div class="state error" id="error" hidden></div>
+
+    <div id="form" hidden>
+      <div class="video-head">
+        <div class="video-thumb" id="videoThumbWrap">
+          <img id="videoThumb" alt="" referrerpolicy="no-referrer">
+        </div>
+        <div class="video-info">
+          <div class="video-title" id="videoTitle"></div>
+          <div class="video-meta">
+            <span class="video-meta-text" id="videoMeta"></span>
+            <span class="video-size" id="videoSize"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-title">清晰度</div>
+          <div class="setting-subtitle" id="qualityHint">选择要下载的画质</div>
+        </div>
+        <div class="lx-select" id="qualitySelect">
+          <button type="button" class="lx-select-trigger">
+            <span class="lx-select-value">—</span>
+            <svg class="lx-select-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-title">视频编码</div>
+          <div class="setting-subtitle" id="codecHint">AVC 兼容性更好，AV1 体积更小</div>
+        </div>
+        <div class="lx-select" id="videoCodecSelect">
+          <button type="button" class="lx-select-trigger">
+            <span class="lx-select-value">—</span>
+            <svg class="lx-select-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-title">音频质量</div>
+          <div class="setting-subtitle" id="audioHint">选择音频档位</div>
+        </div>
+        <div class="lx-select" id="audioSelect">
+          <button type="button" class="lx-select-trigger">
+            <span class="lx-select-value">—</span>
+            <svg class="lx-select-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-title">音频编码</div>
+          <div class="setting-subtitle" id="audioCodecHint">AAC 兼容性最好</div>
+        </div>
+        <div class="lx-select" id="audioCodecSelect">
+          <button type="button" class="lx-select-trigger">
+            <span class="lx-select-value">—</span>
+            <svg class="lx-select-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info">
+          <div class="setting-title">合并格式</div>
+          <div class="setting-subtitle">下载完成后自动合并为所选容器</div>
+        </div>
+        <div class="lx-select" id="mergeFormat">
+          <button type="button" class="lx-select-trigger">
+            <span class="lx-select-value">MP4</span>
+            <svg class="lx-select-arrow" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <p class="tip error-text" id="formError" hidden></p>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <button class="btn btn-primary" id="submitBtn" type="button" disabled>开始下载</button>
+  </footer>
+
+  <div class="lx-select-menu" id="globalSelectMenu" hidden></div>
+
+  <script src="./bili-resource.js"></script>
+</body>
+
+</html>
