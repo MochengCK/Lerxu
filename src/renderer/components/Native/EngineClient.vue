@@ -726,6 +726,9 @@ const dir = dirname(filePath)
         const cfg = preferenceConfig.value || {}
         const path = getTaskActualPath(task, cfg)
         const finalPath = isBT ? path : await removeDownloadingSuffix(task, path, cfg)
+        // 第三方扩展的一对音视频：同 stem、不同扩展名（如 标题.mp4 + 标题.flac）。
+        // 没有角色标记 / pairId，必须靠扩展名分类配对，见 collectGenericAvPair。
+        const genericPair = isBT ? null : collectGenericAvPair(finalPath || path, cfg)
         let isBilibiliPart = false
         if (!isBT) {
           try {
@@ -756,6 +759,10 @@ const dir = dirname(filePath)
                 }
               }
             } catch (_) {}
+          }
+          if (!isBilibiliPart && genericPair && genericPair.pairLike) {
+            // 同 stem 的另一半（视频/音频）已经在盘上或任务里 —— 这条流属于一对
+            isBilibiliPart = true
           }
           if (!isBilibiliPart) {
             try {
@@ -880,11 +887,13 @@ const dir = dirname(filePath)
         //     引擎还预分配写盘（实测下到 9/10 时盘上大小已到满），大小也骗人；
         //     真正可靠的"还在下"信号是引擎控制文件（见 engineCtrlFilePath）。
         // 这条必须放在 setTaskStatus(MERGING) **之前**（否则就把成员状态改脏了）。
-        const pairStillDownloading = !!isPairRecordStillDownloading(mergeGid)
+        const pairStillDownloading = !!isPairRecordStillDownloading(mergeGid) ||
+          !!(genericPair && genericPair.pairLike && genericPair.pending)
         // 这一对**是否已经产出合并文件**（另一半的完成事件晚到/重放时会走到这里）：
         // 有产物就不再合第二次、也不把记录推回 MERGING —— 那是"都合并完了却冒出
         // 正在合并音视频…"的入口之一（用户报的形态）。
-        const pairAlreadyMerged = !!pairInfo && isPairAlreadyMerged(pairInfo)
+        const pairAlreadyMerged = (!!pairInfo && isPairAlreadyMerged(pairInfo)) ||
+          !!(genericPair && genericPair.alreadyMerged)
 
         // 另一半还在下 → 这条流的"完成"不是整条记录的完成：不发完成通知、不试合并。
         // （否则就是用户看到的"卡片还在下载，却已经报完成通知并合并完成"。）
@@ -1134,6 +1143,164 @@ const dir = dirname(filePath)
         if (lower.endsWith('.m4s')) return 'm4s'
         return ''
       }
+
+      // ── 通用音视频流（第三方扩展）──────────────────────────────────────
+      // 别的扩展（Bilibili-Evolved、各类下载助手等）不按 `xxx_video.mp4` /
+      // `xxx_audio.m4a` 命名，而是把画面与声音下成**同 stem 的两个文件**：
+      // `标题.mp4` + `标题.flac`。原有的 DASH 判据只认角色标记 / `.m4s`，
+      // 永远认不出这一对 —— 两个文件都下完了也不会触发合并（用户报的形态）。
+      const GENERIC_VIDEO_EXTS = new Set(['mp4', 'm4v', 'mkv', 'webm', 'mov', 'flv', 'ts'])
+      const GENERIC_AUDIO_EXTS = new Set(['m4a', 'aac', 'flac', 'mp3', 'opus', 'ogg', 'oga', 'wav'])
+
+      function getGenericMediaKind (filename) {
+        const name = filename ? `${filename}` : ''
+        const dot = name.lastIndexOf('.')
+        if (dot <= 0 || dot === name.length - 1) return ''
+        const ext = name.slice(dot + 1).toLowerCase()
+        if (GENERIC_VIDEO_EXTS.has(ext)) return 'video'
+        if (GENERIC_AUDIO_EXTS.has(ext)) return 'audio'
+        return ''
+      }
+
+      function genericMediaStem (filename, cfg) {
+        const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
+        const noSuffix = stripDownloadingSuffixFromFilename(filename ? `${filename}` : '', suffix)
+        const noDup = stripDuplicateNumberBeforeExtension(noSuffix)
+        const dot = noDup.lastIndexOf('.')
+        return dot > 0 ? noDup.slice(0, dot) : noDup
+      }
+
+      /**
+       * 找出与 `finalPath` 同目录、同 stem 的另一半音/视频文件。
+       *
+       * 与 `collectExtensionDashParts` 的区别：后者只认 `.mp4/.m4a/.m4s`，
+       * 且调用方还要求"来自我们自己的扩展 / B 站"。这里按**扩展名分类**
+       * （video/audio 两套集合）配对，覆盖第三方扩展常见的 `.mp4 + .flac`、
+       * `.webm + .m4a` 等组合。
+       *
+       * 返回 `{ dir, stem, videoPath, audioPath, pending, pairLike, alreadyMerged }`：
+       *   · pairLike      —— 同 stem 的互补角色确实存在（盘上文件或任务历史），
+       *                     才算一对；只是"同名文件"不硬凑；
+       *   · pending       —— 另一半还在下载（`.xfer` / 下载中后缀 / 任务未结束）；
+       *   · alreadyMerged —— 这一对已经产出过合并文件（历史里带 dashMerged）。
+       */
+      function collectGenericAvPair (finalPath, cfg) {
+        try {
+          const rawPath = finalPath ? `${finalPath}` : ''
+          if (!rawPath) return null
+          const dir = dirname(rawPath)
+          const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
+          const ownName = stripDownloadingSuffixFromFilename(basename(rawPath), suffix)
+          const ownKind = getGenericMediaKind(ownName)
+          if (!ownKind) return null
+          const stem = genericMediaStem(ownName, cfg)
+          if (!stem) return null
+
+          let entries = []
+          try { entries = readdirSync(dir) || [] } catch (_) { entries = [] }
+          const xferSet = new Set()
+          entries.forEach((e0) => {
+            const e = `${e0 || ''}`
+            if (e.toLowerCase().endsWith('.xfer')) {
+              xferSet.add(e.slice(0, -'.xfer'.length))
+            }
+          })
+
+          const ready = { video: null, audio: null }
+          let pending = false
+          for (const e0 of entries) {
+            const e = `${e0 || ''}`
+            if (!e || e.toLowerCase().endsWith('.xfer')) continue
+            if (e.startsWith('.') && e.includes('.lerxu-merging-')) continue
+            const noSuffix = stripDownloadingSuffixFromFilename(e, suffix)
+            const kind = getGenericMediaKind(noSuffix)
+            if (!kind) continue
+            if (genericMediaStem(e, cfg) !== stem) continue
+            const isPending = !!(suffix && e.endsWith(suffix)) || xferSet.has(e) || xferSet.has(noSuffix)
+            if (isPending) {
+              pending = true
+              continue
+            }
+            const diskPath = resolve(dir, e)
+            let size = 0
+            let mtimeMs = 0
+            try {
+              const st = statSync(diskPath)
+              size = st.size || 0
+              mtimeMs = st.mtimeMs || 0
+            } catch (_) {
+              size = 0
+            }
+            if (size <= 0) continue
+            const prev = ready[kind]
+            if (!prev || size > prev.size) {
+              ready[kind] = { path: diskPath, size, mtimeMs }
+            }
+          }
+
+          // 另一半可能还没落盘：到任务列表 / 历史里找同 stem 的互补角色。
+          // 找到才认为"这是一对"，避免把用户自己下的同名视频与音频硬凑起来。
+          const taskKinds = { video: false, audio: false }
+          let alreadyMerged = false
+          let partnerPending = false
+          if (!ready.video || !ready.audio) {
+            const pendingStatuses = new Set([
+              TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED,
+              TASK_STATUS.SEEDING, TASK_STATUS.MERGING
+            ])
+            const lists = [taskStore.taskList || [], taskStore.allTaskList || [], taskHistory.getAllHistory() || []]
+            for (const list of lists) {
+              for (const t of list || []) {
+                if (!t) continue
+                const files = Array.isArray(t.files) ? t.files : []
+                for (const file of files) {
+                  const fp = file && file.path ? `${file.path}` : ''
+                  if (!fp) continue
+                  if (resolve(dirname(fp)) !== resolve(dir)) continue
+                  const fName = stripDownloadingSuffixFromFilename(basename(fp), suffix)
+                  const kind = getGenericMediaKind(fName)
+                  if (!kind) continue
+                  if (genericMediaStem(fName, cfg) !== stem) continue
+                  if (t.dashMerged === true || t.pairMerged === true) alreadyMerged = true
+                  taskKinds[kind] = true
+                  const st = `${t.status || ''}`
+                  if (st === TASK_STATUS.REMOVED) continue
+                  if (pendingStatuses.has(st)) partnerPending = true
+                }
+              }
+            }
+          }
+
+          const hasVideo = !!(ready.video || taskKinds.video)
+          const hasAudio = !!(ready.audio || taskKinds.audio)
+          if (!hasVideo || !hasAudio) {
+            return null
+          }
+          // 两个文件都在盘上时，用 mtime 兜一层"是不是一起下的"：
+          // 相隔一小时以上的同名音视频多半是用户自己的独立文件，
+          // 不该因为同名就被合成一条。
+          let pairLike = !alreadyMerged
+          if (pairLike && ready.video && ready.audio) {
+            const vm = ready.video.mtimeMs || 0
+            const am = ready.audio.mtimeMs || 0
+            if (vm && am && Math.abs(vm - am) > 60 * 60 * 1000) {
+              pairLike = false
+            }
+          }
+          return {
+            dir,
+            stem,
+            videoPath: ready.video ? ready.video.path : '',
+            audioPath: ready.audio ? ready.audio.path : '',
+            pending: pending || partnerPending || !ready.video || !ready.audio,
+            pairLike,
+            alreadyMerged
+          }
+        } catch (_) {
+          return null
+        }
+      }
+
       function collectExtensionDashParts(finalPath, cfg) {
         try {
           const p = finalPath ? `${finalPath}` : ''
@@ -1700,6 +1867,10 @@ const dir = dirname(filePath)
       // 已经被仲裁判死（重试耗尽且确认凑不齐）的配对：补扫不再重新武装它们，
       // 否则每一轮轮询都会重复尝试一次注定失败的合并。
       const _mergeGivenUp = new Set()
+      // 通用配对（第三方扩展的同 stem 音视频）在本会话里已经补扫过的 mergeKey。
+      // 两个文件各自都是 COMPLETE，补扫时两边都会被扫到；只按 mergeKey 记一次，
+      // 避免同一对武装两份重试、合出两次产物。
+      const _genericSyncAttempted = new Set()
 
       /**
        * 这一对**是否已经产出合并文件**。
@@ -1873,6 +2044,27 @@ const dir = dirname(filePath)
             if (!path) continue
             console.warn(`[Lerxu] Stuck pair detected (${gid}), re-arming merge retry`)
             _scheduleMergeRetry(gid, getDashMergeKey(path, cfg, pair), path, row, false, cfg, 0, 60, false)
+          }
+
+          // 通用配对（第三方扩展）：两条普通任务分别是同 stem 的视频 + 音频，
+          // 两个文件都已下完却从没触发过合并（旧版本没有这条判据）。
+          // 每轮补扫一次；每个 mergeKey 只武装一次，避免两个成员各武装一份。
+          for (const row of rows) {
+            if (!row || row.isPair === true) continue
+            if (`${row.status || ''}` !== TASK_STATUS.COMPLETE) continue
+            if (row.dashMerged === true || row.pairMerged === true) continue
+            const gid = `${row.gid || ''}`
+            if (!gid || _mergeGivenUp.has(gid) || hasMergeRetryTimer(gid)) continue
+            const path = getTaskFullPath(row) || (row.files && row.files[0] && row.files[0].path) || ''
+            if (!path) continue
+            const gp = collectGenericAvPair(path, cfg)
+            if (!gp || !gp.pairLike || gp.alreadyMerged) continue
+            if (!gp.videoPath || !gp.audioPath || gp.pending) continue
+            const mergeKey = getDashMergeKey(path, cfg, null)
+            if (!mergeKey || _genericSyncAttempted.has(mergeKey)) continue
+            _genericSyncAttempted.add(mergeKey)
+            console.warn(`[Lerxu] Generic A/V pair detected (${gid}), re-arming merge`)
+            _scheduleMergeRetry(gid, mergeKey, path, row, false, cfg, 0, 60, false)
           }
         } catch (_) {}
       }
@@ -2618,6 +2810,47 @@ const dir = dirname(filePath)
         }
       }
 
+      /**
+       * 合并第三方扩展留下的一对普通音视频（同 stem、不同扩展名）。
+       *
+       * 输入判据、引擎选择与收尾完全复用既有流程，只是"谁是画面谁是声音"
+       * 由扩展名分类给出（`collectGenericAvPair`），不再要求 `_video/_audio`
+       * 命名或 B 站来源 —— 别的扩展根本没有这些标记。
+       */
+      async function mergeGenericAvPair(finalPath, task, gp, cfg) {
+        try {
+          if (!gp || !gp.pairLike || gp.alreadyMerged) {
+            return { isBilibiliPart: false, mergedPath: '' }
+          }
+          if (gp.pending || !gp.videoPath || !gp.audioPath) {
+            return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
+          }
+          if (!await ensureMediaEngine()) {
+            return {
+              isBilibiliPart: true,
+              mergedPath: '',
+              noMediaEngine: true,
+              notifyKey: `${gp.dir || ''}|${gp.stem || ''}`,
+              fallbackNotifyPath: finalPath || ''
+            }
+          }
+          const mergeInputs = buildMergeInputs(gp.videoPath, cfg, [gp.videoPath, gp.audioPath])
+          const outputPath = getDashMergeOutputPath(gp.dir, gp.stem, mergeInputs, taskMergeFormat(task))
+          if (!outputPath) {
+            return { isBilibiliPart: true, mergedPath: '' }
+          }
+          const gid = task && task.gid ? `${task.gid}` : ''
+          await mergeDashToOutput(mergeInputs, outputPath, gid)
+          const info = { dir: gp.dir, base: gp.stem, type: 'named' }
+          const finalOutputPath = await afterBilibiliMerge(task, info, gp.videoPath, gp.audioPath, outputPath, mergeInputs)
+          return { isBilibiliPart: true, mergedPath: finalOutputPath || outputPath }
+        } catch (e) {
+          console.warn(`[Lerxu] zuvrust merge failed: ${e && e.message ? e.message : e}`)
+          // 合并出错不能当作"完成"：交给重试再试几次
+          return { isBilibiliPart: true, mergedPath: '', waitingForPair: true }
+        }
+      }
+
       async function maybeMergeExtensionDash(finalPath, task = null, pair = null) {
         try {
           const gid = task && task.gid ? `${task.gid}` : ''
@@ -2647,6 +2880,14 @@ const dir = dirname(filePath)
           // 有显式配对 ID：这一条**确定**是一对里的一半，走角色配对（不看文件名）
           if (pair && pair.id) {
             return await mergeExplicitPair(finalPath, task, pair, cfg)
+          }
+
+          // 没有 pairId：先按"同 stem 的视频 + 音频"配对（第三方扩展的常见形态）。
+          // 这条判据必须放在 `fromSupportedSource` 闸门之前 —— 别的扩展没有
+          // `X-Lerxu-Source` 请求头，也未必来自 B 站，否则永远进不来。
+          const genericPair = collectGenericAvPair(finalPath, cfg)
+          if (genericPair && genericPair.pairLike) {
+            return await mergeGenericAvPair(finalPath, task, genericPair, cfg)
           }
 
           const partsInfo = collectExtensionDashParts(finalPath, cfg)

@@ -36,8 +36,23 @@ function resolveUserData () {
   if (_userDataCache) {
     return _userDataCache
   }
-  if (process.env && process.env.LERXU_USER_DATA) {
-    _userDataCache = process.env.LERXU_USER_DATA
+  // ⚠️ 不能直接写 `process.env.XXX`：渲染层构建会把 `process` 标识符替换成
+  // 空桩（打包产物里是 `var X={}`），读到的永远是 undefined，JsonStore 于是
+  // 回落到 `process.cwd()` —— 从 Finder 启动时 cwd 是 `/`，任务历史既不落盘
+  // 也读不出来（重启后"历史全没了"）。`globalThis.process` 是属性访问，
+  // 不会被替换，拿到的才是真正的 Node 进程环境。
+  let fromEnv = ''
+  try {
+    const proc = typeof globalThis !== 'undefined' ? globalThis.process : undefined
+    const env = proc && proc.env ? proc.env : null
+    if (env && env.LERXU_USER_DATA) {
+      fromEnv = `${env.LERXU_USER_DATA}`
+    }
+  } catch (_) {
+    fromEnv = ''
+  }
+  if (fromEnv) {
+    _userDataCache = fromEnv
     return _userDataCache
   }
   _userDataCache = process.cwd()
