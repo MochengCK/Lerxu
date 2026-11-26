@@ -1272,7 +1272,9 @@ const actions = {
 
     const videoTask = this.addUri({
       uris: [video.url],
-      outs: [`${name}_video.mp4`],
+      // 没有独立音频流（durl / 已合并的源）时产物就是完整视频，
+      // 不要再带 `_video` 后缀——番剧电影这类单流任务会看起来像半成品。
+      outs: [audio ? `${name}_video.mp4` : `${name}.mp4`],
       options,
       pairId,
       pairRole: audio ? 'video' : '',

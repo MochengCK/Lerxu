@@ -44,6 +44,9 @@
     html,
     body {
       height: 100%;
+      /* 窗口高度由页面内容反推（见 resizeWindowToContent）：
+         外层永不出现滚动条，只有集数表内部允许滚动。 */
+      overflow: hidden;
     }
 
     html {
@@ -131,20 +134,12 @@
       flex: 1;
       min-height: 0;
       overflow-y: auto;
+      scrollbar-width: none;
       padding: 4px 16px 8px;
     }
 
     .content::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    .content::-webkit-scrollbar-thumb {
-      border-radius: 8px;
-      background: rgba(0, 0, 0, 0.16);
-    }
-
-    html.dark .content::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.16);
+      display: none;
     }
 
     .setting-row {
@@ -172,6 +167,179 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    /* ── 番剧集数表（只在该资源窗带 episodes 时出现） ── */
+    .episode-block {
+      padding: 2px 0 6px;
+    }
+
+    .episode-head {
+      display: flex;
+      align-items: baseline;
+    }
+
+    .episode-head-title {
+      display: inline-flex;
+      align-items: baseline;
+      min-width: 0;
+    }
+
+    .episode-hint {
+      margin-top: 0;
+      color: var(--text);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    /* 与任务详情里的文件表同一套形态：外框 1px + 8px 圆角，
+       表头浅底，行分隔线左右各缩进 8px，不画整行边框。 */
+    .episode-table {
+      margin-top: 6px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+
+    .episode-thead,
+    .episode-item {
+      display: grid;
+      grid-template-columns: 30px 62px minmax(0, 1fr) 48px;
+      align-items: center;
+      column-gap: 6px;
+      padding: 0 8px;
+    }
+
+    .episode-thead {
+      height: 30px;
+      background: var(--hover);
+      color: var(--text-3);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .episode-list {
+      /* 7 行 × 32px：刚好整行，不让最后一行被截半截 */
+      max-height: 224px;
+      overflow-y: auto;
+      background: var(--panel);
+    }
+
+    .episode-list:empty {
+      display: none;
+    }
+
+    .episode-item {
+      position: relative;
+      height: 32px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .episode-item:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: 0;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .episode-item:hover {
+      background: var(--hover);
+    }
+
+    .episode-check {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      min-width: 0;
+    }
+
+    .episode-col-index,
+    .episode-col-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .episode-col-index {
+      color: var(--text-2);
+    }
+
+    .episode-col-title {
+      color: var(--text);
+    }
+
+    .episode-col-duration {
+      color: var(--text-3);
+      font-size: 11px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    /* 勾选框：与新建任务 / 文件列表里的勾选框同一形态
+       （16px、4px 圆角、主题色实底、白色对勾；半选为白色横杠）。 */
+    .lx-checkbox {
+      appearance: none;
+      -webkit-appearance: none;
+      position: relative;
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--panel);
+      cursor: pointer;
+      transition: background-color 0.12s ease, border-color 0.12s ease;
+    }
+
+    .lx-checkbox:hover {
+      border-color: var(--primary);
+    }
+
+    .lx-checkbox:checked,
+    .lx-checkbox:indeterminate {
+      border-color: var(--primary);
+      background: var(--primary);
+    }
+
+    .lx-checkbox:checked::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 44%;
+      width: 4px;
+      height: 8px;
+      border: solid #fff;
+      border-width: 0 1.5px 1.5px 0;
+      transform: translate(-50%, -50%) rotate(45deg);
+    }
+
+    .lx-checkbox:indeterminate::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 8px;
+      height: 2px;
+      border-radius: 1px;
+      background: #fff;
+      transform: translate(-50%, -50%);
+    }
+
+    .episode-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .episode-list::-webkit-scrollbar-thumb {
+      border-radius: 3px;
+      background: var(--border);
     }
 
     /* ── 自绘下拉（不用系统自带的 select） ── */
@@ -376,6 +544,7 @@
     .video-meta-text {
       min-width: 0;
       overflow: hidden;
+      color: var(--text-2);
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -472,10 +641,30 @@
         </div>
       </div>
 
+      <div class="episode-block" id="episodeBlock" hidden>
+        <div class="episode-head">
+          <div class="episode-head-title">
+            <span class="setting-title">集数</span>
+            <span class="episode-hint" id="episodeHint"></span>
+          </div>
+        </div>
+        <div class="episode-table">
+          <div class="episode-thead">
+            <span class="episode-check">
+              <input type="checkbox" id="episodeAll" class="lx-checkbox" aria-label="全选" title="全选">
+            </span>
+            <span class="episode-col-index">集数</span>
+            <span class="episode-col-title">标题</span>
+            <span class="episode-col-duration">时长</span>
+          </div>
+          <div class="episode-list" id="episodeList"></div>
+        </div>
+      </div>
+
       <div class="setting-row">
         <div class="setting-info">
           <div class="setting-title">清晰度</div>
-          <div class="setting-subtitle" id="qualityHint">选择要下载的画质</div>
+          <div class="setting-subtitle" id="qualityHint">画质越高，文件越大</div>
         </div>
         <div class="lx-select" id="qualitySelect">
           <button type="button" class="lx-select-trigger">
@@ -501,7 +690,7 @@
       <div class="setting-row">
         <div class="setting-info">
           <div class="setting-title">音频质量</div>
-          <div class="setting-subtitle" id="audioHint">选择音频档位</div>
+          <div class="setting-subtitle" id="audioHint">码率越高，声音细节越多</div>
         </div>
         <div class="lx-select" id="audioSelect">
           <button type="button" class="lx-select-trigger">

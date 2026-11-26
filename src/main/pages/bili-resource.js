@@ -17,6 +17,10 @@
     audioStreamIndex: 0,
     duration: 0,
     metaParts: [],
+    // 番剧：整季的集数元信息 + 当前勾选的 epId（只在这类资源窗里用）
+    isBangumi: false,
+    episodes: [],
+    selectedEpisodeIds: new Set(),
     submitting: false
   }
 
@@ -28,15 +32,6 @@
     const mm = h > 0 ? `${m}`.padStart(2, '0') : `${m}`
     const ss = `${s}`.padStart(2, '0')
     return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
-  }
-
-  function formatBitrate (bps) {
-    const value = Number(bps) || 0
-    if (value <= 0) {
-      return ''
-    }
-    const mbps = value / 1000000
-    return `${mbps >= 10 ? mbps.toFixed(1) : mbps.toFixed(2)} Mbps`
   }
 
   function formatBytes (bytes) {
@@ -57,22 +52,6 @@
 
   function qualityLabel (item) {
     return `${(item && item.qualityName) || ''}`.replace(/\s*·.*$/, '').trim() || '未知画质'
-  }
-
-  function streamDetail (item) {
-    const parts = []
-    if (item.width && item.height) {
-      parts.push(`${item.width}×${item.height}`)
-    }
-    if (item.frameRate) {
-      parts.push(`${item.frameRate}fps`)
-    }
-    return parts.join(' · ') || '—'
-  }
-
-  function codecDetail (item) {
-    const bitrate = formatBitrate(item.bandwidth)
-    return `${item.codecName || '未知编码'}${bitrate ? ` · ${bitrate}` : ''}`
   }
 
   function groupStreams (list) {
@@ -275,6 +254,7 @@
     $('error').textContent = message
     $('error').hidden = false
     $('submitBtn').disabled = true
+    resizeWindowToContent()
   }
 
   function selectedVideoStream () {
@@ -293,11 +273,152 @@
     return group.streams[state.audioStreamIndex] || group.streams[0] || null
   }
 
+  /** 集数关卡：与左侧标题融为一体，显示为「集数（已选/总数）」。 */
+  function updateEpisodeHint () {
+    const total = state.episodes.length
+    const selected = state.selectedEpisodeIds.size
+    $('episodeHint').textContent = total > 0 ? `（${selected}/${total}）` : ''
+    const all = $('episodeAll')
+    if (all) {
+      all.checked = total > 0 && selected === total
+      all.indeterminate = selected > 0 && selected < total
+    }
+  }
+
+  /** 番剧资源窗：渲染整季集数并默认勾选当前正在看的那一集。 */
+  function renderEpisodes (payload) {
+    state.isBangumi = `${(payload && payload.kind) || ''}` === 'bangumi'
+    state.episodes = state.isBangumi && Array.isArray(payload.episodes) ? payload.episodes : []
+    state.selectedEpisodeIds = new Set()
+    const block = $('episodeBlock')
+    const list = $('episodeList')
+    list.textContent = ''
+    if (!state.isBangumi || state.episodes.length === 0) {
+      block.hidden = true
+      return
+    }
+    block.hidden = false
+    const currentId = `${(payload && payload.currentEpId) || ''}`
+    state.episodes.forEach((ep) => {
+      const row = document.createElement('label')
+      row.className = 'episode-item'
+
+      const checkCell = document.createElement('span')
+      checkCell.className = 'episode-check'
+      const checkbox = document.createElement('input')
+      checkbox.type = 'checkbox'
+      checkbox.className = 'lx-checkbox'
+      checkbox.checked = `${ep.epId}` === currentId
+      if (checkbox.checked) {
+        state.selectedEpisodeIds.add(`${ep.epId}`)
+      }
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+          state.selectedEpisodeIds.add(`${ep.epId}`)
+        } else {
+          state.selectedEpisodeIds.delete(`${ep.epId}`)
+        }
+        updateEpisodeHint()
+        updateDownloadSummary()
+      })
+      checkCell.appendChild(checkbox)
+
+      const indexCell = document.createElement('span')
+      indexCell.className = 'episode-col-index'
+      indexCell.textContent = ep.title || `第${ep.index || ''}集`
+
+      const titleCell = document.createElement('span')
+      titleCell.className = 'episode-col-title'
+      titleCell.textContent = ep.longTitle || '—'
+      if (ep.longTitle) {
+        titleCell.title = ep.longTitle
+      }
+
+      const durationCell = document.createElement('span')
+      durationCell.className = 'episode-col-duration'
+      durationCell.textContent = Number(ep.duration) > 0 ? formatDuration(ep.duration) : ''
+
+      row.appendChild(checkCell)
+      row.appendChild(indexCell)
+      row.appendChild(titleCell)
+      row.appendChild(durationCell)
+      list.appendChild(row)
+    })
+    // 当前集不在清单里（接口没回这个 ep）→ 默认勾第一集，保证能直接下载
+    if (state.selectedEpisodeIds.size === 0 && state.episodes.length > 0) {
+      state.selectedEpisodeIds.add(`${state.episodes[0].epId}`)
+      const first = list.querySelector('input[type="checkbox"]')
+      if (first) {
+        first.checked = true
+      }
+    }
+    updateEpisodeHint()
+    // 长篇连载（上千集）时当前集可能在列表深处：滚到它，别让用户自己找
+    const checked = list.querySelector('input[type="checkbox"]:checked')
+    const checkedRow = checked && checked.closest ? checked.closest('.episode-item') : null
+    if (checkedRow && checkedRow.scrollIntoView) {
+      checkedRow.scrollIntoView({ block: 'nearest' })
+    }
+  }
+
+  /** 已选集数的总时长：预计大小按它算，多集时不再只按当前集。 */
+  function selectedEpisodeDuration () {
+    if (!state.isBangumi) {
+      return Number(state.duration) || 0
+    }
+    let total = 0
+    state.selectedEpisodeIds.forEach((epId) => {
+      const ep = state.episodes.find(item => `${item.epId}` === epId)
+      total += Number(ep && ep.duration) || 0
+    })
+    return total
+  }
+
+  /**
+   * 让窗口高度贴合内容：外层永远不出现滚动条，只有集数表自己滚。
+   *
+   * 不能用 `content.scrollHeight`：`.content` 是 `flex: 1`，窗口偏矮时
+   * 它会被拉成窗口高度，算出来永远缩不回去。这里按"当前可见区块 +
+   * 标题栏 + 页脚 + 内边距"实际高度求和。
+   */
+  function resizeWindowToContent () {
+    requestAnimationFrame(() => {
+      try {
+        const titleBar = $('titleBar')
+        const titleH = titleBar && getComputedStyle(titleBar).display !== 'none'
+          ? titleBar.offsetHeight
+          : 0
+        const content = document.querySelector('.content')
+        const footer = document.querySelector('.footer')
+        let inner = 0
+        const form = $('form')
+        const loading = $('loading')
+        const error = $('error')
+        if (form && !form.hidden) {
+          inner = form.offsetHeight
+        } else if (error && !error.hidden) {
+          inner = error.offsetHeight
+        } else if (loading && !loading.hidden) {
+          inner = loading.offsetHeight
+        }
+        let pad = 0
+        if (content) {
+          const style = getComputedStyle(content)
+          pad = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0)
+        }
+        const height = Math.ceil(titleH + pad + inner + (footer ? footer.offsetHeight : 0))
+        if (height > 0) {
+          ipcRenderer.send('bili-resource:resize', height)
+        }
+      } catch (e) {}
+    })
+  }
+
   /** 预计下载大小：接口带宽 × 时长（视频 + 音频），只用于展示，标“约”。 */
   function updateDownloadSummary () {
     const video = selectedVideoStream()
     const audio = selectedAudioStream()
-    const duration = Number(state.duration) || 0
+    const duration = selectedEpisodeDuration()
     const videoBps = Number(video && video.bandwidth) || 0
     const audioBps = audio ? Number(audio.bandwidth) || 0 : 0
     const bytes = duration > 0 && (videoBps + audioBps) > 0
@@ -307,25 +428,16 @@
     $('videoSize').textContent = sizeText ? `· 约 ${sizeText}` : ''
   }
 
-  function updateVideoHints () {
-    const stream = selectedVideoStream()
-    if (!stream) {
-      return
-    }
-    $('qualityHint').textContent = streamDetail(stream)
-    $('codecHint').textContent = codecDetail(stream)
-    updateDownloadSummary()
-  }
-
   function updateAudioHints () {
     const stream = selectedAudioStream()
     if (!stream) {
       $('audioHint').textContent = '该视频没有独立音频流'
       $('audioCodecHint').textContent = '将只下载视频'
-      return
+    } else {
+      // 副标题只解释选项含义，不重复选择框里的档位 / 编码
+      $('audioHint').textContent = '码率越高，声音细节越多'
+      $('audioCodecHint').textContent = 'AAC 兼容性最好'
     }
-    $('audioHint').textContent = formatBitrate(stream.bandwidth) || '—'
-    $('audioCodecHint').textContent = codecDetail(stream)
     updateDownloadSummary()
   }
 
@@ -334,7 +446,7 @@
     if (!group) {
       setSelectOptions('videoCodecSelect', [{ label: '—' }], 0)
       setSelectDisabled('videoCodecSelect', true)
-      updateVideoHints()
+      updateDownloadSummary()
       return
     }
     const items = group.streams.map((stream) => ({ label: stream.codecName || '未知编码' }))
@@ -348,7 +460,7 @@
     state.videoStreamIndex = index
     setSelectOptions('videoCodecSelect', items, index)
     setSelectDisabled('videoCodecSelect', group.streams.length <= 1)
-    updateVideoHints()
+    updateDownloadSummary()
   }
 
   function renderAudioCodecs () {
@@ -415,22 +527,27 @@
     }
 
     // 标题栏只写动作名，视频标题放到下方封面信息里，避免两处重复
-    $('windowTitle').textContent = '下载视频'
-    document.title = '下载视频'
+    const isBangumi = `${payload.kind || ''}` === 'bangumi'
+    $('windowTitle').textContent = isBangumi ? '下载剧集' : '下载视频'
+    document.title = isBangumi ? '下载剧集' : '下载视频'
 
-    $('videoTitle').textContent = payload.title || 'B 站视频'
+    $('videoTitle').textContent = payload.title || (isBangumi ? '番剧' : 'B 站视频')
     state.duration = Number(payload.duration) || 0
     state.metaParts = []
     if (payload.owner) {
       state.metaParts.push(payload.owner)
     }
-    if (state.duration > 0) {
-      state.metaParts.push(`时长 ${formatDuration(state.duration)}`)
+    if (isBangumi && Array.isArray(payload.episodes) && payload.episodes.length > 0) {
+      state.metaParts.push(`共 ${payload.episodes.length} 集`)
+    } else {
+      if (state.duration > 0) {
+        state.metaParts.push(`时长 ${formatDuration(state.duration)}`)
+      }
+      if (Number(payload.pageCount) > 1) {
+        state.metaParts.push(`P${payload.page}/${payload.pageCount}`)
+      }
     }
-    if (Number(payload.pageCount) > 1) {
-      state.metaParts.push(`P${payload.page}/${payload.pageCount}`)
-    }
-    $('videoMeta').textContent = state.metaParts.join(' · ') || 'B 站视频'
+    $('videoMeta').textContent = state.metaParts.join(' · ') || (isBangumi ? '番剧' : 'B 站视频')
 
     const thumbWrap = $('videoThumbWrap')
     const thumb = $('videoThumb')
@@ -461,6 +578,9 @@
     state.audioGroupIndex = preferredAudio >= 0 ? preferredAudio : 0
     state.audioStreamIndex = 0
 
+    // 必须在画质/大小提示之前：集数决定「已选时长」，预计大小按它算
+    renderEpisodes(payload)
+
     setSelectOptions(
       'mergeFormat',
       MERGE_FORMATS.map((format) => ({ label: format.toUpperCase() })),
@@ -475,6 +595,7 @@
     $('error').hidden = true
     $('form').hidden = false
     $('submitBtn').disabled = false
+    resizeWindowToContent()
   }
 
   async function submit () {
@@ -490,20 +611,39 @@
     }
     const audio = selectedAudioStream()
 
-    const selection = {
-      video: {
-        url: video.url,
-        codecs: video.codecs || '',
-        codecid: Number(video.codecid) || 0
-      },
-      audio: audio
-        ? {
-          url: audio.url,
-          codecs: audio.codecs || '',
-          codecid: Number(audio.codecid) || 0
-        }
-        : null,
-      mergeFormat: state.mergeFormat
+    let selection
+    if (state.isBangumi) {
+      const episodeIds = Array.from(state.selectedEpisodeIds)
+      if (episodeIds.length === 0) {
+        setFormError('请选择要下载的集数')
+        return
+      }
+      // 番剧：只带"选集 + 全局画质/编码偏好"，每一集的播放地址由应用反向
+      // 请求网页内容脚本去取（一次最多 50 集，主进程会再校验）。
+      selection = {
+        episodeIds,
+        videoQualityId: Number(video.id) || 0,
+        videoCodecid: Number(video.codecid) || 0,
+        audioId: audio ? Number(audio.id) || 0 : 0,
+        audioCodecid: audio ? Number(audio.codecid) || 0 : 0,
+        mergeFormat: state.mergeFormat
+      }
+    } else {
+      selection = {
+        video: {
+          url: video.url,
+          codecs: video.codecs || '',
+          codecid: Number(video.codecid) || 0
+        },
+        audio: audio
+          ? {
+            url: audio.url,
+            codecs: audio.codecs || '',
+            codecid: Number(audio.codecid) || 0
+          }
+          : null,
+        mergeFormat: state.mergeFormat
+      }
     }
 
     state.submitting = true
@@ -547,15 +687,30 @@
     }
   }
 
+  // 番剧集数「全选 / 全不选」：只改勾选与本集合，不重画列表
+  const episodeAll = $('episodeAll')
+  if (episodeAll) {
+    episodeAll.addEventListener('change', () => {
+      state.selectedEpisodeIds = new Set(
+        episodeAll.checked ? state.episodes.map(ep => `${ep.epId}`) : []
+      )
+      const boxes = $('episodeList').querySelectorAll('input[type="checkbox"]')
+      boxes.forEach((box) => { box.checked = episodeAll.checked })
+      updateEpisodeHint()
+      updateDownloadSummary()
+    })
+  }
+
   initSelect('qualitySelect', (index) => {
     state.videoGroupIndex = index
     setFormError('')
     renderVideoCodecs(true)
   })
+
   initSelect('videoCodecSelect', (index) => {
     state.videoStreamIndex = index
     setFormError('')
-    updateVideoHints()
+    updateDownloadSummary()
   })
   initSelect('audioSelect', (index) => {
     state.audioGroupIndex = index

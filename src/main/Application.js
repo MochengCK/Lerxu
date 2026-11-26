@@ -123,6 +123,10 @@ export default class Application extends EventEmitter {
     // B 站资源弹窗的流清单（token -> { payload, mergeFormat, createdAt }）。
     // 数据留在主进程内存里，独立窗口按 token 取，不把整份清单塞进 URL。
     this._biliResourceSessions = new Map()
+    // 应用 → 扩展的反向请求（目前只有番剧资源窗的「按集取播放地址」）：
+    // 复用扩展建立的那条已认证 WebSocket，按 id 关联响应。
+    this._extensionWsPending = new Map()
+    this._extensionWsSeq = 0
     this.tokenVersion = Date.now()
     this.sessionTokenTTL = 24 * 60 * 60 * 1000 // session token 24小时过期
 
@@ -1029,7 +1033,19 @@ export default class Application extends EventEmitter {
 
           // 认证后的请求处理
           try {
-            const result = await this._handleWsRequest(msg)
+            // 扩展对反向请求的响应（id 由本端生成，形如 bili-1）
+            if (msg && msg.id !== undefined && this._extensionWsPending.has(msg.id)) {
+              const pending = this._extensionWsPending.get(msg.id)
+              this._extensionWsPending.delete(msg.id)
+              clearTimeout(pending.timer)
+              if (msg.error) {
+                pending.reject(new Error(msg.error))
+              } else {
+                pending.resolve(msg.result)
+              }
+              return
+            }
+            const result = await this._handleWsRequest(msg, ws)
             if (result !== undefined) {
               ws.send(JSON.stringify({ id: msg.id, result }))
             }
@@ -1040,6 +1056,15 @@ export default class Application extends EventEmitter {
 
         ws.on('close', () => {
           clearTimeout(ws.authTimer)
+          // 这条连接上还没回包的反向请求（番剧按集取流）立即失败，
+          // 资源窗会给出"回网页重试"，而不是干等到 60s 超时。
+          for (const [id, pending] of this._extensionWsPending) {
+            if (pending && pending.ws === ws) {
+              this._extensionWsPending.delete(id)
+              clearTimeout(pending.timer)
+              pending.reject(new Error('浏览器扩展连接已断开，请回到网页重新点击下载'))
+            }
+          }
         })
       })
 
@@ -1054,7 +1079,7 @@ export default class Application extends EventEmitter {
   }
 
   // WebSocket 请求分发(仅认证后的连接会到达这里)
-  async _handleWsRequest (msg) {
+  async _handleWsRequest (msg, ws) {
     const { type, params } = msg
     switch (type) {
     case 'add': {
@@ -1095,6 +1120,10 @@ export default class Application extends EventEmitter {
       this._biliResourceSessions.set(token, {
         payload,
         mergeFormat: ['mp4', 'mkv', 'ts'].includes(preferredFormat) ? preferredFormat : 'mp4',
+        // 番剧资源窗：窗口选完集数后，主进程要回到**发起它的那条扩展连接**
+        // 和**那个标签页**取每一集的播放地址（页面上下文才带 Cookie / Referer）。
+        ws: ws || null,
+        tabId: Number(payload.tabId) || 0,
         createdAt: now
       })
 
@@ -1124,6 +1153,111 @@ export default class Application extends EventEmitter {
     default:
       return undefined
     }
+  }
+
+  /**
+   * 应用 → 扩展：按集取播放地址（番剧资源窗提交时调用）。
+   *
+   * 走扩展已经建立并认证过的那条 WebSocket，id 用 `bili-` 前缀与扩展自己
+   * 的请求 id 区分。扩展后台再转发给发起资源窗的标签页，由内容脚本带着
+   * 页面 Cookie / Referer 打 pgc/player/web/playurl。
+   */
+  _requestExtensionPlayUrls (session, episodes) {
+    return new Promise((resolve, reject) => {
+      const ws = session && session.ws
+      if (!ws || ws.readyState !== 1 || ws.isAuthenticated !== true) {
+        reject(new Error('浏览器扩展连接已断开，请回到网页重新点击下载'))
+        return
+      }
+      const id = `bili-${++this._extensionWsSeq}`
+      const timer = setTimeout(() => {
+        this._extensionWsPending.delete(id)
+        reject(new Error('读取播放地址超时，请重试'))
+      }, 120000)
+      this._extensionWsPending.set(id, { resolve, reject, timer, ws })
+      try {
+        ws.send(JSON.stringify({
+          id,
+          type: 'bili-playurl',
+          params: {
+            tabId: session.tabId,
+            episodes: episodes.map(ep => ({
+              epId: `${ep.epId}`,
+              cid: `${ep.cid}`,
+              bvid: `${ep.bvid || ''}`,
+              aid: `${ep.aid || ''}`,
+              title: `${ep.title || ''}`,
+              longTitle: `${ep.longTitle || ''}`
+            }))
+          }
+        }))
+      } catch (err) {
+        clearTimeout(timer)
+        this._extensionWsPending.delete(id)
+        reject(err instanceof Error ? err : new Error('读取播放地址失败'))
+      }
+    })
+  }
+
+  /** 从某一集的流清单里按用户在资源窗选的画质 / 编码挑一条；缺档时退回可用的第一条。 */
+  _pickBiliStream (list, preferId, preferCodecid) {
+    const streams = (Array.isArray(list) ? list : []).filter(item => item && item.url)
+    if (streams.length === 0) {
+      return null
+    }
+    const byId = streams.filter(item => Number(item.id) === Number(preferId))
+    // 这一集没有用户选的档位（老集数通常更低）→ 退回它自己可用的**最高**档，
+    // 而不是数组里的第一条（接口顺序并不保证从高到低）。
+    const pool = byId.length > 0
+      ? byId
+      : streams.slice().sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0))
+    return pool.find(item => Number(item.codecid) === Number(preferCodecid)) || pool[0]
+  }
+
+  /**
+   * 番剧：把「用户选的集数 + 全局画质/编码偏好」展开成一条条建任务参数。
+   *
+   * 每一集用同一套偏好去它自己的流清单里找对应档位；某一集没有这个清晰度
+   * （老集数通常更低）就退回它自己可用的最高档，不让整批因为一集失败。
+   */
+  _buildBiliBangumiSelections (session, fetched, chosen, preference) {
+    const payload = session.payload || {}
+    const headers = Array.isArray(payload.headers) ? payload.headers : []
+    const selections = []
+    for (const ep of chosen) {
+      const streams = (fetched && Array.isArray(fetched.episodes) ? fetched.episodes : [])
+        .find(item => `${item.epId}` === `${ep.epId}`)
+      if (!streams) {
+        continue
+      }
+      const video = this._pickBiliStream(streams.videos, preference.videoQualityId, preference.videoCodecid)
+      if (!video) {
+        continue
+      }
+      const audio = this._pickBiliStream(streams.audios, preference.audioId, preference.audioCodecid)
+      const episodeName = [ep.title, ep.longTitle].filter(Boolean).join(' ')
+      selections.push({
+        title: `${payload.title || ''}${episodeName ? ` - ${episodeName}` : ''}`,
+        partTitle: '',
+        page: 0,
+        referer: `${payload.referer || ''}`,
+        headers,
+        video: {
+          url: `${video.url}`,
+          codecs: `${video.codecs || ''}`,
+          codecid: Number(video.codecid) || 0
+        },
+        audio: audio
+          ? {
+            url: `${audio.url}`,
+            codecs: `${audio.codecs || ''}`,
+            codecid: Number(audio.codecid) || 0
+          }
+          : null,
+        mergeFormat: preference.mergeFormat
+      })
+    }
+    return selections
   }
 
   async autoFetchEngineInfo () {
@@ -4588,9 +4722,42 @@ export default class Application extends EventEmitter {
 
     ipcMain.handle('bili-resource:theme', () => ({ theme: this._getEffectiveTheme() }))
 
+    // 资源窗按内容高度自适应：页面渲染完（画质/集数区块出现、错误态切换）
+    // 后反推目标高度传来这里。外层因此永远不需要滚动条，只有集数表自己滚。
+    ipcMain.on('bili-resource:resize', (event, height) => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (!win || win.isDestroyed()) {
+        return
+      }
+      const target = Math.round(Number(height) || 0)
+      if (target <= 0) {
+        return
+      }
+      try {
+        const [width, currentHeight] = win.getContentSize()
+        const display = screen.getDisplayMatching(win.getBounds())
+        const maxHeight = Math.max(240, display.workAreaSize.height - 40)
+        const nextHeight = Math.min(maxHeight, Math.max(240, target))
+        if (Math.abs(nextHeight - currentHeight) < 1) {
+          return
+        }
+        const before = win.getBounds()
+        win.setContentSize(width, nextHeight)
+        const after = win.getBounds()
+        // 以窗口中心为锚点上下展开/收起，而不是只往下长
+        const nextX = before.x + Math.round((before.width - after.width) / 2)
+        const nextY = before.y + Math.round((before.height - after.height) / 2)
+        const area = display.workArea
+        win.setPosition(
+          Math.min(Math.max(nextX, area.x), area.x + area.width - after.width),
+          Math.min(Math.max(nextY, area.y), area.y + area.height - after.height)
+        )
+      } catch (_) { }
+    })
+
     // 用户在资源窗里确认后：校验选择，转交主窗口的渲染层建任务
     // （配对/合并格式/片段都记进任务历史，合并流程才找得到它们）。
-    ipcMain.handle('bili-resource:submit', (event, raw = {}) => {
+    ipcMain.handle('bili-resource:submit', async (event, raw = {}) => {
       const token = `${raw.token || ''}`
       const session = this._biliResourceSessions.get(token)
       if (!session) {
@@ -4598,6 +4765,65 @@ export default class Application extends EventEmitter {
       }
 
       const selection = raw.selection && typeof raw.selection === 'object' ? raw.selection : {}
+      const mainWindow = this.windowManager.getWindow('index')
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return { ok: false, error: '主窗口不可用，请重新打开应用后再试' }
+      }
+      const closeWindow = () => {
+        try {
+          const win = BrowserWindow.fromWebContents(event.sender)
+          if (win && !win.isDestroyed()) {
+            win.close()
+          }
+        } catch (_) { }
+      }
+
+      const mergeFormat = ['mp4', 'mkv', 'ts'].includes(`${selection.mergeFormat || ''}`)
+        ? `${selection.mergeFormat}`
+        : session.mergeFormat
+
+      // ── 番剧：选集数 + 全局画质/编码偏好，按集取流后批量建任务 ──
+      if (`${(session.payload && session.payload.kind) || ''}` === 'bangumi') {
+        const episodes = Array.isArray(session.payload.episodes) ? session.payload.episodes : []
+        const wanted = new Set(
+          (Array.isArray(selection.episodeIds) ? selection.episodeIds : []).map(id => `${id}`)
+        )
+        const chosen = episodes.filter(ep => wanted.has(`${ep.epId}`))
+        if (chosen.length === 0) {
+          return { ok: false, error: '请选择要下载的集数' }
+        }
+        if (chosen.length > 50) {
+          return { ok: false, error: '一次最多选择 50 集' }
+        }
+
+        let fetched = null
+        try {
+          fetched = await this._requestExtensionPlayUrls(session, chosen)
+        } catch (err) {
+          return { ok: false, error: err && err.message ? err.message : '读取播放地址失败' }
+        }
+        const selections = this._buildBiliBangumiSelections(session, fetched, chosen, {
+          videoQualityId: Number(selection.videoQualityId) || 0,
+          videoCodecid: Number(selection.videoCodecid) || 0,
+          audioId: Number(selection.audioId) || 0,
+          audioCodecid: Number(selection.audioCodecid) || 0,
+          mergeFormat
+        })
+        if (selections.length === 0) {
+          return { ok: false, error: '没有可用的视频流，请在网页上重新点击下载' }
+        }
+
+        this._biliResourceSessions.delete(token)
+        try {
+          this.windowManager.sendMessageTo(mainWindow, 'bili-resource:apply', { selections })
+        } catch (err) {
+          return { ok: false, error: err && err.message ? err.message : '发送下载任务失败' }
+        }
+        closeWindow()
+        return { ok: true }
+      }
+
+      // ── 普通视频：单条流选择 ──
       const video = selection.video && typeof selection.video === 'object' ? selection.video : {}
       const audio = selection.audio && typeof selection.audio === 'object' ? selection.audio : null
       const isHttpUrl = (value) => /^https?:\/\//i.test(`${value || ''}`)
@@ -4606,11 +4832,6 @@ export default class Application extends EventEmitter {
       }
       if (audio && !isHttpUrl(audio.url)) {
         return { ok: false, error: '音频流地址无效' }
-      }
-
-      const mainWindow = this.windowManager.getWindow('index')
-      if (!mainWindow || mainWindow.isDestroyed()) {
-        return { ok: false, error: '主窗口不可用，请重新打开应用后再试' }
       }
 
       const selectionPayload = {
@@ -4631,9 +4852,7 @@ export default class Application extends EventEmitter {
             codecid: Number(audio.codecid) || 0
           }
           : null,
-        mergeFormat: ['mp4', 'mkv', 'ts'].includes(`${selection.mergeFormat || ''}`)
-          ? selection.mergeFormat
-          : session.mergeFormat
+        mergeFormat
       }
 
       const clipStart = Number(selection.clipStart)
@@ -4650,12 +4869,7 @@ export default class Application extends EventEmitter {
         return { ok: false, error: err && err.message ? err.message : '发送下载任务失败' }
       }
 
-      try {
-        const win = BrowserWindow.fromWebContents(event.sender)
-        if (win && !win.isDestroyed()) {
-          win.close()
-        }
-      } catch (_) { }
+      closeWindow()
       return { ok: true }
     })
 

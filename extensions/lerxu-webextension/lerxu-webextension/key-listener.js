@@ -163,6 +163,39 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   const isBilibiliVideoPage = () => !!getBiliVideoIdFromUrl()
 
+  /**
+   * 番剧 / 影视页的入口 id（ep / ss / md 三种 URL 都认）。
+   *
+   * 这些页面同样不嗅探：同一清晰度下的编码只有 playurl 接口说得准，
+   * 而且番剧的音轨、集数都只有接口里有。
+   */
+  const getBiliBangumiIdFromUrl = () => {
+    try {
+      if (!isBilibiliHost()) return null
+      const href = window.location.href || ''
+      const path = window.location.pathname || ''
+      // 普通稿件页优先按视频处理：页面查询串里可能带无关的 ep_id
+      if (/^\/video\//i.test(path)) return null
+      const ep = (path.match(/\/bangumi\/play\/ep(\d+)/i) || [])[1] ||
+        (href.match(/[?&]ep_id=(\d+)/i) || [])[1] || ''
+      if (ep) return { epId: ep, seasonId: '', mediaId: '' }
+      const ss = (path.match(/\/bangumi\/play\/ss(\d+)/i) || [])[1] ||
+        (href.match(/[?&]season_id=(\d+)/i) || [])[1] || ''
+      if (ss) return { epId: '', seasonId: ss, mediaId: '' }
+      const md = (path.match(/\/bangumi\/media\/md(\d+)/i) || [])[1] ||
+        (href.match(/[?&]media_id=(\d+)/i) || [])[1] || ''
+      if (md) return { epId: '', seasonId: '', mediaId: md }
+      return null
+    } catch (e) {
+      return null
+    }
+  }
+
+  const isBilibiliBangumiPage = () => !!getBiliBangumiIdFromUrl()
+
+  /** 按钮走接口直连的页面：普通视频详情页 + 番剧/影视页。 */
+  const isBilibiliDownloadPage = () => isBilibiliVideoPage() || isBilibiliBangumiPage()
+
   // 存储嗅探到的视频资源
   let sniffedResources = {
     video: [],
@@ -531,7 +564,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       // 与下拉框同源同算法：这个数就是列表里能看到几条
       const total = countDisplayItems(collectDisplayItems(resolveDisplayResources()))
       // B 站改成接口直连后没有嗅探结果，按钮直接写明动作而不是"0 个资源"
-      countSpan.textContent = (total === 0 && isBilibiliVideoPage()) ? '下载视频' : `${total} 个资源`
+      countSpan.textContent = (total === 0 && isBilibiliDownloadPage()) ? '下载视频' : `${total} 个资源`
     } catch (e) {}
   }
 
@@ -4009,8 +4042,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
 
     const { resources: viewResources } = getUniversalScopedResources()
-    // B 站视频页不再依赖嗅探：按钮由 playurl 接口兜底显示（嗅探已在该站关闭）
-    const biliApiPage = isBilibiliVideoPage()
+    // B 站视频 / 番剧页不再依赖嗅探：按钮由接口兜底显示（嗅探已在该站关闭）
+    const biliApiPage = isBilibiliDownloadPage()
     const hasResources = biliApiPage || hasAnySniffedResources(viewResources)
     const snifferEnabled = videoSnifferConfig.enabled
     const configLoaded = videoSnifferConfig.loaded
@@ -4144,9 +4177,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       const isButtonClosed = isButtonClosedByUser()
       
       // 无资源或嗅探器禁用时强制隐藏（无视拖拽/固定状态，但尊重悬停和用户关闭状态）。
-      // B 站视频页的按钮由接口直连支撑，没有嗅探资源也必须留着。
+      // B 站视频 / 番剧页的按钮由接口直连支撑，没有嗅探资源也必须留着。
       if (wrapper && !isButtonHovered && !isButtonClosed &&
-          !isBilibiliVideoPage() &&
+          !isBilibiliDownloadPage() &&
           (!sniffedResources || sniffedResources.total === 0 || !videoSnifferConfig.enabled)) {
         wrapper.style.display = 'none'
         positionLocked = false
@@ -4555,9 +4588,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     btn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
-      // B 站视频页：直接调 playurl 接口，让应用弹出独立资源弹窗；
+      // B 站视频 / 番剧页：直接调接口，让应用弹出独立资源弹窗；
       // 浏览器里不再弹资源下拉框。其他站点保持原有嗅探列表。
-      if (isBilibiliVideoPage()) {
+      if (isBilibiliDownloadPage()) {
         openBiliResourceDialog()
         return
       }
@@ -5705,7 +5738,265 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   }
 
+  /**
+   * playurl 响应 → 资源窗的流清单。
+   *
+   * 普通稿件（x/player/playurl）与番剧（pgc/player/web/playurl）的
+   * dash.video / dash.audio 形状一致，映射只写这一份。
+   * 少量老视频只有 durl（音视频合在一起的普通 MP4），按一条流处理。
+   */
+  const buildBiliStreamsFromPlayData = (play) => {
+    const source = play || {}
+    const dash = source.dash || {}
+    const supportFormats = Array.isArray(source.support_formats) ? source.support_formats : []
+
+    const videos = (Array.isArray(dash.video) ? dash.video : []).map(v => ({
+      id: Number(v.id) || 0,
+      codecid: Number(v.codecid) || 0,
+      codecs: `${v.codecs || ''}`,
+      bandwidth: Number(v.bandwidth) || 0,
+      width: Number(v.width) || 0,
+      height: Number(v.height) || 0,
+      frameRate: `${v.frameRate || v.frame_rate || ''}`,
+      qualityName: biliQualityName(v.id, supportFormats),
+      codecName: biliCodecName(v),
+      url: biliStreamUrl(v)
+    })).filter(v => v.url)
+
+    const audios = (Array.isArray(dash.audio) ? dash.audio : []).map(a => ({
+      id: Number(a.id) || 0,
+      codecid: Number(a.codecid) || 0,
+      codecs: `${a.codecs || ''}`,
+      bandwidth: Number(a.bandwidth) || 0,
+      qualityName: biliAudioName(a),
+      codecName: biliCodecName(a),
+      url: biliStreamUrl(a)
+    })).filter(a => a.url)
+
+    if (!videos.length && Array.isArray(source.durl) && source.durl.length > 0) {
+      const durl = source.durl[0] || {}
+      const durlUrl = durl.url || (Array.isArray(durl.backup_url) && durl.backup_url[0]) || ''
+      if (durlUrl) {
+        videos.push({
+          id: Number(source.quality) || 0,
+          codecid: 0,
+          codecs: '',
+          bandwidth: Number(source.bandwidth) || 0,
+          width: 0,
+          height: 0,
+          frameRate: '',
+          qualityName: '默认清晰度（音视频已合并）',
+          codecName: 'MP4',
+          url: durlUrl
+        })
+      }
+    }
+
+    return { videos, audios }
+  }
+
   let biliResourceRequesting = false
+
+  /** 番剧一集的展示名：`第N集`（接口 title 只有数字时补前缀）+ 副标题。 */
+  const biliEpisodeLabel = (episode) => {
+    const ep = episode || {}
+    const title = `${ep.title || ''}`.trim()
+    const longTitle = `${ep.longTitle || ''}`.trim()
+    return longTitle ? `${title} ${longTitle}`.trim() : title
+  }
+
+  /**
+   * 打 season 接口取整季的集数清单。
+   *
+   * 只取元信息，**播放地址等用户选完集数再由应用反向来取**：一季可能有
+   * 上千集（长篇连载），一次性把每集的 playurl 都打了会让按钮"获取中…"
+   * 卡很久，也必然撞上频控。
+   */
+  const fetchBiliBangumiSeason = async (bangumi) => {
+    // md 详情页只有 media_id：先换成 season_id（season 接口不认 media_id）
+    let seasonId = `${bangumi.seasonId || ''}`
+    if (!seasonId && bangumi.mediaId) {
+      const mediaData = await biliApiJson(
+        `https://api.bilibili.com/pgc/view/web/media?media_id=${encodeURIComponent(bangumi.mediaId)}`
+      )
+      if (mediaData && mediaData.code === 0 && mediaData.result && mediaData.result.season_id) {
+        seasonId = `${mediaData.result.season_id}`
+      }
+    }
+    const query = bangumi.epId
+      ? `ep_id=${encodeURIComponent(bangumi.epId)}`
+      : seasonId
+        ? `season_id=${encodeURIComponent(seasonId)}`
+        : `media_id=${encodeURIComponent(bangumi.mediaId)}`
+    const data = await biliApiJson(`https://api.bilibili.com/pgc/view/web/season?${query}`)
+    if (!data || data.code !== 0 || !data.result) {
+      throw new Error(`season ${data && (data.message || data.code)}`)
+    }
+    const season = data.result
+    const episodes = (Array.isArray(season.episodes) ? season.episodes : []).map((ep, index) => {
+      const epId = `${ep.id || ep.ep_id || ''}`
+      const rawTitle = `${ep.title || ''}`.trim()
+      const title = /^\d+$/.test(rawTitle)
+        ? `第${rawTitle}集`
+        : (rawTitle || `第${index + 1}集`)
+      return {
+        epId,
+        aid: `${ep.aid || ''}`,
+        bvid: `${ep.bvid || ''}`,
+        cid: `${ep.cid || ''}`,
+        index: index + 1,
+        title,
+        longTitle: `${ep.long_title || ''}`.trim(),
+        duration: Math.max(0, Math.round((Number(ep.duration) || 0) / 1000)),
+        cover: `${ep.cover || season.cover || ''}`.replace(/^\/\//, 'https://')
+      }
+    }).filter(ep => ep.epId && ep.cid)
+    if (!episodes.length) throw new Error('no episodes')
+    return {
+      season,
+      episodes,
+      title: `${season.title || ''}`.trim() || '番剧',
+      cover: `${season.cover || ''}`.replace(/^\/\//, 'https://'),
+      owner: season.up_info && season.up_info.uname ? `${season.up_info.uname}` : '',
+      seasonId: `${season.season_id || bangumi.seasonId || ''}`
+    }
+  }
+
+  /** 当前页对应的那一集：ep 页按 epId 找，ss / md 页取第一集。 */
+  const pickBiliCurrentBangumiEpisode = (bangumi, episodes) => {
+    if (bangumi.epId) {
+      const matched = episodes.find(ep => `${ep.epId}` === `${bangumi.epId}`)
+      if (matched) return matched
+    }
+    return episodes[0]
+  }
+
+  /** 取番剧某一集的播放地址（pgc/player/web/playurl），流形状与普通稿件一致。 */
+  const fetchBiliPgcPlay = async (episode) => {
+    try {
+      const params = [
+        `ep_id=${encodeURIComponent(episode.epId)}`,
+        `cid=${encodeURIComponent(episode.cid)}`
+      ]
+      if (episode.bvid) params.push(`bvid=${encodeURIComponent(episode.bvid)}`)
+      const data = await biliApiJson(
+        `https://api.bilibili.com/pgc/player/web/playurl?${params.join('&')}&qn=127&fnval=4048&fnver=0&fourk=1`
+      )
+      const play = data && (data.result || data.data)
+      if (!data || data.code !== 0 || !play) {
+        log('Failed to get bangumi playurl', episode.epId, data && (data.message || data.code))
+        return null
+      }
+      const { videos, audios } = buildBiliStreamsFromPlayData(play)
+      if (!videos.length) return null
+      return { videos, audios }
+    } catch (e) {
+      log('fetchBiliPgcPlay error for', episode && episode.epId, e)
+      return null
+    }
+  }
+
+  /** season + 当前集的播放地址 → 资源窗 payload（集数清单留给窗口选）。 */
+  const buildBiliBangumiResourcePayload = async (bangumi) => {
+    const info = await fetchBiliBangumiSeason(bangumi)
+    const current = pickBiliCurrentBangumiEpisode(bangumi, info.episodes)
+    const play = await fetchBiliPgcPlay(current)
+    if (!play) throw new Error('no video stream')
+    const referer = window.location.href || `https://www.bilibili.com/bangumi/play/ep${current.epId}`
+    const headers = []
+    try {
+      if (navigator.userAgent) headers.push(`User-Agent: ${navigator.userAgent}`)
+    } catch (e) {}
+    headers.push(`Referer: ${referer}`)
+    headers.push('Accept: */*')
+    headers.push('X-Lerxu-Source: BrowserExtension')
+    return {
+      kind: 'bangumi',
+      title: info.title,
+      cover: info.cover,
+      owner: info.owner,
+      referer,
+      headers,
+      seasonId: info.seasonId,
+      currentEpId: current.epId,
+      duration: Number(current.duration) || 0,
+      episodes: info.episodes,
+      videos: play.videos,
+      audios: play.audios
+    }
+  }
+
+  /** 番剧页：取 season 清单 + 当前集流，交给应用资源窗选集数。 */
+  const openBiliBangumiResourceDialog = async (bangumi) => {
+    if (biliResourceRequesting) return
+    biliResourceRequesting = true
+    const btn = document.getElementById('lerxu-bilibili-download-btn')
+    const countSpan = btn ? btn.querySelector('.lerxu-resource-count') : null
+    const oldCount = countSpan ? countSpan.textContent : ''
+    if (countSpan) countSpan.textContent = '获取中…'
+
+    try {
+      const payload = await buildBiliBangumiResourcePayload(bangumi)
+      chrome.runtime.sendMessage({ type: 'openBiliResourceDialog', payload }, (resp) => {
+        try {
+          if (chrome.runtime.lastError || !resp || !resp.ok) {
+            log('openBiliResourceDialog failed, falling back to direct add', chrome.runtime.lastError)
+            const current = payload.episodes.find(ep => `${ep.epId}` === `${payload.currentEpId}`) || payload.episodes[0]
+            sendBiliPairDirect({
+              title: `${payload.title} - ${biliEpisodeLabel(current)}`,
+              page: 0,
+              referer: payload.referer,
+              headers: payload.headers
+            }, payload.videos[0], payload.audios[0])
+          }
+        } catch (e) {}
+      })
+    } catch (e) {
+      log('openBiliBangumiResourceDialog error', e)
+      if (countSpan) {
+        countSpan.textContent = '获取失败'
+        setTimeout(() => {
+          if (countSpan && countSpan.textContent === '获取失败') countSpan.textContent = oldCount
+        }, 3000)
+      }
+    } finally {
+      biliResourceRequesting = false
+      if (countSpan && countSpan.textContent === '获取中…') countSpan.textContent = oldCount
+    }
+  }
+
+  // 应用资源窗选完集数后，主进程反向经由后台转发到这里，按集取播放地址。
+  // 只回应当前页是 B 站的情况，避免别站的内容脚本被误用。
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!msg || msg.type !== 'lerxu-fetch-bili-playurl') return
+    if (!isBilibiliHost()) {
+      sendResponse({ error: 'not bilibili' })
+      return false
+    }
+    const episodes = Array.isArray(msg.episodes) ? msg.episodes : []
+    if (!episodes.length) {
+      sendResponse({ error: 'no episodes' })
+      return false
+    }
+    ;(async () => {
+      const results = []
+      for (const ep of episodes) {
+        const fetched = await fetchBiliPgcPlay(ep)
+        if (!fetched) {
+          throw new Error(`无法获取「${biliEpisodeLabel(ep) || ep.epId}」的播放地址`)
+        }
+        results.push({
+          epId: `${ep.epId}`,
+          videos: fetched.videos,
+          audios: fetched.audios
+        })
+      }
+      sendResponse({ result: { episodes: results } })
+    })().catch((err) => {
+      sendResponse({ error: err && err.message ? err.message : '获取播放地址失败' })
+    })
+    return true
+  })
 
   /**
    * 打 view + playurl，把流清单交给应用弹窗。
@@ -5715,6 +6006,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
    */
   const openBiliResourceDialog = async () => {
     if (biliResourceRequesting) return
+    // 番剧 / 影视页：走 season 接口取集数清单，资源窗里再选集数
+    const bangumiId = getBiliBangumiIdFromUrl()
+    if (bangumiId) {
+      await openBiliBangumiResourceDialog(bangumiId)
+      return
+    }
     const id = getBiliVideoIdFromUrl()
     if (!id) {
       showResourceDropdown()
@@ -5748,52 +6045,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         throw new Error(`playurl ${playData && playData.code}`)
       }
       const play = playData.data
-      const dash = play.dash || {}
-      const supportFormats = Array.isArray(play.support_formats) ? play.support_formats : []
-
-      const videos = (Array.isArray(dash.video) ? dash.video : []).map(v => ({
-        id: Number(v.id) || 0,
-        codecid: Number(v.codecid) || 0,
-        codecs: `${v.codecs || ''}`,
-        bandwidth: Number(v.bandwidth) || 0,
-        width: Number(v.width) || 0,
-        height: Number(v.height) || 0,
-        frameRate: `${v.frameRate || v.frame_rate || ''}`,
-        qualityName: biliQualityName(v.id, supportFormats),
-        codecName: biliCodecName(v),
-        url: biliStreamUrl(v)
-      })).filter(v => v.url)
-
-      const audios = (Array.isArray(dash.audio) ? dash.audio : []).map(a => ({
-        id: Number(a.id) || 0,
-        codecid: Number(a.codecid) || 0,
-        codecs: `${a.codecs || ''}`,
-        bandwidth: Number(a.bandwidth) || 0,
-        qualityName: biliAudioName(a),
-        codecName: biliCodecName(a),
-        url: biliStreamUrl(a)
-      })).filter(a => a.url)
-
-      // 少量老视频只有 durl（音视频合在一起的普通 MP4），没有 DASH。
-      // 这条流本身就是完整视频，弹窗里不选音频即可。
-      if (!videos.length && Array.isArray(play.durl) && play.durl.length > 0) {
-        const durl = play.durl[0] || {}
-        const durlUrl = durl.url || (Array.isArray(durl.backup_url) && durl.backup_url[0]) || ''
-        if (durlUrl) {
-          videos.push({
-            id: Number(play.quality) || 0,
-            codecid: 0,
-            codecs: '',
-            bandwidth: Number(play.bandwidth) || 0,
-            width: 0,
-            height: 0,
-            frameRate: '',
-            qualityName: '默认清晰度（音视频已合并）',
-            codecName: 'MP4',
-            url: durlUrl
-          })
-        }
-      }
+      const { videos, audios } = buildBiliStreamsFromPlayData(play)
 
       if (!videos.length) throw new Error('no video stream')
 

@@ -551,6 +551,53 @@ const wsRequest = (type, params, timeout = 5000) => {
   })
 }
 
+// 应用 → 扩展的反向请求：资源窗选完集数后逐集取播放地址。
+// 转发给发起该资源窗的标签页里的内容脚本 —— 只有页面上下文带得上
+// 用户的 Cookie 与正确的 Referer（付费 / 会员集数尤其依赖这两样）。
+const handleBiliPlayUrlReverseRequest = (msg) => {
+  const reply = (payload) => {
+    try {
+      if (wsSocket && wsSocket.readyState === WebSocket.OPEN) {
+        wsSocket.send(JSON.stringify({ id: msg.id, ...payload }))
+      }
+    } catch (e) {}
+  }
+  const params = msg.params || {}
+  const tabId = Number(params.tabId)
+  const episodes = Array.isArray(params.episodes) ? params.episodes : []
+  if (!tabId || episodes.length === 0) {
+    reply({ error: 'invalid playurl request' })
+    return
+  }
+  try {
+    // frameId: 0 —— 内容脚本是 all_frames 注入的，不指定会连广告/内嵌 iframe
+    // 一起收到；它们不是 B 站页面，会先回一个 "not bilibili" 把主页面顶掉。
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: 'lerxu-fetch-bili-playurl', episodes },
+      { frameId: 0 },
+      (resp) => {
+        const lastError = chrome.runtime.lastError
+        if (lastError) {
+          reply({ error: lastError.message || '无法连接网页，请刷新页面后重试' })
+          return
+        }
+        if (!resp) {
+          reply({ error: '网页无响应，请刷新页面后重试' })
+          return
+        }
+        if (resp.error) {
+          reply({ error: resp.error })
+          return
+        }
+        reply({ result: resp.result })
+      }
+    )
+  } catch (e) {
+    reply({ error: e && e.message ? e.message : '无法连接网页' })
+  }
+}
+
 // 连接层认证:对服务器下发的 challenge 签名后回传
 const handleWsChallenge = async (challenge) => {
   try {
@@ -646,6 +693,9 @@ const wsConnect = () => {
         syncExtConfigFromClient().catch(() => {})
       } else if (msg.type === 'error') {
         console.log('[Background] WebSocket server error:', msg.error)
+      } else if (msg.type === 'bili-playurl' && msg.id !== undefined) {
+        // 应用反向请求：按集取播放地址（见 handleBiliPlayUrlReverseRequest）
+        handleBiliPlayUrlReverseRequest(msg)
       } else if (msg.id !== undefined) {
         const pending = wsPending.get(msg.id)
         if (pending) {
@@ -1660,7 +1710,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // （含 codecid）发过来，由应用弹出独立的资源弹窗选择视频/音频/合并格式/片段。
   if (msg && msg.type === 'openBiliResourceDialog' && msg.payload) {
     const handleOpenBiliResource = async () => {
-      const result = await channelRequest('bili-resource', msg.payload, 5000)
+      // 带上来源标签页：资源窗选完集数后应用会反向请求这个页面的内容脚本
+      // 逐集取播放地址（只有页面上下文带得上 Cookie 与 Referer）。
+      const payload = {
+        ...msg.payload,
+        tabId: sender && sender.tab && sender.tab.id ? sender.tab.id : 0
+      }
+      const result = await channelRequest('bili-resource', payload, 5000)
       sendResponse({ ok: !!(result && result.ok) })
     }
     handleOpenBiliResource()

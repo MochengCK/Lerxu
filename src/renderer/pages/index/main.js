@@ -78,7 +78,14 @@ function init (config) {
     ipcRenderer.on('bili-resource:apply', (_event, selection) => {
       try {
         const taskStore = useTaskStore(pinia)
-        Promise.resolve(taskStore.addBiliResourceTasks(selection)).catch((err) => {
+        // 番剧资源窗会一次带回多集（selections），普通视频仍是单条选择。
+        // 串行建任务：一集是一对音视频，并发发会把引擎与配对簿记搅在一起。
+        const list = Array.isArray(selection && selection.selections) ? selection.selections : [selection]
+        ;(async () => {
+          for (const item of list) {
+            await taskStore.addBiliResourceTasks(item)
+          }
+        })().catch((err) => {
           ElMessage.error(err && err.message ? err.message : '加入下载任务失败')
         })
       } catch (err) {
