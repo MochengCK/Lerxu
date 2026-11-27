@@ -5383,13 +5383,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   }
 
-  /** 分类名（拿不到就返回空串）。 */
+  /** 分类名（拿不到就返回空串）。
+   *
+   * 不能用 `.title-txt` 兜底：无分类的合集里，整个列表容器（class 带 section）
+   * 下第一个 `.title-txt` 就是第一个视频的标题，会把每个视频都标成同一个
+   * 「分类名」，资源窗里看起来所有标题都一样（用户点名）。
+   */
   const collectionSectionTitle = (el) => {
     try {
       const selectors = [
         '.video-pod__header .title', '.video-pod__header',
         '[class*="section-title"]', '[class*="section-header"]',
-        '.title-txt', '[class*="list-title"]'
+        '[class*="list-title"]'
       ]
       for (const sel of selectors) {
         const node = el.querySelector(sel)
@@ -6768,6 +6773,12 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   }
 
+  /** "12:34" / "1:02:03" → 秒；拿不到返回 0。 */
+  const parseDurationText = (text) => {
+    const parts = `${text || ''}`.split(':').map((part) => Number(part))
+    if (!parts.length || parts.some((n) => !Number.isFinite(n))) return 0
+    return parts.reduce((total, n) => total * 60 + n, 0)
+  }
   const biliEpisodeLabel = (episode) => {
     const ep = episode || {}
     const title = `${ep.title || ''}`.trim()
@@ -7174,6 +7185,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }
       }
     } catch (e) {}
+    // 侧栏没有播放标记时（未自动播放 / 改版），当前页的视频就是正在看的那个
+    try {
+      const fromUrl = getBiliVideoIdFromUrl()
+      return (fromUrl && fromUrl.bvid) || ''
+    } catch (e) {}
     return ''
   }
 
@@ -7207,6 +7223,76 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       return bottom
     } catch (e) {
       return 0
+    }
+  }
+
+  /**
+   * 合集清单 → 应用资源窗 payload。
+   *
+   * 与番剧同一套选集结构：窗口只选视频与全局画质，具体每条视频的播放地址
+   * 由应用反向请求内容脚本去取（避免这里一次性打几十个 playurl）。
+   */
+  const buildBiliCollectionResourcePayload = async (videos, collectionTitle) => {
+    const referer = window.location.href || ''
+    const headers = buildPageResourceHeaders(referer)
+    const currentBv = detectCurrentPlayingBv()
+    const episodes = videos.map((video, index) => ({
+      epId: video.bv || video.aid || `video-${index}`,
+      cid: '',
+      bvid: video.bv || '',
+      aid: video.aid || '',
+      title: `第${index + 1}个`,
+      longTitle: video.section ? `${video.section} · ${video.title}` : video.title,
+      duration: parseDurationText(video.duration)
+    }))
+    const currentIndex = videos.findIndex(video => video.bv && video.bv === currentBv)
+    // 认不出当前视频时仍用第一条的视频流撑起画质列表，但不要把第一条标成“正在播放”
+    const streamIndex = currentIndex >= 0 ? currentIndex : 0
+    const currentEp = episodes[streamIndex]
+    const play = currentEp ? await fetchBiliUgcEpisodeStreams(currentEp) : null
+    if (!play || play.error || !Array.isArray(play.videos) || !play.videos.length) {
+      throw new Error((play && play.error) || 'no video stream')
+    }
+    return {
+      kind: 'collection',
+      title: collectionTitle || getPageResourceTitle() || '合集',
+      cover: getPageResourceCover(),
+      owner: '',
+      referer,
+      headers,
+      currentEpId: currentIndex >= 0 ? currentEp.epId : '',
+      duration: 0,
+      episodes,
+      videos: play.videos,
+      audios: play.audios
+    }
+  }
+
+  /** 合集按钮 → 应用内资源窗；应用不可达时才退回网页内合集面板。 */
+  const openBiliCollectionResourceDialog = async (videos, collectionTitle) => {
+    if (resourceDialogRequesting) return
+    resourceDialogRequesting = true
+    const btnText = document.querySelector('#lerxu-collection-download-btn span')
+    const oldText = btnText ? btnText.textContent : ''
+    if (btnText) btnText.textContent = '获取中…'
+    const restore = () => {
+      if (btnText && btnText.textContent === '获取中…') btnText.textContent = oldText || '下载合集'
+    }
+    try {
+      const payload = await buildBiliCollectionResourcePayload(videos, collectionTitle)
+      chrome.runtime.sendMessage({ type: 'openBiliResourceDialog', payload }, (resp) => {
+        resourceDialogRequesting = false
+        restore()
+        if (chrome.runtime.lastError || !resp || !resp.ok) {
+          log('open collection resource dialog failed, falling back to in-page panel', chrome.runtime.lastError)
+          showCollectionDownloadDialog(videos, collectionTitle)
+        }
+      })
+    } catch (e) {
+      resourceDialogRequesting = false
+      restore()
+      log('openBiliCollectionResourceDialog error', e)
+      showCollectionDownloadDialog(videos, collectionTitle)
     }
   }
 
@@ -7794,8 +7880,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
           log(`Found ${videos.length} videos in collection, showing dialog`)
 
-          // 弹出下载弹窗
-          showCollectionDownloadDialog(videos, title)
+          // 打开应用内下载窗口（资源窗里选集 + 画质）；应用不可达时回退网页面板
+          openBiliCollectionResourceDialog(videos, title)
 
         } catch (err) {
           log('Collection download error:', err)

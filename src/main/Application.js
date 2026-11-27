@@ -4790,17 +4790,19 @@ export default class Application extends EventEmitter {
           : session.mergeFormat
 
       // ── 番剧：选集数 + 全局画质/编码偏好，按集取流后批量建任务 ──
-      if (`${(session.payload && session.payload.kind) || ''}` === 'bangumi') {
+      if (['bangumi', 'collection'].includes(`${(session.payload && session.payload.kind) || ''}`)) {
         const episodes = Array.isArray(session.payload.episodes) ? session.payload.episodes : []
+        const isCollection = `${(session.payload && session.payload.kind) || ''}` === 'collection'
+        const unit = isCollection ? '个视频' : '集'
         const wanted = new Set(
           (Array.isArray(selection.episodeIds) ? selection.episodeIds : []).map(id => `${id}`)
         )
         const chosen = episodes.filter(ep => wanted.has(`${ep.epId}`))
         if (chosen.length === 0) {
-          return { ok: false, error: '请选择要下载的集数' }
+          return { ok: false, error: `请选择要下载的${isCollection ? '视频' : '集数'}` }
         }
         if (chosen.length > 50) {
-          return { ok: false, error: '一次最多选择 50 集' }
+          return { ok: false, error: `一次最多选择 50 ${unit}` }
         }
 
         let fetched = null

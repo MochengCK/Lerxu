@@ -17,8 +17,9 @@
     audioStreamIndex: 0,
     duration: 0,
     metaParts: [],
-    // 番剧：整季的集数元信息 + 当前勾选的 epId（只在这类资源窗里用）
+    // 番剧 / 合集：整季的集数或合集视频清单 + 当前勾选的 id
     isBangumi: false,
+    isCollection: false,
     // 直播：脚本窗口只负责选清晰度并开始录制（不显示音频/合并格式）
     isLive: false,
     episodes: [],
@@ -287,30 +288,41 @@
     }
   }
 
-  /** 番剧资源窗：渲染整季集数并默认勾选当前正在看的那一集。 */
+  /** 番剧 / 合集资源窗：渲染清单并默认勾选当前项（合集默认全选）。 */
   function renderEpisodes (payload) {
-    state.isBangumi = `${(payload && payload.kind) || ''}` === 'bangumi'
-    state.episodes = state.isBangumi && Array.isArray(payload.episodes) ? payload.episodes : []
+    const kind = `${(payload && payload.kind) || ''}`
+    state.isBangumi = kind === 'bangumi'
+    state.isCollection = kind === 'collection'
+    const episodesMode = state.isBangumi || state.isCollection
+    state.episodes = episodesMode && Array.isArray(payload.episodes) ? payload.episodes : []
     state.selectedEpisodeIds = new Set()
     const block = $('episodeBlock')
     const list = $('episodeList')
     list.textContent = ''
-    if (!state.isBangumi || state.episodes.length === 0) {
+    if (!episodesMode || state.episodes.length === 0) {
       block.hidden = true
       return
     }
     block.hidden = false
+    $('episodeHeadLabel').textContent = state.isCollection ? '视频' : '集数'
+    $('episodeIndexHead').textContent = state.isCollection ? '序号' : '集数'
     const currentId = `${(payload && payload.currentEpId) || ''}`
     state.episodes.forEach((ep) => {
       const row = document.createElement('label')
       row.className = 'episode-item'
+      // 当前正在播放的视频/剧集：仅打标记，不额外展示高亮 / 图标，
+      // 列表打开时优先滚动到它（见下方 scrollIntoView）
+      if (currentId && `${ep.epId}` === currentId) {
+        row.classList.add('current')
+      }
 
       const checkCell = document.createElement('span')
       checkCell.className = 'episode-check'
       const checkbox = document.createElement('input')
       checkbox.type = 'checkbox'
       checkbox.className = 'lx-checkbox'
-      checkbox.checked = `${ep.epId}` === currentId
+      // 合集：默认全选；番剧：默认只勾当前正在看的那一集
+      checkbox.checked = state.isCollection || `${ep.epId}` === currentId
       if (checkbox.checked) {
         state.selectedEpisodeIds.add(`${ep.epId}`)
       }
@@ -355,17 +367,20 @@
       }
     }
     updateEpisodeHint()
-    // 长篇连载（上千集）时当前集可能在列表深处：滚到它，别让用户自己找
+    // 当前播放项优先；没有时退到第一个勾选项。
+    // 长篇连载 / 大合集里当前项可能在列表深处，别让用户自己找。
+    const currentRow = list.querySelector('.episode-item.current')
     const checked = list.querySelector('input[type="checkbox"]:checked')
     const checkedRow = checked && checked.closest ? checked.closest('.episode-item') : null
-    if (checkedRow && checkedRow.scrollIntoView) {
-      checkedRow.scrollIntoView({ block: 'nearest' })
+    const targetRow = currentRow || checkedRow
+    if (targetRow && targetRow.scrollIntoView) {
+      targetRow.scrollIntoView({ block: 'nearest' })
     }
   }
 
-  /** 已选集数的总时长：预计大小按它算，多集时不再只按当前集。 */
+  /** 已选清单的总时长：预计大小按它算，多集 / 多视频时不再只按当前项。 */
   function selectedEpisodeDuration () {
-    if (!state.isBangumi) {
+    if (!state.isBangumi && !state.isCollection) {
       return Number(state.duration) || 0
     }
     let total = 0
@@ -544,13 +559,21 @@
 
     // 标题栏只写动作名，视频标题放到下方封面信息里，避免两处重复
     const isBangumi = `${payload.kind || ''}` === 'bangumi'
+    const isCollection = `${payload.kind || ''}` === 'collection'
     const isLive = `${payload.kind || ''}` === 'live'
     state.isLive = isLive
-    const actionTitle = isLive ? '录制直播' : isBangumi ? '下载剧集' : '下载视频'
+    const actionTitle = isLive
+      ? '录制直播'
+      : isCollection
+        ? '下载合集'
+        : isBangumi
+          ? '下载剧集'
+          : '下载视频'
     $('windowTitle').textContent = actionTitle
     document.title = actionTitle
 
-    $('videoTitle').textContent = payload.title || (isLive ? '直播' : isBangumi ? '番剧' : '视频')
+    $('videoTitle').textContent = payload.title ||
+      (isLive ? '直播' : isCollection ? '合集' : isBangumi ? '番剧' : '视频')
     state.duration = Number(payload.duration) || 0
     state.metaParts = []
     if (payload.owner) {
@@ -558,6 +581,8 @@
     }
     if (isLive) {
       state.metaParts.push('直播')
+    } else if (isCollection && Array.isArray(payload.episodes) && payload.episodes.length > 0) {
+      state.metaParts.push(`共 ${payload.episodes.length} 个视频`)
     } else if (isBangumi && Array.isArray(payload.episodes) && payload.episodes.length > 0) {
       state.metaParts.push(`共 ${payload.episodes.length} 集`)
     } else {
@@ -568,7 +593,8 @@
         state.metaParts.push(`P${payload.page}/${payload.pageCount}`)
       }
     }
-    $('videoMeta').textContent = state.metaParts.join(' · ') || (isLive ? '直播' : isBangumi ? '番剧' : '视频')
+    $('videoMeta').textContent = state.metaParts.join(' · ') ||
+      (isLive ? '直播' : isCollection ? '合集' : isBangumi ? '番剧' : '视频')
 
     // 直播只选清晰度：音频随流、录制产物也不做合并
     $('audioQualityRow').hidden = isLive
@@ -642,10 +668,10 @@
     const audio = state.isLive ? null : selectedAudioStream()
 
     let selection
-    if (state.isBangumi) {
+    if (state.isBangumi || state.isCollection) {
       const episodeIds = Array.from(state.selectedEpisodeIds)
       if (episodeIds.length === 0) {
-        setFormError('请选择要下载的集数')
+        setFormError(`请选择要下载的${state.isCollection ? '视频' : '集数'}`)
         return
       }
       // 番剧：只带"选集 + 全局画质/编码偏好"，每一集的播放地址由应用反向
