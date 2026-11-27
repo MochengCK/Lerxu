@@ -269,6 +269,8 @@
     <string name="settings_category_browser">浏览器</string>
     <string name="settings_category_appearance">个性外观</string>
     <string name="settings_category_general">通用</string>
+    <string name="settings_permissions">权限</string>
+    <string name="settings_permission_not_granted">未授权，点击去授权</string>
     <string name="settings_category_about">关于</string>
     <string name="settings_category_download">下载设置</string>
     <string name="settings_group_transfer">下载与传输</string>
@@ -284,6 +286,7 @@
     <string name="purge_task_records">清除任务记录</string>
     <string name="purge_task_records_desc">移除已完成与出错任务的记录，不删除已下载的文件</string>
     <string name="settings_about">关于</string>
+    <string name="settings_version_info">版本信息</string>
     <string name="about_version">版本</string>
     <string name="about_engine">下载引擎</string>
     <string name="purge_confirm_title">清除任务记录？</string>
@@ -349,7 +352,7 @@
     <string name="detail_tab_overview">概览</string>
     <string name="detail_tab_pieces">分片</string>
     <string name="detail_tab_peers">节点</string>
-    <string name="detail_tab_trackers">Tracker</string>
+    <string name="detail_tab_trackers">追踪器</string>
     <string name="detail_tab_files">文件</string>
     <string name="detail_gid">GID</string>
     <string name="detail_avg_speed">平均速度</string>

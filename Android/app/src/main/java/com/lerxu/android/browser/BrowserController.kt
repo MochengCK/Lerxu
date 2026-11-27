@@ -1470,6 +1470,15 @@ class BrowserController(
     val isHomePage: Boolean get() = active.isHomePage
 
     /**
+     * 当前标签是否停在自家首页。
+     *
+     * 比 [isHomePage] 多兜两种"还没落值"的瞬间：地址已经是首页、或标签还是空白
+     * （刚进浏览器、首页正在加载）。底部导航栏用它判断显隐，否则首次切到浏览器
+     * 会先判成普通网页把导航滑走，首页加载完又滑回来 —— 看起来就是切换动画在抖。
+     */
+    val isOnHomePage: Boolean get() = active.url.isBlank() || isHomeTab(active)
+
+    /**
      * 点输入框进入编辑时应显示的"原始内容"。
      *
      * - 当前页是**搜索结果页**（地址里带着某个引擎的查询参数）→ 用户当时搜的那串词

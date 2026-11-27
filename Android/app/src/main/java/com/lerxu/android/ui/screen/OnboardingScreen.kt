@@ -1057,8 +1057,8 @@ private val ONBOARDING_PAGES = listOf("features", "entry", "permission", "finish
 
 // ─── 权限 ───
 
-/** 存储权限是否已拿到（R+ 看"所有文件访问"，更早看运行时权限）。 */
-private fun storageGranted(context: android.content.Context): Boolean =
+/** 存储权限是否已拿到（R+ 看"所有文件访问"，更早看运行时权限）。设置页共用。 */
+internal fun storageGranted(context: android.content.Context): Boolean =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         Environment.isExternalStorageManager()
     } else {
@@ -1066,8 +1066,8 @@ private fun storageGranted(context: android.content.Context): Boolean =
             android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
-/** 通知权限是否已拿到（API < 33 默认就是有）。 */
-private fun notificationsGranted(context: android.content.Context): Boolean =
+/** 通知权限是否已拿到（API < 33 默认就是有）。设置页共用。 */
+internal fun notificationsGranted(context: android.content.Context): Boolean =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
@@ -1082,7 +1082,7 @@ private fun notificationsGranted(context: android.content.Context): Boolean =
  * `resolveActivity` 问一句"有没有人接"，全都打不开就退到应用详情页；权限状态不靠回调，
  * 而是**每次回到前台重读**（见 OnboardingScreen 里的 ON_RESUME 观察者）。
  */
-private fun openAllFilesAccessPage(context: android.content.Context) {
+internal fun openAllFilesAccessPage(context: android.content.Context) {
     val pkg = Uri.parse("package:${context.packageName}")
     val candidates = buildList {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -1112,7 +1112,7 @@ private fun openAllFilesAccessPage(context: android.content.Context) {
  * 再点"授予"看起来就是"点了没反应"（用户点名）。这条路给那次点击一个去处 ——
  * 用户可以在系统设置里直接打开通知开关，回到前台时状态会被重读（见 ON_RESUME）。
  */
-private fun openNotificationSettingsPage(context: android.content.Context) {
+internal fun openNotificationSettingsPage(context: android.content.Context) {
     val pkg = Uri.parse("package:${context.packageName}")
     val candidates = buildList {
         add(

@@ -13,10 +13,12 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -707,6 +709,9 @@ fun AppScreen(
     }
     var pendingDeleteGids by remember { mutableStateOf<List<String>?>(null) }
     var searchQuery by remember { mutableStateOf("") }
+    // 首页搜索状态提到页面外层：底部导航栏据此在搜索时让位
+    var searchExpanded by remember { mutableStateOf(false) }
+    var searchFocused by remember { mutableStateOf(false) }
 
     // 应用内更新提示：UpdateManager 发现新版本时发到 availableUpdate，
     // 这里以底部悬浮卡片展示（系统通知同时保留，互为补充）
@@ -757,10 +762,28 @@ fun AppScreen(
 
     // 坞：设置已改为底部弹窗（不再是"要让位"的一页），所以它在任何页面都常驻。
     // 另一种"要让位"的情况：浏览器页展开标签网格（网格要盖满整屏）、
-    // 任务页进入编辑模式（底部那条选择控制栏在坞下面，现在是悬浮层会压住它）
+    // 任务页进入编辑模式（底部那条选择控制栏在坞下面，现在是悬浮层会压住它）、
+    // 以及**首页正在搜索**（用户点名：底部导航栏只在搜索时消失）
+    val homeSearching = page == AppPage.Tasks && searchExpanded
     val dockPresent = true
-    val dockOpaque = !(page == AppPage.Browser && browserController.tabsOpen) &&
+    val dockOpaque = !homeSearching &&
+        !(page == AppPage.Browser && browserController.tabsOpen) &&
         !(page == AppPage.Tasks && (selectionMode || deleteConfirming))
+    // 底部导航栏：只在两个「首页」出现（下载器首页 / 浏览器首页），
+    // 搜索页与普通网页都不显示；进出搜索页走上下滑动动画
+    val navVisible = dockOpaque && (
+        page == AppPage.Tasks ||
+            (page == AppPage.Browser && browserController.isOnHomePage &&
+                !addressFocused && !browserController.homePanelsOpen)
+        )
+
+    // 离开首页就收起搜索：底部导航栏恢复常驻，回来时是干净的任务列表
+    LaunchedEffect(page) {
+        if (page != AppPage.Tasks) {
+            searchExpanded = false
+            searchFocused = false
+        }
+    }
 
     /**
      * 顶栏的**实测高度**（含它自带的状态栏内边距）。
@@ -838,54 +861,26 @@ fun AppScreen(
          * 顶栏还没量到（首帧）才退回 Scaffold 的当前值。
          */
         val topInsetWithBar = if (topBarInset > 0.dp) topBarInset else padding.calculateTopPadding()
-        // 页面切换的位移量：**在可组合作用域里先算好**（transitionSpec 那个 lambda
-        // 不是可组合上下文，读不了 LocalDensity）。
-        //
-        // 取**坞的高度 + 它的下边留白**，而不是"1/4 屏"：坞就在底部、锚点是它，
-        // 位移量跟坞对齐，读起来才是"整页从控制栏里长出来 / 收回到控制栏里"。
-        // 位移一大（1/4 屏 ≈ 200px）就变成两块内容互相推，跟坞自身那条
-        // 34% → 100% 的形变脱节，反而不连贯。
-        val pageSlideDist = with(LocalDensity.current) { (DOCK_HEIGHT + 10.dp).roundToPx() }
         AnimatedContent(
             targetState = page,
             // 容器**不给顶部内边距**：让出状态栏这件事由各个页面自己带 ——
             // 浏览器页内部只让网页内容让位、标签网格照样铺到顶；任务页 / 设置页
             // 在各自分支里加。写在容器上的话，page 一切换这个值就瞬间跳变，
             // 正在滑出 / 滑入的内容会被连带闪跳一下（用户点名的"来回跳"）。
+            // 页面切换只走底部导航按钮，屏幕滑动不再切换
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
-                // 页面切换现在只有"下载器 ⇄ 浏览器"这一种（设置已改为底部弹窗，不再是页面），
-                // 于是这一段不再分叉：进出两页共用一套动画、一条时间线，形变原点锚在
-                // **底部中央**（坞那枚浏览器按钮所在的位置）——
-                // 进来的一页从下方 `pageSlideDist` 处升起来 + 从 0.96 放大 + 淡入，
-                // 出去的一页沉回控制栏 + 收回成 0.94 + 淡出。
-                //
-                // 时间线跟坞的形变**完全一致**（340ms + FastOutSlowIn）：坞那条
-                // 34% → 100% 的胶囊长成整条控制栏，和整页的升起来是同一个动作，
-                // 谁也不会"先出现、后到位"（用户点名：控制栏都出来了，链接输入框
-                // 才开始动 —— 那一条的根因在 DockAddressContent 的宽度推导，
-                // 这里把两边的时长对齐，剩下的交给同一条曲线收尾）。
-                //
-                // 关键：位移与缩放**必须同向**（都在"往上长 / 往下收"）——
-                // 若滑入向上而缩放缩小，用户会看到内容先缩再走，产生两次位移错觉。
-                // 两个方向因此共用同一套（不再按 goingToBrowser 分叉）：
-                // 对坞来说"进"和"出"本来就是同一个动作的正反播放。
-                val slideSpec = tween<IntOffset>(340, easing = FastOutSlowInEasing)
-                val scaleSpec = tween<Float>(340, easing = FastOutSlowInEasing)
-                val fadeSpec = tween<Float>(240, easing = FastOutSlowInEasing)
-                val origin = TransformOrigin(0.5f, 1f)
-
-                (
-                    // 进场：从控制栏里升起来（下方 +d → 0），同时放大 + 淡入
-                    slideInVertically(slideSpec) { pageSlideDist } +
-                        scaleIn(scaleSpec, initialScale = 0.96f, transformOrigin = origin) +
-                        fadeIn(fadeSpec)
-                    ) togetherWith (
-                    // 出场：沉回控制栏（0 → 下方 +d），同时收小 + 淡出
-                    slideOutVertically(slideSpec) { pageSlideDist } +
-                        scaleOut(scaleSpec, targetScale = 0.94f, transformOrigin = origin) +
-                        fadeOut(fadeSpec)
-                    )
+                // 横向滑动：去浏览器 → 新页自右侧进、旧页向左出；回下载器反向
+                val forward = targetState == AppPage.Browser
+                val slideSpec = tween<IntOffset>(320, easing = FastOutSlowInEasing)
+                val fadeSpec = tween<Float>(200, easing = FastOutSlowInEasing)
+                if (forward) {
+                    (slideInHorizontally(slideSpec) { it } + fadeIn(fadeSpec)) togetherWith
+                        (slideOutHorizontally(slideSpec) { -it } + fadeOut(fadeSpec))
+                } else {
+                    (slideInHorizontally(slideSpec) { -it } + fadeIn(fadeSpec)) togetherWith
+                        (slideOutHorizontally(slideSpec) { it } + fadeOut(fadeSpec))
+                }
             },
             label = "appPageSwitch"
         ) { current ->
@@ -899,9 +894,9 @@ fun AppScreen(
                     // + 导航条那一截），网页再多留 10dp 只会在两者之间露出一条空白底色
                     //（用户：可显示范围有点少、控制栏上方有一条缝隙）
                     bottomInset = navBottom + if (dockModern) {
-                        DOCK_HEIGHT + 10.dp
+                        DOCK_HEIGHT + 10.dp + (if (navVisible) NAV_HEIGHT + 8.dp else 0.dp)
                     } else {
-                        TRADITIONAL_DOCK_HEIGHT
+                        TRADITIONAL_DOCK_HEIGHT + (if (navVisible) NAV_HEIGHT + 4.dp else 0.dp)
                     },
                     modern = dockModern,
                     topInset = windowTopInset
@@ -912,11 +907,7 @@ fun AppScreen(
                         .fillMaxSize()
                         .padding(top = topInsetWithBar)
                 ) {
-                // 搜索展开状态：用于"点击任意处收起"遮罩与返回键处理
-                var searchExpanded by remember { mutableStateOf(false) }
-                // 搜索框焦点状态：决定点空白是收键盘还是收搜索框、✕ 是清空还是关闭
-                var searchFocused by remember { mutableStateOf(false) }
-                val searchFocusManager = androidx.compose.ui.platform.LocalFocusManager.current
+            val searchFocusManager = androidx.compose.ui.platform.LocalFocusManager.current
             if (state.connected) {
                 ScopeFilterRow(
                     currentScope = currentScope,
@@ -1126,45 +1117,6 @@ fun AppScreen(
                         .fillMaxWidth()
                         .padding(bottom = imeLift)
                 ) {
-                    // 返回下载器：纯文字 + 图标，浮在控制栏上方。
-                    // **严格限定只在自家首页出现** —— 之前用"排除搜索结果页"
-                    // 的写法，任何没匹配上的网页（重定向、换域名）都会漏出来
-                    // 一个返回按钮，语义也不清；其余页面的退出走系统返回键。
-                    // 首页内再让位给：地址栏聚焦（此时首页会切成建议 / 历史视图）、
-                    // 提交后导航未开始、标签网格展开。
-                    val backToShow = page == AppPage.Browser && dockOpaque &&
-                        browserController.isHomePage &&
-                        !addressFocused && !browserController.homePanelsOpen &&
-                        !browserController.navSubmitting &&
-                        !browserController.tabsOpen
-                    AnimatedVisibility(
-                        visible = backToShow,
-                        enter = fadeIn(tween(260)) + slideInVertically(tween(260)) { it / 2 },
-                        exit = fadeOut(tween(200)) + slideOutVertically(tween(200)) { it / 2 }
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { page = AppPage.Tasks }
-                                .padding(vertical = 7.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Outlined.Download,
-                                contentDescription = null,
-                                modifier = Modifier.size(15.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                stringResource(R.string.browser_back_downloader),
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                     // 「本页资源」弹窗**排在坞之前**：这一列是贴底对齐的，面板因此长在
                     // 坞的上方，坞原地不动（用户点名：不再把控制栏顶上去）。
                     // 它自己那套"从资源按钮向上移动放大 / 收起缩回按钮"的动效在 SniffPopup 内
@@ -1186,8 +1138,18 @@ fun AppScreen(
                         onDismissItem = { item -> browserController.dismiss(item.url) },
                         onClear = { browserController.clearSniffed() }
                     )
+                    // 浏览器页：地址栏控制栏在上，底部导航栏在最下面。
+                    // 跟着页面一起**从右侧滑入 / 向右滑出**，不再直接出现 / 消失
+                    AnimatedVisibility(
+                        visible = page == AppPage.Browser,
+                        enter = slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it } +
+                            fadeIn(tween(240)),
+                        exit = slideOutHorizontally(tween(320, easing = FastOutSlowInEasing)) { it } +
+                            fadeOut(tween(240))
+                    ) {
                     BrowserDock(
-                        mode = if (page == AppPage.Browser) DockMode.Address else DockMode.Launch,
+                        mode = DockMode.Address,
+                        navBelow = navVisible,
                         visible = dockOpaque,
                         addressFocused = addressFocused,
                         modern = dockModern,
@@ -1242,7 +1204,9 @@ fun AppScreen(
                         },
                         onAddressFocusChange = { addressFocused = it },
                         focusRequester = addressFocusRequester,
-                        bottomPadding = dockBottom,
+                        // 底部导航栏占了下半截：控制栏贴着它上方（4dp 呼吸）；
+                        // 搜索页里导航让位，控制栏回到屏幕底
+                        bottomPadding = if (navVisible) 4.dp else dockBottom,
                         onLaunch = { page = AppPage.Browser },
                         // 长按返回键 = 直接回下载器（退出浏览器）；标签页留着，再进还在
                         onExitBrowser = { page = AppPage.Tasks },
@@ -1291,6 +1255,35 @@ fun AppScreen(
                             browserController.pickEngine(key)
                         }
                     )
+                    }
+
+                    // 底部导航：两个首页共用的最底下一行。
+                    // 进入搜索页 / 普通网页时向下滑出，回来时向上滑入。
+                    AnimatedVisibility(
+                        visible = navVisible,
+                        // 向下滑出的同时收起占位：上方地址栏跟着**连续下移**，
+                        // 不会在动画结束时才"啪"地掉一截
+                        enter = slideInVertically(tween(220)) { it } +
+                            expandVertically(tween(220)) +
+                            fadeIn(tween(180)),
+                        exit = slideOutVertically(tween(200)) { it } +
+                            shrinkVertically(tween(200)) +
+                            fadeOut(tween(160))
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                // 再向下移一档后又回调一点：略高于手势条，不贴死底边
+                                .padding(bottom = (navBottom - 4.dp).coerceAtLeast(0.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            HomeNavBar(
+                                selected = page,
+                                onSelect = { page = it },
+                                modifier = Modifier.fillMaxWidth().height(NAV_HEIGHT)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1578,6 +1571,9 @@ private enum class DockMode { Launch, Address }
 /** 坞的高度：两种形态共用一个高度，形变时不会上下跳。 */
 private val DOCK_HEIGHT = 46.dp
 
+/** 底部导航栏（下载器 / 浏览器）的高度。 */
+private val NAV_HEIGHT = 52.dp
+
 /**
  * 传统模式的工具栏高度：比悬浮坞高一档（46 → 52dp）。
  *
@@ -1656,8 +1652,8 @@ private fun Modifier.dockSurfaceMaterial(
 /** 底部那条实心底的高度（不含导航条）：要盖住坞所在的整条位置。 */
 private val DOCK_BOTTOM_BAND = 62.dp
 
-/** 浏览器按钮形态的宽度占比（比输入框窄，但明显比"刚好包住文字"要长）。 */
-private const val DOCK_LAUNCH_WIDTH = 0.58f
+/** 底部导航栏形态的宽度占比（两格：下载器 / 浏览器，留出左右呼吸）。 */
+private const val DOCK_LAUNCH_WIDTH = 0.72f
 
 /**
  * 底部常驻的坞（**悬浮**在内容之上，不占布局高度）。
@@ -1673,6 +1669,8 @@ private const val DOCK_LAUNCH_WIDTH = 0.58f
 private fun BrowserDock(
     mode: DockMode,
     visible: Boolean,
+    /** 底部导航栏在坞下方时，传统模式不再自己垫导航条（避免双重留白）。 */
+    navBelow: Boolean = false,
     addressFocused: Boolean,
     modern: Boolean,
     onModernChange: (Boolean) -> Unit,
@@ -1842,9 +1840,8 @@ private fun BrowserDock(
         animationSpec = tween(260, easing = FastOutSlowInEasing),
         label = "dockVisibility"
     )
-    // 材质整体显隐：地址形态才有填充（进出地址形态时平滑过渡）。
-    // 时长跟 `morphSpec`（宽度形变）与整页切换的 340ms **对齐** —— 这三样是同一个
-    // 动作的三个部分（胶囊变宽 / 底料浮现 / 整页升起来），谁短谁就会"先到位"。
+    // 材质整体显隐：**只有地址形态有填充** —— 任务页的底部导航栏是纯图标 + 文字，
+    // 不带背景（用户点名）。
     val materialAmount by animateFloatAsState(
         targetValue = if (address) 1f else 0f,
         animationSpec = tween(340, easing = FastOutSlowInEasing),
@@ -1931,7 +1928,12 @@ private fun BrowserDock(
         label = "dockBottomPad"
     )
     val dockNavStrip by animateDpAsState(
-        targetValue = if (docked || flush) navBottom else 0.dp,
+        targetValue = when {
+            // 底部导航栏在坞下方：传统模式的导航条由导航栏自己让出
+            docked && navBelow -> 0.dp
+            docked || flush -> navBottom
+            else -> 0.dp
+        },
         animationSpec = tween(300, easing = FastOutSlowInEasing),
         label = "dockNavStrip"
     )
@@ -2228,29 +2230,87 @@ private fun BrowserDock(
     }
 }
 
-/** 任务页形态：一个居中的浏览器按钮（不是输入框），占满坞的高度与宽度。 */
+/**
+ * 任务页形态：底部导航栏（下载器 / 浏览器）。
+ *
+ * 用户点名：两个分类一左一右、点击直接切换、图标在上文字在下；
+ * **不要底色、不要按压高亮**，选中态只靠图标 + 文字高亮表达。
+ */
 @Composable
-private fun DockLaunchContent(onOpen: () -> Unit) {
-    val colorScheme = MaterialTheme.colorScheme
+private fun DockLaunchContent(onOpenBrowser: () -> Unit) {
+    HomeNavBar(
+        selected = AppPage.Tasks,
+        onSelect = { target ->
+            if (target == AppPage.Browser) onOpenBrowser()
+        },
+        modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp)
+    )
+}
+
+/** 底部导航栏：两格并排，图标在上、文字在下；选中态只用主色。 */
+@Composable
+private fun HomeNavBar(
+    selected: AppPage,
+    onSelect: (AppPage) -> Unit,
+    modifier: Modifier = Modifier
+) {
     Row(
-        modifier = Modifier
-            .fillMaxSize()
-            .clickable(onClick = onOpen),
-        horizontalArrangement = Arrangement.Center,
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(64.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            Icons.Outlined.Language,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = colorScheme.onSurface
+        DockNavItem(
+            icon = Icons.Outlined.Download,
+            label = stringResource(R.string.start_page_downloader),
+            selected = selected == AppPage.Tasks,
+            onClick = { onSelect(AppPage.Tasks) },
+            modifier = Modifier.width(88.dp)
         )
-        Spacer(Modifier.width(9.dp))
+        DockNavItem(
+            icon = Icons.Outlined.Language,
+            label = stringResource(R.string.tab_browser),
+            selected = selected == AppPage.Browser,
+            onClick = { onSelect(AppPage.Browser) },
+            modifier = Modifier.width(88.dp)
+        )
+    }
+}
+
+/** 底部导航的一项：图标在上、文字在下；无背景、无按压高亮。 */
+@Composable
+private fun DockNavItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    val tint = if (selected) colorScheme.primary else colorScheme.onSurfaceVariant
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+            tint = tint
+        )
+        Spacer(Modifier.height(3.dp))
         Text(
-            stringResource(R.string.tab_browser),
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-            color = colorScheme.onSurface
+            label,
+            fontSize = 11.sp,
+            lineHeight = 14.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = tint
         )
     }
 }

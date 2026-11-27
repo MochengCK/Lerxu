@@ -269,6 +269,8 @@
     <string name="settings_category_browser">Browser</string>
     <string name="settings_category_appearance">Personalization</string>
     <string name="settings_category_general">General</string>
+    <string name="settings_permissions">Permissions</string>
+    <string name="settings_permission_not_granted">Not granted · Tap to grant</string>
     <string name="settings_category_about">About</string>
     <string name="settings_category_download">Downloads</string>
     <string name="settings_group_transfer">Downloads &amp; Transfer</string>
@@ -284,6 +286,7 @@
     <string name="purge_task_records">Purge task records</string>
     <string name="purge_task_records_desc">Remove records of completed and errored tasks. Downloaded files will not be deleted.</string>
     <string name="settings_about">About</string>
+    <string name="settings_version_info">Version info</string>
     <string name="about_version">Version</string>
     <string name="about_engine">Download Engine</string>
     <string name="purge_confirm_title">Purge task records?</string>

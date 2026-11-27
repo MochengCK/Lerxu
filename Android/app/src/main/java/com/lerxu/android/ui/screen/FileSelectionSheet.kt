@@ -164,7 +164,7 @@ fun TaskFileSelectionSheet(
             } else {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = colorScheme.surfaceContainerLow,
+                    color = colorScheme.surfaceContainerHigh,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     LazyColumn(

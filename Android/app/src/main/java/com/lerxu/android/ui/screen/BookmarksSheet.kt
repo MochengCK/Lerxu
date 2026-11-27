@@ -76,7 +76,10 @@ internal fun BrowserBookmarksSheet(
         dragHandle = null,
         contentWindowInsets = { sheetContentInsets() }
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+        ) {
             SettingsSheetHeader(
                 title = stringResource(R.string.browser_dock_more_bookmarks),
                 onBack = dismissAnimated

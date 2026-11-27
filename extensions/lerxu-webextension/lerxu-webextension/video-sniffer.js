@@ -211,7 +211,7 @@
       // 把形态告诉后台（FLV 与清单的判定完全不同，省一次白抓）
       const kind = isFlvLikeResource(entry) && !isManifestLikeResource(entry) ? 'flv' : 'hls'
       entry.liveProbed = true
-      chrome.runtime.sendMessage({ type: 'probeLiveStream', url, kind }, (resp) => {
+      chrome.runtime.sendMessage({ type: 'probeLiveStream', url, kind, referer: window.location.href || '' }, (resp) => {
         try {
           if (chrome.runtime.lastError) {
             entry.liveProbed = false
@@ -477,6 +477,12 @@
     }
   }
 
+  // 去重时保留「决定是哪一档流」的查询参数：同一路径用 ?quality=1080 /
+  // ?quality=720 下发多档时，只按 pathname 去重会把除第一档外的全吃掉
+  // （资源窗里就只剩一个清晰度）。签名 / token 不入键，刷新后的同一条流
+  // 仍然算同一条。
+  const QUALITY_DEDUP_PARAMS = ['quality', 'res', 'resolution', 'height', 'definition', 'q', 'bitrate', 'rate']
+
   const normalizeUrlForDedup = (url) => {
     try {
       if (!url) return ''
@@ -489,7 +495,14 @@
           return `video:${resourceId}:${qualityCode}`
         }
       }
-      return `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}`
+      const significant = []
+      urlObj.searchParams.forEach((value, key) => {
+        const lower = `${key}`.toLowerCase()
+        if (QUALITY_DEDUP_PARAMS.includes(lower)) significant.push(`${lower}=${value}`)
+      })
+      significant.sort()
+      const suffix = significant.length > 0 ? `?${significant.join('&')}` : ''
+      return `${urlObj.protocol}//${urlObj.hostname}${urlObj.pathname}${suffix}`
     } catch (e) {
       return `${url || ''}`
     }
@@ -1144,6 +1157,72 @@
     return 0 // 无法准确推断时返回0
   }
 
+  // ─── 通用清晰度识别 ───
+  //
+  // 站点的多清晰度下载链接通常把档位写在地址里（.../1080p.mp4、
+  // .../1280x720/index.m3u8、?height=720）。嗅探拿不到站点的档位表，但
+  // 地址里的这些记号足够把同一条视频的多档流区分开 —— 否则资源窗里所有
+  // 通用流都会落在同一个「原始画质」上。
+  const qualityLabelFromHeight = (height) => {
+    const h = Number(height) || 0
+    if (h >= 2000) return '4K'
+    if (h >= 1400) return '1440P'
+    if (h >= 1000) return '1080P'
+    if (h >= 700) return '720P'
+    if (h >= 460) return '480P'
+    if (h >= 340) return '360P'
+    if (h >= 220) return '240P'
+    return ''
+  }
+
+  const detectQualityFromUrl = (url) => {
+    try {
+      const urlObj = new URL(url)
+      const text = `${urlObj.pathname} ${urlObj.search}`.toLowerCase()
+
+      // 1920x1080 / 1280x720
+      const sizeMatch = text.match(/(?:^|[^0-9])(\d{3,4})x(\d{3,4})(?:[^0-9]|$)/)
+      if (sizeMatch) {
+        const label = qualityLabelFromHeight(sizeMatch[2])
+        if (label) return label
+      }
+
+      // 1080p / 720P / 2160p
+      const pMatch = text.match(/(?:^|[^0-9a-z])(2160|1440|1080|720|480|360|240)p(?:[^0-9a-z]|$)/)
+      if (pMatch) return qualityLabelFromHeight(pMatch[1])
+
+      // 8k / 4k / 2k
+      const kMatch = text.match(/(?:^|[^0-9a-z])(8k|4k|2k)(?:[^0-9a-z]|$)/)
+      if (kMatch) {
+        if (kMatch[1] === '8k') return '8K'
+        if (kMatch[1] === '4k') return '4K'
+        return '1440P'
+      }
+
+      // 查询参数：height=1080 / resolution=720p / quality=hd / ratio=1080p ...
+      const paramKeys = ['height', 'res', 'resolution', 'quality', 'definition', 'q', 'ratio']
+      for (const key of paramKeys) {
+        const raw = urlObj.searchParams.get(key)
+        if (!raw) continue
+        const value = `${raw}`.trim().toLowerCase()
+        const numeric = value.match(/(\d{3,4})/)
+        if (numeric) {
+          const label = qualityLabelFromHeight(numeric[1])
+          if (label) return label
+        }
+        if (value === 'uhd' || value === '4k') return '4K'
+        if (value === 'fhd' || value === 'fullhd' || value === '1080p') return '1080P'
+        if (value === 'hd' || value === '720p') return '720P'
+        if (value === 'sd' || value === '480p') return '480P'
+      }
+
+      // 兜底：路径里孤立的 1080 / 720（.../1080/index.m3u8）
+      const bareMatch = text.match(/(?:^|[^0-9])(2160|1440|1080|720|480|360|240)(?:[^0-9]|$)/)
+      if (bareMatch) return qualityLabelFromHeight(bareMatch[1])
+    } catch (e) {}
+    return ''
+  }
+
   // 解析资源信息（异步版本，支持多语言）
   async function parseResource(url, mimeType, size) {
     const currentLocale = cachedLocale || 'en'
@@ -1385,6 +1464,18 @@
             }
           }
         } catch (e) {}
+      }
+
+      // 通用清晰度：只有「占位档位」（扩展名 / Unknown / 空）才用地址里的
+      // 档位覆盖。B 站 m4s 等已经从编号解析出真实档位（还可能带编码）的不动。
+      if (info.type === 'video') {
+        const extLabel = `${ext || ''}`.toUpperCase()
+        const unknownLabel = getLocalizedQuality('Unknown', currentLocale)
+        const isPlaceholder = !info.quality || info.quality === extLabel || info.quality === unknownLabel
+        if (isPlaceholder) {
+          const urlQuality = detectQualityFromUrl(url)
+          if (urlQuality) info.quality = urlQuality
+        }
       }
 
       // 如果传入了有效的大小，使用传入的大小（优先级最高）
@@ -2426,6 +2517,14 @@
 
           if (contentType) {
             xhr._mimeType = contentType
+            // 直播流是永不结束的长连接：readyState 可能永远到不了 DONE，
+            // 只在 DONE 登记会整条漏掉。收到响应头就先登记（大小后面再补）。
+            try {
+              const earlyUrl = xhr.responseURL || xhr._url
+              if (shouldSniff(earlyUrl, contentType)) {
+                addResource(earlyUrl, contentType, 0)
+              }
+            } catch (e) {}
           }
 
           // 优先使用Content-Length
@@ -2477,9 +2576,13 @@
             }
           }
           
-          // 只有当我们有有效大小或者这是一个我们关心的资源时才添加
-          if (shouldSniff(xhr._url, xhr._mimeType)) {
-            addResource(xhr._url, xhr._mimeType, finalSize)
+          // 只有当我们有有效大小或者这是一个我们关心的资源时才添加。
+          // 优先登记**重定向后的真实地址**：接口型播放地址（例如
+          // /aweme/v1/play/?…）常 302 到 CDN，登记原始地址会让下载器
+          // 拿到一个空响应（0KB）。
+          const resourceUrl = xhr.responseURL || xhr._url
+          if (shouldSniff(resourceUrl, xhr._mimeType)) {
+            addResource(resourceUrl, xhr._mimeType, finalSize)
           }
         }
         
@@ -2492,8 +2595,9 @@
       const originalOnError = xhr.onerror
       xhr.onerror = function() {
         // 即使出错也尝试添加资源（大小为0）
-        if (shouldSniff(xhr._url, xhr._mimeType)) {
-          addResource(xhr._url, xhr._mimeType, 0)
+        const resourceUrl = xhr.responseURL || xhr._url
+        if (shouldSniff(resourceUrl, xhr._mimeType)) {
+          addResource(resourceUrl, xhr._mimeType, 0)
         }
         if (originalOnError) {
           originalOnError.apply(xhr, arguments)
@@ -2513,6 +2617,9 @@
       // 获取响应并检查各种大小信息
       const fetchPromise = originalFetch.apply(this, arguments)
       fetchPromise.then(response => {
+        // 优先登记重定向后的真实地址：接口型播放地址常 302 到 CDN，
+        // 登记原始地址会让下载器拿到空响应（0KB）。
+        const resourceUrl = response.url || url
         const contentType = response.headers.get('Content-Type')
         const contentLength = response.headers.get('Content-Length')
         let contentRange = null
@@ -2528,7 +2635,7 @@
         // 优先使用Content-Length（如果没有压缩）
         if (contentLength && !contentEncoding) {
           size = parseInt(contentLength) || 0
-          log('Fetch Content-Length:', size, 'for', url.substring(0, 100))
+          log('Fetch Content-Length:', size, 'for', resourceUrl.substring(0, 100))
         }
         
         // 如果是Range请求，从Content-Range获取总大小
@@ -2536,22 +2643,22 @@
           const match = contentRange.match(/bytes \d+-\d+\/(\d+)/)
           if (match) {
             size = parseInt(match[1]) || 0
-            log('Fetch Content-Range total size:', size, 'for', url.substring(0, 100))
+            log('Fetch Content-Range total size:', size, 'for', resourceUrl.substring(0, 100))
           }
         }
         
         if (size > 0) {
           // 如果有明确的大小信息，立即添加
-          if (shouldSniff(url, contentType)) {
-            addResource(url, contentType, size)
+          if (shouldSniff(resourceUrl, contentType)) {
+            addResource(resourceUrl, contentType, size)
           }
         } else {
           // 如果没有大小信息，先立即添加资源（大小为0），然后异步获取大小
-          if (shouldSniff(url, contentType)) {
-            addResource(url, contentType, 0)
+          if (shouldSniff(resourceUrl, contentType)) {
+            addResource(resourceUrl, contentType, 0)
             
             // 异步获取准确大小（直播形态跳过：克隆出来的流会一直读下去）
-            const liveShape = isManifestLikeResource({ url }) || isFlvLikeResource({ url })
+            const liveShape = isManifestLikeResource({ url: resourceUrl }) || isFlvLikeResource({ url: resourceUrl })
             if (!liveShape && response.body && response.headers.get('Content-Type')) {
               // 克隆响应以避免消费原始流
               const clonedResponse = response.clone()
@@ -2566,14 +2673,14 @@
                 new Promise(resolve => setTimeout(() => resolve({ type: 'timeout', size: 0 }), 3000))
               ]).then(result => {
                 const blobSize = result.size || 0
-                log('Fetch', result.type, 'size for', url.substring(0, 100), ':', blobSize)
+                log('Fetch', result.type, 'size for', resourceUrl.substring(0, 100), ':', blobSize)
                 
                 // 如果获取到了更准确的大小，更新资源
                 if (blobSize > 0) {
-                  addResource(url, contentType, blobSize)
+                  addResource(resourceUrl, contentType, blobSize)
                 }
               }).catch(() => {
-                log('Failed to get accurate size for', url.substring(0, 100))
+                log('Failed to get accurate size for', resourceUrl.substring(0, 100))
               })
             }
           }

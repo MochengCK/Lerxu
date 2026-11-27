@@ -97,6 +97,7 @@ fun RoundedProgressBar(
     trackColor: Color,
     modifier: Modifier = Modifier,
     height: Dp = 6.dp,
+    shape: androidx.compose.ui.graphics.Shape = CircleShape,
     animate: Boolean = true,
     indeterminate: Boolean = false
 ) {
@@ -115,7 +116,7 @@ fun RoundedProgressBar(
             modifier
                 .fillMaxWidth()
                 .height(height)
-                .clip(CircleShape)
+                .clip(shape)
                 .background(trackColor)
         ) {
             // 一段 40% 宽的小条沿轨道循环滑动，表达"进行中但进度未知"
@@ -126,7 +127,7 @@ fun RoundedProgressBar(
                         .offset(x = trackWidth * shift)
                         .width(trackWidth * 0.4f)
                         .fillMaxHeight()
-                        .clip(CircleShape)
+                        .clip(shape)
                         .background(color)
                 )
             }
@@ -143,14 +144,14 @@ fun RoundedProgressBar(
         modifier
             .fillMaxWidth()
             .height(height)
-            .clip(CircleShape)
+            .clip(shape)
             .background(trackColor)
     ) {
         Box(
             Modifier
                 .fillMaxHeight()
                 .fillMaxWidth(p)
-                .clip(CircleShape)
+                .clip(shape)
                 .background(color)
         )
     }

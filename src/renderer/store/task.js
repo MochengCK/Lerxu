@@ -33,6 +33,23 @@ function sanitizeBiliFilename (raw) {
     .slice(0, 120)
 }
 
+/**
+ * 资源流自带的容器扩展名 → 产物后缀。
+ *
+ * 接口直连的 B 站流不带 ext，仍按 mp4 / 编码推断；嗅探来的通用流会带上
+ * mp4 / m3u8 等容器，产物必须跟着它走（HLS 清单落 .ts，写成 .mp4 播不了）。
+ * 认不出的一律退回调用方的默认值。
+ */
+function mediaOutputExt (raw, kind) {
+  const ext = `${raw || ''}`.trim().toLowerCase()
+  if (!ext) return ''
+  if (ext === 'm3u8' || ext === 'm3u') return kind === 'audio' ? '' : 'ts'
+  if (ext === 'm4s') return ''
+  const videoExts = ['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'ts', 'm2ts', 'mts', '3gp', 'ogv', 'm4v']
+  const audioExts = ['m4a', 'mp3', 'aac', 'flac', 'ogg', 'oga', 'opus', 'wav', 'eac3']
+  return (kind === 'audio' ? audioExts : videoExts).includes(ext) ? ext : ''
+}
+
 let saveSessionDebounceTimer = null
 
 /* ── 「一对音视频」折叠的簿记 ───────────────────────────────────────────────
@@ -1250,7 +1267,7 @@ const actions = {
       return Promise.reject(new Error('缺少视频流地址'))
     }
     const audio = data.audio && data.audio.url ? data.audio : null
-    const name = `${sanitizeBiliFilename(data.title) || 'bilibili'}${Number(data.page) > 1
+    const name = `${sanitizeBiliFilename(data.title) || 'video'}${Number(data.page) > 1
       ? `_P${data.page}${data.partTitle ? `_${sanitizeBiliFilename(data.partTitle)}` : ''}`
       : ''}`
     const headers = Array.isArray(data.headers) ? data.headers.slice() : []
@@ -1270,11 +1287,14 @@ const actions = {
       extra.clipEnd = Math.round(clipEnd * 1000) / 1000
     }
 
+    const videoExt = mediaOutputExt(video.ext, 'video') || 'mp4'
     const videoTask = this.addUri({
       uris: [video.url],
       // 没有独立音频流（durl / 已合并的源）时产物就是完整视频，
       // 不要再带 `_video` 后缀——番剧电影这类单流任务会看起来像半成品。
-      outs: [audio ? `${name}_video.mp4` : `${name}.mp4`],
+      // 后缀跟着流的真实容器走（嗅探流可能是 webm / HLS → ts），
+      // 接口直连的 B 站流没有 ext，仍然落到 mp4。
+      outs: [audio ? `${name}_video.${videoExt}` : `${name}.${videoExt}`],
       options,
       pairId,
       pairRole: audio ? 'video' : '',
@@ -1284,10 +1304,11 @@ const actions = {
       return videoTask
     }
 
-    // 音频流按实际编码落扩展名：FLAC / E-AC-3 写成 .m4a 会让合并工具
-    // 与播放器按 AAC 去解，探测不到真实编码
+    // 音频流按真实容器落扩展名：FLAC / E-AC-3 写成 .m4a 会让合并工具
+    // 与播放器按 AAC 去解，探测不到真实编码；嗅探流带了 ext 就直接用它。
     const audioCodecs = `${audio.codecs || ''}`.toLowerCase()
-    const audioExt = audioCodecs.includes('flac') ? 'flac' : audioCodecs.includes('ec-3') ? 'eac3' : 'm4a'
+    const audioExt = mediaOutputExt(audio.ext, 'audio') ||
+      (audioCodecs.includes('flac') ? 'flac' : audioCodecs.includes('ec-3') ? 'eac3' : 'm4a')
     return Promise.resolve(videoTask).then(() => this.addUri({
       uris: [audio.url],
       outs: [`${name}_audio.${audioExt}`],

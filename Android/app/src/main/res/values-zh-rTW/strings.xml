@@ -269,6 +269,8 @@
     <string name="settings_category_browser">瀏覽器</string>
     <string name="settings_category_appearance">個性外觀</string>
     <string name="settings_category_general">一般</string>
+    <string name="settings_permissions">權限</string>
+    <string name="settings_permission_not_granted">未授權，點擊去授權</string>
     <string name="settings_category_about">關於</string>
     <string name="settings_category_download">下載設定</string>
     <string name="settings_group_transfer">下載與傳輸</string>
@@ -284,6 +286,7 @@
     <string name="purge_task_records">清除任務紀錄</string>
     <string name="purge_task_records_desc">移除已完成與出錯任務的紀錄，不刪除已下載的檔案</string>
     <string name="settings_about">關於</string>
+    <string name="settings_version_info">版本資訊</string>
     <string name="about_version">版本</string>
     <string name="about_engine">下載引擎</string>
     <string name="purge_confirm_title">清除任務紀錄？</string>
@@ -349,7 +352,7 @@
     <string name="detail_tab_overview">概覽</string>
     <string name="detail_tab_pieces">分片</string>
     <string name="detail_tab_peers">節點</string>
-    <string name="detail_tab_trackers">Tracker</string>
+    <string name="detail_tab_trackers">追蹤器</string>
     <string name="detail_tab_files">檔案</string>
     <string name="detail_gid">GID</string>
     <string name="detail_avg_speed">平均速度</string>

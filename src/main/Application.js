@@ -1098,7 +1098,7 @@ export default class Application extends EventEmitter {
     case 'tasks':
       return this._getExtensionTasks()
     case 'bili-resource': {
-      // B 站播放页的流清单（playurl 的 dash.video / dash.audio，含 codecid）。
+      // 网页视频的流清单：B 站来自 playurl 接口，其它站点来自扩展嗅探。
       // 浏览器内不再弹资源列表：这里直接开一个**独立的资源窗口**，
       // 不唤醒/置顶主窗口，也不依赖主窗口渲染层的命令注册。
       const payload = params || {}
@@ -4778,9 +4778,13 @@ export default class Application extends EventEmitter {
         } catch (_) { }
       }
 
-      const mergeFormat = ['mp4', 'mkv', 'ts'].includes(`${selection.mergeFormat || ''}`)
-        ? `${selection.mergeFormat}`
-        : session.mergeFormat
+      const isLivePayload = `${(session.payload && session.payload.kind) || ''}` === 'live'
+      // 直播是单条流：不套用合并格式（录制产物由引擎按流本身处理）
+      const mergeFormat = isLivePayload
+        ? ''
+        : ['mp4', 'mkv', 'ts'].includes(`${selection.mergeFormat || ''}`)
+          ? `${selection.mergeFormat}`
+          : session.mergeFormat
 
       // ── 番剧：选集数 + 全局画质/编码偏好，按集取流后批量建任务 ──
       if (`${(session.payload && session.payload.kind) || ''}` === 'bangumi') {
@@ -4834,22 +4838,60 @@ export default class Application extends EventEmitter {
         return { ok: false, error: '音频流地址无效' }
       }
 
+      // 只把**选中流**的 Cookie 带上：资源窗里的多档/多站点流各有各的
+      // Cookie，合并后应用下载时才能拿到媒体（抖音 / 直播尤其依赖它）。
+      const baseHeaders = Array.isArray(session.payload.headers) ? session.payload.headers.slice() : []
+      const streamCookies = session.payload.streamCookies && typeof session.payload.streamCookies === 'object'
+        ? session.payload.streamCookies
+        : {}
+      const cookiePairs = []
+      const cookieNames = new Set()
+      const addCookieString = (raw) => {
+        `${raw || ''}`.split(';').forEach((pair) => {
+          const text = pair.trim()
+          const idx = text.indexOf('=')
+          if (idx <= 0) return
+          const name = text.slice(0, idx).trim()
+          if (!name || cookieNames.has(name)) return
+          cookieNames.add(name)
+          cookiePairs.push(text)
+        })
+      }
+      const headers = []
+      baseHeaders.forEach((line) => {
+        const text = `${line || ''}`
+        const idx = text.indexOf(':')
+        if (idx <= 0) return
+        if (text.slice(0, idx).trim().toLowerCase() === 'cookie') {
+          addCookieString(text.slice(idx + 1))
+        } else {
+          headers.push(text)
+        }
+      })
+      ;[video.url, audio && audio.url].forEach((url) => {
+        if (url && streamCookies[url]) addCookieString(streamCookies[url])
+      })
+      if (cookiePairs.length > 0) headers.push(`Cookie: ${cookiePairs.join('; ')}`)
+
       const selectionPayload = {
         title: `${session.payload.title || ''}`,
         partTitle: `${session.payload.partTitle || ''}`,
         page: Number(session.payload.page) || 1,
         referer: `${session.payload.referer || ''}`,
-        headers: Array.isArray(session.payload.headers) ? session.payload.headers : [],
+        headers,
         video: {
           url: `${video.url}`,
           codecs: `${video.codecs || ''}`,
-          codecid: Number(video.codecid) || 0
+          codecid: Number(video.codecid) || 0,
+          // 嗅探流带的容器扩展名：决定了下载产物的后缀（HLS → ts）
+          ext: `${video.ext || ''}`
         },
         audio: audio
           ? {
             url: `${audio.url}`,
             codecs: `${audio.codecs || ''}`,
-            codecid: Number(audio.codecid) || 0
+            codecid: Number(audio.codecid) || 0,
+            ext: `${audio.ext || ''}`
           }
           : null,
         mergeFormat

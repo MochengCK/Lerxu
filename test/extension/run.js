@@ -796,10 +796,10 @@ const main = async () => {
       start >= 0 && end > start,
       '未能在 page-stream-watcher.js 中定位流地址提取函数（结构变了？测试需同步）'
     )
-    const code = `(function () {\n${src.slice(start, end)}\nreturn { scanText, scanJsonValue }\n})()`
-    const sandbox = { console: { log () {}, warn () {}, error () {} }, location: { protocol: 'https:' } }
+    const code = `(function () {\n${src.slice(start, end)}\nconst reportedList = []\nconst report = (urls) => { urls.forEach(u => reportedList.push(u)) }\nreturn { scanText, scanJsonValue, scanPlaylistText, reported: reportedList }\n})()`
+    const sandbox = { URL, console: { log () {}, warn () {}, error () {} }, location: { protocol: 'https:' } }
     vm.createContext(sandbox)
-    const { scanText, scanJsonValue } = new vm.Script(code, { filename: 'stream-scan.js' }).runInContext(sandbox)
+    const { scanText, scanJsonValue, scanPlaylistText, reported } = new vm.Script(code, { filename: 'stream-scan.js' }).runInContext(sandbox)
 
     // 转义斜杠的 JSON 文本（接口原样下发的样子）
     const t = scanText('{"flv_pull_url":{"FULL_HD1":"https:\\/\\/pull-flv.example.com\\/stage\\/stream-1_or4.flv?sign=abc&expire=1"}}')
@@ -833,7 +833,41 @@ const main = async () => {
     assert(scanText('https://h.example.com/api/list.json').size === 0, '非媒体扩展名不能进来')
     assert(scanJsonValue({ base_url: '/api/data' }).size === 0, '没有主机可拼的相对非媒体路径不能进来')
     assert(scanText('<html><body>no streams here</body></html>').size === 0, '普通文本不能误报')
-    assert(scanJsonValue({ url: 'https://h.example.com/a.mp4' }).size === 0, '非流媒体扩展（mp4 等）不该被当成流地址')
+    assert(scanJsonValue({ url: 'https://h.example.com/a.mp4' }).size === 0, '不带清晰度记号的 mp4（预告片 / 广告）不该被当成流地址')
+    // 站点自己的多清晰度下载：普通视频文件带清晰度记号时要上报，
+    // 否则资源窗只有正在播放的那一档（用户点名「只能选原始画质」）。
+    assert(
+      scanJsonValue({ url: 'https://h.example.com/movie_720p.mp4' }).size === 1,
+      '带清晰度记号的 mp4 下载地址要能上报'
+    )
+    assert(
+      scanText('<a href="https://h.example.com/movie-1080p.mp4">1080P</a>').size === 1,
+      'HTML 里的多清晰度下载链接也要能上报'
+    )
+    assert(
+      scanJsonValue({ url: 'https://h.example.com/play?quality=1080' }).size === 0,
+      '查询参数带清晰度但扩展名不是媒体时仍不能误报'
+    )
+
+    // HLS 主清单：列出同清单的音视频变体；带独立音轨组的变体单独下会无声，不报
+    scanPlaylistText([
+      '#EXTM3U',
+      '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080',
+      'v/1080/index.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720',
+      'v/720/index.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1920x1080,AUDIO="aud"',
+      'v/1080-silent/index.m3u8'
+    ].join('\n'), 'https://h.example.com/path/master.m3u8')
+    assert(
+      reported.includes('https://h.example.com/path/v/1080/index.m3u8') &&
+      reported.includes('https://h.example.com/path/v/720/index.m3u8'),
+      '主清单里的同清单变体应作为多档清晰度上报：' + JSON.stringify(reported)
+    )
+    assert(
+      !reported.includes('https://h.example.com/path/v/1080-silent/index.m3u8'),
+      '带 AUDIO 组的变体（独立音轨）不能当成视频上报'
+    )
   })
 
   check('页面世界观察器已接通（MAIN world 注入 + postMessage 登记）', () => {
@@ -875,7 +909,7 @@ const main = async () => {
       'video-sniffer 未把 FLV 形态纳入直播探测'
     )
     assert(
-      /kind/.test(sniffer) && /sendMessage\(\{ type: 'probeLiveStream', url, kind \}/.test(sniffer),
+      /kind/.test(sniffer) && /sendMessage\(\{ type: 'probeLiveStream', url, kind/.test(sniffer),
       'video-sniffer 未把形态提示（kind）随探测消息一起发出'
     )
     assert(
@@ -883,11 +917,11 @@ const main = async () => {
       'background 未处理 probeLiveStream 消息'
     )
     assert(
-      /const probeStreamLive = async \(url, kind\)/.test(bg),
+      /const probeStreamLive = async \(url, kind/.test(bg),
       'background 缺少 probeStreamLive 实现（或未接收形态提示）'
     )
     assert(
-      /const readFlvHead = async \(url, timeout\)/.test(bg),
+      /const readFlvHead = async \(url, timeout/.test(bg),
       'background 缺少 FLV 响应头抓取实现'
     )
     assert(
@@ -902,6 +936,57 @@ const main = async () => {
       /r\.live !== true/.test(sniffer),
       '直播条目必须排除在音视频配对之外'
     )
+  })
+
+  check('HLS 主清单解析：档位 / 编码 / 独立音轨分别识别', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'background.js'), 'utf8')
+    const start = src.indexOf('const parseHlsAttributeList')
+    const end = src.indexOf('const resolveHlsManifestInfo', start)
+    assert(
+      start >= 0 && end > start,
+      '未能在 background.js 中定位 HLS 主清单解析函数（结构变了？测试需同步）'
+    )
+    const code = `(function () {\n${src.slice(start, end)}\nreturn { parseHlsMasterInfo }\n})()`
+    const sandbox = { URL, console: { log () {}, warn () {}, error () {} } }
+    vm.createContext(sandbox)
+    const { parseHlsMasterInfo } = new vm.Script(code, { filename: 'hls-parse.js' }).runInContext(sandbox)
+
+    const master = [
+      '#EXTM3U',
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",NAME="中文",DEFAULT=YES,URI="audio/cn.m3u8"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,CODECS="avc1.64001f,mp4a.40.2"',
+      'v/1080/index.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,CODECS="avc1.4d401f,mp4a.40.2"',
+      'v/720/index.m3u8',
+      '#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1920x1080,CODECS="avc1.64001f",AUDIO="aud"',
+      'v/1080-silent/index.m3u8'
+    ].join('\n')
+    const info = parseHlsMasterInfo(master, 'https://cdn.example.com/path/master.m3u8')
+    assert(info && info.master === true, '主清单应识别为 master')
+    assert(info.variants.length === 3, `应解析出 3 路变体，实际 ${info.variants.length}`)
+    assert(
+      info.variants[0].url === 'https://cdn.example.com/path/v/1080/index.m3u8',
+      `相对地址应基于清单地址解析，实际 ${info.variants[0].url}`
+    )
+    assert(
+      info.variants[0].quality === '1080P' && info.variants[1].quality === '720P',
+      '档位应从 RESOLUTION 得到 1080P / 720P'
+    )
+    assert(
+      info.variants[0].codecName === 'AVC (H.264)',
+      `CODECS 应映射成编码名，实际 ${info.variants[0].codecName}`
+    )
+    assert(
+      info.variants[2].audioGroup === 'aud',
+      '独立音轨的变体应保留 AUDIO 组名（内容脚本据此排除）'
+    )
+    assert(
+      info.nonVideoUrls.includes('https://cdn.example.com/path/audio/cn.m3u8'),
+      'EXT-X-MEDIA 的音轨清单应进 nonVideoUrls'
+    )
+
+    const media = parseHlsMasterInfo('#EXTM3U\n#EXTINF:4,\nseg1.ts\n#EXT-X-ENDLIST', 'https://cdn.example.com/a/index.m3u8')
+    assert(media && media.master === false, '媒体清单（无 STREAM-INF）不应被当成主清单')
   })
 
   check('资源弹窗：应用设计令牌 + 明暗主题 + 空态/分栏结构', () => {

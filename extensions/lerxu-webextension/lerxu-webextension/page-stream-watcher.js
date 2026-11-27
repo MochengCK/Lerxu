@@ -47,8 +47,19 @@
   /// 把主推的那条放最前，留前若干条即可。
   const MAX_REPORTED_TOTAL = 12
   /// 只认这几种容器的流地址（与扩展的媒体嗅探范围一致）。
-  const MEDIA_EXT_RE = /\.(?:m3u8?|flv|mpd)(?:[?#]|$)/i
-  const ABS_URL_RE = /https?:\/\/[^\s"'\\<>\])}]+?\.(?:m3u8?|flv|mpd)(?:[?#][^\s"'\\<>\])}]*)?/gi
+  /// 后缀判定放宽到「扩展名后面不是字母 / 数字 / 斜杠」：页面里的链接常写成
+  /// href="…m3u8" / "…mp4"，严格用 `$` 收尾会整条漏掉。
+  const MEDIA_EXT_RE = /\.(?:m3u8?|flv|mpd)(?![0-9a-z/])/i
+  /// 普通视频文件：只有当地址里带清晰度记号时才上报 —— 站点自己的多清晰度
+  /// 下载链接基本都长这样；不带记号的 .mp4 多是预告片 / 广告 / 预览，别灌进列表。
+  const QUALITY_VIDEO_EXT_RE = /\.(?:mp4|webm|m4v|mov|mkv)(?![0-9a-z/])/i
+  const QUALITY_HINT_RE = /(?:^|[^0-9a-z])(?:8k|4k|2k|2160p?|1440p?|1080p?|720p?|480p?|360p?|240p?)(?:[^0-9a-z]|$)|[?&](?:quality|res|resolution|height|definition|q|ratio|bitrate)=[^&#]*(?:2160|1440|1080|720|480|360|240|4k|2k|8k|hd|fhd|uhd|sd)/i
+  const isReportableUrl = (url) => {
+    if (MEDIA_EXT_RE.test(url)) return true
+    if (!QUALITY_VIDEO_EXT_RE.test(url)) return false
+    return QUALITY_HINT_RE.test(url)
+  }
+  const ABS_URL_RE = /https?:\/\/[^\s"'\\<>\])}]+?\.(?:m3u8?|flv|mpd|mp4|webm|m4v|mov|mkv)(?:[?#][^\s"'\\<>\])}]*)?/gi
   /// 已经上报过的地址（几个时间点会重扫，同一地址不重复占额度/重复上报）
   const reported = new Set()
 
@@ -73,14 +84,59 @@
     if (normalized.indexOf('\\/') >= 0) {
       normalized = normalized.replace(/\\\//g, '/')
     }
-    if (!MEDIA_EXT_RE.test(normalized)) return out
+    if (!MEDIA_EXT_RE.test(normalized) && !QUALITY_VIDEO_EXT_RE.test(normalized)) return out
     const re = new RegExp(ABS_URL_RE.source, 'gi')
     let m
     while ((m = re.exec(normalized))) {
+      if (!isReportableUrl(m[0])) continue
       out.add(m[0])
       if (out.size >= MAX_URLS_PER_PAYLOAD) break
     }
     return out
+  }
+
+  /** 响应是不是 HLS 清单（按 Content-Type 或地址后缀判断）。 */
+  const isHlsResponse = (url, contentType) => {
+    const ct = `${contentType || ''}`.toLowerCase()
+    if (ct.includes('mpegurl') || ct.includes('m3u8') || ct.includes('vnd.apple')) return true
+    return /\.m3u8?(?:[?#]|$)/i.test(`${url || ''}`)
+  }
+
+  /**
+   * HLS 主清单文本 → 各变体清单地址。
+   *
+   * 播放器加载主清单时顺手把 `#EXT-X-STREAM-INF` 后面的变体地址全捞出来：
+   * 这样即使后台代抓清单失败（需要 Referer / 签名），资源窗仍能按变体
+   * 列出清晰度，而不是只剩一条「原始画质」。只报**音视频同清单**的变体
+   * （带 AUDIO 组的是独立音轨，单独下会无声），也不报音轨 / 字幕清单。
+   */
+  const scanPlaylistText = (text, baseUrl) => {
+    try {
+      if (typeof text !== 'string' || !text || !text.includes('#EXT-X-STREAM-INF')) return
+      const urls = new Set()
+      const lines = text.split(/\r?\n/)
+      let pending = false
+      let pendingHasAudioGroup = false
+      for (const rawLine of lines) {
+        const line = rawLine.trim()
+        if (!line) continue
+        if (line.startsWith('#EXT-X-STREAM-INF')) {
+          pending = true
+          const audioAttr = line.match(/(?:^|,)\s*AUDIO\s*=\s*("[^"]*"|[^,]*)/i)
+          pendingHasAudioGroup = !!(audioAttr && `${audioAttr[1] || ''}`.replace(/"/g, '').trim())
+          continue
+        }
+        if (line.startsWith('#')) continue
+        if (!pending) continue
+        pending = false
+        if (pendingHasAudioGroup) continue
+        try {
+          const resolved = new URL(line, baseUrl).href
+          if (/^https?:/i.test(resolved)) urls.add(resolved)
+        } catch (e) {}
+      }
+      if (urls.size > 0) report(urls)
+    } catch (e) {}
   }
 
   /**
@@ -100,7 +156,7 @@
       if (out.size >= MAX_URLS_PER_PAYLOAD) return
       if (typeof value === 'string') {
         const s = value.trim()
-        if (!MEDIA_EXT_RE.test(s)) return
+        if (!isReportableUrl(s)) return
         if (/^https?:\/\//i.test(s)) {
           out.add(s)
           return
@@ -243,6 +299,8 @@
         }
         budget -= text.length
         if (text.indexOf('.flv') < 0 && text.indexOf('.m3u8') < 0 && text.indexOf('.m3u') < 0 &&
+            text.indexOf('.mp4') < 0 && text.indexOf('.webm') < 0 && text.indexOf('.m4v') < 0 &&
+            text.indexOf('.mov') < 0 && text.indexOf('.mkv') < 0 &&
             text.indexOf('%2F') < 0 && text.indexOf('%2f') < 0) {
           continue
         }
@@ -279,7 +337,7 @@
     setTimeout(rescan, 5000)
   } catch (e) {}
 
-  // ---- 观察点 1：XHR 的 JSON 响应体（只加一个 load 监听，不动页面回调） ----
+  // ---- 观察点 1：XHR 的响应体（JSON 抓地址；HLS 主清单抓变体） ----
   try {
     const send = XMLHttpRequest.prototype.send
     if (typeof send === 'function') {
@@ -288,14 +346,25 @@
           this.addEventListener('load', () => {
             try {
               const ct = this.getResponseHeader && this.getResponseHeader('Content-Type')
-              if (!ct || !/json/i.test(ct)) return
+              const responseUrl = this.responseURL || this._url || ''
               const len = parseInt(this.getResponseHeader('Content-Length') || '0', 10) || 0
               if (len > SCAN_MAX_BYTES) return
               const type = this.responseType
-              let body = null
-              if (type === '' || type === 'text') body = this.responseText
-              else if (type === 'json') body = this.response
-              if (body != null) scanPayload(body)
+
+              if (ct && /json/i.test(ct)) {
+                let body = null
+                if (type === '' || type === 'text') body = this.responseText
+                else if (type === 'json') body = this.response
+                if (body != null) scanPayload(body)
+                return
+              }
+              if (isHlsResponse(responseUrl, ct)) {
+                if (type === '' || type === 'text') {
+                  scanPlaylistText(this.responseText, responseUrl)
+                } else if (type === 'arraybuffer' && this.response instanceof ArrayBuffer) {
+                  scanPlaylistText(new TextDecoder('utf-8', { fatal: false }).decode(this.response), responseUrl)
+                }
+              }
             } catch (e) {}
           })
         } catch (e) {}
@@ -304,7 +373,7 @@
     }
   } catch (e) {}
 
-  // ---- 观察点 2：fetch 的 JSON 响应体（clone 解析，页面拿到的那份不动） ----
+  // ---- 观察点 2：fetch 的响应体（clone 解析，页面拿到的那份不动） ----
   try {
     const origFetch = window.fetch
     if (typeof origFetch === 'function') {
@@ -315,10 +384,16 @@
             try {
               if (!resp || !resp.headers || typeof resp.clone !== 'function') return
               const ct = resp.headers.get('Content-Type') || ''
-              if (!/json/i.test(ct)) return
+              const responseUrl = resp.url || ''
               const len = parseInt(resp.headers.get('Content-Length') || '0', 10) || 0
               if (len > SCAN_MAX_BYTES) return
-              resp.clone().json().then((v) => scanPayload(v)).catch(() => {})
+              if (/json/i.test(ct)) {
+                resp.clone().json().then((v) => scanPayload(v)).catch(() => {})
+                return
+              }
+              if (isHlsResponse(responseUrl, ct)) {
+                resp.clone().text().then((text) => scanPlaylistText(text, responseUrl)).catch(() => {})
+              }
             } catch (e) {}
           }).catch(() => {})
         } catch (e) {}

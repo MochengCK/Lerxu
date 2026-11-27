@@ -399,12 +399,14 @@ const analyzeFlvHead = ({ url, contentType, contentLength, head }) => {
   return { flv: true, live: !hasLength }
 }
 
-const readManifestHead = async (url, timeout) => {
-  const resp = await fetchWithTimeout(
-    url,
-    { method: 'GET', credentials: 'include', cache: 'no-store' },
-    timeout
-  )
+const readManifestHead = async (url, timeout, referer) => {
+  const options = { method: 'GET', credentials: 'include', cache: 'no-store' }
+  if (referer) {
+    // 部分 CDN 会校验 Referer；fetch 的 referrer 选项比手写请求头可靠
+    options.referrer = referer
+    options.referrerPolicy = 'no-referrer-when-downgrade'
+  }
+  const resp = await fetchWithTimeout(url, options, timeout)
   if (!resp || !resp.ok) return ''
   let text = ''
   try {
@@ -416,22 +418,169 @@ const readManifestHead = async (url, timeout) => {
   return text.length > LIVE_PROBE_MAX_BYTES ? text.slice(0, LIVE_PROBE_MAX_BYTES) : text
 }
 
+// === HLS 主清单解析（给资源窗列清晰度用） ===
+// 嗅探到的常常是主清单（master.m3u8）本身：里面每一路变体都是一档清晰度。
+// 内容脚本点击「下载视频」时把清单地址发过来，这里代抓并解析出
+//   - variants: 各档位（含 RESOLUTION / CODECS / AUDIO 组）；
+//   - nonVideoUrls: 独立音轨 / 字幕 / I 帧清单（不是视频选项）。
+// 只读清单文件（256KB 上限），不碰媒体分片。
+const parseHlsAttributeList = (text) => {
+  const out = {}
+  const source = `${text || ''}`
+  let i = 0
+  while (i < source.length) {
+    while (i < source.length && (source[i] === ',' || /\s/.test(source[i]))) i++
+    const eq = source.indexOf('=', i)
+    if (eq < 0) break
+    const key = source.slice(i, eq).trim().toUpperCase()
+    if (!key) break
+    let j = eq + 1
+    let value = ''
+    if (source[j] === '"') {
+      j++
+      const start = j
+      while (j < source.length && source[j] !== '"') j++
+      value = source.slice(start, j)
+      j++
+    } else {
+      const start = j
+      while (j < source.length && source[j] !== ',') j++
+      value = source.slice(start, j).trim()
+    }
+    out[key] = value
+    const comma = source.indexOf(',', j)
+    if (comma < 0) break
+    i = comma + 1
+  }
+  return out
+}
+
+const resolveHlsUrl = (baseUrl, uri) => {
+  try {
+    const url = new URL(`${uri || ''}`.trim(), baseUrl)
+    return /^https?:$/i.test(url.protocol) ? url.href : ''
+  } catch (e) {
+    return ''
+  }
+}
+
+const hlsQualityFromHeight = (height) => {
+  const h = Number(height) || 0
+  if (h >= 2000) return '4K'
+  if (h >= 1400) return '1440P'
+  if (h >= 1000) return '1080P'
+  if (h >= 700) return '720P'
+  if (h >= 460) return '480P'
+  if (h >= 340) return '360P'
+  if (h >= 220) return '240P'
+  return ''
+}
+
+const hlsCodecName = (codecs) => {
+  const text = `${codecs || ''}`.toLowerCase()
+  if (text.includes('av01')) return 'AV1'
+  if (text.includes('hev1') || text.includes('hvc1') || text.includes('h265')) return 'HEVC (H.265)'
+  if (text.includes('avc1') || text.includes('avc') || text.includes('h264')) return 'AVC (H.264)'
+  return 'HLS'
+}
+
+const parseHlsMasterInfo = (text, baseUrl) => {
+  if (!text || !text.includes('#EXTM3U')) return null
+  const lines = text.split(/\r?\n/)
+  const variants = []
+  const nonVideoUrls = []
+  let pending = null
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line) continue
+
+    if (line.startsWith('#EXT-X-MEDIA:')) {
+      const attrs = parseHlsAttributeList(line.slice('#EXT-X-MEDIA:'.length))
+      const url = attrs.URI ? resolveHlsUrl(baseUrl, attrs.URI) : ''
+      if (url) nonVideoUrls.push(url)
+      continue
+    }
+    if (line.startsWith('#EXT-X-I-FRAME-STREAM-INF:')) {
+      const attrs = parseHlsAttributeList(line.slice('#EXT-X-I-FRAME-STREAM-INF:'.length))
+      const url = attrs.URI ? resolveHlsUrl(baseUrl, attrs.URI) : ''
+      if (url) nonVideoUrls.push(url)
+      continue
+    }
+    if (line.startsWith('#EXT-X-STREAM-INF:')) {
+      pending = parseHlsAttributeList(line.slice('#EXT-X-STREAM-INF:'.length))
+      continue
+    }
+    if (line.startsWith('#')) continue
+
+    if (pending) {
+      const attrs = pending
+      pending = null
+      const url = resolveHlsUrl(baseUrl, line)
+      if (!url) continue
+      const resolution = `${attrs.RESOLUTION || ''}`
+      const matched = resolution.match(/(\d{2,4})x(\d{2,4})/i)
+      const width = matched ? Number(matched[1]) : 0
+      const height = matched ? Number(matched[2]) : 0
+      const bandwidth = Number(attrs.BANDWIDTH || attrs['AVERAGE-BANDWIDTH']) || 0
+      const name = `${attrs.NAME || ''}`.trim()
+      let quality = hlsQualityFromHeight(height)
+      if (!quality && name) quality = name
+      if (!quality && bandwidth > 0) quality = `${Math.round(bandwidth / 1000)} kbps`
+      variants.push({
+        url,
+        bandwidth,
+        width,
+        height,
+        frameRate: `${attrs['FRAME-RATE'] || ''}`,
+        name,
+        codecs: `${attrs.CODECS || ''}`,
+        audioGroup: `${attrs.AUDIO || ''}`.trim(),
+        quality: quality || '原始画质',
+        codecName: hlsCodecName(attrs.CODECS)
+      })
+    }
+  }
+
+  return {
+    master: variants.length > 0 || /#EXT-X-STREAM-INF/i.test(text),
+    variants,
+    nonVideoUrls
+  }
+}
+
+const resolveHlsManifestInfo = async (url, referer) => {
+  try {
+    if (!/^https?:/i.test(`${url || ''}`)) return null
+    const text = await readManifestHead(url, 5000, referer)
+    if (!text) return null
+    return parseHlsMasterInfo(text, url)
+  } catch (e) {
+    return null
+  }
+}
+
 /**
  * 抓 FLV 响应的判定素材：响应头 + （仅当没有总长时）正文首块。
  *
  * 有 `Content-Length` = 点播文件：读完响应头立刻掐断，正文一个字节都不下；
  * 没有总长才读一点正文验 FLV 魔数（直播流是不会结束的，读完首块马上取消）。
  */
-const readFlvHead = async (url, timeout) => {
+const readFlvHead = async (url, timeout, referer) => {
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), timeout)
+  const options = {
+    method: 'GET',
+    credentials: 'include',
+    cache: 'no-store',
+    signal: ac.signal
+  }
+  if (referer) {
+    options.referrer = referer
+    options.referrerPolicy = 'no-referrer-when-downgrade'
+  }
   try {
-    const resp = await fetch(url, {
-      method: 'GET',
-      credentials: 'include',
-      cache: 'no-store',
-      signal: ac.signal
-    })
+    const resp = await fetch(url, options)
     if (!resp || !resp.ok) return null
     const contentType = resp.headers.get('content-type') || ''
     const contentLength = resp.headers.get('content-length')
@@ -463,14 +612,14 @@ const readFlvHead = async (url, timeout) => {
  * `kind`：内容脚本给的形态提示（`'hls'` / `'flv'`），省一次白抓；
  * 缺失时先按清单判、判不出来再按 FLV 判（老内容脚本也能工作）。
  */
-const probeStreamLive = async (url, kind) => {
+const probeStreamLive = async (url, kind, referer) => {
   if (!url || !/^https?:/i.test(url)) return null
   const now = Date.now()
   const hit = liveProbeCache.get(url)
   if (hit && now - hit.at < LIVE_PROBE_TTL) return hit.result
   let result = null
   const probeFlv = async () => {
-    const head = await readFlvHead(url, 8000)
+    const head = await readFlvHead(url, 8000, referer)
     if (!head) return
     const a = analyzeFlvHead({ url, ...head })
     if (a.flv) result = { live: !!a.live }
@@ -479,7 +628,7 @@ const probeStreamLive = async (url, kind) => {
     if (kind === 'flv') {
       await probeFlv()
     } else {
-      const text = await readManifestHead(url, 8000)
+      const text = await readManifestHead(url, 8000, referer)
       const a = analyzeManifestTextForLive(text)
       if (a.manifest && !a.master) {
         result = { live: !!a.live }
@@ -488,7 +637,7 @@ const probeStreamLive = async (url, kind) => {
         try {
           variantUrl = new URL(a.variantUri, url).toString()
         } catch (e) {}
-        const vtext = await readManifestHead(variantUrl, 8000)
+        const vtext = await readManifestHead(variantUrl, 8000, referer)
         const va = analyzeManifestTextForLive(vtext)
         if (va.manifest && !va.master) {
           result = { live: !!va.live }
@@ -1358,6 +1507,38 @@ const getHeadersForUrl = async (url, referer) => {
   return hs
 }
 
+/**
+ * 资源窗载荷的逐流 Cookie。
+ *
+ * 下载窗口把流地址交给应用时，应用没有浏览器会话；抖音 / B 站直播等
+ * 地址需要页面 Cookie（SESSDATA / ttwid 等）才会返回媒体而不是 403/空。
+ * 这里按**每条流自己的地址**取 Cookie，应用提交时只带上选中流的那些。
+ */
+const collectStreamCookies = async (payload) => {
+  const urls = new Set()
+  ;(payload && Array.isArray(payload.videos) ? payload.videos : []).forEach((stream) => {
+    if (stream && stream.url) urls.add(`${stream.url}`)
+  })
+  ;(payload && Array.isArray(payload.audios) ? payload.audios : []).forEach((stream) => {
+    if (stream && stream.url) urls.add(`${stream.url}`)
+  })
+  if (urls.size === 0) return null
+  const out = {}
+  await Promise.all(Array.from(urls).map(async (url) => {
+    if (!/^https?:/i.test(url)) return
+    try {
+      const list = await new Promise((resolve) => {
+        chrome.cookies.getAll({ url }, (cookies) => resolve(cookies || []))
+      })
+      if (Array.isArray(list) && list.length > 0) {
+        const cookieStr = list.map(c => `${c.name}=${c.value}`).join('; ')
+        if (cookieStr) out[url] = cookieStr
+      }
+    } catch (_) {}
+  }))
+  return Object.keys(out).length > 0 ? out : null
+}
+
 const initializeBackground = async () => {
   if (isInitialized) {
     console.log('[Background] Already initialized, skipping')
@@ -1569,10 +1750,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // （'hls' / 'flv'）；`ok=false` = 无法判定（网络失败/不是这类内容），
   // 调用方按"未知"处理。
   if (msg && msg.type === 'probeLiveStream' && msg.url) {
-    probeStreamLive(msg.url, msg.kind).then((result) => {
+    probeStreamLive(msg.url, msg.kind, msg.referer).then((result) => {
       sendResponse({ ok: !!result, live: !!(result && result.live) })
     }).catch(() => {
       sendResponse({ ok: false, live: false })
+    })
+    return true
+  }
+
+  // HLS 主清单解析：资源窗点击前由内容脚本发来清单地址，代抓后返回各档位。
+  // 独立音轨 / 字幕 / I 帧清单放在 nonVideoUrls，内容脚本据此把它们从
+  // 视频选项里剔除（否则音轨会被误显示成一个「视频」）。
+  if (msg && msg.type === 'resolveHlsManifest' && msg.url) {
+    resolveHlsManifestInfo(msg.url, msg.referer).then((info) => {
+      sendResponse({ ok: !!info, data: info })
+    }).catch(() => {
+      sendResponse({ ok: false })
     })
     return true
   }
@@ -1706,8 +1899,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true
   }
 
-  // B 站资源清单：内容脚本直接调 playurl 接口后把 dash.video / dash.audio
-  // （含 codecid）发过来，由应用弹出独立的资源弹窗选择视频/音频/合并格式/片段。
+  // 网页视频的流清单：内容脚本把可直接下载的流（B 站走 playurl 接口，
+  // 其它站点用嗅探结果）发过来，由应用弹出独立的资源弹窗选择视频/音频/
+  // 合并格式/片段。
   if (msg && msg.type === 'openBiliResourceDialog' && msg.payload) {
     const handleOpenBiliResource = async () => {
       // 带上来源标签页：资源窗选完集数后应用会反向请求这个页面的内容脚本
@@ -1716,6 +1910,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         ...msg.payload,
         tabId: sender && sender.tab && sender.tab.id ? sender.tab.id : 0
       }
+      // 逐流 Cookie：应用侧下载时没有浏览器会话，抖音 / B 站直播等
+      // 必须带上页面 Cookie 才拿得到媒体（否则常见 403 / 0KB）。
+      try {
+        const streamCookies = await collectStreamCookies(payload)
+        if (streamCookies) payload.streamCookies = streamCookies
+      } catch (e) {}
       const result = await channelRequest('bili-resource', payload, 5000)
       sendResponse({ ok: !!(result && result.ok) })
     }

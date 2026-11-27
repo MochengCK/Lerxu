@@ -5509,6 +5509,723 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return videos
   }
 
+  // ─── 通用站点：嗅探结果 → 应用内「下载视频」窗口 ───
+  //
+  // 嗅探照旧负责收集地址；交互改成与接口直连一致：点下载按钮时把当前页的
+  // 流清单整理成资源窗的格式，直接由应用弹「下载视频」窗口，网页里不再
+  // 展开资源列表。拿不出完整视频流（如仅直播 / 仅音频）时才退回旧列表。
+
+  let resourceDialogRequesting = false
+
+  const RESOURCE_EXT_PATTERN = /\.([a-z0-9]{2,5})(?:$|[?#])/i
+  const RESOURCE_VIDEO_EXTS = ['mp4', 'm4v', 'mkv', 'webm', 'mov', 'avi', 'flv', 'ts', 'm2ts', 'mts', '3gp', 'ogv']
+  const RESOURCE_AUDIO_EXTS = ['m4a', 'mp3', 'aac', 'flac', 'ogg', 'oga', 'opus', 'wav', 'eac3']
+
+  const readMetaContent = (selector) => {
+    try {
+      const el = document.querySelector(selector)
+      return el ? `${el.getAttribute('content') || ''}`.trim() : ''
+    } catch (e) {
+      return ''
+    }
+  }
+
+  /** 下载窗口顶部的标题：优先页面声明的标题，其次正文大标题，最后 document.title。 */
+  const getPageResourceTitle = () => {
+    try {
+      // 短视频信息流（抖音等）：当前播放卡片的文案比页面标题准确
+      if (isShortVideoFeedHost()) {
+        const activeTitle = `${getVideoTitle() || ''}`.replace(/\s+/g, ' ').trim()
+        if (activeTitle) return activeTitle.slice(0, 200)
+      }
+      // 直播页：房间标题通常比站点默认标题有用
+      if (pageLooksLikeLive()) {
+        const liveTitle = `${getVideoTitle() || ''}`.replace(/\s+/g, ' ').trim()
+        if (liveTitle) return liveTitle.slice(0, 200)
+      }
+      const metaTitle = readMetaContent('meta[property="og:title"]') ||
+        readMetaContent('meta[name="twitter:title"]') ||
+        readMetaContent('meta[name="title"]')
+      if (metaTitle) return metaTitle.slice(0, 200)
+      const heading = document.querySelector('h1')
+      const headingText = heading ? `${heading.textContent || ''}`.replace(/\s+/g, ' ').trim() : ''
+      if (headingText) return headingText.slice(0, 200)
+      return `${document.title || ''}`.trim().slice(0, 200)
+    } catch (e) {
+      return ''
+    }
+  }
+
+  const getPageResourceCover = () => {
+    try {
+      // 短视频信息流：当前视频的 poster 才是这一条，og:image 常是站点图标
+      if (isShortVideoFeedHost()) {
+        const activeVideo = document.querySelector('video')
+        const activePoster = activeVideo ? `${activeVideo.poster || ''}`.trim() : ''
+        if (/^https?:/i.test(activePoster)) return activePoster
+      }
+      const metaCover = readMetaContent('meta[property="og:image"]') ||
+        readMetaContent('meta[name="twitter:image"]')
+      if (metaCover) return metaCover.replace(/^\/\//, 'https://')
+      const video = document.querySelector('video')
+      const poster = video ? `${video.poster || ''}`.trim() : ''
+      return /^https?:/i.test(poster) ? poster : ''
+    } catch (e) {
+      return ''
+    }
+  }
+
+  const buildPageResourceHeaders = (referer) => {
+    const headers = []
+    try {
+      if (navigator.userAgent) headers.push(`User-Agent: ${navigator.userAgent}`)
+    } catch (e) {}
+    try {
+      const langs = (typeof navigator !== 'undefined' && Array.isArray(navigator.languages) ? navigator.languages : [])
+        .map(x => `${x || ''}`.trim()).filter(Boolean)
+      if (langs.length > 0) headers.push(`Accept-Language: ${langs.join(',')}`)
+    } catch (e) {}
+    if (referer) headers.push(`Referer: ${referer}`)
+    headers.push('Accept: */*')
+    headers.push('X-Lerxu-Source: BrowserExtension')
+    return headers
+  }
+
+  /** 地址里的媒体扩展名：只认已知容器，认不出就用调用方的兜底值。 */
+  const resourceExtFromUrl = (url, fallback) => {
+    try {
+      const matched = `${url || ''}`.match(RESOURCE_EXT_PATTERN)
+      const ext = matched ? matched[1].toLowerCase() : ''
+      if (ext === 'm3u8' || ext === 'm3u') return 'm3u8'
+      if (RESOURCE_VIDEO_EXTS.includes(ext) || RESOURCE_AUDIO_EXTS.includes(ext)) return ext
+    } catch (e) {}
+    return fallback || ''
+  }
+
+  const resourceCodecLabel = (ext) => {
+    const value = `${ext || ''}`.toLowerCase()
+    if (value === 'm3u8' || value === 'm3u') return 'HLS'
+    return value ? value.toUpperCase() : '原始文件'
+  }
+
+  /**
+   * 嗅探条目的画质名。
+   *
+   * 嗅探没有接口那样的 support_formats，通用的 mp4/m3u8 条目 quality 往往
+   * 就是扩展名或 "Unknown"：这类占位值换成「原始画质 / 音频」，只有真的
+   * 解析出 1080P 之类的标签才沿用。
+   */
+  const resourceQualityLabel = (resource, ext, fallback) => {
+    const raw = `${(resource && resource.quality) || ''}`.trim()
+    if (!raw) return fallback
+    const lower = raw.toLowerCase()
+    if (ext && lower === `${ext}`.toLowerCase()) return fallback
+    if (lower === 'unknown' || raw === '未知' ||
+        lower === 'audio' || raw === '音频' ||
+        lower === 'video' || raw === '视频' ||
+        lower === 'm3u8' || lower === 'm4s') {
+      return fallback
+    }
+    return raw
+  }
+
+  /** 画质排序权重：资源窗默认选中最高一档。 */
+  const qualityRank = (label) => {
+    const text = `${label || ''}`.toLowerCase()
+    if (text.includes('8k')) return 8000
+    if (text.includes('4k') || text.includes('2160')) return 4000
+    if (text.includes('1440') || text.includes('2k')) return 1440
+    const matched = text.match(/(\d{3,4})p/)
+    if (matched) return Number(matched[1])
+    if (text.includes('1080')) return 1080
+    if (text.includes('720')) return 720
+    if (text.includes('480')) return 480
+    if (text.includes('360')) return 360
+    if (text.includes('240')) return 240
+    return 0
+  }
+
+  const isHlsStream = (stream) => {
+    const ext = `${(stream && stream.ext) || ''}`.toLowerCase()
+    if (ext === 'm3u8' || ext === 'm3u') return true
+    return /\.m3u8?(?:[?#]|$)/i.test(`${(stream && stream.url) || ''}`)
+  }
+
+  /** 编码名 → 资源窗使用 codecid（7 = AVC，资源窗默认优先兼容性最好的它）。 */
+  const codecIdFromLabel = (codecName, codecs) => {
+    const text = `${codecName || ''} ${codecs || ''}`.toLowerCase()
+    if (text.includes('avc') || text.includes('h.264') || text.includes('avc1')) return 7
+    if (text.includes('hevc') || text.includes('h.265') || text.includes('hvc1') || text.includes('hev1')) return 12
+    if (text.includes('av1') || text.includes('av01')) return 13
+    return 0
+  }
+
+  /**
+   * 地址看起来是「独立音轨清单」吗？
+   *
+   * HLS 的音轨清单本身也是 .m3u8，只看扩展名会被当成一个视频选项（点下去
+   * 只有声音）。主清单在时用 EXT-X-MEDIA 的 URI 精确排除；主清单没被嗅到时
+   * 只能靠地址特征兜底，所以规则保持保守（只认明显的 audio 段 / 参数）。
+   */
+  const isLikelyAudioManifest = (resource) => {
+    try {
+      const urlObj = new URL(`${(resource && resource.url) || ''}`)
+      const path = urlObj.pathname.toLowerCase()
+      const search = urlObj.search.toLowerCase()
+      const pathHasAudio = /(^|\/)(audio|audios|aac|m4a|audio_only|audio-only|audioonly)(\/|\.|$)/.test(path) ||
+        /[._-](audio|aac|m4a|audio_only|audio-only|audioonly)([._-]|\.m3u8?$)/.test(path)
+      const paramHasAudio = /(^|&)(type|media_type|format|stream_type)=(audio|aac|m4a|audio_only|audio-only)(&|$)/.test(search)
+      return pathHasAudio || paramHasAudio
+    } catch (e) {
+      return false
+    }
+  }
+
+  /** URL 末段 → 可读名（多档流都认不出档位时用它区分下拉选项）。 */
+  const mediaNameHint = (url) => {
+    try {
+      const urlObj = new URL(url)
+      const raw = decodeURIComponent(urlObj.pathname.split('/').pop() || '')
+      const stem = raw.replace(/\.[a-z0-9]{2,5}$/i, '')
+      return `${stem || urlObj.hostname}`.slice(0, 24)
+    } catch (e) {
+      return ''
+    }
+  }
+
+  /**
+   * 给流分组（资源窗按 id 分「清晰度」）。
+   *
+   * 多条流都拿不到档位时（全叫「原始画质」），用文件名补一个区分后缀 ——
+   * 否则清晰度下拉里只剩一条，用户看到的正是「只能选原始画质」。
+   */
+  const assignStreamGroups = (list) => {
+    try {
+      const counts = new Map()
+      list.forEach(item => {
+        const label = item.qualityName || ''
+        counts.set(label, (counts.get(label) || 0) + 1)
+      })
+      const groups = new Map()
+      list.forEach(item => {
+        const label = item.qualityName || ''
+        if ((counts.get(label) || 0) > 1 && /^(原始画质|完整视频|音频)$/.test(label)) {
+          const hint = mediaNameHint(item.url)
+          if (hint) item.qualityName = `${label} (${hint})`
+        }
+        if (!groups.has(item.qualityName)) groups.set(item.qualityName, groups.size + 1)
+        item.id = groups.get(item.qualityName)
+      })
+    } catch (e) {}
+  }
+
+  /**
+   * 主清单解析请求：应用侧的资源窗需要各档位，但清单内容只有扩展后台
+   * 抓得到（不受页面 CORS 限制）。失败返回 null，调用方保留主清单本身。
+   */
+  const requestHlsManifest = (url) => new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({
+        type: 'resolveHlsManifest',
+        url,
+        referer: window.location.href || ''
+      }, (resp) => {
+        if (chrome.runtime.lastError || !resp || !resp.ok || !resp.data) {
+          resolve(null)
+          return
+        }
+        resolve(resp.data)
+      })
+    } catch (e) {
+      resolve(null)
+    }
+  })
+
+  /**
+   * HLS 主清单 → 各档位视频流。
+   *
+   * 只展开「音视频同清单」的变体：引擎没有封装器，独立音轨的变体单独下
+   * 只能得到无声文件，所以这类变体不列进视频选项（主清单本身保留给引擎
+   * 按全局 HLS 设置选流）。独立音轨 / 字幕 / I 帧清单的地址从视频列表剔除，
+   * 避免音频清单被误显示成一个「视频」。
+   */
+  const expandHlsStreams = async (payload) => {
+    try {
+      const hlsVideos = (payload.videos || []).filter(isHlsStream)
+      if (hlsVideos.length === 0) return payload
+
+      const infos = await Promise.all(hlsVideos.map(stream => requestHlsManifest(stream.url)))
+      const infoByUrl = new Map()
+      infos.forEach((info, index) => {
+        if (info) infoByUrl.set(hlsVideos[index].url, info)
+      })
+      if (infoByUrl.size === 0) return payload
+
+      const excludedUrls = new Set()
+      const resolvedByUrl = new Map()
+      infoByUrl.forEach((info) => {
+        ;(info.nonVideoUrls || []).forEach(url => excludedUrls.add(url))
+        ;(info.variants || []).forEach(variant => {
+          if (!variant || !variant.url) return
+          if (variant.audioGroup) {
+            // 独立音轨的变体：单独下会无声，不作为视频选项
+            excludedUrls.add(variant.url)
+            return
+          }
+          resolvedByUrl.set(variant.url, {
+            codecid: codecIdFromLabel(variant.codecName, variant.codecs),
+            codecs: `${variant.codecs || ''}`,
+            bandwidth: Number(variant.bandwidth) || 0,
+            qualityName: `${variant.quality || '原始画质'}`,
+            codecName: `${variant.codecName || 'HLS'}`,
+            ext: 'm3u8',
+            size: 0,
+            url: variant.url
+          })
+        })
+      })
+
+      // 同一档位（都是 1080P）可能有多个码率 / 编码变体：给编码补上码率，
+      // 让它们留在同一个「1080P」组里仍能区分（否则编码下拉全是同名项）。
+      const resolvedList = Array.from(resolvedByUrl.values())
+      const labelCounts = new Map()
+      resolvedList.forEach(item => {
+        labelCounts.set(item.qualityName, (labelCounts.get(item.qualityName) || 0) + 1)
+      })
+      resolvedList.forEach(item => {
+        if ((labelCounts.get(item.qualityName) || 0) <= 1) return
+        const kbps = Math.round((Number(item.bandwidth) || 0) / 1000)
+        if (kbps > 0) item.codecName = `${item.codecName} · ${kbps} kbps`
+      })
+
+      const videos = []
+      const seen = new Set()
+      const addVideo = (stream) => {
+        if (!stream || !stream.url || seen.has(stream.url) || excludedUrls.has(stream.url)) return
+        seen.add(stream.url)
+        videos.push({ ...stream, id: 0 })
+      }
+      const materialize = (stream) => {
+        const resolved = resolvedByUrl.get(stream.url)
+        return resolved ? { ...stream, ...resolved } : stream
+      }
+
+      ;(payload.videos || []).forEach(stream => {
+        const info = infoByUrl.get(stream.url)
+        if (info && info.master && Array.isArray(info.variants)) {
+          const muxed = info.variants.filter(v => v && v.url && !v.audioGroup)
+          if (muxed.length > 0) {
+            // 主清单换成真正的档位（分辨率 / 码率），不再只显示「原始画质」
+            muxed.forEach(variant => addVideo(materialize({
+              url: variant.url,
+              qualityName: `${variant.quality || '原始画质'}`,
+              ext: 'm3u8'
+            })))
+            return
+          }
+        }
+        addVideo(materialize(stream))
+      })
+      // 主清单之外的零散变体（例如被单独嗅探到）也按解析结果补齐
+      resolvedByUrl.forEach((resolved) => addVideo(resolved))
+
+      if (videos.length === 0) return payload
+      assignStreamGroups(videos)
+      assignStreamGroups(payload.audios || [])
+      videos.sort((a, b) => {
+        const byQuality = qualityRank(b.qualityName) - qualityRank(a.qualityName)
+        return byQuality !== 0 ? byQuality : (Number(b.bandwidth) || 0) - (Number(a.bandwidth) || 0)
+      })
+      return { ...payload, videos }
+    } catch (e) {
+      log('expandHlsStreams error', e)
+      return payload
+    }
+  }
+
+  /**
+   * 资源窗用的嗅探数据：在「当前播放视频」的流之外，把还没有归属的流补回来。
+   *
+   * 浏览器内列表只服务"当前这个视频"，过滤掉无归属资源是合理的；但站点
+   * 自己的多清晰度下载链接通常在播放上下文建立之前就从页面里扫到了，不补
+   * 回来资源窗里就只剩正在播放的那一档（用户点名「只能选原始画质」）。
+   */
+  const resolveDialogResources = () => {
+    const scoped = resolveDisplayResources()
+
+    // 直播流不受"当前播放上下文"限制：直播地址常在播放器建立上下文之前
+    // 就从接口里拿到（无归属），漏掉它会让直播页退化成普通下载。
+    const withLiveExtras = (resources) => {
+      try {
+        const base = resources || {}
+        const video = Array.isArray(base.video) ? base.video.slice() : []
+        const seen = new Set(video.map(resource => resource && resource.url).filter(Boolean))
+        ;(Array.isArray(sniffedResources.video) ? sniffedResources.video : []).forEach((resource) => {
+          if (!resource || !resource.url || resource.live !== true) return
+          if (seen.has(resource.url)) return
+          seen.add(resource.url)
+          video.push(resource)
+        })
+        return {
+          ...base,
+          video,
+          total: video.length + ((base.audio && base.audio.length) || 0)
+        }
+      } catch (e) {
+        return resources
+      }
+    }
+
+    // 短视频信息流（抖音等）里页面级的无归属流可能来自相邻视频，
+    // 补进来会把两条视频的清晰度混在一起 —— 只补无归属的直播流。
+    if (perVideoModeActive || isShortVideoFeedHost()) return withLiveExtras(scoped)
+    try {
+      const scopedList = [].concat(
+        scoped.video || [], scoped.audio || [], scoped.m4s || [], scoped.combined || []
+      )
+      if (!scopedList.some(resource => resource && resource.videoContextId)) return withLiveExtras(scoped)
+
+      const keyOf = (resource) => {
+        if (!resource) return ''
+        if (resource.url) return resource.url
+        if (resource.videoUrl) return `${resource.videoUrl}|${resource.audioUrl || ''}`
+        return ''
+      }
+      const merge = (base, extra) => {
+        const list = Array.isArray(base) ? base.slice() : []
+        const seen = new Set()
+        list.forEach(resource => {
+          const key = keyOf(resource)
+          if (key) seen.add(key)
+        })
+        ;(Array.isArray(extra) ? extra : []).forEach(resource => {
+          if (!resource || resource.videoContextId) return
+          const key = keyOf(resource)
+          if (!key || seen.has(key)) return
+          seen.add(key)
+          list.push(resource)
+        })
+        return list
+      }
+
+      const merged = {
+        video: merge(scoped.video, sniffedResources.video),
+        audio: merge(scoped.audio, sniffedResources.audio),
+        m4s: merge(scoped.m4s, sniffedResources.m4s),
+        combined: merge(scoped.combined, sniffedResources.combined),
+        total: 0
+      }
+      merged.total = merged.video.length + merged.audio.length
+      return withLiveExtras(merged)
+    } catch (e) {
+      return withLiveExtras(scoped)
+    }
+  }
+
+  /**
+   * 把当前页嗅探到的资源整理成应用资源窗所需的流清单。
+   *
+   * 与浏览器内列表共用 `collectDisplayItems` / `resolveDisplayResources`，
+   * 所以"按钮上提示的东西"和"窗口里能选的流"仍然出自同一份数据。
+   * 没有画面流时返回 null（例如只有直播或只有音频，继续用网页内列表）。
+   */
+  const buildSniffedResourcePayload = () => {
+    try {
+      const dialogResources = resolveDialogResources()
+      const items = collectDisplayItems(dialogResources)
+      const referer = window.location.href || ''
+
+      // 合并条目的 videoUrl / audioUrl 是两条独立流，大小要各自回到原条目取，
+      // 不能拿合并条目的 totalSize 当视频流的大小。
+      const sizeByUrl = new Map()
+      ;(sniffedResources.video || []).concat(sniffedResources.audio || []).forEach((resource) => {
+        if (resource && resource.url) sizeByUrl.set(resource.url, Number(resource.size) || 0)
+      })
+
+      const videos = []
+      const audios = []
+      const seenVideoUrl = new Set()
+      const seenAudioUrl = new Set()
+
+      const extOf = (resource, fallback) => {
+        const declared = `${(resource && resource.ext) || ''}`.trim().toLowerCase()
+        return declared || resourceExtFromUrl(resource && resource.url, fallback)
+      }
+
+      const pushVideo = (url, qualityName, ext, size) => {
+        const target = `${url || ''}`
+        if (!/^https?:/i.test(target) || seenVideoUrl.has(target)) return
+        seenVideoUrl.add(target)
+        const label = `${qualityName || '原始画质'}`.trim()
+        videos.push({
+          codecid: 0,
+          codecs: `${ext || ''}`,
+          bandwidth: 0,
+          qualityName: label,
+          codecName: resourceCodecLabel(ext),
+          ext: `${ext || ''}`,
+          size: Number(size) || 0,
+          url: target
+        })
+      }
+
+      const pushAudio = (url, qualityName, ext, size) => {
+        const target = `${url || ''}`
+        if (!/^https?:/i.test(target) || seenAudioUrl.has(target)) return
+        seenAudioUrl.add(target)
+        const label = `${qualityName || '音频'}`.trim()
+        audios.push({
+          codecid: 0,
+          codecs: `${ext || ''}`,
+          bandwidth: 0,
+          qualityName: label,
+          codecName: resourceCodecLabel(ext),
+          ext: `${ext || ''}`,
+          size: Number(size) || 0,
+          url: target
+        })
+      }
+
+      // HLS 清单：一条就是一个完整视频，不带独立音轨
+      items.manifest.forEach((resource) => {
+        if (!resource) return
+        // 独立音轨清单（.m3u8）不是视频，主清单没被嗅到时靠地址特征兜底
+        if (isLikelyAudioManifest(resource)) return
+        const ext = extOf(resource, 'm3u8')
+        pushVideo(
+          resource.url,
+          resourceQualityLabel(resource, ext, '原始画质'),
+          ext,
+          resource.size
+        )
+      })
+
+      // 音视频合并条目：拆成画面流 + 声音流，交给资源窗合并
+      items.combined.forEach((resource) => {
+        if (!resource) return
+        const videoExt = resourceExtFromUrl(resource.videoUrl, 'mp4')
+        const audioExt = resourceExtFromUrl(resource.audioUrl, 'm4a')
+        const videoLabel = resourceQualityLabel(resource, '', '完整视频')
+        const audioLabel = resourceQualityLabel(resource, '', '音频')
+        pushVideo(resource.videoUrl, videoLabel, videoExt, sizeByUrl.get(resource.videoUrl))
+        pushAudio(resource.audioUrl, audioLabel, audioExt, sizeByUrl.get(resource.audioUrl))
+      })
+
+      items.m4s.forEach((resource) => {
+        if (!resource) return
+        const ext = extOf(resource, 'm4s')
+        if (`${resource.type || ''}`.toLowerCase() === 'audio') {
+          pushAudio(resource.url, resourceQualityLabel(resource, ext, '音频'), ext, resource.size)
+        } else {
+          pushVideo(resource.url, resourceQualityLabel(resource, ext, '原始画质'), ext, resource.size)
+        }
+      })
+
+      items.video.forEach((resource) => {
+        if (!resource) return
+        const ext = extOf(resource, 'mp4')
+        pushVideo(resource.url, resourceQualityLabel(resource, ext, '原始画质'), ext, resource.size)
+      })
+
+      items.audio.forEach((resource) => {
+        if (!resource) return
+        const ext = extOf(resource, 'm4a')
+        pushAudio(resource.url, resourceQualityLabel(resource, ext, '音频'), ext, resource.size)
+      })
+
+      // 有 HLS 清单时，浏览器列表会隐藏普通视频流（避免在同一栏里重复）；
+      // 但资源窗里这些往往是站点自己的多清晰度下载文件，属于另一种可选流，
+      // 应当和清单档位一起列出来（只收普通视频，分片 / 音轨 / 直播不在此列）。
+      if (items.manifest.length > 0) {
+        ;(dialogResources.video || []).forEach((resource) => {
+          if (!resource || !resource.url || resource.live === true) return
+          const ext = `${(resource.ext || '')}`.toLowerCase()
+          if (ext === 'm4s' || ext === 'm3u8' || ext === 'm3u' || ext === 'mpd') return
+          if (isHlsManifestEntry(resource) || isTsSegmentEntry(resource)) return
+          if (`${resource.type || 'video'}`.toLowerCase() === 'audio') return
+          const resolvedExt = extOf(resource, 'mp4')
+          pushVideo(
+            resource.url,
+            resourceQualityLabel(resource, resolvedExt, '原始画质'),
+            resolvedExt,
+            resource.size
+          )
+        })
+      }
+
+      // 识别到直播流时优先走录制：直播页常同时带推荐视频/预告片的资源，
+      // 「有普通视频就当下载」会把真正的直播漏掉（用户点名 B 站直播未录制）。
+      let liveCandidates = items.live.slice()
+      // 探测失败/未回来时的兜底：直播页上的 FLV / HLS 基本就是长连接直播
+      if (liveCandidates.length === 0 && pageLooksLikeLive()) {
+        liveCandidates = (dialogResources.video || []).filter((resource) => {
+          if (!resource || !resource.url || resource.live === false) return false
+          const ext = `${(resource.ext || '')}`.toLowerCase()
+          return ext === 'flv' || /\.flv(?:[?#]|$)/i.test(resource.url) || isHlsManifestEntry(resource)
+        })
+      }
+      if (liveCandidates.length > 0) {
+        const liveVideos = []
+        const seenLiveUrl = new Set()
+        liveCandidates.forEach((resource) => {
+          if (!resource || !resource.url || seenLiveUrl.has(resource.url)) return
+          if (`${resource.type || ''}`.toLowerCase() === 'audio') return
+          // 独立音轨清单不是可视直播流（主清单在时由 HLS 展开精确排除）
+          if (isLikelyAudioManifest(resource)) return
+          seenLiveUrl.add(resource.url)
+          const ext = extOf(resource, /\.flv(?:[?#]|$)/i.test(resource.url) ? 'flv' : 'm3u8')
+          liveVideos.push({
+            codecid: 0,
+            codecs: `${ext || ''}`,
+            bandwidth: 0,
+            qualityName: resourceQualityLabel(resource, ext, '直播'),
+            codecName: resourceCodecLabel(ext),
+            ext: `${ext || ''}`,
+            size: 0,
+            url: resource.url
+          })
+        })
+        if (liveVideos.length > 0) {
+          assignStreamGroups(liveVideos)
+          liveVideos.sort((a, b) => qualityRank(b.qualityName) - qualityRank(a.qualityName))
+          return {
+            kind: 'live',
+            live: true,
+            title: getPageResourceTitle(),
+            cover: getPageResourceCover(),
+            referer,
+            headers: buildPageResourceHeaders(referer),
+            duration: 0,
+            videos: liveVideos,
+            audios: []
+          }
+        }
+      }
+
+      if (videos.length === 0) return null
+
+      assignStreamGroups(videos)
+      assignStreamGroups(audios)
+
+      // 默认选中最高一档：嗅探顺序取决于"谁先被看到"，不排序的话
+      // 资源窗可能默认停在正在播放的低画质上。
+      videos.sort((a, b) => qualityRank(b.qualityName) - qualityRank(a.qualityName))
+      audios.sort((a, b) => qualityRank(b.qualityName) - qualityRank(a.qualityName))
+
+      return {
+        title: getPageResourceTitle(),
+        cover: getPageResourceCover(),
+        referer,
+        headers: buildPageResourceHeaders(referer),
+        duration: pageVideoDuration(),
+        videos,
+        audios
+      }
+    } catch (e) {
+      log('buildSniffedResourcePayload error', e)
+      return null
+    }
+  }
+
+  /**
+   * 页面看起来是不是直播页？
+   *
+   * 用于在点击下载时**短暂等待**直播探测结果：直播页的 m3u8/FLV 会异步
+   * 问后台"有没有 ENDLIST / 有没有 Content-Length"，用户点得快时结果
+   * 还没回来，就会误走普通下载。只在这类页面等，普通点播页不受影响。
+   */
+  const pageLooksLikeLive = () => {
+    try {
+      const host = `${(window.location && window.location.hostname) || ''}`.toLowerCase()
+      const path = `${(window.location && window.location.pathname) || ''}`.toLowerCase()
+      if (/(^|\.)live\./.test(host)) return true
+      if (path.includes('/live') || path.includes('/room')) return true
+      const videos = document.querySelectorAll('video')
+      for (const video of videos) {
+        const duration = Number(video && video.duration)
+        if (duration === Infinity) return true
+      }
+    } catch (e) {}
+    return false
+  }
+
+  const hasPendingLiveProbe = () => {
+    try {
+      const pools = [sniffedResources.video, sniffedResources.audio, sniffedResources.m4s]
+      return pools.some(list => Array.isArray(list) && list.some(resource =>
+        resource && resource.liveProbed === true && typeof resource.live === 'undefined'))
+    } catch (e) {
+      return false
+    }
+  }
+
+  /** 直播页最多等这么久让探测落定（普通页直接跳过）。 */
+  const waitForLiveProbeDecision = async (timeout) => {
+    if (!pageLooksLikeLive() || !hasPendingLiveProbe()) return
+    const deadline = Date.now() + timeout
+    while (Date.now() < deadline && hasPendingLiveProbe()) {
+      await new Promise(resolve => setTimeout(resolve, 120))
+    }
+  }
+
+  /**
+   * 打开应用的「下载视频」窗口。返回 true 表示已接管这次点击；
+   * 拿不出完整视频流时内部回落到网页内的资源列表。
+   */
+  const openSniffedResourceDialog = () => {
+    if (resourceDialogRequesting) return true
+    resourceDialogRequesting = true
+
+    const btn = document.getElementById('lerxu-bilibili-download-btn')
+    const countSpan = btn ? btn.querySelector('.lerxu-resource-count') : null
+    const oldCount = countSpan ? countSpan.textContent : ''
+    if (countSpan) countSpan.textContent = '获取中…'
+
+    const restoreCount = () => {
+      if (countSpan && countSpan.textContent === '获取中…') countSpan.textContent = oldCount
+    }
+
+    ;(async () => {
+      // 直播页先等探测结果，避免把直播误当成普通视频
+      try {
+        await waitForLiveProbeDecision(2500)
+      } catch (e) {}
+
+      const payload = buildSniffedResourcePayload()
+      if (!payload) {
+        resourceDialogRequesting = false
+        restoreCount()
+        showResourceDropdown()
+        return
+      }
+
+      // HLS 主清单先解析成各档位：只把「音视频同清单」的变体列出来，
+      // 独立音轨 / 字幕清单从视频选项剔除。
+      let finalPayload = payload
+      try {
+        finalPayload = await expandHlsStreams(payload)
+      } catch (e) {}
+
+      try {
+        // 复用接口直连的那条通道：应用不可达时退回网页内列表，
+        // 不让用户点了按钮没有任何反应。
+        chrome.runtime.sendMessage({ type: 'openBiliResourceDialog', payload: finalPayload }, (resp) => {
+          resourceDialogRequesting = false
+          restoreCount()
+          if (chrome.runtime.lastError || !resp || !resp.ok) {
+            log('open resource dialog failed, falling back to in-page list', chrome.runtime.lastError)
+            showResourceDropdown()
+          }
+        })
+      } catch (e) {
+        resourceDialogRequesting = false
+        restoreCount()
+        showResourceDropdown()
+      }
+    })()
+    return true
+  }
+
   // ─── B 站接口 ───
 
   /**
@@ -5795,8 +6512,6 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return { videos, audios }
   }
 
-  let biliResourceRequesting = false
-
   /** 番剧一集的展示名：`第N集`（接口 title 只有数字时补前缀）+ 副标题。 */
   const biliEpisodeLabel = (episode) => {
     const ep = episode || {}
@@ -5903,13 +6618,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const play = await fetchBiliPgcPlay(current)
     if (!play) throw new Error('no video stream')
     const referer = window.location.href || `https://www.bilibili.com/bangumi/play/ep${current.epId}`
-    const headers = []
-    try {
-      if (navigator.userAgent) headers.push(`User-Agent: ${navigator.userAgent}`)
-    } catch (e) {}
-    headers.push(`Referer: ${referer}`)
-    headers.push('Accept: */*')
-    headers.push('X-Lerxu-Source: BrowserExtension')
+    const headers = buildPageResourceHeaders(referer)
     return {
       kind: 'bangumi',
       title: info.title,
@@ -5928,8 +6637,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   /** 番剧页：取 season 清单 + 当前集流，交给应用资源窗选集数。 */
   const openBiliBangumiResourceDialog = async (bangumi) => {
-    if (biliResourceRequesting) return
-    biliResourceRequesting = true
+    if (resourceDialogRequesting) return
+    resourceDialogRequesting = true
     const btn = document.getElementById('lerxu-bilibili-download-btn')
     const countSpan = btn ? btn.querySelector('.lerxu-resource-count') : null
     const oldCount = countSpan ? countSpan.textContent : ''
@@ -5960,7 +6669,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }, 3000)
       }
     } finally {
-      biliResourceRequesting = false
+      resourceDialogRequesting = false
       if (countSpan && countSpan.textContent === '获取中…') countSpan.textContent = oldCount
     }
   }
@@ -6005,7 +6714,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
    * 不让用户点了按钮没有任何反应。
    */
   const openBiliResourceDialog = async () => {
-    if (biliResourceRequesting) return
+    if (resourceDialogRequesting) return
     // 番剧 / 影视页：走 season 接口取集数清单，资源窗里再选集数
     const bangumiId = getBiliBangumiIdFromUrl()
     if (bangumiId) {
@@ -6018,7 +6727,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       return
     }
 
-    biliResourceRequesting = true
+    resourceDialogRequesting = true
     const btn = document.getElementById('lerxu-bilibili-download-btn')
     const countSpan = btn ? btn.querySelector('.lerxu-resource-count') : null
     const oldCount = countSpan ? countSpan.textContent : ''
@@ -6050,13 +6759,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       if (!videos.length) throw new Error('no video stream')
 
       const referer = window.location.href || `https://www.bilibili.com/video/${id.bvid || 'av' + id.aid}`
-      const headers = []
-      try {
-        if (navigator.userAgent) headers.push(`User-Agent: ${navigator.userAgent}`)
-      } catch (e) {}
-      headers.push(`Referer: ${referer}`)
-      headers.push('Accept: */*')
-      headers.push('X-Lerxu-Source: BrowserExtension')
+      const headers = buildPageResourceHeaders(referer)
 
       const payload = {
         title: view.title || '',
@@ -6090,7 +6793,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }, 3000)
       }
     } finally {
-      biliResourceRequesting = false
+      resourceDialogRequesting = false
       if (countSpan && countSpan.textContent === '获取中…') countSpan.textContent = oldCount
     }
   }

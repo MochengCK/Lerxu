@@ -283,6 +283,29 @@ fun SettingsScreen(
     var startPage by remember { mutableStateOf(StartPagePrefs.read(context)) }
     var showStartPageDialog by remember { mutableStateOf(false) }
 
+    // ── 权限：引导里跳过或拒绝授予后，仍可在这里补授（用户点名）──
+    var hasStoragePermission by remember { mutableStateOf(storageGranted(context)) }
+    var hasNotificationPermission by remember { mutableStateOf(notificationsGranted(context)) }
+    // 系统授权页没有回调：回到前台重读一次
+    val permissionLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(permissionLifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasStoragePermission = storageGranted(context)
+                hasNotificationPermission = notificationsGranted(context)
+            }
+        }
+        permissionLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { permissionLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    // API < R 的存储权限是运行时权限；R+ 走「所有文件访问」系统页
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasStoragePermission = granted
+        if (!granted) openAllFilesAccessPage(context)
+    }
+
     // ── 主题切换 ──
     var showThemeDialog by remember { mutableStateOf(false) }
     var showSearchEngineDialog by remember { mutableStateOf(false) }
@@ -341,9 +364,6 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-            // 高度交给弹窗自己：里面的 `weight(1f)` 会把内容撑到弹窗给的上限，
-            // 也就是"铺满整屏"——不要再写 `fillMaxHeight(0.92f)` 那种百分比，
-            // 那一截空白就是它留下的（见上）
         ) {
             SettingsSheetHeader(
                 title = category?.let { stringResource(it.titleRes) } ?: stringResource(R.string.settings),
@@ -999,6 +1019,33 @@ fun SettingsScreen(
             }
         }
 
+        // ── 权限：引导时未授予也能在这里补授 ──
+        if (cat == SettingsCategory.General) SettingsSection(stringResource(R.string.settings_permissions)) {
+            PermissionSettingsRow(
+                title = stringResource(R.string.onboarding_permission_storage_title),
+                granted = hasStoragePermission,
+                onClick = {
+                    runCatching {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            openAllFilesAccessPage(context)
+                        } else {
+                            storagePermissionLauncher.launch(
+                                android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                            )
+                        }
+                    }
+                }
+            )
+            // 通知权限是 API 33+ 才有的运行时权限；更早的系统默认有权限，不显示这一行
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                PermissionSettingsRow(
+                    title = stringResource(R.string.onboarding_permission_notification_title),
+                    granted = hasNotificationPermission,
+                    onClick = { openNotificationSettingsPage(context) }
+                )
+            }
+        }
+
         // ── 启动：默认入口（下载器 / 浏览器）──
         if (cat == SettingsCategory.General) SettingsSection(stringResource(R.string.settings_section_start)) {
             Row(
@@ -1215,7 +1262,6 @@ fun SettingsScreen(
 
         // ── 关于 ──
         if (cat == SettingsCategory.About) SettingsSection(stringResource(R.string.settings_about)) {
-            SettingsInfoRow(stringResource(R.string.about_version), BuildConfig.VERSION_NAME)
             // 自动检测更新开关（启动时检查 GitHub Releases）
             Row(
                 modifier = Modifier
@@ -1378,6 +1424,11 @@ fun SettingsScreen(
                 )
             }
 
+        }
+
+        // ── 版本信息：独立分组，不再混在「关于」设置里 ──
+        if (cat == SettingsCategory.About) SettingsSection(stringResource(R.string.settings_version_info)) {
+            SettingsInfoRow(stringResource(R.string.about_version), BuildConfig.VERSION_NAME)
             SettingsInfoRow(
                 stringResource(R.string.about_engine),
                 engineVersion?.let { "${it.name} v${it.version}" } ?: "—"
@@ -1922,6 +1973,45 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
     Spacer(Modifier.height(14.dp))
 }
 
+/** 权限行：标题 + 授权状态，整行可点前往系统授权入口。 */
+@Composable
+private fun PermissionSettingsRow(
+    title: String,
+    granted: Boolean,
+    onClick: () -> Unit
+) {
+    val colorScheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                stringResource(
+                    if (granted) R.string.onboarding_permission_granted
+                    else R.string.settings_permission_not_granted
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (granted) colorScheme.tertiary else colorScheme.primary
+            )
+        }
+        Icon(
+            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+        )
+    }
+}
+
 @Composable
 private fun SettingsInfoRow(label: String, value: String) {
     Row(
@@ -1956,7 +2046,7 @@ private fun Stepper(
     val colorScheme = MaterialTheme.colorScheme
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = colorScheme.surfaceContainerHigh
+        color = colorScheme.surfaceVariant
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(
@@ -2005,7 +2095,7 @@ private fun PresetCycler(
     val colorScheme = MaterialTheme.colorScheme
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = colorScheme.surfaceContainerHigh
+        color = colorScheme.surfaceVariant
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(

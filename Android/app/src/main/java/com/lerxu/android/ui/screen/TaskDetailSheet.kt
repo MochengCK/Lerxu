@@ -2,7 +2,9 @@ package com.lerxu.android.ui.screen
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -15,17 +17,18 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -53,10 +56,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import androidx.compose.material3.TabRowDefaults
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -71,12 +70,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -107,6 +109,9 @@ import kotlinx.serialization.json.JsonPrimitive
  * 进度条 + 控制按钮固定在底部，所有 tab 共享。
  */
 private enum class DetailTab { OVERVIEW, PIECES, PEERS, TRACKERS, FILES }
+
+/** 详情内所有卡片 / 按钮 / 背景的统一圆角（与进度条一致）。 */
+private val DetailCorner = 7.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -206,35 +211,62 @@ fun TaskDetailSheet(
                 )
             }
 
-            // ── Tab 行 ──
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = Color.Transparent,
-                contentColor = colorScheme.primary,
-                indicator = { positions ->
-                    if (selectedTab < positions.size) {
-                        TabRowDefaults.SecondaryIndicator(
-                            modifier = Modifier.tabIndicatorOffset(positions[selectedTab]),
-                            height = 2.5.dp
-                        )
-                    }
-                },
-                divider = {}
+            // ── Tab 行：与应用一致的胶囊分段控件（选中段主色填充）──
+            Surface(
+                shape = RoundedCornerShape(DetailCorner),
+                color = colorScheme.surfaceContainerHighest,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                tabs.forEachIndexed { index, tab ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = {
-                            Text(
-                                text = stringResource(tabLabel(tab)),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = if (selectedTab == index) FontWeight.SemiBold else FontWeight.Normal
-                            )
-                        },
-                        selectedContentColor = colorScheme.primary,
-                        unselectedContentColor = colorScheme.onSurfaceVariant
+                // 选中滑块在主色块之间平滑移动（而不是每个格子直接换色）
+                BoxWithMaxWidth { fullWidth ->
+                    val inset = 3.dp
+                    val gap = 3.dp
+                    val count = tabs.size.coerceAtLeast(1)
+                    val cellWidth = (fullWidth - inset * 2 - gap * (count - 1)) / count
+                    val thumbOffset by animateDpAsState(
+                        targetValue = inset + (cellWidth + gap) * selectedTab,
+                        animationSpec = tween(240, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+                        label = "detailTabThumb"
                     )
+                    Box(modifier = Modifier.fillMaxWidth().height(40.dp)) {
+                        // 滑块先画，文字压在上面
+                        Box(
+                            modifier = Modifier
+                                .offset(x = thumbOffset, y = inset)
+                                .width(cellWidth)
+                                .height(34.dp)
+                                .clip(RoundedCornerShape(DetailCorner))
+                                .background(colorScheme.primary)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(inset),
+                            horizontalArrangement = Arrangement.spacedBy(gap)
+                        ) {
+                            tabs.forEachIndexed { index, tab ->
+                                val selected = selectedTab == index
+                                val contentColor by animateColorAsState(
+                                    targetValue = if (selected) colorScheme.onPrimary else colorScheme.onSurfaceVariant,
+                                    animationSpec = tween(180),
+                                    label = "detailTabFg"
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(34.dp)
+                                        .clickable { selectedTab = index },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = stringResource(tabLabel(tab)),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                                        color = contentColor,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -269,15 +301,39 @@ fun TaskDetailSheet(
 
             Spacer(Modifier.height(10.dp))
 
-            // ── 进度条（裸，不带卡片，固定在控制按钮正上方） ──
-            RoundedProgressBar(
-                progress = displayTask.progress,
-                color = statusColor,
-                trackColor = statusColor.copy(alpha = 0.18f),
-                height = 6.dp,
-                indeterminate = displayTask.status == "active" &&
-                    displayTask.downloadSpeed <= 0L && displayTask.completedLength <= 0L
-            )
+            // ── 进度条（高度适中，内部居中显示已下载/总大小与百分比） ──
+            Box(
+                modifier = Modifier.fillMaxWidth().height(20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                RoundedProgressBar(
+                    progress = displayTask.progress,
+                    color = statusColor,
+                    trackColor = statusColor.copy(alpha = 0.18f),
+                    height = 20.dp,
+                    shape = RoundedCornerShape(DetailCorner),
+                    indeterminate = displayTask.status == "active" &&
+                        displayTask.downloadSpeed <= 0L && displayTask.completedLength <= 0L
+                )
+                // 总大小未知（解析中）时不显示，避免出现 "0 B / 0 B"
+                if (displayTask.totalLength > 0) {
+                    Text(
+                        text = "${formatBytes(displayTask.completedLength)} / " +
+                            "${formatBytes(displayTask.totalLength)} · ${displayTask.percent}%",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            // 直接压在进度条上：加一层轻阴影，浅色轨道上也看得清
+                            shadow = Shadow(
+                                color = Color.Black.copy(alpha = 0.45f),
+                                offset = Offset(0f, 1f),
+                                blurRadius = 3f
+                            )
+                        ),
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
 
             Spacer(Modifier.height(10.dp))
 
@@ -291,7 +347,7 @@ fun TaskDetailSheet(
                         OutlinedButton(
                             onClick = { viewModel.pauseTask(task.gid) },
                             modifier = Modifier.weight(1f).height(46.dp),
-                            shape = RoundedCornerShape(14.dp)
+                            shape = RoundedCornerShape(DetailCorner)
                         ) {
                             Icon(Icons.Default.Pause, contentDescription = null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
@@ -302,7 +358,7 @@ fun TaskDetailSheet(
                         Button(
                             onClick = { viewModel.resumeTask(task.gid) },
                             modifier = Modifier.weight(1f).height(46.dp),
-                            shape = RoundedCornerShape(14.dp)
+                            shape = RoundedCornerShape(DetailCorner)
                         ) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(17.dp))
                             Spacer(Modifier.width(6.dp))
@@ -313,7 +369,7 @@ fun TaskDetailSheet(
                 OutlinedButton(
                     onClick = onDeleteRequest,
                     modifier = Modifier.weight(1f).height(46.dp),
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(DetailCorner),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = colorScheme.error)
                 ) {
                     Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(17.dp))
@@ -384,8 +440,8 @@ private fun OverviewTab(
     ) {
         // 详细信息卡
         Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(DetailCorner),
+            color = colorScheme.surfaceContainerHigh,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.padding(vertical = 4.dp)) {
@@ -399,7 +455,8 @@ private fun OverviewTab(
                             .padding(horizontal = 16.dp, vertical = 10.dp)
                     )
                     HorizontalDivider(
-                        color = colorScheme.outlineVariant,
+                        // 与卡片底同色系的可见一档：outlineVariant 在深色下比卡片还深
+                        color = lerxuExtraColors.dialogDivider,
                         thickness = 0.5.dp,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
@@ -672,19 +729,35 @@ private fun PeersTab(
                 )
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+            // 与文件表格一致的卡片背景
+            Surface(
+                shape = RoundedCornerShape(DetailCorner),
+                color = colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                items(peers, key = { it.addr }) { peer ->
-                    PeerRow(colorScheme, peer) { durationSec ->
-                        scope.launch {
-                            val ok = viewModel.banPeer(gid, peerIp(peer.addr), durationSec)
-                            Toast.makeText(
-                                context,
-                                context.getString(if (ok) R.string.ban_peer_done else R.string.ban_peer_failed),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    items(peers.size, key = { peers[it].addr }) { i ->
+                        val peer = peers[i]
+                        PeerRow(colorScheme, peer) { durationSec ->
+                            scope.launch {
+                                val ok = viewModel.banPeer(gid, peerIp(peer.addr), durationSec)
+                                Toast.makeText(
+                                    context,
+                                    context.getString(if (ok) R.string.ban_peer_done else R.string.ban_peer_failed),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                        // 只在行间画分隔线；卡片底部不留线，且用面板上可见的一档颜色
+                        if (i < peers.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 14.dp),
+                                color = lerxuExtraColors.dialogDivider,
+                                thickness = 0.5.dp
+                            )
                         }
                     }
                 }
@@ -711,7 +784,7 @@ private fun PeerRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
+                .padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
@@ -802,7 +875,6 @@ private fun PeerRow(
                 )
             }
         }
-        HorizontalDivider(color = colorScheme.outlineVariant, thickness = 0.5.dp)
     }
 }
 
@@ -827,13 +899,27 @@ private fun TrackersTab(
                 )
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+            // 与文件表格一致的卡片背景
+            Surface(
+                shape = RoundedCornerShape(DetailCorner),
+                color = colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                items(trackers, key = { it.url }) { tr ->
-                    TrackerRow(colorScheme, tr)
-                    HorizontalDivider(color = colorScheme.outlineVariant, thickness = 0.5.dp)
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    items(trackers.size, key = { trackers[it].url }) { i ->
+                        TrackerRow(colorScheme, trackers[i])
+                        // 只在行间画分隔线；卡片底部不留线，且用面板上可见的一档颜色
+                        if (i < trackers.lastIndex) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 14.dp),
+                                color = lerxuExtraColors.dialogDivider,
+                                thickness = 0.5.dp
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -852,7 +938,7 @@ private fun TrackerRow(
         "not-working" -> extraColors.danger
         else -> extraColors.warning
     }
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
@@ -934,9 +1020,13 @@ private fun FilesTab(
     var pending by remember(polled.gid, polled.files.size) { mutableStateOf<Set<Int>?>(null) }
     val canSelect = polled.isBT && polled.files.size > 1 &&
         polled.status !in listOf("complete", "error", "removed")
-    val currentSelection: Set<Int> = pending ?: polled.files
+    // 引擎当前的勾选集合：用于判断选择是否真的发生了变化
+    val originalSelection: Set<Int> = polled.files
         .mapIndexedNotNull { i, f -> if (f.selected) i else null }
         .toSet()
+    val currentSelection: Set<Int> = pending ?: originalSelection
+    // 勾选后又取消回原状时不应再显示「应用选择」
+    val selectionChanged = currentSelection != originalSelection
 
     // 用于文件移除（取消勾选并应用）
     fun applySelection(sel: Set<Int>) {
@@ -979,9 +1069,18 @@ private fun FilesTab(
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f)
             )
-            if (canSelect && pending != null) {
-                TextButtonCompat(colorScheme, stringResource(R.string.apply_selection)) {
-                    applySelection(pending!!)
+            if (canSelect && selectionChanged) {
+                Button(
+                    onClick = { applySelection(currentSelection) },
+                    modifier = Modifier.height(32.dp),
+                    shape = RoundedCornerShape(DetailCorner),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.apply_selection),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
@@ -1005,9 +1104,11 @@ private fun FilesTab(
                 }
             }
             else -> {
+                // 无背景、无左右间距：文件行直接铺在弹窗内容区里，
+                // 行与行之间靠间距分隔（用户点名）
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     itemsIndexedCompat(polled.files) { _, file ->
                         val idx = file.index - 1
@@ -1017,33 +1118,15 @@ private fun FilesTab(
                             selectable = canSelect,
                             checked = idx in currentSelection,
                             onToggle = { checked ->
-                                pending = if (checked) currentSelection + idx else currentSelection - idx
-                            },
-                            onRemove = if (canSelect) {
-                                {
-                                    // 移除文件：从选择中移除并立即应用
-                                    val newSel = currentSelection - idx
-                                    pending = newSel
-                                    applySelection(newSel)
-                                }
-                            } else null
+                                val next = if (checked) currentSelection + idx else currentSelection - idx
+                                // 回到原勾选状态时清空待提交，从而隐藏「应用选择」
+                                pending = next.takeIf { it != originalSelection }
+                            }
                         )
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun TextButtonCompat(colorScheme: androidx.compose.material3.ColorScheme, text: CharSequence, onClick: () -> Unit) {
-    androidx.compose.material3.TextButton(onClick = onClick) {
-        Text(
-            text.toString(),
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = colorScheme.primary
-        )
     }
 }
 
@@ -1060,8 +1143,7 @@ private fun FileRowSelectable(
     file: TaskFile,
     selectable: Boolean,
     checked: Boolean,
-    onToggle: (Boolean) -> Unit,
-    onRemove: (() -> Unit)? = null
+    onToggle: (Boolean) -> Unit
 ) {
     val fileName = file.path.substringAfterLast('/').substringAfterLast('\\')
         .ifEmpty { stringResource(R.string.file_index, file.index) }
@@ -1074,7 +1156,7 @@ private fun FileRowSelectable(
             .fillMaxWidth()
             // 整行可点切换勾选（仅图标可点时目标太小，下载中难以命中）
             .then(if (selectable) Modifier.clickable { onToggle(!checked) } else Modifier)
-            .padding(vertical = 4.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (selectable) {
@@ -1088,39 +1170,37 @@ private fun FileRowSelectable(
                 modifier = Modifier.size(20.dp),
                 tint = if (checked) colorScheme.primary else colorScheme.outline
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
         }
         Column(Modifier.weight(1f)) {
             Text(
                 fileName,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(Modifier.height(3.dp))
+            // 大小 + 进度百分比：都放在名称下方（用户点名）
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    formatBytes(file.length),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "${(fileProgress * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = colorScheme.primary
+                )
+            }
+            Spacer(Modifier.height(5.dp))
             RoundedProgressBar(
                 progress = fileProgress,
                 color = colorScheme.primary,
                 trackColor = colorScheme.primary.copy(alpha = 0.18f),
-                height = 3.dp
-            )
-        }
-        Spacer(Modifier.width(10.dp))
-        Text(
-            formatBytes(file.length),
-            style = MaterialTheme.typography.labelSmall,
-            color = colorScheme.onSurfaceVariant
-        )
-        if (onRemove != null) {
-            Spacer(Modifier.width(6.dp))
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = stringResource(R.string.delete),
-                modifier = Modifier
-                    .size(16.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .clickable { onRemove() },
-                tint = colorScheme.onSurfaceVariant
+                height = 4.dp
             )
         }
     }
@@ -1161,7 +1241,7 @@ private fun TaskLimitDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("", "1M", "5M", "10M", "20M", "50M").forEach { preset ->
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(DetailCorner),
                         color = colorScheme.surfaceContainerHighest,
                         modifier = Modifier.clickable { dl = preset; if (!isHttpTask) ul = preset }
                     ) {
@@ -1202,7 +1282,7 @@ private fun LimitField(
             )
         },
         textStyle = MaterialTheme.typography.bodyMedium,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(DetailCorner),
         modifier = Modifier.fillMaxWidth()
     )
 }

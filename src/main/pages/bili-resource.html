@@ -150,6 +150,12 @@
       padding: 8px 0;
     }
 
+    /* hidden 属性在 .setting-row 的 display:flex 下会被作者样式覆盖，
+       直播模式隐藏音频 / 合并格式时必须显式关掉 */
+    .setting-row[hidden] {
+      display: none;
+    }
+
     .setting-info {
       min-width: 0;
     }
@@ -661,9 +667,9 @@
         </div>
       </div>
 
-      <div class="setting-row">
+      <div class="setting-row" id="qualityRow">
         <div class="setting-info">
-          <div class="setting-title">清晰度</div>
+          <div class="setting-title" id="qualityTitle">清晰度</div>
           <div class="setting-subtitle" id="qualityHint">画质越高，文件越大</div>
         </div>
         <div class="lx-select" id="qualitySelect">
@@ -674,9 +680,9 @@
         </div>
       </div>
 
-      <div class="setting-row">
+      <div class="setting-row" id="videoCodecRow">
         <div class="setting-info">
-          <div class="setting-title">视频编码</div>
+          <div class="setting-title" id="videoCodecTitle">视频编码</div>
           <div class="setting-subtitle" id="codecHint">AVC 兼容性更好，AV1 体积更小</div>
         </div>
         <div class="lx-select" id="videoCodecSelect">
@@ -687,7 +693,7 @@
         </div>
       </div>
 
-      <div class="setting-row">
+      <div class="setting-row" id="audioQualityRow">
         <div class="setting-info">
           <div class="setting-title">音频质量</div>
           <div class="setting-subtitle" id="audioHint">码率越高，声音细节越多</div>
@@ -700,7 +706,7 @@
         </div>
       </div>
 
-      <div class="setting-row">
+      <div class="setting-row" id="audioCodecRow">
         <div class="setting-info">
           <div class="setting-title">音频编码</div>
           <div class="setting-subtitle" id="audioCodecHint">AAC 兼容性最好</div>
@@ -713,7 +719,7 @@
         </div>
       </div>
 
-      <div class="setting-row">
+      <div class="setting-row" id="mergeFormatRow">
         <div class="setting-info">
           <div class="setting-title">合并格式</div>
           <div class="setting-subtitle">下载完成后自动合并为所选容器</div>

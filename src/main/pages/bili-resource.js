@@ -19,6 +19,8 @@
     metaParts: [],
     // 番剧：整季的集数元信息 + 当前勾选的 epId（只在这类资源窗里用）
     isBangumi: false,
+    // 直播：脚本窗口只负责选清晰度并开始录制（不显示音频/合并格式）
+    isLive: false,
     episodes: [],
     selectedEpisodeIds: new Set(),
     submitting: false
@@ -414,25 +416,39 @@
     })
   }
 
-  /** 预计下载大小：接口带宽 × 时长（视频 + 音频），只用于展示，标“约”。 */
+  /** 单条流的字节数：优先用嗅探得到的真实大小，其次按带宽 × 时长估算。 */
+  function streamBytes (stream, duration) {
+    const size = Number(stream && stream.size) || 0
+    if (size > 0) return size
+    const bandwidth = Number(stream && stream.bandwidth) || 0
+    return bandwidth > 0 && duration > 0 ? (bandwidth * duration) / 8 : 0
+  }
+
+  /** 预计下载大小：真实大小优先，没有就按带宽 × 时长估算（视频 + 音频）。 */
   function updateDownloadSummary () {
     const video = selectedVideoStream()
     const audio = selectedAudioStream()
     const duration = selectedEpisodeDuration()
-    const videoBps = Number(video && video.bandwidth) || 0
-    const audioBps = audio ? Number(audio.bandwidth) || 0 : 0
-    const bytes = duration > 0 && (videoBps + audioBps) > 0
-      ? ((videoBps + audioBps) * duration) / 8
-      : 0
+    const bytes = streamBytes(video, duration) + streamBytes(audio, duration)
     const sizeText = formatBytes(bytes)
     $('videoSize').textContent = sizeText ? `· 约 ${sizeText}` : ''
+  }
+
+  /** 画面流的容器是不是通常已自带音轨（单文件视频 / HLS 清单）。 */
+  function videoHasEmbeddedAudio (stream) {
+    const ext = `${(stream && stream.ext) || ''}`.toLowerCase()
+    if (!ext) return false
+    return ['mp4', 'mkv', 'webm', 'mov', 'avi', 'flv', 'ts', 'm2ts', 'mts', '3gp', 'ogv', 'm4v', 'm3u8'].includes(ext)
   }
 
   function updateAudioHints () {
     const stream = selectedAudioStream()
     if (!stream) {
-      $('audioHint').textContent = '该视频没有独立音频流'
-      $('audioCodecHint').textContent = '将只下载视频'
+      // 单文件视频（嗅探到的 mp4 / HLS）本身就有声音，别让「将只下载视频」
+      // 看起来像丢音轨；真正的纯画面流（DASH 分离流）才提示只下画面。
+      const embedded = videoHasEmbeddedAudio(selectedVideoStream())
+      $('audioHint').textContent = embedded ? '音频已包含在视频文件中' : '该视频没有独立音频流'
+      $('audioCodecHint').textContent = embedded ? '无需单独下载音频' : '将只下载视频'
     } else {
       // 副标题只解释选项含义，不重复选择框里的档位 / 编码
       $('audioHint').textContent = '码率越高，声音细节越多'
@@ -528,16 +544,21 @@
 
     // 标题栏只写动作名，视频标题放到下方封面信息里，避免两处重复
     const isBangumi = `${payload.kind || ''}` === 'bangumi'
-    $('windowTitle').textContent = isBangumi ? '下载剧集' : '下载视频'
-    document.title = isBangumi ? '下载剧集' : '下载视频'
+    const isLive = `${payload.kind || ''}` === 'live'
+    state.isLive = isLive
+    const actionTitle = isLive ? '录制直播' : isBangumi ? '下载剧集' : '下载视频'
+    $('windowTitle').textContent = actionTitle
+    document.title = actionTitle
 
-    $('videoTitle').textContent = payload.title || (isBangumi ? '番剧' : 'B 站视频')
+    $('videoTitle').textContent = payload.title || (isLive ? '直播' : isBangumi ? '番剧' : '视频')
     state.duration = Number(payload.duration) || 0
     state.metaParts = []
     if (payload.owner) {
       state.metaParts.push(payload.owner)
     }
-    if (isBangumi && Array.isArray(payload.episodes) && payload.episodes.length > 0) {
+    if (isLive) {
+      state.metaParts.push('直播')
+    } else if (isBangumi && Array.isArray(payload.episodes) && payload.episodes.length > 0) {
       state.metaParts.push(`共 ${payload.episodes.length} 集`)
     } else {
       if (state.duration > 0) {
@@ -547,7 +568,16 @@
         state.metaParts.push(`P${payload.page}/${payload.pageCount}`)
       }
     }
-    $('videoMeta').textContent = state.metaParts.join(' · ') || (isBangumi ? '番剧' : 'B 站视频')
+    $('videoMeta').textContent = state.metaParts.join(' · ') || (isLive ? '直播' : isBangumi ? '番剧' : '视频')
+
+    // 直播只选清晰度：音频随流、录制产物也不做合并
+    $('audioQualityRow').hidden = isLive
+    $('audioCodecRow').hidden = isLive
+    $('mergeFormatRow').hidden = isLive
+    $('qualityTitle').textContent = '清晰度'
+    $('videoCodecTitle').textContent = isLive ? '流格式' : '视频编码'
+    $('codecHint').textContent = isLive ? '由站点提供的直播流格式' : 'AVC 兼容性更好，AV1 体积更小'
+    $('submitBtn').textContent = isLive ? '开始录制' : '开始下载'
 
     const thumbWrap = $('videoThumbWrap')
     const thumb = $('videoThumb')
@@ -609,7 +639,7 @@
       setFormError('请选择清晰度')
       return
     }
-    const audio = selectedAudioStream()
+    const audio = state.isLive ? null : selectedAudioStream()
 
     let selection
     if (state.isBangumi) {
@@ -633,19 +663,25 @@
         video: {
           url: video.url,
           codecs: video.codecs || '',
-          codecid: Number(video.codecid) || 0
+          codecid: Number(video.codecid) || 0,
+          // 嗅探来的流没有接口编码信息，但容器扩展名决定了产物后缀
+          ext: `${video.ext || ''}`
         },
         audio: audio
           ? {
             url: audio.url,
             codecs: audio.codecs || '',
-            codecid: Number(audio.codecid) || 0
+            codecid: Number(audio.codecid) || 0,
+            ext: `${audio.ext || ''}`
           }
           : null,
-        mergeFormat: state.mergeFormat
+        // 直播是单条流：录制产物不做合并，交给引擎按流本身处理
+        mergeFormat: state.isLive ? '' : state.mergeFormat,
+        live: state.isLive
       }
     }
 
+    const idleText = state.isLive ? '开始录制' : '开始下载'
     state.submitting = true
     const btn = $('submitBtn')
     btn.disabled = true
@@ -657,16 +693,16 @@
         setFormError((res && res.error) || '加入下载任务失败')
         state.submitting = false
         btn.disabled = false
-        btn.textContent = '开始下载'
+        btn.textContent = idleText
         return
       }
-      btn.textContent = '已加入下载任务'
+      btn.textContent = state.isLive ? '已加入录制任务' : '已加入下载任务'
       setTimeout(() => window.close(), 500)
     } catch (err) {
       setFormError(err && err.message ? err.message : '加入下载任务失败')
       state.submitting = false
       btn.disabled = false
-      btn.textContent = '开始下载'
+      btn.textContent = idleText
     }
   }
 
