@@ -1,4 +1,4 @@
-import * as curlParser from '@bany/curl-to-json'
+import curlParser from '@bany/curl-to-json'
 
 export const buildUrisFromCurl = (uris = []) => {
   return uris.map((uri) => {

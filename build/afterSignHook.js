@@ -21,14 +21,11 @@ exports.default = async function (context) {
     // dotenv 未安装时忽略——CI 环境变量直接注入
   }
 
-  const appBundleId = appId
   const appName = context.packager.appInfo.productFilename
   const appPath = join(appOutDir, `${appName}.app`)
 
   try {
     await notarize({
-      tool: 'notarytool',
-      appBundleId,
       appPath,
       teamId: process.env.TEAM_ID,
       appleId: process.env.APPLE_ID,

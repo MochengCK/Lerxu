@@ -190,7 +190,10 @@ export default defineConfig(({ command }) => {
                 NODE_OPTIONS: _no,
                 ...electronEnv
               } = process.env
-              args.startup(['.', '--no-sandbox'], { env: electronEnv })
+              // vite-plugin-electron 1.2 以 Vite root（src/renderer）作为子进程
+              // 工作目录，`electron .` 会在那里找 package.json 并弹
+              // "Error launching app"。这里显式传项目根目录的绝对路径。
+              args.startup([resolve('.'), '--no-sandbox'], { env: electronEnv })
             }
           }
         },

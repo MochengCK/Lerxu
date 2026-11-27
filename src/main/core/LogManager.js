@@ -51,7 +51,7 @@ electronLog.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {
 electronLog.transports.console.format = '[{level}] {text}'
 
 if (IS_PORTABLE) {
-  electronLog.transports.file.resolvePath = () => join(PORTABLE_EXECUTABLE_DIR, `${APP_NAME.toLowerCase()}.log`)
+  electronLog.transports.file.resolvePathFn = () => join(PORTABLE_EXECUTABLE_DIR, `${APP_NAME.toLowerCase()}.log`)
 }
 
 /* ============================================================

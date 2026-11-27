@@ -66,7 +66,10 @@ export class JSONRPCClient extends EventEmitter {
       try {
         data = await response.json()
       } catch (err) {
-        throw new Error(`Invalid JSON response: ${err && err.message ? err.message : err}`)
+        throw new Error(
+          `Invalid JSON response: ${err && err.message ? err.message : err}`,
+          { cause: err }
+        )
       }
       this._onmessage(data)
     } catch (err) {

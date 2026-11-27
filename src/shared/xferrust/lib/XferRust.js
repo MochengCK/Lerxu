@@ -356,7 +356,7 @@ export class XferRust extends JSONRPCClient {
       // BT 对端封禁：duration 秒后自动解封，<= 0 视为永久（aria2 语义）
       case 'banPeer': {
         const [gid, ip, duration = -1] = positional
-        Object.assign(params, { gid, ip, duration: Number(duration) ?? -1 })
+        Object.assign(params, { gid, ip, duration: Number(duration) })
         return { method: 'task.banPeer', params, transform: okToOK }
       }
       case 'unbanPeer': {
