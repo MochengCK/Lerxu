@@ -43,6 +43,7 @@ import {
   hasMergeRetryTimer
 } from '@/utils/mergeRetryManager'
 import { isTargetWrittenByEntries } from '@/utils/mergeInput'
+import { mediaKindOf, mediaStemOf, scanSiblingMedia, resolveGenericPair } from '@/utils/avPair'
 import { createCompleteNotifier } from '@/utils/completeNotify'
 import {
   mediaEngineBinName,
@@ -1151,26 +1152,10 @@ const dir = dirname(filePath)
       // `xxx_audio.m4a` 命名，而是把画面与声音下成**同 stem 的两个文件**：
       // `标题.mp4` + `标题.flac`。原有的 DASH 判据只认角色标记 / `.m4s`，
       // 永远认不出这一对 —— 两个文件都下完了也不会触发合并（用户报的形态）。
-      const GENERIC_VIDEO_EXTS = new Set(['mp4', 'm4v', 'mkv', 'webm', 'mov', 'flv', 'ts'])
-      const GENERIC_AUDIO_EXTS = new Set(['m4a', 'aac', 'flac', 'mp3', 'opus', 'ogg', 'oga', 'wav'])
-
-      function getGenericMediaKind (filename) {
-        const name = filename ? `${filename}` : ''
-        const dot = name.lastIndexOf('.')
-        if (dot <= 0 || dot === name.length - 1) return ''
-        const ext = name.slice(dot + 1).toLowerCase()
-        if (GENERIC_VIDEO_EXTS.has(ext)) return 'video'
-        if (GENERIC_AUDIO_EXTS.has(ext)) return 'audio'
-        return ''
-      }
-
-      function genericMediaStem (filename, cfg) {
-        const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
-        const noSuffix = stripDownloadingSuffixFromFilename(filename ? `${filename}` : '', suffix)
-        const noDup = stripDuplicateNumberBeforeExtension(noSuffix)
-        const dot = noDup.lastIndexOf('.')
-        return dot > 0 ? noDup.slice(0, dot) : noDup
-      }
+      //
+      // 判据本体在 `utils/avPair.js`（纯函数，有 `test/avpair` 覆盖）：
+      // 它决定"这两个文件算不算一对"，而配成一对之后**原始文件会被删掉**，
+      // 所以每条保守条件都必须可测，不能再埋在 4000 行的组件里靠肉眼维护。
 
       /**
        * 找出与 `finalPath` 同目录、同 stem 的另一半音/视频文件。
@@ -1193,59 +1178,37 @@ const dir = dirname(filePath)
           const dir = dirname(rawPath)
           const suffix = cfg && cfg.downloadingFileSuffix ? `${cfg.downloadingFileSuffix}` : ''
           const ownName = stripDownloadingSuffixFromFilename(basename(rawPath), suffix)
-          const ownKind = getGenericMediaKind(ownName)
-          if (!ownKind) return null
-          const stem = genericMediaStem(ownName, cfg)
-          if (!stem) return null
+          // 先按扩展名快速否掉：这是**每个任务下完**都会走一遭的路径，
+          // 普通文件（压缩包 / 文档 / 安装镜像）不该为它 readdir 一次目录。
+          if (!mediaKindOf(ownName)) return null
 
           let entries = []
           try { entries = readdirSync(dir) || [] } catch (_) { entries = [] }
-          const xferSet = new Set()
-          entries.forEach((e0) => {
-            const e = `${e0 || ''}`
-            if (e.toLowerCase().endsWith('.xfer')) {
-              xferSet.add(e.slice(0, -'.xfer'.length))
+          const names = entries.map(e => `${e || ''}`).filter(Boolean)
+
+          // 判据本体是纯函数（`utils/avPair.js`）：只认"同 stem + 互补角色"，
+          // 并把「还在下 / mtime 差太多 / 已经合过」这些保守条件一并算好。
+          const scan = scanSiblingMedia({
+            ownName,
+            names,
+            downloadingSuffix: suffix,
+            statOf: (name) => {
+              try {
+                const st = statSync(resolve(dir, name))
+                return { size: st.size || 0, mtimeMs: st.mtimeMs || 0 }
+              } catch (_) {
+                return null
+              }
             }
           })
-
-          const ready = { video: null, audio: null }
-          let pending = false
-          for (const e0 of entries) {
-            const e = `${e0 || ''}`
-            if (!e || e.toLowerCase().endsWith('.xfer')) continue
-            if (e.startsWith('.') && e.includes('.lerxu-merging-')) continue
-            const noSuffix = stripDownloadingSuffixFromFilename(e, suffix)
-            const kind = getGenericMediaKind(noSuffix)
-            if (!kind) continue
-            if (genericMediaStem(e, cfg) !== stem) continue
-            const isPending = !!(suffix && e.endsWith(suffix)) || xferSet.has(e) || xferSet.has(noSuffix)
-            if (isPending) {
-              pending = true
-              continue
-            }
-            const diskPath = resolve(dir, e)
-            let size = 0
-            let mtimeMs = 0
-            try {
-              const st = statSync(diskPath)
-              size = st.size || 0
-              mtimeMs = st.mtimeMs || 0
-            } catch (_) {
-              size = 0
-            }
-            if (size <= 0) continue
-            const prev = ready[kind]
-            if (!prev || size > prev.size) {
-              ready[kind] = { path: diskPath, size, mtimeMs }
-            }
-          }
+          if (!scan) return null
 
           // 另一半可能还没落盘：到任务列表 / 历史里找同 stem 的互补角色。
           // 找到才认为"这是一对"，避免把用户自己下的同名视频与音频硬凑起来。
           const taskKinds = { video: false, audio: false }
           let alreadyMerged = false
           let partnerPending = false
-          if (!ready.video || !ready.audio) {
+          if (!scan.video || !scan.audio) {
             const pendingStatuses = new Set([
               TASK_STATUS.ACTIVE, TASK_STATUS.WAITING, TASK_STATUS.PAUSED,
               TASK_STATUS.SEEDING, TASK_STATUS.MERGING
@@ -1260,9 +1223,9 @@ const dir = dirname(filePath)
                   if (!fp) continue
                   if (resolve(dirname(fp)) !== resolve(dir)) continue
                   const fName = stripDownloadingSuffixFromFilename(basename(fp), suffix)
-                  const kind = getGenericMediaKind(fName)
+                  const kind = mediaKindOf(fName)
                   if (!kind) continue
-                  if (genericMediaStem(fName, cfg) !== stem) continue
+                  if (mediaStemOf(fName, suffix) !== scan.stem) continue
                   if (t.dashMerged === true || t.pairMerged === true) alreadyMerged = true
                   taskKinds[kind] = true
                   const st = `${t.status || ''}`
@@ -1273,30 +1236,16 @@ const dir = dirname(filePath)
             }
           }
 
-          const hasVideo = !!(ready.video || taskKinds.video)
-          const hasAudio = !!(ready.audio || taskKinds.audio)
-          if (!hasVideo || !hasAudio) {
-            return null
-          }
-          // 两个文件都在盘上时，用 mtime 兜一层"是不是一起下的"：
-          // 相隔一小时以上的同名音视频多半是用户自己的独立文件，
-          // 不该因为同名就被合成一条。
-          let pairLike = !alreadyMerged
-          if (pairLike && ready.video && ready.audio) {
-            const vm = ready.video.mtimeMs || 0
-            const am = ready.audio.mtimeMs || 0
-            if (vm && am && Math.abs(vm - am) > 60 * 60 * 1000) {
-              pairLike = false
-            }
-          }
+          const decision = resolveGenericPair(scan, { taskKinds, partnerPending, alreadyMerged })
+          if (!decision) return null
           return {
             dir,
-            stem,
-            videoPath: ready.video ? ready.video.path : '',
-            audioPath: ready.audio ? ready.audio.path : '',
-            pending: pending || partnerPending || !ready.video || !ready.audio,
-            pairLike,
-            alreadyMerged
+            stem: decision.stem,
+            videoPath: decision.video ? resolve(dir, decision.video.name) : '',
+            audioPath: decision.audio ? resolve(dir, decision.audio.name) : '',
+            pending: decision.pending,
+            pairLike: decision.pairLike,
+            alreadyMerged: decision.alreadyMerged
           }
         } catch (_) {
           return null
