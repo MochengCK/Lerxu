@@ -98,7 +98,7 @@ export function getVideoMember (members) {
  *
  * 取画面流的文件名，去掉角色标记与重复序号。**扩展名不能用画面流自己的**：
  * 扩展发来的画面流固定是 fMP4（`xxx_video.mp4`），而最终产物容器由
- * 「视频 → 合并格式」决定（mp4 / mkv / ts），所以这里显式用当前配置的容器，
+ * 「视频 → 合并格式」决定（mp4 / mkv / webm / flv / ts），所以这里显式用当前配置的容器，
  * 否则下载阶段和完成弹窗会一直显示 `.mp4`，直到合并产物落盘才"突然"变成 `.mkv`。
  * 画面流信息缺失时返回空串，调用方回退到原逻辑。
  */
@@ -138,7 +138,7 @@ export function pairDisplayName (task, mergeFormat = '') {
 /** 「视频 → 合并格式」允许的产物容器；空值/未知值返回空串，调用方回退旧逻辑。 */
 function normalizeMergeContainer (mergeFormat) {
   const value = `${mergeFormat || ''}`.trim().toLowerCase()
-  return ['mp4', 'mkv', 'ts'].includes(value) ? value : ''
+  return ['mp4', 'mkv', 'webm', 'flv', 'ts'].includes(value) ? value : ''
 }
 
 function sumOf (members, key) {

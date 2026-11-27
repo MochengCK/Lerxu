@@ -1170,6 +1170,19 @@ const main = async () => {
     )
   })
 
+  check('条目「输出格式」菜单含 FLV（不含 WebM）', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    const m = src.match(/const MERGE_FORMAT_VALUES = \[([^\]]+)\]/)
+    assert(m, '找不到 MERGE_FORMAT_VALUES（结构变了？）')
+    const values = m[1].split(',').map(s => s.trim().replace(/^'+|'+$/g, ''))
+    assert(values.includes('flv'), `菜单缺 FLV：${values.join(' / ')}`)
+    assert(
+      !values.includes('webm'),
+      'WebM 不该出现在菜单里：H.264+AAC 的流装不进去，列出来只会让用户选到一个必失败项'
+    )
+    assert(values.includes(''), '必须有「跟随应用」空值项')
+  })
+
   // ------------------------------------------------------- 行内下载入口 DOM
   console.log('\n[5] 行内下载入口（DOM 桩）')
 
@@ -1261,7 +1274,7 @@ const main = async () => {
       markSent: () => true,
       // 条目里的「输出格式」设置：这个用例只关心整行点击，控件本身另有用例
       mergeFormatByUrl: new Map(),
-      MERGE_FORMAT_VALUES: ['', 'mp4', 'mkv', 'ts'],
+      MERGE_FORMAT_VALUES: ['', 'mp4', 'mkv', 'flv', 'ts'],
       mergeFormatOf: () => '',
       createFormatControl: () => ({ control: dom.createEl('span'), panel: dom.createEl('div') }),
       // 条目右侧的下载按钮：桩里做成真的可点节点，用例靠它验证"点按钮才发任务"

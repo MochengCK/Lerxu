@@ -261,9 +261,11 @@ section('解码方式')
   eq(mergeContainerOf('mp4'), 'mp4', 'mp4 → fmp4 容器')
   eq(mergeContainerOf('mkv'), 'mkv', 'mkv → matroska 容器')
   eq(mergeContainerOf('webm'), 'webm', 'webm → webm 容器')
+  eq(mergeContainerOf('flv'), 'flv', 'flv → flv 容器')
   eq(mergeContainerOf('ts'), 'ts', 'ts → mpeg-ts 容器')
   eq(mergeContainerOf('nonsense'), 'mp4', '认不出的格式回落 mp4（与历史行为一致）')
   eq(mergeOutputExtension('webm'), 'webm', 'WebM 的产物扩展名')
+  eq(mergeOutputExtension('flv'), 'flv', 'FLV 的产物扩展名')
   eq(mergeOutputExtension('mkv'), 'mkv', 'Matroska 的产物扩展名')
 }
 

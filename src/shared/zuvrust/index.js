@@ -200,6 +200,7 @@ export function mergeContainerOf (format) {
   const f = `${format || ''}`.toLowerCase()
   if (f === 'mkv' || f === 'matroska') return 'mkv'
   if (f === 'webm') return 'webm'
+  if (f === 'flv') return 'flv'
   if (f === 'ts' || f === 'mpegts') return 'ts'
   return 'mp4'
 }
@@ -214,6 +215,7 @@ export function mergeOutputExtension (format) {
   const container = mergeContainerOf(format)
   if (container === 'mkv') return 'mkv'
   if (container === 'webm') return 'webm'
+  if (container === 'flv') return 'flv'
   if (container === 'ts') return 'ts'
   return 'mp4'
 }

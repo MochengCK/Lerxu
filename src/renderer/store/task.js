@@ -1273,7 +1273,7 @@ const actions = {
     const headers = Array.isArray(data.headers) ? data.headers.slice() : []
     const options = { header: headers, referer: `${data.referer || ''}` }
     const pairId = audio ? `bili-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : ''
-    const mergeFormat = ['mp4', 'mkv', 'ts'].includes(`${data.mergeFormat || ''}`.trim().toLowerCase())
+    const mergeFormat = ['mp4', 'mkv', 'webm', 'flv', 'ts'].includes(`${data.mergeFormat || ''}`.trim().toLowerCase())
       ? `${data.mergeFormat}`.trim().toLowerCase()
       : ''
     const clipStart = Number(data.clipStart)

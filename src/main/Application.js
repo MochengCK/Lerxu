@@ -598,7 +598,7 @@ export default class Application extends EventEmitter {
     // 浏览器扩展里逐条选的「合并产出格式」。只有应用真支持的容器才往下传：
     // 这个值最终会决定合并/换封装的扩展名，不能让任意字符串进到文件名里。
     const requestedMergeFormat = `${mergeFormat || ''}`.trim().toLowerCase()
-    if (['mp4', 'mkv', 'webm', 'ts'].includes(requestedMergeFormat)) {
+    if (['mp4', 'mkv', 'webm', 'flv', 'ts'].includes(requestedMergeFormat)) {
       taskPayload.mergeFormat = requestedMergeFormat
     }
     // 片段下载（秒）：扩展里拖出来的时间区间，原样带到任务选项
@@ -1119,7 +1119,7 @@ export default class Application extends EventEmitter {
       const preferredFormat = `${this.configManager.getUserConfig('merge-format', 'mp4') || 'mp4'}`.trim().toLowerCase()
       this._biliResourceSessions.set(token, {
         payload,
-        mergeFormat: ['mp4', 'mkv', 'ts'].includes(preferredFormat) ? preferredFormat : 'mp4',
+        mergeFormat: ['mp4', 'mkv', 'webm', 'flv', 'ts'].includes(preferredFormat) ? preferredFormat : 'mp4',
         // 番剧资源窗：窗口选完集数后，主进程要回到**发起它的那条扩展连接**
         // 和**那个标签页**取每一集的播放地址（页面上下文才带 Cookie / Referer）。
         ws: ws || null,
@@ -4785,7 +4785,7 @@ export default class Application extends EventEmitter {
       // 直播是单条流：不套用合并格式（录制产物由引擎按流本身处理）
       const mergeFormat = isLivePayload
         ? ''
-        : ['mp4', 'mkv', 'ts'].includes(`${selection.mergeFormat || ''}`)
+        : ['mp4', 'mkv', 'webm', 'flv', 'ts'].includes(`${selection.mergeFormat || ''}`)
           ? `${selection.mergeFormat}`
           : session.mergeFormat
 

@@ -5,7 +5,7 @@
 
   const token = new URLSearchParams(window.location.search).get('token') || ''
   const $ = (id) => document.getElementById(id)
-  const MERGE_FORMATS = ['mp4', 'mkv', 'ts']
+  const MERGE_FORMATS = ['mp4', 'mkv', 'flv', 'ts']
 
   const state = {
     mergeFormat: 'mp4',

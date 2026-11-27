@@ -274,8 +274,9 @@ check('未配置合并格式时回退到画面流扩展名', () => {
   assertEqual(list[0].pairDisplayName, '短片.mp4')
 })
 
-check('合并格式为 mkv / ts 时预览名用配置的容器', () => {
+check('合并格式为 mkv / flv / ts 时预览名用配置的容器', () => {
   assertEqual(collapseTaskPairs([video, audio], { mergeFormat: 'mkv' }).list[0].pairDisplayName, '短片.mkv')
+  assertEqual(collapseTaskPairs([video, audio], { mergeFormat: 'flv' }).list[0].pairDisplayName, '短片.flv')
   assertEqual(collapseTaskPairs([video, audio], { mergeFormat: 'TS' }).list[0].pairDisplayName, '短片.ts')
   assertEqual(collapseTaskPairs([video, audio], { mergeFormat: 'avi' }).list[0].pairDisplayName, '短片.mp4', '未知格式回退')
 })

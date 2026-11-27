@@ -2415,7 +2415,7 @@ const dir = dirname(filePath)
           const history = taskHistory.getAllHistory() || []
           const matched = history.find(t => t && `${t.gid}` === gid)
           const value = matched && matched.mergeFormat ? `${matched.mergeFormat}`.trim().toLowerCase() : ''
-          return ['mp4', 'mkv', 'webm', 'ts'].includes(value) ? value : ''
+          return ['mp4', 'mkv', 'webm', 'flv', 'ts'].includes(value) ? value : ''
         } catch (_) {
           return ''
         }
