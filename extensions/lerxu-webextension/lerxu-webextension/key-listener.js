@@ -5382,13 +5382,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
   }
 
-  /** 分类名（拿不到就返回空串）。 */
+  /** 分类名（拿不到就返回空串）。
+   *
+   * 不能用 `.title-txt` 兜底：无分类的合集里，整个列表容器（class 带 section）
+   * 下第一个 `.title-txt` 就是第一个视频的标题，会把每个视频都标成同一个
+   * 「分类名」，资源窗里看起来所有标题都一样（用户点名）。
+   */
   const collectionSectionTitle = (el) => {
     try {
       const selectors = [
         '.video-pod__header .title', '.video-pod__header',
         '[class*="section-title"]', '[class*="section-header"]',
-        '.title-txt', '[class*="list-title"]'
+        '[class*="list-title"]'
       ]
       for (const sel of selectors) {
         const node = el.querySelector(sel)
@@ -6228,6 +6233,210 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
   // ─── B 站接口 ───
 
+  // ─── WBI 签名：纯算法部分（无 DOM / 无网络，单测直接跑这一段） ───
+  //
+  // 为什么要签名：B 站的「视频取流」（`x/player/playurl`）与「视频信息」
+  // （`x/web-interface/view`）自 2023 年起走 WBI 鉴权 —— 不带 `w_rid` / `wts`
+  // 时**头几次能过，之后开始返回 -403 / -352**。这正是"有时候获取失败"的来源：
+  // 用户点开一个视频能拿地址，连续翻几个 / 合集批量取到一半就整批失败。
+  // 官方算法见 bilibili-API-collect 的 `docs/misc/sign/wbi.md`。
+
+  /** WBI 的 64 位置换表（官方实现的固定常量，别改）。 */
+  const WBI_MIXIN_TAB = [
+    46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
+    27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
+    37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
+    22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52
+  ]
+
+  /**
+   * MD5（十六进制小写）。
+   *
+   * 必须自带：`crypto.subtle` **不支持 MD5**（只给 SHA-1/256/384/512），
+   * 而 WBI 的 `w_rid` 就是 MD5(query + mixinKey)。别改成第三方库 ——
+   * 扩展没有构建步骤，打包白名单里也不允许 node_modules。
+   */
+  const md5 = (input) => {
+    const msg = new TextEncoder().encode(input)
+    const len = msg.length
+    // 补位：0x80 + 若干 0 + 8 字节小端位长，凑到 64 字节的整数倍
+    const padded = new Uint8Array((((len + 8) >> 6) + 1) * 64)
+    padded.set(msg)
+    padded[len] = 0x80
+    const view = new DataView(padded.buffer)
+    const bitLen = len * 8
+    view.setUint32(padded.length - 8, bitLen >>> 0, true)
+    view.setUint32(padded.length - 4, Math.floor(bitLen / 0x100000000), true)
+    let a0 = 0x67452301
+    let b0 = 0xefcdab89
+    let c0 = 0x98badcfe
+    let d0 = 0x10325476
+    const S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21]
+    const K = new Uint32Array(64)
+    for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000) >>> 0
+    const M = new Uint32Array(16)
+    for (let off = 0; off < padded.length; off += 64) {
+      for (let i = 0; i < 16; i++) M[i] = view.getUint32(off + i * 4, true)
+      let A = a0
+      let B = b0
+      let C = c0
+      let D = d0
+      for (let i = 0; i < 64; i++) {
+        let F
+        let g
+        if (i < 16) {
+          F = (B & C) | (~B & D)
+          g = i
+        } else if (i < 32) {
+          F = (D & B) | (~D & C)
+          g = (5 * i + 1) % 16
+        } else if (i < 48) {
+          F = B ^ C ^ D
+          g = (3 * i + 5) % 16
+        } else {
+          F = C ^ (B | ~D)
+          g = (7 * i) % 16
+        }
+        const tmp = D
+        D = C
+        C = B
+        const sum = (A + F + K[i] + M[g]) >>> 0
+        const s = S[(i >> 4) * 4 + (i % 4)]
+        B = (B + ((sum << s) | (sum >>> (32 - s)))) >>> 0
+        A = tmp
+      }
+      a0 = (a0 + A) >>> 0
+      b0 = (b0 + B) >>> 0
+      c0 = (c0 + C) >>> 0
+      d0 = (d0 + D) >>> 0
+    }
+    const out = new Uint8Array(16)
+    const ov = new DataView(out.buffer)
+    ov.setUint32(0, a0, true)
+    ov.setUint32(4, b0, true)
+    ov.setUint32(8, c0, true)
+    ov.setUint32(12, d0, true)
+    return [...out].map((b) => b.toString(16).padStart(2, '0')).join('')
+  }
+
+  /** `img_key + sub_key` → 32 位 mixinKey（按置换表取字符）。 */
+  const wbiMixinKey = (orig) => WBI_MIXIN_TAB.map((i) => orig[i] || '').join('').slice(0, 32)
+
+  /** WBI 的值编码：先剔掉 `!'()*`，再按百分号编码（空格必须是 %20，不能是 +）。 */
+  const wbiEncode = (value) => encodeURIComponent(String(value).replace(/[!'()*]/g, ''))
+
+  /**
+   * 生成带签名的查询串：键名排序 → 拼接 → `md5(query + mixinKey)` 作为 `w_rid`。
+   * `wts` 参与排序与签名，`w_rid` 追加在最后、不参与签名。
+   */
+  const wbiQuery = (params, mixinKey, wts) => {
+    const all = { ...params, wts }
+    const query = Object.keys(all)
+      .sort()
+      .map((key) => `${wbiEncode(key)}=${wbiEncode(all[key])}`)
+      .join('&')
+    return `${query}&w_rid=${md5(query + mixinKey)}`
+  }
+  // ─── /WBI 签名：纯算法部分 ───
+
+  /** WBI 口令（mixinKey）缓存：B 站按天轮换，30 分钟刷新一次足够。 */
+  const WBI_KEY_TTL_MS = 30 * 60 * 1000
+  const wbiKeys = { mixinKey: '', at: 0, pending: null }
+
+  /**
+   * 取 mixinKey（`nav` 接口的 `wbi_img.img_url` / `sub_url` 里藏着两段口令）。
+   *
+   * 拿不到就返回空串：调用方退回**未签名**请求 —— 老的接口形态还能用一阵，
+   * 总比因为 nav 一次失败就完全不能下载好。`force` 用于签名被拒（-403）后
+   * 强制换新口令再试一次。
+   */
+  const loadWbiMixinKey = async (force = false) => {
+    const fresh = wbiKeys.mixinKey && Date.now() - wbiKeys.at < WBI_KEY_TTL_MS
+    if (!force && fresh) return wbiKeys.mixinKey
+    if (wbiKeys.pending) return wbiKeys.pending
+    const task = (async () => {
+      try {
+        const resp = await fetch('https://api.bilibili.com/x/web-interface/nav', {
+          credentials: 'include'
+        })
+        if (resp && resp.ok) {
+          const data = await resp.json()
+          const img = (data && data.data && data.data.wbi_img && data.data.wbi_img.img_url) || ''
+          const sub = (data && data.data && data.data.wbi_img && data.data.wbi_img.sub_url) || ''
+          const stem = (u) => `${u}`.slice(`${u}`.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '')
+          const key = wbiMixinKey(stem(img) + stem(sub))
+          if (key.length === 32) {
+            wbiKeys.mixinKey = key
+            wbiKeys.at = Date.now()
+            return key
+          }
+        }
+        log('bili wbi: nav 里没有拿到口令')
+      } catch (e) {
+        log('bili wbi: 取口令失败', e)
+      }
+      // 刷新失败时沿用旧口令（它通常还没过期），没有就返回空串
+      return wbiKeys.mixinKey || ''
+    })()
+    wbiKeys.pending = task
+    try {
+      return await task
+    } finally {
+      wbiKeys.pending = null
+    }
+  }
+
+  /** 端点 + 参数 → 完整 URL（有口令就签名，没有就退回未签名）。 */
+  const biliSignedUrl = async (endpoint, params) => {
+    const mixinKey = await loadWbiMixinKey()
+    if (!mixinKey) {
+      const query = Object.keys(params)
+        .map((key) => `${wbiEncode(key)}=${wbiEncode(params[key])}`)
+        .join('&')
+      return `${endpoint}?${query}`
+    }
+    return `${endpoint}?${wbiQuery(params, mixinKey, Math.round(Date.now() / 1000))}`
+  }
+
+  /**
+   * 带 WBI 签名的接口请求。
+   *
+   * `-403` / `-352` 是签名或风控被拒：换一次口令重签再试（`wbi` 口令会轮换，
+   * 长时间挂着的页面很容易拿着过期口令）。其它错误码原样返回给调用方。
+   */
+  const biliApiSigned = async (endpoint, params, attempts = 3) => {
+    let last = null
+    for (let round = 0; round < 2; round++) {
+      const url = await biliSignedUrl(endpoint, params)
+      last = await biliApiJson(url, attempts)
+      const code = last && typeof last.code === 'number' ? last.code : 0
+      if (code !== -403 && code !== -352) return last
+      log('bili api rejected, refreshing wbi keys', code, endpoint)
+      await loadWbiMixinKey(true)
+    }
+    return last
+  }
+
+  /**
+   * B 站接口的全局节流闸：**所有**请求串行、相邻间隔 ≥250ms。
+   *
+   * 合集批量取流、面板"共 N P"预取与用户手动点下载会同时打接口，并发一上来
+   * 很容易吃 -412。调用点各自 sleep 挡不住跨路径的并发，这里统一排队。
+   */
+  const BILI_API_MIN_GAP_MS = 250
+  let biliApiChain = Promise.resolve()
+  let biliApiLastAt = 0
+  const biliApiGate = () => {
+    const run = async () => {
+      const wait = BILI_API_MIN_GAP_MS - (Date.now() - biliApiLastAt)
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+      biliApiLastAt = Date.now()
+    }
+    const next = biliApiChain.then(run, run)
+    biliApiChain = next.catch(() => {})
+    return next
+  }
+
   /**
    * B 站接口里"值得重试"的返回码：限频 / 风控 / 服务繁忙。
    *
@@ -6242,6 +6451,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   const biliApiJson = async (url, attempts = 3) => {
     for (let i = 0; i < attempts; i++) {
       try {
+        // 所有接口请求共用一个节流闸（串行 + 最小间隔），避免并发触发 -412
+        await biliApiGate()
         const resp = await fetch(url, { credentials: 'include' })
         if (resp && resp.ok) {
           const data = await resp.json()
@@ -6263,25 +6474,25 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   }
 
   /**
-   * 取流接口的 id 参数。
+   * 取流接口的 id 参数（对象形态：WBI 签名要对**每个**参数算一遍）。
    *
    * 优先 BV 号；只有 av 号（部分老页面 / 课程页不给 BV）时退回 aid ——
    * 以前写死 `bvid=`，这类条目必然拿到 code != 0 而被静默跳过（用户点名）。
    */
-  const biliVideoQuery = (video) => {
+  const biliVideoParams = (video) => {
     try {
       const v = video || {}
       const bv = `${v.bv || ''}`.trim()
-      if (/^BV/i.test(bv)) return `bvid=${encodeURIComponent(bv)}`
+      if (/^BV/i.test(bv)) return { bvid: bv }
       const aid = `${v.aid || ''}`.trim()
-      if (/^\d+$/.test(aid)) return `aid=${aid}`
+      if (/^\d+$/.test(aid)) return { aid }
       const url = `${v.url || ''}`
       const mBv = url.match(/(BV[0-9A-Za-z]{8,})/)
-      if (mBv) return `bvid=${encodeURIComponent(mBv[1])}`
+      if (mBv) return { bvid: mBv[1] }
       const mAid = url.match(/\/video\/av(\d+)/i) || url.match(/[?&]aid=(\d+)/)
-      if (mAid) return `aid=${mAid[1]}`
+      if (mAid) return { aid: mAid[1] }
     } catch (e) {}
-    return ''
+    return null
   }
 
   /** 从 view 响应里取出分P 列表。 */
@@ -6329,13 +6540,18 @@ if (typeof window !== 'undefined' && window.addEventListener) {
    */
   const fetchBiliPlayUrl = async (video, cid) => {
     try {
-      const query = biliVideoQuery(video)
-      if (!query || !cid) return null
-      const data = await biliApiJson(
-        `https://api.bilibili.com/x/player/playurl?${query}&cid=${cid}&qn=80&fnval=16&fnver=0&fourk=1`
-      )
+      const params = biliVideoParams(video)
+      if (!params || !cid) return null
+      const data = await biliApiSigned('https://api.bilibili.com/x/player/playurl', {
+        ...params,
+        cid,
+        qn: 80,
+        fnval: 16,
+        fnver: 0,
+        fourk: 1
+      })
       if (!data || data.code !== 0 || !data.data) {
-        log('Failed to get playurl for', query, 'cid', cid, data)
+        log('Failed to get playurl for', params, 'cid', cid, data)
         return null
       }
       return parseBiliPlayData(data.data)
@@ -6353,15 +6569,15 @@ if (typeof window !== 'undefined' && window.addEventListener) {
    */
   const fetchBiliVideoStream = async (video, cid) => {
     try {
-      const query = biliVideoQuery(video)
-      if (!query) {
+      const params = biliVideoParams(video)
+      if (!params) {
         log('No bilibili video id for', video && video.url)
         return null
       }
       // 1. 获取 cid 与分P 列表
-      const viewData = await biliApiJson(`https://api.bilibili.com/x/web-interface/view?${query}`)
+      const viewData = await biliApiSigned('https://api.bilibili.com/x/web-interface/view', params)
       if (!viewData || viewData.code !== 0 || !viewData.data || !viewData.data.cid) {
-        log('Failed to get cid for', query, viewData)
+        log('Failed to get cid for', params, viewData)
         return null
       }
       const pages = parseBiliPages(viewData)
@@ -6385,9 +6601,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
    */
   const fetchBiliVideoPages = async (video) => {
     try {
-      const query = biliVideoQuery(video)
-      if (!query) return []
-      const data = await biliApiJson(`https://api.bilibili.com/x/web-interface/view?${query}`)
+      const params = biliVideoParams(video)
+      if (!params) return []
+      const data = await biliApiSigned('https://api.bilibili.com/x/web-interface/view', params)
       if (!data || data.code !== 0 || !data.data) return []
       return parseBiliPages(data)
     } catch (e) {
@@ -6512,7 +6728,56 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     return { videos, audios }
   }
 
-  /** 番剧一集的展示名：`第N集`（接口 title 只有数字时补前缀）+ 副标题。 */
+  /**
+   * 普通稿件（合集里的单个视频）按 bvid / aid + cid 取完整流清单。
+   *
+   * 应用资源窗提交时会反向请求这里；合集条目只有 bvid，没有番剧的 epId，
+   * 所以走 x/player/playurl 而不是 pgc 接口。cid 缺失时先打一次 view。
+   *
+   * 返回 `{ videos, audios }` 或 `{ error }`（**不抛异常**：批量取流时一集失败
+   * 不能让整批都失败，调用方要把失败的那几集单独报给用户）。
+   */
+  const fetchBiliUgcEpisodeStreams = async (ep) => {
+    try {
+      const params = biliVideoParams({ bv: ep && ep.bvid, aid: ep && ep.aid })
+      if (!params) return { error: '缺少 BV 号 / av 号' }
+      let cid = `${(ep && ep.cid) || ''}`
+      if (!cid) {
+        const viewData = await biliApiSigned('https://api.bilibili.com/x/web-interface/view', params)
+        if (!viewData || viewData.code !== 0 || !viewData.data) {
+          return { error: `取视频信息失败（${viewData && viewData.code}）` }
+        }
+        cid = `${viewData.data.cid || ''}`
+      }
+      if (!cid) return { error: '视频没有可用的 cid' }
+      const playData = await biliApiSigned('https://api.bilibili.com/x/player/playurl', {
+        ...params,
+        cid,
+        qn: 127,
+        fnval: 4048,
+        fnver: 0,
+        fourk: 1
+      })
+      if (!playData || playData.code !== 0 || !playData.data) {
+        const code = playData && playData.code
+        const message = playData && playData.message ? ` ${playData.message}` : ''
+        return { error: `取播放地址失败（${code}${message}）` }
+      }
+      const { videos, audios } = buildBiliStreamsFromPlayData(playData.data)
+      if (!videos.length) return { error: '接口没有返回可用的画面流' }
+      return { videos, audios }
+    } catch (e) {
+      log('fetchBiliUgcEpisodeStreams error', ep && (ep.bvid || ep.aid), e)
+      return { error: e && e.message ? e.message : '请求异常' }
+    }
+  }
+
+  /** "12:34" / "1:02:03" → 秒；拿不到返回 0。 */
+  const parseDurationText = (text) => {
+    const parts = `${text || ''}`.split(':').map((part) => Number(part))
+    if (!parts.length || parts.some((n) => !Number.isFinite(n))) return 0
+    return parts.reduce((total, n) => total * 60 + n, 0)
+  }
   const biliEpisodeLabel = (episode) => {
     const ep = episode || {}
     const title = `${ep.title || ''}`.trim()
@@ -6589,25 +6854,37 @@ if (typeof window !== 'undefined' && window.addEventListener) {
   /** 取番剧某一集的播放地址（pgc/player/web/playurl），流形状与普通稿件一致。 */
   const fetchBiliPgcPlay = async (episode) => {
     try {
-      const params = [
-        `ep_id=${encodeURIComponent(episode.epId)}`,
-        `cid=${encodeURIComponent(episode.cid)}`
-      ]
-      if (episode.bvid) params.push(`bvid=${encodeURIComponent(episode.bvid)}`)
-      const data = await biliApiJson(
-        `https://api.bilibili.com/pgc/player/web/playurl?${params.join('&')}&qn=127&fnval=4048&fnver=0&fourk=1`
-      )
+      const params = {
+        ep_id: episode.epId,
+        cid: episode.cid,
+        qn: 127,
+        fnval: 4048,
+        fnver: 0,
+        fourk: 1
+      }
+      if (episode.bvid) params.bvid = episode.bvid
+      let data = await biliApiSigned('https://api.bilibili.com/pgc/player/web/playurl', params)
+      // pgc 接口是 Cookie 鉴权，文档没要求 WBI；万一多出来的签名参数被判非法参数，
+      // 退回未签名再试一次（这条接口不带 w_rid 本来也能过）。
+      if (data && data.code === -400) {
+        const query = Object.keys(params)
+          .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
+          .join('&')
+        data = await biliApiJson(`https://api.bilibili.com/pgc/player/web/playurl?${query}`)
+      }
       const play = data && (data.result || data.data)
       if (!data || data.code !== 0 || !play) {
+        const code = data && data.code
+        const message = data && data.message ? ` ${data.message}` : ''
         log('Failed to get bangumi playurl', episode.epId, data && (data.message || data.code))
-        return null
+        return { error: `取播放地址失败（${code}${message}）` }
       }
       const { videos, audios } = buildBiliStreamsFromPlayData(play)
-      if (!videos.length) return null
+      if (!videos.length) return { error: '接口没有返回可用的画面流' }
       return { videos, audios }
     } catch (e) {
       log('fetchBiliPgcPlay error for', episode && episode.epId, e)
-      return null
+      return { error: e && e.message ? e.message : '请求异常' }
     }
   }
 
@@ -6616,7 +6893,9 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     const info = await fetchBiliBangumiSeason(bangumi)
     const current = pickBiliCurrentBangumiEpisode(bangumi, info.episodes)
     const play = await fetchBiliPgcPlay(current)
-    if (!play) throw new Error('no video stream')
+    if (!play || play.error || !play.videos) {
+      throw new Error((play && play.error) || 'no video stream')
+    }
     const referer = window.location.href || `https://www.bilibili.com/bangumi/play/ep${current.epId}`
     const headers = buildPageResourceHeaders(referer)
     return {
@@ -6662,6 +6941,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       })
     } catch (e) {
       log('openBiliBangumiResourceDialog error', e)
+      if (btn) btn.title = `获取失败：${(e && e.message) || '未知错误'}`
       if (countSpan) {
         countSpan.textContent = '获取失败'
         setTimeout(() => {
@@ -6689,18 +6969,45 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     }
     ;(async () => {
       const results = []
-      for (const ep of episodes) {
-        const fetched = await fetchBiliPgcPlay(ep)
-        if (!fetched) {
-          throw new Error(`无法获取「${biliEpisodeLabel(ep) || ep.epId}」的播放地址`)
+      // 单集失败**不拖垮整批**：番剧里付费 / 地区限制 / 已下架的集数取不到流很常见，
+      // 以前一集失败就 throw，用户选 10 集拿到的是"获取失败"、一集都下不了
+      // （现象就是"有时候获取失败"）。现在把失败的那几集单独列出来，其余照常下发。
+      const failed = []
+      for (let i = 0; i < episodes.length; i++) {
+        const ep = episodes[i]
+        // 合集条目只有 bvid / aid；番剧才有 epId。两条接口不能混用。
+        const fetched = ep && (ep.bvid || ep.aid)
+          ? await fetchBiliUgcEpisodeStreams(ep)
+          : await fetchBiliPgcPlay(ep)
+        const label = biliEpisodeLabel(ep) || `${ep && ep.epId ? ep.epId : ''}`
+        if (!fetched || fetched.error || !Array.isArray(fetched.videos) || !fetched.videos.length) {
+          failed.push({
+            epId: `${(ep && ep.epId) || ''}`,
+            label,
+            reason: (fetched && fetched.error) || '没有可用的视频流'
+          })
+        } else {
+          results.push({
+            epId: `${ep.epId}`,
+            videos: fetched.videos,
+            audios: fetched.audios
+          })
         }
-        results.push({
-          epId: `${ep.epId}`,
-          videos: fetched.videos,
-          audios: fetched.audios
-        })
+        // 合集可能有几十个视频：串行 + 间隔，避免一次性打满接口触发限频
+        if (i < episodes.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 250))
+        }
       }
-      sendResponse({ result: { episodes: results } })
+      if (!results.length) {
+        const first = failed[0]
+        sendResponse({
+          error: first
+            ? `无法获取「${first.label}」的播放地址：${first.reason}`
+            : '获取播放地址失败'
+        })
+        return
+      }
+      sendResponse({ result: { episodes: results, failed } })
     })().catch((err) => {
       sendResponse({ error: err && err.message ? err.message : '获取播放地址失败' })
     })
@@ -6734,10 +7041,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     if (countSpan) countSpan.textContent = '获取中…'
 
     try {
-      const query = id.bvid ? `bvid=${encodeURIComponent(id.bvid)}` : `aid=${encodeURIComponent(id.aid)}`
-      const viewData = await biliApiJson(`https://api.bilibili.com/x/web-interface/view?${query}`)
+      const params = id.bvid ? { bvid: id.bvid } : { aid: id.aid }
+      const viewData = await biliApiSigned('https://api.bilibili.com/x/web-interface/view', params)
       if (!viewData || viewData.code !== 0 || !viewData.data) {
-        throw new Error(`view ${viewData && viewData.code}`)
+        throw new Error(`view ${viewData && viewData.code}${viewData && viewData.message ? `（${viewData.message}）` : ''}`)
       }
       const view = viewData.data
       const pages = parseBiliPages(viewData)
@@ -6747,11 +7054,20 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
       // fnval=4048：DASH + HDR + 4K + 杜比音频 + 杜比视界 + 8K + AV1，
       // 少一个 flag 就可能拿不到 AV1 / Hi-Res，弹窗里就少了可选项。
-      const playData = await biliApiJson(
-        `https://api.bilibili.com/x/player/playurl?${query}&cid=${cid}&qn=127&fnval=4048&fnver=0&fourk=1`
-      )
+      const playData = await biliApiSigned('https://api.bilibili.com/x/player/playurl', {
+        ...params,
+        cid,
+        qn: 127,
+        fnval: 4048,
+        fnver: 0,
+        fourk: 1
+      })
       if (!playData || playData.code !== 0 || !playData.data) {
-        throw new Error(`playurl ${playData && playData.code}`)
+        const code = playData && playData.code
+        const hint = code === -352 || code === -403
+          ? '（触发了 B 站风控，稍后重试或刷新页面）'
+          : ''
+        throw new Error(`playurl ${code}${hint}`)
       }
       const play = playData.data
       const { videos, audios } = buildBiliStreamsFromPlayData(play)
@@ -6786,6 +7102,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       })
     } catch (e) {
       log('openBiliResourceDialog error', e)
+      if (btn) btn.title = `获取失败：${(e && e.message) || '未知错误'}`
       if (countSpan) {
         countSpan.textContent = '获取失败'
         setTimeout(() => {
@@ -6867,6 +7184,11 @@ if (typeof window !== 'undefined' && window.addEventListener) {
         }
       }
     } catch (e) {}
+    // 侧栏没有播放标记时（未自动播放 / 改版），当前页的视频就是正在看的那个
+    try {
+      const fromUrl = getBiliVideoIdFromUrl()
+      return (fromUrl && fromUrl.bvid) || ''
+    } catch (e) {}
     return ''
   }
 
@@ -6900,6 +7222,76 @@ if (typeof window !== 'undefined' && window.addEventListener) {
       return bottom
     } catch (e) {
       return 0
+    }
+  }
+
+  /**
+   * 合集清单 → 应用资源窗 payload。
+   *
+   * 与番剧同一套选集结构：窗口只选视频与全局画质，具体每条视频的播放地址
+   * 由应用反向请求内容脚本去取（避免这里一次性打几十个 playurl）。
+   */
+  const buildBiliCollectionResourcePayload = async (videos, collectionTitle) => {
+    const referer = window.location.href || ''
+    const headers = buildPageResourceHeaders(referer)
+    const currentBv = detectCurrentPlayingBv()
+    const episodes = videos.map((video, index) => ({
+      epId: video.bv || video.aid || `video-${index}`,
+      cid: '',
+      bvid: video.bv || '',
+      aid: video.aid || '',
+      title: `第${index + 1}个`,
+      longTitle: video.section ? `${video.section} · ${video.title}` : video.title,
+      duration: parseDurationText(video.duration)
+    }))
+    const currentIndex = videos.findIndex(video => video.bv && video.bv === currentBv)
+    // 认不出当前视频时仍用第一条的视频流撑起画质列表，但不要把第一条标成“正在播放”
+    const streamIndex = currentIndex >= 0 ? currentIndex : 0
+    const currentEp = episodes[streamIndex]
+    const play = currentEp ? await fetchBiliUgcEpisodeStreams(currentEp) : null
+    if (!play || play.error || !Array.isArray(play.videos) || !play.videos.length) {
+      throw new Error((play && play.error) || 'no video stream')
+    }
+    return {
+      kind: 'collection',
+      title: collectionTitle || getPageResourceTitle() || '合集',
+      cover: getPageResourceCover(),
+      owner: '',
+      referer,
+      headers,
+      currentEpId: currentIndex >= 0 ? currentEp.epId : '',
+      duration: 0,
+      episodes,
+      videos: play.videos,
+      audios: play.audios
+    }
+  }
+
+  /** 合集按钮 → 应用内资源窗；应用不可达时才退回网页内合集面板。 */
+  const openBiliCollectionResourceDialog = async (videos, collectionTitle) => {
+    if (resourceDialogRequesting) return
+    resourceDialogRequesting = true
+    const btnText = document.querySelector('#lerxu-collection-download-btn span')
+    const oldText = btnText ? btnText.textContent : ''
+    if (btnText) btnText.textContent = '获取中…'
+    const restore = () => {
+      if (btnText && btnText.textContent === '获取中…') btnText.textContent = oldText || '下载合集'
+    }
+    try {
+      const payload = await buildBiliCollectionResourcePayload(videos, collectionTitle)
+      chrome.runtime.sendMessage({ type: 'openBiliResourceDialog', payload }, (resp) => {
+        resourceDialogRequesting = false
+        restore()
+        if (chrome.runtime.lastError || !resp || !resp.ok) {
+          log('open collection resource dialog failed, falling back to in-page panel', chrome.runtime.lastError)
+          showCollectionDownloadDialog(videos, collectionTitle)
+        }
+      })
+    } catch (e) {
+      resourceDialogRequesting = false
+      restore()
+      log('openBiliCollectionResourceDialog error', e)
+      showCollectionDownloadDialog(videos, collectionTitle)
     }
   }
 
@@ -7487,8 +7879,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
           log(`Found ${videos.length} videos in collection, showing dialog`)
 
-          // 弹出下载弹窗
-          showCollectionDownloadDialog(videos, title)
+          // 打开应用内下载窗口（资源窗里选集 + 画质）；应用不可达时回退网页面板
+          openBiliCollectionResourceDialog(videos, title)
 
         } catch (err) {
           log('Collection download error:', err)

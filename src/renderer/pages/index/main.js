@@ -81,9 +81,22 @@ function init (config) {
         // 番剧资源窗会一次带回多集（selections），普通视频仍是单条选择。
         // 串行建任务：一集是一对音视频，并发发会把引擎与配对簿记搅在一起。
         const list = Array.isArray(selection && selection.selections) ? selection.selections : [selection]
+        // 番剧 / 合集里取不到流的集数（付费 / 地区限制 / 已下架）：其余集照常建任务，
+        // 这里把跳过的名单提示出来 —— 否则用户只会看到"选 10 集下出来 8 集"。
+        const skipped = Array.isArray(selection && selection.skipped) ? selection.skipped : []
         ;(async () => {
           for (const item of list) {
             await taskStore.addBiliResourceTasks(item)
+          }
+          if (skipped.length) {
+            const names = skipped
+              .slice(0, 3)
+              .map(item => `${(item && item.title) || ''}`.trim())
+              .filter(Boolean)
+              .join('、')
+            ElMessage.warning(
+              `已跳过 ${skipped.length} 集：${names}${skipped.length > 3 ? '…' : ''}（可能无权限或已下架）`
+            )
           }
         })().catch((err) => {
           ElMessage.error(err && err.message ? err.message : '加入下载任务失败')

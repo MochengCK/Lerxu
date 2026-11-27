@@ -1055,6 +1055,121 @@ const main = async () => {
     assert(depth === 0, `CSS 花括号不配平（差 ${depth} 个）：缺失的 } 会让后面的规则整段失效`)
   })
 
+  // ------------------------------------------------------- B 站接口（WBI）
+  console.log('\n[4.5] B 站接口：WBI 签名与节流')
+
+  /**
+   * 把 key-listener.js 里 WBI 的**纯算法段**抽出来跑（无 DOM / 无网络）。
+   *
+   * 为什么必须有这组用例：WBI 的 md5/置换表/参数过滤任何一处写错，接口都不会
+   * 立刻报错 —— 而是**头几次成功、之后开始 -403/-352**，表现成"有时候获取失败"。
+   * 这种错误只有拿官方测试向量对拍才能提前发现。
+   */
+  const loadWbi = () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    const start = src.indexOf('// ─── WBI 签名：纯算法部分')
+    const end = src.indexOf('// ─── /WBI 签名：纯算法部分')
+    assert(start >= 0 && end > start, '未能在 key-listener.js 中定位 WBI 纯算法段（结构变了？测试需同步）')
+    const code = `(function () {\n${src.slice(start, end)}\n` +
+      'return { md5, wbiMixinKey, wbiEncode, wbiQuery }\n})()'
+    const sandbox = { TextEncoder, console: { log () {}, warn () {}, error () {} } }
+    vm.createContext(sandbox)
+    return new vm.Script(code, { filename: 'wbi.js' }).runInContext(sandbox)
+  }
+
+  check('MD5：官方测试向量逐个对上（含 UTF-8）', () => {
+    const { md5 } = loadWbi()
+    const vectors = [
+      ['', 'd41d8cd98f00b204e9800998ecf8427e'],
+      ['abc', '900150983cd24fb0d6963f7d28e17f72'],
+      ['123456789', '25f9e794323b453885f5181f1b624d0b'],
+      ['The quick brown fox jumps over the lazy dog', '9e107d9d372bb6826bd81d3542a419d6'],
+      ['中文测试', '089b4943ea034acfa445d050c7913e55']
+    ]
+    for (const [input, want] of vectors) {
+      const got = md5(input)
+      assert(got === want, `md5(${JSON.stringify(input)}) = ${got}，期望 ${want}`)
+    }
+  })
+
+  check('WBI 口令：img_key + sub_key 按置换表得到官方 mixinKey', () => {
+    const { wbiMixinKey } = loadWbi()
+    // bilibili-API-collect 文档里的示例口令
+    const img = '7cd084941338484aae1ad9425b84077c'
+    const sub = '4932caff0ff746eab6f01bf08b70ac45'
+    const got = wbiMixinKey(img + sub)
+    assert(
+      got === 'ea1db124af3c7062474693fa704f4ff8',
+      `mixinKey 应为文档值 ea1db124af3c7062474693fa704f4ff8，实际 ${got}`
+    )
+  })
+
+  check('WBI 查询串：排序 / 过滤 !\'()* / 空格 %20 / w_rid 对拍', () => {
+    const { wbiQuery } = loadWbi()
+    const mixin = 'ea1db124af3c7062474693fa704f4ff8'
+    // 文档示例参数 + 固定 wts（结果与 Python hashlib 独立实现一致）
+    const query = wbiQuery({ foo: '114', bar: '514', zab: 1919810 }, mixin, 1702204169)
+    assert(
+      query === 'bar=514&foo=114&wts=1702204169&zab=1919810&w_rid=8f6f2b5b3d485fe1886cec6a0be8c5d4',
+      `查询串不符合 WBI 规范：${query}`
+    )
+    // 值里的 !'()* 必须剔掉；空格必须是 %20（urlencode 的 + 会算出不同的签名）
+    const filtered = wbiQuery({ q: "a b!'()*c" }, mixin, 1702204169)
+    assert(
+      filtered.startsWith('q=a%20bc&wts=1702204169&w_rid='),
+      `过滤 / 编码不符合规范：${filtered}`
+    )
+    assert(!filtered.includes('+'), `空格不能用 +：${filtered}`)
+  })
+
+  check('取流接口全部走签名：playurl / view 不再直接 fetch', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    assert(
+      /const loadWbiMixinKey = async \(force = false\)/.test(src),
+      '缺少 WBI 口令加载（nav）实现'
+    )
+    assert(
+      /const biliApiGate = \(\) =>/.test(src) && /await biliApiGate\(\)/.test(src),
+      '接口请求缺少全局节流闸（并发会触发 -412）'
+    )
+    // UGC 视频取流：每次播放地址请求都必须带签名
+    const signedPlayurl = (src.match(/biliApiSigned\('https:\/\/api\.bilibili\.com\/x\/player\/playurl'/g) || []).length
+    assert(signedPlayurl >= 3, `playurl 调用点应全部签名（实际 ${signedPlayurl} 处）`)
+    // view 也一样（视频信息在 WBI 的接口清单里）
+    const signedView = (src.match(/biliApiSigned\('https:\/\/api\.bilibili\.com\/x\/web-interface\/view'/g) || []).length
+    assert(signedView >= 3, `view 调用点应全部签名（实际 ${signedView} 处）`)
+    // 不许再有"手拼 query 直接打"的旧写法
+    assert(
+      !/biliApiJson\(\s*`https:\/\/api\.bilibili\.com\/x\/player\/playurl/.test(src),
+      '还有未签名的 playurl 直连（会间歇性 -403）'
+    )
+    // 签名被拒（-403 / -352）要换口令重试一次
+    assert(
+      /code !== -403 && code !== -352/.test(src),
+      '缺少签名被拒后的换口令重试'
+    )
+  })
+
+  check('批量取流：单集失败不拖垮整批（返回 failed 名单）', () => {
+    const src = fs.readFileSync(path.join(EXT_DIR, 'key-listener.js'), 'utf8')
+    assert(/failed\.push\(/.test(src), '缺少失败集数的收集')
+    assert(
+      /result: \{ episodes: results, failed \}/.test(src),
+      '返回载荷必须带 failed（宿主据此提示跳过了哪几集）'
+    )
+    assert(/if \(!results\.length\)/.test(src), '只有全部失败时才该报错')
+    assert(
+      !/throw new Error\(`无法获取「/.test(src),
+      '单集失败不应再 throw（否则整批都下不了）'
+    )
+    // 取流函数改成 { videos, audios } / { error } 两种形态后，
+    // 「合集 / 番剧资源窗」的单条调用点也必须判 error（否则 play.videos 是 undefined）
+    assert(
+      (src.match(/play\.error/g) || []).length >= 2,
+      '取流调用点没有判 `{ error }` 形态（合集 / 番剧资源窗会拿不到流）'
+    )
+  })
+
   // ------------------------------------------------------- 行内下载入口 DOM
   console.log('\n[5] 行内下载入口（DOM 桩）')
 

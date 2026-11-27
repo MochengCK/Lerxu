@@ -1237,6 +1237,9 @@ export default class Application extends EventEmitter {
       const audio = this._pickBiliStream(streams.audios, preference.audioId, preference.audioCodecid)
       const episodeName = [ep.title, ep.longTitle].filter(Boolean).join(' ')
       selections.push({
+        // 带上 epId：提交后要按它算"哪几集没拿到流"（失败的那几集不建任务，
+        // 但必须告诉用户，不能像以前那样静默少下载）
+        epId: `${ep.epId}`,
         title: `${payload.title || ''}${episodeName ? ` - ${episodeName}` : ''}`,
         partTitle: '',
         page: 0,
@@ -4814,17 +4817,40 @@ export default class Application extends EventEmitter {
           mergeFormat
         })
         if (selections.length === 0) {
-          return { ok: false, error: '没有可用的视频流，请在网页上重新点击下载' }
+          const first = Array.isArray(fetched && fetched.failed) ? fetched.failed[0] : null
+          return {
+            ok: false,
+            error: first && first.reason
+              ? `没有可用的视频流：${first.label ? `${first.label} ` : ''}${first.reason}`
+              : '没有可用的视频流，请在网页上重新点击下载'
+          }
         }
+
+        // 有集数取不到流（付费 / 地区限制 / 已下架）时**照常建其余任务**，
+        // 把跳过的集数回报给渲染层提示 —— 一集失败就整批失败，用户会以为
+        // "有时候点下载没反应"。
+        const selectedIds = new Set(selections.map(item => `${item.epId || ''}`))
+        const failedList = Array.isArray(fetched && fetched.failed) ? fetched.failed : []
+        const skipped = chosen
+          .filter(ep => !selectedIds.has(`${ep.epId}`))
+          .map(ep => {
+            const failed = failedList.find(item => `${item.epId}` === `${ep.epId}`) || {}
+            const name = [ep.title, ep.longTitle].filter(Boolean).join(' ')
+            return {
+              epId: `${ep.epId}`,
+              title: `${session.payload && session.payload.title ? `${session.payload.title} - ` : ''}${name || ep.epId}`,
+              reason: `${failed.reason || '没有可用的视频流'}`
+            }
+          })
 
         this._biliResourceSessions.delete(token)
         try {
-          this.windowManager.sendMessageTo(mainWindow, 'bili-resource:apply', { selections })
+          this.windowManager.sendMessageTo(mainWindow, 'bili-resource:apply', { selections, skipped })
         } catch (err) {
           return { ok: false, error: err && err.message ? err.message : '发送下载任务失败' }
         }
         closeWindow()
-        return { ok: true }
+        return { ok: true, skipped: skipped.length }
       }
 
       // ── 普通视频：单条流选择 ──
