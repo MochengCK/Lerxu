@@ -341,6 +341,8 @@ fun SettingsScreen(
     // 早先这一张被整段关掉过（"内容区不参与往下拽"），结果是"设置弹窗无法通过下移关闭"
     //（用户点名）。阈值那一套现在与历史弹窗**同一处出处**，不会再各写一份对不上。
     val sheetState = rememberSheetStateFirmDismiss()
+    // 状态栏高度必须在弹窗外层取（弹窗内部读到的是被自身偏移扣过的值）
+    val sheetTopGap = rememberSheetTopGap()
     // 当前展开的分类；null = 停在分类首页
     var category by remember { mutableStateOf<SettingsCategory?>(null) }
     // 先收起再回调关闭：直接置 false 会让弹窗"啪"地消失，没有下滑动画
@@ -353,18 +355,11 @@ fun SettingsScreen(
         sheetState = sheetState,
         // 顶部不画那条小横杆：标题行自带返回按钮，视觉更整
         dragHandle = null,
-        // **只让开顶部，底部不让**（见 [sheetContentInsets] 的说明）：material3 的默认值
-        // `safeDrawing` 会把**手势条那一整条**当成内容的 `windowInsetsPadding` 加在
-        // Surface 内部 —— 面板底色铺到了屏幕底，内容却永远差那一截画不下来
-        //（用户点名："设置弹窗和历史记录弹窗内容无法显示到底部小横条区域"）。
-        // 让开底部之后内容能滚进那条带子；该留的呼吸由内容末尾自己加（见下面的
-        // `sheetBottomGap`），**不要**再靠这里的 inset 顶出空白。
-        contentWindowInsets = { sheetContentInsets() }
+        // 顶部状态栏空间由 [SheetPanel] 统一预留；这里不再吃系统栏 inset，
+        // 否则会把状态栏高度留两次。底部仍由内容末尾自己让开手势条（见 sheetBottomGap）。
+        contentWindowInsets = { WindowInsets(0) }
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-        ) {
+        SheetPanel(topGap = sheetTopGap) {
             SettingsSheetHeader(
                 title = category?.let { stringResource(it.titleRes) } ?: stringResource(R.string.settings),
                 onBack = {

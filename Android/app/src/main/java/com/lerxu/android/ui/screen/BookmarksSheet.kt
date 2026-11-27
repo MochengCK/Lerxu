@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -39,7 +40,7 @@ import kotlinx.coroutines.launch
  * **书签**弹窗（「更多功能」宫格里的第一枚书签键）。
  *
  * 与历史弹窗同一套壳：同一个 [ModalBottomSheet]、同一个 [SettingsSheetHeader]（左返回 + 中标题）、
- * `dragHandle = null`、`contentWindowInsets` 只让开顶部（见 [sheetContentInsets]），
+ * `dragHandle = null`、顶部状态栏空间统一由 [SheetPanel] 预留，
  * 底部的呼吸位由内容自己加（见 [sheetBottomGap]）—— 三处与 [BrowserHistorySheet] 完全一致，
  * 两张弹窗摊开时不该有第二种版式。
  *
@@ -65,6 +66,8 @@ internal fun BrowserBookmarksSheet(
     val scope = rememberCoroutineScope()
     // 与设置 / 历史弹窗同一档"不容易误触"的下滑关闭（见 rememberSheetStateFirmDismiss）
     val sheetState = rememberSheetStateFirmDismiss()
+    // 状态栏高度必须在弹窗外层取（弹窗内部读到的是被自身偏移扣过的值）
+    val sheetTopGap = rememberSheetTopGap()
     // 先收起再回调关闭：直接置 false 会让弹窗"啪"地消失，没有下滑动画（与另两张弹窗同一处理）
     val dismissAnimated: () -> Unit = {
         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
@@ -74,12 +77,9 @@ internal fun BrowserBookmarksSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         dragHandle = null,
-        contentWindowInsets = { sheetContentInsets() }
+        contentWindowInsets = { WindowInsets(0) }
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-        ) {
+        SheetPanel(topGap = sheetTopGap) {
             SettingsSheetHeader(
                 title = stringResource(R.string.browser_dock_more_bookmarks),
                 onBack = dismissAnimated

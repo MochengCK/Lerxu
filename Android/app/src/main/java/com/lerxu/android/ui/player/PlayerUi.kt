@@ -58,6 +58,9 @@ enum class DownloadSource { None, Hls, File }
  * （播放器回调、进度轮询），Compose 控件从里读。全部是 Compose 状态，写一处、读一处，
  * 不存在两份状态打架。
  */
+/** 播放器统一倍速档位：设置弹窗与长按倍速条共用同一份。 */
+internal val PlayerSpeedSteps = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f, 4f)
+
 @UnstableApi
 class PlayerUi {
 
@@ -117,7 +120,7 @@ class PlayerUi {
     var bufferedMs by mutableLongStateOf(0L)
     var controlsVisible by mutableStateOf(true)
 
-    /** 基准倍速：长按加速结束后回到它（不是死记 1.0）。 */
+    /** 基准倍速（设置弹窗与长按倍速条共用，不是死记 1.0）。 */
     var baseSpeed by mutableFloatStateOf(1f)
 
     /** 画面比例：默认「适应」（见 [FitMode] 的说明）—— 整幅可见，不裁内容。 */
@@ -171,8 +174,12 @@ class PlayerUi {
      */
     var gridOpen by mutableStateOf(false)
 
-    /** 长按加速中（按住不放）：界面据此显示"2× 快进中"那枚徽标。 */
-    var boost by mutableStateOf(false)
+    /** 长按调倍速：顶部倍速条是否显示 / 是否正在按住调整 / 当前预览档位。 */
+    var speedBarVisible by mutableStateOf(false)
+    var speedAdjusting by mutableStateOf(false)
+    var speedDraft by mutableFloatStateOf(1f)
+    /** 点倍速按钮唤出的倍速条：不自动收起，选中某一档后消失。 */
+    var speedBarPinned by mutableStateOf(false)
 
     /**
      * **锁屏**（用户点名：全屏里控制栏中间偏左加一枚锁屏按钮）。
@@ -235,7 +242,10 @@ class PlayerUi {
         downloadSize = 0L
         downloadProbing = false
         gridOpen = false
-        boost = false
+        speedBarVisible = false
+        speedAdjusting = false
+        speedDraft = 1f
+        speedBarPinned = false
         locked = false
         playFlashPlaying = false
         playFlashToken = 0

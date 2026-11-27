@@ -1,10 +1,15 @@
 package com.lerxu.android.ui.screen
 
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
@@ -20,6 +25,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -62,6 +69,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -71,8 +79,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -96,6 +109,7 @@ import com.lerxu.android.ui.formatSpeed
 import com.lerxu.android.ui.statusColor
 import com.lerxu.android.ui.theme.lerxuExtraColors
 import com.lerxu.android.ui.statusText
+import kotlin.math.max
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -112,6 +126,51 @@ private enum class DetailTab { OVERVIEW, PIECES, PEERS, TRACKERS, FILES }
 
 /** 详情内所有卡片 / 按钮 / 背景的统一圆角（与进度条一致）。 */
 private val DetailCorner = 7.dp
+
+/** 速度曲线的一个采样点（上/下行字节每秒）。 */
+private data class SpeedSample(val download: Long, val upload: Long)
+
+/**
+ * 跨弹窗开关保留每个任务的速度采样。
+ *
+ * 采样列表原先建在弹窗的 remember 里：关掉详情再打开，历史直接归零，
+ * 曲线只剩当前一个点，看起来就像“变样了”。放在进程级缓存里，
+ * 重新打开能接着上一次的形状继续画（采样仍只在详情打开时追加）。
+ */
+private object SpeedHistoryStore {
+    private val histories =
+        mutableMapOf<String, androidx.compose.runtime.snapshots.SnapshotStateList<SpeedSample>>()
+
+    fun forTask(gid: String): androidx.compose.runtime.snapshots.SnapshotStateList<SpeedSample> =
+        histories.getOrPut(gid) { mutableStateListOf() }
+}
+
+/** 节点行显示的实时速度（由两次节点快照的字节差算出）。 */
+private data class PeerSpeed(val download: Long, val upload: Long)
+
+/** 概览速度曲线保留的采样数：约 1.5s 一个点，60 点 ≈ 一分半。 */
+private const val SPEED_HISTORY_POINTS = 60
+
+/** 节点排序：已连接的优先，其次种子，最后按地址稳定排序。 */
+private fun sortPeersForDisplay(peers: List<Peer>): List<Peer> =
+    peers.sortedWith(
+        compareByDescending<Peer> { it.connected }
+            .thenByDescending { it.seed }
+            .thenBy { it.addr }
+    )
+
+/** Tracker 排序：working 最前，其次 waiting/未知，not-working 最后。 */
+private fun sortTrackersForDisplay(trackers: List<Tracker>): List<Tracker> =
+    trackers.sortedWith(
+        compareBy<Tracker> { trackerOrder(it.status) }
+            .thenByDescending { it.seeders }
+    )
+
+private fun trackerOrder(status: String): Int = when (status) {
+    "working" -> 0
+    "not-working" -> 2
+    else -> 1
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,6 +189,14 @@ fun TaskDetailSheet(
     var polled by remember(task.gid) { mutableStateOf(task) }
     var peers by remember(task.gid) { mutableStateOf<List<Peer>>(emptyList()) }
     var trackers by remember(task.gid) { mutableStateOf<List<Tracker>>(emptyList()) }
+    // 概览顶部速度曲线的历史采样：进程级缓存，关掉详情再打开不会从头开始
+    val speedHistory = remember(task.gid) { SpeedHistoryStore.forTask(task.gid) }
+    // 节点实时速度：节点接口给的是累计字节，用两次快照的差值 ÷ 间隔换算
+    var peerSpeeds by remember(task.gid) { mutableStateOf<Map<String, PeerSpeed>>(emptyMap()) }
+    var lastPeerCounters by remember(task.gid) {
+        mutableStateOf<Map<String, Pair<Long, Long>>>(emptyMap())
+    }
+    var lastPeerSampleAt by remember(task.gid) { mutableStateOf(0L) }
 
     // 使用轮询的 polled 作为显示数据（进度更实时）
     val displayTask = polled
@@ -150,12 +217,47 @@ fun TaskDetailSheet(
     var selectedTab by rememberSaveable(task.gid) { mutableIntStateOf(0) }
 
     LaunchedEffect(task.gid, selectedTab, tabs) {
+        // 首次打开 / 缓存还是空的时候补一个当前采样，曲线立刻有起点
+        if (speedHistory.isEmpty()) {
+            speedHistory.add(SpeedSample(task.downloadSpeed, task.uploadSpeed))
+        }
         while (isActive) {
-            viewModel.fetchTaskDetail(task.gid)?.let { polled = it }
+            viewModel.fetchTaskDetail(task.gid)?.let { fresh ->
+                polled = fresh
+                speedHistory.add(SpeedSample(fresh.downloadSpeed, fresh.uploadSpeed))
+                if (speedHistory.size > SPEED_HISTORY_POINTS) {
+                    speedHistory.removeAt(0)
+                }
+            }
             val tab = tabs.getOrNull(selectedTab)
             when (tab) {
                 DetailTab.PIECES -> {}
-                DetailTab.PEERS -> if (showBtTabs) peers = viewModel.fetchPeers(task.gid)
+                DetailTab.PEERS -> if (showBtTabs) {
+                    val freshPeers = viewModel.fetchPeers(task.gid)
+                    val now = SystemClock.elapsedRealtime()
+                    val elapsed = now - lastPeerSampleAt
+                    val previous = lastPeerCounters
+                    // 只接受正常的轮询间隔；离开页面很久后回来先归零，等下一帧再测
+                    peerSpeeds = if (elapsed in 500L..5000L) {
+                        freshPeers.associate { p ->
+                            val before = previous[p.addr]
+                            val speed = if (p.connected && before != null) {
+                                PeerSpeed(
+                                    (p.downloaded - before.first).coerceAtLeast(0) * 1000 / elapsed,
+                                    (p.uploaded - before.second).coerceAtLeast(0) * 1000 / elapsed
+                                )
+                            } else {
+                                PeerSpeed(0, 0)
+                            }
+                            p.addr to speed
+                        }
+                    } else {
+                        freshPeers.associate { it.addr to PeerSpeed(0, 0) }
+                    }
+                    lastPeerCounters = freshPeers.associate { it.addr to (it.downloaded to it.uploaded) }
+                    lastPeerSampleAt = now
+                    peers = freshPeers
+                }
                 DetailTab.TRACKERS -> if (showBtTabs) trackers = viewModel.fetchTrackers(task.gid)
                 else -> {}
             }
@@ -179,13 +281,20 @@ fun TaskDetailSheet(
         }
     }
 
+    // 状态栏高度必须在弹窗外层取（弹窗内部读到的是被自身偏移扣过的值）
+    val sheetTopGap = rememberSheetTopGap()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = colorScheme.surface,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        dragHandle = null
+        dragHandle = null,
+        // 状态栏空间由 SheetPanel 统一留出，这里不再用系统栏 inset（否则会留两次）
+        contentWindowInsets = { WindowInsets(0) }
     ) {
+        // 与设置同一套外壳：顶部让出状态栏，面板铺满剩余高度，
+        // 不再是一个按内容高度停在半途的弹窗（内容多时滚动，必要时就是设置那样的覆盖）。
+        SheetPanel(topGap = sheetTopGap) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -275,6 +384,8 @@ fun TaskDetailSheet(
             // ── Tab 内容（带高度动画） ──
             AnimatedContent(
                 targetState = tabs.getOrNull(selectedTab),
+                // 面板高度固定后，让 tab 内容吃掉中间剩余空间，进度条与按钮始终贴底
+                modifier = Modifier.weight(1f),
                 transitionSpec = {
                     (fadeIn(animationSpec = tween(200)) + expandVertically(animationSpec = tween(200)))
                         .togetherWith(fadeOut(animationSpec = tween(200)) + shrinkVertically(animationSpec = tween(200)))
@@ -284,16 +395,15 @@ fun TaskDetailSheet(
             ) { tab ->
                 when (tab) {
                     DetailTab.PIECES -> PiecesTab(colorScheme, displayTask)
-                    DetailTab.PEERS -> PeersTab(colorScheme, task.gid, peers, viewModel, scope, context)
+                    DetailTab.PEERS -> PeersTab(colorScheme, task.gid, peers, peerSpeeds, viewModel, scope, context)
                     DetailTab.TRACKERS -> TrackersTab(colorScheme, trackers)
                     DetailTab.FILES -> FilesTab(colorScheme, task, displayTask, viewModel, scope, context)
                     else -> OverviewTab(
                         colorScheme = colorScheme,
-                        context = context,
                         task = displayTask,
-                        statusColor = statusColor,
                         limits = limits,
                         isHttpTask = isHttpTask,
+                        speedHistory = speedHistory,
                         onEditLimits = { showLimitDialog = true }
                     )
                 }
@@ -378,6 +488,7 @@ fun TaskDetailSheet(
                 }
             }
         }
+        }
     }
 
     // ── 单任务限速编辑：通用居下弹窗（与设置页自定义限速同款样式） ──
@@ -424,86 +535,398 @@ private fun tabLabel(tab: DetailTab): Int = when (tab) {
 @Composable
 private fun OverviewTab(
     colorScheme: androidx.compose.material3.ColorScheme,
-    context: android.content.Context,
     task: TaskInfo,
-    statusColor: Color,
     limits: Pair<String, String>?,
     isHttpTask: Boolean,
+    speedHistory: List<SpeedSample>,
     onEditLimits: () -> Unit
 ) {
+    // 暂停时下载速度平滑归零（不是瞬间消失），行本身仍然保留
+    val shownDownloadSpeed by animateFloatAsState(
+        targetValue = if (task.status == "active") task.downloadSpeed.toFloat() else 0f,
+        animationSpec = tween(durationMillis = 900),
+        label = "overviewDownloadSpeed"
+    )
+    val shownUploadSpeed by animateFloatAsState(
+        targetValue = if (task.status == "active" || task.status == "seeding") {
+            task.uploadSpeed.toFloat()
+        } else {
+            0f
+        },
+        animationSpec = tween(durationMillis = 900),
+        label = "overviewUploadSpeed"
+    )
+    val showDownloadSpeed = task.status == "active" ||
+        task.status == "paused" ||
+        task.downloadSpeed > 0
+    val showUploadSpeed = task.isBT && (
+        task.status == "active" ||
+            task.status == "paused" ||
+            task.status == "seeding" ||
+            task.uploadSpeed > 0 ||
+            task.uploadLength > 0
+        )
+    // 剩余时间只在活动状态显示，暂停后整行隐藏（用户口径）
+    val remainingText = if (task.status == "active" && task.remainingSeconds > 0) {
+        formatDuration(task.remainingSeconds)
+    } else {
+        null
+    }
+    // 退出动画期间 remainingText 已经是 null，保留最后一帧文案避免行内容先空掉
+    var lastRemainingText by remember { mutableStateOf("") }
+    LaunchedEffect(remainingText) {
+        if (remainingText != null) lastRemainingText = remainingText
+    }
+    val hasTransferInfo = task.totalLength > 0 ||
+        task.status == "active" ||
+        task.status == "paused" ||
+        task.status == "seeding" ||
+        task.downloadSpeed > 0 ||
+        (task.isBT && (task.uploadSpeed > 0 || task.uploadLength > 0)) ||
+        remainingText != null ||
+        task.averageSpeed > 0
+    val hasFileInfo = task.dir.isNotEmpty() ||
+        task.files.size > 1 ||
+        task.numPieces > 0 ||
+        task.pieceLength > 0
+    // 原始下载链接：HTTP 等任务会保存在文件的 uris 里（BT 任务为空）
+    val sourceUrl = task.files.asSequence()
+        .flatMap { it.uris.asSequence() }
+        .map { it.uri }
+        .firstOrNull { it.isNotBlank() }
+        .orEmpty()
+
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
-            .heightIn(max = 320.dp),
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 详细信息卡
-        Surface(
-            shape = RoundedCornerShape(DetailCorner),
-            color = colorScheme.surfaceContainerHigh,
-            modifier = Modifier.fillMaxWidth()
+        // ── 速度曲线：下载 / 上传两条线同时画 ──
+        DetailGroup(
+            title = stringResource(R.string.detail_group_speed),
+            trailing = {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SpeedLegend(colorScheme.primary, "↓ ${formatSpeed(shownDownloadSpeed.toLong())}")
+                    // 上传只属于 BT 任务，HTTP 任务不画、也不显示图例
+                    if (showUploadSpeed) {
+                        SpeedLegend(colorScheme.tertiary, "↑ ${formatSpeed(shownUploadSpeed.toLong())}")
+                    }
+                }
+            }
         ) {
-            Column(Modifier.padding(vertical = 4.dp)) {
-                if (task.errorCode != 0) {
-                    Text(
-                        stringResource(R.string.error_code_msg, task.errorCode, task.errorMessage),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colorScheme.error,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp)
-                    )
-                    HorizontalDivider(
-                        // 与卡片底同色系的可见一档：outlineVariant 在深色下比卡片还深
-                        color = lerxuExtraColors.dialogDivider,
-                        thickness = 0.5.dp,
-                        modifier = Modifier.padding(horizontal = 16.dp)
+            SpeedChart(
+                colorScheme = colorScheme,
+                history = speedHistory,
+                showUpload = task.isBT,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(104.dp)
+                    .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = 6.dp)
+            )
+        }
+
+        // ── 错误（有才显示）──
+        if (task.errorCode != 0) {
+            DetailGroup(title = stringResource(R.string.detail_group_error)) {
+                Text(
+                    stringResource(R.string.error_code_msg, task.errorCode, task.errorMessage),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colorScheme.error,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                )
+            }
+        }
+
+        // ── 传输 ──
+        if (hasTransferInfo) {
+            DetailGroup(title = stringResource(R.string.detail_group_transfer)) {
+                if (task.totalLength > 0) {
+                    InfoRow(
+                        stringResource(R.string.detail_downloaded),
+                        "${formatBytes(task.completedLength)} / ${formatBytes(task.totalLength)}"
                     )
                 }
-                CopyableInfoRow(stringResource(R.string.detail_gid), task.gid)
-                if (task.dir.isNotEmpty()) InfoRow(stringResource(R.string.save_dir), task.dir)
-                InfoRow(stringResource(R.string.connections), "${task.connections}")
-                if (task.isBT) InfoRow(stringResource(R.string.seeders), "${task.numSeeders}")
-                if (task.isBT && task.seedRatio > 0) {
-                    InfoRow(stringResource(R.string.detail_seed_ratio), String.format("%.2f", task.seedRatio))
+                if (showDownloadSpeed) {
+                    InfoRow(
+                        stringResource(R.string.download_speed),
+                        formatSpeed(shownDownloadSpeed.toLong())
+                    )
+                }
+                if (showUploadSpeed) {
+                    InfoRow(
+                        stringResource(R.string.upload_speed),
+                        formatSpeed(shownUploadSpeed.toLong())
+                    )
+                }
+                AnimatedVisibility(
+                    visible = remainingText != null,
+                    enter = fadeIn(tween(180)) + expandVertically(tween(220)),
+                    exit = fadeOut(tween(140)) + shrinkVertically(tween(200))
+                ) {
+                    InfoRow(
+                        stringResource(R.string.sort_field_remaining),
+                        remainingText ?: lastRemainingText
+                    )
                 }
                 if (task.averageSpeed > 0) {
                     InfoRow(stringResource(R.string.detail_avg_speed), formatSpeed(task.averageSpeed))
                 }
-                // 单任务限速行（点击编辑）—— HTTP/HTTPS 只显示下载限速
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onEditLimits() }
-                        .padding(horizontal = 16.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        stringResource(R.string.speed_limit),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(76.dp)
-                    )
-                    Text(
-                        limitsText(limits, isHttpTask),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        color = colorScheme.primary,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Icon(
-                        Icons.Default.Speed,
-                        contentDescription = stringResource(R.string.speed_limit_edit),
-                        modifier = Modifier.size(14.dp),
-                        tint = colorScheme.onSurfaceVariant
-                    )
-                }
-                InfoRow(stringResource(R.string.elapsed), formatDuration(task.elapsedMs / 1000))
             }
         }
+
+        // ── 文件 ──
+        if (hasFileInfo) {
+            DetailGroup(title = stringResource(R.string.detail_group_file)) {
+                if (task.files.size > 1) {
+                    InfoRow(stringResource(R.string.detail_file_count), "${task.files.size}")
+                }
+                if (task.dir.isNotEmpty()) {
+                    InfoRow(stringResource(R.string.save_dir), task.dir)
+                }
+                if (task.numPieces > 0) {
+                    InfoRow(stringResource(R.string.detail_pieces), "${task.numPieces}")
+                }
+                if (task.pieceLength > 0) {
+                    InfoRow(stringResource(R.string.detail_piece_size), formatBytes(task.pieceLength))
+                }
+            }
+        }
+
+        // ── BT ──
+        if (task.isBT) {
+            DetailGroup(title = stringResource(R.string.detail_group_bt)) {
+                InfoRow(stringResource(R.string.seeders), "${task.numSeeders}")
+                if (task.seedRatio > 0) {
+                    InfoRow(stringResource(R.string.detail_seed_ratio), String.format("%.2f", task.seedRatio))
+                }
+                if (task.uploadLength > 0) {
+                    InfoRow(stringResource(R.string.detail_uploaded), formatBytes(task.uploadLength))
+                }
+                task.infoHash?.takeIf { it.isNotBlank() }?.let {
+                    CopyableInfoRow(stringResource(R.string.detail_info_hash), it)
+                }
+            }
+        }
+
+        // ── 任务 ──
+        DetailGroup(title = stringResource(R.string.detail_group_task)) {
+            if (sourceUrl.isNotBlank()) {
+                CopyableInfoRow(stringResource(R.string.detail_source_url), sourceUrl)
+            }
+            InfoRow(stringResource(R.string.connections), "${task.connections}")
+            CopyableInfoRow(stringResource(R.string.detail_gid), task.gid)
+            // 单任务限速行（点击编辑）—— HTTP/HTTPS 只显示下载限速
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onEditLimits() }
+                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    stringResource(R.string.speed_limit),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(76.dp)
+                )
+                Text(
+                    limitsText(limits, isHttpTask),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Icon(
+                    Icons.Default.Speed,
+                    contentDescription = stringResource(R.string.speed_limit_edit),
+                    modifier = Modifier.size(14.dp),
+                    tint = colorScheme.onSurfaceVariant
+                )
+            }
+            InfoRow(stringResource(R.string.elapsed), formatDuration(task.elapsedMs / 1000))
+        }
+    }
+}
+
+/** 概览分组：标题在卡片背景外（与设置页 SettingsSection 同一形态）。 */
+@Composable
+private fun DetailGroup(
+    title: String,
+    trailing: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 6.dp, end = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            trailing?.invoke()
+        }
+        Surface(
+            shape = RoundedCornerShape(DetailCorner),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                content()
+            }
+        }
+    }
+}
+
+/** 下载 / 上传两条速度曲线（共用同一个纵轴上限）。 */
+@Composable
+private fun SpeedChart(
+    colorScheme: androidx.compose.material3.ColorScheme,
+    history: List<SpeedSample>,
+    showUpload: Boolean,
+    modifier: Modifier = Modifier
+) {
+    // 固定 60 点窗口：不足时左侧补 0，保证曲线始终按固定步长从右往左滚动
+    val snapshot = history.toList()
+    val window = remember(snapshot) {
+        if (snapshot.size >= SPEED_HISTORY_POINTS) {
+            snapshot.takeLast(SPEED_HISTORY_POINTS)
+        } else {
+            List(SPEED_HISTORY_POINTS - snapshot.size) { SpeedSample(0, 0) } + snapshot
+        }
+    }
+    var from by remember { mutableStateOf(window) }
+    var to by remember { mutableStateOf(window) }
+    val progress = remember { Animatable(1f) }
+    LaunchedEffect(window) {
+        // 只有在“整体左移一格”时才做滚动动画；数据跳变（切页/恢复）直接落到新位置
+        // 新窗口 = 旧窗口左移一格 + 新采样（补 0 的成长阶段也满足这个关系）
+        val singleStep = to.size == window.size &&
+            to.isNotEmpty() &&
+            window.dropLast(1) == to.drop(1)
+        if (!singleStep) {
+            from = window
+            to = window
+            progress.snapTo(1f)
+            return@LaunchedEffect
+        }
+        from = to
+        to = window
+        progress.snapTo(0f)
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 1200, easing = LinearEasing)
+        )
+    }
+
+    val peak = max(
+        window.maxOfOrNull { it.download } ?: 0L,
+        if (showUpload) window.maxOfOrNull { it.upload } ?: 0L else 0L
+    )
+    val maxValue by animateFloatAsState(
+        targetValue = max(1f, peak.toFloat()),
+        animationSpec = tween(durationMillis = 800),
+        label = "speedChartScale"
+    )
+
+    Canvas(modifier) {
+        val p = progress.value.coerceIn(0f, 1f)
+        // 滚动时把刚被挤出去的那一帧也画上，整条线按一个采样间距平滑左移
+        val scrolling = from !== to && from.size == to.size && from.isNotEmpty()
+        val samples = if (scrolling) listOf(from.first()) + to else to
+        val step = if (to.size > 1) size.width / (to.size - 1).toFloat() else size.width
+        val shift = if (samples.size > to.size) p * step else 0f
+        val downloads = samples.map { it.download }
+        val uploads = if (showUpload) samples.map { it.upload } else emptyList()
+
+        val grid = colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
+        // 三条横向参考线 + 基线
+        repeat(3) { index ->
+            val y = size.height * index / 3f
+            drawLine(grid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1f)
+        }
+        drawLine(
+            grid,
+            Offset(0f, size.height),
+            Offset(size.width, size.height),
+            strokeWidth = 1f
+        )
+
+        fun seriesPath(values: List<Long>): Path {
+            val path = Path()
+            values.forEachIndexed { index, value ->
+                val x = index * step - shift
+                val y = size.height - (value / maxValue).coerceIn(0f, 1f) * size.height
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            return path
+        }
+
+        if (downloads.size >= 2) {
+            val line = seriesPath(downloads)
+            val area = Path().apply {
+                addPath(line)
+                lineTo(size.width, size.height)
+                lineTo(0f, size.height)
+                close()
+            }
+            drawPath(
+                area,
+                Brush.verticalGradient(
+                    listOf(
+                        colorScheme.primary.copy(alpha = 0.20f),
+                        Color.Transparent
+                    )
+                )
+            )
+            drawPath(
+                line,
+                colorScheme.primary,
+                style = Stroke(
+                    width = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
+            )
+        }
+        if (uploads.size >= 2) {
+            drawPath(
+                seriesPath(uploads),
+                colorScheme.tertiary,
+                style = Stroke(
+                    width = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpeedLegend(color: Color, value: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Spacer(Modifier.width(4.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -711,16 +1134,18 @@ private fun PeersTab(
     colorScheme: androidx.compose.material3.ColorScheme,
     gid: String,
     peers: List<Peer>,
+    peerSpeeds: Map<String, PeerSpeed>,
     viewModel: TaskViewModel,
     scope: kotlinx.coroutines.CoroutineScope,
     context: android.content.Context
 ) {
+    val sortedPeers = remember(peers) { sortPeersForDisplay(peers) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(max = 320.dp)
     ) {
-        if (peers.isEmpty()) {
+        if (sortedPeers.isEmpty()) {
             Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
                 Text(
                     stringResource(R.string.peers_empty),
@@ -739,9 +1164,13 @@ private fun PeersTab(
                     modifier = Modifier.fillMaxWidth(),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
-                    items(peers.size, key = { peers[it].addr }) { i ->
-                        val peer = peers[i]
-                        PeerRow(colorScheme, peer) { durationSec ->
+                    items(sortedPeers.size, key = { sortedPeers[it].addr }) { i ->
+                        val peer = sortedPeers[i]
+                        PeerRow(
+                            colorScheme = colorScheme,
+                            peer = peer,
+                            speed = peerSpeeds[peer.addr] ?: PeerSpeed(0, 0)
+                        ) { durationSec ->
                             scope.launch {
                                 val ok = viewModel.banPeer(gid, peerIp(peer.addr), durationSec)
                                 Toast.makeText(
@@ -752,7 +1181,7 @@ private fun PeersTab(
                             }
                         }
                         // 只在行间画分隔线；卡片底部不留线，且用面板上可见的一档颜色
-                        if (i < peers.lastIndex) {
+                        if (i < sortedPeers.lastIndex) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 14.dp),
                                 color = lerxuExtraColors.dialogDivider,
@@ -777,6 +1206,7 @@ private fun peerIp(addr: String): String = when {
 private fun PeerRow(
     colorScheme: androidx.compose.material3.ColorScheme,
     peer: Peer,
+    speed: PeerSpeed,
     onBan: (Long) -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -842,8 +1272,8 @@ private fun PeerRow(
                 Spacer(Modifier.height(3.dp))
                 Text(
                     buildString {
-                        append("↓ ").append(formatBytes(peer.downloaded))
-                        append(" · ↑ ").append(formatBytes(peer.uploaded))
+                        append("↓ ").append(formatSpeed(speed.download))
+                        append(" · ↑ ").append(formatSpeed(speed.upload))
                         if (peer.choked) append(" · ").append(stringResource(R.string.peer_choked))
                     },
                     style = MaterialTheme.typography.labelSmall,
@@ -885,12 +1315,13 @@ private fun TrackersTab(
     colorScheme: androidx.compose.material3.ColorScheme,
     trackers: List<Tracker>
 ) {
+    val sortedTrackers = remember(trackers) { sortTrackersForDisplay(trackers) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(max = 320.dp)
     ) {
-        if (trackers.isEmpty()) {
+        if (sortedTrackers.isEmpty()) {
             Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
                 Text(
                     stringResource(R.string.trackers_empty),
@@ -909,10 +1340,10 @@ private fun TrackersTab(
                     modifier = Modifier.fillMaxWidth(),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {
-                    items(trackers.size, key = { trackers[it].url }) { i ->
-                        TrackerRow(colorScheme, trackers[i])
+                    items(sortedTrackers.size, key = { sortedTrackers[it].url }) { i ->
+                        TrackerRow(colorScheme, sortedTrackers[i])
                         // 只在行间画分隔线；卡片底部不留线，且用面板上可见的一档颜色
-                        if (i < trackers.lastIndex) {
+                        if (i < sortedTrackers.lastIndex) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 14.dp),
                                 color = lerxuExtraColors.dialogDivider,
@@ -1350,3 +1781,4 @@ private fun CopyableInfoRow(label: String, value: String) {
         )
     }
 }
+

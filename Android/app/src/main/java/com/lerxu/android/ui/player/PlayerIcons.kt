@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathBuilder
+import androidx.compose.ui.graphics.vector.group
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
@@ -13,7 +14,7 @@ import androidx.compose.ui.unit.dp
  * 播放器自己画的三枚图标（用户点名"重新设计一下右下角的横竖屏切换按钮"）。
  *
  * 为什么不直接用 Material 那套：
- * - 左上角那枚"退出全屏"要的就是**一枚向左的箭头**（用户点名）—— Material 的
+ * - 左上角那枚"退出全屏"要的就是**一枚向左的尖角**（用户点名）—— Material 的
  *   `FullscreenExit` 是"四角向内"的通用符号，读不出"退出去"；
  * - 右下角那枚要**分横竖屏**：横屏时是"缩回竖屏"、竖屏时是"转成横屏"，
  *   Material 没有这个说法。
@@ -22,14 +23,14 @@ import androidx.compose.ui.unit.dp
  * 转屏那两枚是**同一枚符号的两个方向**（设备画在目标方向上 + 半圈回转箭头，两枚互成
  * 90°），一眼就能读出"点下去它会转成什么样"。颜色不写死：`Icon(tint = …)` 会整体着色。
  */
-private fun buildIcon(name: String, block: ImageVector.Builder.() -> ImageVector.Builder): ImageVector =
+private fun buildIcon(name: String, block: ImageVector.Builder.() -> Unit): ImageVector =
     ImageVector.Builder(
         name = name,
         defaultWidth = 24.dp,
         defaultHeight = 24.dp,
         viewportWidth = 24f,
         viewportHeight = 24f
-    ).block().build()
+    ).apply(block).build()
 
 /** 描边路径的公共参数（与 Material Rounded 的观感对齐）：交给 [path] 构造器。 */
 private const val STROKE_W = 1.9f
@@ -50,13 +51,13 @@ private fun PathBuilder.roundRect(l: Float, t: Float, r: Float, b: Float, radius
 }
 
 /**
- * 退出全屏（**全屏态左上角**那枚）：**一枚向左的箭头**。
+ * 退出全屏（**全屏态左上角**那枚）：**一枚向左的尖角（chevron）**。
  *
- * 用户点名："左侧应该显示退出全屏按钮，退出全屏按钮应该就是一个向左的箭头"。
- * 早先这里画的是"小窗 + 斜向射入的箭头"、摆在右上角 —— 那套语汇是"画面缩回小窗"，
- * 而用户要的就是最朴素的返回箭头：摆在左边、朝左、一眼读得出"退出去"。
- * 笔法仍跟着 Material Rounded（圆头圆角、1.9 描边、24 视口），尺寸取 Material
- * `arrow_back` 的比例（箭羽张开约 90°）。
+ * 用户点名："左侧应该显示退出全屏按钮，退出全屏按钮应该就是一个向左的箭头"；
+ * 后来又点名："把右侧那条横杠删掉，只保留一个向左的图标" —— 所以这里不再画箭身，
+ * 只留两条在左侧收尖的斜边，读起来就是最干净的"返回"。几何在 24 视口里居中
+ * （尖点 x=7.8、两翼 x=15.2），放进 44dp 命中框里不会偏左。
+ * 笔法跟着 Material Rounded（圆头圆角、1.9 描边、24 视口）。
  */
 val LerxuExitFullscreen: ImageVector by lazy {
     buildIcon("LerxuExitFullscreen") {
@@ -66,13 +67,10 @@ val LerxuExitFullscreen: ImageVector by lazy {
             strokeLineCap = StrokeCap.Round,
             strokeLineJoin = StrokeJoin.Round
         ) {
-            // 箭身：从右往左
-            moveTo(19.8f, 12f)
-            horizontalLineTo(4.8f)
-            // 箭羽：两条斜边在左侧收成尖
-            moveTo(11.6f, 5.2f)
-            lineTo(4.8f, 12f)
-            lineTo(11.6f, 18.8f)
+            // 只有一枚向左的尖角（chevron）：用户点名删掉右侧那条横杠，不要箭身
+            moveTo(15.2f, 5.0f)
+            lineTo(7.8f, 12f)
+            lineTo(15.2f, 19.0f)
         }
     }
 }
@@ -88,30 +86,51 @@ val LerxuExitFullscreen: ImageVector by lazy {
  * 与 [LerxuExitFullscreen] 同一套笔法（圆头圆角、1.9 描边、24 视口）。
  */
 val LerxuRotateToPortrait: ImageVector by lazy {
-    buildIcon("LerxuRotateToPortrait") {
-        path(
-            stroke = SolidColor(Color.White),
-            strokeLineWidth = STROKE_W,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
-        ) {
-            // 竖着的设备（居中偏左，给右侧那半圈留位置）
-            roundRect(l = 7.4f, t = 3.2f, r = 16.6f, b = 20.8f, radius = 2.8f)
-        }
-        path(
-            stroke = SolidColor(Color.White),
-            strokeLineWidth = STROKE_W,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
-        ) {
-            // 回转箭头：右侧半圈（上 → 右 → 下），箭头收在下端、朝左
-            moveTo(19.4f, 9.0f)
-            curveTo(21.06f, 9.0f, 22.4f, 10.34f, 22.4f, 12.0f)
-            curveTo(22.4f, 13.66f, 21.06f, 15.0f, 19.4f, 15.0f)
-            moveTo(21.5f, 13.5f)
-            lineTo(19.4f, 15.0f)
-            lineTo(21.5f, 16.5f)
-        }
+    buildIcon("LerxuRotateToPortrait") { portraitRotatePaths() }
+}
+
+/**
+ * 转屏图标共用的笔画：**竖屏设备 + 右侧回转箭头**。
+ *
+ * 之前那版箭头是一段很短的半圆、贴着 24 视口最右边，设备又偏左，整体重心歪、
+ * 放大到 28dp 时显得草率（用户点名）。这里把设备收窄、箭头拉成完整的半椭圆，
+ * 末端箭头沿切线张开，并补上听筒 / 底部指示条，线条更稳、更像一枚精致的状态图标。
+ */
+private fun ImageVector.Builder.portraitRotatePaths() {
+    path(
+        stroke = SolidColor(Color.White),
+        strokeLineWidth = 1.8f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round
+    ) {
+        // 设备轮廓
+        roundRect(l = 5.8f, t = 3.2f, r = 14.6f, b = 20.8f, radius = 2.4f)
+    }
+    path(
+        stroke = SolidColor(Color.White),
+        strokeLineWidth = 1.5f,
+        strokeLineCap = StrokeCap.Round
+    ) {
+        // 听筒与底部指示条：小细节让轮廓读起来像手机
+        moveTo(9.4f, 5.4f)
+        lineTo(11.0f, 5.4f)
+        moveTo(9.2f, 18.6f)
+        lineTo(11.2f, 18.6f)
+    }
+    path(
+        stroke = SolidColor(Color.White),
+        strokeLineWidth = 1.8f,
+        strokeLineCap = StrokeCap.Round,
+        strokeLineJoin = StrokeJoin.Round
+    ) {
+        // 回转箭头：右侧半椭圆（上 → 右 → 下），箭头收在下端、**沿切线**张开。
+        // 早先两条箭羽横在末端（一上一下），读出来是一枚"向左的箭头"、不像回转，
+        // 这里按终点切线（左下方向）把两翼摆到右侧偏上，尖端才顺着弧势指出去
+        moveTo(17.4f, 6.6f)
+        curveTo(20.0f, 8.4f, 20.0f, 15.6f, 17.4f, 17.4f)
+        moveTo(19.2f, 17.3f)
+        lineTo(17.4f, 17.4f)
+        lineTo(18.1f, 15.7f)
     }
 }
 
@@ -121,27 +140,9 @@ val LerxuRotateToPortrait: ImageVector by lazy {
  */
 val LerxuRotateToLandscape: ImageVector by lazy {
     buildIcon("LerxuRotateToLandscape") {
-        path(
-            stroke = SolidColor(Color.White),
-            strokeLineWidth = STROKE_W,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
-        ) {
-            roundRect(l = 3.2f, t = 7.4f, r = 20.8f, b = 16.6f, radius = 2.8f)
-        }
-        path(
-            stroke = SolidColor(Color.White),
-            strokeLineWidth = STROKE_W,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
-        ) {
-            // 回转箭头：下半圈（左 → 下 → 右），箭头收在左端、朝上
-            moveTo(15.0f, 19.4f)
-            curveTo(15.0f, 21.06f, 13.66f, 22.4f, 12.0f, 22.4f)
-            curveTo(10.34f, 22.4f, 9.0f, 21.06f, 9.0f, 19.4f)
-            moveTo(10.5f, 21.5f)
-            lineTo(9.0f, 19.4f)
-            lineTo(7.5f, 21.5f)
+        // 与竖屏同构：整枚符号转 90°，设备与箭头的关系永远一致
+        group(rotate = 90f, pivotX = 12f, pivotY = 12f) {
+            portraitRotatePaths()
         }
     }
 }

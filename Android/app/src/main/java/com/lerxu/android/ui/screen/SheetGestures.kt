@@ -1,15 +1,19 @@
 package com.lerxu.android.ui.screen
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -64,27 +68,49 @@ internal fun rememberSheetStateFirmDismiss(): SheetState {
 }
 
 /**
- * 底部弹窗的 `contentWindowInsets`：**只让开顶部，底部一律不让**。
+ * 在**弹窗外层**取状态栏高度。
  *
- * 为什么（用户点名："设置弹窗和历史记录弹窗内容无法显示到底部小横条区域"）：
- * material3 把 `contentWindowInsets` 用 `Modifier.windowInsetsPadding` 加在
- * **Surface 内部**那个 Column 上 —— 默认值 `safeDrawing` 于是把**手势条那一整条**
- * 当成内容的内边距。结果就是：面板底色铺到了屏幕底，但内容被整体抬高一截，
- * 最下面永远留一条**画不出东西的空带**。
- *
- * 让开底部之后，内容（列表）能一路画进手势条区域（滚动时从它下面穿过），
- * 而那一段该留的呼吸由各自内容自己加 —— 用 [sheetBottomGap]，**别指望这里**。
- *
- * 顶部**必须留着**：这两张弹窗都铺满整屏，不留的话标题行会被状态栏/挖孔压住。
+ * 不能在 [SheetPanel] 内部读 `WindowInsets`：ModalBottomSheet 会把自身当前的
+ * 偏移量从子内容的 window insets 里扣掉（见 material3 的 `SheetWindowInsets`）。
+ * 当弹窗已经停在"状态栏下方"时，内容再读到的状态栏 inset 就变成 0，
+ * 于是面板又长高、弹窗继续往上爬 —— 这正是之前"弹窗慢慢上移直到全覆盖"的原因。
+ * 在调用 ModalBottomSheet 之前取一次，传入 [SheetPanel] 使用。
  */
 @Composable
-internal fun sheetContentInsets(): WindowInsets =
-    WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
+internal fun rememberSheetTopGap(): Dp =
+    WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
+
+/**
+ * 设置类弹窗的统一内容面板。
+ *
+ * 用户口径：设置这类弹窗**顶部要留出系统状态栏的空间**，不要把状态栏一起盖住；
+ * 任务详情也要用同一套形态，而不是半覆盖。
+ *
+ * 做法：用弹窗内容的最大高度减去 [topGap]（状态栏高度）作为面板高度。
+ * 弹窗表面（Surface）的高度跟随后代内容，所以面板矮一截，弹窗顶部就会往下退一截，
+ * 状态栏那一截自然露出来（背后是正常的弹窗遮罩）。高度一次算好、不做位移动画。
+ */
+@Composable
+internal fun SheetPanel(
+    topGap: Dp,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val panelHeight = (maxHeight - topGap).coerceAtLeast(0.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(panelHeight)
+        ) {
+            content()
+        }
+    }
+}
 
 /**
  * 底部弹窗**内容**末尾要留的那一段高度 = 手势条 + [extra]。
  *
- * 配合 [sheetContentInsets] 使用：insets 那边不再替内容让开手势条了，所以"最后一行不该
+ * 配合 [SheetPanel] 使用：弹窗不再替内容让开手势条了，所以"最后一行不该
  * 压在手势条底下"这件事得由内容自己保证（列表的 `contentPadding` / 末尾的 Spacer）。
  * 留的是**手势条 + extra**，而不是整块空白 —— 滚动中内容会从手势条下面穿过去。
  */

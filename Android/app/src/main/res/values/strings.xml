@@ -10,6 +10,18 @@
     <string name="engine_restarting_notification">Restarting engine…</string>
     <string name="engine_start_failed_default">Engine failed to start, please check app permissions</string>
     <string name="engine_start_failed">Engine failed to start</string>
+    <!-- Download task progress notification (multiple active tasks) -->
+    <string name="download_notification_title_multi">Downloading %1$d tasks</string>
+    <!-- Remaining time in the progress notification, e.g. "3:20 left" -->
+    <string name="download_notification_eta">%1$s left</string>
+    <!-- Notification action buttons -->
+    <string name="notification_action_pause">Pause</string>
+    <string name="notification_action_pause_all">Pause all</string>
+    <string name="notification_action_resume">Resume</string>
+    <string name="notification_action_resume_all">Resume all</string>
+    <string name="notification_action_open">Open</string>
+    <string name="notification_completed_text">Download complete</string>
+    <string name="notification_paused_multi">%1$d tasks paused</string>
 
     <!-- Common -->
     <string name="cancel">Cancel</string>
@@ -70,6 +82,8 @@
     <string name="exit_edit_mode">Exit edit mode</string>
     <string name="selected_count">Selected %1$d</string>
     <string name="select_all">Select All</string>
+    <string name="task_select">Select task</string>
+    <string name="task_deselect">Deselect task</string>
     <string name="scope_all">All</string>
     <string name="scope_active">Active</string>
     <string name="scope_seeding">Seeding</string>
@@ -357,6 +371,20 @@
     <string name="detail_gid">GID</string>
     <string name="detail_avg_speed">Avg speed</string>
     <string name="detail_seed_ratio">Share ratio</string>
+    <string name="detail_downloaded">Downloaded</string>
+    <string name="detail_uploaded">Uploaded</string>
+    <string name="detail_file_count">Files</string>
+    <string name="detail_pieces">Pieces</string>
+    <string name="detail_piece_size">Piece size</string>
+    <string name="detail_info_hash">Info hash</string>
+    <string name="detail_source_url">Source link</string>
+    <!-- Overview groups -->
+    <string name="detail_group_speed">Speed</string>
+    <string name="detail_group_transfer">Transfer</string>
+    <string name="detail_group_file">File</string>
+    <string name="detail_group_bt">BitTorrent</string>
+    <string name="detail_group_task">Task</string>
+    <string name="detail_group_error">Error</string>
     <!-- Per-task speed limit -->
     <string name="speed_limit">Speed limit</string>
     <string name="speed_limit_edit">Edit per-task speed limit</string>

@@ -73,6 +73,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -319,13 +320,17 @@ internal fun PlayerSettingsSheet(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { s ->
+            PlayerSpeedSteps.forEach { s ->
                 PlayerOptionChip(
                     label = if (s == 1f) "1.0x" else "${s}x",
                     selected = ui.baseSpeed == s,
                     // 「正常」挂在 1 倍速这一档：一排数字里用户不用猜"哪一档是原速"
                     badge = if (s == 1f) NORMAL_BADGE else null,
-                    onClick = { ui.baseSpeed = s }
+                    onClick = {
+                        ui.baseSpeed = s
+                        // 设置里选完立即生效（之前只改了状态，播放器没跟着变）
+                        player?.playbackParameters = PlaybackParameters(s)
+                    }
                 )
             }
         }

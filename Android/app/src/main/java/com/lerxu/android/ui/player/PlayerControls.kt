@@ -6,19 +6,22 @@ import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
+import android.os.SystemClock
 import android.text.format.DateFormat
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -89,6 +93,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.PlaybackParameters
@@ -191,14 +197,14 @@ private val BottomIconSlack = 8.5.dp
 private val LockGap = 6.dp
 
 /**
- * **竖屏全屏**锁屏态要给"进度 + 按钮"那两排**留出的高度**（30dp 的进度那排 + 44dp 的按钮那排）。
+ * **竖屏全屏**锁屏态要给"进度 + 按钮"那两排**留出的高度**（36dp 的进度那排 + 44dp 的按钮那排）。
  *
  * 为什么锁上了还要占着地方：竖屏下锁屏那枚在那一列的顶上，锁上前/后**位置不能变**
  * （它是同一枚按钮的两种状态，一锁就往下掉一截读起来就是"按钮跑了"）。
  * 横屏锁屏时整列撤掉 —— 那枚在屏幕左缘居中，不依赖这一列。
  * 那两个尺寸写死在 [PlayerSeekRow] / [PlayerButtonsRow] 里，改那里要回来改这里。
  */
-private val BottomRowsHeight = 74.dp
+private val BottomRowsHeight = 80.dp
 
 /** 自绘信息栏的高度下限（拿不到系统状态栏高度时用它，例如 insets 还没派发下来的头几帧）。 */
 private val StatusBarMinHeight = 24.dp
@@ -216,9 +222,10 @@ private val StatusBarMinHeight = 24.dp
  * 下排全屏时是「进度在上、按钮在下」，而且**最上面还挂着那枚锁屏**（悬浮在进度条最左侧的
  * 上方一点，见 [PlayerLockButton]）；两枚图标的**外沿**与进度显示的外沿对齐。
  *
- * 手势：点任意处切换显隐；双击左 / 右三分之一 ∓10s、**双击中间切播放/暂停**；长按 2 倍速。
- * 锁屏之后只剩"点一下切显隐"这一下（双击跳转与长按加速整块摘掉），屏幕上只剩那枚
- * "已锁定" —— 它和其他控制按钮**同一个显隐节奏**：点一下出来、点一下收起、3 秒自动收起。
+ * 手势：点任意处切换显隐；双击左 / 右三分之一 ∓10s、**双击中间切播放/暂停**；
+ * 长按 + 左右拖动调倍速（顶部倍速条）。锁屏之后只剩"点一下切显隐"这一下
+ *（双击跳转与长按调倍速整块摘掉），屏幕上只剩那枚"已锁定" —— 它和其他控制按钮
+ * **同一个显隐节奏**：点一下出来、点一下收起、3 秒自动收起。
  */
 @OptIn(UnstableApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -252,20 +259,36 @@ fun PlayerControls(
     // 锁屏（只有全屏里会真）—— 锁上之后控件整块收起，只剩一枚"解锁"
     val locked = ui.locked && ui.fullscreen
 
+    // 长按调倍速的临时状态：拖动累计 / 起始档位 / 抑制长按松手时误触发单击
+    var suppressTapUntil by remember { mutableStateOf(0L) }
+    var speedDragAccum by remember { mutableStateOf(0f) }
+    var speedStartIndex by remember { mutableStateOf(0) }
+    // 暂停时不允许唤起倍速条：长按仍会吃掉这一下手势，但不进入调整态
+    var speedGestureActive by remember { mutableStateOf(false) }
+
     // 播放中闲置 3s 自动收起控件（暂停时一直留着）；锁屏态不需要这套
     // 锁屏态**一样要自动收起**（用户点名："锁屏按钮应该跟其他控制按钮的显示状态一样"）——
     // 早先这里把 locked 排除在外，于是锁屏按钮（和"已锁定"那行字）永远挂在屏幕上。
     // `locked` 仍留在 key 里：锁/解锁那一下要重新起表，锁上之后 3 秒再收
-    LaunchedEffect(ui.controlsVisible, ui.playing, locked) {
-        if (!ui.controlsVisible || !ui.playing) return@LaunchedEffect
+    LaunchedEffect(ui.controlsVisible, ui.playing, locked, ui.scrubbing) {
+        // 拖动进度条期间不要自动收起控件
+        if (!ui.controlsVisible || !ui.playing || ui.scrubbing) return@LaunchedEffect
         delay(3000)
         ui.controlsVisible = false
     }
 
-    /** 长按加速：按下进入 2 倍，松手回到基准倍速。 */
-    fun boost(on: Boolean) {
-        ui.boost = on
-        player?.playbackParameters = PlaybackParameters(if (on) 2f else ui.baseSpeed)
+    // 松手后倍速条再停留一小拍，让用户看清最终选中的档位
+    LaunchedEffect(ui.speedBarVisible, ui.speedAdjusting, ui.speedBarPinned) {
+        // 长按唤出的条会短暂停留；点倍速按钮唤出的条（pinned）等用户选完再收
+        if (ui.speedBarVisible && !ui.speedAdjusting && !ui.speedBarPinned) {
+            delay(700)
+            ui.speedBarVisible = false
+        }
+    }
+
+    // 基准倍速变化（设置弹窗 / 顶部倍速条 / 倍速按钮）都从这里落到播放器
+    LaunchedEffect(player, ui.baseSpeed) {
+        player?.playbackParameters = PlaybackParameters(ui.baseSpeed)
     }
 
     fun seekBy(deltaMs: Long) {
@@ -358,56 +381,119 @@ fun PlayerControls(
                             )
                         }
                     } else {
-                        Modifier.pointerInput(Unit) {
-                            detectTapGestures(
-                                onTap = { ui.controlsVisible = !ui.controlsVisible },
-                                onDoubleTap = { offset ->
-                                    // 三档而不是对半分（用户点名："双击播放器中间应该是暂停
-                                    // 和开始视频"）：左 1/3 退 10s、右 1/3 进 10s、
-                                    // **中间那 1/3 切播放/暂停**（各家的共同口径）
-                                    val third = size.width / 3f
-                                    when {
-                                        offset.x < third -> {
-                                            seekBy(-10_000L)
-                                            // 左右各对应一侧的跳动提示：
-                                            // 方向 + 令牌（连点两次也重播动画）
-                                            ui.seekFlashDir = -1
-                                            ui.seekFlashToken++
+                        Modifier
+                            .pointerInput(Unit) {
+                                detectTapGestures(
+                                    onTap = {
+                                        // 长按倍速刚结束时抑制这一次"松手单击"
+                                        if (SystemClock.uptimeMillis() >= suppressTapUntil) {
+                                            if (ui.speedBarVisible) {
+                                                ui.speedBarVisible = false
+                                                ui.speedBarPinned = false
+                                            } else {
+                                                ui.controlsVisible = !ui.controlsVisible
+                                            }
                                         }
-                                        offset.x > third * 2f -> {
-                                            seekBy(10_000L)
-                                            ui.seekFlashDir = 1
-                                            ui.seekFlashToken++
+                                    },
+                                    onDoubleTap = { offset ->
+                                        if (SystemClock.uptimeMillis() >= suppressTapUntil) {
+                                            // 三档而不是对半分（用户点名："双击播放器中间应该是
+                                            // 暂停和开始视频"）：左 1/3 退 10s、右 1/3 进 10s、
+                                            // **中间那 1/3 切播放/暂停**（各家的共同口径）
+                                            val third = size.width / 3f
+                                            when {
+                                                offset.x < third -> {
+                                                    seekBy(-10_000L)
+                                                    // 左右各对应一侧的跳动提示：
+                                                    // 方向 + 令牌（连点两次也重播动画）
+                                                    ui.seekFlashDir = -1
+                                                    ui.seekFlashToken++
+                                                }
+                                                offset.x > third * 2f -> {
+                                                    seekBy(10_000L)
+                                                    ui.seekFlashDir = 1
+                                                    ui.seekFlashToken++
+                                                }
+                                                else -> togglePlay()
+                                            }
+                                            ui.controlsVisible = true
                                         }
-                                        else -> togglePlay()
                                     }
-                                    ui.controlsVisible = true
-                                },
-                                onLongPress = null,
-                                // 长按 = **按住期间** 2 倍速，松手还原。
-                                // 用 onPress + tryAwaitRelease，而不是 onLongPress：后者只报
-                                // "按下了"、没有"松手"那一下，做不出"按住才加速"
-                                onPress = {
-                                    val released = withTimeoutOrNull(400L) {
-                                        tryAwaitRelease()
-                                        true
+                                )
+                            }
+                            // 长按 + 左右拖动调倍速：顶部出现倍速条，**松手即恢复持久倍速**
+                            // （这是临时预览；持久倍速只由右下角那枚倍速按钮决定）
+                            .pointerInput(Unit) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        suppressTapUntil = SystemClock.uptimeMillis() + 800
+                                        // **按在进度条上时不能起倍速**：进度条的按下会立刻把
+                                        // scrubbing 置真，这里据此把它挡掉。否则长按 500ms 一到，
+                                        // 正按着进度条调位置的手也会被当成"长按调倍速"。
+                                        speedGestureActive = ui.playing && !ui.scrubbing
+                                        if (speedGestureActive) {
+                                            speedDragAccum = 0f
+                                            speedStartIndex = PlayerSpeedSteps.indices.minByOrNull {
+                                                abs(PlayerSpeedSteps[it] - ui.baseSpeed)
+                                            } ?: 0
+                                            ui.speedDraft = ui.baseSpeed
+                                            ui.speedAdjusting = true
+                                            ui.speedBarPinned = false
+                                            ui.speedBarVisible = true
+                                            ui.controlsVisible = false
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        if (speedGestureActive) {
+                                            // **拖动倍速只是暂时的**：松手就回到持久倍速
+                                            // （右下角那枚倍速按钮选的才是持久的，用户点名）
+                                            ui.speedAdjusting = false
+                                            ui.speedBarVisible = false
+                                            ui.speedDraft = ui.baseSpeed
+                                            player?.playbackParameters = PlaybackParameters(ui.baseSpeed)
+                                        }
+                                        speedGestureActive = false
+                                    },
+                                    onDragCancel = {
+                                        if (speedGestureActive) {
+                                            ui.speedAdjusting = false
+                                            ui.speedBarVisible = false
+                                            ui.speedDraft = ui.baseSpeed
+                                            player?.playbackParameters = PlaybackParameters(ui.baseSpeed)
+                                        }
+                                        speedGestureActive = false
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        if (!speedGestureActive) return@detectDragGesturesAfterLongPress
+                                        change.consume()
+                                        speedDragAccum += dragAmount.x
+                                        // 24dp 一档：竖屏下从最慢拖到最快也不到半屏，
+                                        // 不会出现"手都到屏幕边了还没到最高倍速"
+                                        val stepPx = 24.dp.toPx()
+                                        val index = (speedStartIndex + (speedDragAccum / stepPx).roundToInt())
+                                            .coerceIn(0, PlayerSpeedSteps.lastIndex)
+                                        val speed = PlayerSpeedSteps[index]
+                                        if (speed != ui.speedDraft) {
+                                            ui.speedDraft = speed
+                                            player?.playbackParameters = PlaybackParameters(speed)
+                                        }
                                     }
-                                    if (released == null) {
-                                        boost(true)
-                                        tryAwaitRelease()
-                                        boost(false)
-                                    }
-                                }
-                            )
-                        }
+                                )
+                            }
                     }
                 )
         ) {
             // ── 双击左右半屏：那一侧亮一块柔和的渐变 + 图标缩放淡出 ──
             if (ui.seekFlashDir != 0) SeekFlash(ui.seekFlashDir, ui.seekFlashToken)
 
-            // ── 长按加速中：居中的徽标，带一点呼吸感 ──
-            if (ui.boost) BoostBadge(ui.baseSpeed)
+            // ── 长按调倍速：顶部倍速条（松手后短暂停留） ──
+            SpeedBar(
+                ui = ui,
+                topPadding = if (ui.fullscreen) statusBarHeight + 10.dp else 10.dp
+            )
+
+            // ── 拖动进度条：屏幕中央显示"选中进度 / 总进度" ──
+            ScrubPreview(ui)
 
             if (ui.buffering) {
                 CircularProgressIndicator(
@@ -608,8 +694,30 @@ fun PlayerControls(
                                 onToggleFullscreen()
                                 ui.controlsVisible = true
                             }
+                            if (ui.title.isNotBlank()) {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    ui.title,
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = TextStyle(
+                                        shadow = Shadow(
+                                            color = Color(0x99000000),
+                                            blurRadius = 4f,
+                                            offset = Offset(0f, 1f)
+                                        )
+                                    ),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            } else {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        } else {
+                            Spacer(Modifier.weight(1f))
                         }
-                        Spacer(Modifier.weight(1f))
                         // 下载：**这一路有可下载源才出现**（用户口径："准确识别该视频的
                         // 可下载源并显示"）—— HLS 清单与普通单文件给，DASH 清单 / 网页
                         // / 认不出的源不给（见 [DownloadSource]）
@@ -938,6 +1046,9 @@ private fun PlayerSeekRow(ui: PlayerUi, player: ExoPlayer?) {
     // 这一刻**别写 0:00**（那读起来就是"坏了"），写 `--:--`，进度条也只画轨道、不可拖 ——
     // 有总长的那一刻它会自己变回来（[PlayerUi.durationMs] 由 NativePlayerOverlay 的取数表刷）
     val known = ui.durationMs > 0L
+    // 拖动中这一排被重建（切横竖屏等）时不会收到 onDragCancel：离开组合就清掉 scrubbing，
+    // 否则它会一直为真 —— 控件不再自动收起，长按倍速也会被这道闸门一直挡着
+    DisposableEffect(Unit) { onDispose { ui.scrubbing = false } }
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -955,7 +1066,12 @@ private fun PlayerSeekRow(ui: PlayerUi, player: ExoPlayer?) {
             bufferedMs = ui.bufferedMs,
             durationMs = ui.durationMs,
             seekable = known,
-            onScrub = { ui.scrubbing = true; ui.positionMs = it },
+            // 按住 / 拖动过程中就实时 seek：直接按到某一处也立刻跳过去，不等松手
+            onScrub = {
+                ui.scrubbing = true
+                ui.positionMs = it
+                player?.seekTo(it)
+            },
             onCommit = {
                 ui.scrubbing = false
                 player?.seekTo(it)
@@ -975,7 +1091,8 @@ private fun PlayerSeekRow(ui: PlayerUi, player: ExoPlayer?) {
 /**
  * 底部那排**控制按钮**：左是播放/暂停、右是"全屏"（窗口态）/"转屏"（全屏态）。
  *
- * **只留这两枚**（用户点名不要后退/前进，也不要倍速按钮）—— 倍速挪进设置，长按加速仍然保留。
+ * 左端是播放/暂停、右端是"全屏"（窗口态）/"转屏"（全屏态），紧挨右端还有一枚
+ * **持久倍速**按钮（用户点名加在转屏按钮左侧，文字就是当前基准倍速，点开顶部倍速条选档）。
  * 两枚图标的**外边**与进度那排的显示对齐（见 [PlayerIconButton] 的 align）：左图标的左沿落在
  * 当前进度那颗字的左沿、右图标的右沿落在总时长那颗字的右沿 —— 命中区仍是 44dp 的方框，
  * 只是图标贴着方框的外侧站，看上去刚好压在那条线上（用户点名）。
@@ -1005,13 +1122,26 @@ private fun PlayerButtonsRow(
             if (ui.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
             if (ui.playing) "暂停" else "播放",
             align = Alignment.CenterStart,
-            size = 27.dp,
+            size = 30.dp,
             edgeNudge = (-4).dp
         ) {
             if (ui.playing) player?.pause() else player?.play()
             ui.controlsVisible = true
         }
         Spacer(Modifier.weight(1f))
+        // 持久倍速按钮：显示当前基准倍速，点开顶部倍速条选择
+        PlayerSpeedButton(ui) {
+            if (ui.speedBarVisible) {
+                ui.speedBarVisible = false
+                ui.speedBarPinned = false
+            } else {
+                ui.speedDraft = ui.baseSpeed
+                ui.speedBarPinned = true
+                ui.speedBarVisible = true
+                ui.controlsVisible = true
+            }
+        }
+        Spacer(Modifier.width(2.dp))
         val landscape = !ui.fullscreenPortrait
         PlayerIconButton(
             if (ui.fullscreen) {
@@ -1025,7 +1155,7 @@ private fun PlayerButtonsRow(
                 "全屏"
             },
             align = Alignment.CenterEnd,
-            size = 24.dp,
+            size = 28.dp,
             edgeNudge = 2.dp
         ) {
             if (ui.fullscreen) onToggleOrientation() else onToggleFullscreen()
@@ -1135,7 +1265,8 @@ private fun PlayerUi.fmt(ms: Long): String {
     val h = t / 3600
     val m = (t % 3600) / 60
     val s = t % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+    // 分钟始终补足两位（1:05 → 01:05）；有小时时按 h:mm:ss 显示
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
 }
 
 /**
@@ -1152,6 +1283,59 @@ private fun PlayerUi.fmt(ms: Long): String {
  * 的两枚用 CenterStart / CenterEnd —— 命中框不变（还是 44dp 的方框），图标贴到
  * 方框外侧站，视觉上就与下方进度显示（左「当前进度」、右「总时长」）的外侧对齐了。
  */
+/** 速率的展示文案：1 倍写 1.0×，其余直接带一位小数。 */
+private fun speedLabel(speed: Float): String = if (speed == 1f) "1.0×" else "${speed}×"
+
+/**
+ * 底部**持久倍速**按钮：文字就是当前基准倍速，点开顶部倍速条选档。
+ *
+ * 与长按画面拖动的那套是两回事：拖动只是**临时**改当前播放速度、松手即回到这里显示的
+ * 基准倍速；只有从这枚按钮（或设置弹窗）选定的档位才会写进 [PlayerUi.baseSpeed]。
+ */
+@Composable
+private fun PlayerSpeedButton(ui: PlayerUi, onClick: () -> Unit) {
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.86f else 1f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 900f),
+        label = "speedButtonPress"
+    )
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        pressed = true
+                        tryAwaitRelease()
+                        pressed = false
+                    },
+                    onTap = { onClick() }
+                )
+            },
+        // 贴在命中框右沿、再往右探一点：与右侧转屏图标之间只留一道窄缝，
+        // 读起来是"同一个操作组"，而不是两枚各自漂着的按钮
+        contentAlignment = Alignment.CenterEnd
+    ) {
+        Text(
+            text = speedLabel(ui.baseSpeed),
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            style = TextStyle(
+                shadow = Shadow(color = Color(0xB3000000), blurRadius = 4f, offset = Offset(0f, 1f))
+            ),
+            modifier = Modifier
+                .offset(x = 6.dp)
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = if (pressed) 0.75f else 1f
+                }
+        )
+    }
+}
+
 @Composable
 private fun PlayerIconButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -1329,39 +1513,83 @@ private fun BoxScope.PlayFlash(playing: Boolean, token: Int) {
     }
 }
 
-/** 长按加速中的徽标：带一点呼吸感，明确告诉用户"现在在 2 倍"。 */
+/** 拖动进度条时的居中预览：选中进度 / 总进度。 */
 @Composable
-private fun BoxScope.BoostBadge(speed: Float) {
-    val breathe by rememberInfiniteTransition(label = "boost").animateFloat(
-        initialValue = 1f,
-        targetValue = 1.06f,
-        animationSpec = infiniteRepeatable(tween(620), RepeatMode.Reverse),
-        label = "boostScale"
-    )
-    Box(
-        modifier = Modifier
-            .align(Alignment.Center)
-            .graphicsLayer {
-                scaleX = breathe
-                scaleY = breathe
-            }
-            .background(Color(0x8C000000), RoundedCornerShape(20.dp))
-            .padding(horizontal = 14.dp, vertical = 8.dp)
+private fun BoxScope.ScrubPreview(ui: PlayerUi) {
+    AnimatedVisibility(
+        visible = ui.scrubbing,
+        modifier = Modifier.align(Alignment.Center),
+        enter = fadeIn(tween(120)),
+        exit = fadeOut(tween(120))
     ) {
+        // 只显示文字、不上背景；放大并加深投影，压在亮画面上也不会糊成一片
+        val shadow = Shadow(color = Color(0xF2000000), blurRadius = 10f, offset = Offset(0f, 2f))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Rounded.FastForward,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(Modifier.width(6.dp))
             Text(
-                text = "2.0×  快进中",
+                ui.fmt(ui.positionMs),
                 color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                style = TextStyle(shadow = shadow)
             )
+            Text(
+                "  /  ",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 16.sp,
+                style = TextStyle(shadow = shadow)
+            )
+            Text(
+                if (ui.durationMs > 0L) ui.fmt(ui.durationMs) else "--:--",
+                color = Color.White.copy(alpha = 0.86f),
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                style = TextStyle(shadow = shadow)
+            )
+        }
+    }
+}
+
+/** 长按调倍速：顶部倍速条，当前档位反白显示。 */
+@Composable
+private fun BoxScope.SpeedBar(ui: PlayerUi, topPadding: Dp) {
+    AnimatedVisibility(
+        visible = ui.speedBarVisible,
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .padding(top = topPadding),
+        enter = fadeIn(tween(160)) + slideInVertically(tween(180)) { -it },
+        exit = fadeOut(tween(140)) + slideOutVertically(tween(160)) { -it }
+    ) {
+        Row(
+            modifier = Modifier
+                .background(Color(0xCC000000), RoundedCornerShape(18.dp))
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            PlayerSpeedSteps.forEach { speed ->
+                val selected = abs(ui.speedDraft - speed) < 0.001f
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (selected) Color.White else Color.Transparent)
+                        .clickable {
+                            ui.speedDraft = speed
+                            ui.baseSpeed = speed
+                            ui.speedAdjusting = false
+                            ui.speedBarVisible = false
+                            ui.speedBarPinned = false
+                        }
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = speedLabel(speed),
+                        color = if (selected) Color.Black else Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
         }
     }
 }
@@ -1391,6 +1619,12 @@ private fun SeekBar(
     // 拖动过程中最后一次落点：`onDragEnd` 拿不到位置，只能记下来（早先写成
     // `posOf(0f)` —— 一松手就跳回 0，是个真 bug）
     var lastX by remember { mutableFloatStateOf(0f) }
+    var dragging by remember { mutableStateOf(false) }
+    val knobScale by animateFloatAsState(
+        targetValue = if (dragging) 1.35f else 1f,
+        animationSpec = tween(150),
+        label = "seekKnobScale"
+    )
 
     fun posOf(x: Float): Long =
         ((x / widthPx).coerceIn(0f, 1f) * total).toLong()
@@ -1398,31 +1632,38 @@ private fun SeekBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(30.dp)
+            // 命中区比轨道高得多：手指按在轨道上下一点也算拖进度，不会漏给画面的长按
+            .height(36.dp)
             .then(
                 if (!seekable) {
                     Modifier
                 } else {
-                    Modifier
-                        .pointerInput(total) {
-                            detectDragGestures(
-                                onDragStart = { offset ->
-                                    widthPx = size.width.toFloat()
-                                    lastX = offset.x
-                                    onScrub(posOf(offset.x))
-                                },
-                                onDrag = { change, _ ->
-                                    change.consume()
-                                    lastX = change.position.x
-                                    onScrub(posOf(lastX))
-                                },
-                                onDragEnd = { onCommit(posOf(lastX)) }
-                            )
-                        }
-                        .pointerInput(total) {
-                            widthPx = size.width.toFloat()
-                            detectTapGestures { offset -> onCommit(posOf(offset.x)) }
-                        }
+                    // 不等 touch slop：按下那一刻就按落点 seek（用户点名）
+                    Modifier.pointerInput(total) {
+                        detectDragGestures(
+                            orientationLock = null,
+                            shouldAwaitTouchSlop = { false },
+                            onDragStart = { down, _, _ ->
+                                widthPx = size.width.toFloat()
+                                lastX = down.position.x
+                                dragging = true
+                                onScrub(posOf(lastX))
+                            },
+                            onDrag = { change, _ ->
+                                change.consume()
+                                lastX = change.position.x
+                                onScrub(posOf(lastX))
+                            },
+                            onDragEnd = { _ ->
+                                dragging = false
+                                onCommit(posOf(lastX))
+                            },
+                            onDragCancel = {
+                                dragging = false
+                                onCommit(posOf(lastX))
+                            }
+                        )
+                    }
                 }
             ),
         contentAlignment = Alignment.CenterStart
@@ -1431,27 +1672,58 @@ private fun SeekBar(
             widthPx = size.width
             val h = size.height
             val cy = h / 2f
-            val trackH = 4.dp.toPx()
-            val knobR = 6.5f.dp.toPx()
+            val trackH = 5.dp.toPx()
+            val knobR = 6.5.dp.toPx() * knobScale
 
+            // 暗色底衬：整条轨道比亮色轨道宽 2dp，压在亮画面上也能看清"这里有一条轨"
             drawLine(
-                Color(0x59FFFFFF), Offset(0f, cy), Offset(size.width, cy),
+                Color(0x4D000000), Offset(0f, cy), Offset(size.width, cy),
+                strokeWidth = trackH + 2.dp.toPx(), cap = StrokeCap.Round
+            )
+            // 轨道：比早先更厚一点，半透明白
+            drawLine(
+                Color(0x2EFFFFFF), Offset(0f, cy), Offset(size.width, cy),
                 strokeWidth = trackH, cap = StrokeCap.Round
             )
             if (!seekable) return@Canvas
 
             val played = (positionMs.toFloat() / total).coerceIn(0f, 1f) * size.width
             val buffered = (bufferedMs.toFloat() / total).coerceIn(0f, 1f) * size.width
+            // 旋钮贴住两端时别被画布裁掉半个
+            val knobX = played.coerceIn(knobR, (size.width - knobR).coerceAtLeast(knobR))
 
+            // 已缓冲
             drawLine(
-                Color(0x8CFFFFFF), Offset(0f, cy), Offset(buffered, cy),
+                Color(0x66FFFFFF), Offset(0f, cy), Offset(buffered, cy),
                 strokeWidth = trackH, cap = StrokeCap.Round
             )
+            // 已播放：浅蓝渐变，比纯色更有层次
             drawLine(
-                Color(0xFF6FB4FF), Offset(0f, cy), Offset(played, cy),
-                strokeWidth = trackH, cap = StrokeCap.Round
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color(0xFF4A9EFF), Color(0xFF8CCBFF)),
+                    startX = 0f,
+                    endX = size.width
+                ),
+                start = Offset(0f, cy),
+                end = Offset(played, cy),
+                strokeWidth = trackH,
+                cap = StrokeCap.Round
             )
-            drawCircle(Color.White, knobR, Offset(played, cy))
+            // 按住 / 拖动时旋钮放大，并带一圈柔和光晕
+            if (dragging) {
+                drawCircle(
+                    color = Color(0x556FB4FF),
+                    radius = knobR + 4.dp.toPx(),
+                    center = Offset(knobX, cy)
+                )
+            }
+            drawCircle(Color.White, knobR, Offset(knobX, cy))
+            drawCircle(
+                color = Color(0xAA6FB4FF),
+                radius = knobR + 1.2.dp.toPx(),
+                center = Offset(knobX, cy),
+                style = Stroke(width = 1.2.dp.toPx())
+            )
         }
     }
 }

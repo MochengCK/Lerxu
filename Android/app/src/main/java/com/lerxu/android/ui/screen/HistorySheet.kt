@@ -155,6 +155,8 @@ internal fun BrowserHistorySheet(
     // 「往下拽 = 关掉弹窗」照旧开着（用户点名：要能"通过向下滑动弹窗来关闭"，但"不会轻易的
     // 被误触"），两档阈值抬高的细节与设置弹窗**同一处出处**（见 [rememberSheetStateFirmDismiss]）
     val sheetState = rememberSheetStateFirmDismiss()
+    // 状态栏高度必须在弹窗外层取（弹窗内部读到的是被自身偏移扣过的值）
+    val sheetTopGap = rememberSheetTopGap()
     // 先收起再回调关闭：直接置 false 会让弹窗"啪"地消失，没有下滑动画（与设置弹窗同一处理）
     val dismissAnimated: () -> Unit = {
         scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
@@ -214,11 +216,11 @@ internal fun BrowserHistorySheet(
         sheetState = sheetState,
         // 与设置弹窗一致：不画顶部那条把手（标题行自带返回键，视觉更整）
         dragHandle = null,
-        // **只让开顶部，底部不让**（与设置弹窗同一处出处，见 [sheetContentInsets]）：
-        // 默认的 `safeDrawing` 会把手势条那一整条当内容的 padding 加在 Surface 内部，
-        // 于是列表永远差一截画不到底（用户点名"内容无法显示到底部小横条区域"）。
-        contentWindowInsets = { sheetContentInsets() }
+        // 顶部状态栏空间由 [SheetPanel] 统一预留，这里不再吃系统栏 inset（否则留两次）；
+        // 底部由列表内容自己让开手势条（见 sheetBottomGap）。
+        contentWindowInsets = { WindowInsets(0) }
     ) {
+        SheetPanel(topGap = sheetTopGap) {
         // 外面这层 Box 只为了一件事：让移除控制栏**浮在列表之上**、贴在弹窗底部 ——
         // 与下载器那条一样（它也是浮在任务列表上的，不占列表的布局高度）
         Box(modifier = Modifier.fillMaxWidth()) {
@@ -329,6 +331,7 @@ internal fun BrowserHistorySheet(
                 },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
+        }
         }
     }
 }
@@ -809,8 +812,8 @@ private fun ColumnScope.HistoryEmptyHint(text: String) {
  * 红色「删除」+ 退出编辑的 ✕**。
  *
  * 两处**故意不一样**：
- * - 外沿的**下边距要自己叠加手势条**（`sheetBottomGap(12.dp)`）—— 弹窗那边现在只让开顶部
- *  （见 [sheetContentInsets]），这条栏是贴屏幕底的浮层，不让开就会压在手势条底下点不着；
+ * - 外沿的**下边距要自己叠加手势条**（`sheetBottomGap(12.dp)`）—— 弹窗本身不再替内容让开底部
+ *  （见 [SheetPanel]），这条栏是贴屏幕底的浮层，不让开就会压在手势条底下点不着；
  * - **没有下载器那套"删除确认"第二态**：那边要确认是因为还得选"是否连文件一起删"，
  *   而历史只有"删掉记录"一件事，多一步确认只是让用户多按一次。
  */
@@ -844,7 +847,7 @@ private fun HistorySelectionBar(
             shadowElevation = 10.dp,
             tonalElevation = 2.dp,
             modifier = Modifier
-                // 底部**要自己让开手势条**：弹窗那边已经不让开了（见 sheetContentInsets），
+                // 底部**要自己让开手势条**：弹窗本身不再替内容让开（见 SheetPanel），
                 // 而这条栏是贴屏幕底的浮层 —— 不让的话按钮会压在手势条底下点不着
                 .padding(
                     start = 16.dp,

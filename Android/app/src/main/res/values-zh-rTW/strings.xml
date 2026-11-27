@@ -10,6 +10,18 @@
     <string name="engine_restarting_notification">引擎重啟中…</string>
     <string name="engine_start_failed_default">引擎啟動失敗，請檢查應用權限</string>
     <string name="engine_start_failed">引擎啟動失敗</string>
+    <!-- 下載任務進度通知（多個活動任務） -->
+    <string name="download_notification_title_multi">正在下載 %1$d 個任務</string>
+    <!-- 進度通知裡的剩餘時間，例如「剩餘 3:20」 -->
+    <string name="download_notification_eta">剩餘 %1$s</string>
+    <!-- 通知操作按鈕 -->
+    <string name="notification_action_pause">暫停</string>
+    <string name="notification_action_pause_all">全部暫停</string>
+    <string name="notification_action_resume">繼續</string>
+    <string name="notification_action_resume_all">全部繼續</string>
+    <string name="notification_action_open">開啟</string>
+    <string name="notification_completed_text">下載完成</string>
+    <string name="notification_paused_multi">%1$d 個任務已暫停</string>
 
     <!-- Common -->
     <string name="cancel">取消</string>
@@ -70,6 +82,8 @@
     <string name="exit_edit_mode">退出編輯模式</string>
     <string name="selected_count">已選 %1$d</string>
     <string name="select_all">全選</string>
+    <string name="task_select">選擇任務</string>
+    <string name="task_deselect">取消選擇任務</string>
     <string name="scope_all">全部</string>
     <string name="scope_active">進行中</string>
     <string name="scope_seeding">做種中</string>
@@ -357,6 +371,20 @@
     <string name="detail_gid">GID</string>
     <string name="detail_avg_speed">平均速度</string>
     <string name="detail_seed_ratio">分享率</string>
+    <string name="detail_downloaded">已下載</string>
+    <string name="detail_uploaded">上傳量</string>
+    <string name="detail_file_count">檔案數</string>
+    <string name="detail_pieces">分片數</string>
+    <string name="detail_piece_size">分片大小</string>
+    <string name="detail_info_hash">Info Hash</string>
+    <string name="detail_source_url">原始連結</string>
+    <!-- 概覽分組標題 -->
+    <string name="detail_group_speed">速度</string>
+    <string name="detail_group_transfer">傳輸</string>
+    <string name="detail_group_file">檔案</string>
+    <string name="detail_group_bt">BitTorrent</string>
+    <string name="detail_group_task">任務</string>
+    <string name="detail_group_error">錯誤</string>
     <!-- 單任務限速 -->
     <string name="speed_limit">單任務限速</string>
     <string name="speed_limit_edit">編輯單任務限速</string>

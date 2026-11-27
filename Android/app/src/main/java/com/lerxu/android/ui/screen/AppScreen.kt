@@ -119,6 +119,7 @@ import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
@@ -5009,18 +5010,16 @@ private fun TaskCard(
     val isActive = task.status == "active"
     val isError = task.status == "error"
     val interactionSource = remember { MutableInteractionSource() }
-
-    // 选中态仅用卡片背景表达，布局零变化（高度恒定）
-    val selectionBackground by animateColorAsState(
-        targetValue = if (selected) colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
-        animationSpec = tween(180, easing = FastOutSlowInEasing),
-        label = "selectionBackground"
+    // 标题起始缩进：编辑模式给左上角勾选按钮让位。只改水平位置，不参与卡片高度计算
+    val titleStartPadding by animateDpAsState(
+        targetValue = if (selectionMode) 28.dp else 0.dp,
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
+        label = "taskTitleStart"
     )
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(selectionBackground)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
@@ -5034,16 +5033,22 @@ private fun TaskCard(
                     if (selectionMode) onToggleSelect() else onEnterSelection()
                 }
             )
-            .padding(horizontal = 16.dp, vertical = 9.dp)
     ) {
-        // 标题行（编辑模式不插入任何元素，卡片高度不变）
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 9.dp)
+        ) {
+        // 标题行：选中与否只看左上角那枚勾选按钮（不再高亮整卡背景）
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = task.fileName,
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = titleStartPadding)
             )
         }
 
@@ -5144,6 +5149,50 @@ private fun TaskCard(
                         stringResource(R.string.error_at, formatFinishedTime(context, task.finishedAt)),
                         style = MaterialTheme.typography.labelSmall,
                         color = colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        }
+        // 勾选按钮浮在卡片左上角：不参与标题行测量，因此不会把卡片撑高
+        AnimatedVisibility(
+            visible = selectionMode,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                // top 比内容内边距再少 2dp：文字视觉重心比行盒略高，勾选按钮要跟着上提
+                .padding(start = 16.dp, top = 7.dp),
+            enter = fadeIn(tween(160)) + scaleIn(initialScale = 0.7f, animationSpec = tween(180)),
+            exit = fadeOut(tween(120)) + scaleOut(targetScale = 0.7f, animationSpec = tween(140))
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clickable { onToggleSelect() },
+                contentAlignment = Alignment.Center
+            ) {
+                AnimatedContent(
+                    targetState = selected,
+                    transitionSpec = {
+                        (fadeIn(tween(160)) +
+                            scaleIn(initialScale = 0.7f, animationSpec = tween(180)))
+                            .togetherWith(
+                                fadeOut(tween(120)) +
+                                    scaleOut(targetScale = 0.7f, animationSpec = tween(140))
+                            )
+                    },
+                    label = "taskSelectIcon"
+                ) { isSelected ->
+                    Icon(
+                        imageVector = if (isSelected) {
+                            Icons.Filled.CheckCircle
+                        } else {
+                            Icons.Outlined.RadioButtonUnchecked
+                        },
+                        contentDescription = stringResource(
+                            if (isSelected) R.string.task_deselect else R.string.task_select
+                        ),
+                        tint = if (isSelected) colorScheme.primary else colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
