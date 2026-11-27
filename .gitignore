@@ -102,3 +102,9 @@ __pycache__/
 # 但**不入库**（内部流程，不随仓库公开）。锚定到根目录，避免匹配到别处的同名文件。
 /COMMIT-RULES.md
 /RELEASE-NOTES-RULES.md
+
+# 本地运行时产物：开发/调试时应用直接写在仓库根目录（任务历史、文件选择缓存）
+# 与 Trae 的 HTML 分享临时包，都不属于源码。
+/pendingFileSelection.json
+/taskHistory.json
+/.trae-html-share-packages/
